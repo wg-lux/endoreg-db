@@ -1,0 +1,31 @@
+- model: agl_base_db.Unit
+  fields:
+    name: "microgram"
+    abbreviation: "µg"
+    name_de: "Mikrogramm"
+    name_en: "Microgram"
+    description: "micrograms"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "milligram"
+    abbreviation: "mg"
+    name_de: "Milligramm"
+    name_en: "Milligram"
+    description: "milligrams"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "gram"
+    abbreviation: "g"
+    name_de: "Gramm"
+    name_en: "Gram"
+    description: "grams"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "kilogram"
+    abbreviation: "kg"
+    name_de: "Kilogramm"
+    name_en: "Kilogram"
+    description: "kilograms"

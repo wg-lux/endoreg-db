@@ -1,0 +1,48 @@
+- model: report.ExaminationTime
+  fields:
+    name: "colonoscopy-total-time"
+    name_de: "Koloskopie Zeiten"
+    name_en: "Colonoscopy Times"
+    time_types: [
+      "colonoscopy-time"
+    ]
+  
+# withdrawal-time
+- model: report.ExaminationTime
+  fields:
+    name: "withdrawal-time"
+    name_de: "Withdrawal Time"
+    name_en: "Withdrawal Time"
+    time_types: [
+      "colonoscopy-time"
+    ]
+
+# cecum-time
+- model: report.ExaminationTime
+  fields:
+    name: "cecum-time"
+    name_de: "Zökum Zeit"
+    name_en: "Cecum Time"
+    time_types: [
+      "colonoscopy-time"
+    ]
+
+# intubation-time
+- model: report.ExaminationTime
+  fields:
+    name: "intubation-time"
+    name_de: "Intubationszeit"
+    name_en: "Intubation Time"
+    time_types: [
+      "colonoscopy-time"
+    ]
+
+# colonoscopy-intervention-time
+- model: report.ExaminationTimeType
+  fields:
+    name: "colonoscopy-intervention-time"
+    name_de: "Interventionszeit"
+    name_en: "Intervention Time"
+    time_types: [
+      "colonoscopy-time"
+    ]

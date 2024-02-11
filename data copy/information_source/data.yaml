@@ -1,0 +1,30 @@
+- model: agl_base_db.InformationSource
+  fields:
+    name: treating_physician
+- model: agl_base_db.InformationSource
+  fields:
+    name: treating_physician_anamnestic
+- model: agl_base_db.InformationSource
+  fields:
+    name: physicians_note_anamnestic
+- model: agl_base_db.InformationSource
+  fields:
+    name: patient_anamnestic
+- model: agl_base_db.InformationSource
+  fields:
+    name: physical_measurement
+- model: agl_base_db.InformationSource
+  fields:
+    name: family_anamnestic
+- model: agl_base_db.InformationSource
+  fields:
+    name: physical_examination
+- model: agl_base_db.InformationSource
+  fields:
+    name: unknown
+- model: agl_base_db.InformationSource
+  fields:
+    name: prediction
+- model: agl_base_db.InformationSource
+  fields:
+    name: annotation

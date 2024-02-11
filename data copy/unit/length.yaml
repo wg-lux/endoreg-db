@@ -1,0 +1,31 @@
+- model: agl_base_db.Unit
+  fields:
+    name: "millimeter"
+    abbreviation: "mm"
+    name_de: "Millimeter"
+    name_en: "Millimeter"
+    description: "millimeters"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "centimeter"
+    abbreviation: "cm"
+    name_de: "Zentimeter"
+    name_en: "Centimeter"
+    description: "centimeters"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "meter"
+    abbreviation: "m"
+    name_de: "Meter"
+    name_en: "Meter"
+    description: "meters"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "kilometer"
+    abbreviation: "km"
+    name_de: "Kilometer"
+    name_en: "Kilometer"
+    description: "kilometers"

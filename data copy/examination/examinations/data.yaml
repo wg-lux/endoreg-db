@@ -1,0 +1,17 @@
+- model: report.Examination
+  fields:
+    name: "colonoscopy"
+    name_de: "Koloskopie"
+    name_en: "Colonoscopy"
+    examination_types: [
+      "endoscopy"
+    ]
+
+- model: report.Examination
+  fields:
+    name: "gastroscopy"
+    name_de: "Gastroskopie"
+    name_en: "Gastroscopy"
+    examination_types: [
+      "endoscopy"
+    ]

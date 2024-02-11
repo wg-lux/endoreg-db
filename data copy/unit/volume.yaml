@@ -1,0 +1,26 @@
+# Units/data.yaml
+
+- model: agl_base_db.Unit
+  fields:
+    name: "milliliter"
+    abbreviation: "ml"
+    name_de: "Milliliter"
+    name_en: "Milliliter"
+    description: "milliliters"
+
+- model: agl_base_db.Unit
+  fields:
+    name: "liter"
+    abbreviation: "l"
+    name_de: "Liter"
+    name_en: "Liter"
+    description: "liters"
+
+# cubic_meter
+- model: agl_base_db.Unit
+  fields:
+    name: "cubic_meter"
+    abbreviation: "m³"
+    name_de: "Kubikmeter"
+    name_en: "Cubic Meter"
+    description: "cubic meters"

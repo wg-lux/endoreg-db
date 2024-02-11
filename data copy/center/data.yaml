@@ -1,0 +1,7 @@
+# center/data.yaml
+
+- model: agl_base_db.center
+  fields:
+    name: "university_hospital_wuerzburg"
+    name_de: "Universitätsklinikum Würzburg"
+    name_en: "University Hospital Würzburg"
