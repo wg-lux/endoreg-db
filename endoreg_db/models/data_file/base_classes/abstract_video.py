@@ -1,4 +1,4 @@
-import cv2
+# import cv2
 from PIL import Image
 from django.core.files.base import ContentFile
 from django.db import models, transaction
