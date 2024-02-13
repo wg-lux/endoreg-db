@@ -1,0 +1,70 @@
+- model: endoreg_db.Profession
+  fields:
+    name: "nurse"
+    name_de: "Pflegekraft"
+    name_en: "Nurse"
+    description: "Not further specified nurse"
+
+# endoscopy nurse
+- model: endoreg_db.Profession
+  fields:
+    name: "endoscopy-nurse"
+    name_de: "Pflegekraft (Endoskopie)"
+    name_en: "Endoscopy nurse"
+    description: "Endoscopy nurse"
+
+- model: endoreg_db.Profession
+  fields:
+    name: "physician"
+    name_de: "Arzt"
+    name_en: "Physician"
+    description: "Not further specified doctor"
+
+# Physician in training (gastroenterology)
+- model: endoreg_db.Profession
+  fields:
+    name: "physician-in-training-gastroenterology"
+    name_de: "Arzt in Weiterbildung Gastroenterologie"
+    name_en: "Physician in training (gastroenterology)"
+    description: "Physician in training (gastroenterology)"
+  
+# Physician in training (internal medicine)
+- model: endoreg_db.Profession
+  fields:
+    name: "physician-in-training-internal-medicine"
+    name_de: "Arzt in Weiterbildung Innere Medizin"
+    name_en: "Physician in training (internal medicine)"
+    description: "Physician in training (internal medicine)"
+
+# Physician in training (general surgery)
+- model: endoreg_db.Profession
+  fields:
+    name: "physician-in-training-general-surgery"
+    name_de: "Arzt in Weiterbildung Allgemeinchirurgie"
+    name_en: "Physician in training (general surgery)"
+    description: "Physician in training (general surgery)"
+
+# Physician (Internal Medicine)
+- model: endoreg_db.Profession
+  fields:
+    name: "physician-internal-medicine"
+    name_de: "Arzt Innere Medizin"
+    name_en: "Physician (Internal Medicine)"
+    description: "Physician (Internal Medicine)"
+
+# Physician (Gastroenterology)
+- model: endoreg_db.Profession
+  fields:
+    name: "physician-gastroenterology"
+    name_de: "Arzt Gastroenterologie"
+    name_en: "Physician (Gastroenterology)"
+    description: "Physician (Gastroenterology)"
+
+# Physician (General Surgery)
+- model: endoreg_db.Profession
+  fields:
+    name: "physician-general-surgery"
+    name_de: "Arzt Allgemeinchirurgie"
+    name_en: "Physician (General Surgery)"
+    description: "Physician (General Surgery)"
+

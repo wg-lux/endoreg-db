@@ -1,0 +1,18 @@
+- model: endoreg_db.LabelSet
+  fields:
+    name: "multilabel_classification"
+    version: 0
+    labels: [
+      "appendix",
+      "ileocecal_valve",
+      "polyp",
+      "water_jet",
+      "digital_chromo_endoscopy",
+      "instrument",
+      "wound",
+      "blood",
+      "ileum",
+      "low_quality",
+      "clip",
+      "outside",
+    ]
