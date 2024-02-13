@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from endoreg_db.models.data_file.video import LegacyVideo
 import os
 from tqdm import tqdm
-import cv2
+# import cv2
 
 def convert_mkv_to_mp4(source_path, target_path):
     """
