@@ -2,7 +2,7 @@
 from pathlib import Path
 import datetime
 
-def extract_metadata_from_filename(filepath:Path, time_format = None):
+def _extract_metadata_from_filename(filepath:Path, time_format = None): # deprecated
     """
     Extracts metadata from a video filename.
 
@@ -55,7 +55,7 @@ def extract_metadata_from_filename(filepath:Path, time_format = None):
 
     return metadata
 
-def get_video_metadata(file_path):
+def _get_video_metadata(file_path): # Deprecated
     """
     Returns the framerate, dimensions, and duration of a video file.
 

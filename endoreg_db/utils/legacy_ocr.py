@@ -1,5 +1,6 @@
 import pytesseract
-from PIL import Image, ImageOps, ImageFilter
+# import cv2
+from endoreg_db.models import EndoscopyProcessor
 import os
 from collections import Counter
 from tempfile import TemporaryDirectory
@@ -8,9 +9,6 @@ from datetime import datetime
 from typing import Dict, List
 from icecream import ic
 import numpy as np
-from endoreg_db.utils.cropping import crop_and_insert
-
-
 
 N_FRAMES_MEAN_OCR = 2
 
@@ -63,7 +61,7 @@ def roi_values_valid(roi):
     return all([value >= 0 for value in roi.values()])
 
 # Function to extract text from ROIs
-def extract_text_from_rois(image_path, processor):
+def extract_text_from_rois(image_path, processor:EndoscopyProcessor):
     """
     Extracts text from regions of interest (ROIs) in an image using OCR.
 
@@ -74,16 +72,8 @@ def extract_text_from_rois(image_path, processor):
     Returns:
         dict: A dictionary containing the extracted text for each ROI.
     """
-    # Read the image using Pillow
-    image = Image.open(image_path)
-    image_dimensions = image.size # (width, height)
-
-    ####### Adjust Image #######
-    # Convert to grayscale
-    gray = image.convert('L')
-
-    # Invert colors for white text on black background
-    inverted = ImageOps.invert(gray)
+    # Read the image using OpenCV
+    image = cv2.imread(image_path)
 
     # Initialize the dictionary to hold the extracted text
     extracted_texts = {}
@@ -106,20 +96,33 @@ def extract_text_from_rois(image_path, processor):
         # Check if the ROI has values
         
         if roi_values_valid(roi):
+            # Crop the image to the ROI
             x, y, w, h = roi['x'], roi['y'], roi['width'], roi['height']
-            
-            # Get white image with original shape and just the roi remaining
-            roi_image = crop_and_insert(inverted, x,y,h,w)
+            roi_cropped = image[y:y+h, x:x+w]
+            # Convert to grayscale
+            gray = cv2.cvtColor(roi_cropped, cv2.COLOR_BGR2GRAY)
+
+            # Invert colors for white text on black background
+            gray = cv2.bitwise_not(gray)
+
+            # Binarize the image - using Otsu's method
+            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+            # Dilate the image to improve the contour of the pixelated text
+            kernel = np.ones((2,2), np.uint8)
+            dilation = cv2.dilate(binary, kernel, iterations=1)
 
             # OCR configuration: Recognize white text on black background without corrections
             config = '--psm 10 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-üöäÜÖÄß'
 
             # Use pytesseract to do OCR on the preprocessed ROI
-            text = pytesseract.image_to_string(roi_image, config=config).strip()
+            text = pytesseract.image_to_string(dilation, config=config).strip()
 
             # Post-process extracted text
             processed_text = post_process(text)
+            # processed_text = text
             
+            # Store the processed text in the dictionary
             extracted_texts[roi_name] = processed_text
 
         else:
@@ -128,6 +131,7 @@ def extract_text_from_rois(image_path, processor):
             ic("No values for this ROI")
 
     return extracted_texts
+
 
 def get_most_frequent_values(rois_texts: Dict[str, List[str]]) -> Dict[str, str]:
     """

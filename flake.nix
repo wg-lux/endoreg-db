@@ -21,6 +21,7 @@
           devShell."${system}" = pkgs.mkShell {
             buildInputs = [ 
               pkgs.poetry
+              pkgs.tesseract
 
               # Make venv (not very nixy but easy workaround to use current non-nix-packaged python module)
               pkgs.python3Packages.venvShellHook
@@ -31,13 +32,8 @@
             postShellHook = ''
               mkdir -p data
 
-              pip install --upgrade pip
+              # pip install --upgrade pip
               # poetry update
-              
-              export DJANGO_SECRET_KEY=$(cat .env/secret)
-
-              # print out the environment variables
-              echo "DJANGO_SECRET_KEY: $DJANGO_SECRET_KEY"
 
             '';
           };

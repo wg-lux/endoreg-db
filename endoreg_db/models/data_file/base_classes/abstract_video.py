@@ -3,6 +3,7 @@ from PIL import Image
 from django.core.files.base import ContentFile
 from django.db import models, transaction
 from tqdm import tqdm
+# import cv2
 import io
 from datetime import date
 

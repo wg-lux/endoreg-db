@@ -5,6 +5,10 @@ __pycache__/
 _build
 .direnv
 
+###### Do not Remove ######
+# Protects temporary files from being comitted
+endoreg_client_manager/data/*
+
 # C extensions
 *.so
 
