@@ -50,6 +50,10 @@ class VideoMeta(models.Model):
         self.initialize_ffmpeg_meta(file_path)
         self.save()
 
+    def get_endo_roi(self):
+        endo_roi = self.processor.get_roi_endoscope_image()
+        return endo_roi
+
 
 class FFMpegMeta(models.Model):
     # Existing fields
