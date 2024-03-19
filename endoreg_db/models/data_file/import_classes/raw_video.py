@@ -12,7 +12,6 @@ import subprocess
 
 from ..metadata import VideoMeta, SensitiveMeta
 
-
 class RawVideoFile(models.Model):
     uuid = models.UUIDField()
     file = models.FileField(upload_to="raw_data/")
@@ -144,7 +143,7 @@ class RawVideoFile(models.Model):
 
     def get_endo_roi(self):
         endo_roi = self.video_meta.get_endo_roi()
-        return 
+        return endo_roi
 
     # video meta should be created when video file is created
     def save(self, *args, **kwargs):
@@ -246,7 +245,7 @@ class RawVideoFile(models.Model):
         return paths
 
     def get_prediction_dir(self):
-        return Path(elf.prediction_dir)
+        return Path(self.prediction_dir)
 
     def get_predictions_path(self, suffix = ".json"):
         pred_dir = self.get_prediction_dir()
@@ -267,9 +266,6 @@ class RawVideoFile(models.Model):
     def get_filtered_sequences_path(self, suffix=".json"):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("filtered_sequences").with_suffix(suffix)
-
-    
-        
 
     def extract_text_information(self, frame_fraction: float = 0.001):
         """
@@ -334,3 +330,12 @@ class RawVideoFile(models.Model):
 
         else:
             video_meta.update_meta(video_path)
+
+    def get_fps(self):
+        if self.video_meta is None:
+            self.update_video_meta()
+
+        if self.video_meta.ffmpeg_meta is None:
+            self.video_meta.initialize_ffmpeg_meta(self.file.path)
+
+        return self.video_meta.get_fps()

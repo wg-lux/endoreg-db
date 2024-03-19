@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "endoreg-db"
-version = "0.2.3"
+version = "0.3.1"
 description = "EndoReg Db Django App"
 authors = ["Thomas J. Lux"]
 license = "GNU3"

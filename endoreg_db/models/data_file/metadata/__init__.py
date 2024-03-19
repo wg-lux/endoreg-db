@@ -54,6 +54,12 @@ class VideoMeta(models.Model):
         endo_roi = self.processor.get_roi_endoscope_image()
         return endo_roi
 
+    def get_fps(self):
+        if not self.ffmpeg_meta:
+            return None
+    
+        return self.ffmpeg_meta.frame_rate
+            
 
 class FFMpegMeta(models.Model):
     # Existing fields

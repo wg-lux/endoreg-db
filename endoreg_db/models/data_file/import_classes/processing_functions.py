@@ -1,4 +1,5 @@
 from .raw_video import RawVideoFile
+import json 
 
 # # Starting point
 # Automated tasks generate RawVideoFile objects in our db.
@@ -96,14 +97,14 @@ from pathlib import Path
 def get_multilabel_model(model_path:Path):
     from agl_predict_endo_frame.model_loader import MultiLabelClassificationNet
     model_path_str = model_path.resolve().as_posix()
-    model = MultiLabelClassificationNet.load_from_checkpoint()
+    model = MultiLabelClassificationNet.load_from_checkpoint(model_path_str)
     model.cuda()
     model.eval()
     return model
 
 def get_multilabel_classifier(model, verbose:bool=False):
     from agl_predict_endo_frame.predict import Classifier
-    classifier = Classifier(model, verbose = True)
+    classifier = Classifier(model, verbose = verbose)
     return classifier
 
 def get_crops(video, paths):
@@ -121,12 +122,12 @@ def get_crops(video, paths):
 
 # model = MultiLabelClassificationNet.load_from_checkpoint("model/colo_segmentation_RegNetX800MF_6.ckpt")
 def perform_initial_prediction_on_video(
-    video:RawVideoFile, model_path:Path,
+    video:RawVideoFile, model_path,
     window_size_s, min_seq_len_s
 ):
-    # perform initial prediction on video
+
     model = get_multilabel_model(model_path)
-    classifier = get_multilabel_classifier(model)
+    classifier = get_multilabel_classifier(model, verbose = True)
 
     paths = video.get_frame_paths()
     string_paths = [p.resolve().as_posix() for p in paths]
@@ -136,61 +137,58 @@ def perform_initial_prediction_on_video(
     predictions = classifier.pipe(string_paths, crops)
     readable_predictions = [classifier.readable(p) for p in predictions]
     result_dict = classifier.post_process_predictions_serializable(
-        readable_predictios,
+        readable_predictions,
         window_size_s = window_size_s,
         min_seq_len_s = min_seq_len_s,
         fps = fps
     )
 
-    # pred_target_dir = video.get_pred_target_dir()
-    
-    result_targets = [
-        "predictions",
-        "smooth_predictions",
-        "binary_predictions",
-        "raw_sequences",
-        "filtered_sequences"
-    ]
     
     # Predictions
     _path = video.get_predictions_path()
     with open(_path, "w") as f:
-        json.dump(result_targets["predictions"])
+        json.dump(result_dict["predictions"], f, indent = 4)
 
     # smooth_predictions
     _path = video.get_smooth_predictions_path()
     with open(_path, "w") as f:
-        json.dump(result_targets["smooth_predictions"])
+        json.dump(result_dict["smooth_predictions"], f, indent = 4)
 
     # binary_predictions
     _path = video.get_binary_predictions_path()
     with open(_path, "w") as f:
-        json.dump(result_targets["binary_predictions"])
+        json.dump(result_dict["binary_predictions"], f, indent = 4)
 
     # Raw Sequences
     _path = video.get_raw_sequences_path()
     with open(_path, "w") as f:
-        json.dump(result_targets["raw_sequences"])
+        json.dump(result_dict["raw_sequences"], f, indent = 4)
 
     # filtered_sequences
     _path = video.get_filtered_sequences_path()
     with open(_path, "w") as f:
-        json.dump(result_targets["filtered_sequences"])
+        json.dump(result_dict["filtered_sequences"], f, indent = 4)
 
     
     # update state_initial_prediction_completed
     video.state_initial_prediction_required = False
     video.state_initial_prediction_completed = True
-    video.state_prediction_import_required = True
-    video.state_prediction_import_completed = False
+    video.state_initial_prediction_import_required = True
+    video.state_initial_prediction_import_completed = False
     video.save()
 
     return video
 
-def perform_initial_prediction_on_videos():
+def perform_initial_prediction_on_videos(
+    model_path,
+    window_size_s, min_seq_len_s
+):
     videos = get_videos_scheduled_for_initial_prediction()
     for video in videos:
-        perform_initial_prediction_on_video(video)
+        perform_initial_prediction_on_video(
+        video,
+        model_path, window_size_s, min_seq_len_s
+    )
 
 def videos_scheduled_for_prediction_import_preflight():
     videos = RawVideoFile.objects.filter(
