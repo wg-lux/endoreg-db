@@ -16,6 +16,7 @@ class ReportFile(models.Model):
     time = models.TimeField(blank=True, null=True)
 
     def get_pdf_hash(self):
+        #FIXME should use endoreg_db.utils.get_pdf_hash in future
         pdf = self.pdf
         pdf_hash = None
 

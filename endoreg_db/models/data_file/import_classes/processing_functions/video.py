@@ -1,4 +1,4 @@
-from .raw_video import RawVideoFile
+from ..raw_video import RawVideoFile
 import json 
 
 # # Starting point
@@ -221,7 +221,6 @@ def import_predictions_for_videos():
     videos = get_videos_scheduled_for_prediction_import()
     for video in videos:
         import_predictions_for_video(video)
-
 
 # # Step 4 - Delete Frames if not needed anymore
 # function to query for videos scheduled for frame deletion,

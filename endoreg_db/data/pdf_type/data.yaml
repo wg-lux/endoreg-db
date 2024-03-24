@@ -1,0 +1,8 @@
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "ukw-endoscopy-examination-report-generic"
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "ukw-endoscopy-histology-report-generic"

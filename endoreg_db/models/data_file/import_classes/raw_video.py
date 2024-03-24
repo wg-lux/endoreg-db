@@ -15,9 +15,11 @@ from ..metadata import VideoMeta, SensitiveMeta
 class RawVideoFile(models.Model):
     uuid = models.UUIDField()
     file = models.FileField(upload_to="raw_data/")
+    
     sensitive_meta = models.OneToOneField(
         "SensitiveMeta", on_delete=models.CASCADE, blank=True, null=True
-    )
+    ) 
+
     center = models.ForeignKey("Center", on_delete=models.CASCADE)
     processor = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True
@@ -69,7 +71,7 @@ class RawVideoFile(models.Model):
     def create_from_file(
         cls,
         file_path: Path,
-        video_dir_parent: Path,
+        video_dir: Path,
         center_name: str,
         processor_name: str,
         frame_dir_parent: Path,
@@ -87,8 +89,8 @@ class RawVideoFile(models.Model):
         if not framedir.exists():
             framedir.mkdir(parents=True, exist_ok=True)
 
-        if not video_dir_parent.exists():
-            video_dir_parent.mkdir(parents=True, exist_ok=True)
+        if not video_dir.exists():
+            video_dir.mkdir(parents=True, exist_ok=True)
 
         video_hash = get_video_hash(file_path)
 
@@ -98,7 +100,7 @@ class RawVideoFile(models.Model):
         processor = EndoscopyProcessor.objects.get(name=processor_name)
         assert processor is not None, "Processor must exist"
 
-        new_filepath = video_dir_parent / new_file_name
+        new_filepath = video_dir / new_file_name
 
         print(f"Moving {file_path} to {new_filepath}")
         shutil.move(file_path.resolve().as_posix(), new_filepath.resolve().as_posix())

@@ -23,6 +23,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_user_groups..."))
         call_command('load_user_groups', verbose=verbose)
 
+        # Run the load_pdf_type_data command
+        self.stdout.write(self.style.SUCCESS("Running load_pdf_type_data..."))
+        call_command('load_pdf_type_data', verbose=verbose)
+
         # Run the load_endoscopy_processor_data command
         self.stdout.write(self.style.SUCCESS("Running load_endoscopy_processor_data..."))
         call_command('load_endoscopy_processor_data', verbose=verbose)

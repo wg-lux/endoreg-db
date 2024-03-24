@@ -5,3 +5,8 @@
     name: "university_hospital_wuerzburg"
     name_de: "Universitätsklinikum Würzburg"
     name_en: "University Hospital Würzburg"
+- model: endoreg_db.center
+  fields:
+    name: "rbk_stuttgart"
+    name_de: "Robert-Bosch-Krankenhaus Stuttgart"
+    name_en: "Robert Bosch Hospital Stuttgart"
