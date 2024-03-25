@@ -201,8 +201,8 @@ def videos_scheduled_for_prediction_import_preflight():
     
 def get_videos_scheduled_for_prediction_import():
     return RawVideoFile.objects.filter(
-        state_prediction_import_required=True,
-        state_prediction_import_completed=False,
+        state_initial_prediction_import_required=True,
+        state_initial_prediction_import_completed=False,
         state_initial_prediction_completed=True
     )
 
@@ -211,9 +211,9 @@ def import_predictions_for_video(video:RawVideoFile):
     pass
 
     # update state_prediction_import_completed
-    video.state_prediction_import_required = False
-    video.state_prediction_import_completed = True
-    video.save()
+    # video.state_initial_prediction_import_required = False
+    # video.state_initial_prediction_import_completed = True
+    # video.save()
 
     return video
 

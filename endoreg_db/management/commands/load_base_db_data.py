@@ -23,6 +23,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_user_groups..."))
         call_command('load_user_groups', verbose=verbose)
 
+        # run the load_report_reader_flag command
+        self.stdout.write(self.style.SUCCESS("Running load_report_reader_flag..."))
+        call_command('load_report_reader_flag', verbose=verbose)
+
         # Run the load_pdf_type_data command
         self.stdout.write(self.style.SUCCESS("Running load_pdf_type_data..."))
         call_command('load_pdf_type_data', verbose=verbose)
@@ -59,8 +63,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_ai_model_data..."))
         call_command('load_ai_model_data', verbose=verbose)
 
-        # Run the load_active_model_data command
-        self.stdout.write(self.style.SUCCESS("Running load_active_model_data..."))
-        call_command('load_active_model_data', verbose=verbose)
+        # Necessary? Migrate? FIXME
+        # # Run the load_active_model_data command
+        # self.stdout.write(self.style.SUCCESS("Running load_active_model_data..."))
+        # call_command('load_active_model_data', verbose=verbose)
         
         self.stdout.write(self.style.SUCCESS("All data loading commands executed successfully."))

@@ -28,8 +28,8 @@ from .video import (
     delete_frames,
 )
 
-from .examination import (
-    get_examination_reports_scheduled_for_processing,
-    process_examination_report,
-    process_examination_reports,
+from .pdf import (
+    get_pdf_files_scheduled_for_processing,
+    process_pdf_file,
+    process_pdf_files,
 )

@@ -12,6 +12,12 @@ class Center(models.Model):
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
 
+    first_names = models.ManyToManyField(
+        'FirstName',
+        related_name='centers',
+    )
+    last_names = models.ManyToManyField('LastName', related_name='centers')
+
     def natural_key(self):
         return (self.name,)
     

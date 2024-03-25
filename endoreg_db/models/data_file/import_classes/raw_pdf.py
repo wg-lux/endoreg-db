@@ -117,10 +117,13 @@ class RawPdfFile(models.Model):
         return raw_pdf
 
     def process_file(self, verbose = False):
-        rr = ReportReader() #FIXME In future we need to pass a configuration file 
+        
+        pdf_path = self.file.path
+        rr_config = self.get_report_reader_config()
+
+        rr = ReportReader(**rr_config) #FIXME In future we need to pass a configuration file 
         # This configuration file should be associated with pdf type 
 
-        pdf_path = self.file.path
         text, anonymized_text, report_meta = rr.process_report(pdf_path, verbose=verbose)
         if not self.sensitive_meta:
             sensitive_meta = SensitiveMeta.create_from_dict(report_meta)
@@ -158,3 +161,25 @@ class RawPdfFile(models.Model):
             self.pdf_hash = get_pdf_hash(self.file.path)
 
         super().save(*args, **kwargs)
+
+
+    def get_report_reader_config(self):
+        if self.pdf_type.endoscope_info_line:
+            endoscope_info_line = self.pdf_type.endoscope_info_line.value
+        else:
+            endoscope_info_line = None
+        settings_dict = {
+            "locale": "de_DE",
+            "employee_first_names": [_.name for _ in self.center.first_names.all()],
+            "employee_last_names": [_.name for _ in self.center.last_names.all()],
+            "text_date_format":'%d.%m.%Y',
+            "flags": {
+                "patient_info_line": self.pdf_type.patient_info_line.value,
+                "endoscope_info_line": endoscope_info_line,
+                "examiner_info_line": self.pdf_type.examiner_info_line.value,
+                "cut_off_below": [_.value for _ in self.pdf_type.cut_off_below_lines.all()],
+                "cut_off_above": [_.value for _ in self.pdf_type.cut_off_above_lines.all()],
+            }
+        }
+
+        return settings_dict

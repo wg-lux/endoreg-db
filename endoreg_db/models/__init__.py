@@ -1,6 +1,7 @@
 from .unit import Unit
 from .information_source import InformationSource
 from .center import Center
+from .report_reader import ReportReaderConfig, ReportReaderFlag
 from .persons import (
     Person,
     Patient,
@@ -9,6 +10,7 @@ from .persons import (
     ExaminerSerializer,
     PortalUserInfo,
     Profession,
+    FirstName, LastName
 )
 
 from .examination import (

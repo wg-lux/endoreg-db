@@ -5,8 +5,48 @@
     name: "university_hospital_wuerzburg"
     name_de: "Universitätsklinikum Würzburg"
     name_en: "University Hospital Würzburg"
+
+    first_names: [
+      "Markus",
+      "Linhel",
+      "Rainer",
+      "Hans",
+      "Anja",
+      "Dorothea",
+      "Doro",
+      "Angelika",
+      "Sven",
+      "Theodor",
+      "Alexander",
+      "Mandy",
+      "Kathrin",
+      "Florian",
+      "Philip",
+      "Laura"
+    ]
+    last_names: [
+      "Kozielski",
+      "Reiter",
+      "Purrer",
+      "Kudlich",
+      "Brand",
+      "Weich",
+      "Lux",
+      "Meining",
+      "Hann",
+      "Retzbach",
+      "Hose",
+      "Henniger",
+      "Weich",
+      "Dela Cruz",
+      "Wiesemann",
+      "Weise",
+      "Sodmann"
+    ]
 - model: endoreg_db.center
   fields:
     name: "rbk_stuttgart"
     name_de: "Robert-Bosch-Krankenhaus Stuttgart"
     name_en: "Robert Bosch Hospital Stuttgart"
+    first_names: [] # many to many; if foreign key, we would just have a string; strings represent "name" attribute
+    last_names: []

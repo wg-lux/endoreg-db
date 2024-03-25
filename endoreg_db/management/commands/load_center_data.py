@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from ...utils import load_model_data_from_yaml
-from ...models import Center
+from ...models import Center, FirstName, LastName
 from ...data import CENTER_DATA_DIR
 
 SOURCE_DIR = CENTER_DATA_DIR # e.g. settings.DATA_DIR_INTERVENTION
@@ -15,8 +15,8 @@ IMPORT_METADATA = {
     MODEL_0.__name__: {
         "dir": SOURCE_DIR, # e.g. "interventions"
         "model": MODEL_0, # e.g. Intervention
-        "foreign_keys": [], # e.g. ["intervention_types"]
-        "foreign_key_models": [] # e.g. [InterventionType]
+        "foreign_keys": ["first_names", "last_names"], # e.g. ["intervention_types"]
+        "foreign_key_models": [FirstName, LastName] # e.g. [InterventionType]
     }
 }
 
