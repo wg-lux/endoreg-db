@@ -2,13 +2,13 @@
 
 [[package]]
 name = "agl-report-reader"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read and anonymize medical reports"
 optional = false
 python-versions = "<4.0,>=3.11"
 files = [
-    {file = "agl_report_reader-0.2.0-py3-none-any.whl", hash = "sha256:260624748ec68d2bcb29799a42146d7651cf692080a4cc8e4994747176f2011f"},
-    {file = "agl_report_reader-0.2.0.tar.gz", hash = "sha256:8ced3d675136ddb43487a13766d73bea0463708623016c6c81ae7f30dd808ac0"},
+    {file = "agl_report_reader-0.3.0-py3-none-any.whl", hash = "sha256:be34737b22c55844d5b04922d36cc0060f0471b502539b439ac6b010cc7e9592"},
+    {file = "agl_report_reader-0.3.0.tar.gz", hash = "sha256:74bad8a89eb0af632ba6234672b23ed53a98402775cf28022fa42957f8b3ed97"},
 ]
 
 [package.dependencies]
@@ -818,4 +818,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "36c048d5a52c7e1644f66ab2483e0524f26e4b8564984b365d1ef5614c2942a1"
+content-hash = "3f83c72926238564ab126ff4485d89200676cd3c63787ad3afcf2cf8b6a6270d"
