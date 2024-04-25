@@ -25,11 +25,14 @@ logger = logging.getLogger('pdf_import')
 
 import shutil
 
+# get pdf location from settings, default to ~/erc_data/raw_pdf and create if not exists
+PSEUDO_DIR_RAW_PDF = getattr(settings, 'PSEUDO_DIR_RAW_PDF', settings.BASE_DIR / 'erc_data/raw_pdf')
+
 class RawPdfFile(models.Model):
     file = models.FileField(
         upload_to='raw_pdf/',
         validators=[FileExtensionValidator(allowed_extensions=['pdf'])],
-        storage=FileSystemStorage(location=settings.PSEUDO_DIR_RAW_PDF.resolve().as_posix()),
+        storage=FileSystemStorage(location=PSEUDO_DIR_RAW_PDF.resolve().as_posix()),
     )
 
     pdf_hash = models.CharField(max_length=255, unique=True)
