@@ -79,9 +79,10 @@ class FFMpegMeta(models.Model):
     def create_from_file(cls, file_path: Path):
         """Creates an FFMpegMeta instance from a video file using ffmpeg probe."""
         try:
-            probe = ffmpeg.probe(str(file_path))
-        except ffmpeg.Error as e:
-            print(e.stderr)
+            probe = ffmpeg.probe(file_path.resolve().as_posix())
+        except: # ffmpeg.Error as e:
+            # print(e.stderr)
+            print(f"Error while probing {file_path}")
             return None
 
         video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
