@@ -1,0 +1,15 @@
+- model: endoreg_db.event
+  fields:
+    name: "coro_des_implantation"
+    name_de: "Koronarstent-Implantation (DES)"
+    name_en: "Coronary Stent Implantation (DES)"
+- model: endoreg_db.event
+  fields:
+    name: "coro_bms_implantation"
+    name_de: "Koronarstent-Implantation (BMS)"
+    name_en: "Coronary Stent Implantation (BMS)"
+- model: endoreg_db.event
+  fields:
+    name: "complication_coro_stent_thrombosis"
+    name_de: "Komplikation: Koronar Stent Thrombose"
+    name_en: "Complication: Coronary Stent Thrombosis"

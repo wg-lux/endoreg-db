@@ -1,9 +1,9 @@
-from .person import Person
+from ..person import Person
 from django import forms
 from django.forms import DateInput
 from rest_framework import serializers
-from ..patient_examination import PatientExamination
-from ..data_file import ReportFile
+from ...patient_examination import PatientExamination
+from ...data_file import ReportFile
 from django.db import models
 
 class Patient(Person):
@@ -20,6 +20,7 @@ class Patient(Person):
 
     """
     center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
+    
 
     def __str__(self):
         return self.first_name + " " + self.last_name + " (" + str(self.dob) + ")"

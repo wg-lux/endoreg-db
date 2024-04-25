@@ -63,6 +63,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_ai_model_data..."))
         call_command('load_ai_model_data', verbose=verbose)
 
+        # Run the load_event_data command
+        self.stdout.write(self.style.SUCCESS("Running load_event_data..."))
+        call_command('load_event_data', verbose=verbose)
+        
+
         # Necessary? Migrate? FIXME
         # # Run the load_active_model_data command
         # self.stdout.write(self.style.SUCCESS("Running load_active_model_data..."))

@@ -4,8 +4,7 @@ from .center import Center
 from .report_reader import ReportReaderConfig, ReportReaderFlag
 from .persons import (
     Person,
-    Patient,
-    PatientForm,
+    Patient, PatientForm, PatientEvent,
     Examiner,
     ExaminerSerializer,
     PortalUserInfo,
@@ -19,7 +18,7 @@ from .examination import (
     ExaminationTime,
     ExaminationTimeType,
 )
-
+from .event import Event
 from .data_file import *
 
 from .patient_examination import PatientExamination
