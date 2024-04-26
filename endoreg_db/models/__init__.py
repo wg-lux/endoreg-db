@@ -4,7 +4,7 @@ from .center import Center
 from .report_reader import ReportReaderConfig, ReportReaderFlag
 from .persons import (
     Person,
-    Patient, PatientForm, PatientEvent,
+    Patient, PatientForm, PatientEvent, PatientDisease, PatientLabValue, PatientMedication,
     Examiner,
     ExaminerSerializer,
     PortalUserInfo,
@@ -12,13 +12,25 @@ from .persons import (
     FirstName, LastName
 )
 
+from .rules import (
+    Rule,
+    RuleType,
+    Ruleset,
+    RuleApplicator,
+    Rule
+)
+
+from .disease import Disease
+from .event import Event
+from .laboratory import LabValue
+from .medication import Medication
+
 from .examination import (
     Examination,
     ExaminationType,
     ExaminationTime,
     ExaminationTimeType,
 )
-from .event import Event
 from .data_file import *
 
 from .patient_examination import PatientExamination

@@ -16,5 +16,7 @@ class PatientEvent(models.Model):
     date_end = models.DateField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
+    last_update = models.DateTimeField(auto_now=True)
+    
     def __str__(self):
         return str(self.date_start) + ": " + self.event
