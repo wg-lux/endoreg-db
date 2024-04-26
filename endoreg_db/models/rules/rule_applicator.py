@@ -1,7 +1,4 @@
-from django.db import models
 from .rule import Rule
-
-
 import random
 from django.core.exceptions import ValidationError
 
