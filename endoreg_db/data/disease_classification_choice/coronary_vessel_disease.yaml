@@ -1,0 +1,20 @@
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "khk_1_ge"
+    name_de: "Koronare Gefäßerkrankung (1-Gefäß-Erkrankung)"
+    name_en: "Coronary Vessel Disease (1-Vessel Disease)"
+    disease_classification: "coronary_artery_disease_base_classification"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "khk_2_ge"
+    name_de: "Koronare Gefäßerkrankung (2-Gefäß-Erkrankung)"
+    name_en: "Coronary Vessel Disease (2-Vessel Disease)"
+    disease_classification: "coronary_artery_disease_base_classification"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "khk_3_ge"
+    name_de: "Koronare Gefäßerkrankung (3-Gefäß-Erkrankung)"
+    name_en: "Coronary Vessel Disease (3-Vessel Disease)"
+    disease_classification: "coronary_artery_disease_base_classification"

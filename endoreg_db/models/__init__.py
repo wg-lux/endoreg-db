@@ -20,7 +20,7 @@ from .rules import (
     Rule
 )
 
-from .disease import Disease
+from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
 from .event import Event
 from .laboratory import LabValue
 from .medication import Medication

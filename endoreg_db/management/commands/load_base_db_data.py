@@ -19,6 +19,18 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_profession_data..."))
         call_command('load_profession_data', verbose=verbose)
 
+        # Run the load_disease data command
+        self.stdout.write(self.style.SUCCESS("Running load_disease_data..."))
+        call_command('load_disease_data', verbose=verbose)
+
+        # Run the load_disease_classification data command
+        self.stdout.write(self.style.SUCCESS("Running load_disease_classification_data..."))
+        call_command('load_disease_classification_data', verbose=verbose)
+
+        # Run the load_disease_classification_choices data command
+        self.stdout.write(self.style.SUCCESS("Running load_disease_classification_choices_data..."))
+        call_command('load_disease_classification_choices_data', verbose=verbose)
+
         # rund the load_user_groups command
         self.stdout.write(self.style.SUCCESS("Running load_user_groups..."))
         call_command('load_user_groups', verbose=verbose)
@@ -66,7 +78,7 @@ class Command(BaseCommand):
         # Run the load_event_data command
         self.stdout.write(self.style.SUCCESS("Running load_event_data..."))
         call_command('load_event_data', verbose=verbose)
-        
+
 
         # Necessary? Migrate? FIXME
         # # Run the load_active_model_data command
