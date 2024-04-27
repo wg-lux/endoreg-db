@@ -15,14 +15,12 @@ PROFESSION_DATA_DIR = DATA_DIR / "profession"
 PDF_TYPE_DATA_DIR = DATA_DIR / "pdf_type"
 REPORT_READER_FLAG_DATA_DIR = DATA_DIR / "report_reader_flag"
 EVENT_DATA_DIR = DATA_DIR / "event"
-
-# To Do
 DISEASE_CLASSIFICATION_DATA_DIR = DATA_DIR / "disease_classification"
 DISEASE_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "disease_classification_choice"
 DISEASE_DATA_DIR = DATA_DIR / "disease"
-
-
+# To Do
 LAB_VALUE_DATA_DIR = DATA_DIR / "lab_value"
+
 MEDICATION_DATA_DIR = DATA_DIR / "medication"
 RULE_TYPE_DATA_DIR = DATA_DIR / "rule_type"
 RULE_ATTRIBUTE_DTYPE_DATA_DIR = DATA_DIR / "rule_attribute_dtype"

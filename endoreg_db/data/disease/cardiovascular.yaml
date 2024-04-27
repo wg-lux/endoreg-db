@@ -30,3 +30,8 @@
     name_de: "Diabetes mellitus Typ II"
     name_en: "Diabetes Mellitus Type II"
 
+- model: endoreg_db.disease
+  fields:
+    name: "atrial_fibrillation"
+    name_de: "Vorhofflimmern"
+    name_en: "Atrial Fibrillation"

@@ -1,12 +1,21 @@
 # Units/data.yaml
 
+# femptolitre
 - model: endoreg_db.Unit
   fields:
-    name: "milliliter"
+    name: "femtoliter"
+    abbreviation: "fl"
+    name_de: "Femtoliter"
+    name_en: "Femtolitre"
+    description: "femtoliters"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "mililiter"
     abbreviation: "ml"
-    name_de: "Milliliter"
-    name_en: "Milliliter"
-    description: "milliliters"
+    name_de: "mililiter"
+    name_en: "mililiter"
+    description: "mililiters"
 
 - model: endoreg_db.Unit
   fields:

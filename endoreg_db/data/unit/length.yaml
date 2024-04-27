@@ -1,10 +1,10 @@
 - model: endoreg_db.Unit
   fields:
-    name: "millimeter"
+    name: "milimeter"
     abbreviation: "mm"
-    name_de: "Millimeter"
-    name_en: "Millimeter"
-    description: "millimeters"
+    name_de: "milimeter"
+    name_en: "milimeter"
+    description: "milimeters"
 
 - model: endoreg_db.Unit
   fields:

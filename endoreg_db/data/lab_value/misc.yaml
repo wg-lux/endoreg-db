@@ -1,0 +1,30 @@
+# C-reactive protein: < 0.5 mg/dL 
+# D-dimer: ≤ 300 ng/mL (300 µg/L) 
+# Lactate dehydrogenase (LDH): 60-160 U/L
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "c_reactive_protein"
+    name_de: "C-reaktives Protein"
+    name_en: "C-reactive protein"
+    abbreviation: "CRP"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"max": 0.5}
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "d_dimer"
+    name_de: "D-Dimer"
+    name_en: "D-dimer"
+    abbreviation: "D-Dimer"
+    default_unit: "nanogram per mililiter"
+    default_normal_range: {"max": 300}
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "lactate_dehydrogenase"
+    name_de: "Laktatdehydrogenase"
+    name_en: "Lactate dehydrogenase"
+    abbreviation: "LDH"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 60, "max": 160}
