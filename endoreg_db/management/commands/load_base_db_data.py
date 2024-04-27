@@ -11,7 +11,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        verbose = options['verbose']
+        # verbose = options['verbose']
+        verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))
 
@@ -54,6 +55,10 @@ class Command(BaseCommand):
         # Run the load_unit_data command
         self.stdout.write(self.style.SUCCESS("Running load_unit_data..."))
         call_command('load_unit_data', verbose=verbose)
+
+        # Run the load_lab_value_data command
+        self.stdout.write(self.style.SUCCESS("Running load_lab_value_data..."))
+        call_command("load_lab_value_data", verbose=verbose)
 
         # Run the load_information_source command
         self.stdout.write(self.style.SUCCESS("Running load_information_source..."))
