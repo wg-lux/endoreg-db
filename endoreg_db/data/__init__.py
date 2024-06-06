@@ -18,10 +18,15 @@ EVENT_DATA_DIR = DATA_DIR / "event"
 DISEASE_CLASSIFICATION_DATA_DIR = DATA_DIR / "disease_classification"
 DISEASE_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "disease_classification_choice"
 DISEASE_DATA_DIR = DATA_DIR / "disease"
+MEDICATION_DATA_DIR = DATA_DIR / "medication"
+MEDICATION_INDICATION_DATA_DIR = DATA_DIR / "medication_indication"
+MEDICATION_INDICATION_TYPE_DATA_DIR = DATA_DIR / "medication_indication_type"
 # To Do
 LAB_VALUE_DATA_DIR = DATA_DIR / "lab_value"
+MEDICATION_SCHEDULE_DATA_DIR = DATA_DIR / "medication_schedule"
+MEDICATION_INTAKE_TIME_DATA_DIR = DATA_DIR / "medication_intake_time"
 
-MEDICATION_DATA_DIR = DATA_DIR / "medication"
+
 RULE_TYPE_DATA_DIR = DATA_DIR / "rule_type"
 RULE_ATTRIBUTE_DTYPE_DATA_DIR = DATA_DIR / "rule_attribute_dtype"
 RULESET_DATA_DIR = DATA_DIR / "ruleset"

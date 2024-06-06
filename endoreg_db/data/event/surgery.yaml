@@ -1,0 +1,13 @@
+- model: endoreg_db.event
+  fields:
+    name: "hip_replacement_surgery" #TODO : could match disease / indication / ...?
+    name_de: "Hüft-TEP Operation"
+    name_en: "Hip replacement surgery"
+    description: "Hip replacement surgery"
+
+- model: endoreg_db.event
+  fields:
+    name: "knee_replacement_surgery"
+    name_de: "Knie-TEP Operation"
+    name_en: "Knee replacement surgery"
+    description: "Knee replacement surgery"

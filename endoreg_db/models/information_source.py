@@ -18,5 +18,12 @@ class InformationSource(models.Model):
     name_de = models.CharField(max_length=100, blank=True, null=True)
     name_en = models.CharField(max_length=100, blank=True, null=True)
 
+    url = models.URLField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    date = models.DateField(blank=True, null=True)
+
+    def natural_key(self):
+        return (self.name,)
+
     def __str__(self):
         return self.name

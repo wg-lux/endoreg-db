@@ -16,7 +16,7 @@ class PatientLabValue(models.Model):
     value_str = models.CharField(max_length=255, blank=True, null=True)
     date = models.DateTimeField()
     normal_range = models.JSONField(
-        default = {}
+        default = dict
     )
     unit = models.ForeignKey('Unit', on_delete=models.CASCADE, blank=True, null=True)
 

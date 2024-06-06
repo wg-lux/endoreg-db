@@ -32,6 +32,6 @@
 
 - model: endoreg_db.disease
   fields:
-    name: "atrial_fibrillation"
-    name_de: "Vorhofflimmern"
-    name_en: "Atrial Fibrillation"
+    name: "non_valvular_atrial_fibrillation"
+    name_de: "nicht valvuläres Vorhofflimmern"
+    name_en: "non valvular Atrial Fibrillation"

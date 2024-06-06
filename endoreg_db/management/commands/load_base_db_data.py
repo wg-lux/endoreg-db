@@ -84,6 +84,26 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_event_data..."))
         call_command('load_event_data', verbose=verbose)
 
+        # run the load_medication_data command
+        self.stdout.write(self.style.SUCCESS("Running load_medication_data..."))
+        call_command('load_medication_data', verbose=verbose)
+
+        # Run the load_medication_indication_type_data command
+        self.stdout.write(self.style.SUCCESS("Running load_medication_indication_type_data..."))
+        call_command('load_medication_indication_type_data', verbose=verbose)
+
+        # Run the load_medication_intake_time_data command
+        self.stdout.write(self.style.SUCCESS("Running load_medication_intake_time_data..."))
+        call_command('load_medication_intake_time_data', verbose=verbose)
+
+        # Run the load_medication_schedule_data command
+        self.stdout.write(self.style.SUCCESS("Running load_medication_schedule_data..."))
+        call_command('load_medication_schedule_data', verbose=verbose)
+
+        # Run the load_medication_indication_data command
+        self.stdout.write(self.style.SUCCESS("Running load_medication_indication_data..."))
+        call_command('load_medication_indication_data', verbose=verbose)
+
 
         # Necessary? Migrate? FIXME
         # # Run the load_active_model_data command

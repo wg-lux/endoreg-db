@@ -11,3 +11,10 @@
     abbreviation: ""
     name_de: "Ratio"
     name_en: "ratio"
+
+- model: endoreg_db.unit
+  fields:
+    name: "dose"
+    name_de: "Dosierung(en)"
+    name_en: "dose(s)"
+    abbreviation: ""

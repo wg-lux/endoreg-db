@@ -1,0 +1,54 @@
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-2.5mg-twice_daily_32d"
+    name_de: "Apixaban 2.5mg, 2x täglich, 32 Tage"
+    name_en: "Apixaban 2.5mg, twice daily, 32 days"
+    therapy_duration_d: 32
+    medication: "apixaban"
+    dose: 2.5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-2.5mg-twice_daily_10d"
+    name_de: "Apixaban 2.5mg, 2x täglich, 10 Tage"
+    name_en: "Apixaban 2.5mg, twice daily, 10 days"
+    therapy_duration_d: 10
+    medication: "apixaban"
+    dose: 2.5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-5mg-twice_daily"
+    name_de: "Apixaban 5mg, 2x täglich"
+    name_en: "Apixaban 5mg, twice daily"
+    medication: "apixaban"
+    dose: 5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-2.5mg-twice_daily"
+    name_de: "Apixaban 2.5mg, 2x täglich"
+    name_en: "Apixaban 2.5mg, twice daily"
+    medication: "apixaban"
+    dose: 2.5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
