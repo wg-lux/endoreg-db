@@ -1,0 +1,12 @@
+- fields:
+    distance: 1000
+    emission_factor: transport_product_emission_generic_europe
+    name: generic_europe
+    unit: kilometer
+  model: endoreg_db.TransportRoute
+- fields:
+    distance: 10000
+    emission_factor: transport_product_emission_generic_overseas
+    name: generic_overseas
+    unit: kilometer
+  model: endoreg_db.TransportRoute
