@@ -23,13 +23,11 @@ IMPORT_METADATA = {
             "medication",
             "intake_times",
             "unit",
-            "sources"
         ], # e.g. ["intervention_types"]
         "foreign_key_models": [
             Medication,
             MedicationIntakeTime,
             Unit,
-            InformationSource
         ] # e.g. [InterventionType]
     }
 }

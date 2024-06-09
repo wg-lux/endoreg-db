@@ -33,3 +33,9 @@
     name: "pulmonary_embolism-treatment"
     name_de: "Thrombose-Behandlung bei Lungenembolie"
     name_en: "Pulmonary Embolism Treatment"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "thrombembolism-prevention-recurrent_thrombembolism"
+    name_de: "Thromboembolie-Prophylaxe bei rezidivierenden Thrombembolien"
+    name_en: "Thromboembolism Prevention in Recurrent Thrombembolism"

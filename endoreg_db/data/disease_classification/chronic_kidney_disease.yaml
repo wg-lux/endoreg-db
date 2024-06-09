@@ -1,0 +1,6 @@
+- model: endoreg_db.disease_classification
+  fields:
+    name: "chronic_kideny_disease_kdigo"
+    name_de: "Chronische Nierenerkrankung (KDIGO)"
+    name_en: "Chronic Kidney Disease (KDIGO)"
+    disease: "chronic_kidney_disease"

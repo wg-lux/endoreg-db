@@ -71,7 +71,10 @@ def load_data_with_foreign_keys(command, model, yaml_data, foreign_keys, foreign
                 fields[fk_field] = obj
 
         # Create or update the main object
-        obj, created = model.objects.update_or_create(defaults=fields, name=name)
+        if name is None:
+            obj, created = model.objects.get_or_create(**fields)
+        else:
+            obj, created = model.objects.update_or_create(defaults=fields, name=name)
         if created and verbose:
             command.stdout.write(command.style.SUCCESS(f'Created {model.__name__} {name}'))
         elif verbose:

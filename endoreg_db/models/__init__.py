@@ -58,6 +58,8 @@ from .ai_model import (
     ActiveModel,
 )
 
+from .quiz import *
+
 from .prediction import (
     ImageClassificationPrediction,
     LegacyVideoPredictionMeta,

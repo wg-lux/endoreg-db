@@ -95,7 +95,9 @@ class MedicationIndicationManager(models.Manager):
 
 class MedicationIndication(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    indication_type = models.ForeignKey("MedicationIndicationType", on_delete=models.CASCADE)
+    indication_type = models.ForeignKey(
+        "MedicationIndicationType", on_delete=models.CASCADE
+    )
     medication_schedules = models.ManyToManyField(
         "MedicationSchedule"
     )
@@ -109,7 +111,7 @@ class MedicationIndication(models.Model):
         "DiseaseClassificationChoice"
     )
     sources = models.ManyToManyField(
-        "InformationSource", blank=True, null=True
+        "InformationSource"
     )
 
     def get_indication_links(self):

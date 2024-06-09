@@ -4,7 +4,7 @@ class ProductMaterial(models.Model):
     component = models.CharField(max_length=255)
     material = models.ForeignKey("Material", on_delete=models.CASCADE)
     product = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="product_materials")
-    unit = models.ForeignKey("agl_base_db.Unit", on_delete=models.CASCADE)
+    unit = models.ForeignKey("Unit", on_delete=models.CASCADE)
     quantity = models.FloatField()
 
     def get_emission(self):

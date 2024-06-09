@@ -75,32 +75,32 @@ IMPORT_METADATA = OrderedDict({
     Product.__name__: {
         "dir": PRODUCT_DATA_DIR,
         "model": Product,
-        "foreign_keys": ["product_group"],
-        "foreign_key_models": [ProductGroup]
+        "foreign_keys": ["product_group", "transport_route"],
+        "foreign_key_models": [ProductGroup, TransportRoute]
     },
     ReferenceProduct.__name__: {
         "dir": REFERENCE_PRODUCT_DATA_DIR,
         "model": ReferenceProduct,
-        "foreign_keys": ["product_group"],
-        "foreign_key_models": [ProductGroup]
+        "foreign_keys": ["product","product_group"],
+        "foreign_key_models": [Product,ProductGroup]
     },
     CenterWaste.__name__: {
         "dir": CENTER_WASTE_DATA_DIR,
         "model": CenterWaste,
-        "foreign_keys": ["waste", "center"],
-        "foreign_key_models": [Waste, Center]
+        "foreign_keys": ["waste", "center", "unit", "emission_factor"],
+        "foreign_key_models": [Waste, Center, Unit, EmissionFactor]
     },
     CenterResource.__name__: {
         "dir": CENTER_RESOURCE_DATA_DIR,
         "model": CenterResource,
-        "foreign_keys": ["resource", "unit", "transport_emission_factor", "use_emission_factor"],
-        "foreign_key_models": [Resource, Unit, EmissionFactor, EmissionFactor]
+        "foreign_keys": ["center","resource", "unit", "transport_emission_factor", "use_emission_factor"],
+        "foreign_key_models": [Center,Resource, Unit, EmissionFactor, EmissionFactor]
     },
     ProductMaterial.__name__: {
         "dir": PRODUCT_MATERIAL_DATA_DIR,
         "model": ProductMaterial,
-        "foreign_keys": ["product", "material"],
-        "foreign_key_models": [Product, Material]
+        "foreign_keys": ["product", "material", "unit"],
+        "foreign_key_models": [Product, Material, Unit]
     },
     ProductWeight.__name__: {
         "dir": PRODUCT_WEIGHT_DATA_DIR,

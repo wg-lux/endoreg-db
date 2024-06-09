@@ -10,7 +10,7 @@ class EmissionFactor(models.Model):
     name = models.CharField(max_length=255)
     name_de = models.CharField(max_length=255, null=True)
     name_en = models.CharField(max_length=255, null=True)
-    unit = models.ForeignKey("agl_base_db.Unit", on_delete=models.SET_NULL, null=True)
+    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
     value = models.FloatField()
     
     def natural_key(self):

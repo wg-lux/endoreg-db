@@ -69,7 +69,7 @@
     events: ["deep_vein_thrombosis"]
     medication_schedules: [
       "apixaban-5g-twice_daily_7d", # first 7d of treatment 10 mg twice daily
-      "apixaban-5g-twice_daily-3mo", # no limit
+      "apixaban-5g-twice_daily_3mo", # no limit
     ]
     indication_type: "deep_vein_thrombosis-treatment"
     sources: [
@@ -108,13 +108,13 @@
     events: [
       "recurrent_thrombembolism"
     ]
-  medication_schedules: [
-    "apixaban-2.5mg-twice_daily"
-  ]
-  indication_type: "thrombembolism-prevention-recurrent_thrombembolism"
-  sources: [
-    "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
-  ]
+    medication_schedules: [
+      "apixaban-2.5mg-twice_daily"
+    ]
+    indication_type: "thrombembolism-prevention-recurrent_thrombembolism"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
 
 # templates to create:
 # medication_schedules:
