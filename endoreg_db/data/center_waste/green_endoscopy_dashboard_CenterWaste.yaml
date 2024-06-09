@@ -1,0 +1,48 @@
+- fields:
+    center: university_hospital_wuerzburg
+    emission_factor: waste_emission_general
+    quantity: 10156.3857142857
+    unit: kilogram
+    waste: general_waste
+    year: 2020
+  model: CenterWaste
+- fields:
+    center: university_hospital_wuerzburg
+    emission_factor: waste_emission_medical
+    quantity: 15699.9014285714
+    unit: kilogram
+    waste: medical_waste
+    year: 2020
+  model: CenterWaste
+- fields:
+    center: university_hospital_wuerzburg
+    emission_factor: waste_emission_general
+    quantity: 10156.3857142857
+    unit: kilogram
+    waste: general_waste
+    year: 2021
+  model: CenterWaste
+- fields:
+    center: university_hospital_wuerzburg
+    emission_factor: waste_emission_medical
+    quantity: 15699.9014285714
+    unit: kilogram
+    waste: medical_waste
+    year: 2021
+  model: CenterWaste
+- fields:
+    center: university_hospital_wuerzburg
+    emission_factor: waste_emission_general
+    quantity: 10156.3857142857
+    unit: kilogram
+    waste: general_waste
+    year: 2022
+  model: CenterWaste
+- fields:
+    center: university_hospital_wuerzburg
+    emission_factor: waste_emission_medical
+    quantity: 15699.9014285714
+    unit: kilogram
+    waste: medical_waste
+    year: 2022
+  model: CenterWaste

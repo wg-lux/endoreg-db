@@ -104,6 +104,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_medication_indication_data..."))
         call_command('load_medication_indication_data', verbose=verbose)
 
+        # Run the load_green_endoscopy_wuerzburg_data command
+        self.stdout.write(self.style.SUCCESS("Running load_green_endoscopy_wuerzburg_data..."))
+        call_command('load_green_endoscopy_wuerzburg_data', verbose=verbose)
 
         # Necessary? Migrate? FIXME
         # # Run the load_active_model_data command

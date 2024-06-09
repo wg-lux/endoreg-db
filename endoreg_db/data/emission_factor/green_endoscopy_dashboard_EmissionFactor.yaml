@@ -1,0 +1,132 @@
+- fields:
+    name: material_emission_cardboard
+    unit: kilogram
+    value: 0.828
+  model: EmissionFactor
+- fields:
+    name: material_emission_foil
+    unit: kilogram
+    value: 2.574
+  model: EmissionFactor
+- fields:
+    name: material_emission_gold
+    unit: kilogram
+    value: 4.018
+  model: EmissionFactor
+- fields:
+    name: material_emission_metal
+    unit: kilogram
+    value: 4.018
+  model: EmissionFactor
+- fields:
+    name: material_emission_nickel
+    unit: kilogram
+    value: 4.018
+  model: EmissionFactor
+- fields:
+    name: material_emission_paper
+    unit: kilogram
+    value: 0.919
+  model: EmissionFactor
+- fields:
+    name: material_emission_paper_coated
+    unit: kilogram
+    value: 2.0175
+  model: EmissionFactor
+- fields:
+    name: material_emission_plastic
+    unit: kilogram
+    value: 3.116
+  model: EmissionFactor
+- fields:
+    name: material_emission_plastic_coated
+    unit: kilogram
+    value: 3.116
+  model: EmissionFactor
+- fields:
+    name: material_emission_silicone
+    unit: kilogram
+    value: 2.0
+  model: EmissionFactor
+- fields:
+    name: material_emission_steel
+    unit: kilogram
+    value: 4.018
+  model: EmissionFactor
+- fields:
+    name: material_emission_tantal
+    unit: kilogram
+    value: 4.018
+  model: EmissionFactor
+- fields:
+    name: material_emission_textile
+    unit: kilogram
+    value: 2.0
+  model: EmissionFactor
+- fields:
+    name: material_emission_titan
+    unit: kilogram
+    value: 4.018
+  model: EmissionFactor
+- fields:
+    name: use_resource_emission_ukw_gas
+    unit: liter
+    value: 2.01574
+  model: EmissionFactor
+- fields:
+    name: use_resource_emission_ukw_oil
+    unit: cubic_meter
+    value: 3.17522
+  model: EmissionFactor
+- fields:
+    name: use_resource_emission_ukw_electricity_extern
+    unit: kilowatt-hours
+    value: 0.0
+  model: EmissionFactor
+- fields:
+    name: use_resource_emission_ukw_electricity_selfmade
+    unit: kilowatt-hours
+    value: 0.0
+  model: EmissionFactor
+- fields:
+    name: transport_resource_emission_ukw_gas
+    unit: liter
+    value: 0.3434
+  model: EmissionFactor
+- fields:
+    name: transport_resource_emission_ukw_oil
+    unit: cubic_meter
+    value: 0.69723
+  model: EmissionFactor
+- fields:
+    name: transport_resource_emission_ukw_electricity_extern
+    unit: kilowatt-hours
+    value: 0.05048
+  model: EmissionFactor
+- fields:
+    name: transport_resource_emission_ukw_electricity_selfmade
+    unit: kilowatt-hours
+    value: 0.0
+  model: EmissionFactor
+
+- fields:
+    name: transport_product_emission_generic_europe
+    unit: "kilogram"
+    value: 0.13213
+  model: EmissionFactor
+- fields:
+    name: transport_product_emission_generic_overseas
+    unit: "kilogram"
+    value: 1.308373
+  model: EmissionFactor
+- fields:
+    name: waste_emission_medical
+    unit: "kilogram"
+    value: 0.0212801937984496
+  model: EmissionFactor
+
+- fields:
+    name: waste_emission_general
+    unit: "kilogram"
+    value: 0.0212801937984496
+  model: EmissionFactor
