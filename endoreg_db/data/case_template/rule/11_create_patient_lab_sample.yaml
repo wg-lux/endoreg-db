@@ -1,0 +1,23 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "create-patient_lab_sample-default"
+    rule_type: "create-object"
+    target_model: "PatientLabSample"
+    parent_field: "patient"
+    chained_rules: [
+      "patient_lab_sample-add_value-sodium-default",
+      "patient_lab_sample-add_value-potassium-default",
+      "patient_lab_sample-add_value-egfr-default",
+      "patient_lab_sample-add_value-hemoglobin-default",
+      "patient_lab_sample-add_value-hematocrit-default",
+      "patient_lab_sample-add_value-platelets-default",
+      "patient_lab_sample-add_value-white_blood_cells-default"
+    ]
+    extra_parameters: {
+      "create_method": {
+        "name": "create_by_patient",
+        "kwargs": {
+          "sample_type": "generic"
+        }
+      }
+    }

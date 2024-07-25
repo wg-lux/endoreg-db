@@ -87,6 +87,15 @@ class MedicationIndicationType(models.Model):
 
     def __str__(self):
         return self.name
+    
+    @classmethod
+    def get_random_indication_by_type(cls, name) -> "MedicationIndication":
+        return cls.objects.get(name=name).medication_indications.order_by('?').first()
+    
+
+    def get_random_medication_indication(self):
+        from endoreg_db.models import MedicationIndication
+        return MedicationIndication.objects.filter(indication_type=self).order_by('?').first()
 
 
 class MedicationIndicationManager(models.Manager):
@@ -96,7 +105,7 @@ class MedicationIndicationManager(models.Manager):
 class MedicationIndication(models.Model):
     name = models.CharField(max_length=255, unique=True)
     indication_type = models.ForeignKey(
-        "MedicationIndicationType", on_delete=models.CASCADE
+        "MedicationIndicationType", on_delete=models.CASCADE, related_name="medication_indications"
     )
     medication_schedules = models.ManyToManyField(
         "MedicationSchedule"
@@ -121,14 +130,6 @@ class MedicationIndication(models.Model):
             "events": self.events,
             "classification_choices": self.classification_choices
         }
-    
-
-    #TODO Implement function to get all medication schedules for this indication
-    #TODO Implement function to get all medications via available medication schedules for this indication
-    #TODO Implement function: 
-        # expects Patient and Medication
-        # checks if Schedules for given Indication are available; warn and return False if not
-        # 
 
     objects = MedicationIndicationManager()
 
@@ -137,3 +138,11 @@ class MedicationIndication(models.Model):
     
     def __str__(self):
         return self.name
+    
+    def create_patient_medication_schedules(self, patient):
+        from endoreg_db.models import PatientMedicationSchedule
+        for medication_schedule in self.medication_schedules.all():
+            PatientMedicationSchedule.objects.create(
+                patient=patient,
+                medication_schedule=medication_schedule
+            )

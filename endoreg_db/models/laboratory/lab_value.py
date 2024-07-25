@@ -1,6 +1,8 @@
 from django.db import models
 import warnings
 
+LANG = "de"
+
 class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
@@ -11,6 +13,31 @@ class LabValue(models.Model):
     name_en = models.CharField(max_length=255, blank=True, null=True)
     abbreviation = models.CharField(max_length=10, blank=True, null=True)
     default_unit = models.ForeignKey('Unit', on_delete=models.CASCADE, blank=True, null=True)
+    numeric_precision = models.IntegerField(default=3)
+    default_single_categorical_value_distribution = models.ForeignKey(
+        'SingleCategoricalValueDistribution',
+        on_delete=models.CASCADE,
+        blank=True, null=True,
+        related_name='default_single_categorical_value_distribution'
+    )
+    default_numerical_value_distribution = models.ForeignKey(
+        'NumericValueDistribution',
+        on_delete=models.CASCADE,
+        blank=True, null=True,
+        related_name='default_numerical_value_distribution'
+    )
+    default_multiple_categorical_value_distribution = models.ForeignKey(
+        'MultipleCategoricalValueDistribution',
+        on_delete=models.CASCADE,
+        blank=True, null=True,
+        related_name='default_multiple_categorical_value_distribution'
+    )
+    default_date_value_distribution = models.ForeignKey(
+        'DateValueDistribution',
+        on_delete=models.CASCADE,
+        blank=True, null=True,
+        related_name='default_date_value_distribution'
+    )
     default_normal_range = models.JSONField(blank=True, null=True)
     normal_range_age_dependent = models.BooleanField(default=False)
     normal_range_gender_dependent = models.BooleanField(default=False)
@@ -23,8 +50,21 @@ class LabValue(models.Model):
     def __str__(self):
         return self.name
     
+    def get_default_default_distribution(self):
+        if self.default_single_categorical_value_distribution:
+            return self.default_single_categorical_value_distribution
+        elif self.default_numerical_value_distribution:
+            return self.default_numerical_value_distribution
+        elif self.default_multiple_categorical_value_distribution:
+            return self.default_multiple_categorical_value_distribution
+        elif self.default_date_value_distribution:
+            return self.default_date_value_distribution
+        else:
+            warnings.warn("No default distribution set for lab value")
+            return None
+    
     def get_normal_range(self, age=None, gender=None):
-        age_dependent = self.normal_range_age_depend
+        age_dependent = self.normal_range_age_dependent
         gender_dependent = self.normal_range_gender_dependent
         special_case = self.normal_range_special_case
 

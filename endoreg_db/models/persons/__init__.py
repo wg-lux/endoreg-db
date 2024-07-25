@@ -1,3 +1,4 @@
+from .gender import Gender
 from .person import Person
 from .patient import *
 from .examiner import Examiner, ExaminerSerializer

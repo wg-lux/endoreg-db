@@ -50,3 +50,11 @@
     name_en: "Robert Bosch Hospital Stuttgart"
     first_names: [] # many to many; if foreign key, we would just have a string; strings represent "name" attribute
     last_names: []
+
+- model: endoreg_db.center
+  fields:
+    name: "gplay_case_generator"
+    name_de: "GPlay Case Generator"
+    name_en: "GPlay Case Generator"
+    first_names: []
+    last_names: []

@@ -14,7 +14,9 @@ class Unit(models.Model):
     abbreviation = models.CharField(max_length=25, blank=True, null=True) # e.g. "cm", "mm", "in"
     
     def __str__(self):
-        return self.abbreviation
+        if self.abbreviation:
+            return self.abbreviation
+        return self.name
     
     def natural_key(self):
         return (self.name,)

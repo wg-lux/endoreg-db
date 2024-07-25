@@ -1,0 +1,8 @@
+- model: endoreg_db.case_template
+  fields:
+    name: "pre_default_screening_colonoscopy"
+    rules: [
+      "create-patient-default",
+      "create-patient_medication_schedule-anticoagulation-non_valvular_af",
+    ]
+    template_type: "pre_endoscopy"

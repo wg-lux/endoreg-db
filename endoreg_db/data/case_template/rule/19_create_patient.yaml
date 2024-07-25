@@ -1,0 +1,17 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "create-patient-default"
+    rule_type: "create-object"
+    target_model: "Patient"
+    chained_rules: [
+      "patient-set-age-screening_colo_population",
+      "create-patient_lab_sample-default"
+    ]
+    extra_parameters: {
+      "create_method": {
+        "name": "create_generic",
+        "kwargs": {
+          "center": "gplay_case_generator",
+         }
+        }
+    }

@@ -1,0 +1,13 @@
+- model: endoreg_db.case_template_rule_value
+  fields:
+    name: "diagnosis_value-non_valvular_atrial-fibrillation"
+    target_field: "disease"
+    value_type: "foreign_key"
+    fk_value: "non_valvular_atrial_fibrillation"
+    
+- model: endoreg_db.case_template_rule_value
+  fields:
+    name: "medication_schedule-apixaban-5mg-twice_daily"
+    target_field: "medication_indication"
+    value_type: "foreign_key"
+    fk_value: "te_prevention-recurrent-te-apixaban"
