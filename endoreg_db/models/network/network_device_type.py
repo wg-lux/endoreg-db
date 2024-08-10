@@ -2,7 +2,7 @@
 
 from django.db import models
 
-class NetworkDeviceTypeManager(models.Model):
+class NetworkDeviceTypeManager(models.Manager):
     # Custom manager for NetworkDeviceType; defines name as natural key
     def get_by_natural_key(self, name):
         return self.get(name=name)
