@@ -6,6 +6,12 @@
 
 - model: endoreg_db.network_device
   fields:
+    name: "agl-server-02"
+    device_type: "agl-server"
+    ip: "172.16.255.2"
+
+- model: endoreg_db.network_device
+  fields:
     name: "agl-server-03"
     device_type: "agl-server"
     ip: "172.16.255.3"
