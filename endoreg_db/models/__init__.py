@@ -5,6 +5,7 @@ from .report_reader import ReportReaderConfig, ReportReaderFlag
 from .emission import *
 from .persons import *
 from .network import *
+from .logging import *
 
 from .case_template import *
 # from .other.distribution import (

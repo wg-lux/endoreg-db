@@ -20,6 +20,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_network_data..."))
         call_command('load_network_data', verbose=verbose)
 
+        # Run the load_logging_data command
+        self.stdout.write(self.style.SUCCESS("Running load_logging_data..."))
+        call_command('load_logging_data', verbose=verbose)
+
         # Run the load_profession_data command
         self.stdout.write(self.style.SUCCESS("Running load_profession_data..."))
         call_command('load_profession_data', verbose=verbose)
