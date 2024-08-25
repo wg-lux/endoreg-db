@@ -67,7 +67,7 @@ class RawPdfFile(models.Model):
         cls,
         file_path,
         center_name,
-        pdf_type_name,
+        pdf_type_name, # to be depreceated / changed since we now import all pdfs from same directory
         destination_dir,
         save=True,
     ):
