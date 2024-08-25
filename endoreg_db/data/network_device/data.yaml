@@ -21,3 +21,9 @@
     name: "agl-server-04"
     device_type: "agl-server"
     ip: "172.16.255.4"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-dev"
+    device_type: "agl-gpu-client"
+    ip: "172.16.255.140"

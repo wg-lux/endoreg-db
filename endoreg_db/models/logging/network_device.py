@@ -6,6 +6,7 @@ class NetworkDeviceLogEntry(AbstractLogEntry):
     Model for log entries related to network devices.
     """
     device = models.ForeignKey("NetworkDevice", on_delete=models.CASCADE)
+    log_type = models.ForeignKey("LogType", on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
         verbose_name = "Network Device Log Entry"

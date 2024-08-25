@@ -6,6 +6,10 @@ class AglServiceLogEntry(AbstractLogEntry):
     Model for log entries related to AGL services.
     """
     service = models.ForeignKey("AglService", on_delete=models.CASCADE)
+    device = models.ForeignKey(
+        "NetworkDevice", on_delete=models.CASCADE, null=True, blank=True
+    )
+    log_type = models.ForeignKey("LogType", on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
         verbose_name = "AGL Service Log Entry"
