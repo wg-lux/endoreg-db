@@ -33,7 +33,7 @@
               mkdir -p data
 
               # pip install --upgrade pip
-              # poetry update
+              poetry update
 
             '';
           };
