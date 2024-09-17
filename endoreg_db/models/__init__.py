@@ -43,6 +43,8 @@ from .annotation import (
     ImageClassificationAnnotation,
     LegacyBinaryClassificationAnnotationTask,
     BinaryClassificationAnnotationTask,
+    AnonymizedFile,
+    UploadedFile,
 )
 
 from .legacy_data import (
