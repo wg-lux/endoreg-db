@@ -39,11 +39,7 @@ from .patient_examination import PatientExamination
 
 from .label import Label, LabelType, LabelSet
 
-from .annotation import (
-    ImageClassificationAnnotation,
-    LegacyBinaryClassificationAnnotationTask,
-    BinaryClassificationAnnotationTask,
-)
+from .annotation import *
 
 from .legacy_data import (
     LegacyImage,
