@@ -70,3 +70,4 @@ from .hardware import (
 )
 
 from .questionnaires import TtoQuestionnaire
+from .annotation import AnonymousImageAnnotation, AnonymizedImageLabel, DroppedName
