@@ -83,7 +83,10 @@
         python = pkgs."python${python_version}";
         overrides = p2n-overrides;
         preferWheels = true; # some packages, e.g. transformers break if false
-        propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [];
+        propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [
+
+          inputs.agl-report-reader.packages.x86_64-linux.poetryApp
+        ];
         nativeBuildInputs = with pkgs."python${python_version}Packages"; [
           pip
           setuptools
