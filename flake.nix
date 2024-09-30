@@ -83,6 +83,8 @@
         python = pkgs."python${python_version}";
         overrides = p2n-overrides;
         preferWheels = true; # some packages, e.g. transformers break if false
+
+        # Makes Package available to other packages which depend on this one (e.g. agl-monitor flake also imports functions from agl-report reader)
         propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [
 
           inputs.agl-report-reader.packages.x86_64-linux.poetryApp
