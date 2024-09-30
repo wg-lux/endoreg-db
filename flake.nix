@@ -1,107 +1,111 @@
 {
-  description = "Application packaged using poetry2nix";
+  description = "Flake for the EndoReg Db Django App";
+
+  nixConfig = {
+    substituters = [
+        "https://cache.nixos.org"
+        "https://cuda-maintainers.cachix.org"
+      ];
+    trusted-public-keys = [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
+      ];
+    extra-substituters = "https://cache.nixos.org https://nix-community.cachix.org https://cuda-maintainers.cachix.org";
+    extra-trusted-public-keys = "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E=";
+  };
+
   inputs = {
-    # flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
-    poetry2nix = {
-      url = "github:nix-community/poetry2nix";
+    poetry2nix.url = "github:nix-community/poetry2nix";
+    poetry2nix.inputs.nixpkgs.follows = "nixpkgs";
+
+    cachix = {
+      url = "github:cachix/cachix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, poetry2nix }:
+  outputs = { nixpkgs, poetry2nix, ... } @ inputs: 
     let
-        system = "x86_64-linux";
-        pkgs = nixpkgs.legacyPackages.${system};
-        _poetry2nix = poetry2nix.lib.mkPoetry2Nix { inherit pkgs; };
+      system = "x86_64-linux";
+      self = inputs.self;
+      version = "0.1.${pkgs.lib.substring 0 8 inputs.self.lastModifiedDate}.${inputs.self.shortRev or "dirty"}";
+      python_version = "311";
+      cachix = inputs.cachix;
 
-    in
-        {
-          # Call with nix develop
-          devShell."${system}" = pkgs.mkShell {
-            buildInputs = [ 
-              pkgs.poetry
-              pkgs.tesseract
-
-              # Make venv (not very nixy but easy workaround to use current non-nix-packaged python module)
-              pkgs.python3Packages.venvShellHook
-            ];
-
-            # Define Python venv
-            venvDir = ".venv";
-            postShellHook = ''
-              mkdir -p data
-
-              # pip install --upgrade pip
-              poetry update
-
-            '';
-          };
-
-
-        # });
+      nvidiaCache = cachix.lib.mkCachixCache {
+        inherit (pkgs) lib;
+        name = "nvidia";
+        publicKey = "nvidia.cachix.org-1:dSyZxI8geDCJrwgvBfPH3zHMC+PO6y/BT7O6zLBOv0w=";
+        secretKey = null;  # not needed for pulling from the cache
+      };
+    
+      pkgs = import nixpkgs {
+        inherit system;
+        config = {
+          allowUnfree = true;
+          cudaSupport = true;
         };
+      };
+
+      lib = pkgs.lib;
+
+      pypkgs-build-requirements = {
+        gender-guesser = [ "setuptools" ];
+        conllu = [ "setuptools" ];
+        janome = [ "setuptools" ];
+        pptree = [ "setuptools" ];
+        wikipedia-api = [ "setuptools" ];
+        django-flat-theme = [ "setuptools" ];
+        django-flat-responsive = [ "setuptools" ];
+      };
+
+      poetry2nix = inputs.poetry2nix.lib.mkPoetry2Nix { inherit pkgs;};
+
+      p2n-overrides = poetry2nix.defaultPoetryOverrides.extend (final: prev:
+        builtins.mapAttrs (package: build-requirements:
+          (builtins.getAttr package prev).overridePythonAttrs (old: {
+            buildInputs = (old.buildInputs or [ ]) ++ (
+              builtins.map (pkg:
+                if builtins.isString pkg then builtins.getAttr pkg prev else pkg
+              ) build-requirements
+            );
+          })
+        ) pypkgs-build-requirements
+      );
+
+      poetryApp = poetry2nix.mkPoetryApplication {
+        projectDir = ./.;
+        src = lib.cleanSource ./.;
+        python = pkgs."python${python_version}";
+        overrides = p2n-overrides;
+        preferWheels = true; # some packages, e.g. transformers break if false
+        propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [];
+        nativeBuildInputs = with pkgs."python${python_version}Packages"; [
+          pip
+          setuptools
+          icecream
+        ];
+      };       
+      
+  in
+  {
+    packages.x86_64-linux.poetryApp = poetryApp;
+    packages.x86_64-linux.default = poetryApp;
+
+    apps.x86_64-linux.default = {
+      type = "app";
+      # program = "${poetryApp}/bin/django-server";
+    };
+
+    devShells.x86_64-linux.default = pkgs.mkShell {
+      inputsFrom = [ self.packages.x86_64-linux.poetryApp ];
+      packages = [ pkgs.poetry ];
+      shellHook = ''
+      '';
+    };
+
+  };
 }
 
 
 
-
-# {
-#   description = "Application packaged using poetry2nix";
-#   inputs = {
-#     # flake-utils.url = "github:numtide/flake-utils";
-#     nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
-#     poetry2nix = {
-#       url = "github:nix-community/poetry2nix";
-#       inputs.nixpkgs.follows = "nixpkgs";
-#     };
-
-#   };
-#   outputs = { self, nixpkgs, flake-utils, poetry2nix }:
-#     # flake-utils.lib.eachDefaultSystem (system:
-#     let
-#         system = "x86_64-linux";
-#         # see https://github.com/nix-community/poetry2nix/tree/master#api for more functions and examples.
-#         pkgs = nixpkgs.legacyPackages.${system};
-        
-#         _poetry2nix = poetry2nix.lib.mkPoetry2Nix { inherit pkgs; };
-
-#     in
-#         {
-
-#           # Call with nix develop
-#           devShell."${system}" = pkgs.mkShell {
-#             buildInputs = [ 
-#               pkgs.python311
-#               pkgs.python311.pkgs.requests
-#               pkgs.python311.pkgs.pip
-#               pkgs.python311.pkgs.virtualenv
-#               # Make venv (not very nixy but easy workaround to use current non-nix-packaged python module)
-#               pkgs.python3Packages.venvShellHook
-#             ];
-
-#             # Define Environment Variables
-#             TEST_VAR = "test";
-
-#             shellHook = ''
-            # Tells pip to put packages into $PIP_PREFIX instead of the usual locations.
-            # See https://pip.pypa.io/en/stable/user_guide/#environment-variables.
-            # export PIP_PREFIX=$(pwd)/_build/pip_packages
-            # export PYTHONPATH="$PIP_PREFIX/${pkgs.python3.sitePackages}:$PYTHONPATH"
-            # export PATH="$PIP_PREFIX/bin:$PATH"
-            # unset SOURCE_DATE_EPOCH
-            
-            # mkdir -p data
-
-            # source .venv/bin/activate
-#             '';
-
-#             # venvDir = ".venv";
-#             postShellHook = ''
-#             '';
-#           };
-
-
-#         # });
-#         };
-# }
