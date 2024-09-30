@@ -18,12 +18,12 @@ pillow = "^10.2.0"
 opencv-python = "^4.9.0.80"
 ffmpeg-python = "^0.2.0"
 pytesseract = "^0.3.10"
-# agl-report-reader = "^0.3.0"
 scipy = "^1.14.0"
 pandas = "^2.2.2"
 
 [tool.poetry.group.nixProvided.dependencies]
 icecream = "^2.1.3"
+agl-report-reader = "^0.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"

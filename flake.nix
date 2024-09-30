@@ -18,6 +18,11 @@
     poetry2nix.url = "github:nix-community/poetry2nix";
     poetry2nix.inputs.nixpkgs.follows = "nixpkgs";
 
+    agl-report-reader = {
+      url = "github:wg-lux/agl-report-reader";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     cachix = {
       url = "github:cachix/cachix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -43,7 +48,6 @@
         inherit system;
         config = {
           allowUnfree = true;
-          cudaSupport = true;
         };
       };
 
@@ -84,6 +88,8 @@
           pip
           setuptools
           icecream
+
+          inputs.agl-report-reader.packages.x86_64-linux.poetryApp
         ];
       };       
       
