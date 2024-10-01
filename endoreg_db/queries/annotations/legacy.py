@@ -1,7 +1,6 @@
 from ...models import LabelSet, ImageClassificationAnnotation
 from django.db.models import Q, F
 from django.db import models
-from icecream import ic
 from tqdm import tqdm
 from collections import defaultdict
 

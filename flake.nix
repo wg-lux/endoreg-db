@@ -18,10 +18,10 @@
     poetry2nix.url = "github:nix-community/poetry2nix";
     poetry2nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    agl-report-reader = {
-      url = "github:wg-lux/agl-report-reader";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # agl-report-reader = {
+    #   url = "github:wg-lux/agl-report-reader";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
 
     cachix = {
       url = "github:cachix/cachix";
@@ -86,20 +86,28 @@
 
         # Makes Package available to other packages which depend on this one (e.g. agl-monitor flake also imports functions from agl-report reader)
         propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [
-          inputs.agl-report-reader.packages.x86_64-linux.poetryApp
+          # inputs.agl-report-reader.packages.x86_64-linux.poetryApp
         ];
         nativeBuildInputs = with pkgs."python${python_version}Packages"; [
           pip
           setuptools
-          icecream
-          # pillow
-
-          inputs.agl-report-reader.packages.x86_64-linux.poetryApp
+          # inputs.agl-report-reader.packages.x86_64-linux.poetryApp
         ];
+      };
+
+      poetryAppDev = poetry2nix.mkPoetryEditablePackage {
+        projectDir = ./.;
+        python = pkgs."python${python-version}";
+        # python3 = python39;
+        editablePackageSources = {
+          endoreg-db = lib.cleanSource ./.;
+        };
       };       
       
   in
   {
+
+    packages.x86_64-linux.poetryAppDev = poetryAppDev;
     packages.x86_64-linux.poetryApp = poetryApp;
     packages.x86_64-linux.default = poetryApp;
 

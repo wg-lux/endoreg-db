@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 import re
 from datetime import datetime
 from typing import Dict, List
-from icecream import ic
 import numpy as np
 from endoreg_db.utils.cropping import crop_and_insert
 
@@ -123,9 +122,7 @@ def extract_text_from_rois(image_path, processor):
             extracted_texts[roi_name] = processed_text
 
         else:
-            ic(roi_name)
-            ic(roi)
-            ic("No values for this ROI")
+            pass
 
     return extracted_texts
 
@@ -142,8 +139,6 @@ def get_most_frequent_values(rois_texts: Dict[str, List[str]]) -> Dict[str, str]
     most_frequent = {}
     for key in rois_texts.keys():
         counter = Counter([text for text in rois_texts[key] if text])
-        ic(key)
-        ic(counter)
         most_frequent[key], _ = counter.most_common(1)[0] if counter else (None, None)
     return most_frequent
 
@@ -160,7 +155,6 @@ def process_video(video_path, processor):
     """
     # Create a temporary directory to store frames
     with TemporaryDirectory() as temp_dir:
-        ic(temp_dir)
         # Capture the video
         video = cv2.VideoCapture(video_path)
         success, frame_number = True, 0
@@ -178,7 +172,6 @@ def process_video(video_path, processor):
                 
                 # Extract text from ROIs
                 extracted_texts = extract_text_from_rois(frame_path, processor)
-                ic(extracted_texts)
                 
                 # Store the extracted text from each ROI
                 for key, text in extracted_texts.items():

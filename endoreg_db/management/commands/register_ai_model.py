@@ -14,7 +14,6 @@ from django.core.files import File
 from endoreg_db.models import ModelMeta, ModelType, LabelSet
 import json
 from pathlib import Path
-from icecream import ic
 
 class Command(BaseCommand):
     """

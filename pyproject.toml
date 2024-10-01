@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "endoreg-db"
-version = "0.4.1"
+version = "0.4.3"
 description = "EndoReg Db Django App"
 authors = ["Thomas J. Lux"]
 license = "GNU3"
@@ -19,9 +19,10 @@ pytesseract = "^0.3.10"
 scipy = "^1.14.0"
 pandas = "^2.2.2"
 pillow = "~10"
+agl-report-reader = "0.3.2"
 
-[tool.poetry.group.nixProvided.dependencies]
-icecream = "^2.1.3"
+# [tool.poetry.group.nixProvided.dependencies]
+
 # agl-report-reader = "^0.3"
 
 [tool.poetry.group.dev.dependencies]
