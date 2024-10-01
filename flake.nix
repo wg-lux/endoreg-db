@@ -86,14 +86,13 @@
 
         # Makes Package available to other packages which depend on this one (e.g. agl-monitor flake also imports functions from agl-report reader)
         propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [
-          pdfplumber
           inputs.agl-report-reader.packages.x86_64-linux.poetryApp
         ];
         nativeBuildInputs = with pkgs."python${python_version}Packages"; [
           pip
           setuptools
           icecream
-          pdfplumber
+          # pillow
 
           inputs.agl-report-reader.packages.x86_64-linux.poetryApp
         ];
