@@ -34,7 +34,7 @@
       system = "x86_64-linux";
       self = inputs.self;
       version = "0.1.${pkgs.lib.substring 0 8 inputs.self.lastModifiedDate}.${inputs.self.shortRev or "dirty"}";
-      python_version = "311";
+      python-version = "311";
       cachix = inputs.cachix;
 
       nvidiaCache = cachix.lib.mkCachixCache {
@@ -80,15 +80,15 @@
       poetryApp = poetry2nix.mkPoetryApplication {
         projectDir = ./.;
         src = lib.cleanSource ./.;
-        python = pkgs."python${python_version}";
+        python = pkgs."python${python-version}";
         overrides = p2n-overrides;
         preferWheels = true; # some packages, e.g. transformers break if false
 
         # Makes Package available to other packages which depend on this one (e.g. agl-monitor flake also imports functions from agl-report reader)
-        propagatedBuildInputs =  with pkgs."python${python_version}Packages"; [
+        propagatedBuildInputs =  with pkgs."python${python-version}Packages"; [
           # inputs.agl-report-reader.packages.x86_64-linux.poetryApp
         ];
-        nativeBuildInputs = with pkgs."python${python_version}Packages"; [
+        nativeBuildInputs = with pkgs."python${python-version}Packages"; [
           pip
           setuptools
           # inputs.agl-report-reader.packages.x86_64-linux.poetryApp
