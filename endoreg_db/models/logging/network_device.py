@@ -9,11 +9,14 @@ class NetworkDeviceLogEntry(AbstractLogEntry):
     log_type = models.ForeignKey("LogType", on_delete=models.CASCADE, null=True, blank=True)
 
     datetime = models.DateTimeField(default=None, null=True, blank=True)
-    vpn_service_status = models.BooleanField(default=False)
+    # hostname = models.CharField(max_length=255, null=True, blank=True)
+    aglnet_ip = models.GenericIPAddressField(null=True, blank=True)
+    vpn_service_status = models.CharField(max_length=255, null=True, blank=True)
     vpn_service_restart_attempt = models.BooleanField(default=False)
     vpn_service_restart_success = models.BooleanField(null=True, blank=True)
     ping_vpn = models.BooleanField(default=False)
     ping_www = models.BooleanField(default=False)
+    transferred_to_host = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Network Device Log Entry"
