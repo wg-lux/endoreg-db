@@ -44,11 +44,11 @@ def load_data_with_foreign_keys(command, model, yaml_data, foreign_keys, foreign
         fields = entry.get('fields', {})
         name = fields.pop('name', None)
         m2m_relationships = {}  # Store many-to-many relationships
-        print(entry)
+        # print(entry)
 
         # Handle foreign keys and many-to-many relationships
         for fk_field, fk_model in zip(foreign_keys, foreign_key_models):
-            print(fk_field, fk_model)
+            # print(fk_field, fk_model)
             target_keys = fields.pop(fk_field, None)
             
             # Ensure the foreign key exists
@@ -69,7 +69,8 @@ def load_data_with_foreign_keys(command, model, yaml_data, foreign_keys, foreign
             else:  # Single foreign key relationship
                 try:
                     if model == "endoreg_db.case_template_rule":
-                        print(fk_model, target_keys)
+                        # print(fk_model, target_keys)
+                        pass
                     obj = fk_model.objects.get_by_natural_key(target_keys)
                 except ObjectDoesNotExist:
                     if verbose:

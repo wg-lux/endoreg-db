@@ -60,7 +60,7 @@ class Patient(Person):
         
         # Extract names and probabilities
         gender_names = ["male", "female"]
-        probabilities = [0.5, 0.5]
+        probabilities = [p_male, p_female]
         
         # Debug: print the names and probabilities
         print(f"Gender names: {gender_names}")
@@ -155,7 +155,8 @@ class Patient(Person):
         patient = Patient.objects.create(
             first_name=first_name,
             last_name=last_name,
-            dob=dob
+            dob=dob,
+            gender = gender,
         )
         patient.save()
         return patient

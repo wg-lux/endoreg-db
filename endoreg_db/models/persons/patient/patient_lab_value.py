@@ -30,7 +30,11 @@ class PatientLabValue(models.Model):
     unit = models.ForeignKey('Unit', on_delete=models.CASCADE, blank=True, null=True)
 
     @classmethod
-    def create_lab_value_by_sample(cls, sample=None, lab_value_name=None, value=None, value_str=None, unit=None):
+    def create_lab_value_by_sample(
+        cls, sample=None, lab_value_name=None, 
+        value=None, value_str=None, 
+        unit=None
+    ):
         from endoreg_db.models import LabValue
         patient = sample.patient
         lab_value = LabValue.objects.get(name=lab_value_name)
@@ -51,8 +55,8 @@ class PatientLabValue(models.Model):
         return pat_lab_val
 
     def __str__(self):
-        _str = f'{self.lab_value} - {self.value} {self.unit} ({self.datetime})'
-        print(_str)
+        formatted_datetime = self.datetime.strftime('%Y-%m-%d %H:%M')
+        _str = f'{self.lab_value} - {self.value} {self.unit} ({formatted_datetime})'
         return _str
     
     def set_min_norm_value(self, value, save = True):
@@ -72,7 +76,6 @@ class PatientLabValue(models.Model):
         self.set_min_norm_value(min_value, save = False)
         self.set_max_norm_value(max_value, save = False)
         self.save()
-
 
     def set_unit_from_default(self):
         self.unit = self.lab_value.default_unit

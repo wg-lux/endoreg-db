@@ -58,10 +58,12 @@ class PatientLabSample(models.Model):
     date = models.DateTimeField()
 
     def __str__(self):
-        return f"{self.patient} - {self.sample_type} - {self.date} ()"
+
+        formatted_datetime = self.date.strftime('%Y-%m-%d %H:%M')
+        return f"{self.patient} - {self.sample_type} - {formatted_datetime} ()"
     
     def get_values(self):
-        return self.values
+        return self.values.all()
     
     @classmethod
     def create_by_patient(cls, patient=None, sample_type=None, date=None, save = True):
