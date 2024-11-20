@@ -56,7 +56,8 @@ class PatientLabValue(models.Model):
 
     def __str__(self):
         formatted_datetime = self.datetime.strftime('%Y-%m-%d %H:%M')
-        _str = f'{self.lab_value} - {self.value} {self.unit} ({formatted_datetime})'
+        norm_range_string = f'[{self.normal_range.get("min", "")} - {self.normal_range.get("max", "")}]'
+        _str = f'{self.lab_value} - {self.value} {self.unit} - {norm_range_string} ({formatted_datetime})'
         return _str
     
     def set_min_norm_value(self, value, save = True):
@@ -112,8 +113,8 @@ class PatientLabValue(models.Model):
 
         patient:Patient = self.patient
 
-        dob = patient.dob
-        gender:Gender = patient.gender
+        dob = patient.dob #TODO: age specific norm values
+        gender:Gender = patient.gender # TODO: gender specific norm values
         lab_value:LabValue = self.lab_value
 
         assert self.lab_value, "Lab value must be set to set value by distribution"

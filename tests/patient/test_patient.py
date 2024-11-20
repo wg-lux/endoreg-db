@@ -9,6 +9,12 @@ LAB_VALUE_DICTS = [
     {
         "lab_value_name": "potassium",
         "value": 4.2,
+    },
+]
+
+LAB_VALUE_W_DIST_DICTS = [
+    {
+        "lab_value_name": "sodium",
     }
 ]
 
@@ -56,6 +62,17 @@ class TestGeneratePatient(TestCase):
 
             lab_value.set_unit_from_default()
             lab_value.set_norm_values_from_default()
+
+        for _dict in LAB_VALUE_W_DIST_DICTS:
+            lab_value = PatientLabValue.create_lab_value_by_sample(
+                sample=sample,
+                **_dict
+            )
+
+            lab_value.set_unit_from_default()
+            lab_value.set_norm_values_from_default()
+            lab_value.set_value_by_distribution()
+
         
         print("Lab Values:")
         for value in sample.get_values():
