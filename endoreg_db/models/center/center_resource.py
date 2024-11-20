@@ -1,4 +1,3 @@
-from os import name
 from django.db import models
 
 class CenterResource(models.Model):

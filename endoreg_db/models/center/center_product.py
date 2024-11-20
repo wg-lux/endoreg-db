@@ -1,4 +1,3 @@
-from itertools import product
 from django.db import models
 
 class CenterProduct(models.Model):

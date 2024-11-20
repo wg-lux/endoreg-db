@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "endoreg-db"
+version = "0.4.6"
+description = "EndoReg Db Django App"
+authors = ["Thomas J. Lux"]
+license = "GNU3"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+django = "^5.1"
+djangorestframework = "^3.14.0"
+django-bootstrap5 = "^23.4"
+tqdm = "^4.66.2"
+pyyaml = "^6.0.1"
+opencv-python = "^4.9.0.80"
+ffmpeg-python = "^0.2.0"
+pytesseract = "^0.3.10"
+scipy = "^1.14.0"
+pandas = "^2.2.2"
+pillow = "~10"
+agl-report-reader = "0.3.2"
+
+# [tool.poetry.group.nixProvided.dependencies]
+
+# agl-report-reader = "^0.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
