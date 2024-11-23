@@ -3,6 +3,7 @@ result/
 *result
 .ruff_cache/
 .devenv
+untracked_notes.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

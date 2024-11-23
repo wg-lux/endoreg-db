@@ -7,6 +7,13 @@ from .persons import *
 from .network import *
 from .logging import *
 
+from .organ import Organ
+
+from .finding import (
+    Finding, FindingType,
+    FindingLocationClassification, FindingLocationClassificationChoice,
+)
+
 from .case_template import *
 # from .other.distribution import (
 #     SingleCategoricalValueDistribution,
@@ -35,7 +42,11 @@ from .examination import (
 )
 from .data_file import *
 
-from .patient_examination import PatientExamination
+from .patient import (
+    PatientExamination, 
+    PatientFinding,
+    PatientFindingLocation,
+)
 
 from .label import Label, LabelType, LabelSet
 

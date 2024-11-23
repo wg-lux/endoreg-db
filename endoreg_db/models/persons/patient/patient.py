@@ -2,7 +2,7 @@ from ..person import Person
 from django import forms
 from django.forms import DateInput
 from rest_framework import serializers
-from ...patient_examination import PatientExamination
+from ...patient import PatientExamination
 from ...data_file import ReportFile
 from django.db import models
 from faker import Faker
@@ -41,6 +41,19 @@ class Patient(Person):
         '''Returns all patient examinations for this patient ordered by date (most recent is first).'''
         return self.patient_examinations.order_by('-date')
     
+    def create_examination(self, examination_name_str:str=None):
+        '''Creates a patient examination for this patient.'''
+
+        if examination_name_str:
+            from endoreg_db.models import Examination
+            examination = Examination.objects.get(name=examination_name_str)
+            patient_examination = PatientExamination(patient=self, examination=examination)
+            patient_examination.save()
+        else:
+            patient_examination = PatientExamination(patient=self)
+            patient_examination.save()
+        return patient_examination
+
     def create_examination_by_report_file(self, report_file:ReportFile):
         '''Creates a patient examination for this patient based on the given report file.'''
         patient_examination = PatientExamination(patient=self, report_file=report_file)

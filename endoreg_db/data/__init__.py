@@ -16,6 +16,17 @@ PDF_TYPE_DATA_DIR = DATA_DIR / "pdf_type"
 REPORT_READER_FLAG_DATA_DIR = DATA_DIR / "report_reader_flag"
 EVENT_DATA_DIR = DATA_DIR / "event"
 GENDER_DATA_DIR = DATA_DIR / "gender"
+ORGAN_DATA_DIR = DATA_DIR / "organ"
+
+
+# Finding
+FINDING_TYPE_DATA_DIR = DATA_DIR / "finding_type"
+FINDING_DATA_DIR = DATA_DIR / "finding"
+FINDING_LOCATION_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_location_classification"
+FINDING_LOCATION_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_location_classification_choice"
+FINDING_MORPHOLOGY_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_morphology_classification"
+FINDING_MORPHOLOGY_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_morphology_classification_choice"
+
 
 # Green Endoscopy Dashboard Stuffs
 CENTER_RESOURCE_DATA_DIR = DATA_DIR / "center_resource"

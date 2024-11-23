@@ -1,0 +1,110 @@
+- model: endoreg_db.finding
+  fields:
+    name: "tumor"
+    name_de: "Tumor"
+    name_en: "Tumor"
+
+    examinations: [
+      "colonoscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]
+
+- model: endoreg_db.finding
+  fields:
+    name: "inflammation"
+    name_de: "Entzündung"
+    name_en: "Inflammation"
+    examinations: [
+      "colonoscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]
+
+- model: endoreg_db.finding
+  fields:
+    name: "erosion"
+    name_de: "Erosion"
+    name_en: "Erosion"
+    examinations: [
+      "colonoscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]
+
+- model: endoreg_db.finding
+  fields:
+    name: "ulcer"
+    name_de: "Ulcus"
+    name_en: "Ulcer"
+    examinations: [
+      "colonoscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]
+
+- model: endoreg_db.finding
+  fields:
+    name: "scar"
+    name_de: "Narbe"
+    name_en: "Scar"
+
+    examinations: [
+      "colonoscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]
+
+- model: endoreg_db.finding
+  fields:
+    name: "polyp"
+    name_de: "Polyp"
+    name_en: "Polyp"
+
+    examinations: [
+      "colonoscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]

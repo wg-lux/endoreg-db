@@ -32,6 +32,14 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_gender_data..."))
         call_command('load_gender_data', verbose=verbose)
 
+        # Run the load_examination_data command
+        self.stdout.write(self.style.SUCCESS("Running load_examination_data..."))
+        call_command('load_examination_data', verbose=verbose)
+
+        # run the load_finding_data command
+        self.stdout.write(self.style.SUCCESS("Running load_finding_data..."))
+        call_command('load_finding_data', verbose=verbose)
+
         # Run the load_disease data command
         self.stdout.write(self.style.SUCCESS("Running load_disease_data..."))
         call_command('load_disease_data', verbose=verbose)
@@ -79,10 +87,6 @@ class Command(BaseCommand):
         # Run the load_center_data command
         self.stdout.write(self.style.SUCCESS("Running load_center_data..."))
         call_command('load_center_data', verbose=verbose)
-
-        # Run the load_examination_data command
-        self.stdout.write(self.style.SUCCESS("Running load_examination_data..."))
-        call_command('load_examination_data', verbose=verbose)
 
         # Run the load_label_data command
         self.stdout.write(self.style.SUCCESS("Running load_label_data..."))

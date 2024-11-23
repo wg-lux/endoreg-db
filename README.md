@@ -1,8 +1,3 @@
-# endoreg-db
-endoreg-db
+# Resources
 
-
-## Poetry add pypi token
-poetry config pypi-token.pypi your-api-token
-
-
+Testing with django: https://docs.djangoproject.com/en/5.1/topics/testing/advanced/#testing-reusable-applications
