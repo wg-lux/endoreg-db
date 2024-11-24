@@ -1,5 +1,55 @@
 - model: endoreg_db.finding
   fields:
+    name: "colon_polyp"
+    name_de: "Kolonpolyp"
+    name_en: "Colon Polyp"
+    
+    finding_interventions: [
+      "colon-lesion-polypectomy-cold-snare",
+      "colon-lesion-polypectomy-hot-snare",
+      "colon-lesion-injection-liftup",
+      "colon-lesion-injection-vasoactive",
+      "colon-lesion-biopsy",
+      "colon-lesion-emr",
+      "colon-lesion-esd",
+      "colon-lesion-clip",
+    ]
+
+    causing_finding_interventions: []
+    opt_causing_finding_interventions: []
+
+    examinations: ["colonoscopy"]
+
+    finding_types: ["macroscopic"]
+    
+- model: endoreg_db.finding
+  fields:
+    name: "post-intervention-wound"
+    name_de: "Postinterventionelle Wunde"
+
+    finding_interventions: [
+      "colon-lesion-clip",
+    ]
+
+    causing_finding_interventions: [
+      "colon-lesion-polypectomy-cold-snare"
+    ]
+
+    opt_causing_finding_interventions: [
+    ]
+
+    examinations: [
+      "colonoscopy"
+    ]
+
+    finding_types: [
+      "macroscopic"
+    ]
+
+
+
+- model: endoreg_db.finding
+  fields:
     name: "tumor"
     name_de: "Tumor"
     name_en: "Tumor"
@@ -30,7 +80,6 @@
       "small_bowel_endoscopy",
       "capsule_endoscopy"
     ]
-
     finding_types: [
       "macroscopic"
     ]
@@ -77,6 +126,10 @@
     name_de: "Narbe"
     name_en: "Scar"
 
+    opt_causing_finding_interventions: [
+      "colon-lesion-polypectomy-cold-snare",
+    ]
+
     examinations: [
       "colonoscopy",
       "endosonography_upper_gi",
@@ -90,21 +143,3 @@
       "macroscopic"
     ]
 
-- model: endoreg_db.finding
-  fields:
-    name: "polyp"
-    name_de: "Polyp"
-    name_en: "Polyp"
-
-    examinations: [
-      "colonoscopy",
-      "endosonography_upper_gi",
-      "endosonography_lower_gi",
-      "ercp",
-      "small_bowel_endoscopy",
-      "capsule_endoscopy"
-    ]
-
-    finding_types: [
-      "macroscopic"
-    ]

@@ -1,0 +1,11 @@
+- model: endoreg_db.contraindication
+  fields:
+    name: "anticoagulation-therapeutic"
+    description: "Therapeutic anticoagulation"
+
+- model: endoreg_db.contraindication
+  fields:
+    name: "thrombocytopenia-severe"
+    description: "Thrombocyte count < 50.000/µl"
+
+

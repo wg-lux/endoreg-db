@@ -9,6 +9,7 @@ class LoadDbDataTest(TestCase):
         call_command("load_gender_data", stdout=out)
         call_command("load_unit_data", stdout=out)
         call_command("load_organ_data", stdout=out)
+        call_command("load_contraindication_data", stdout=out)
         call_command("load_examination_data", stdout=out)
-        call_command("load_finding_data", stdout=out)
         call_command("load_lab_value_data", stdout=out)
+        call_command("load_finding_data", stdout=out)

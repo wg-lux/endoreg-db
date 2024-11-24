@@ -9,9 +9,14 @@ from .logging import *
 
 from .organ import Organ
 
+from .contraindication import Contraindication
+
 from .finding import (
     Finding, FindingType,
     FindingLocationClassification, FindingLocationClassificationChoice,
+    FindingMorphologyClassificationType, FindingMorphologyClassificationChoice,
+    FindingMorphologyClassification,
+    FindingIntervention, FindingInterventionType,
 )
 
 from .case_template import *
@@ -46,6 +51,8 @@ from .patient import (
     PatientExamination, 
     PatientFinding,
     PatientFindingLocation,
+    PatientFindingMorphology,
+    PatientFindingIntervention,
 )
 
 from .label import Label, LabelType, LabelSet

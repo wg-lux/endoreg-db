@@ -27,6 +27,9 @@ class FindingLocationClassification(models.Model):
     
     def __str__(self):
         return self.name
+    
+    def get_choices(self):
+        return self.choices.all()
 
 class FindingLocationClassificationChoiceManager(models.Manager):
     def get_by_natural_key(self, name):
