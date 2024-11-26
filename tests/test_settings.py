@@ -20,3 +20,5 @@ DATABASES = {
         'NAME': BASE_DIR / 'test_db.sqlite3',
     },
 }
+
+TIME_ZONE = "Europe/Berlin"

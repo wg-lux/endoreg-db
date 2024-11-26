@@ -1,26 +1,40 @@
 from django.db import models
-
+from typing import List
 # Serializer located in serializers/examination.py
 class PatientExamination(models.Model):
     patient = models.ForeignKey('Patient', on_delete=models.CASCADE, related_name='patient_examinations')
     examination = models.ForeignKey('Examination', on_delete=models.CASCADE, null = True, blank = True)
     video = models.OneToOneField('Video', on_delete=models.CASCADE, null = True, blank = True, related_name='patient_examination')
     report_file = models.OneToOneField('ReportFile', on_delete=models.CASCADE, null = True, blank = True, related_name='patient_examination')
+    date_start = models.DateField(null=True, blank=True)
+    date_end = models.DateField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Patient Examination'
         verbose_name_plural = 'Patient Examinations'
-        ordering = ['patient', 'examination']
+        ordering = ['patient', 'examination', "date_start"]
 
     def __str__(self):
-        return f"{self.patient} - {self.report_file}"
-    
-    def get_finding_choices(self):
+        return f"{self.patient} - {self.examination} - {self.date_start}"
+
+    def get_patient_age_at_examination(self) -> int:
+        """
+        Returns the patient's age at the time of the examination.
+        """
+        from endoreg_db.models import Patient
+        from datetime import datetime
+        patient:Patient = self.patient
+        dob = patient.get_dob()
+        date_start = self.date_start
+        return (date_start - dob).days // 365
+
+    def get_available_findings(self):
         """
         Returns all findings that are associated with the examination of this patient examination.
         """
-        from endoreg_db.models import Finding
-        findings:Finding = [_ for _ in self.examination.findings.all()]
+        from endoreg_db.models import Finding, Examination
+        examination:Examination = self.examination
+        findings:List[Finding] = [_ for _ in examination.get_available_findings()]
         return findings
     
     def get_findings(self):
@@ -28,7 +42,7 @@ class PatientExamination(models.Model):
         Returns all findings that are associated with this patient examination.
         """
         from endoreg_db.models import PatientFinding
-        patient_findings:PatientFinding = [_ for _ in self.patient_findings.all()]
+        patient_findings:List[PatientFinding] = [_ for _ in self.patient_findings.all()]
         return patient_findings
     
     def create_finding(self, finding):

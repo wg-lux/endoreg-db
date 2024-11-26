@@ -1,15 +1,16 @@
 from endoreg_db.models import (
     Patient, 
     Center, 
-    PatientLabValue, 
 )
+
+from .utils import create_test_patient
 
 from django.core.management import call_command
 from django.test import TestCase
 from io import StringIO
 from .conf import (
     TEST_CENTER_NAME,
-    TEST_EXAMINATION_NAME_STRINGS
+    TEST_PATIENT_OUTPUT_PATH
 )
 
 class TestGeneratePatient(TestCase):
@@ -20,34 +21,47 @@ class TestGeneratePatient(TestCase):
         call_command("load_examination_data", stdout=out)
         Center.objects.create(name=TEST_CENTER_NAME)
 
-    def test_center_created(self):
-        _ = Center.objects.get(name=TEST_CENTER_NAME)
-        assert _
+        # Delete existing test_patient_examination_output_path
+        with open(TEST_PATIENT_OUTPUT_PATH, "w") as f:
+            f.write("")
 
-    def test_create_generic_patient(self):
-        patient = Patient.create_generic(center=TEST_CENTER_NAME)
+    def test_create_patient(self):
+        patient = create_test_patient()
+
+        report = "Test Patient created successfully: \n"
+        report += f"{patient}\n"
+
+        # Append to test_patient_examination_output_path
+        with open(TEST_PATIENT_OUTPUT_PATH, "a") as f:
+            f.write(report)
+
         assert patient
-    
-    def test_create_generic_patient_with_examination(self):
-        patient = Patient.create_generic(center=TEST_CENTER_NAME)
 
-        patient_examination = patient.create_examination()
+    def test_create_100_patients(self):
+        # delete all patients
+        Patient.objects.all().delete()
 
-        assert patient_examination
+        # Create 100 patients
+        for i in range(100):
+            _patient = create_test_patient()
 
+        # calculate mean, min, max and std of patient.age
+        patients = Patient.objects.all()
+        ages = [patient.age() for patient in patients]
 
-    def test_create_generic_patient_with_examinations(self):
-        patient = Patient.create_generic(center=TEST_CENTER_NAME)
+        mean_age = sum(ages) / len(ages)
+        min_age = min(ages)
+        max_age = max(ages)
 
-        examination_name_strings = TEST_EXAMINATION_NAME_STRINGS
+        std_age = (sum([(age - mean_age)**2 for age in ages]) / len(ages))**0.5
 
-        for examination_name_str in examination_name_strings:
+        report = "100 Test Patients created successfully: \n"
+        report += f"Mean age: {mean_age}\n"
+        report += f"Min age: {min_age}\n"
+        report += f"Max age: {max_age}\n"
+        report += f"Std age: {std_age}\n"
 
-            patient_examination = patient.create_examination(
-                examination_name_str=examination_name_str
-            )
+        # Append to test_patient_examination_output_path
+        with open(TEST_PATIENT_OUTPUT_PATH, "a") as f:
+            f.write(report)
 
-            assert patient_examination
-
-
-    

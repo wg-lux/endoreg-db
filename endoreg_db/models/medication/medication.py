@@ -1,4 +1,5 @@
 from django.db import models
+from typing import List
 
 class MedicationManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -50,6 +51,10 @@ class MedicationSchedule(models.Model):
     def __str__(self):
         return self.name
     
+    def get_intake_times(self) -> List["MedicationIntakeTime"]:
+        intake_times = [_ for _ in self.intake_times.all()]
+        return intake_times
+    
     
 class MedicationIntakeTimeManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -68,7 +73,7 @@ class MedicationIntakeTime(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return self.name + " at " + str(self.time) + " (" + self.repeats + ")"
 
 # IMPLEMENT MEDICATION INDICATION TYPE
 class MedicationIndicationTypeManager(models.Manager):
@@ -108,7 +113,7 @@ class MedicationIndication(models.Model):
         "MedicationIndicationType", on_delete=models.CASCADE, related_name="medication_indications"
     )
     medication_schedules = models.ManyToManyField(
-        "MedicationSchedule"
+        "MedicationSchedule",
     )
     diseases = models.ManyToManyField(
         "Disease"
@@ -139,10 +144,16 @@ class MedicationIndication(models.Model):
     def __str__(self):
         return self.name
     
-    def create_patient_medication_schedules(self, patient):
-        from endoreg_db.models import PatientMedicationSchedule
-        for medication_schedule in self.medication_schedules.all():
-            PatientMedicationSchedule.objects.create(
-                patient=patient,
-                medication_schedule=medication_schedule
-            )
+    # Depreceated
+    # def create_patient_medication_schedules(self, patient):
+    #     from endoreg_db.models import PatientMedicationSchedule
+    #     schedules = []
+    #     for medication_schedule in self.medication_schedules.all():
+    #         patient_medication_schedule = PatientMedicationSchedule.objects.create(
+    #             patient=patient,
+    #             medication_schedule=medication_schedule
+    #         )
+
+    #         schedules.append(patient_medication_schedule)
+
+    #     return schedules

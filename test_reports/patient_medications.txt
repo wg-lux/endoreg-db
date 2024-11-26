@@ -1,0 +1,55 @@
+IndicationType - thromboembolism-prevention-after_hip_replacement:
+	MedicationIndication - te_prevention-after_hip-apixaban:
+		MedicationSchedule - apixaban-2.5mg-twice_daily_32d:
+			PatientMedication - apixaban (Indication te_prevention-after_hip-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+IndicationType - thromboembolism-prevention-after_knee_replacement:
+	MedicationIndication - te_prevention-after_knee-apixaban:
+		MedicationSchedule - apixaban-2.5mg-twice_daily_10d:
+			PatientMedication - apixaban (Indication te_prevention-after_knee-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+IndicationType - thromboembolism-prevention-non_valvular_af:
+	MedicationIndication - te_prevention-non_valvular_af-apixaban:
+		MedicationSchedule - apixaban-5mg-twice_daily:
+			PatientMedication - apixaban (Indication te_prevention-non_valvular_af-apixaban) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	MedicationIndication - te_prevention-non_valvular_af-apixaban-dr:
+		MedicationSchedule - apixaban-2.5mg-twice_daily:
+			PatientMedication - apixaban (Indication te_prevention-non_valvular_af-apixaban-dr) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+IndicationType - thromboembolism-prevention-recurrent_thrombembolism:
+IndicationType - deep_vein_thrombosis-treatment:
+	MedicationIndication - dvt_treatment-apixaban-3mo:
+		MedicationSchedule - apixaban-5g-twice_daily_7d:
+			PatientMedication - apixaban (Indication dvt_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+		MedicationSchedule - apixaban-5g-twice_daily_3mo:
+			PatientMedication - apixaban (Indication dvt_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+IndicationType - pulmonary_embolism-treatment:
+	MedicationIndication - pe_treatment-apixaban-3mo:
+		MedicationSchedule - apixaban-5g-twice_daily_7d:
+			PatientMedication - apixaban (Indication pe_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+		MedicationSchedule - apixaban-5g-twice_daily_3mo:
+			PatientMedication - apixaban (Indication pe_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	MedicationIndication - pe_treatment-apixaban-6mo:
+		MedicationSchedule - apixaban-5g-twice_daily_7d:
+			PatientMedication - apixaban (Indication pe_treatment-apixaban-6mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+		MedicationSchedule - apixaban-5g-twice_daily_6mo:
+			PatientMedication - apixaban (Indication pe_treatment-apixaban-6mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+IndicationType - thrombembolism-prevention-recurrent_thrombembolism:
+	MedicationIndication - te_prevention-recurrent-te-apixaban:
+		MedicationSchedule - apixaban-2.5mg-twice_daily:
+			PatientMedication - apixaban (Indication te_prevention-recurrent-te-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+
+---
+Resulting PatientMedicationSchedule:
+Alexandre Tröst (1953-11-26) - <QuerySet [<PatientMedication: apixaban (Indication te_prevention-after_hip-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication te_prevention-after_knee-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication te_prevention-non_valvular_af-apixaban) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication te_prevention-non_valvular_af-apixaban-dr) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication dvt_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication dvt_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication pe_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication pe_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication pe_treatment-apixaban-6mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication pe_treatment-apixaban-6mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >, <PatientMedication: apixaban (Indication te_prevention-recurrent-te-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - >]>
+
+---
+PatientMedications:
+	apixaban (Indication te_prevention-after_hip-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication te_prevention-after_knee-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication te_prevention-non_valvular_af-apixaban) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication te_prevention-non_valvular_af-apixaban-dr) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication dvt_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication dvt_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication pe_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication pe_treatment-apixaban-3mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication pe_treatment-apixaban-6mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication pe_treatment-apixaban-6mo) - 5.0 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 
+	apixaban (Indication te_prevention-recurrent-te-apixaban) - 2.5 - mg - daily-morning at 07:00:00 (daily) - daily-evening at 19:00:00 (daily) - 

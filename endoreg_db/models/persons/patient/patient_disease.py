@@ -14,3 +14,7 @@ class PatientDisease(models.Model):
     def __str__(self):
         return f"{self.patient} - {self.disease}"
     
+    class Meta:
+        # unique_together = ('patient', 'disease', 'start_date')
+        verbose_name = 'Patient Disease'
+        verbose_name_plural = 'Patient Diseases'

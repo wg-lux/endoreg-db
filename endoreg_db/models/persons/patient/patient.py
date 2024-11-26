@@ -28,6 +28,10 @@ class Patient(Person):
     def __str__(self):
         return self.first_name + " " + self.last_name + " (" + str(self.dob) + ")"
     
+    def get_dob(self) -> datetime.date:
+        dob:datetime.date = self.dob
+        return dob
+    
     def get_unmatched_report_files(self): #field: self.report_files; filter: report_file.patient_examination = None
         '''Returns all report files for this patient that are not matched to a patient examination.'''
 
@@ -41,18 +45,53 @@ class Patient(Person):
         '''Returns all patient examinations for this patient ordered by date (most recent is first).'''
         return self.patient_examinations.order_by('-date')
     
-    def create_examination(self, examination_name_str:str=None):
+    def create_examination(
+            self, 
+            examination_name_str:str=None, 
+            date_start:datetime=None,
+            date_end:datetime=None
+        ):
         '''Creates a patient examination for this patient.'''
 
         if examination_name_str:
             from endoreg_db.models import Examination
             examination = Examination.objects.get(name=examination_name_str)
-            patient_examination = PatientExamination(patient=self, examination=examination)
-            patient_examination.save()
+            patient_examination = PatientExamination(
+                patient=self, examination=examination,
+                date_start = date_start,
+                date_end = date_end
+            )
+
         else:
-            patient_examination = PatientExamination(patient=self)
-            patient_examination.save()
+            patient_examination = PatientExamination(
+                patient=self,
+                date_start = date_start,
+                date_end = date_end
+            )
+            
+        patient_examination.save()
+
         return patient_examination
+    
+    def create_event(
+            self, event_name_str:str, date_start:datetime=None, date_end:datetime=None, description:str=None
+        ):
+        from endoreg_db.models import Event, PatientEvent
+        event = Event.objects.get(name=event_name_str)
+
+        if not date_start:
+            date_start = datetime.now()
+
+        patient_event = PatientEvent.objects.create(
+            patient=self,
+            event=event,
+            date_start=date_start,
+        )
+
+        return patient_event
+
+
+
 
     def create_examination_by_report_file(self, report_file:ReportFile):
         '''Creates a patient examination for this patient based on the given report file.'''
@@ -76,13 +115,13 @@ class Patient(Person):
         probabilities = [p_male, p_female]
         
         # Debug: print the names and probabilities
-        print(f"Gender names: {gender_names}")
-        print(f"Probabilities: {probabilities}")
+        # print(f"Gender names: {gender_names}")
+        # print(f"Probabilities: {probabilities}")
         
         # Select a gender based on the given probabilities
         selected_gender = random.choices(gender_names, probabilities)[0]
         # Debug: print the selected gender
-        print(f"Selected gender: {selected_gender}")
+        # print(f"Selected gender: {selected_gender}")
         
         # Fetch the corresponding Gender object from the database
         gender_obj = Gender.objects.get(name=selected_gender)

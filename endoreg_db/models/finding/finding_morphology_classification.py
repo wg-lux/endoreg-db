@@ -19,6 +19,17 @@ class FindingMorphologyClassificationType(models.Model):
     def __str__(self):
         return self.name
     
+    @classmethod
+    def get_required_classifications_for_finding(cls, finding):
+        """
+        Returns all required morphology classification types for a given finding.
+        """
+        from endoreg_db.models import FindingMorphologyClassificationType
+        required_classification_types:List[FindingMorphologyClassificationType] = [
+            _ for _ in finding.required_morphology_classification_types.all()
+        ]
+        return required_classification_types
+    
 class FindingMorphologyClassificationManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
@@ -57,8 +68,13 @@ class FindingMorphologyClassificationChoice(models.Model):
         related_name='choices'
     )
     
-    subcategories = models.JSONField(blank=True, null=True)
-    numerical_descriptors = models.JSONField(blank=True, null=True)
+    subcategories = models.JSONField(
+        default = dict
+    )
+
+    numerical_descriptors = models.JSONField(
+        default = dict
+    )
 
     objects = FindingMorphologyClassificationChoiceManager()
     

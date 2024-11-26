@@ -8,11 +8,25 @@ class PatientMedication(models.Model):
         related_name="patient_medications", null=True
     )
 
-    medication_schedules = models.ManyToManyField(
-        'MedicationSchedule'
+    medication = models.ForeignKey(
+        'Medication', on_delete=models.CASCADE,
+        blank=True,
+        related_name='patient_medications'
     )
-    unit = models.ForeignKey('Unit', on_delete=models.CASCADE)
-    dosage = models.JSONField()
+
+    intake_times = models.ManyToManyField(
+        'MedicationIntakeTime', 
+        related_name='patient_medications',
+        blank=True,
+    )
+
+    unit = models.ForeignKey(
+        'Unit', on_delete=models.CASCADE,
+        null=True, blank=True
+    )
+    dosage = models.JSONField(
+        null=True, blank=True
+    )
     active = models.BooleanField(default=True)
 
     objects = models.Manager()
@@ -27,18 +41,19 @@ class PatientMedication(models.Model):
         medication_indication: MedicationIndication
         patient_medication = cls.objects.create(patient=patient, medication_indication=medication_indication)
         patient_medication.save()
-        patient_medication.set_schedules_from_indication()
         
         return patient_medication
 
-    def set_schedules_from_indication(self):
-        schedules = self.medication_indication.medication_schedules.all()
-        self.medication_schedules.set(schedules)
-        self.save()
 
     def __str__(self):
-        indication = self.medication_indication
-        schedules = self.medication_schedules.all()
-        return f'{indication} - {schedules}'
+        intake_times = self.intake_times.all()
+        out = f"{self.medication} (Indication {self.medication_indication}) - "
+        out += f"{self.dosage} - {self.unit} - "
+
+
+        for intake_time in intake_times:
+            out += f"{intake_time} - "
+
+        return out
     
     

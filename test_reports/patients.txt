@@ -1,0 +1,2 @@
+Test Patient created successfully: 
+Friedbert Fröhlich (1959-11-26)

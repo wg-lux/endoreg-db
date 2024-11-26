@@ -19,4 +19,4 @@ class PatientEvent(models.Model):
     last_update = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return str(self.date_start) + ": " + self.event
+        return str(self.date_start) + ": " + self.event.name

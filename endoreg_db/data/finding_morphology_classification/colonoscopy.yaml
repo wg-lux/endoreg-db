@@ -39,3 +39,10 @@
     classification_type: "colon_lesion_advanced_imaging"
     name_de: "Kolonläsion - NICE"
     name_en: "Colon lesion - NICE"
+
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_paris"
+    classification_type: "colon_lesion_shape"
+    name_de: "Formklassifikation Kolonläsion"
+    name_en: "Colon Lesion Shape Classification"

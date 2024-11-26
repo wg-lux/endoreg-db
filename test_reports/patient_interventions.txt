@@ -1,0 +1,49 @@
+Generated 8 interventions for 8 findings
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-polypectomy-cold-snare
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-polypectomy-hot-snare
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-injection-liftup
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-injection-vasoactive
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-biopsy
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-emr
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-esd
+
+
+Rebecca Bohnbach (1957-11-26) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - terminal_ileum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default)>]
+	colon-lesion-clip
+
+

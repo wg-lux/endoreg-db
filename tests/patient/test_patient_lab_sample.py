@@ -11,7 +11,8 @@ from io import StringIO
 from .conf import (
     TEST_CENTER_NAME,
     LAB_VALUE_DICTS,
-    LAB_VALUE_W_DIST_DICTS
+    LAB_VALUE_W_DIST_DICTS,
+    TEST_PATIENT_LAB_SAMPLE_OUTPUT_PATH
 )
 
 
@@ -25,18 +26,13 @@ class TestGeneratePatient(TestCase):
         Center.objects.create(name=TEST_CENTER_NAME)
 
     def test_create_generic_patient_with_lab_sample(self):
+        out = ""
         patient = Patient.create_generic(center=TEST_CENTER_NAME)
-        patient.create_lab_sample(
+        sample = patient.create_lab_sample(
             sample_type="generic",
             date=None, # defaults to dt.now() if not provided
             save=True
         )
-        # print("Lab Sample:")
-        sample = patient.lab_samples.first()
-        # print(sample)
-
-        # Add a lab value to the lab sample
-        _dict = LAB_VALUE_DICTS[0]
 
         for _dict in LAB_VALUE_DICTS:
             lab_value = PatientLabValue.create_lab_value_by_sample(
@@ -57,10 +53,11 @@ class TestGeneratePatient(TestCase):
             lab_value.set_norm_values_from_default()
             lab_value.set_value_by_distribution()
 
-        
-        print("Lab Values:")
         for value in sample.get_values():
-            # print(value)
-            pass
+            out += f"{value}\n"
+
+        with open(TEST_PATIENT_LAB_SAMPLE_OUTPUT_PATH, "w") as f:
+            f.write(out)
 
         return patient
+    

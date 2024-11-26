@@ -1,15 +1,15 @@
 from django.db import models
-
+from typing import List
 
 class PatientFinding(models.Model):
     patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')
     finding = models.ForeignKey('Finding', on_delete=models.CASCADE, related_name='patient_findings')
-    location_choices = models.ManyToManyField(
+    locations = models.ManyToManyField(
         'PatientFindingLocation',
         blank=True,
         related_name='patient_findings'
     )
-    morphology_choices = models.ManyToManyField(
+    morphologies = models.ManyToManyField(
         'PatientFindingMorphology',
         blank=True,
         related_name='patient_findings'
@@ -25,21 +25,21 @@ class PatientFinding(models.Model):
         return f"{self.patient_examination} - {self.finding}"
 
    # functions to get all associated location and morphology choices
-    def get_location_choices(self):
+    def get_locations(self):
         """
         Returns all location choices that are associated with this patient finding.
         """
         from endoreg_db.models import PatientFindingLocation
-        location_choices = [_ for _ in self.location_choices.all()]
-        return location_choices
+        locations:List[PatientFindingLocation] = [_ for _ in self.locations.all()]
+        return locations
     
-    def get_morphology_choices(self):
+    def get_morphologies(self):
         """
         Returns all morphology choices that are associated with this patient finding.
         """
         from endoreg_db.models import PatientFindingMorphology
-        morphology_choices = [_ for _ in self.morphology_choices.all()]
-        return morphology_choices   
+        morphologies:List[PatientFindingMorphology] = [_ for _ in self.morphologies.all()]
+        return morphologies   
 
     def add_morphology_choice(self, morphology_choice, morphology_classification):
         """
@@ -59,7 +59,7 @@ class PatientFinding(models.Model):
         )
         patient_finding_morphology.save()
 
-        self.morphology_choices.add(patient_finding_morphology)
+        self.morphologies.add(patient_finding_morphology)
         self.save()
 
         return patient_finding_morphology
@@ -97,11 +97,18 @@ class PatientFinding(models.Model):
         )
         patient_finding_location.save()
 
-        self.location_choices.add(patient_finding_location)
+        self.locations.add(patient_finding_location)
         self.save()
 
         return patient_finding_location
 
+    def get_interventions(self):
+        """
+        Returns all interventions that are associated with this patient finding.
+        """
+        from endoreg_db.models import PatientFindingIntervention
+        interventions:List[PatientFindingIntervention] = [_ for _ in self.interventions.all()]
+        return interventions
 
     def set_random_location(
             self, location_classification
@@ -128,7 +135,7 @@ class PatientFinding(models.Model):
             location_choice=location_choice
         )
 
-        self.location_choices.add(patient_finding_location)
+        self.locations.add(patient_finding_location)
         self.save()
 
         return patient_finding_location

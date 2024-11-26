@@ -44,13 +44,13 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_disease_data..."))
         call_command('load_disease_data', verbose=verbose)
 
-        # Run the load_disease_classification data command
-        self.stdout.write(self.style.SUCCESS("Running load_disease_classification_data..."))
-        call_command('load_disease_classification_data', verbose=verbose)
+        # # Run the load_disease_classification data command
+        # self.stdout.write(self.style.SUCCESS("Running load_disease_classification_data..."))
+        # call_command('load_disease_classification_data', verbose=verbose)
 
-        # Run the load_disease_classification_choices data command
-        self.stdout.write(self.style.SUCCESS("Running load_disease_classification_choices_data..."))
-        call_command('load_disease_classification_choices_data', verbose=verbose)
+        # # Run the load_disease_classification_choices data command
+        # self.stdout.write(self.style.SUCCESS("Running load_disease_classification_choices_data..."))
+        # call_command('load_disease_classification_choices_data', verbose=verbose)
 
         # rund the load_user_groups command
         self.stdout.write(self.style.SUCCESS("Running load_user_groups..."))
@@ -104,21 +104,21 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Running load_medication_data..."))
         call_command('load_medication_data', verbose=verbose)
 
-        # Run the load_medication_indication_type_data command
-        self.stdout.write(self.style.SUCCESS("Running load_medication_indication_type_data..."))
-        call_command('load_medication_indication_type_data', verbose=verbose)
+        # # Run the load_medication_indication_type_data command
+        # self.stdout.write(self.style.SUCCESS("Running load_medication_indication_type_data..."))
+        # call_command('load_medication_indication_type_data', verbose=verbose)
 
-        # Run the load_medication_intake_time_data command
-        self.stdout.write(self.style.SUCCESS("Running load_medication_intake_time_data..."))
-        call_command('load_medication_intake_time_data', verbose=verbose)
+        # # Run the load_medication_intake_time_data command
+        # self.stdout.write(self.style.SUCCESS("Running load_medication_intake_time_data..."))
+        # call_command('load_medication_intake_time_data', verbose=verbose)
 
-        # Run the load_medication_schedule_data command
-        self.stdout.write(self.style.SUCCESS("Running load_medication_schedule_data..."))
-        call_command('load_medication_schedule_data', verbose=verbose)
+        # # Run the load_medication_schedule_data command
+        # self.stdout.write(self.style.SUCCESS("Running load_medication_schedule_data..."))
+        # call_command('load_medication_schedule_data', verbose=verbose)
 
-        # Run the load_medication_indication_data command
-        self.stdout.write(self.style.SUCCESS("Running load_medication_indication_data..."))
-        call_command('load_medication_indication_data', verbose=verbose)
+        # # Run the load_medication_indication_data command
+        # self.stdout.write(self.style.SUCCESS("Running load_medication_indication_data..."))
+        # call_command('load_medication_indication_data', verbose=verbose)
 
         # Run the load_green_endoscopy_wuerzburg_data command
         self.stdout.write(self.style.SUCCESS("Running load_green_endoscopy_wuerzburg_data..."))

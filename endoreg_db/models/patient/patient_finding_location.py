@@ -31,7 +31,16 @@ class PatientFindingLocation(models.Model):
 
         super().save(*args, **kwargs)
 
-    
+    def set_subcategory(self, subcategory_name, subcategory_value):
+        """
+        Sets a subcategory for this location.
+        """
+        assert subcategory_name in self.subcategories, "Subcategory must be in subcategories."
+        self.subcategories[subcategory_name]["value"] = subcategory_value
+        self.save()
+
+        return self.subcategories[subcategory_name]
+
     def set_random_subcategories(self):
         """
         Sets random subcategories for this location if they are required.
@@ -58,6 +67,27 @@ class PatientFindingLocation(models.Model):
 
         return self.subcategories
     
+    def set_random_numerical_descriptor(self, descriptor_name):
+        """
+        Sets a random numerical descriptor for this location.
+        """
+        import random
+        if descriptor_name not in self.numerical_descriptors:
+            raise ValueError("Descriptor name must be in numerical descriptors.")
+
+        numerical_descriptor = self.numerical_descriptors[descriptor_name]
+        min_value = numerical_descriptor["min"]
+        max_value = numerical_descriptor["max"]
+
+        assert min_value <= max_value, "Min value must be less than or equal to max value."
+
+        random_value = random.uniform(min_value, max_value)
+        self.numerical_descriptors[descriptor_name]["value"] = random_value
+        self.save()
+
+        return self.numerical_descriptors[descriptor_name]
+
+
     def set_random_numerical_descriptors(self):
         """
         Sets random numerical descriptors for this location if they are required.

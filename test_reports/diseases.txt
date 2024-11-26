@@ -1,0 +1,38 @@
+hypertension:
+coronary_artery_disease:
+	coronary_artery_disease_base_classification:
+		khk_1_ge
+			Linda Klemm (1954-11-26) - coronary_artery_disease
+
+		khk_2_ge
+			Linda Klemm (1954-11-26) - coronary_artery_disease
+
+		khk_3_ge
+			Linda Klemm (1954-11-26) - coronary_artery_disease
+
+congestive_heart_failure:
+diabetes_mellitus_I:
+diabetes_mellitus_II:
+non_valvular_atrial_fibrillation:
+liver_cirrhosis:
+malignoma_unspecified:
+chronic_kidney_disease:
+	chronic_kideny_disease_kdigo:
+		ckd_kdigo_1
+			Linda Klemm (1954-11-26) - chronic_kidney_disease
+
+		ckd_kdigo_2
+			Linda Klemm (1954-11-26) - chronic_kidney_disease
+
+		ckd_kdigo_3a
+			Linda Klemm (1954-11-26) - chronic_kidney_disease
+
+		ckd_kdigo_3b
+			Linda Klemm (1954-11-26) - chronic_kidney_disease
+
+		ckd_kdigo_4
+			Linda Klemm (1954-11-26) - chronic_kidney_disease
+
+		ckd_kdigo_5
+			Linda Klemm (1954-11-26) - chronic_kidney_disease
+

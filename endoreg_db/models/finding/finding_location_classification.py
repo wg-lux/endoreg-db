@@ -1,5 +1,5 @@
 from django.db import models
-
+from typing import List
 # Class to represent the LocationClassifications of a Finding
 
 class FindingLocationClassificationManager(models.Manager):
@@ -28,6 +28,34 @@ class FindingLocationClassification(models.Model):
     def __str__(self):
         return self.name
     
+    def get_available_findings(self):
+        from endoreg_db.models import Finding
+        available_findings:List[Finding] = [_ for _ in self.findings.all()]
+        return available_findings
+    
+    def remove_unavailable_findings(
+            self,
+            findings
+    ):
+        """
+        Returns a list of findings that are in the input list but not available for this location classification.
+        """
+        from endoreg_db.models import Finding
+        for _ in findings:
+            assert isinstance(_, Finding)
+        available_findings:List['Finding'] = self.get_available_findings()
+        available_finding_names = [
+            finding.name for finding in available_findings
+        ]
+
+        filtered_findings = []
+
+        for finding in findings:
+            if finding.name in available_finding_names:
+                filtered_findings.append(finding)
+
+        return filtered_findings
+
     def get_choices(self):
         return self.choices.all()
 
@@ -58,3 +86,9 @@ class FindingLocationClassificationChoice(models.Model):
     
     def __str__(self):
         return self.name
+    
+    def get_subcategories(self)->dict:
+        return self.subcategories
+    
+    def get_numerical_descriptors(self)->dict:
+        return self.numerical_descriptors

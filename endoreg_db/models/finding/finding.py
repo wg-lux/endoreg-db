@@ -1,5 +1,6 @@
 # Class to represent findings of examinations
 from django.db import models
+from typing import List
 
 class FindingManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -64,4 +65,11 @@ class Finding(models.Model):
         location_classifications:FindingLocationClassification = self.location_classifications.all()
         
         return location_classifications 
+    
+    def get_required_morphology_classification_types(self):
+        from endoreg_db.models import FindingMorphologyClassificationType
+        finding_morphology_classification_types:List[FindingMorphologyClassificationType] = [
+            _ for _ in self.required_morphology_classification_types.all()
+        ]
+        return finding_morphology_classification_types
     

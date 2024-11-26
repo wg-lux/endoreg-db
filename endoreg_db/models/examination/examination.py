@@ -18,6 +18,12 @@ class Examination(models.Model):
     
     def natural_key(self):
         return (self.name,)
+    
+    def get_available_findings(self):
+        from endoreg_db.models import Finding
+        from typing import List
+        findings:List[Finding] = [_ for _ in self.findings.all()]
+        return findings
 
     class Meta:
         verbose_name = 'Examination'
