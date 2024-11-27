@@ -1,0 +1,7 @@
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy_screening"
+    name_de: "Koloskopie: Screening"
+    name_en: "Colonoscopy: Screening"
+    classification: "endoscopy_colonoscopy"
+

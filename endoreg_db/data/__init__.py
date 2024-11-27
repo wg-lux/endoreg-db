@@ -21,6 +21,11 @@ ORGAN_DATA_DIR = DATA_DIR / "organ"
 # Contraindication
 CONTRAINDICATION_DATA_DIR = DATA_DIR / "contraindication"
 
+# Examination
+EXAMINATION_INDICATION_DATA_DIR = DATA_DIR / "examination_indication"
+EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR = DATA_DIR / "examination_indication_classification"
+EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "examination_indication_classification_choice"
+
 # Finding
 FINDING_TYPE_DATA_DIR = DATA_DIR / "finding_type"
 FINDING_DATA_DIR = DATA_DIR / "finding"

@@ -44,6 +44,9 @@ from .examination import (
     ExaminationType,
     ExaminationTime,
     ExaminationTimeType,
+    ExaminationIndication,
+    ExaminationIndicationClassification,
+    ExaminationIndicationClassificationChoice,
 )
 from .data_file import *
 

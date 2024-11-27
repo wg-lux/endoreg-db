@@ -41,6 +41,8 @@
     subcategories:
       description:
         choices: ["unspecified", "focal", "diffuse", "total"]
+        probability: [0.5, 0.2, 0.2, 0.1]
+        default: "unspecified"
         required: true
 
 - model: endoreg_db.finding_morphology_classification_choice

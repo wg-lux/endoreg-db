@@ -16,7 +16,8 @@ class Event(models.Model):
     name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     event_classification = models.ForeignKey(
-        'EventClassification', on_delete=models.CASCADE, related_name='events'
+        'EventClassification', on_delete=models.CASCADE, related_name='events',
+        null=True, blank=True
     )
 
     def natural_key(self):

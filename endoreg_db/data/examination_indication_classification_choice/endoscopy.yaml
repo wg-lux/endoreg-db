@@ -1,0 +1,101 @@
+- model: endoreg_db.examination_indication_classification_choice
+  fields:
+    name: "colonoscopy_bleeding"
+    classification: "endoscopy_colonoscopy"
+    name_de: "Koloskopie: Blutung"
+    name_en: "Colonoscopy: Bleeding"
+    subcategories:
+      acuteness:
+        choices: ["N0", "N1", "N2", "N3", "N4", "N5"]
+        default: "N4"
+        probability: [0.005, 0.005, 0.01, 0.13, 0.35, 0.5]
+        required: false
+        description: "Acuteness of the examination (N0: immediate, N1: < 1h, N2: < 6h, N3: < 12h, N4: < 24h, N5: >= 24h)"
+
+- model: endoreg_db.examination_indication_classification_choice
+  fields:
+    name: "colonoscopy_surveillance"
+    classification: "endoscopy_colonoscopy"
+    name_de: "Koloskopie: Überwachung"
+    name_en: "Colonoscopy: Surveillance"
+    subcategories:
+      reason:
+        choices: [
+          "unknown",
+          "polypectomy_surveillance",
+          "known_polyposis_syndrome",
+          "known_inflammatory_bowel_disease",
+          "suspected_inflammatory_bowel_disease",
+          "positive_ifobt",
+        ]
+        default: "unknown"
+        probability: [0.5, 0.1, 0.1, 0.1, 0.2]
+        required: true
+        description: "Reason for surveillance"
+    numerical_descriptors:
+      months_since_last_colonoscopy:
+        unit: "month"
+        min: 3
+        max: 120
+        mean: 24
+        std: 12
+        distribution: "normal"
+        description: "Months since last colonoscopy"
+        required: true
+        
+- model: endoreg_db.examination_indication_classification_choice
+  fields:
+    name: "colonoscopy_screening"
+    classification: "endoscopy_colonoscopy"
+    name_de: "Koloskopie: Screening"
+    name_en: "Colonoscopy: Screening"
+    subcategories:
+      reason:
+        choices: [
+          "age",
+          "family_history_colorectal_cancer",
+          "family_history_polyposis_syndrome",
+        ]
+        default: "age"
+        probability: [0.8, 0.1, 0.1]
+        required: true
+        description: "Reason for screening"
+
+- model: endoreg_db.examination_indication_classification_choice
+  fields:
+    name: "colonoscopy_diagnostic"
+    classification: "endoscopy_colonoscopy"
+    name_de: "Koloskopie: Diagnostik"
+    name_en: "Colonoscopy: Diagnostic"
+    subcategories:
+      reason:
+        choices: [
+          "abdominal_pain",
+          "diarrhea",
+          "constipation",
+          "weight_loss",
+          "anemia",
+          "positive_ifobt",
+          "suspected_inflammatory_bowel_disease",
+        ]
+        default: "abdominal_pain"
+        probability: [0.2,0.2,0.2,0.0.5,0.1,0.1,0.05]
+        required: true
+
+- model: endoreg_db.examination_indication_classification_choice
+  fields:
+    name: "colonoscopy_therapeutic"
+    classification: "endoscopy_colonoscopy"
+    name_de: "Koloskopie: therapeutisch"
+    name_en: "Colonoscopy: Therapeutic"
+    subcategories:
+      reason:
+        choices: [
+          "lesion_removal", # > 9mm
+          "hemostasis",
+          "dilatation",
+          "stent_placement",
+          "foreign_body_removal"
+        ]
+
+
