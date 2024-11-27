@@ -9,6 +9,8 @@ class Disease(models.Model):
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
+    subcategories = models.JSONField(default=dict)
+    numerical_descriptors = models.JSONField(default=dict)
 
     objects = DiseaseManager()
 
@@ -17,6 +19,12 @@ class Disease(models.Model):
 
     def __str__(self):
         return self.name
+    
+    
+
+        
+
+
     
     def get_classifications(self)->List['DiseaseClassification']:
         classifications: List[DiseaseClassification] = [_ for _ in self.disease_classifications.all()]

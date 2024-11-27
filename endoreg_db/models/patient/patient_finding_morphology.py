@@ -116,7 +116,7 @@ class PatientFindingMorphology(models.Model):
 
         return self.numerical_descriptors[descriptor_name]
 
-    def set_random_numerical_descriptors(self):
+    def set_random_numerical_descriptors(self): #TODO Update
         """
         Sets random numerical descriptors for this patient finding morphology.
         """

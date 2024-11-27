@@ -45,7 +45,6 @@ class TestGeneratePatientFindings(TestCase):
 
     def test_create_generic_test_patient_with_colonoscopy_findings(self):
         patient, patient_examination = create_patient_with_colonoscopy(center_name=TEST_CENTER_NAME)
-        
         available_findings = patient_examination.get_available_findings()
 
         for finding in available_findings:

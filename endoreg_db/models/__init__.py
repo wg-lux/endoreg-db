@@ -35,7 +35,7 @@ from .rules import (
 )
 
 from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
-from .event import Event
+from .event import Event, EventClassification, EventClassificationChoice
 from .laboratory import LabValue
 from .medication import *
 

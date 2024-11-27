@@ -8,6 +8,8 @@ class PatientDisease(models.Model):
     classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
+    numerical_descriptors = models.JSONField(default=dict)
+    subcategories = models.JSONField(default=dict)
 
     last_update = models.DateTimeField(auto_now=True)
 
