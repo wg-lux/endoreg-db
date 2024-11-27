@@ -55,7 +55,7 @@ from .patient import (
     PatientFinding,
     PatientFindingLocation,
     PatientFindingMorphology,
-    PatientFindingIntervention,
+    PatientFindingIntervention
 )
 
 from .label import Label, LabelType, LabelSet

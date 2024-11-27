@@ -45,6 +45,22 @@ class PatientExamination(models.Model):
         patient_findings:List[PatientFinding] = [_ for _ in self.patient_findings.all()]
         return patient_findings
     
+    def get_indications(self):
+        """
+        Returns all indications that are associated with this patient examination.
+        """
+        from endoreg_db.models import PatientExaminationIndication
+        indications:List[PatientExaminationIndication] = [_ for _ in self.indications.all()]
+        return indications
+    
+    def get_indication_choices(self):
+        """
+        Returns all indication choices that are associated with this patient examination.
+        """
+        from endoreg_db.models import ExaminationIndicationClassificationChoice
+        choices:List[ExaminationIndicationClassificationChoice] = [_.indication_choice for _ in self.get_indications()]
+        return choices
+
     def create_finding(self, finding):
         """
         Adds a finding to this patient examination.

@@ -2,6 +2,8 @@ from endoreg_db.models import (
     Patient, 
     Center,
     PatientExamination,
+    ExaminationIndication,
+    PatientExaminationIndication
 )
 from .utils import (
     create_patient_with_colonoscopy,
@@ -14,7 +16,8 @@ from io import StringIO
 from .conf import (
     TEST_CENTER_NAME,
     TEST_EXAMINATION_NAME_STRINGS,
-    TEST_PATIENT_EXAMINATION_OUTPUT_PATH
+    TEST_PATIENT_EXAMINATION_OUTPUT_PATH,
+    TEST_PATIENT_EXAMINATION_INDICATION_OUTPUT_PATH
 )
 
 class TestGeneratePatient(TestCase):
@@ -23,6 +26,7 @@ class TestGeneratePatient(TestCase):
         call_command("load_gender_data", stdout=out)
         call_command("load_unit_data", stdout=out)
         call_command("load_examination_data", stdout=out)
+        call_command("load_examination_indication_data", stdout=out)
         Center.objects.create(name=TEST_CENTER_NAME)
 
         # delete existing test_patient_examination_output_path
@@ -60,6 +64,45 @@ class TestGeneratePatient(TestCase):
 
         with open(TEST_PATIENT_EXAMINATION_OUTPUT_PATH, "w") as f:
             f.write(out_str)
+
+    def test_examination_indication(self):
+        patient = Patient.create_generic(center=TEST_CENTER_NAME)
+
+        examination_indications = ExaminationIndication.objects.all()
+
+        for examination_indication in examination_indications:
+            for examination_indication_choice in examination_indication.get_choices():
+                patient_examination, patient_examination_indication = patient.create_examination_by_indication(
+                    indication=examination_indication
+                )
+
+                assert patient_examination
+                assert patient_examination_indication
+
+                patient_examination_indication.indication_choice = examination_indication_choice
+                patient_examination_indication.save()
+
+        
+
+
+        # get all examinations for patient
+        patient_examinations = PatientExamination.objects.filter(patient=patient)
+
+        with open(TEST_PATIENT_EXAMINATION_INDICATION_OUTPUT_PATH, "w") as f:
+            for patient_examination in patient_examinations:
+                f.write(f"{patient_examination}\n")
+                
+                examination_indications = patient_examination.get_indications()
+                assert len(examination_indications) == 1
+                examination_indication = examination_indications[0]
+                f.write(f"Examination Indication: {examination_indication}\n")
+
+                examination_indication_choices = patient_examination.get_indication_choices()
+                assert len(examination_indication_choices) == 1
+                examination_indication_choice = examination_indication_choices[0]
+
+                f.write(f"Examination Indication Choice: {examination_indication_choice}\n\n")
+
 
 
     

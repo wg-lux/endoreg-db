@@ -73,6 +73,40 @@ class Patient(Person):
 
         return patient_examination
     
+    def create_examination_by_indication(self,
+        indication,
+        date_start:datetime=None,
+        date_end:datetime=None
+    ):
+        from endoreg_db.models import (
+            ExaminationIndication, 
+            Examination,
+            PatientExaminationIndication
+        )
+        assert isinstance(indication, ExaminationIndication)
+
+        examination = indication.get_examination()
+
+        assert isinstance(examination, Examination)
+
+        patient_examination = PatientExamination.objects.create(
+            patient=self,
+            examination=examination,
+            date_start=date_start,
+            date_end=date_end
+        )
+
+        patient_examination.save()
+
+        patient_examination_indication = PatientExaminationIndication.objects.create(
+            patient_examination=patient_examination,
+            examination_indication=indication
+        )
+        patient_examination_indication.save()
+
+        return patient_examination, patient_examination_indication
+
+
     def create_event(
             self, event_name_str:str, date_start:datetime=None, date_end:datetime=None, description:str=None
         ):

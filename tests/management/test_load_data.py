@@ -15,6 +15,7 @@ class LoadDbDataTest(TestCase):
             call_command("load_organ_data", stdout=out_file)
             call_command("load_contraindication_data", stdout=out_file)
             call_command("load_examination_data", stdout=out_file)
+            call_command("load_examination_indication_data", stdout=out_file)
             call_command("load_lab_value_data", stdout=out_file)
             call_command("load_finding_data", stdout=out_file)
             call_command("load_medication_data", stdout=out_file)

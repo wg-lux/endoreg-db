@@ -2,13 +2,13 @@ hypertension:
 coronary_artery_disease:
 	coronary_artery_disease_base_classification:
 		khk_1_ge
-			Vladimir Heintze (1955-11-26) - coronary_artery_disease
+			Nicole Biggen (1950-11-27) - coronary_artery_disease
 
 		khk_2_ge
-			Vladimir Heintze (1955-11-26) - coronary_artery_disease
+			Nicole Biggen (1950-11-27) - coronary_artery_disease
 
 		khk_3_ge
-			Vladimir Heintze (1955-11-26) - coronary_artery_disease
+			Nicole Biggen (1950-11-27) - coronary_artery_disease
 
 congestive_heart_failure:
 diabetes_mellitus_I:
@@ -19,20 +19,20 @@ malignoma_unspecified:
 chronic_kidney_disease:
 	chronic_kideny_disease_kdigo:
 		ckd_kdigo_1
-			Vladimir Heintze (1955-11-26) - chronic_kidney_disease
+			Nicole Biggen (1950-11-27) - chronic_kidney_disease
 
 		ckd_kdigo_2
-			Vladimir Heintze (1955-11-26) - chronic_kidney_disease
+			Nicole Biggen (1950-11-27) - chronic_kidney_disease
 
 		ckd_kdigo_3a
-			Vladimir Heintze (1955-11-26) - chronic_kidney_disease
+			Nicole Biggen (1950-11-27) - chronic_kidney_disease
 
 		ckd_kdigo_3b
-			Vladimir Heintze (1955-11-26) - chronic_kidney_disease
+			Nicole Biggen (1950-11-27) - chronic_kidney_disease
 
 		ckd_kdigo_4
-			Vladimir Heintze (1955-11-26) - chronic_kidney_disease
+			Nicole Biggen (1950-11-27) - chronic_kidney_disease
 
 		ckd_kdigo_5
-			Vladimir Heintze (1955-11-26) - chronic_kidney_disease
+			Nicole Biggen (1950-11-27) - chronic_kidney_disease
 

@@ -1,5 +1,5 @@
 from django.db import models
-
+from typing import List
 class ExaminationManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
@@ -21,9 +21,9 @@ class Examination(models.Model):
     
     def get_available_findings(self):
         from endoreg_db.models import Finding
-        from typing import List
         findings:List[Finding] = [_ for _ in self.findings.all()]
         return findings
+    
 
     class Meta:
         verbose_name = 'Examination'

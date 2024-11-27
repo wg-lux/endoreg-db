@@ -17,7 +17,6 @@ class ExaminationIndication(models.Model):
     examination = models.ForeignKey(
         'Examination', on_delete=models.CASCADE,
         related_name='indications',
-        blank=True, null=True
     )
     
     objects = ExaminationIndicationManager()
@@ -31,6 +30,11 @@ class ExaminationIndication(models.Model):
     def get_choices(self)->List['ExaminationIndicationClassificationChoice']:
         choices:List[ExaminationIndicationClassificationChoice] = [_ for _ in self.classification.choices.all()]
         return choices
+    
+    def get_examination(self):
+        from endoreg_db.models import Examination
+        examination:Examination = self.examination
+        return examination
     
 class ExaminationIndicationClassificationManager(models.Manager):
     def get_by_natural_key(self, name):
