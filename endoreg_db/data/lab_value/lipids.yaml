@@ -9,7 +9,11 @@
     name_de: "Triglyceride"
     name_en: "Triglycerides"
     default_unit: "miligram per deciliter"
-    default_normal_range: {"max": 150}
+    default_normal_range: {
+      "min": 0,
+      "max": 150
+    }
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -17,7 +21,8 @@
     name_de: "Gesamtcholesterin"
     name_en: "Total Cholesterol"
     default_unit: "miligram per deciliter"
-    default_normal_range: {"max": 200}
+    default_normal_range: {"min": 0,"max": 200}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value 
   fields:
@@ -28,12 +33,15 @@
     normal_range_gender_dependent: true
     default_normal_range: {
       "female": {
+        "min": 10,
         "max": 50
       },
       "male": {
+        "min": 10,
         "max": 40
       }
     }
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -41,4 +49,5 @@
     name_de: "Low-Density-Lipoprotein"
     name_en: "Low-Density Lipoprotein"
     default_unit: "miligram per deciliter"
-    default_normal_range: {"max": 100}
+    default_normal_range: {"min": 20, "max": 100}
+    default_numerical_value_distribution: "uniform_default"

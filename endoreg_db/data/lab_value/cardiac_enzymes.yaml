@@ -20,6 +20,7 @@
         "max": 170
       }
     }
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -28,4 +29,9 @@
     name_en: "Creatine Kinase MB"
     abbreviation: "CKMB%"
     default_unit: "percent"
-    default_normal_range: {"max": 5}
+    default_normal_range: {
+      "min": 0.01,
+      "max": 5
+    }
+    default_numerical_value_distribution: "uniform_default"
+

@@ -6,6 +6,7 @@
     abbreviation: "TBG"
     default_unit: "microgram per mililiter"
     default_normal_range: {"min": 12, "max": 27}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -15,6 +16,7 @@
     abbreviation: "TSH"
     default_unit: "microinternational units per mililiter"
     default_normal_range: {"min": 0.5, "max": 4.0}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -24,6 +26,7 @@
     abbreviation: "T4"
     default_unit: "microgram per deciliter"
     default_normal_range: {"min": 5, "max": 12}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -33,6 +36,7 @@
     abbreviation: "T3"
     default_unit: "nanogram per deciliter"
     default_normal_range: {"min": 80, "max": 180}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -42,6 +46,7 @@
     abbreviation: "fT3"
     default_unit: "picogram per mililiter"
     default_normal_range: {"min": 2.3, "max": 4.2}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -51,3 +56,4 @@
     abbreviation: "fT4"
     default_unit: "nanogram per deciliter"
     default_normal_range: {"min": 0.8, "max": 2.8}
+    default_numerical_value_distribution: "uniform_default"

@@ -63,7 +63,11 @@ class LabValue(models.Model):
             warnings.warn("No default distribution set for lab value")
             return None
     
-    def get_normal_range(self, age=None, gender=None):
+    def get_normal_range(self, age:int=None, gender=None):
+        from endoreg_db.models import Gender
+        assert isinstance(age, int) or age is None
+        assert isinstance(gender, Gender) or gender is None
+
         age_dependent = self.normal_range_age_dependent
         gender_dependent = self.normal_range_gender_dependent
         special_case = self.normal_range_special_case
@@ -90,7 +94,7 @@ class LabValue(models.Model):
                 choices = ["male", "female"]
                 gender = choice(choices)
 
-            default_range_dict = self.default_normal_range.get(gender, {})
+            default_range_dict = self.default_normal_range.get(gender.name, {})
             min_value = default_range_dict.get('min', None)
             max_value = default_range_dict.get('max', None)
 
@@ -98,5 +102,10 @@ class LabValue(models.Model):
             # get normal range for special case
             warnings.warn("Special case normal range not implemented yet")
 
-        return min_value, max_value
+        normal_range_dict = {
+            "min": min_value,
+            "max": max_value
+        }
+
+        return normal_range_dict
 

@@ -16,6 +16,7 @@
         "min": 12, "max": 16
       }
     }
+    default_numerical_value_distribution: "uniform_default"
 
 # Hematocrit Female: 37%–47%; male: 42%–50% 
 - model: endoreg_db.lab_value
@@ -34,6 +35,7 @@
         "min": 37, "max": 47
       }
     }
+    default_numerical_value_distribution: "uniform_default"
 
 # Glycosylated hemoglobin 4.0%–5.6% 
 - model: 
@@ -44,6 +46,7 @@
     abbreviation: "HbA1c"
     default_unit: "percent"
     default_normal_range: {"min": 4.0, "max": 5.6}
+    default_numerical_value_distribution: "uniform_default"
 
 # Mean corpuscular volume (MCV): 80–98 fL
 - model: endoreg_db.lab_value
@@ -54,6 +57,7 @@
     abbreviation: "MCV"
     default_unit: "femtoliter"
     default_normal_range: {"min": 80, "max": 98}
+    default_numerical_value_distribution: "uniform_default"
 
 # Red blood cell distribution width (RDW): 9.0%–14.5% 
 - model: endoreg_db.lab_value
@@ -64,6 +68,7 @@
     abbreviation: "RDW"
     default_unit: "percent"
     default_normal_range: {"min": 9.0, "max": 14.5}
+    default_numerical_value_distribution: "uniform_default"
 
 # Mean corpuscular hemoglobin (MCH): 28–32 pg 
 - model: endoreg_db.lab_value
@@ -74,6 +79,7 @@
     abbreviation: "MCH"
     default_unit: "picogram"
     default_normal_range: {"min": 28, "max": 32}
+    default_numerical_value_distribution: "uniform_default"
 
 # Mean corpuscular hemoglobin concentration (MCHC): 33–36 g/dL  
 - model: endoreg_db.lab_value
@@ -84,6 +90,7 @@
     abbreviation: "MCHC"
     default_unit: "gram per deciliter"
     default_normal_range: {"min": 33, "max": 36}
+    default_numerical_value_distribution: "uniform_default"
 
 
 # Reticulocytes 0.5%–1.5% of red cells 
@@ -95,6 +102,7 @@
     abbreviation: "Reti"
     default_unit: "percent"
     default_normal_range: {"min": 0.5, "max": 1.5}
+    default_numerical_value_distribution: "uniform_default"
 
 # White blood cells (WBC) 4-10 x 10^9/L 
 - model: endoreg_db.lab_value
@@ -105,6 +113,7 @@
     abbreviation: "WBC"
     default_unit: "x 10^9 per liter"
     default_normal_range: {"min": 4, "max": 10}
+    default_numerical_value_distribution: "uniform_default"
 
 # Neutrophils: 2-8 x 109/L 
 - model: endoreg_db.lab_value
@@ -115,6 +124,7 @@
     abbreviation: "Neu"
     default_unit: "x 10^9 per liter"
     default_normal_range: {"min": 2, "max": 8}
+    default_numerical_value_distribution: "uniform_default"
 
 
 # Bands: < 1 x 109/L
@@ -125,7 +135,8 @@
     name_en: "Bands"
     abbreviation: "Bands"
     default_unit: "x 10^9 per liter"
-    default_normal_range: {"max": 1}
+    default_normal_range: {"min": 0.0001, "max": 1}
+    default_numerical_value_distribution: "uniform_default"
 
 # Lymphocytes: 1000 to 4800/mcL (1 to 4.8 × 109/L) 
 - model: endoreg_db.lab_value
@@ -136,6 +147,7 @@
     abbreviation: "Lym"
     default_unit: "x 10^9 per liter"
     default_normal_range: {"min": 1, "max": 4.8}
+    default_numerical_value_distribution: "uniform_default"
 
 
 # Monocytes: 0.2-0.8 x 109/L 
@@ -147,6 +159,7 @@
     abbreviation: "Mon"
     default_unit: "x 10^9 per liter"
     default_normal_range: {"min": 0.2, "max": 0.8}
+    default_numerical_value_distribution: "uniform_default"
 
 # Eosinophils: .000-0.600 th/uL (0-6%) 
 - model: endoreg_db.lab_value
@@ -156,7 +169,8 @@
     name_en: "Eosinophils"
     abbreviation: "Eos"
     default_unit: "x 10^9 per liter"
-    default_normal_range: {"max": 0.6}
+    default_normal_range: {"min": 0.01, "max": 0.6}
+    default_numerical_value_distribution: "uniform_default"
 
 # Platelets: 150,000-350,000/µL (150-350 x 109/L) 
 - model: endoreg_db.lab_value
@@ -167,3 +181,4 @@
     abbreviation: "Plt"
     default_unit: "x 10^9 per liter"
     default_normal_range: {"min": 150, "max": 350}
+    default_numerical_value_distribution: "uniform_default"

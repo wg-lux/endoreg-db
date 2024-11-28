@@ -9,3 +9,4 @@
       "min": 60,
       "max": 120
     }
+    default_numerical_value_distribution: "uniform_default"

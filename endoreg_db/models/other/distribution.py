@@ -38,15 +38,27 @@ class NumericValueDistribution(BaseValueDistribution):
     ]
 
     distribution_type = models.CharField(max_length=20, choices=DISTRIBUTION_CHOICES)
-    min_value = models.FloatField()
-    max_value = models.FloatField()
-    mean = models.FloatField(null=True, blank=True)
-    std_dev = models.FloatField(null=True, blank=True)
-    skewness = models.FloatField(null=True, blank=True)
+    min_descriptor = models.CharField(
+        max_length=20
+    )
 
-    def generate_value(self):
+    max_descriptor = models.CharField(
+        max_length=20
+    )
+
+    def generate_value(self, lab_value, patient):
+        from endoreg_db.models import LabValue, Patient
+        assert isinstance(patient, Patient)
+        assert isinstance(lab_value, LabValue)
+        default_normal_range_dict = lab_value.get_normal_range(patient.age(), patient.gender)
+        assert isinstance(default_normal_range_dict, dict)
         if self.distribution_type == 'uniform':
-            return np.random.uniform(self.min_value, self.max_value)
+            assert self.min_descriptor and self.max_descriptor
+            assert "min" in default_normal_range_dict and "max" in default_normal_range_dict
+            value = self._generate_value_uniform(default_normal_range_dict)
+            
+            return value
+        
         elif self.distribution_type == 'normal':
             value = np.random.normal(self.mean, self.std_dev)
             return np.clip(value, self.min_value, self.max_value)
@@ -55,7 +67,43 @@ class NumericValueDistribution(BaseValueDistribution):
             return np.clip(value, self.min_value, self.max_value)
         else:
             raise ValueError("Unsupported distribution type")
-        
+
+    def parse_value_descriptor(self, value_descriptor:str):
+        # strings of shape f"{value_key}_{operator}_{value}"
+        # extract value_key, operator, value
+        value_key, operator, value = value_descriptor.split("_")
+        value = float(value)
+
+        operator_functions = {
+            "+": lambda x: x + value,
+            "-": lambda x: x - value,
+            "x": lambda x: x * value,
+            "/": lambda x: x / value,
+        }
+
+        return {value_key: operator_functions[operator]}
+
+        # create dict with {value_key: lambda x: x operator value}
+
+    def _generate_value_uniform(self, default_normal_range_dict:dict):
+        value_function_dict = self.parse_value_descriptor(
+            self.min_descriptor
+        )
+
+        _ = self.parse_value_descriptor(
+            self.max_descriptor
+        )
+
+        value_function_dict.update(_)
+
+        result_dict = {
+            key: value_function(default_normal_range_dict[key]) 
+            for key, value_function in value_function_dict.items()
+        }
+
+        # generate value
+        return np.random.uniform(result_dict["min"], result_dict["max"])
+
     
 class SingleCategoricalValueDistributionManager(models.Manager):
     def get_by_natural_key(self, name):

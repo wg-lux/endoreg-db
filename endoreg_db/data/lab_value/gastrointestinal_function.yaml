@@ -7,6 +7,7 @@
     name_en: "Albumin"
     default_unit: "gram per deciliter"
     default_normal_range: {"min": 3.5, "max": 5.5}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -15,6 +16,7 @@
     name_en: "Alkaline Phosphatase"
     default_unit: "units per liter"
     default_normal_range: {"min": 30, "max": 120}
+    default_numerical_value_distribution: "uniform_default"
 
 # ALT and GPT are the same enzyme
 - model: endoreg_db.lab_value 
@@ -25,6 +27,7 @@
     abbreviation: "ALT"
     default_unit: "units per liter"
     default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value
   fields:
@@ -34,6 +37,7 @@
     abbreviation: "GPT"
     default_unit: "units per liter"
     default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
 
 - model: endoreg_db.lab_value 
   fields:
@@ -42,6 +46,7 @@
     name_en: "Amylase"
     default_unit: "units per liter"
     default_normal_range: {"min": 25, "max": 125}
+    default_numerical_value_distribution: "uniform_default"
 
 # Aspartate aminotransferase (AST): 10–40 U/L 
 - model: endoreg_db.lab_value
@@ -52,6 +57,7 @@
     abbreviation: "AST"
     default_unit: "units per liter"
     default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
 
 # AST and GOT are the same
 - model: endoreg_db.lab_value
@@ -62,6 +68,7 @@
     abbreviation: "GOT"
     default_unit: "units per liter"
     default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
 
 
 # Direct bilirubin: 0.1–0.3 mg/dL 
@@ -72,6 +79,7 @@
     name_en: "Direct Bilirubin"
     default_unit: "miligram per deciliter"
     default_normal_range: {"min": 0.1, "max": 0.3}
+    default_numerical_value_distribution: "uniform_default"
 
 # Gamma glutamyl transferase: Female: 8–40 U/L; male: 9–50 U/L
 - model: endoreg_db.lab_value
@@ -82,6 +90,7 @@
     abbreviation: "GGT"
     default_unit: "units per liter"
     normal_range_gender_dependent: true
+    default_numerical_value_distribution: "uniform_default"
     default_normal_range: {
       "female": {
         "min": 8,
@@ -101,6 +110,7 @@
     name_en: "Lipase"
     default_unit: "units per liter"
     default_normal_range: {"min": 10, "max": 140}
+    default_numerical_value_distribution: "uniform_default"
 
 # Total bilirubin: 0.3–1.0 mg/dL 
 - model: endoreg_db.lab_value
@@ -110,6 +120,7 @@
     name_en: "Total Bilirubin"
     default_unit: "miligram per deciliter"
     default_normal_range: {"min": 0.3, "max": 1.0}
+    default_numerical_value_distribution: "uniform_default"
 
 # Total protein: 5.5–9.0 g/dL 
 - model: endoreg_db.lab_value
@@ -119,3 +130,4 @@
     name_en: "Total Protein"
     default_unit: "gram per deciliter"
     default_normal_range: {"min": 5.5, "max": 9.0}
+    default_numerical_value_distribution: "uniform_default"

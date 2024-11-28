@@ -2,13 +2,13 @@ hypertension:
 coronary_artery_disease:
 	coronary_artery_disease_base_classification:
 		khk_1_ge
-			Nicole Biggen (1950-11-27) - coronary_artery_disease
+			Meinrad Scheibe (1968-11-28) - coronary_artery_disease
 
 		khk_2_ge
-			Nicole Biggen (1950-11-27) - coronary_artery_disease
+			Meinrad Scheibe (1968-11-28) - coronary_artery_disease
 
 		khk_3_ge
-			Nicole Biggen (1950-11-27) - coronary_artery_disease
+			Meinrad Scheibe (1968-11-28) - coronary_artery_disease
 
 congestive_heart_failure:
 diabetes_mellitus_I:
@@ -19,20 +19,20 @@ malignoma_unspecified:
 chronic_kidney_disease:
 	chronic_kideny_disease_kdigo:
 		ckd_kdigo_1
-			Nicole Biggen (1950-11-27) - chronic_kidney_disease
+			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
 
 		ckd_kdigo_2
-			Nicole Biggen (1950-11-27) - chronic_kidney_disease
+			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
 
 		ckd_kdigo_3a
-			Nicole Biggen (1950-11-27) - chronic_kidney_disease
+			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
 
 		ckd_kdigo_3b
-			Nicole Biggen (1950-11-27) - chronic_kidney_disease
+			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
 
 		ckd_kdigo_4
-			Nicole Biggen (1950-11-27) - chronic_kidney_disease
+			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
 
 		ckd_kdigo_5
-			Nicole Biggen (1950-11-27) - chronic_kidney_disease
+			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
 

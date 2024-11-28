@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from endoreg_db.models import LabValue as MODEL_0
-from endoreg_db.models import PatientLabSampleType
+from endoreg_db.models import PatientLabSampleType, NumericValueDistribution
 from ...utils import load_model_data_from_yaml
 from ...data import LAB_VALUE_DATA_DIR as SOURCE_DIR
 from ...data import PATIENT_LAB_SAMPLE_TYPE_DATA_DIR
@@ -16,8 +16,8 @@ IMPORT_METADATA = {
     MODEL_0.__name__: {
         "dir": SOURCE_DIR, # e.g. "interventions"
         "model": MODEL_0, # e.g. Intervention
-        "foreign_keys": ["default_unit"], # e.g. ["intervention_types"]
-        "foreign_key_models": [Unit] # e.g. [InterventionType]
+        "foreign_keys": ["default_unit","default_numerical_value_distribution"], # e.g. ["intervention_types"]
+        "foreign_key_models": [Unit, NumericValueDistribution] # e.g. [InterventionType]
     },
     PatientLabSampleType.__name__: {
         "dir": PATIENT_LAB_SAMPLE_TYPE_DATA_DIR,

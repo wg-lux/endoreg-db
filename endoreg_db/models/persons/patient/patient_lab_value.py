@@ -56,9 +56,24 @@ class PatientLabValue(models.Model):
 
     def __str__(self):
         formatted_datetime = self.datetime.strftime('%Y-%m-%d %H:%M')
+        # normal_range = self.get_normal_range()
         norm_range_string = f'[{self.normal_range.get("min", "")} - {self.normal_range.get("max", "")}]'
         _str = f'{self.lab_value} - {self.value} {self.unit} - {norm_range_string} ({formatted_datetime})'
         return _str
+    
+    def get_normal_range(self):
+        from endoreg_db.models import LabValue, Patient
+        lab_value:LabValue = self.lab_value
+        patient:Patient = self.patient
+
+        age = patient.age()
+        gender = patient.gender
+
+        normal_range_dict = lab_value.get_normal_range(
+            age,gender
+        )
+        return normal_range_dict
+
     
     def set_min_norm_value(self, value, save = True):
         self.normal_range["min"] = value
@@ -71,11 +86,10 @@ class PatientLabValue(models.Model):
             self.save()
 
     def set_norm_values_from_default(self):
-        age = self.patient.age()
-        gender = self.patient.gender
-        min_value, max_value = self.lab_value.get_normal_range(age=age, gender=gender)
-        self.set_min_norm_value(min_value, save = False)
-        self.set_max_norm_value(max_value, save = False)
+
+        normal_range_dict = self.get_normal_range()
+        self.set_min_norm_value(normal_range_dict["min"], save = False)
+        self.set_max_norm_value(normal_range_dict["max"], save = False)
         self.save()
 
     def set_unit_from_default(self):
@@ -125,7 +139,7 @@ class PatientLabValue(models.Model):
 
             if not distribution:
                 warnings.warn(
-                    "No distribution set for lab value, assuming uniform numeric distribution based on normal values"
+                    f"No distribution set for lab value {lab_value}, assuming uniform numeric distribution based on normal values"
                 )
 
                 if not self.normal_range.get("min", None) or not self.normal_range.get("max", None):
@@ -137,12 +151,12 @@ class PatientLabValue(models.Model):
                 _name = "auto-" + self.lab_value.name + "-distribution-default-uniform" 
                 distribution = NumericValueDistribution(
                     name = _name,
-                    min_value = _min,
-                    max_value = _max,
+                    min_descriptor = _min,
+                    max_max_desciptor = _max,
                     distribution_type = "uniform"
                 )
 
-                value = distribution.generate_value()
+                value = distribution.generate_value(lab_value=lab_value)
                 self.value = value
                 if save:
                     self.save()
@@ -157,7 +171,10 @@ class PatientLabValue(models.Model):
             return value
         
         elif isinstance(distribution, NumericValueDistribution):
-            value = distribution.generate_value()
+            value = distribution.generate_value(
+                lab_value=lab_value,
+                patient=patient
+            )
             self.value = value
             if save:
                 self.save()
