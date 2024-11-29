@@ -40,13 +40,26 @@ class Product(models.Model):
     name_en = models.CharField(max_length=255, null=True)
 
     transport_route = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
-    product_group = models.ForeignKey("ProductGroup", on_delete=models.SET_NULL, null=True)
+    product_group = models.ForeignKey(
+        "ProductGroup", on_delete=models.SET_NULL, null=True
+    )
 
     def natural_key(self):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        result = f"{self.name}"
+        if self.product_group:
+            result += f" ({self.product_group}, "
+        else:
+            result += " (no product group, "
+
+        if self.transport_route:
+            result += f"{self.transport_route})"
+        else:
+            result += "no transport route)"
+        
+        return result
     
     def get_product_weight(self):
         # check if there is a product material weight

@@ -2,13 +2,13 @@ hypertension:
 coronary_artery_disease:
 	coronary_artery_disease_base_classification:
 		khk_1_ge
-			Meinrad Scheibe (1968-11-28) - coronary_artery_disease
+			Wieslaw Kabus (1950-11-29) - coronary_artery_disease
 
 		khk_2_ge
-			Meinrad Scheibe (1968-11-28) - coronary_artery_disease
+			Wieslaw Kabus (1950-11-29) - coronary_artery_disease
 
 		khk_3_ge
-			Meinrad Scheibe (1968-11-28) - coronary_artery_disease
+			Wieslaw Kabus (1950-11-29) - coronary_artery_disease
 
 congestive_heart_failure:
 diabetes_mellitus_I:
@@ -19,20 +19,20 @@ malignoma_unspecified:
 chronic_kidney_disease:
 	chronic_kideny_disease_kdigo:
 		ckd_kdigo_1
-			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
+			Wieslaw Kabus (1950-11-29) - chronic_kidney_disease
 
 		ckd_kdigo_2
-			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
+			Wieslaw Kabus (1950-11-29) - chronic_kidney_disease
 
 		ckd_kdigo_3a
-			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
+			Wieslaw Kabus (1950-11-29) - chronic_kidney_disease
 
 		ckd_kdigo_3b
-			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
+			Wieslaw Kabus (1950-11-29) - chronic_kidney_disease
 
 		ckd_kdigo_4
-			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
+			Wieslaw Kabus (1950-11-29) - chronic_kidney_disease
 
 		ckd_kdigo_5
-			Meinrad Scheibe (1968-11-28) - chronic_kidney_disease
+			Wieslaw Kabus (1950-11-29) - chronic_kidney_disease
 

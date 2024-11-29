@@ -1,0 +1,93 @@
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_colonoscope_ukw"
+    name_de: "Standard Koloskop UKW"
+    name_en: "Default Colonoscope UKW"
+    sn: "1"
+    center: "university_hospital_wuerzburg"
+    endoscope_type: "colonoscope"
+
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_gastroscope_ukw"
+    name_de: "Standard Gastroskop UKW"
+    name_en: "Default Gastroscope UKW"
+    sn: "2"
+    center: "university_hospital_wuerzburg"
+    endoscope_type: "gastroscope"
+
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_colonoscope_rbk"
+    name_de: "Standard Koloskop RBK"
+    name_en: "Default Colonoscope RBK"
+    sn: "3"
+    center: "rbk_stuttgart"
+    endoscope_type: "colonoscope"
+
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_gastroscope_rbk"
+    name_de: "Standard Gastroskop RBK"
+    name_en: "Default Gastroscope RBK"
+    sn: "4"
+    center: "rbk_stuttgart"
+    endoscope_type: "gastroscope"
+
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_colonoscope_bbk"
+    name_de: "Standard Koloskop BBK"
+    name_en: "Default Colonoscope BBK"
+    sn: "5"
+    center: "bbk_regensburg"
+    endoscope_type: "colonoscope"
+
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_gastroscope_bbk"
+    name_de: "Standard Gastroskop BBK"
+    name_en: "Default Gastroscope BBK"
+    sn: "6"
+    center: "bbk_regensburg"
+    endoscope_type: "gastroscope"
+
+# UKE
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_colonoscope_uke"
+    name_de: "Standard Koloskop UKE"
+    name_en: "Default Colonoscope UKE"
+    sn: "7"
+    center: "uke_hamburg"
+    endoscope_type: "colonoscope"
+
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_gastroscope_uke"
+    name_de: "Standard Gastroskop UKE"
+    name_en: "Default Gastroscope UKE"
+    sn: "8"
+    center: "uke_hamburg"
+    endoscope_type: "gastroscope"
+
+# rkh_ludwigsburg
+- model: endoreg_db.endoscope
+  fields:
+    name: "default_colonoscope_rkh"
+    name_de: "Standard Koloskop RKH"
+    name_en: "Default Colonoscope RKH"
+    sn: "9"
+    center: "rkh_ludwigsburg"
+    endoscope_type: "colonoscope"
+
+- model: endoreg_db.endoscope 
+  fields:
+    name: "default_gastroscope_rkh"
+    name_de: "Standard Gastroskop RKH"
+    name_en: "Default Gastroscope RKH"
+    sn: "10"
+    center: "rkh_ludwigsburg"
+    endoscope_type: "gastroscope"
+
+

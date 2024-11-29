@@ -4,6 +4,8 @@ result/
 .ruff_cache/
 .devenv
 untracked_notes.md
+tests/sensitive/
+erc_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

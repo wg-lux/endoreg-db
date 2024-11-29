@@ -5,579 +5,579 @@ which contains those location choices <QuerySet [<FindingLocationClassificationC
 
 ------------
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 32.64559959194685}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.81647832657718}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.82406447179205}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.225549029337547}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - tumor
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.8787784696622598}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.4158362548577612}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 32.64559959194685}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.81647832657718}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 32.64559959194685}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.81647832657718}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 32.64559959194685}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.81647832657718}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.82566684598919}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.349636961702146}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.82406447179205}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.225549029337547}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.82406447179205}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.225549029337547}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.82406447179205}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 18.225549029337547}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.937755438442187}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.3300357183447975}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - erosion
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.384342126082755}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.10346179785486365}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.82566684598919}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.349636961702146}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.82566684598919}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.349636961702146}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.82566684598919}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.349636961702146}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.59377299958668}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.027620457372237}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.937755438442187}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.3300357183447975}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.937755438442187}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.3300357183447975}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.937755438442187}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.3300357183447975}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.342710569300191}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.299765511999736}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - ulcer
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.6261399854659686}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.9051341371674557}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.59377299958668}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.027620457372237}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.59377299958668}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.027620457372237}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.59377299958668}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.027620457372237}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 26.457046136907735}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.85363021243424}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.342710569300191}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.299765511999736}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.342710569300191}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.299765511999736}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.342710569300191}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.299765511999736}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 19.205378546663244}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 19.846578383421335}}
 
 
-Patient Finding: Kristine Käster (1970-11-28) - colonoscopy - None - scar
+Patient Finding: Karl-Dieter Grein Groth (1927-11-29) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.5379241558200918}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.3836889215040573}}
 
 

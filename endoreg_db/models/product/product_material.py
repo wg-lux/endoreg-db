@@ -20,5 +20,9 @@ class ProductMaterial(models.Model):
         emmision_value = emission_factor.value * self.quantity
         emission_unit = emission_factor.unit
         return emmision_value, emission_unit
+    
+    def __str__(self):
+        return f"{self.product.name} - {self.material.name} - {self.quantity} {self.unit.name}"
+    
         
 

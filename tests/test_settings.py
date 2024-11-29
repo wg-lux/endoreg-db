@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+DEBUG=True
 SECRET_KEY = "fake-key"
 INSTALLED_APPS = [
     "tests",

@@ -17,3 +17,11 @@ class ProductGroup(models.Model):
     def __str__(self):
         return self.name
     
+    def get_products(self):
+        from endoreg_db.models import Product
+        return Product.objects.filter(product_group=self)
+    
+    def get_reference_product(self):
+        from endoreg_db.models import ReferenceProduct
+        return ReferenceProduct.objects.get(product_group=self)
+    

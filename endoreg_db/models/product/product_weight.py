@@ -24,3 +24,15 @@ class ProductWeight(models.Model):
             return self.manufacturer
         else:
             return None
+        
+    def get_weight_source(self):
+        if not pd.isnull(self.verified):
+            return "verified"
+        elif not pd.isnull(self.measured):
+            return "measured"
+        elif not pd.isnull(self.manufacturer):
+            return "manufacturer"
+        else:
+            return None
+    def __str__(self):
+        return f"{self.product} - {self.get_weight()} {self.unit} (Source: {self.get_weight_source()})"

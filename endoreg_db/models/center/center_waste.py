@@ -9,3 +9,8 @@ class CenterWaste(models.Model):
     emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
 
     
+    def __str__(self):
+        result = f"{self.quantity} {self.unit}"
+        result += f" -\t{self.waste}, EmissionFactor: {self.emission_factor}\t\t- {self.center} - {self.year}"
+
+        return result

@@ -1,0 +1,286 @@
+Test Green Endoscopy Data
+
+Checking EmissionFactor
+material_emission_cardboard:	0.828 per kg
+material_emission_foil:	2.574 per kg
+material_emission_gold:	4.018 per kg
+material_emission_metal:	4.018 per kg
+material_emission_nickel:	4.018 per kg
+material_emission_paper:	0.919 per kg
+material_emission_paper_coated:	2.0175 per kg
+material_emission_plastic:	3.116 per kg
+material_emission_plastic_coated:	3.116 per kg
+material_emission_silicone:	2.0 per kg
+material_emission_steel:	4.018 per kg
+material_emission_tantal:	4.018 per kg
+material_emission_textile:	2.0 per kg
+material_emission_titan:	4.018 per kg
+use_resource_emission_ukw_gas:	2.01574 per l
+use_resource_emission_ukw_oil:	3.17522 per m³
+use_resource_emission_ukw_electricity_extern:	0.0 per kWh
+use_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+transport_resource_emission_ukw_gas:	0.3434 per l
+transport_resource_emission_ukw_oil:	0.69723 per m³
+transport_resource_emission_ukw_electricity_extern:	0.05048 per kWh
+transport_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+transport_product_emission_generic_europe:	0.13213 per kg
+transport_product_emission_generic_overseas:	1.308373 per kg
+waste_emission_medical:	0.0212801937984496 per kg
+waste_emission_general:	0.0212801937984496 per kg
+
+Checking Resource
+gas
+oil
+electricity
+
+Checking Waste
+general_waste
+medical_waste
+
+Checking Material
+cardboard - EmissionFactor: material_emission_cardboard:	0.828 per kg
+foil - EmissionFactor: material_emission_foil:	2.574 per kg
+gold - EmissionFactor: material_emission_gold:	4.018 per kg
+metal - EmissionFactor: material_emission_metal:	4.018 per kg
+nickel - EmissionFactor: material_emission_nickel:	4.018 per kg
+paper - EmissionFactor: material_emission_paper:	0.919 per kg
+paper_coated - EmissionFactor: material_emission_paper_coated:	2.0175 per kg
+plastic - EmissionFactor: material_emission_plastic:	3.116 per kg
+plastic_coated - EmissionFactor: material_emission_plastic_coated:	3.116 per kg
+silicone - EmissionFactor: material_emission_silicone:	2.0 per kg
+steel - EmissionFactor: material_emission_steel:	4.018 per kg
+tantal - EmissionFactor: material_emission_tantal:	4.018 per kg
+textile - EmissionFactor: material_emission_textile:	2.0 per kg
+titan - EmissionFactor: material_emission_titan:	4.018 per kg
+
+Checking ProductGroup
+Balloon
+Bougie
+Wire
+PEG
+Instrument
+Metal-Stent
+Plastic-Stent
+Plastic
+Plastic-Large
+Coat
+Absorbant-Pad
+
+Checking TransportRoute
+generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg
+generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg
+
+Checking Product
+extraction_balloon_escort_2 (Balloon, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg)
+esophageal_dilator (Bougie, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg)
+visiglide_2 (Wire, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg)
+peg_freka_15_ch (PEG, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg)
+biopsy_grasper_hot_radial_jaw_4 (Instrument, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg)
+nitinol_stent_aix_oel (Metal-Stent, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg)
+biliary_stent_cotton_leung_sof_flex (Plastic-Stent, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg)
+bite_protector (Plastic, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg)
+pressure_syringe_60_ml (Plastic-Large, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg)
+foliodress_gown_standard (Coat, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg)
+absorbant_pad (Absorbant-Pad, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg)
+
+Checking ReferenceProduct
+extraction_balloon_escort_2 (Balloon)
+esophageal_dilator (Bougie)
+visiglide_2 (Wire)
+peg_freka_15_ch (PEG)
+biopsy_grasper_hot_radial_jaw_4 (Instrument)
+nitinol_stent_aix_oel (Metal-Stent)
+biliary_stent_cotton_leung_sof_flex (Plastic-Stent)
+bite_protector (Plastic)
+pressure_syringe_60_ml (Plastic-Large)
+foliodress_gown_standard (Coat)
+absorbant_pad (Absorbant-Pad)
+
+Checking CenterWaste
+10156.3857142857 kg -	general_waste, EmissionFactor: waste_emission_general:	0.0212801937984496 per kg		- university_hospital_wuerzburg - 2020
+15699.9014285714 kg -	medical_waste, EmissionFactor: waste_emission_medical:	0.0212801937984496 per kg		- university_hospital_wuerzburg - 2020
+10156.3857142857 kg -	general_waste, EmissionFactor: waste_emission_general:	0.0212801937984496 per kg		- university_hospital_wuerzburg - 2021
+15699.9014285714 kg -	medical_waste, EmissionFactor: waste_emission_medical:	0.0212801937984496 per kg		- university_hospital_wuerzburg - 2021
+10156.3857142857 kg -	general_waste, EmissionFactor: waste_emission_general:	0.0212801937984496 per kg		- university_hospital_wuerzburg - 2022
+15699.9014285714 kg -	medical_waste, EmissionFactor: waste_emission_medical:	0.0212801937984496 per kg		- university_hospital_wuerzburg - 2022
+
+Checking CenterResource
+gas_ukw_2020:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	gas
+	Quantity	-	19000.0
+	Year	-	2020
+	Unit	-	l
+	Transport Emission Factor	-	transport_resource_emission_ukw_gas:	0.3434 per l
+	Use Emission Factor	-	use_resource_emission_ukw_gas:	2.01574 per l
+
+
+oil_ukw_2020:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	oil
+	Quantity	-	0.0
+	Year	-	2020
+	Unit	-	m³
+	Transport Emission Factor	-	transport_resource_emission_ukw_oil:	0.69723 per m³
+	Use Emission Factor	-	use_resource_emission_ukw_oil:	3.17522 per m³
+
+
+electricity_ukw_extern_2020:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	electricity
+	Quantity	-	48000.0
+	Year	-	2020
+	Unit	-	kWh
+	Transport Emission Factor	-	transport_resource_emission_ukw_electricity_extern:	0.05048 per kWh
+	Use Emission Factor	-	use_resource_emission_ukw_electricity_extern:	0.0 per kWh
+
+
+electricity_ukw_selfmade_2020:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	electricity
+	Quantity	-	22000.0
+	Year	-	2020
+	Unit	-	kWh
+	Transport Emission Factor	-	transport_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+	Use Emission Factor	-	use_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+
+
+gas_ukw_2021:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	gas
+	Quantity	-	18000.0
+	Year	-	2021
+	Unit	-	l
+	Transport Emission Factor	-	transport_resource_emission_ukw_gas:	0.3434 per l
+	Use Emission Factor	-	use_resource_emission_ukw_gas:	2.01574 per l
+
+
+oil_ukw_2021:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	oil
+	Quantity	-	0.0
+	Year	-	2021
+	Unit	-	m³
+	Transport Emission Factor	-	transport_resource_emission_ukw_oil:	0.69723 per m³
+	Use Emission Factor	-	use_resource_emission_ukw_oil:	3.17522 per m³
+
+
+electricity_ukw_extern_2021:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	electricity
+	Quantity	-	45000.0
+	Year	-	2021
+	Unit	-	kWh
+	Transport Emission Factor	-	transport_resource_emission_ukw_electricity_extern:	0.05048 per kWh
+	Use Emission Factor	-	use_resource_emission_ukw_electricity_extern:	0.0 per kWh
+
+
+electricity_ukw_selfmade_2021:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	electricity
+	Quantity	-	22000.0
+	Year	-	2021
+	Unit	-	kWh
+	Transport Emission Factor	-	transport_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+	Use Emission Factor	-	use_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+
+
+gas_ukw_2022:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	gas
+	Quantity	-	18500.0
+	Year	-	2022
+	Unit	-	l
+	Transport Emission Factor	-	transport_resource_emission_ukw_gas:	0.3434 per l
+	Use Emission Factor	-	use_resource_emission_ukw_gas:	2.01574 per l
+
+
+oil_ukw_2022:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	oil
+	Quantity	-	0.0
+	Year	-	2022
+	Unit	-	m³
+	Transport Emission Factor	-	transport_resource_emission_ukw_oil:	0.69723 per m³
+	Use Emission Factor	-	use_resource_emission_ukw_oil:	3.17522 per m³
+
+
+electricity_ukw_extern_2022:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	electricity
+	Quantity	-	46000.0
+	Year	-	2022
+	Unit	-	kWh
+	Transport Emission Factor	-	transport_resource_emission_ukw_electricity_extern:	0.05048 per kWh
+	Use Emission Factor	-	use_resource_emission_ukw_electricity_extern:	0.0 per kWh
+
+
+electricity_ukw_selfmade_2022:
+	Center	-	university_hospital_wuerzburg
+	Resource	-	electricity
+	Quantity	-	22000.0
+	Year	-	2022
+	Unit	-	kWh
+	Transport Emission Factor	-	transport_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+	Use Emission Factor	-	use_resource_emission_ukw_electricity_selfmade:	0.0 per kWh
+
+
+
+Checking ProductMaterial
+extraction_balloon_escort_2 - plastic - 0.042 kilogram
+extraction_balloon_escort_2 - plastic - 0.0225 kilogram
+extraction_balloon_escort_2 - paper - 0.0095 kilogram
+esophageal_dilator - silicone - 0.119 kilogram
+esophageal_dilator - steel - 0.001 kilogram
+esophageal_dilator - paper_coated - 0.007 kilogram
+esophageal_dilator - plastic - 0.007 kilogram
+visiglide_2 - metal - 0.045 kilogram
+visiglide_2 - cardboard - 0.108 kilogram
+visiglide_2 - paper - 0.015 kilogram
+visiglide_2 - paper_coated - 0.013 kilogram
+visiglide_2 - plastic - 0.013 kilogram
+peg_freka_15_ch - metal - 0.0074 kilogram
+peg_freka_15_ch - plastic - 0.0222 kilogram
+peg_freka_15_ch - silicone - 0.0074 kilogram
+peg_freka_15_ch - cardboard - 0.072 kilogram
+peg_freka_15_ch - paper - 0.086 kilogram
+peg_freka_15_ch - plastic - 0.033 kilogram
+biopsy_grasper_hot_radial_jaw_4 - metal - 0.0295 kilogram
+biopsy_grasper_hot_radial_jaw_4 - plastic - 0.0295 kilogram
+biopsy_grasper_hot_radial_jaw_4 - paper - 0.0085 kilogram
+biopsy_grasper_hot_radial_jaw_4 - plastic - 0.0085 kilogram
+nitinol_stent_aix_oel - nickel - 0.015 kilogram
+nitinol_stent_aix_oel - plastic - 0.024 kilogram
+nitinol_stent_aix_oel - silicone - 0.003 kilogram
+nitinol_stent_aix_oel - tantal - 0.003 kilogram
+nitinol_stent_aix_oel - titan - 0.015 kilogram
+nitinol_stent_aix_oel - paper - 0.106 kilogram
+nitinol_stent_aix_oel - plastic - 0.03 kilogram
+biliary_stent_cotton_leung_sof_flex - gold - 0.007 kilogram
+biliary_stent_cotton_leung_sof_flex - paper - 0.014 kilogram
+biliary_stent_cotton_leung_sof_flex - plastic - 0.004 kilogram
+bite_protector - plastic - 0.006 kilogram
+bite_protector - textile - 0.005 kilogram
+bite_protector - paper - 0.001 kilogram
+bite_protector - plastic - 0.001 kilogram
+pressure_syringe_60_ml - plastic - 0.07 kilogram
+pressure_syringe_60_ml - steel - 0.03 kilogram
+pressure_syringe_60_ml - paper - 0.004 kilogram
+pressure_syringe_60_ml - plastic - 0.039 kilogram
+foliodress_gown_standard - plastic - 0.036 kilogram
+foliodress_gown_standard - plastic - 0.001 kilogram
+absorbant_pad - plastic_coated - 0.057 kilogram
+absorbant_pad - plastic - 0.001 kilogram
+
+Checking ProductWeight
+extraction_balloon_escort_2 (Balloon, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg) - 0.074 kg (Source: verified)
+esophageal_dilator (Bougie, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg) - 0.134 kg (Source: verified)
+visiglide_2 (Wire, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg) - 0.194 kg (Source: verified)
+peg_freka_15_ch (PEG, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg) - 0.228 kg (Source: verified)
+biopsy_grasper_hot_radial_jaw_4 (Instrument, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg) - 0.076 kg (Source: verified)
+nitinol_stent_aix_oel (Metal-Stent, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg) - 0.413 kg (Source: verified)
+biliary_stent_cotton_leung_sof_flex (Plastic-Stent, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg) - 0.058 kg (Source: verified)
+bite_protector (Plastic, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg) - 0.013 kg (Source: verified)
+pressure_syringe_60_ml (Plastic-Large, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg) - 0.143 kg (Source: verified)
+foliodress_gown_standard (Coat, generic_europe (1000.0 km) - transport_product_emission_generic_europe:	0.13213 per kg) - 0.036 kg (Source: verified)
+absorbant_pad (Absorbant-Pad, generic_overseas (10000.0 km) - transport_product_emission_generic_overseas:	1.308373 per kg) - 0.057 kg (Source: verified)

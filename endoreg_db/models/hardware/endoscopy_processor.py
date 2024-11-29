@@ -7,6 +7,14 @@ class EndoscopyProcessorManager(models.Manager):
 class EndoscopyProcessor(models.Model):
     objects = EndoscopyProcessorManager()
 
+    center = models.ForeignKey(
+        'Center',
+        blank=True,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name='endoscopy_processors'
+    )
+
     name = models.CharField(max_length=255)
     image_width = models.IntegerField()
     image_height = models.IntegerField()

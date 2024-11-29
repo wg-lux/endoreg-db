@@ -18,4 +18,5 @@ class TransportRoute(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        result = f"{self.name} ({self.distance} {self.unit}) - {self.emission_factor}"
+        return result

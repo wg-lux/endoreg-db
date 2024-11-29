@@ -52,6 +52,10 @@ class PdfType(models.Model):
     
         return summary
 
+    @classmethod
+    def default_pdf_type(cls):
+        return PdfType.objects.get(name="ukw-endoscopy-examination-report-generic")
+
 class PdfMeta(models.Model):
     pdf_type = models.ForeignKey(PdfType, on_delete=models.CASCADE)
     date = models.DateField()

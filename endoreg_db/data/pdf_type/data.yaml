@@ -6,8 +6,9 @@
     endoscope_info_line: "ukw-examination-generic-endoscope-info-line"
     examiner_info_line: "ukw-examination-generic-examiner-info-line"
     cut_off_above_lines: [
+      "ukw-examination-generic-anamnese-info-line",
       "ukw-examination-generic-endoscope-info-line",
-      "ukw-examination-generic-examiner-info-line"
+      "ukw-examination-generic-examiner-info-line",
     ]
     cut_off_below_lines: [
       "ukw-examination-generic-cut-off-below-line-01"

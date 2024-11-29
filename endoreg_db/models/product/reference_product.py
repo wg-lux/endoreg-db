@@ -9,9 +9,25 @@ class ReferenceProduct(models.Model):
     name = models.CharField(max_length=255)
     product = models.ForeignKey("Product", on_delete=models.CASCADE)
     product_group = models.OneToOneField("ProductGroup", on_delete=models.CASCADE, related_name="reference_product")
-    emission_factor_total = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True, blank = True)
-    emission_factor_package = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True, related_name="reference_product_package")
-    emission_factor_product = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True, related_name="reference_product_product")
+    emission_factor_total = models.ForeignKey(
+        "EmissionFactor", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank = True,
+        # related_name="reference_product_total"
+        )
+    emission_factor_package = models.ForeignKey(
+        "EmissionFactor", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name="reference_product_package"
+    )
+    emission_factor_product = models.ForeignKey(
+        "EmissionFactor", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name="reference_product_product"
+    )
     
     objects = ReferenceProductManager()
 

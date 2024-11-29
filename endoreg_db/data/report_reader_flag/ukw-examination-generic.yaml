@@ -24,3 +24,7 @@
     name: "ukw-examination-generic-cut-off-below-line-01"
     value: "________________"
 
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "ukw-examination-generic-anamnese-info-line"
+    value: "Anamnese: "

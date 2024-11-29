@@ -8,7 +8,23 @@ class Endoscope(models.Model):
     objects = EndoscopeManager()
     
     name = models.CharField(max_length=255)
+    name_de = models.CharField(max_length=255, blank=True, null=True)
+    name_en = models.CharField(max_length=255, blank=True, null=True)
     sn = models.CharField(max_length=255)
+    center = models.ForeignKey(
+        'Center',
+        blank=True, 
+        null=True, 
+        on_delete=models.CASCADE,
+        related_name='endoscopes'
+    )
+    endoscope_type = models.ForeignKey(
+        'EndoscopeType', 
+        blank=True, 
+        null=True, 
+        on_delete=models.CASCADE,
+        related_name='endoscopes'
+    )
     
     def natural_key(self):
         return (self.name, self.sn)

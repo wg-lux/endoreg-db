@@ -22,12 +22,15 @@
       "Kathrin",
       "Florian",
       "Philip",
-      "Laura"
+      "Laura",
+      "Tanja",
     ]
+    
     last_names: [
       "Kozielski",
       "Reiter",
       "Purrer",
+      "Hossner",
       "Kudlich",
       "Brand",
       "Weich",
@@ -40,7 +43,7 @@
       "Weich",
       "Dela Cruz",
       "Wiesemann",
-      "Weise",
+      "Wiese",
       "Sodmann"
     ]
 - model: endoreg_db.center
@@ -51,10 +54,37 @@
     first_names: [] # many to many; if foreign key, we would just have a string; strings represent "name" attribute
     last_names: []
 
+# bbk_regensburg
 - model: endoreg_db.center
   fields:
-    name: "gplay_case_generator"
-    name_de: "GPlay Case Generator"
-    name_en: "GPlay Case Generator"
+    name: "bbk_regensburg"
+    name_de: "Barmherzige  Brüder Krankenhaus Regensburg"
+    name_en: "Barmherzige Brüder Hospital Regensburg"
+    first_names: []
+    last_names: []
+
+# uke_hamburg
+- model: endoreg_db.center
+  fields:
+    name: "uke_hamburg"
+    name_de: "Universitätsklinikum Hamburg-Eppendorf"
+    name_en: "University Hospital Hamburg-Eppendorf"
+    first_names: []
+    last_names: []
+
+# rkh_ludwigsburg
+- model: endoreg_db.center
+  fields:
+    name: "rkh_ludwigsburg"
+    name_de: "RKH Krankenhaus Ludwigsburg"
+    name_en: "RKH Hospital Ludwigsburg"
+    first_names: []
+    last_names: []
+
+- model: endoreg_db.center
+  fields:
+    name: "endoreg_db_demo"
+    name_de: "Demo Center"
+    name_en: "Demo Center"
     first_names: []
     last_names: []

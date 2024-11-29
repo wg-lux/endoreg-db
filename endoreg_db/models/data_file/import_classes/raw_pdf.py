@@ -7,9 +7,7 @@
 
 from django.db import models
 from django.core.files.storage import FileSystemStorage
-from django.core.files import File
 from django.conf import settings
-from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from endoreg_db.utils.file_operations import get_uuid_filename
@@ -21,23 +19,38 @@ from ..metadata import SensitiveMeta
 
 # setup logging to pdf_import.log
 import logging
-logger = logging.getLogger('pdf_import')
 
 import shutil
+from pathlib import Path
+logger = logging.getLogger('pdf_import')
 
 # get pdf location from settings, default to ~/erc_data/raw_pdf and create if not exists
-PSEUDO_DIR_RAW_PDF = getattr(settings, 'PSEUDO_DIR_RAW_PDF', settings.BASE_DIR / 'erc_data/raw_pdf')
+PSEUDO_DIR_RAW_PDF:Path = getattr(settings, 'PSEUDO_DIR_RAW_PDF', settings.BASE_DIR / 'erc_data/raw_pdf')
+
+STORAGE_LOCATION = PSEUDO_DIR_RAW_PDF
+RAW_PDF_DIR_NAME = 'raw_pdf'
+RAW_PDF_DIR = STORAGE_LOCATION / RAW_PDF_DIR_NAME
+
+if not RAW_PDF_DIR.exists():
+    RAW_PDF_DIR.mkdir(parents=True)
 
 class RawPdfFile(models.Model):
     file = models.FileField(
-        upload_to='raw_pdf/',
+        upload_to=f'{RAW_PDF_DIR_NAME}/',
         validators=[FileExtensionValidator(allowed_extensions=['pdf'])],
-        storage=FileSystemStorage(location=PSEUDO_DIR_RAW_PDF.resolve().as_posix()),
+        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
 
     pdf_hash = models.CharField(max_length=255, unique=True)
-    pdf_type = models.ForeignKey('PdfType', on_delete=models.CASCADE)
-    center = models.ForeignKey('Center', on_delete=models.CASCADE)
+    pdf_type = models.ForeignKey(
+        'PdfType', on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
+    center = models.ForeignKey(
+        'Center', on_delete=models.CASCADE,
+        blank=True, null=True,
+    )
 
     state_report_processing_required = models.BooleanField(default = True)
     state_report_processed = models.BooleanField(default=False)
@@ -65,20 +78,15 @@ class RawPdfFile(models.Model):
     @classmethod
     def create_from_file(
         cls,
-        file_path,
+        file_path:Path,
         center_name,
-        pdf_type_name, # to be depreceated / changed since we now import all pdfs from same directory
-        destination_dir,
         save=True,
+        delete_source=True,
     ):
-        from endoreg_db.models import PdfType, Center
+        from endoreg_db.models import Center
         logger.info(f"Creating RawPdfFile object from file: {file_path}")
-        original_file_name = file_path.name
 
         new_file_name, uuid = get_uuid_filename(file_path)
-
-        if not destination_dir.exists():
-            destination_dir.mkdir(parents=True)
 
         pdf_hash = get_pdf_hash(file_path)
 
@@ -87,16 +95,16 @@ class RawPdfFile(models.Model):
             logger.warning(f"RawPdfFile with hash {pdf_hash} already exists")
             return None
         
-        assert pdf_type_name is not None, "pdf_type_name is required"
+        # assert pdf_type_name is not None, "pdf_type_name is required"
         assert center_name is not None, "center_name is required"
 
-        pdf_type = PdfType.objects.get(name=pdf_type_name)
+        # pdf_type = PdfType.objects.get(name=pdf_type_name)
         center = Center.objects.get(name=center_name)
 
-        new_file_path = destination_dir / new_file_name
+        new_file_path = RAW_PDF_DIR / new_file_name
 
         logger.info(f"Copying file to {new_file_path}")
-        success = shutil.copy(file_path, new_file_path)
+        _success = shutil.copy(file_path, new_file_path)
          
         # validate copy operation by comparing hashs
         assert get_pdf_hash(new_file_path) == pdf_hash, "Copy operation failed"
@@ -104,20 +112,30 @@ class RawPdfFile(models.Model):
         raw_pdf = cls(
             file=new_file_path.resolve().as_posix(),
             pdf_hash=pdf_hash,
-            pdf_type=pdf_type,
+            # pdf_type=pdf_type,
             center=center,
         )
         logger.info(f"RawPdfFile object created: {raw_pdf}")
 
         # remove source file
-        file_path.unlink()
-        logger.info(f"Source file removed: {file_path}")
+        if delete_source:
+            file_path.unlink()
+            logger.info(f"Source file removed: {file_path}")
 
         if save:
             raw_pdf.save()
         
 
         return raw_pdf
+    
+    def delete_with_file(self):
+        file_path = Path(self.file.path)
+        if file_path.exists():
+            file_path.unlink()
+            logger.info(f"File removed: {file_path}")
+        
+        r = self.delete()
+        return r
 
     def process_file(self, verbose = False):
         
@@ -152,8 +170,9 @@ class RawPdfFile(models.Model):
 
             return True
 
-        except:
+        except Exception as e:
             logger.error(f"Error processing file: {self.file.path}")
+            logger.error(e)
             return False
 
     def save(self, *args, **kwargs):
@@ -167,21 +186,30 @@ class RawPdfFile(models.Model):
 
 
     def get_report_reader_config(self):
-        if self.pdf_type.endoscope_info_line:
-            endoscope_info_line = self.pdf_type.endoscope_info_line.value
+        from endoreg_db.models import PdfType, Center
+        from warnings import warn
+        if not self.pdf_type:
+            warn("PdfType not set, using default settings")
+            pdf_type = PdfType.default_pdf_type()
+        else:
+            pdf_type:PdfType = self.pdf_type
+        center:Center = self.center
+        if pdf_type.endoscope_info_line:
+            endoscope_info_line = pdf_type.endoscope_info_line.value
+            
         else:
             endoscope_info_line = None
         settings_dict = {
             "locale": "de_DE",
-            "employee_first_names": [_.name for _ in self.center.first_names.all()],
-            "employee_last_names": [_.name for _ in self.center.last_names.all()],
+            "employee_first_names": [_.name for _ in center.first_names.all()],
+            "employee_last_names": [_.name for _ in center.last_names.all()],
             "text_date_format":'%d.%m.%Y',
             "flags": {
-                "patient_info_line": self.pdf_type.patient_info_line.value,
+                "patient_info_line": pdf_type.patient_info_line.value,
                 "endoscope_info_line": endoscope_info_line,
-                "examiner_info_line": self.pdf_type.examiner_info_line.value,
-                "cut_off_below": [_.value for _ in self.pdf_type.cut_off_below_lines.all()],
-                "cut_off_above": [_.value for _ in self.pdf_type.cut_off_above_lines.all()],
+                "examiner_info_line": pdf_type.examiner_info_line.value,
+                "cut_off_below": [_.value for _ in pdf_type.cut_off_below_lines.all()],
+                "cut_off_above": [_.value for _ in pdf_type.cut_off_above_lines.all()],
             }
         }
 

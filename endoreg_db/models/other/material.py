@@ -14,3 +14,7 @@ class Material(models.Model):
 
     def natural_key(self):
         return (self.name,)
+    
+    def __str__(self):
+        result = f"{self.name} - EmissionFactor: {self.emission_factor}"
+        return result
