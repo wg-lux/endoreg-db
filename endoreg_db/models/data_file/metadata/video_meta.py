@@ -27,9 +27,9 @@ class VideoMeta(models.Model):
 
         result_html = ""
 
-        result_html += f"Processor: {processor_name}<br>"
-        result_html += f"Endoscope: {endoscope_name}<br>"
-        result_html += f"Center: {center_name}<br>"
+        result_html += f"Processor: {processor_name}\n"
+        result_html += f"Endoscope: {endoscope_name}\n"
+        result_html += f"Center: {center_name}\n"
 
         return result_html
     
@@ -50,7 +50,9 @@ class VideoMeta(models.Model):
         self.save()
 
     def get_endo_roi(self):
-        endo_roi = self.processor.get_roi_endoscope_image()
+        from endoreg_db.models import EndoscopyProcessor
+        processor: EndoscopyProcessor = self.processor
+        endo_roi = processor.get_roi_endoscope_image()
         return endo_roi
 
     def get_fps(self):
@@ -113,6 +115,21 @@ class FFMpegMeta(models.Model):
 
         # Create and return the FFMpegMeta instance
         return cls.objects.create(**metadata)
+    
+    def __str__(self):
+        result_html = ""
+
+        result_html += f"Duration: {self.duration}\n"
+        result_html += f"Width: {self.width}\n"
+        result_html += f"Height: {self.height}\n"
+        result_html += f"Frame Rate: {self.frame_rate}\n"
+        result_html += f"Video Codec: {self.video_codec}\n"
+        result_html += f"Audio Codec: {self.audio_codec}\n"
+        result_html += f"Audio Channels: {self.audio_channels}\n"
+        result_html += f"Audio Sample Rate: {self.audio_sample_rate}\n"
+
+        return result_html
+
 
 class VideoImportMeta(models.Model):
 
@@ -125,9 +142,9 @@ class VideoImportMeta(models.Model):
     def __str__(self):
         result_html = ""
 
-        result_html += f"Video anonymized: {self.video_anonymized}<br>"
-        result_html += f"Video patient data detected: {self.video_patient_data_detected}<br>"
-        result_html += f"Outside detected: {self.outside_detected}<br>"
-        result_html += f"Patient data removed: {self.patient_data_removed}<br>"
-        result_html += f"Outside removed: {self.outside_removed}<br>"
+        result_html += f"Video anonymized: {self.video_anonymized}\n"
+        result_html += f"Video patient data detected: {self.video_patient_data_detected}\n"
+        result_html += f"Outside detected: {self.outside_detected}\n"
+        result_html += f"Patient data removed: {self.patient_data_removed}\n"
+        result_html += f"Outside removed: {self.outside_removed}\n"
         return result_html

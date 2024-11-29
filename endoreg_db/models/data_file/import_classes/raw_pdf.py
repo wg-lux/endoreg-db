@@ -25,9 +25,9 @@ from pathlib import Path
 logger = logging.getLogger('pdf_import')
 
 # get pdf location from settings, default to ~/erc_data/raw_pdf and create if not exists
-PSEUDO_DIR_RAW_PDF:Path = getattr(settings, 'PSEUDO_DIR_RAW_PDF', settings.BASE_DIR / 'erc_data/raw_pdf')
+PSEUDO_DIR:Path = getattr(settings, 'PSEUDO_DIR', settings.BASE_DIR / 'erc_data')
 
-STORAGE_LOCATION = PSEUDO_DIR_RAW_PDF
+STORAGE_LOCATION = PSEUDO_DIR
 RAW_PDF_DIR_NAME = 'raw_pdf'
 RAW_PDF_DIR = STORAGE_LOCATION / RAW_PDF_DIR_NAME
 

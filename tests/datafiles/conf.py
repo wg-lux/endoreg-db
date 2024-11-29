@@ -6,8 +6,22 @@ TEST_GASTRO_REPORT_PATH = Path("tests/sensitive/lux-gastro-report.pdf")
 TEST_GASTRO_HISTO_PATH = Path("tests/sensitive/lux-gastro-histo.pdf")
 TEST_SENSITIVE_OUTPUT_DIR = Path("tests/sensitive/results")
 TEST_GASTRO_REPORT_OUTPUT_PATH = TEST_SENSITIVE_OUTPUT_DIR / "lux-gastro-report.txt"
+TEST_GASTROSCOPY_VIDEO_OUTPUT_PATH = TEST_SENSITIVE_OUTPUT_DIR / "lux-gastro-video.txt"
+
 
 TEST_CENTER_NAME = "university_hospital_wuerzburg"
+
+TEST_VIDEO_DICT = {
+    "gastroscopy": {
+        "path": Path("tests/sensitive/lux-gastro-video.mp4"),
+        "examination_types": [
+            "gastroscopy",
+        ],
+        "skip": False,
+        "endoscopy_processor": "olympus_cv_1500"
+    }
+}
+
 
 TEST_FRAME_DIR = Path("sensitive/frames")
 if not TEST_FRAME_DIR.exists():

@@ -5,16 +5,48 @@ from collections import defaultdict, Counter
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-
+from django.core.validators import FileExtensionValidator
+from django.core.files.storage import FileSystemStorage
 import shutil
 import os
 import subprocess
+from django.conf import settings
+from typing import List
 
 from ..metadata import VideoMeta, SensitiveMeta
 
+def copy_with_progress(src, dst, buffer_size=1024*1024):
+    total_size = os.path.getsize(src)
+    copied_size = 0
+
+    with open(src, 'rb') as fsrc, open(dst, 'wb') as fdst:
+        while True:
+            buf = fsrc.read(buffer_size)
+            if not buf:
+                break
+            fdst.write(buf)
+            copied_size += len(buf)
+            progress = copied_size / total_size * 100
+            print(f"\rProgress: {progress:.2f}%", end='')
+
+
+PSEUDO_DIR:Path = getattr(settings, 'PSEUDO_DIR', settings.BASE_DIR / 'erc_data')
+
+STORAGE_LOCATION = PSEUDO_DIR
+RAW_VIDEO_DIR_NAME = 'raw_videos'
+RAW_VIDEO_DIR = STORAGE_LOCATION / RAW_VIDEO_DIR_NAME
+
+if not RAW_VIDEO_DIR.exists():
+    RAW_VIDEO_DIR.mkdir(parents=True)
+
+
 class RawVideoFile(models.Model):
     uuid = models.UUIDField()
-    file = models.FileField(upload_to="raw_data/")
+    file = models.FileField(
+        upload_to="RAW_VIDEO_DIR_NAME",
+        validators=[FileExtensionValidator(allowed_extensions=['pdf'])],
+        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+    )
     
     sensitive_meta = models.OneToOneField(
         "SensitiveMeta", on_delete=models.CASCADE, blank=True, null=True
@@ -71,10 +103,11 @@ class RawVideoFile(models.Model):
     def create_from_file(
         cls,
         file_path: Path,
-        video_dir: Path,
         center_name: str,
         processor_name: str,
-        frame_dir_parent: Path,
+        frame_dir_parent: Path = Path("erc_data/raw_frames"),
+        video_dir: Path=Path("erc_data/raw_videos"),
+        delete_source: bool = False,
         save: bool = True,
     ):
         from endoreg_db.models import Center, EndoscopyProcessor
@@ -93,6 +126,11 @@ class RawVideoFile(models.Model):
             video_dir.mkdir(parents=True, exist_ok=True)
 
         video_hash = get_video_hash(file_path)
+        # make sure that no other file with the same hash exists
+        if cls.objects.filter(video_hash=video_hash).exists():
+            # log and print warnint
+            print(f"File with hash {video_hash} already exists")
+            return None
 
         center = Center.objects.get(name=center_name)
         assert center is not None, "Center must exist"
@@ -102,9 +140,9 @@ class RawVideoFile(models.Model):
 
         new_filepath = video_dir / new_file_name
 
-        print(f"Moving {file_path} to {new_filepath}")
-        shutil.move(file_path.resolve().as_posix(), new_filepath.resolve().as_posix())
-        print(f"Moved to {new_filepath}")
+        print(f"Copy {file_path} to {new_filepath}")
+        copy_with_progress(file_path.resolve().as_posix(), new_filepath.resolve().as_posix())
+        print(f"\nCopied to {new_filepath}")
 
         # Make sure file was transferred correctly and hash is correct
         if not new_filepath.exists():
@@ -116,36 +154,43 @@ class RawVideoFile(models.Model):
             print(f"Hash of file {file_path} is not correct")
             return None
 
-        # make sure that no other file with the same hash exists
-        if cls.objects.filter(video_hash=video_hash).exists():
-            # log and print warnint
-            print(f"File with hash {video_hash} already exists")
-            return None
+        print(center)
+        # Create a new instance of RawVideoFile
+        raw_video_file = cls(
+            uuid=uuid,
+            file=new_filepath.resolve().as_posix(),
+            center=center,
+            processor=processor,
+            original_file_name=original_file_name,
+            video_hash=video_hash,
+            frame_dir=framedir.as_posix(),
+        )
 
-        else:
-            print(center)
-            # Create a new instance of RawVideoFile
-            raw_video_file = cls(
-                uuid=uuid,
-                file=new_filepath.resolve().as_posix(),
-                center=center,
-                processor=processor,
-                original_file_name=original_file_name,
-                video_hash=video_hash,
-                frame_dir=framedir.as_posix(),
-            )
+        # Save the instance to the database
+        raw_video_file.save()
 
-            # Save the instance to the database
-            raw_video_file.save()
+        if delete_source:
+            file_path.unlink()
 
-            return raw_video_file
+        return raw_video_file
 
     def __str__(self):
         return self.file.name
+    
+    def delete_with_file(self):
+        file_path = Path(self.file.path)
+        if file_path.exists():
+            file_path.unlink()
+        self.delete_frames()
+        self.delete()
+        return f"Deleted {self.file.name}"
 
     def get_endo_roi(self):
         endo_roi = self.video_meta.get_endo_roi()
         return endo_roi
+
+    def set_frame_dir(self):
+        self.frame_dir = f"{RAW_VIDEO_DIR}/{self.uuid}"
 
     # video meta should be created when video file is created
     def save(self, *args, **kwargs):
@@ -156,6 +201,10 @@ class RawVideoFile(models.Model):
                 center=center, processor=processor
             )
             self.video_meta.initialize_ffmpeg_meta(self.file.path)
+        
+        if not self.frame_dir:
+            self.set_frame_dir()
+        
         super(RawVideoFile, self).save(*args, **kwargs)
 
     def extract_frames(
@@ -164,6 +213,7 @@ class RawVideoFile(models.Model):
         frame_dir: Path = None,
         overwrite: bool = False,
         ext="jpg",
+        verbose=False
     ):
         """
         Extract frames from the video file and save them to the frame_dir.
@@ -201,9 +251,22 @@ class RawVideoFile(models.Model):
 
         # Extract frames from the video file
         # Execute the command
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Exception(f"Error extracting frames: {result.stderr}")
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # Display progress
+        
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+
+            if verbose:
+                if output:
+                    print(output.strip())
+        
+        if process.returncode != 0:
+            raise Exception(f"Error extracting frames: {process.stderr.read()}")
 
         self.state_frames_extracted = True
 
@@ -243,7 +306,7 @@ class RawVideoFile(models.Model):
         # sort ascending by index
         path_index_tuples.sort(key=lambda x: x[1])
         paths, indices = zip(*path_index_tuples)
-
+        paths:List[Path]
         return paths
 
     def get_prediction_dir(self):
