@@ -1,0 +1,3 @@
+# run in django shell
+
+

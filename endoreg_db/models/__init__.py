@@ -74,6 +74,7 @@ from .ai_model import (
     ModelMeta,
     ModelType,
     ActiveModel,
+    MultilabelVideoSegmentationModel
 )
 
 from .quiz import *

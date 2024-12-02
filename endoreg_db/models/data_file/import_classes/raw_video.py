@@ -12,8 +12,39 @@ import os
 import subprocess
 from django.conf import settings
 from typing import List
+from endoreg_db.utils.validate_endo_roi import validate_endo_roi
+import warnings
 
 from ..metadata import VideoMeta, SensitiveMeta
+from tqdm import tqdm
+
+def anonymize_frame(raw_frame_path:Path, target_frame_path:Path, endo_roi):
+    """
+    Anonymize the frame by blacking out all pixels that are not in the endoscope ROI.
+    """
+    import cv2
+    import numpy as np
+
+    frame = cv2.imread(raw_frame_path.as_posix())
+
+    # make black frame with same size as original frame
+    new_frame = np.zeros_like(frame)
+
+    # endo_roi is dict with keys "x", "y", "width", "heigth"
+    x = endo_roi["x"]
+    y = endo_roi["y"]
+    width = endo_roi["width"]
+    height = endo_roi["height"]
+
+    # copy endoscope roi to black frame
+    new_frame[y:y+height, x:x+width] = frame[y:y+height, x:x+width]
+    cv2.imwrite(target_frame_path.as_posix(), new_frame)
+
+    return frame
+
+
+# get DJANGO_NAME_SALT from environment
+DJANGO_NAME_SALT = os.environ.get('DJANGO_NAME_SALT', 'default_salt')
 
 def copy_with_progress(src, dst, buffer_size=1024*1024):
     total_size = os.path.getsize(src)
@@ -90,6 +121,7 @@ class RawVideoFile(models.Model):
     state_dataset_complete = models.BooleanField(default=False)
 
     # Finalizing for Upload
+    state_anonymized_frames_generated = models.BooleanField(default=False)
     state_anonym_video_required = models.BooleanField(default=True)
     state_anonym_video_performed = models.BooleanField(default=False)
     state_original_reports_deleted = models.BooleanField(default=False)
@@ -174,6 +206,36 @@ class RawVideoFile(models.Model):
 
         return raw_video_file
 
+    def generate_anonymized_frames(self):
+        """
+        Generate anonymized frames from the video file.
+        """
+        if not self.state_frames_extracted:
+            print(f"Frames not extracted for {self.file.name}")
+            return None
+        
+        frame_dir = Path(self.frame_dir)
+        anonymized_frame_dir = frame_dir.parent / f"anonymized_{self.uuid}"
+        if not anonymized_frame_dir.exists():
+            anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
+        
+        # make sure, that the directory is empty
+        for f in tqdm(anonymized_frame_dir.glob("*")):
+            f.unlink()
+
+        endo_roi = self.get_endo_roi()
+        assert validate_endo_roi(endo_roi), "Endoscope ROI is not valid"
+
+        # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
+        for frame_path in self.get_frame_paths():
+            frame_name = frame_path.name
+            target_frame_path = anonymized_frame_dir / frame_name
+            anonymize_frame(frame_path, target_frame_path, endo_roi)
+
+        self.state_anonymized_frames_generated = True
+
+        return f"Anonymized frames generated to {anonymized_frame_dir}"
+
     def __str__(self):
         return self.file.name
     
@@ -182,8 +244,9 @@ class RawVideoFile(models.Model):
         if file_path.exists():
             file_path.unlink()
         self.delete_frames()
+        self.delete_frames_anonymized()
         self.delete()
-        return f"Deleted {self.file.name}"
+        return f"Deleted {self.file.name}; Deleted frames; Deleted anonymized frames"
 
     def get_endo_roi(self):
         endo_roi = self.video_meta.get_endo_roi()
@@ -285,7 +348,19 @@ class RawVideoFile(models.Model):
         else:
             return f"No frames to delete for {self.file.name}"
 
-    def get_frame_path(self, n: int = 0):
+    def delete_frames_anonymized(self):
+        """
+        Delete anonymized frames extracted from the video file.
+        """
+        frame_dir = Path(self.frame_dir)
+        anonymized_frame_dir = frame_dir.parent / f"anonymized_{self.uuid}"
+        if anonymized_frame_dir.exists():
+            shutil.rmtree(anonymized_frame_dir)
+            return f"Anonymized frames deleted from {anonymized_frame_dir}"
+        else:
+            return f"No anonymized frames to delete for {self.file.name}"
+
+    def get_frame_path(self, n: int = 0, anonymized=False):
         """
         Get the path to the n-th frame extracted from the video file.
         Note that the frame numbering starts at 1 in our naming convention.
@@ -293,20 +368,38 @@ class RawVideoFile(models.Model):
         # Adjust index
         n = n + 1
 
-        frame_dir = Path(self.frame_dir)
+        if anonymized:
+            _frame_dir = Path(self.frame_dir)
+            frame_dir = _frame_dir.parent / f"anonymized_{_frame_dir.name}"
+        else:
+            frame_dir = Path(self.frame_dir)
         return frame_dir / f"frame_{n:07d}.jpg"
     
-    def get_frame_paths(self):
-        if not self.state_frames_extracted:
-            return None
-        frame_dir = Path(self.frame_dir)
+    def get_frame_paths(self, anonymized=False):        
+        if anonymized:
+            print("Getting anonymized frame paths")
+            _frame_dir = Path(self.frame_dir)
+            frame_dir = _frame_dir.parent / f"anonymized_{_frame_dir.name}"
+        else:
+            print("Getting raw frame paths")
+            frame_dir = Path(self.frame_dir)
+
+        print(f"Frame dir: {frame_dir}")
+
         paths = [p for p in frame_dir.glob('*')]
         indices = [int(p.stem.split("_")[1]) for p in paths]
         path_index_tuples = list(zip(paths, indices))
         # sort ascending by index
         path_index_tuples.sort(key=lambda x: x[1])
+        
+        if not path_index_tuples:
+            return []
+        
         paths, indices = zip(*path_index_tuples)
         paths:List[Path]
+
+        print(f"Found {len(paths)} frames for {self.file.name} (anonymized: {anonymized})")
+
         return paths
 
     def get_prediction_dir(self):
@@ -376,9 +469,14 @@ class RawVideoFile(models.Model):
 
     def update_text_metadata(self, ocr_frame_fraction=0.001):
         print(f"Updating metadata for {self.file.name}")
-        texts = self.extract_text_information(ocr_frame_fraction)
+        extracted_data_dict = self.extract_text_information(ocr_frame_fraction)
+        extracted_data_dict["center_name"] = self.center.name
 
-        self.sensitive_meta = SensitiveMeta.create_from_dict(texts)
+        print("____________")
+        print(extracted_data_dict)
+        print("____________")
+
+        self.sensitive_meta = SensitiveMeta.create_from_dict(extracted_data_dict)
         self.state_sensitive_data_retrieved = True
         self.save()
 
@@ -394,7 +492,7 @@ class RawVideoFile(models.Model):
             self.save()
 
         else:
-            video_meta.update_meta(video_path)
+            video_meta.update_meta(video_path)    
 
     def get_fps(self):
         if self.video_meta is None:

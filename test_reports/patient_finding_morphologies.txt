@@ -3,81 +3,81 @@ Tested Patient Findings for colon_polyp
 
 ----
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
-Patient Finding Morphology: colon_lesion_size_mm - colon_lesion_size_oval_mm (colon_lesion_size_mm) - largest_diameter_mm: 8.005187316845618
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
+Patient Finding Morphology: colon_lesion_size_mm - colon_lesion_size_oval_mm (colon_lesion_size_mm) - largest_diameter_mm: 4.739827876895304
 Subcategories: {}
-Numerical Descriptors: {'largest_diameter_mm': {'unit': 'mm', 'min': 0, 'max': 35, 'distribution': 'normal', 'mean': 5, 'std': 3, 'description': 'Largest diameter of the lesion in mm', 'required': True, 'value': 8.005187316845618}, 'perpendicular_diameter_mm': {'unit': 'mm', 'min': 0, 'max': 35, 'description': 'Perpendicular diameter of the lesion in mm', 'required': False}}
+Numerical Descriptors: {'largest_diameter_mm': {'unit': 'mm', 'min': 0, 'max': 35, 'distribution': 'normal', 'mean': 5, 'std': 3, 'description': 'Largest diameter of the lesion in mm', 'required': True, 'value': 4.739827876895304}, 'perpendicular_diameter_mm': {'unit': 'mm', 'min': 0, 'max': 35, 'description': 'Perpendicular diameter of the lesion in mm', 'required': False}}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default) - description: unspecified
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse'], 'default': 'unspecified', 'probability': [0.5, 0.2, 0.3], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default) - description: focal
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse'], 'default': 'unspecified', 'probability': [0.5, 0.2, 0.3], 'required': True, 'value': 'focal'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_surface_intact_default - colon_lesion_surface_eroded (colon_lesion_surface_intact_default) - description: diffuse
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse'], 'default': 'unspecified', 'probability': [0.5, 0.2, 0.3], 'required': True, 'value': 'diffuse'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_surface_intact_default - colon_lesion_surface_ulcerated (colon_lesion_surface_intact_default) - description: unspecified
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse'], 'default': 'unspecified', 'probability': [0.5, 0.2, 0.3], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_surface_intact_default - colon_lesion_surface_ulcerated (colon_lesion_surface_intact_default) - description: focal
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse'], 'default': 'unspecified', 'probability': [0.5, 0.2, 0.3], 'required': True, 'value': 'focal'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_surface_intact_default - colon_lesion_surface_ulcerated (colon_lesion_surface_intact_default) - description: diffuse
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse'], 'default': 'unspecified', 'probability': [0.5, 0.2, 0.3], 'required': True, 'value': 'diffuse'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_planarity_default - colon_lesion_planarity_excavated (colon_lesion_planarity_default) - description: unspecified
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse', 'total'], 'probability': [0.5, 0.2, 0.2, 0.1], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_planarity_default - colon_lesion_planarity_excavated (colon_lesion_planarity_default) - description: focal
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse', 'total'], 'probability': [0.5, 0.2, 0.2, 0.1], 'default': 'unspecified', 'required': True, 'value': 'focal'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_planarity_default - colon_lesion_planarity_excavated (colon_lesion_planarity_default) - description: diffuse
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse', 'total'], 'probability': [0.5, 0.2, 0.2, 0.1], 'default': 'unspecified', 'required': True, 'value': 'diffuse'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
 Patient Finding Morphology: colon_lesion_planarity_default - colon_lesion_planarity_excavated (colon_lesion_planarity_default) - description: total
 Subcategories: {'description': {'choices': ['unspecified', 'focal', 'diffuse', 'total'], 'probability': [0.5, 0.2, 0.2, 0.1], 'default': 'unspecified', 'required': True, 'value': 'total'}}
 Numerical Descriptors: {}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
-Patient Finding Morphology: colon_lesion_circularity_default - colon_lesion_circularity_true (colon_lesion_circularity_default) - length: 54.47239512973256
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
+Patient Finding Morphology: colon_lesion_circularity_default - colon_lesion_circularity_true (colon_lesion_circularity_default) - length: 51.560961742319535
 Subcategories: {}
-Numerical Descriptors: {'length': {'unit': 'milimeter', 'min': 0, 'max': 100, 'default': None, 'distribution': 'uniform', 'description': 'Length of the lesion in mm', 'required': True, 'value': 54.47239512973256}, 'circumference': {'unit': 'percent', 'min': 33, 'max': 100, 'mean': 50, 'std': 10, 'default': None, 'distribution': 'normal', 'description': 'Circumference of the lesion in %', 'required': True}}
+Numerical Descriptors: {'length': {'unit': 'milimeter', 'min': 0, 'max': 100, 'default': None, 'distribution': 'uniform', 'description': 'Length of the lesion in mm', 'required': True, 'value': 51.560961742319535}, 'circumference': {'unit': 'percent', 'min': 33, 'max': 100, 'mean': 50, 'std': 10, 'default': None, 'distribution': 'normal', 'description': 'Circumference of the lesion in %', 'required': True}}
 
 
-Patient Finding: Senol Heintze (1946-11-29) - colonoscopy - None - colon_polyp
-Patient Finding Morphology: colon_lesion_circularity_default - colon_lesion_circularity_true (colon_lesion_circularity_default) - length: 54.47239512973256 - circumference: 51.84496828881971
+Patient Finding: Isabella Juncken (1960-12-02) - colonoscopy - None - colon_polyp
+Patient Finding Morphology: colon_lesion_circularity_default - colon_lesion_circularity_true (colon_lesion_circularity_default) - length: 51.560961742319535 - circumference: 58.29999044189331
 Subcategories: {}
-Numerical Descriptors: {'length': {'unit': 'milimeter', 'min': 0, 'max': 100, 'default': None, 'distribution': 'uniform', 'description': 'Length of the lesion in mm', 'required': True, 'value': 54.47239512973256}, 'circumference': {'unit': 'percent', 'min': 33, 'max': 100, 'mean': 50, 'std': 10, 'default': None, 'distribution': 'normal', 'description': 'Circumference of the lesion in %', 'required': True, 'value': 51.84496828881971}}
+Numerical Descriptors: {'length': {'unit': 'milimeter', 'min': 0, 'max': 100, 'default': None, 'distribution': 'uniform', 'description': 'Length of the lesion in mm', 'required': True, 'value': 51.560961742319535}, 'circumference': {'unit': 'percent', 'min': 33, 'max': 100, 'mean': 50, 'std': 10, 'default': None, 'distribution': 'normal', 'description': 'Circumference of the lesion in %', 'required': True, 'value': 58.29999044189331}}
 
 

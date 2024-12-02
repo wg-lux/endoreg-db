@@ -1,5 +1,7 @@
 import hashlib
 from pathlib import Path
+import warnings
+from datetime import datetime, date
 
 def get_video_hash(video_path):
     """
@@ -32,3 +34,89 @@ def get_pdf_hash(pdf_path:Path):
     assert len(pdf_hash) <= 255, "Hash length exceeds 255 characters"
 
     return pdf_hash
+
+def _get_date_hash_string(date_obj:date)->str:
+    from datetime import date
+    # if date is datetime object, convert to date
+    if isinstance(date_obj, datetime):
+        warnings.warn("Date is a datetime object. Converting to date object.")
+        date_obj = date_obj.date()
+    elif isinstance(date_obj, str):
+        warnings.warn("Date is a string. Converting to date object.")
+        date_obj = datetime.strptime(date_obj, "%Y-%m-%d").date()
+    
+    assert isinstance(date_obj, date), "Date must be a date object"
+    # if date is 1900-01-01, make it an empty string
+    if date_obj == date(1900,1,1):
+        date_str = ""
+    else: 
+        date_str = date_obj.strftime("%Y-%m-%d")
+
+    return date_str
+
+
+def get_hash_string(
+    first_name:str="",
+    last_name:str="",
+    dob:date=date(1900,1,1),
+    center_name:str="",
+    examination_date:date=date(1900,1,1),
+    endoscope_sn:str="",
+    salt:str="",
+):
+    """
+    Get the string to be hashed for a patient's first name, last name, date of birth, examination date, and endoscope serial number.
+    """
+    if not salt:
+        warnings.warn("No salt provided for hashing. This is not recommended for production use.")
+    
+    examination_date_str = _get_date_hash_string(examination_date)
+    dob_str = _get_date_hash_string(dob)
+
+    # Concatenate the patient's first name, last name, date of birth, examination date, endoscope serial number, and salt:
+    hash_str = f"{first_name}{last_name}{dob_str}{center_name}{dob_str}{examination_date_str}{endoscope_sn}{salt}"
+    return hash_str
+
+def get_patient_hash(first_name:str, last_name:str, dob:date, center:str, salt:str=""):
+    """
+    Get the hash of a patient's first name, last name, and date of birth.
+    """
+    # Concatenate the patient's first name, last name, date of birth, and salt:
+    hash_str = get_hash_string(
+        first_name=first_name, 
+        last_name=last_name,
+        dob=dob, center_name=center, salt=salt)
+    # Create a hash object using SHA-256 algorithm
+    hash_object = hashlib.sha256(hash_str.encode())
+    # Get the hexadecimal representation of the hash
+    patient_hash = hash_object.hexdigest()
+
+    return patient_hash
+
+def get_patient_examination_hash(
+        first_name:str, 
+        last_name:str, 
+        dob:date,
+        center:str, 
+        examination_date:date, 
+        salt:str=""):
+    """
+    Get the hash of a patient's first name, last name, date of birth, and examination date.
+    """
+    # Concatenate the patient's first name, last name, date of birth, examination date, and salt:
+    hash_str = get_hash_string(
+        first_name=first_name, 
+        last_name=last_name, 
+        center_name=center,
+        dob=dob, examination_date=examination_date, 
+        salt=salt
+    )
+    # Create a hash object using SHA-256 algorithm
+    hash_object = hashlib.sha256(hash_str.encode())
+    # Get the hexadecimal representation of the hash
+    patient_examination_hash = hash_object.hexdigest()
+
+    return patient_examination_hash
+
+def get_examiner_hash():
+    pass

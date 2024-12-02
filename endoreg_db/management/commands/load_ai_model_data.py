@@ -1,24 +1,31 @@
 from django.conf import settings
 import os
 from django.core.management.base import BaseCommand
-from ...models import ModelType
+from ...models import VideoSegmentationLabel, MultilabelVideoSegmentationModel
 from ...utils import load_model_data_from_yaml
-from ...data import MODEL_TYPE_DATA_DIR
+from ...data import (
+    VIDEO_SEGMENTATION_LABEL_DATA_DIR,
+    AI_MODEL_DATA_DIR,
+)
 
-SOURCE_DIR = MODEL_TYPE_DATA_DIR # e.g. settings.DATA_DIR_INTERVENTION
-
-MODEL_0 = ModelType
 
 IMPORT_MODELS = [ # string as model key, serves as key in IMPORT_METADATA
-    MODEL_0.__name__,
+    VideoSegmentationLabel.__name__,
+    MultilabelVideoSegmentationModel.__name__,
 ]
 
 IMPORT_METADATA = {
-    MODEL_0.__name__: {
-        "dir": SOURCE_DIR, # e.g. "interventions"
-        "model": MODEL_0, # e.g. Intervention
+    VideoSegmentationLabel.__name__: {
+        "dir": VIDEO_SEGMENTATION_LABEL_DATA_DIR, # e.g. "interventions"
+        "model": VideoSegmentationLabel, # e.g. Intervention
         "foreign_keys": [], # e.g. ["intervention_types"]
         "foreign_key_models": [] # e.g. [InterventionType]
+    },
+    MultilabelVideoSegmentationModel.__name__: {
+        "dir": AI_MODEL_DATA_DIR, # e.g. "intervention_types"
+        "model": MultilabelVideoSegmentationModel, # e.g. InterventionType
+        "foreign_keys": ["labels"], # e.g. ["interventions"]
+        "foreign_key_models": [VideoSegmentationLabel] # e.g. [Intervention]
     }
 }
 

@@ -146,6 +146,8 @@ class RawPdfFile(models.Model):
         # This configuration file should be associated with pdf type 
 
         text, anonymized_text, report_meta = rr.process_report(pdf_path, verbose=verbose)
+
+        report_meta["center_name"] = self.center.name
         if not self.sensitive_meta:
             sensitive_meta = SensitiveMeta.create_from_dict(report_meta)
             sensitive_meta.save()

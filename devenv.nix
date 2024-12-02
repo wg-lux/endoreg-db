@@ -3,6 +3,9 @@ let
   buildInputs = with pkgs; [
     python311Full
     stdenv.cc.cc
+    tesseract
+    glib
+    openssh
   ];
 
 in 
@@ -13,7 +16,9 @@ in
   dotenv.disableHint = true;
 
   packages = with pkgs; [
+    cudaPackages.cuda_nvcc
     stdenv.cc.cc
+    tesseract
   ];
 
   env = {
@@ -32,7 +37,7 @@ in
   };
 
   scripts = {
-    hello.exec = "echo Hello World!";
+    hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
   };
 
   tasks = {
@@ -48,5 +53,6 @@ in
   '';
 
   enterTest = ''
+    nvcc -V
   '';
 }

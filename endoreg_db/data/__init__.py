@@ -81,6 +81,10 @@ AGL_SERVICE_DATA_DIR = DATA_DIR / "agl_service"
 # LOGS
 LOG_TYPE_DATA_DIR = DATA_DIR / "log_type"
 
+# AI STUFFS
+AI_MODEL_DATA_DIR = DATA_DIR / "ai_model"
+VIDEO_SEGMENTATION_LABEL_DATA_DIR = DATA_DIR / "video_segmentation_label"
+
 # To Do
 LAB_VALUE_DATA_DIR = DATA_DIR / "lab_value"
 PATIENT_LAB_SAMPLE_TYPE_DATA_DIR = DATA_DIR / "patient_lab_sample_type"
