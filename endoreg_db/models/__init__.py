@@ -9,6 +9,13 @@ from .logging import *
 
 from .organ import Organ
 
+from .lx import (
+    LxClientType, LxClientTag, LxClient,
+    LxIdentity, LxIdentityType,
+    LxPermission,
+    LxUser
+)
+
 from .contraindication import Contraindication
 
 from .finding import (

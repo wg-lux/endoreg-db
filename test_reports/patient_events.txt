@@ -1,30 +1,30 @@
 coro_des_implantation:
-	2024-12-02 09:54:14.370316: coro_des_implantation
+	2024-12-09 11:22:26.501078: coro_des_implantation
 
 coro_bms_implantation:
-	2024-12-02 09:54:14.370793: coro_bms_implantation
+	2024-12-09 11:22:26.501476: coro_bms_implantation
 
 complication_coro_stent_thrombosis:
-	2024-12-02 09:54:14.371133: complication_coro_stent_thrombosis
+	2024-12-09 11:22:26.501785: complication_coro_stent_thrombosis
 
 pulmonary_embolism:
-	2024-12-02 09:54:14.371445: pulmonary_embolism
+	2024-12-09 11:22:26.502084: pulmonary_embolism
 
 deep_vein_thrombosis:
-	2024-12-02 09:54:14.371756: deep_vein_thrombosis
+	2024-12-09 11:22:26.502373: deep_vein_thrombosis
 
 stroke:
-	2024-12-02 09:54:14.372079: stroke
+	2024-12-09 11:22:26.502646: stroke
 
 transient_ischemic_attack:
-	2024-12-02 09:54:14.372386: transient_ischemic_attack
+	2024-12-09 11:22:26.502912: transient_ischemic_attack
 
 hip_replacement_surgery:
-	2024-12-02 09:54:14.372692: hip_replacement_surgery
+	2024-12-09 11:22:26.503192: hip_replacement_surgery
 
 knee_replacement_surgery:
-	2024-12-02 09:54:14.372989: knee_replacement_surgery
+	2024-12-09 11:22:26.503483: knee_replacement_surgery
 
 recurrent_thrombembolism:
-	2024-12-02 09:54:14.373278: recurrent_thrombembolism
+	2024-12-09 11:22:26.503753: recurrent_thrombembolism
 

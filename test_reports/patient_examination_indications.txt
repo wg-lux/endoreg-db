@@ -1,20 +1,20 @@
-Gerwin Geisler (1947-12-02) - colonoscopy - None
-Examination Indication: Gerwin Geisler (1947-12-02) - colonoscopy - None - colonoscopy
+Timm Döring (1955-12-09) - colonoscopy - None
+Examination Indication: Timm Döring (1955-12-09) - colonoscopy - None - colonoscopy
 Examination Indication Choice: colonoscopy_bleeding
 
-Gerwin Geisler (1947-12-02) - colonoscopy - None
-Examination Indication: Gerwin Geisler (1947-12-02) - colonoscopy - None - colonoscopy
+Timm Döring (1955-12-09) - colonoscopy - None
+Examination Indication: Timm Döring (1955-12-09) - colonoscopy - None - colonoscopy
 Examination Indication Choice: colonoscopy_surveillance
 
-Gerwin Geisler (1947-12-02) - colonoscopy - None
-Examination Indication: Gerwin Geisler (1947-12-02) - colonoscopy - None - colonoscopy
+Timm Döring (1955-12-09) - colonoscopy - None
+Examination Indication: Timm Döring (1955-12-09) - colonoscopy - None - colonoscopy
 Examination Indication Choice: colonoscopy_screening
 
-Gerwin Geisler (1947-12-02) - colonoscopy - None
-Examination Indication: Gerwin Geisler (1947-12-02) - colonoscopy - None - colonoscopy
+Timm Döring (1955-12-09) - colonoscopy - None
+Examination Indication: Timm Döring (1955-12-09) - colonoscopy - None - colonoscopy
 Examination Indication Choice: colonoscopy_diagnostic
 
-Gerwin Geisler (1947-12-02) - colonoscopy - None
-Examination Indication: Gerwin Geisler (1947-12-02) - colonoscopy - None - colonoscopy
+Timm Döring (1955-12-09) - colonoscopy - None
+Examination Indication: Timm Döring (1955-12-09) - colonoscopy - None - colonoscopy
 Examination Indication Choice: colonoscopy_therapeutic
 

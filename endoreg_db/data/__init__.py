@@ -95,3 +95,7 @@ MEDICATION_INTAKE_TIME_DATA_DIR = DATA_DIR / "medication_intake_time"
 RULE_TYPE_DATA_DIR = DATA_DIR / "rule_type"
 RULE_ATTRIBUTE_DTYPE_DATA_DIR = DATA_DIR / "rule_attribute_dtype"
 RULESET_DATA_DIR = DATA_DIR / "ruleset"
+
+LX_PERMISSION_DATA_DIR = DATA_DIR / "lx_permission"
+LX_CLIENT_TAG_DATA_DIR = DATA_DIR / "lx_client_tag"
+LX_CLIENT_TYPE_DATA_DIR = DATA_DIR / "lx_client_type"

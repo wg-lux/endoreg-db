@@ -5,579 +5,579 @@ which contains those location choices <QuerySet [<FindingLocationClassificationC
 
 ------------
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.715890094057244}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.611257684014891}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - tumor
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.2130669876886806}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.1022939731509918}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.715890094057244}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.715890094057244}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.715890094057244}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 31.94485268215641}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.611257684014891}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.611257684014891}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.611257684014891}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 11.173350119967793}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - erosion
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.5909828361500639}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.0785181446303085}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 31.94485268215641}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 31.94485268215641}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 31.94485268215641}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.70411731045727}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 11.173350119967793}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 11.173350119967793}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 11.173350119967793}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.914236323539194}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - ulcer
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.8454548449090391}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.349432805577325}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.70411731045727}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.70411731045727}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 28.70411731045727}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 48.71063601719823}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 21.831168048808692}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.914236323539194}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.914236323539194}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.914236323539194}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.740366008314341}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 11.402816210114198}}
 
 
-Patient Finding: Wilhelmine Barth (1957-12-02) - colonoscopy - None - scar
+Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.5360113743306539}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.4354694397268566}}
 
 

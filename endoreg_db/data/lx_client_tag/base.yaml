@@ -1,0 +1,54 @@
+# Client Tags
+- model: endoreg_db.lx_client_tag
+  fields:
+    name: "coloreg"
+    description: "Coloreg related clients"
+    permissions: [
+      "local_base_db_read",
+      "local_base_db_write",
+    ]
+
+- model: endoreg_db.lx_client_tag
+  fields:
+    name: "client"
+    description: "General client"
+    permissions: [
+      "local_base_db_read",
+      "local_base_db_write",
+    ]
+
+- model: endoreg_db.lx_client_tag
+  fields:
+    name: "server"
+    description: "General server"
+    permissions: [
+      "local_base_db_read",
+      "local_base_db_write",
+    ]
+
+- model: endoreg_db.lx_client_tag
+  fields:
+    name: "production"
+    description: "Production environment"
+    permissions: [
+      "local_base_db_read",
+      "local_base_db_write",
+    ]
+
+- model: endoreg_db.lx_client_tag
+  fields:
+    name: "development"
+    description: "Development environment"
+    permissions: [
+      "local_base_db_read",
+      "local_base_db_write",
+    ]
+
+- model: endoreg_db.lx_client_tag
+  fields:
+    name: "test"
+    description: "Test environment"
+    permissions: [
+      "local_base_db_read",
+      "local_base_db_write",
+    ]
