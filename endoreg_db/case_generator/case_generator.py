@@ -101,14 +101,14 @@ class CaseGenerator:
 
     def apply_rule(self, rule: CaseTemplateRule, parent=None):
         """
-        Applies a rule based on its type.
+        Applies a rule based on its type to generate a case.
 
         Args:
             rule (CaseTemplateRule): The rule to apply.
             parent (Optional[Model]): The parent object for the rule.
 
         Returns:
-            Model: The result of applying the rule.
+            Model: The case by applying the rule.
         """
         self._validate_rule_type(rule.rule_type)
 
