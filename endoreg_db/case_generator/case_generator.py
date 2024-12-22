@@ -7,114 +7,134 @@ class CaseGenerator:
     """
     Provides methods to generate cases based on a template.
     """
-    def __init__(self, template=None):
-        if not template:
-            # get default template
-            template = CaseTemplate.objects.get(name=DEFAULT_CASE_TEMPLATE_NAME)
 
-        self.template = template
+    def __init__(self, template: CaseTemplate = None):
+        """
+        Initializes the CaseGenerator with a template.
 
-        self.lsf = LabSampleFactory()
+        Args:
+            template (CaseTemplate, optional): The template to use for case generation. Defaults to the predefined template.
+        """
+        self.template = template or CaseTemplate.objects.get(name=DEFAULT_CASE_TEMPLATE_NAME)
+        self.lab_sample_factory = LabSampleFactory()
 
-        # define available rule types
-        rule_types = [
+        # Define available rule types
+        rule_type_names = [
             "create-object",
             "set-field-default",
-            "set-field-by_distribution",
-            "set_field_by_value"
-            "set-field-single_choice",
-            "set-field-multiple_choice",
+            "set-field-by-distribution",
+            "set-field-by-value",
+            "set-field-single-choice",
+            "set-field-multiple-choice",
         ]
-        rule_types = CaseTemplateRuleType.objects.filter(name__in=rule_types)
-        self.rule_types = rule_types
+        self.available_rule_types = CaseTemplateRuleType.objects.filter(name__in=rule_type_names)
 
-    def _check_rule_type(self, rule_type:CaseTemplateRuleType):
-        if rule_type not in self.rule_types:
+    def _validate_rule_type(self, rule_type: CaseTemplateRuleType):
+        """
+        Validates if the rule type is supported.
+
+        Args:
+            rule_type (CaseTemplateRuleType): The rule type to validate.
+
+        Raises:
+            ValueError: If the rule type is not supported.
+        """
+        if rule_type not in self.available_rule_types:
             raise ValueError(f"Rule type {rule_type} is not supported.")
 
-    def apply_create_object_rule(self, rule:CaseTemplateRule, parent=None):      
-        # get the django db model from the endoreg_db module based on the models name
+    def _apply_create_object(self, rule: CaseTemplateRule, parent=None):
+        """
+        Applies a create-object rule to generate a model instance.
+
+        Args:
+            rule (CaseTemplateRule): The rule to apply.
+            parent (Optional[Model]): The parent object for the rule.
+
+        Returns:
+            Model: The created model instance.
+        """
         target_model = rule.get_target_model()
+        extra_params = rule.extra_parameters or {}
+        create_method_info = extra_params.get("create_method", {})
 
-        print("Creating object of type: ", target_model)
-        print("Rule", rule)
-        print("Extra parameters: ", rule.extra_parameters)
-        create_kwargs = rule.extra_parameters["create_method"]["kwargs"]
+        assert create_method_info, "Create method must be set for a create-object rule."
 
-        extra_params = getattr(rule, "extra_parameters", {})
-        create_method_dict:dict = extra_params.get("create_method", {})
-        assert create_method_dict, "Create method must be set for rule with create-object."
-
-        create_method = getattr(target_model, create_method_dict["name"])
-        kwargs = create_method_dict.get("kwargs", {})
+        create_method = getattr(target_model, create_method_info["name"])
+        kwargs = create_method_info.get("kwargs", {})
 
         if parent:
-            parent_model_field = rule.parent_field
-            kwargs[parent_model_field] = parent
+            kwargs[rule.parent_field] = parent
 
-        target_model_instance = create_method(**kwargs)
-        target_model_instance.save()
+        target_instance = create_method(**kwargs)
+        target_instance.save()
 
-        actions = extra_params.get("actions", [])
-        for action in actions:
-            print("Applying action: ", action)
-            action_method = getattr(target_model_instance, action["name"])
+        for action in extra_params.get("actions", []):
+            action_method = getattr(target_instance, action["name"])
             action_kwargs = action.get("kwargs", {})
             action_method(**action_kwargs)
 
         for chained_rule in rule.chained_rules.all():
-            self.apply_rule(chained_rule, parent = target_model_instance)
+            self.apply_rule(chained_rule, parent=target_instance)
 
-        return target_model_instance
+        return target_instance
 
-    def apply_set_field_by_distribution_rule(self, rule:CaseTemplateRule, parent=None):
+    def _apply_set_field_by_distribution(self, rule: CaseTemplateRule, parent):
+        """
+        Applies a set-field-by-distribution rule.
+
+        Args:
+            rule (CaseTemplateRule): The rule to apply.
+            parent (Model): The parent object for the rule.
+
+        Returns:
+            Model: The updated parent object.
+        """
+        assert parent, "Parent must be provided for set-field-by-distribution rules."
+        assert rule.target_field, "Target field must be specified for the rule."
+
         distribution = rule.get_distribution()
         value = distribution.generate_value()
-
-        print(f"Setting field {rule.target_field} to {value}.")
-        
-        assert parent, "Parent must be set for rule with parent."
-        assert rule.target_field, "Target field must be set for rule with parent."
 
         setattr(parent, rule.target_field, value)
         parent.save()
         return parent
 
-
-
-    def apply_rule(self, rule:CaseTemplateRule, parent=None):
+    def apply_rule(self, rule: CaseTemplateRule, parent=None):
         """
-        Applies a rule to generate a case.
+        Applies a rule based on its type.
+
+        Args:
+            rule (CaseTemplateRule): The rule to apply.
+            parent (Optional[Model]): The parent object for the rule.
+
+        Returns:
+            Model: The result of applying the rule.
         """
-        # get necessary attributes like rule type and target model from rule
-        rule_type = rule.rule_type
+        self._validate_rule_type(rule.rule_type)
 
-        # make sure rule type is one of the following:
-        self._check_rule_type(rule_type)
+        if rule.rule_type.name == "create-object":
+            return self._apply_create_object(rule, parent)
 
-        # apply rule based on rule type
-        if rule_type.name == "create-object":
-            result = self.apply_create_object_rule(rule, parent=parent)
+        if rule.rule_type.name == "set-field-by-distribution":
+            return self._apply_set_field_by_distribution(rule, parent)
 
-        if rule_type.name == "set-field-by_distribution":
-            result = self.apply_set_field_by_distribution_rule(rule, parent=parent)
+        raise ValueError(f"Unsupported rule type: {rule.rule_type.name}")
 
-        return result
-
-    def generate_case(self,case_template:CaseTemplate=None):
+    def generate_case(self, case_template: CaseTemplate = None):
         """
-        Generates a case based on the template.
-        
+        Generates a case based on the provided or default template.
+
+        Args:
+            case_template (CaseTemplate, optional): The template to use for case generation. Defaults to None.
+
+        Returns:
+            Tuple[Model, Model]: The generated patient and medication schedule.
         """
+        case_template = case_template or CaseTemplate.objects.get(name=DEFAULT_CASE_TEMPLATE_NAME)
 
-        if not case_template:
-            case_template = CaseTemplate.objects.get(name="pre_default_screening_colonoscopy")
-
-        # Generate patient
-        create_patient_rule:CaseTemplateRule = case_template.get_create_patient_rule()
+        create_patient_rule = case_template.get_create_patient_rule()
         patient = self.apply_rule(create_patient_rule)
 
-        # Generate Medication Schedule
         medication_schedule_rule = case_template.get_create_patient_medication_schedule_rule()
         medication_schedule = self.apply_rule(medication_schedule_rule, parent=patient)
 

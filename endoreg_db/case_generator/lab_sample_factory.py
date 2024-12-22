@@ -5,19 +5,29 @@ class LabSampleFactory:
     """
     Provides methods to generate lab samples.
     """
+
     def __init__(self):
+        """
+        Initializes the LabSampleFactory.
+        """
         pass
 
-    def generic_lab_sample(self, patient:Patient):
+    def create_generic_lab_sample(self, patient: Patient):
         """
-        Generates a lab sample.
+        Generates a generic lab sample for a given patient.
+
+        Args:
+            patient (Patient): The patient for whom the lab sample is generated.
+
+        Returns:
+            PatientLabSample: The created lab sample instance.
         """
         sample_type = PatientLabSampleType.objects.get(name="generic")
-        
-        patient_lab_sample = PatientLabSample.objects.create(
+
+        lab_sample = PatientLabSample.objects.create(
             patient=patient,
             sample_type=sample_type,
             date=datetime.now(tz=timezone.utc)
         )
 
-        return patient_lab_sample
+        return lab_sample
