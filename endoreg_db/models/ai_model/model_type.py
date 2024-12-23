@@ -2,7 +2,10 @@ from django.db import models
 from django.core import serializers
 
 class ModelTypeManager(models.Manager):
-    def get_by_natural_key(self, name):
+    """
+    Custom manager for ModelType with additional query methods.
+    """
+    def get_by_natural_key(self, name: str) -> "ModelType":
         return self.get(name=name)
     
 class ModelType(models.Model):

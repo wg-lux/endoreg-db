@@ -7,15 +7,22 @@ from .image_classification import ImageClassificationAnnotation
 ANNOTATION_PER_S_THRESHOLD = 2
 
 def clear_finished_legacy_tasks():
-    # fetch all BinaryClassificationAnnotationTasks that are finished and delete them
-    tasks = LegacyBinaryClassificationAnnotationTask.objects.filter(finished=True)
-
-    # delete tasks with a bulk operation
+    """
+    Deletes all finished LegacyBinaryClassificationAnnotationTask entries.
+    """
+    tasks = LegacyBinaryClassificationAnnotationTask.objects.filter(is_finished=True)
     tasks.delete()
 
 def get_legacy_binary_classification_annotation_tasks_by_label(label:Label, n:int=100, legacy=False):
     clear_finished_legacy_tasks()
+    """
+    Retrieves legacy binary classification annotation tasks for a specific label.
 
+    Args:
+        label (Label): The label to filter tasks by.
+        n (int): Maximum number of tasks to retrieve. Defaults to 100.
+        legacy (bool): If True, includes legacy tasks. Defaults to False.
+    """
     if legacy:
         # fetch all LegacyLabelVideoSegments with the given label
         _segments = LegacyLabelVideoSegment.objects.filter(label=label)
@@ -49,6 +56,20 @@ def get_legacy_binary_classification_annotation_tasks_by_label(label:Label, n:in
         
 
 class AbstractBinaryClassificationAnnotationTask(models.Model):
+    """
+    Abstract base class for binary classification annotation tasks.
+
+    Attributes:
+        label (ForeignKey): The associated label.
+        is_finished (bool): Indicates if the task is completed.
+        date_created (datetime): The creation date of the task.
+        date_finished (datetime): The completion date of the task.
+        image_path (str): Path to the associated image.
+        image_type (str): The type of the image (e.g., "frame" or "legacy").
+        frame_id (int): Identifier of the associated frame.
+        labelstudio_project_id (int): The Label Studio project ID.
+        labelstudio_task_id (int): The Label Studio task ID.
+    """
     label = models.ForeignKey("Label", on_delete=models.CASCADE)
     is_finished = models.BooleanField(default=False)
     date_created = models.DateTimeField(auto_now_add=True)
@@ -63,18 +84,33 @@ class AbstractBinaryClassificationAnnotationTask(models.Model):
         abstract = True
 
 class BinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationTask):
-    frame = models.ForeignKey("Frame", on_delete=models.CASCADE, related_name="binary_classification_annotation_tasks")
-    image_type = models.CharField(max_length=255, default="frame")
-
-    def get_frame(self):
-        return self.video_segment.get_frame_by_id(self.frame_id)
-
-class LegacyBinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationTask):
-    frame = models.ForeignKey("LegacyFrame", on_delete=models.CASCADE, related_name="binary_classification_annotation_tasks")
-    image_type = models.CharField(max_length=255, default="legacy")
-
-    def get_frame(self):
+     """
+     Represents a binary classification task for a frame.
+     
+     Attributes:
+        frame (ForeignKey): The associated frame for this task.
+     """
+     frame = models.ForeignKey("Frame", on_delete=models.CASCADE, related_name="binary_classification_annotation_tasks")
+     image_type = models.CharField(max_length=255, default="frame")  # Default image type for non-legacy tasks
+     
+     def get_frame(self) -> "Frame":
+        """
+        Retrieves the frame associated with this task.
+        """
         return self.frame
 
+class LegacyBinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationTask):
+    """
+    Represents a legacy binary classification task for a frame.
 
+    Attributes:
+        frame (ForeignKey): The associated legacy frame for this task.
+    """
+    frame = models.ForeignKey("LegacyFrame", on_delete=models.CASCADE, related_name="binary_classification_annotation_tasks")
+    image_type = models.CharField(max_length=255, default="legacy")  # Default image type for legacy tasks
 
+    def get_frame(self) -> "LegacyFrame":
+        """
+        Retrieves the legacy frame associated with this task.
+        """
+        return self.frame
