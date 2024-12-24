@@ -40,12 +40,14 @@ class CaseTemplateRuleValueManager(models.Manager):
     
 class CaseTemplateRuleValue(models.Model):
     """
-    A class representing a case template rule value.
+    Represents a case template rule value.
 
     Attributes:
-        value (str): The value of the case template rule value.
-        case_template_rule (CaseTemplateRule): The case template rule of the case template rule value.
-        case_template (CaseTemplate): The case template of the case template rule value.
+        name (str): The name of the rule value.
+        description (str): A description of the rule value.
+        fk_value (str): Foreign key value stored as a string.
+        numeric_value (float): Numeric value for the rule.
+        text_value (str): Text value for the rule.
     """
     objects = CaseTemplateRuleValueManager()
 
@@ -57,12 +59,25 @@ class CaseTemplateRuleValue(models.Model):
     text_value = models.CharField(max_length=255, null=True, blank=True)
 
     def natural_key(self):
+        """
+        Returns the natural key for the object.
+        """
         return (self.name,)
     
     def __str__(self):
+        """
+        String representation of the object.
+        """
         return self.name
     
     def get_value(self):
+        """
+        Retrieves the value based on priority:
+        - fk_value > numeric_value > text_value > None.
+        
+        Returns:
+            str | float | None: The value based on the type hierarchy.
+        """
         if self.fk_value:
             return self.fk_value
         elif self.numeric_value:

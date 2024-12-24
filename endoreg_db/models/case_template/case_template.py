@@ -6,13 +6,14 @@ class CaseTemplateManager(models.Manager):
     
 class CaseTemplate(models.Model):
     """
-    A class representing a case template.
+    Represents a case template.
 
     Attributes:
-        name (str): The name of the case template. This is the natural key.
-        case_template_type (CaseTemplateType): The type of the case template.
+        name (str): The unique name of the case template.
+        template_type (ForeignKey): The type of the case template.
         description (str): A description of the case template.
-
+        rules: The primary rules associated with the case template.
+        secondary_rules: Secondary rules associated with the case template.
     """
     name = models.CharField(max_length=255, unique=True)
     template_type = models.ForeignKey("CaseTemplateType", on_delete=models.CASCADE, related_name="case_templates")
@@ -30,33 +31,70 @@ class CaseTemplate(models.Model):
     objects = CaseTemplateManager()
 
     def natural_key(self):
+        """
+        Returns the natural key for the case template.
+
+        Returns:
+            tuple: The natural key consisting of the name.
+        """
         return (self.name,)
     
     def __str__(self):
+        """
+        String representation of the case template.
+
+        Returns:
+            str: The name of the case template.
+        """
         return self.name
     
     def get_rules(self):
-        rules = self.rules.all()
-        return rules
+        """
+        Retrieves all primary rules associated with the case template.
+
+        Returns:
+            A queryset of primary rules.
+        """
+        return self.rules.all()
+        
     
     def get_secondary_rules(self):
+        """
+        Retrieves all secondary rules associated with the case template.
+
+        Returns:
+            QuerySet: A queryset of secondary rules.
+        """
         rules = self.secondary_rules.all()
         return rules
     
     def _assert_max_one_create_patient_rule(self):
-        """Asserts that there is at most one rule with the rule_type__name "create-object" and target_model__name "Patient"."""
+        """
+        Ensures that there is at most one rule with rule_type "create-object" and target_model "Patient".
+
+        Raises:
+            ValueError: If more than one rule of the specified type exists.
+        """
         create_patient_rules = self.rules.filter(rule_type__name="create-object", target_model__name="Patient")
         if len(create_patient_rules) > 1:
-            raise ValueError("There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'Patient'.")
-
+            raise ValueError(
+                "There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'Patient'."
+            )
+        
     # custom save method which runs the _assert_max_one_create_patient_rule method and others
     def save(self, *args, **kwargs):
         # self._assert_max_one_create_patient_rule() #TODO Fails on first save since many to many can only be used if object has an id
         super().save(*args, **kwargs)
 
     def get_create_patient_rule(self):
-        """Filter the rules for the rule which has the rule_type__name "create-object" and target_model__name "Patient".
-        Also makes sure, that only 1 is returned. If there is no such rule, get default create patient rule.
+        """
+        Retrieves the "create-patient" rule.
+
+        Returns:
+            CaseTemplateRule: The rule that creates a patient.
+
+        Raises:
+            ValueError: If multiple such rules exist.
         """
         from endoreg_db.models.case_template.case_template_rule import CaseTemplateRule
         create_patient_rules = self.rules.filter(rule_type__name="create-object", target_model="Patient")
@@ -67,8 +105,14 @@ class CaseTemplate(models.Model):
         return create_patient_rules[0]
     
     def get_create_patient_medication_schedule_rule(self):
-        """Filter the rules for the rule which has the rule_type__name "create-object" and target_model__name "PatientMedicationSchedule".
-        Also makes sure, that only 1 is returned. If there is no such rule, get default create patient medication schedule rule.
+        """
+        Retrieves the "create-patient_medication_schedule" rule.
+
+        Returns:
+            CaseTemplateRule: The rule for creating a patient medication schedule.
+
+        Raises:
+            ValueError: If multiple such rules exist.
         """
         from endoreg_db.models.case_template.case_template_rule import CaseTemplateRule
         create_patient_medication_schedule_rules = self.rules.filter(rule_type__name="create-object", target_model="PatientMedicationSchedule")

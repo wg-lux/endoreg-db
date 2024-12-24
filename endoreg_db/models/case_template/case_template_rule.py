@@ -6,12 +6,13 @@ class CaseTemplateRuleTypeManager(models.Manager):
     
 class CaseTemplateRuleType(models.Model):
     """
-    A class representing a case template rule type.
+    Represents a type of rule for a case template.
 
     Attributes:
-        name (str): The name of the case template rule type.
-        description (str): A description of the case template rule type.
-
+        name (str): The name of the rule type.
+        name_de (str): The German name of the rule type.
+        name_en (str): The English name of the rule type.
+        description (str): A description of the rule type.
     """
     name = models.CharField(max_length=255)
     name_de = models.CharField(max_length=255, null=True)
@@ -50,7 +51,6 @@ class CaseTemplateRule(models.Model):
 
     Attributes:
         name (str): The name of the case template rule.
-        case_template (CaseTemplate): The case template to which the rule belongs.
         description (str): A description of the case template rule.
         name_de (str): The name of the case template rule in German.
         name_en (str): The name of the case template rule in English.
