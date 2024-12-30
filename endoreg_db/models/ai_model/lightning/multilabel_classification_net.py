@@ -1,24 +1,45 @@
+import numpy as np
 import torch
-from torchvision import models
 import torch.nn as nn
 from pytorch_lightning import LightningModule
-import numpy as np
-from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.metrics import f1_score, precision_score, recall_score
+from torchvision import models
 
 METRICS_ON_STEP = False
 
+
 def calculate_metrics(pred, target, threshold=0.5):
     pred = np.array(pred > threshold, dtype=float)
-    return {'micro/precision': precision_score(y_true=target, y_pred=pred, average='micro', zero_division = 0),
-            'micro/recall': recall_score(y_true=target, y_pred=pred, average='micro', zero_division = 0),
-            'micro/f1': f1_score(y_true=target, y_pred=pred, average='micro', zero_division = 0),
-            'macro/precision': precision_score(y_true=target, y_pred=pred, average='macro', zero_division = 0),
-            'macro/recall': recall_score(y_true=target, y_pred=pred, average='macro', zero_division = 0),
-            'macro/f1': f1_score(y_true=target, y_pred=pred, average='macro', zero_division = 0),
-            'samples/precision': precision_score(y_true=target, y_pred=pred, average=None, zero_division = 0),
-            'samples/recall': recall_score(y_true=target, y_pred=pred, average=None, zero_division = 0),
-            'samples/f1': f1_score(y_true=target, y_pred=pred, average=None, zero_division = 0),
-            }
+    return {
+        "micro/precision": precision_score(
+            y_true=target, y_pred=pred, average="micro", zero_division=0
+        ),
+        "micro/recall": recall_score(
+            y_true=target, y_pred=pred, average="micro", zero_division=0
+        ),
+        "micro/f1": f1_score(
+            y_true=target, y_pred=pred, average="micro", zero_division=0
+        ),
+        "macro/precision": precision_score(
+            y_true=target, y_pred=pred, average="macro", zero_division=0
+        ),
+        "macro/recall": recall_score(
+            y_true=target, y_pred=pred, average="macro", zero_division=0
+        ),
+        "macro/f1": f1_score(
+            y_true=target, y_pred=pred, average="macro", zero_division=0
+        ),
+        "samples/precision": precision_score(
+            y_true=target, y_pred=pred, average=None, zero_division=0
+        ),
+        "samples/recall": recall_score(
+            y_true=target, y_pred=pred, average=None, zero_division=0
+        ),
+        "samples/f1": f1_score(
+            y_true=target, y_pred=pred, average=None, zero_division=0
+        ),
+    }
+
 
 class MultiLabelClassificationNet(LightningModule):
     def __init__(

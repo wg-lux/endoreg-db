@@ -7,57 +7,120 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0008_rename_endoscopy_type_endoscope_endoscope_type_and_more'),
+        ("endoreg_db", "0008_rename_endoscopy_type_endoscope_endoscope_type_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='VideoSegmentationLabel',
+            name="VideoSegmentationLabel",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('name_de', models.CharField(blank=True, max_length=255, null=True)),
-                ('name_en', models.CharField(blank=True, max_length=255, null=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('color', models.CharField(blank=True, max_length=255, null=True)),
-                ('order_priority', models.IntegerField(default=0)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("name_de", models.CharField(blank=True, max_length=255, null=True)),
+                ("name_en", models.CharField(blank=True, max_length=255, null=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("color", models.CharField(blank=True, max_length=255, null=True)),
+                ("order_priority", models.IntegerField(default=0)),
             ],
         ),
         migrations.AlterField(
-            model_name='rawpdffile',
-            name='file',
-            field=models.FileField(storage=django.core.files.storage.FileSystemStorage(location='/home/setup-user/dev/endoreg-db-api/erc_data'), upload_to='raw_pdf/', validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['pdf'])]),
+            model_name="rawpdffile",
+            name="file",
+            field=models.FileField(
+                storage=django.core.files.storage.FileSystemStorage(
+                    location="/home/setup-user/dev/endoreg-db-api/erc_data"
+                ),
+                upload_to="raw_pdf/",
+                validators=[
+                    django.core.validators.FileExtensionValidator(
+                        allowed_extensions=["pdf"]
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='rawvideofile',
-            name='file',
-            field=models.FileField(storage=django.core.files.storage.FileSystemStorage(location='/home/setup-user/dev/endoreg-db-api/erc_data'), upload_to='RAW_VIDEO_DIR_NAME', validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['pdf'])]),
+            model_name="rawvideofile",
+            name="file",
+            field=models.FileField(
+                storage=django.core.files.storage.FileSystemStorage(
+                    location="/home/setup-user/dev/endoreg-db-api/erc_data"
+                ),
+                upload_to="RAW_VIDEO_DIR_NAME",
+                validators=[
+                    django.core.validators.FileExtensionValidator(
+                        allowed_extensions=["pdf"]
+                    )
+                ],
+            ),
         ),
         migrations.CreateModel(
-            name='VideoSegmentationAnnotation',
+            name="VideoSegmentationAnnotation",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('start_time', models.FloatField()),
-                ('stop_time', models.FloatField()),
-                ('is_true', models.BooleanField(default=True)),
-                ('video', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='endoreg_db.rawvideofile')),
-                ('label', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='endoreg_db.videosegmentationlabel')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("start_time", models.FloatField()),
+                ("stop_time", models.FloatField()),
+                ("is_true", models.BooleanField(default=True)),
+                (
+                    "video",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="endoreg_db.rawvideofile",
+                    ),
+                ),
+                (
+                    "label",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="endoreg_db.videosegmentationlabel",
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='MultilabelVideoSegmentationModel',
+            name="MultilabelVideoSegmentationModel",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('name_de', models.CharField(blank=True, max_length=255, null=True)),
-                ('name_en', models.CharField(blank=True, max_length=255, null=True)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('model_type', models.CharField(blank=True, max_length=255, null=True)),
-                ('model_subtype', models.CharField(blank=True, max_length=255, null=True)),
-                ('version', models.IntegerField(default=1)),
-                ('labels', models.ManyToManyField(related_name='models', to='endoreg_db.videosegmentationlabel')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("name_de", models.CharField(blank=True, max_length=255, null=True)),
+                ("name_en", models.CharField(blank=True, max_length=255, null=True)),
+                ("description", models.TextField(blank=True, null=True)),
+                ("model_type", models.CharField(blank=True, max_length=255, null=True)),
+                (
+                    "model_subtype",
+                    models.CharField(blank=True, max_length=255, null=True),
+                ),
+                ("version", models.IntegerField(default=1)),
+                (
+                    "labels",
+                    models.ManyToManyField(
+                        related_name="models", to="endoreg_db.videosegmentationlabel"
+                    ),
+                ),
             ],
         ),
     ]

@@ -1,25 +1,25 @@
-from endoreg_db.models import (
-    Patient, 
-    Center, Event,
-    PatientLabValue, PatientFinding, FindingMorphologyClassification,
-    Finding,
-    FindingLocationClassification,
-    PatientMedication, PatientMedicationSchedule, MedicationIndication,
-    MedicationIndicationType, MedicationSchedule
-)
 from datetime import datetime
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
-from io import StringIO
+
+from endoreg_db.models import (
+    Center,
+    MedicationIndication,
+    MedicationIndicationType,
+    Patient,
+    PatientMedicationSchedule,
+)
+
 from .conf import (
+    TEST_ANTICOAGULATION_INDICATION_TYPES,
     TEST_CENTER_NAME,
     TEST_PATIENT_MEDICATION_OUTPUT_PATH,
-    TEST_ANTICOAGULATION_INDICATION_TYPES
 )
 
 # Note
-# A MedicationIndication can have multiple MedicationSchedules 
+# A MedicationIndication can have multiple MedicationSchedules
 # (e.g., pulmonary embolism medication starts with high dose for 10d and is then reduced)
 
 # -> A MedicationSchedule defines the dosage, intake_times, and duration for ONE DRUG
@@ -31,7 +31,7 @@ from .conf import (
 
 # PatientMedicationSchedule may point to multiple PatientMedications
 
-#### Example
+# Example
 # - model: endoreg_db.medication_indication
 #   fields:
 #     name: "te_prevention-after_hip-apixaban"
@@ -63,17 +63,15 @@ class TestGeneratePatientMedication(TestCase):
         out = ""
 
         pms = PatientMedicationSchedule.objects.create(
-            patient = patient,
+            patient=patient,
         )
 
-
         for indication_type in TEST_ANTICOAGULATION_INDICATION_TYPES:
-            out += f"IndicationType - {indication_type}:\n" 
+            out += f"IndicationType - {indication_type}:\n"
             indication_type = MedicationIndicationType.objects.get(name=indication_type)
             medication_indications = MedicationIndication.objects.filter(
                 indication_type=indication_type
             )
-        
 
             for medication_indication in medication_indications:
                 medication_schedules = medication_indication.medication_schedules.all()
@@ -81,21 +79,21 @@ class TestGeneratePatientMedication(TestCase):
 
                 for medication_schedule in medication_schedules:
                     out += f"\t\tMedicationSchedule - {medication_schedule}:\n"
-                    _patient_medication = pms.create_patient_medication_from_medication_schedule(
-                        medication_schedule=medication_schedule,
-                        medication_indication = medication_indication,
-                        start_date=datetime.now()
+                    _patient_medication = (
+                        pms.create_patient_medication_from_medication_schedule(
+                            medication_schedule=medication_schedule,
+                            medication_indication=medication_indication,
+                            start_date=datetime.now(),
+                        )
                     )
 
                     out += f"\t\t\tPatientMedication - {_patient_medication}\n"
 
-        pms = PatientMedicationSchedule.objects.get(pk = pms.pk)
+        pms = PatientMedicationSchedule.objects.get(pk=pms.pk)
         out += f"\n---\nResulting PatientMedicationSchedule:\n{pms}\n"
         out += "\n---\nPatientMedications:\n"
         for pm in pms.get_patient_medication():
             out += f"\t{pm}\n"
-                
-
 
         with open(TEST_PATIENT_MEDICATION_OUTPUT_PATH, "w") as f:
             _ = out

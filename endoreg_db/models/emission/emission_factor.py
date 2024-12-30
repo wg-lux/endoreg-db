@@ -1,15 +1,21 @@
-from django.db import models
 from typing import List
+
+from django.db import models
+
+
 class EmissionFactorManager(models.Manager):
     """
     Manager for EmissionFactor with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "EmissionFactor":
         return self.get(name=name)
+
 
 # get debug from settings
 # from django.conf import settings
 # DEBUG = settings.DEBUG
+
 
 class EmissionFactor(models.Model):
     """
@@ -22,6 +28,7 @@ class EmissionFactor(models.Model):
         unit (ForeignKey): The unit associated with the emission factor.
         value (float): The value of the emission factor.
     """
+
     objects = EmissionFactorManager()
 
     name = models.CharField(max_length=255)
@@ -29,7 +36,7 @@ class EmissionFactor(models.Model):
     name_en = models.CharField(max_length=255, null=True)
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
     value = models.FloatField()
-    
+
     def natural_key(self) -> tuple:
         """
         Returns the natural key for the emission factor.
@@ -56,7 +63,7 @@ class EmissionFactor(models.Model):
                 result += f"\n\t\t{source}"
 
         return result
-    
+
     def get_reference_products(self) -> List["ReferenceProduct"]:
         """
         Retrieves all reference products associated with the emission factor.
@@ -64,12 +71,18 @@ class EmissionFactor(models.Model):
         Returns:
             list: A list of ReferenceProduct instances associated with this emission factor.
         """
-        from endoreg_db.models import ReferenceProduct
+        from endoreg_db.models.product.reference_product import ReferenceProduct
 
         reference_products = []
-        reference_products += ReferenceProduct.objects.filter(emission_factor_total=self)
-        reference_products += ReferenceProduct.objects.filter(emission_factor_package=self)
-        reference_products += ReferenceProduct.objects.filter(emission_factor_product=self)
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_total=self
+        )
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_package=self
+        )
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_product=self
+        )
 
         return reference_products
 

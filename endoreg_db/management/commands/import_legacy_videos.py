@@ -1,24 +1,37 @@
-from endoreg_db.utils.hashs import get_video_hash
+import os
 import subprocess
+
+import cv2
 from django.core.files import File
 from django.core.management.base import BaseCommand
-from endoreg_db.models.data_file.video import LegacyVideo
-import os
 from tqdm import tqdm
-# import cv2
+
+from endoreg_db.models.data_file.video import LegacyVideo
+from endoreg_db.utils.hashs import get_video_hash
+
 
 def convert_mkv_to_mp4(source_path, target_path):
     """
     Convert a .mkv file to a .mp4 file using FFmpeg.
-    
+
     Parameters:
         mov_file_path (str): The file path of the input .MOV file.
         mp4_file_path (str): The file path where the output .mp4 file should be saved.
-        
+
     Returns:
         None
     """
-    cmd = ["ffmpeg", "-y", "-i", source_path, "-vcodec", "h264", "-acodec", "aac", target_path]
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        source_path,
+        "-vcodec",
+        "h264",
+        "-acodec",
+        "aac",
+        target_path,
+    ]
     subprocess.run(cmd)
 
 
@@ -29,13 +42,14 @@ class Command(BaseCommand):
     Usage:
         python manage.py import_legacy_videos <directory>
     """
-    help = 'Imports videos from a directory into the database'
+
+    help = "Imports videos from a directory into the database"
 
     def add_arguments(self, parser):
-        parser.add_argument('directory', type=str)
+        parser.add_argument("directory", type=str)
 
     def handle(self, *args, **options):
-        directory = options['directory']
+        directory = options["directory"]
         if not os.path.isdir(directory):
             raise Exception(f"Directory {directory} does not exist")
 
@@ -64,10 +78,10 @@ class Command(BaseCommand):
                 print(f"Video with hash {video_hash} already exists. Skipping...")
                 continue
 
-            video = LegacyVideo.objects.create(video_hash=video_hash, suffix = "mp4")
+            video = LegacyVideo.objects.create(video_hash=video_hash, suffix="mp4")
 
             # open the .mp4 file
-            with open(mp4_file, 'rb') as f:
+            with open(mp4_file, "rb") as f:
                 # create the Django File object
                 django_file = File(f)
                 # save the file to the video

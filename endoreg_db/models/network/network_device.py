@@ -2,11 +2,13 @@
 
 from django.db import models
 
+
 class NetworkDeviceManager(models.Manager):
     # Custom manager for NetworkDevice; defines name as natural key
     def get_by_natural_key(self, name):
         return self.get(name=name)
-    
+
+
 class NetworkDevice(models.Model):
     name = models.CharField(max_length=255)
     ip = models.GenericIPAddressField(blank=True, null=True)
@@ -21,12 +23,12 @@ class NetworkDevice(models.Model):
         return self.name
 
     class Meta:
-        db_table = 'network_devices'
-        ordering = ['name']
-        
+        db_table = "network_devices"
+        ordering = ["name"]
+
     def natural_key(self):
         return (self.name,)
-    
+
     def ping(self):
         target_ip = self.ip
 
@@ -34,20 +36,20 @@ class NetworkDevice(models.Model):
         import subprocess
 
         # Define the command
-        command = ['ping', '-c', '1', target_ip]
+        command = ["ping", "-c", "1", target_ip]
 
         # Run the command
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
 
         # Wait for the process to terminate
         process.wait()
 
         # Check the return code
         return_code = process.returncode
-        
+
         # Return True if the return code is 0, False otherwise
         self.online = return_code == 0
         self.save()
         return self.online
-    
-

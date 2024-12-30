@@ -1,12 +1,11 @@
-from endoreg_db.models import (
-    Endoscope,
-    EndoscopyProcessor
-)
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
-from io import StringIO
-from .conf import TEST_CENTER_NAME, TEST_ENDOSCOPE_OUTPUT_PATH, TEST_GREEN_ENDOSCOPY_OUTPUT_PATH
+
+from endoreg_db.models import Endoscope, EndoscopyProcessor
+
+from .conf import TEST_ENDOSCOPE_OUTPUT_PATH, TEST_GREEN_ENDOSCOPY_OUTPUT_PATH
 
 
 class TestHardware(TestCase):
@@ -45,8 +44,6 @@ class TestHardware(TestCase):
         for obj in objects:
             f.write(f"{obj}\n")
 
-        
-
     def test_endoscopy_data(self):
         with open(TEST_ENDOSCOPE_OUTPUT_PATH, "a") as f:
             self.write_endoscopes_created(f)
@@ -54,7 +51,22 @@ class TestHardware(TestCase):
 
     def test_green_endoscopy_data(self):
         from endoreg_db.models import (
-            EmissionFactor, 
+            CenterResource,
+            CenterWaste,
+            EmissionFactor,
+            Material,
+            Product,
+            ProductGroup,
+            ProductMaterial,
+            ProductWeight,
+            ReferenceProduct,
+            Resource,
+            TransportRoute,
+            Waste,
+        )
+
+        models = [
+            EmissionFactor,
             Resource,
             Waste,
             Material,
@@ -66,25 +78,8 @@ class TestHardware(TestCase):
             CenterResource,
             ProductMaterial,
             ProductWeight,
-
-        )
-        models = [
-            EmissionFactor, 
-            Resource,
-            Waste,
-            Material,
-            ProductGroup,
-            TransportRoute,
-            Product,
-            ReferenceProduct,
-            CenterWaste,
-            CenterResource,
-            ProductMaterial,
-            ProductWeight
         ]
 
         with open(TEST_GREEN_ENDOSCOPY_OUTPUT_PATH, "a") as f:
             for model in models:
                 self.write_green_endoscopy_data(model, f)
-
-

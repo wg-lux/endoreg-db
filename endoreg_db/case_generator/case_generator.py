@@ -1,7 +1,8 @@
-from endoreg_db.models import CaseTemplate, CaseTemplateRule, CaseTemplateRuleType
 from endoreg_db.case_generator.lab_sample_factory import LabSampleFactory
+from endoreg_db.models import CaseTemplate, CaseTemplateRule, CaseTemplateRuleType
 
 DEFAULT_CASE_TEMPLATE_NAME = "pre_default_screening_colonoscopy"
+
 
 class CaseGenerator:
     """
@@ -15,7 +16,9 @@ class CaseGenerator:
         Args:
             template (CaseTemplate, optional): The template to use for case generation. Defaults to the predefined template.
         """
-        self.template = template or CaseTemplate.objects.get(name=DEFAULT_CASE_TEMPLATE_NAME)
+        self.template = template or CaseTemplate.objects.get(
+            name=DEFAULT_CASE_TEMPLATE_NAME
+        )
         self.lab_sample_factory = LabSampleFactory()
 
         # Define available rule types
@@ -27,7 +30,9 @@ class CaseGenerator:
             "set-field-single-choice",
             "set-field-multiple-choice",
         ]
-        self.available_rule_types = CaseTemplateRuleType.objects.filter(name__in=rule_type_names)
+        self.available_rule_types = CaseTemplateRuleType.objects.filter(
+            name__in=rule_type_names
+        )
 
     def _validate_rule_type(self, rule_type: CaseTemplateRuleType):
         """
@@ -130,12 +135,16 @@ class CaseGenerator:
         Returns:
             Tuple[Model, Model]: The generated patient and medication schedule.
         """
-        case_template = case_template or CaseTemplate.objects.get(name=DEFAULT_CASE_TEMPLATE_NAME)
+        case_template = case_template or CaseTemplate.objects.get(
+            name=DEFAULT_CASE_TEMPLATE_NAME
+        )
 
         create_patient_rule = case_template.get_create_patient_rule()
         patient = self.apply_rule(create_patient_rule)
 
-        medication_schedule_rule = case_template.get_create_patient_medication_schedule_rule()
+        medication_schedule_rule = (
+            case_template.get_create_patient_medication_schedule_rule()
+        )
         medication_schedule = self.apply_rule(medication_schedule_rule, parent=patient)
 
         return patient, medication_schedule

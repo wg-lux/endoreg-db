@@ -1,11 +1,14 @@
 from django.db import models
 
+
 class VideoSegmentationLabelManager(models.Manager):
     """
     Manager for VideoSegmentationLabel with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "VideoSegmentationLabel":
         return self.get(name=name)
+
 
 class VideoSegmentationLabel(models.Model):
     """
@@ -19,6 +22,7 @@ class VideoSegmentationLabel(models.Model):
         color (str): The color associated with the label.
         order_priority (int): The priority for ordering labels.
     """
+
     objects = VideoSegmentationLabelManager()
 
     name = models.CharField(max_length=255)
@@ -34,6 +38,7 @@ class VideoSegmentationLabel(models.Model):
     def __str__(self):
         return self.name
 
+
 class VideoSegmentationAnnotation(models.Model):
     """
     Represents a video segmentation annotation.
@@ -45,6 +50,7 @@ class VideoSegmentationAnnotation(models.Model):
         stop_time (float): The stop time of the annotation in seconds.
         is_true (bool): Indicates if the annotation is valid.
     """
+
     video = models.ForeignKey("RawVideoFile", on_delete=models.CASCADE)
     label = models.ForeignKey(VideoSegmentationLabel, on_delete=models.CASCADE)
     start_time = models.FloatField()  # in seconds

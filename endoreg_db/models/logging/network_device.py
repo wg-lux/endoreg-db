@@ -1,12 +1,17 @@
 from django.db import models
+
 from .base import AbstractLogEntry
+
 
 class NetworkDeviceLogEntry(AbstractLogEntry):
     """
     Model for log entries related to network devices.
     """
+
     device = models.ForeignKey("NetworkDevice", on_delete=models.CASCADE)
-    log_type = models.ForeignKey("LogType", on_delete=models.CASCADE, null=True, blank=True)
+    log_type = models.ForeignKey(
+        "LogType", on_delete=models.CASCADE, null=True, blank=True
+    )
 
     datetime = models.DateTimeField(default=None, null=True, blank=True)
     # hostname = models.CharField(max_length=255, null=True, blank=True)
@@ -24,4 +29,3 @@ class NetworkDeviceLogEntry(AbstractLogEntry):
 
     def __str__(self):
         return f"{self.timestamp} - {self.user} - {self.ip_address} - {self.device} - {self.message}"
-

@@ -1,7 +1,7 @@
 # from endoreg_db.models import (
 #     RawVideoFile,Center,VideoMeta
 # )
-    
+
 # from datetime import datetime
 
 # from django.core.management import call_command
@@ -43,7 +43,7 @@
 #         from endoreg_db.models import SensitiveMeta
 #         video_dict = TEST_VIDEO_DICT["gastroscopy"]
 #         result_dict = video_dict["results"]
-        
+
 #         if check_file_exists(video_dict["path"]) and not video_dict["skip"]:
 #             center = Center.objects.get(name=TEST_CENTER_NAME)
 #             raw_video = RawVideoFile.create_from_file(
@@ -72,7 +72,7 @@
 
 #             with open(TEST_GASTROSCOPY_VIDEO_OUTPUT_PATH, "a") as f:
 #                 f.write(f"Extract Frames Result:\n{extract_frames_result}\n\n")
-                
+
 #             # get frame paths:
 #             frame_paths = raw_video.get_frame_paths()
 #             for frame_path in frame_paths:
@@ -85,7 +85,7 @@
 #             with open(TEST_GASTROSCOPY_VIDEO_OUTPUT_PATH, "a") as f:
 #                 f.write(f"Text Info:\n{sensitive_meta}\n\n")
 
-            
+
 #             # check states (substitution, hashing, etc.)
 #             # if state not true, then run functions to update states
 
@@ -95,7 +95,7 @@
 
 #             patient_hash = raw_video.sensitive_meta.get_patient_hash(salt=TEST_SALT)
 #             patient_examination_hash = raw_video.sensitive_meta.get_patient_examination_hash(salt=TEST_SALT)
-            
+
 #             patient_hash_string = get_hash_string(
 #                 first_name = sensitive_meta.patient_first_name,
 #                 last_name = sensitive_meta.patient_last_name,
@@ -112,7 +112,7 @@
 #                 examination_date=sensitive_meta.examination_date,
 #                 salt=TEST_SALT
 #             )
-            
+
 #             with open(TEST_GASTROSCOPY_VIDEO_OUTPUT_PATH, "a") as f:
 #                 f.write(f"Patient String for Hashing:\n\t{patient_hash_string}\n")
 #                 f.write(f"Patient Hash:\n\t{patient_hash}\n\n")
@@ -137,6 +137,3 @@
 #         out = StringIO()
 #         # import würzburg 1920x1080 anonymized videos
 #         call_command("load_ai_model_data", stdout=out)
-
-
-

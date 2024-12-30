@@ -1,17 +1,13 @@
-from endoreg_db.models import (
-    Patient, 
-    Center, 
-)
-
-from .utils import create_test_patient
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
-from io import StringIO
-from .conf import (
-    TEST_CENTER_NAME,
-    TEST_PATIENT_OUTPUT_PATH
-)
+
+from endoreg_db.models import Center, Patient
+
+from .conf import TEST_CENTER_NAME, TEST_PATIENT_OUTPUT_PATH
+from .utils import create_test_patient
+
 
 class TestGeneratePatient(TestCase):
     def setUp(self):
@@ -43,7 +39,7 @@ class TestGeneratePatient(TestCase):
 
         # Create 100 patients
         for i in range(100):
-            _patient = create_test_patient()
+            create_test_patient()
 
         # calculate mean, min, max and std of patient.age
         patients = Patient.objects.all()
@@ -53,7 +49,7 @@ class TestGeneratePatient(TestCase):
         min_age = min(ages)
         max_age = max(ages)
 
-        std_age = (sum([(age - mean_age)**2 for age in ages]) / len(ages))**0.5
+        std_age = (sum([(age - mean_age) ** 2 for age in ages]) / len(ages)) ** 0.5
 
         report = "100 Test Patients created successfully: \n"
         report += f"Mean age: {mean_age}\n"
@@ -64,4 +60,3 @@ class TestGeneratePatient(TestCase):
         # Append to test_patient_examination_output_path
         with open(TEST_PATIENT_OUTPUT_PATH, "a") as f:
             f.write(report)
-

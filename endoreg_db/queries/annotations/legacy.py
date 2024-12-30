@@ -1,8 +1,10 @@
-from ...models import LabelSet, ImageClassificationAnnotation
-from django.db.models import Q, F
-from django.db import models
-from tqdm import tqdm
 from collections import defaultdict
+
+from django.db import models
+from django.db.models import F
+from tqdm import tqdm
+
+from ...models import ImageClassificationAnnotation, LabelSet
 
 # def get_legacy_annotations_for_labelset(labelset_name, version=None):
 #     """
@@ -69,7 +71,6 @@ from collections import defaultdict
 #     return organized_annotations
 
 
-
 def get_legacy_annotations_for_labelset(labelset_name, version=None):
     """
     ... [rest of your docstring]
@@ -79,7 +80,9 @@ def get_legacy_annotations_for_labelset(labelset_name, version=None):
     if version:
         labelset = LabelSet.objects.get(name=labelset_name, version=version)
     else:
-        labelset = LabelSet.objects.filter(name=labelset_name).order_by('-version').first()
+        labelset = (
+            LabelSet.objects.filter(name=labelset_name).order_by("-version").first()
+        )
         if not labelset:
             raise ValueError(f"No label set found with the name: {labelset_name}")
 
@@ -87,35 +90,36 @@ def get_legacy_annotations_for_labelset(labelset_name, version=None):
     labels_in_set = labelset.labels.all()
 
     # Get the most recent annotations for each frame/label combination
-    annotations = (ImageClassificationAnnotation.objects
-                   .filter(label__in=labels_in_set)
-                   .select_related('legacy_image', 'label')  # Reduce number of queries
-                   .annotate(
-                        latest_annotation=models.Window(
-                            expression=models.functions.RowNumber(),
-                            partition_by=[F('legacy_image'), F('label')],
-                            order_by=F('date_modified').desc()
-                        )
-                    ).filter(latest_annotation=1))
+    annotations = (
+        ImageClassificationAnnotation.objects.filter(label__in=labels_in_set)
+        .select_related("legacy_image", "label")  # Reduce number of queries
+        .annotate(
+            latest_annotation=models.Window(
+                expression=models.functions.RowNumber(),
+                partition_by=[F("legacy_image"), F("label")],
+                order_by=F("date_modified").desc(),
+            )
+        )
+        .filter(latest_annotation=1)
+    )
 
     # Organize the annotations by image/frame using a defaultdict
-    organized_annotations_dict = defaultdict(lambda: {
-        "legacy_image": None,
-        "annotations": []
-    })
+    organized_annotations_dict = defaultdict(
+        lambda: {"legacy_image": None, "annotations": []}
+    )
 
     for annotation in tqdm(annotations):
         organized_entry = organized_annotations_dict[annotation.legacy_image.id]
         organized_entry["legacy_image"] = annotation.legacy_image
-        organized_entry["annotations"].append({
-            "label": annotation.label.name,
-            "value": annotation.value
-        })
+        organized_entry["annotations"].append(
+            {"label": annotation.label.name, "value": annotation.value}
+        )
 
     # Convert organized_annotations_dict to a list
     organized_annotations = list(organized_annotations_dict.values())
 
     return organized_annotations
+
 
 def generate_legacy_dataset_output(labelset_name, version=None):
     """
@@ -143,15 +147,24 @@ def generate_legacy_dataset_output(labelset_name, version=None):
     for entry in organized_annotations:
         # Prepare a dictionary for each frame
         frame_data = {
-            "path": entry['legacy_image'].image.path,  # Assuming 'image' field stores the file path
-            "labels": [-1] * len(all_labels)  # Initialize with -1 for all labels
+            "path": entry[
+                "legacy_image"
+            ].image.path,  # Assuming 'image' field stores the file path
+            "labels": [-1] * len(all_labels),  # Initialize with -1 for all labels
         }
 
         # Update the labels based on the annotations
-        for annotation in entry['annotations']:
-            index = next((i for i, label in enumerate(all_labels) if label.name == annotation['label']), None)
+        for annotation in entry["annotations"]:
+            index = next(
+                (
+                    i
+                    for i, label in enumerate(all_labels)
+                    if label.name == annotation["label"]
+                ),
+                None,
+            )
             if index is not None:
-                frame_data['labels'][index] = int(annotation['value'])
+                frame_data["labels"][index] = int(annotation["value"])
 
         dataset_output.append(frame_data)
 

@@ -1,18 +1,13 @@
-from endoreg_db.models import (
-    Patient, 
-    Center, Disease,
-    PatientDisease,
-)
-    
 from datetime import datetime
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
-from io import StringIO
-from .conf import (
-    TEST_CENTER_NAME,
-    TEST_PATIENT_DISEASES_OUTPUT_PATH
-)
+
+from endoreg_db.models import Center, Disease, Patient, PatientDisease
+
+from .conf import TEST_CENTER_NAME, TEST_PATIENT_DISEASES_OUTPUT_PATH
+
 
 class TestPatientDiseases(TestCase):
     def setUp(self):
@@ -38,11 +33,8 @@ class TestPatientDiseases(TestCase):
                 out += f"\t{classification.name}:\n"
 
                 for choice in choices:
-
                     _patient_disease = PatientDisease.objects.create(
-                        patient=patient,
-                        disease=disease,
-                        start_date=datetime.now()
+                        patient=patient, disease=disease, start_date=datetime.now()
                     )
 
                     out += f"\t\t{choice.name}\n"
@@ -50,9 +42,3 @@ class TestPatientDiseases(TestCase):
 
         with open(TEST_PATIENT_DISEASES_OUTPUT_PATH, "w") as f:
             f.write(out)
-
-
-        
-
-
-

@@ -1,8 +1,10 @@
 from django.db import models
 
+
 class RuleTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
+
 
 class RuleType(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -18,5 +20,5 @@ class RuleType(models.Model):
         return self.name
 
     class Meta:
-        verbose_name = 'Rule Type'
-        verbose_name_plural = 'Rule Types'
+        verbose_name = "Rule Type"
+        verbose_name_plural = "Rule Types"

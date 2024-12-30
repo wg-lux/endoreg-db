@@ -1,8 +1,10 @@
 import shutil
 from pathlib import Path
+
 from endoreg_db.utils.uuid import get_uuid
 
-def get_uuid_filename(file:Path) -> tuple[str, str]:
+
+def get_uuid_filename(file: Path) -> tuple[str, str]:
     """
     Returns a new filename with a uuid
     """
@@ -12,8 +14,9 @@ def get_uuid_filename(file:Path) -> tuple[str, str]:
     uuid = get_uuid()
     new_file_name = f"{uuid}{file_extension}"
     return new_file_name, uuid
-    
-def rename_file_uuid(old_file:Path):
+
+
+def rename_file_uuid(old_file: Path):
     """
     Rename a file by assigning a uuid while preserving file extension. Returns new filepath and uuid
     """

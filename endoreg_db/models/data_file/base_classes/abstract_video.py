@@ -1,18 +1,21 @@
-# import cv2
-from PIL import Image
-from django.core.files.base import ContentFile
-from django.db import models, transaction
-from tqdm import tqdm
-# import cv2
 import io
 from datetime import date
 
+import cv2
+from django.core.files.base import ContentFile
+from django.db import models, transaction
+from PIL import Image
+from tqdm import tqdm
+
 BATCH_SIZE = 1000
+
 
 class AbstractVideo(models.Model):
     file = models.FileField(upload_to="raw_videos", blank=True, null=True)
     video_hash = models.CharField(max_length=255, unique=True)
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, blank=True, null=True)
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE, blank=True, null=True
+    )
     date = models.DateField(blank=True, null=True)
     suffix = models.CharField(max_length=255)
     fps = models.FloatField()
@@ -23,8 +26,12 @@ class AbstractVideo(models.Model):
     endoscope_image_y = models.IntegerField(blank=True, null=True)
     endoscope_image_width = models.IntegerField(blank=True, null=True)
     endoscope_image_height = models.IntegerField(blank=True, null=True)
-    center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
-    endoscopy_processor = models.ForeignKey("EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True)
+    center = models.ForeignKey(
+        "Center", on_delete=models.CASCADE, blank=True, null=True
+    )
+    endoscopy_processor = models.ForeignKey(
+        "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True
+    )
     frames_extracted = models.BooleanField(default=False)
 
     meta = models.JSONField(blank=True, null=True)
@@ -34,10 +41,10 @@ class AbstractVideo(models.Model):
 
     def get_roi_endoscope_image(self):
         return {
-            'x': self.endoscope_image_content_x,
-            'y': self.endoscope_image_content_y,
-            'width': self.endoscope_image_content_width,
-            'height': self.endoscope_image_content_height,
+            "x": self.endoscope_image_content_x,
+            "y": self.endoscope_image_content_y,
+            "width": self.endoscope_image_content_width,
+            "height": self.endoscope_image_content_height,
         }
 
     def initialize_metadata_in_db(self, video_meta=None):
@@ -49,20 +56,21 @@ class AbstractVideo(models.Model):
 
     def get_or_create_patient(self, video_meta=None):
         from ...persons import Patient
+
         if not video_meta:
             video_meta = self.meta
 
-        patient_first_name = video_meta['patient_first_name']
-        patient_last_name = video_meta['patient_last_name']
-        patient_dob = video_meta['patient_dob']
+        patient_first_name = video_meta["patient_first_name"]
+        patient_last_name = video_meta["patient_last_name"]
+        patient_dob = video_meta["patient_dob"]
 
         # assert that we got all the necessary information
-        assert patient_first_name and patient_last_name and patient_dob, "Missing patient information"
+        assert (
+            patient_first_name and patient_last_name and patient_dob
+        ), "Missing patient information"
 
         patient, created = Patient.objects.get_or_create(
-            first_name=patient_first_name,
-            last_name=patient_last_name,
-            dob=patient_dob
+            first_name=patient_first_name, last_name=patient_last_name, dob=patient_dob
         )
 
         return patient, created
@@ -80,17 +88,17 @@ class AbstractVideo(models.Model):
         frame_model = self.get_frame_model()
         framecount = frame_model.objects.filter(video=self).count()
         return framecount
-    
-    def set_frames_extracted(self, value:bool=True):
+
+    def set_frames_extracted(self, value: bool = True):
         self.frames_extracted = value
         self.save()
-        
+
     def get_frames(self):
         """
         Retrieve all frames for this video in the correct order.
         """
         frame_model = self.get_frame_model()
-        return frame_model.objects.filter(video=self).order_by('frame_number')
+        return frame_model.objects.filter(video=self).order_by("frame_number")
 
     def get_frame(self, frame_number):
         """
@@ -99,21 +107,25 @@ class AbstractVideo(models.Model):
         frame_model = self.get_frame_model()
         return frame_model.objects.get(video=self, frame_number=frame_number)
 
-    def get_frame_range(self, start_frame_number:int, end_frame_number:int):
+    def get_frame_range(self, start_frame_number: int, end_frame_number: int):
         """
         Expects numbers of start and stop frame.
         Returns all frames of this video within the given range in ascending order.
         """
         frame_model = self.get_frame_model()
-        return frame_model.objects.filter(video=self, frame_number__gte=start_frame_number, frame_number__lte=end_frame_number).order_by('frame_number')
+        return frame_model.objects.filter(
+            video=self,
+            frame_number__gte=start_frame_number,
+            frame_number__lte=end_frame_number,
+        ).order_by("frame_number")
 
     def _create_frame_object(self, frame_number, image_file):
         frame_model = self.get_frame_model()
         frame = frame_model(
-                video=self,
-                frame_number=frame_number,
-                suffix='jpg',
-            )
+            video=self,
+            frame_number=frame_number,
+            suffix="jpg",
+        )
         frame.image_file = image_file  # Temporary store the file-like object
 
         return frame
@@ -125,7 +137,9 @@ class AbstractVideo(models.Model):
 
             # After the DB operation, save the ImageField for each object
             for frame in frames_to_create:
-                frame_name = f"video_{self.id}_frame_{str(frame.frame_number).zfill(7)}.jpg"
+                frame_name = (
+                    f"video_{self.id}_frame_{str(frame.frame_number).zfill(7)}.jpg"
+                )
                 frame.image.save(frame_name, frame.image_file)
 
             # Clear the list for the next batch
@@ -134,7 +148,7 @@ class AbstractVideo(models.Model):
     def set_examination_date_from_video_meta(self, video_meta=None):
         if not video_meta:
             video_meta = self.meta
-        date_str = video_meta['examination_date'] # e.g. 2020-01-01
+        date_str = video_meta["examination_date"]  # e.g. 2020-01-01
         if date_str:
             self.date = date.fromisoformat(date_str)
             self.save()
@@ -165,7 +179,7 @@ class AbstractVideo(models.Model):
 
             # Save the PIL Image to a buffer
             buffer = io.BytesIO()
-            pil_image.save(buffer, format='JPEG')
+            pil_image.save(buffer, format="JPEG")
 
             # Create a file-like object from the byte data in the buffer
             image_file = ContentFile(buffer.getvalue())
@@ -179,7 +193,6 @@ class AbstractVideo(models.Model):
                 self._bulk_create_frames(frames_to_create)
                 frames_to_create = []
 
-
         # Handle remaining frames
         if frames_to_create:
             self._bulk_create_frames(frames_to_create)
@@ -188,7 +201,6 @@ class AbstractVideo(models.Model):
         # Close the video file
         video.release()
         self.set_frames_extracted(True)
-
 
     def initialize_video_specs(self, video):
         """

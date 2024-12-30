@@ -5,20 +5,28 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0003_patientexaminationindication'),
+        ("endoreg_db", "0003_patientexaminationindication"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='patientexaminationindication',
-            name='indication_choice',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='endoreg_db.examinationindicationclassificationchoice'),
+            model_name="patientexaminationindication",
+            name="indication_choice",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                to="endoreg_db.examinationindicationclassificationchoice",
+            ),
         ),
         migrations.AlterField(
-            model_name='patientexaminationindication',
-            name='patient_examination',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='indications', to='endoreg_db.patientexamination'),
+            model_name="patientexaminationindication",
+            name="patient_examination",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="indications",
+                to="endoreg_db.patientexamination",
+            ),
         ),
     ]

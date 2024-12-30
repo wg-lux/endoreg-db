@@ -1,7 +1,7 @@
 # from endoreg_db.models import (
 #     RawVideoFile,Center,VideoMeta
 # )
-    
+
 # from datetime import datetime
 
 # from django.core.management import call_command
@@ -42,7 +42,8 @@
 #     # maybe add sigmoid after prediction?
 #     "activation": nn.Sigmoid(),
 #     "labels": [
-#         'appendix',  'blood',  'diverticule',  'grasper',  'ileocaecalvalve',  'ileum',  'low_quality',  'nbi',  'needle',  'outside',  'polyp',  'snare',  'water_jet',  'wound'
+#           'appendix',  'blood',  'diverticule',  'grasper',  'ileocaecalvalve',  'ileum',  'low_quality',
+#           'nbi',  'needle',  'outside',  'polyp',  'snare',  'water_jet',  'wound'
 #     ]
 # }
 
@@ -68,10 +69,10 @@
 #             Classifier,
 #             InferenceDataset
 #         )
-        
+
 #         test_video_dict = TEST_VIDEO_DICT["gastroscopy"]
 #         center = Center.objects.get(name=TEST_CENTER_NAME)
-        
+
 #         model = MultiLabelClassificationNet.load_from_checkpoint(
 #             checkpoint_path=TEST_MULTILABEL_CLASSIFIER_MODEL_PATH,
 #         )
@@ -93,10 +94,10 @@
 #         paths_string = [_.as_posix() for _ in anonymized_frame_paths]
 
 #         endo_roi = raw_video.get_endo_roi() # {"x": 0, "y": 0, "width": 1920, "height": 1080}
-        
+
 #         crops = [
 #             [
-#                 endo_roi["y"], 
+#                 endo_roi["y"],
 #                 endo_roi["y"] + endo_roi["height"],
 #                 endo_roi["x"],
 #                 endo_roi["x"] + endo_roi["width"]
@@ -130,7 +131,7 @@
 #                 # if numpy array
 #                 if hasattr(_dict[key], "tolist"):
 #                     _dict[key] = _dict[key].tolist()
-                
+
 #                 # check if list of tuples
 #                 # if so, make sure each tuple has 2 elements and split to two lists (start, stop)
 #                 if isinstance(_dict[key], tuple):
@@ -160,21 +161,18 @@
 #                 json.dump(_dict, f, indent=4)
 
 
-
 #         with open(TEST_MULTILABEL_AI_MODEL_IMPORT_PATH, "a") as f:
 #             f.write(f"Extract Frames Result:\n{extract_frames_result}\n\n")
 #             f.write(f"Anonymized Frames Result:\n{_r}\n\n")
 #             f.write(f"Predictions:\n{result}\n\n")
 
-       
+
 #         # raw_video.delete_with_file()
 
 #         # for frame_path in anonymized_frame_paths:
 #         #     assert frame_path.exists(), f"Anonymized Frame {frame_path} does not exist"
 
 
-
 #         # with open(TEST_MULTILABEL_AI_MODEL_IMPORT_PATH, "a") as f:
 #         #     f.write(f"Extract Frames Result:\n{extract_frames_result}\n\n")
 #         #     f.write(f"Anonymized Frames Result:\n{_r}\n\n")
-

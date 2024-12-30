@@ -1,7 +1,7 @@
 # from endoreg_db.models import (
 #     RawPdfFile,Center,
 # )
-    
+
 # from datetime import datetime
 
 # from django.core.management import call_command
@@ -70,7 +70,7 @@
 
 #                 self.assertEqual(patient_hash, TEST_GASTRO_REPORT_RESULTS["patient_hash"])
 #                 self.assertEqual(patient_examination_hash, TEST_GASTRO_REPORT_RESULTS["patient_examination_hash"])
-                
+
 #                 f.write("Extracted Sensitive Report Meta:\n")
 #                 for key, value in report_meta.items():
 #                     f.write(f"{key}:\n{value}\n\n")
@@ -84,7 +84,3 @@
 
 #                 # verify the raw pdf file is deleted
 #                 self.assertFalse(pdf_filepath.exists())
-
-
-        
-

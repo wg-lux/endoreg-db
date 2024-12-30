@@ -4,16 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0013_lxclienttag_lxclienttype_lxidentitytype_lxpermission_and_more'),
+        (
+            "endoreg_db",
+            "0013_lxclienttag_lxclienttype_lxidentitytype_lxpermission_and_more",
+        ),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='lxclienttype',
-            name='abbreviation',
-            field=models.CharField(default='WÜDÜDÜDÜ', max_length=10, unique=True),
+            model_name="lxclienttype",
+            name="abbreviation",
+            field=models.CharField(default="WÜDÜDÜDÜ", max_length=10, unique=True),
             preserve_default=False,
         ),
     ]

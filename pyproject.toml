@@ -26,5 +26,8 @@ dependencies = [
     "urllib3>=2.2.3",
 ]
 
+[tool.isort]
+profile = "black"
+
 [tool.setuptools]
 packages = ["endoreg_db"]

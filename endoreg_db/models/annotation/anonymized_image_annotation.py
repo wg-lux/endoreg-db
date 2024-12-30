@@ -1,6 +1,7 @@
 from django.db import models
-from django.utils.text import slugify
 from django.utils import timezone
+from django.utils.text import slugify
+
 
 class AnonymizedImageLabel(models.Model):
     """
@@ -10,6 +11,7 @@ class AnonymizedImageLabel(models.Model):
         name (str): Unique name of the label.
         description (str): Optional description for the label.
     """
+
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
 
@@ -33,9 +35,12 @@ class AnonymousImageAnnotation(models.Model):
         date_created (datetime): Date when the annotation was created.
         processed (bool): Indicates if the annotation has been processed.
     """
+
     label = models.ForeignKey(AnonymizedImageLabel, on_delete=models.CASCADE)
     image_name = models.CharField(max_length=255)
-    original_image_url = models.CharField(max_length=255, default='https://example.com/placeholder.jpg')
+    original_image_url = models.CharField(
+        max_length=255, default="https://example.com/placeholder.jpg"
+    )
     slug = models.SlugField(unique=True, blank=True, null=True)
     polyp_count = models.IntegerField()
     comments = models.TextField(blank=True, null=True)
@@ -69,7 +74,10 @@ class DroppedName(models.Model):
         name_image_url (str): URL of the name image.
         box_coordinates (str): Optional coordinates of the bounding box.
     """
-    annotation = models.ForeignKey(AnonymousImageAnnotation, related_name='dropped_names', on_delete=models.CASCADE)
+
+    annotation = models.ForeignKey(
+        AnonymousImageAnnotation, related_name="dropped_names", on_delete=models.CASCADE
+    )
     name = models.CharField(max_length=255)
     gender = models.CharField(max_length=255)
     x = models.FloatField()
@@ -90,7 +98,8 @@ class UploadedFile(models.Model):
         upload_date (datetime): Date when the file was uploaded.
         description (str): Optional description of the file.
     """
-    original_file = models.FileField(upload_to='uploads/original/')
+
+    original_file = models.FileField(upload_to="uploads/original/")
     upload_date = models.DateTimeField(default=timezone.now)
     description = models.TextField(blank=True, null=True)
 
@@ -107,8 +116,11 @@ class AnonymizedFile(models.Model):
         anonymized_file (FileField): The anonymized file.
         anonymization_date (datetime): Date when the file was anonymized.
     """
-    original_file = models.OneToOneField(UploadedFile, on_delete=models.CASCADE, related_name='anonymized_file')
-    anonymized_file = models.FileField(upload_to='uploads/anonymized/')
+
+    original_file = models.OneToOneField(
+        UploadedFile, on_delete=models.CASCADE, related_name="anonymized_file"
+    )
+    anonymized_file = models.FileField(upload_to="uploads/anonymized/")
     anonymization_date = models.DateTimeField(default=timezone.now)
 
     def __str__(self) -> str:

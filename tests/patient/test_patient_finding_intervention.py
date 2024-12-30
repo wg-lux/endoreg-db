@@ -1,23 +1,23 @@
-from endoreg_db.models import (
-    Patient, 
-    Center, 
-    PatientLabValue, PatientFinding, FindingMorphologyClassification,
-    Finding, PatientFindingIntervention,
-    FindingLocationClassification,
-)
-
-from .utils import create_patient_with_colonoscopy
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
-from io import StringIO
-from .conf import (
-    TEST_CENTER_NAME,
-    TEST_EXAMINATION_NAME_STRINGS,
-    TEST_PATIENT_INTERVENTION_OUTPUT_PATH,
-    COLONOSCOPY_FINDING_LOCATION_CLASSIFICATION_NAME
+
+from endoreg_db.models import (
+    Center,
+    Finding,
+    FindingLocationClassification,
+    FindingMorphologyClassification,
+    PatientFinding,
 )
-import random
+
+from .conf import (
+    COLONOSCOPY_FINDING_LOCATION_CLASSIFICATION_NAME,
+    TEST_CENTER_NAME,
+    TEST_PATIENT_INTERVENTION_OUTPUT_PATH,
+)
+from .utils import create_patient_with_colonoscopy
+
 
 class TestGeneratePatient(TestCase):
     def setUp(self):
@@ -33,7 +33,10 @@ class TestGeneratePatient(TestCase):
 
     def test_colon_polyp_finding_interventions(self):
         import random
-        patient, patient_examination = create_patient_with_colonoscopy(center_name=TEST_CENTER_NAME)
+
+        patient, patient_examination = create_patient_with_colonoscopy(
+            center_name=TEST_CENTER_NAME
+        )
 
         finding = Finding.objects.get(name="colon_polyp")
 
@@ -43,26 +46,35 @@ class TestGeneratePatient(TestCase):
         )
 
         location_classification_choices = location_classification.get_choices()
-        required_morphology_classification_types = finding.get_required_morphology_classification_types()
+        required_morphology_classification_types = (
+            finding.get_required_morphology_classification_types()
+        )
         # Select random
         location_classification_choice = random.choice(location_classification_choices)
-        morphology_classification_type = random.choice(required_morphology_classification_types)
-        
-        morphology_classification:FindingMorphologyClassification = FindingMorphologyClassification.objects.filter(
-            classification_type=morphology_classification_type
-        ).first()
-        
+        morphology_classification_type = random.choice(
+            required_morphology_classification_types
+        )
+
+        morphology_classification: FindingMorphologyClassification = (
+            FindingMorphologyClassification.objects.filter(
+                classification_type=morphology_classification_type
+            ).first()
+        )
+
         i = 0
 
-
         morphology_classification_choices = morphology_classification.get_choices()
-        morphology_classification_choice = random.choice(morphology_classification_choices)
+        morphology_classification_choice = random.choice(
+            morphology_classification_choices
+        )
 
         finding_interventions = finding.finding_interventions.all()
         for finding_intervention in finding_interventions:
-            i+=1
-            patient_finding:PatientFinding = patient_examination.create_finding(finding)
-            
+            i += 1
+            patient_finding: PatientFinding = patient_examination.create_finding(
+                finding
+            )
+
             # Set Location
             _patient_finding_location = patient_finding.add_location_choice(
                 location_classification_choice, location_classification
@@ -93,4 +105,3 @@ class TestGeneratePatient(TestCase):
 
         with open(TEST_PATIENT_INTERVENTION_OUTPUT_PATH, "w") as f:
             f.write(out)
-

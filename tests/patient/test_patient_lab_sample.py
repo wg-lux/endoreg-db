@@ -1,20 +1,11 @@
-from endoreg_db.models import (
-    Patient, 
-    Center, 
-    PatientLabValue, LabValue
-)
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
-from io import StringIO
 
-from .conf import (
-    TEST_CENTER_NAME,
-    LAB_VALUE_DICTS,
-    LAB_VALUE_W_DIST_DICTS,
-    TEST_PATIENT_LAB_SAMPLE_OUTPUT_PATH
-)
+from endoreg_db.models import Center, LabValue, Patient, PatientLabValue
 
+from .conf import LAB_VALUE_DICTS, TEST_CENTER_NAME, TEST_PATIENT_LAB_SAMPLE_OUTPUT_PATH
 
 
 class TestGeneratePatient(TestCase):
@@ -31,14 +22,13 @@ class TestGeneratePatient(TestCase):
         patient = Patient.create_generic(center=TEST_CENTER_NAME)
         sample = patient.create_lab_sample(
             sample_type="generic",
-            date=None, # defaults to dt.now() if not provided
-            save=True
+            date=None,  # defaults to dt.now() if not provided
+            save=True,
         )
 
         for _dict in LAB_VALUE_DICTS:
             lab_value = PatientLabValue.create_lab_value_by_sample(
-                sample=sample,
-                **_dict
+                sample=sample, **_dict
             )
 
             lab_value.set_unit_from_default()
@@ -46,8 +36,8 @@ class TestGeneratePatient(TestCase):
 
         sample_2 = patient.create_lab_sample(
             sample_type="generic",
-            date=None, # defaults to dt.now() if not provided
-            save=True
+            date=None,  # defaults to dt.now() if not provided
+            save=True,
         )
 
         lab_values = LabValue.objects.all()
@@ -56,9 +46,9 @@ class TestGeneratePatient(TestCase):
             try:
                 patient_lab_value = PatientLabValue.create_lab_value_by_sample(
                     sample=sample_2,
-                    lab_value_name = lab_value.name,
+                    lab_value_name=lab_value.name,
                 )
-                
+
                 patient_lab_value.set_unit_from_default()
                 patient_lab_value.set_norm_values_from_default()
                 patient_lab_value.set_value_by_distribution()
@@ -75,4 +65,3 @@ class TestGeneratePatient(TestCase):
             f.write(out)
 
         return patient
-    

@@ -1,12 +1,15 @@
 from django.db import models
 
+
 class ExaminationTimeTypeManager(models.Manager):
     """
     Manager for ExaminationTimeType with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "ExaminationTimeType":
         return self.get(name=name)
-    
+
+
 class ExaminationTimeType(models.Model):
     """
     Represents a type of examination time.
@@ -17,11 +20,12 @@ class ExaminationTimeType(models.Model):
         name_en (str): The English name of the examination time type.
         examinations: The examinations associated with this type.
     """
+
     objects = ExaminationTimeTypeManager()
     name = models.CharField(max_length=100, unique=True)
     name_de = models.CharField(max_length=100, blank=True, null=True)
     name_en = models.CharField(max_length=100, blank=True, null=True)
-    examinations = models.ManyToManyField('Examination', blank=True)
+    examinations = models.ManyToManyField("Examination", blank=True)
 
     def __str__(self) -> str:
         """
@@ -42,7 +46,6 @@ class ExaminationTimeType(models.Model):
         return (self.name,)
 
     class Meta:
-        verbose_name = 'Examination Time Type'
-        verbose_name_plural = 'Examination Time Types'
-        ordering = ['name']
-
+        verbose_name = "Examination Time Type"
+        verbose_name_plural = "Examination Time Types"
+        ordering = ["name"]

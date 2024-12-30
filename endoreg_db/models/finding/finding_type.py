@@ -4,7 +4,8 @@ from django.db import models
 class FindingTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-    
+
+
 class FindingType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     name_de = models.CharField(max_length=100, blank=True, null=True)
@@ -17,6 +18,6 @@ class FindingType(models.Model):
 
     def natural_key(self):
         return (self.name,)
-    
+
     def __str__(self):
         return self.name

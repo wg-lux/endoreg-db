@@ -1,13 +1,17 @@
-from django.db import models
 from typing import List
+
+from django.db import models
+
 
 class ExaminationIndicationManager(models.Manager):
     """
     Manager for ExaminationIndication with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "ExaminationIndication":
         return self.get(name=name)
-    
+
+
 class ExaminationIndication(models.Model):
     """
     Represents an indication for an examination.
@@ -19,21 +23,25 @@ class ExaminationIndication(models.Model):
         classification (ForeignKey): The classification associated with the indication.
         examination (ForeignKey): The examination associated with the indication.
     """
+
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     classification = models.ForeignKey(
-        'ExaminationIndicationClassification', on_delete=models.CASCADE,
-        related_name='indications',
-        blank=True, null=True
+        "ExaminationIndicationClassification",
+        on_delete=models.CASCADE,
+        related_name="indications",
+        blank=True,
+        null=True,
     )
     examination = models.ForeignKey(
-        'Examination', on_delete=models.CASCADE,
-        related_name='indications',
+        "Examination",
+        on_delete=models.CASCADE,
+        related_name="indications",
     )
-    
+
     objects = ExaminationIndicationManager()
-    
+
     def natural_key(self) -> tuple:
         """
         Returns the natural key for the indication.
@@ -52,7 +60,7 @@ class ExaminationIndication(models.Model):
         """
         return self.name
 
-    def get_choices(self) -> List['ExaminationIndicationClassificationChoice']:
+    def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
         """
         Retrieves all choices associated with the classification.
 
@@ -61,7 +69,7 @@ class ExaminationIndication(models.Model):
         """
         return list(self.classification.choices.all()) if self.classification else []
 
-    def get_examination(self) -> 'Examination':
+    def get_examination(self) -> "Examination":
         """
         Retrieves the associated examination.
 
@@ -70,12 +78,15 @@ class ExaminationIndication(models.Model):
         """
         return self.examination
 
+
 class ExaminationIndicationClassificationManager(models.Manager):
     """
     Manager for ExaminationIndicationClassification with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "ExaminationIndicationClassification":
         return self.get(name=name)
+
 
 class ExaminationIndicationClassification(models.Model):
     """
@@ -86,13 +97,13 @@ class ExaminationIndicationClassification(models.Model):
         name_de (str): The German name of the classification.
         name_en (str): The English name of the classification.
     """
+
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
-    
-    
+
     objects = ExaminationIndicationClassificationManager()
-    
+
     def natural_key(self) -> tuple:
         """
         Returns the natural key for the classification.
@@ -111,7 +122,7 @@ class ExaminationIndicationClassification(models.Model):
         """
         return self.name
 
-    def get_choices(self) -> List['ExaminationIndicationClassificationChoice']:
+    def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
         """
         Retrieves all choices associated with this classification.
 
@@ -120,12 +131,17 @@ class ExaminationIndicationClassification(models.Model):
         """
         return list(self.choices.all())
 
+
 class ExaminationIndicationClassificationChoiceManager(models.Manager):
     """
     Manager for ExaminationIndicationClassificationChoice with custom query methods.
     """
-    def get_by_natural_key(self, name: str) -> "ExaminationIndicationClassificationChoice":
+
+    def get_by_natural_key(
+        self, name: str
+    ) -> "ExaminationIndicationClassificationChoice":
         return self.get(name=name)
+
 
 class ExaminationIndicationClassificationChoice(models.Model):
     """
@@ -139,14 +155,16 @@ class ExaminationIndicationClassificationChoice(models.Model):
         numerical_descriptors (JSONField): Numerical descriptors for the choice.
         classification (ForeignKey): The classification to which this choice belongs.
     """
+
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
     classification = models.ForeignKey(
-        ExaminationIndicationClassification, on_delete=models.CASCADE,
-        related_name='choices'
+        ExaminationIndicationClassification,
+        on_delete=models.CASCADE,
+        related_name="choices",
     )
 
     objects = ExaminationIndicationClassificationChoiceManager()
