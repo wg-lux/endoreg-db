@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file=requirements.txt pyproject.toml
 #
-agl-report-reader==0.4.0
+# agl-report-reader==0.4.0
     # via endoreg-db (pyproject.toml)
 aiohappyeyeballs==2.4.4
     # via aiohttp
