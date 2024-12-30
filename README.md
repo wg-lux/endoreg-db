@@ -69,10 +69,26 @@ venv\Scripts\activate
 
 ### Step 3: Install Dependencies
 
-Install the required Python dependencies:
+We provide two separate requirements files depending on your environment:
+
+1. **CPU-based Systems (macOS or Linux without CUDA)**:
+    - Install dependencies for macOS or CPU-only Linux systems.
+    - Run the following command:
+      ```bash
+      pip install -r requirements-cpu.txt
+      ```
+
+2. **GPU-based Systems (Linux with CUDA)**:
+    - Install dependencies for systems with CUDA support.
+    - Run the following command:
+      ```bash
+      pip install -r requirements-gpu.txt
+      ```
+
+For automatic installation based on your platform, use the `install_dependencies.py` script:
 
 ```bash
-pip install -r requirements.txt
+python install_dependencies.py
 ```
 
 ### Step 4: Run Migrations
