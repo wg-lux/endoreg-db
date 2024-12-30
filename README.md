@@ -32,7 +32,6 @@ and more.
 - **Image/Video Processing**: Support for analyzing patient images and clinical videos.
 
 ### Development Tools & Infrastructure
-- **Docker Support**: Containerized environments for reproducibility.
 - **Data Science Toolchains**: Pre-configured environments for data processing, analysis, and visualization.
 - **Monitoring & Logging**: Setup for continuous monitoring and logging to ensure system stability and performance.
 
