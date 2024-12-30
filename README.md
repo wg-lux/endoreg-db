@@ -47,7 +47,7 @@ For a complete list, see the `pyproject.toml` file.
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/endoreg-db.git
+git clone https://github.com/wg-lux/endoreg-db.git
 cd endoreg-db
 ```
 
