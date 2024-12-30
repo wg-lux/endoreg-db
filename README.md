@@ -81,17 +81,12 @@ and more.
 endoreg-db/
 ├── endoreg_db/                # Main Django app for medical data
 │   ├── models/                # Data models
-│   ├── views/                 # Views and endpoints
 │   ├── migrations/            # Database migrations
 │   └── serializers/           # Serializers for data
 ├── scripts/                   # Utility scripts (for backup, data import)
-├── docs/                      # Documentation files
-│   ├── deployment-guide.md    # Deployment guide
-│   ├── api.md                 # API documentation
-│   └── setup.md               # Environment setup
-├── requirements.txt           # Required Python packages
+├── requirements_cpu.txt       # Required Python packages for Apple Silicon
+├── requirements_gpu.txt       # Required Python packages for CUDA based Systems
 ├── manage.py                  # Main script for Django management
-├── Dockerfile                 # Docker configuration for containerization
 ├── .gitignore                 # Git ignore file for unnecessary files
 └── README.md                  # Project description and setup instructions
 ```
@@ -114,22 +109,11 @@ endoreg-db/
 
 ---
 
-## 📚 Documentation
-
-Detailed documentation is available in the `docs/` directory:
-- Deployment Guide
-- System Configuration
-- Data Processing Setup
-- API Usage
-- Database Setup
-
----
 
 ## 🛟 Support
 
 For issues and questions:
 - Create an issue in the repository
-- Check the documentation in the `docs/` directory
 - Review the Deployment Guide for common issues
 
 ---
