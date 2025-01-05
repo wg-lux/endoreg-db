@@ -1,11 +1,11 @@
-# EndoregDB - Professional Data Infrastructure for Research
+# EndoregDB - Professional Data Infrastructure for Clinical Research
 
 EndoregDB is a comprehensive database framework designed to manage medical and research-related data for clinical trials. This repository focuses on efficient data processing, automated deployment, security, and reproducibility, offering a flexible setup for local development environments as well as distributed systems. It supports the integration of AI/ML tools and advanced image and report processing.
 
 This infrastructure was originally designed for clinical research studies and is optimized for handling large data volumes, including:
 - Medical reports,
-- Patient imaging data,
-- Clinical videos,
+- Patient imaging and video data,
+- Clinical product and treatment data,
 and more.
 
 ## 🚀 Key Features
@@ -21,7 +21,6 @@ and more.
 ### Security & Data Management
 - **Data Encryption**: All sensitive data is encrypted, and privacy policies are enforced.
 - **Impermanence**: Stateless system configuration with persistence for critical data.
-- **Backup & Recovery**: Automated backups of critical data with simple recovery options.
 - **Access Control**: Role-based access and identity management integration.
 
 ### Data and Processing Environment
@@ -35,18 +34,12 @@ and more.
 - **Data Science Toolchains**: Pre-configured environments for data processing, analysis, and visualization.
 - **Monitoring & Logging**: Setup for continuous monitoring and logging to ensure system stability and performance.
 
-### Network & Integration
-- **Data APIs**: REST APIs for integration with other systems.
-- **Cloud Storage Integration**: Support for cloud-based data storage services.
-- **VPN & Secure Networking**: Secure network configurations with options for private and public cloud deployments.
-
 ---
 
 ## 🛠 Getting Started
 
 ### Prerequisites
 - A Linux-based system (Ubuntu/Debian recommended) or NixOS
-- Docker or Podman for containerization
 - Hardware with sufficient storage for data processing (at least 1 TB recommended)
 
 ### Quick Start
@@ -63,29 +56,18 @@ and more.
     python install_dependencies.py
     ```
 
-3. Initialize the database and run migrations:
-    ```bash
-    python manage.py migrate
-    ```
-
-4. Start the application (or run tests):
-    ```bash
-    python manage.py runserver
-    ```
-
 ---
 
 ## 📁 Repository Structure
 ```
 endoreg-db/
 ├── endoreg_db/                # Main Django app for medical data
+│   ├── case_generator/        # Sample case generator
+│   ├── data/                  # Medical knowledge base
+│   ├── management/            # Data wrangling operations
 │   ├── models/                # Data models
 │   ├── migrations/            # Database migrations
 │   └── serializers/           # Serializers for data
-├── scripts/                   # Utility scripts (for backup, data import)
-├── requirements_cpu.txt       # Required Python packages for Apple Silicon
-├── requirements_gpu.txt       # Required Python packages for CUDA based Systems
-├── manage.py                  # Main script for Django management
 ├── .gitignore                 # Git ignore file for unnecessary files
 └── README.md                  # Project description and setup instructions
 ```
@@ -95,7 +77,7 @@ endoreg-db/
 
 ## 🔒 Security Features
 
-- **Data Encryption**: All sensitive patient data is encrypted using industry-standard methods.
+- **Data Encryption**: All sensitive patient data is encrypted.
 - **Role-Based Access Control**: Configurable roles for managing access to various parts of the system.
 - **Logging & Auditing**: Comprehensive logging system that tracks user activities and data changes.
 
