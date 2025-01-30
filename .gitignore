@@ -15,9 +15,11 @@ __pycache__/
 _build
 .direnv
 
-###### Do not Remove ######
+.devenv.flake.nix
+
+###### Do not Remove ###### # Deprecated?
 # Protects temporary files from being comitted
-endoreg_client_manager/data/*
+endoreg_client_manager/data/* 
 
 # C extensions
 *.so
