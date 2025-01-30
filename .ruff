@@ -1,4 +1,0 @@
-[tool.ruff]
-ignore = ["F401", "E402", "F403", "F841", "E203", "W503", "F821", "E501", "E266"]
-line-length = 150
-exclude = ["migrations", "tests"]
