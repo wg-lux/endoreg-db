@@ -1,49 +1,49 @@
 Generated 8 interventions for 8 findings
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-polypectomy-cold-snare
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-polypectomy-hot-snare
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-injection-liftup
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-injection-vasoactive
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-biopsy
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-emr
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-esd
 
 
-Sonja Sauer (1963-12-09) - colonoscopy - None - colon_polyp
-Finding Location: [<PatientFindingLocation: colonoscopy_default - sigmoid_colon>]
-Finding Morphology: [<PatientFindingMorphology: colon_lesion_circularity_default - colon_lesion_circularity_false (colon_lesion_circularity_default)>]
+Heinz-Wilhelm Schaaf (1972-12-22) - colonoscopy - None - colon_polyp
+Finding Location: [<PatientFindingLocation: colonoscopy_default - rectum>]
+Finding Morphology: [<PatientFindingMorphology: colon_lesion_size_categorical - colon_lesion_size_categorical_medium (colon_lesion_size_categorical)>]
 	colon-lesion-clip
 
 

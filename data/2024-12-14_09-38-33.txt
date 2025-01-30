@@ -3,6 +3,6 @@ Cuda is available: True
 Number of usable devices: 1
 
 Device 0: NVIDIA GeForce RTX 4070 Laptop GPU
-  Total Memory: 7843.25 MB
+  Total Memory: 7832.25 MB
   Multiprocessor Count: 36
 

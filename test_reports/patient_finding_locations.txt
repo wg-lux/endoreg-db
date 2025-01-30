@@ -5,579 +5,579 @@ which contains those location choices <QuerySet [<FindingLocationClassificationC
 
 ------------
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - tumor
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.1022939731509918}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.1077126609339214}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.308169072392534}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 17.0815497969932}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - erosion
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.0785181446303085}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.1451250800857973}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 37.985449582149386}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.443891781999744}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - ulcer
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.349432805577325}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.205656282289658}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 34.62034280456659}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 21.831168048808692}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.48639239894852}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 13.46476559228297}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 11.402816210114198}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 9.162698840093068}}
 
 
-Patient Finding: Roberto Scholz (1950-12-09) - colonoscopy - None - scar
+Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.4354694397268566}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.3803480034038664}}
 
 

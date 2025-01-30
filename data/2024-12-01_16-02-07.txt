@@ -1,8 +1,0 @@
-EndoReg DB DevEnv (with cuda support)!
-Cuda is available: True
-Number of usable devices: 1
-
-Device 0: NVIDIA GeForce RTX 3050 Laptop GPU
-  Total Memory: 3805.88 MB
-  Multiprocessor Count: 16
-

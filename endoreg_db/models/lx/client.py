@@ -62,4 +62,5 @@ class LxClient(models.Model):
     description = models.TextField(blank=True)
     client_type = models.ForeignKey(LxClientType, on_delete=models.CASCADE)
     client_tags = models.ManyToManyField(LxClientTag, blank=True)
+    vpn_ip = models.GenericIPAddressField(blank=True, null=True)
     objects = LxClientManager()

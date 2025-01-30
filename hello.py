@@ -20,9 +20,7 @@ def write_message(message=None):
         for i in range(torch.cuda.device_count()):
             properties = torch.cuda.get_device_properties(i)
             message += f"Device {i}: {properties.name}\n"
-            message += (
-                f"  Total Memory: {properties.total_memory / (1024 ** 2):.2f} MB\n"
-            )
+            message += f"  Total Memory: {properties.total_memory / (1024**2):.2f} MB\n"
             message += f"  Multiprocessor Count: {properties.multi_processor_count}\n"
             message += "\n"
 
@@ -39,7 +37,7 @@ def write_message(message=None):
 
 
 def main():
-    print("Hello from nix-python-devenv (with cuda support)!")
+    print("Hello from EndoReg-DB DevEnv (with cuda support)!")
     print("Cuda is available:", torch.cuda.is_available())
 
     num_of_gpus = torch.cuda.device_count()
@@ -48,10 +46,12 @@ def main():
     for i in range(num_of_gpus):
         properties = torch.cuda.get_device_properties(i)
         print(f"Device {i}: {properties.name}")
-        print(f"  Total Memory: {properties.total_memory / (1024 ** 2):.2f} MB")
+        print(f"  Total Memory: {properties.total_memory / (1024**2):.2f} MB")
         print(f"  Multiprocessor Count: {properties.multi_processor_count}")
 
     write_message()
+
+    # write_message()
 
 
 if __name__ == "__main__":
