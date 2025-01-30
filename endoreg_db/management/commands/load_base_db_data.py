@@ -1,6 +1,7 @@
 from django.core.management import BaseCommand, call_command
 from io import StringIO
 
+
 class Command(BaseCommand):
     help = "Run all data loading commands in the correct order"
 
@@ -30,6 +31,10 @@ class Command(BaseCommand):
         call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_finding_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
+
+        self.stdout.write(
+            self.style.SUCCESS("All data loading commands executed successfully.")
+        )
 
         # # Run the load_network_data command
         # self.stdout.write(self.style.SUCCESS("Running load_network_data..."))
@@ -84,8 +89,8 @@ class Command(BaseCommand):
 
         # # Run the load_endoscopy_processor_data command
         # self.stdout.write(
-            self.style.SUCCESS("Running load_endoscopy_processor_data...")
-        )
+        #     self.style.SUCCESS("Running load_endoscopy_processor_data...")
+        # )
         # call_command("load_endoscopy_processor_data", verbose=verbose)
 
         # # Run the load_endoscope_type_data command
@@ -142,8 +147,8 @@ class Command(BaseCommand):
 
         # # Run the load_green_endoscopy_wuerzburg_data command
         # self.stdout.write(
-            self.style.SUCCESS("Running load_green_endoscopy_wuerzburg_data...")
-        )
+        #     self.style.SUCCESS("Running load_green_endoscopy_wuerzburg_data...")
+        # )
         # call_command("load_green_endoscopy_wuerzburg_data", verbose=verbose)
 
         # # Load G-Play Data
@@ -158,7 +163,3 @@ class Command(BaseCommand):
         # # # Run the load_active_model_data command
         # # self.stdout.write(self.style.SUCCESS("Running load_active_model_data..."))
         # # call_command('load_active_model_data', verbose=verbose)
-
-        self.stdout.write(
-            self.style.SUCCESS("All data loading commands executed successfully.")
-        )
