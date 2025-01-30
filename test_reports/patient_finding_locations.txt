@@ -5,579 +5,579 @@ which contains those location choices <QuerySet [<FindingLocationClassificationC
 
 ------------
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.187623266174285}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.595099109093606}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - tumor
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - tumor
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 0.1077126609339214}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.6374086751826074}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.187623266174285}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.187623266174285}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 38.29090288477853}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 40.187623266174285}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 25.589201729469266}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.595099109093606}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.595099109093606}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 12.140361028681049}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 5.595099109093606}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 16.46911705937307}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - erosion
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - erosion
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.1451250800857973}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 2.8122165419002956}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 25.589201729469266}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 25.589201729469266}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 24.92230736545113}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 25.589201729469266}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 45.146877197126415}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 16.46911705937307}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 16.46911705937307}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.625440008409004}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 16.46911705937307}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 14.393650182282022}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - ulcer
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - ulcer
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.205656282289658}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.005785543816331}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'ileocecal-valve'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - cecum
 Subcategories: {'description': {'choices': ['unspecified', 'ileocecal-valve', 'peri-appendicular'], 'default': 'unspecified', 'probability': [0.5, 0.3, 0.2], 'required': True, 'value': 'peri-appendicular'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 60, 'max': 140, 'distribution': 'uniform', 'std': None, 'mean': None, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - ascending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 100, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - right_flexure
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 80, 'max': 180, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - transverse_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 40, 'max': 80, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - descending_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
 Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 35, 'max': 70, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': False}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'unspecified'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 45.146877197126415}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'proximal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 45.146877197126415}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 42.18673417442801}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 45.146877197126415}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - sigmoid_colon
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': True, 'value': 'distal'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 49.48639239894852}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 20, 'max': 50, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 23.597472283003473}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '1/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 14.393650182282022}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '2/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 14.393650182282022}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 10.05671124816212}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 14.393650182282022}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - rectum
 Subcategories: {'description': {'choices': ['1/3', '2/3', '3/3'], 'probability': [0.3, 0.3, 0.4], 'default': '3/3', 'required': True, 'value': '3/3'}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 9.162698840093068}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 5, 'max': 20, 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 7.687578745412741}}
 
 
-Patient Finding: Hinrich Tintzmann (1959-12-22) - colonoscopy - None - scar
+Patient Finding: Vlado Ring (1959-01-30) - colonoscopy - None - scar
 Patient Finding Location: colonoscopy_default - anal_canal
 Subcategories: {'description': {'choices': ['unspecified', 'proximal', 'distal'], 'probability': [0.5, 0.3, 0.2], 'default': 'unspecified', 'required': False}}
-Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.3803480034038664}}
+Numerical Descriptors: {'cm_rectified': {'unit': 'centimeter', 'min': 0, 'max': 3, 'mean': None, 'std': None, 'distribution': 'uniform', 'description': 'Insertion depth of the colonoscope in cm (rectified)', 'required': True, 'value': 1.876505596209593}}
 
 

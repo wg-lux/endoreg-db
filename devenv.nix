@@ -37,6 +37,7 @@ in
 
   scripts = {
     hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
+    runtests.exec = "${pkgs.uv}/bin/uv run python runtests.py";
   };
 
   tasks = {
@@ -48,6 +49,7 @@ in
 
   enterShell = ''
     . .devenv/state/venv/bin/activate
+    runtests
     hello
   '';
 

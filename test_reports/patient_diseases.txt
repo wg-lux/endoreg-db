@@ -2,13 +2,13 @@ hypertension:
 coronary_artery_disease:
 	coronary_artery_disease_base_classification:
 		khk_1_ge
-			Gitta Renner (1958-12-22) - coronary_artery_disease
+			Dörte Trapp (1970-01-30) - coronary_artery_disease
 
 		khk_2_ge
-			Gitta Renner (1958-12-22) - coronary_artery_disease
+			Dörte Trapp (1970-01-30) - coronary_artery_disease
 
 		khk_3_ge
-			Gitta Renner (1958-12-22) - coronary_artery_disease
+			Dörte Trapp (1970-01-30) - coronary_artery_disease
 
 congestive_heart_failure:
 diabetes_mellitus_I:
@@ -19,20 +19,20 @@ malignoma_unspecified:
 chronic_kidney_disease:
 	chronic_kideny_disease_kdigo:
 		ckd_kdigo_1
-			Gitta Renner (1958-12-22) - chronic_kidney_disease
+			Dörte Trapp (1970-01-30) - chronic_kidney_disease
 
 		ckd_kdigo_2
-			Gitta Renner (1958-12-22) - chronic_kidney_disease
+			Dörte Trapp (1970-01-30) - chronic_kidney_disease
 
 		ckd_kdigo_3a
-			Gitta Renner (1958-12-22) - chronic_kidney_disease
+			Dörte Trapp (1970-01-30) - chronic_kidney_disease
 
 		ckd_kdigo_3b
-			Gitta Renner (1958-12-22) - chronic_kidney_disease
+			Dörte Trapp (1970-01-30) - chronic_kidney_disease
 
 		ckd_kdigo_4
-			Gitta Renner (1958-12-22) - chronic_kidney_disease
+			Dörte Trapp (1970-01-30) - chronic_kidney_disease
 
 		ckd_kdigo_5
-			Gitta Renner (1958-12-22) - chronic_kidney_disease
+			Dörte Trapp (1970-01-30) - chronic_kidney_disease
 
