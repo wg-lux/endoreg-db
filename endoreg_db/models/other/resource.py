@@ -1,11 +1,9 @@
 from django.db import models
 
-
 class ResourceManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
-
+    
 class Resource(models.Model):
     objects = ResourceManager()
 
@@ -15,6 +13,6 @@ class Resource(models.Model):
 
     def natural_key(self):
         return (self.name,)
-
+    
     def __str__(self):
         return self.name

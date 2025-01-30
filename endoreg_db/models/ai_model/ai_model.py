@@ -1,14 +1,11 @@
-from django.db import models
-
+from django.db import models    
 
 class AiModelManager(models.Manager):
     """
     Manager for AI models with custom query methods.
     """
-
     def get_by_natural_key(self, name: str) -> "MultilabelVideoSegmentationModel":
         return self.get(name=name)
-
 
 class MultilabelVideoSegmentationModel(models.Model):
     """
@@ -20,7 +17,6 @@ class MultilabelVideoSegmentationModel(models.Model):
         labels (ManyToMany): Associated labels.
         version (int): The version of the model.
     """
-
     objects = AiModelManager()
 
     name = models.CharField(max_length=255)

@@ -1,7 +1,5 @@
 from django.test import TestCase
-
 from endoreg_db.models import Center
-
 
 class CenterTestCase(TestCase):
     def setUp(self):

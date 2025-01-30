@@ -1,14 +1,16 @@
+from endoreg_db.models import (
+    Patient, 
+    Center, Event,
+)
 from datetime import datetime
-from io import StringIO
-
+from .utils import create_test_patient
 from django.core.management import call_command
 from django.test import TestCase
-
-from endoreg_db.models import Center, Event
-
-from .conf import TEST_CENTER_NAME, TEST_PATIENT_EVENT_OUTPUT_PATH
-from .utils import create_test_patient
-
+from io import StringIO
+from .conf import (
+    TEST_CENTER_NAME,
+    TEST_PATIENT_EVENT_OUTPUT_PATH
+)
 
 class TestGeneratePatientEvents(TestCase):
     def setUp(self):
@@ -28,7 +30,8 @@ class TestGeneratePatientEvents(TestCase):
 
         for event in events:
             _patient_event = patient.create_event(
-                event_name_str=event.name, date_start=datetime.now()
+                event_name_str=event.name,
+                date_start=datetime.now()
             )
 
             out += f"{event.name}:\n"

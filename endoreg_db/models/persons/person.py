@@ -1,7 +1,5 @@
 from abc import abstractmethod
-
 from django.db import models
-
 
 class Person(models.Model):
     """
@@ -30,3 +28,4 @@ class Person(models.Model):
 
     class Meta:
         abstract = True
+

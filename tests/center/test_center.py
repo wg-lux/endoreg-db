@@ -1,12 +1,8 @@
-from io import StringIO
-
+from endoreg_db.models import Center, FirstName, LastName
 from django.core.management import call_command
 from django.test import TestCase
-
-from endoreg_db.models import Center, FirstName, LastName
-
+from io import StringIO
 from .conf import TEST_CENTER_NAME, TEST_CENTER_OUTPUT_PATH, TEST_CENTERS_AVAILABLE
-
 
 class TestCenter(TestCase):
     def setUp(self):

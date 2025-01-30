@@ -1,14 +1,11 @@
-from typing import Optional
-
 from endoreg_db.models import Center
-
+from typing import Optional
 
 def get_centers() -> Center:
     """
     Returns all Center objects from the database.
     """
     return Center.objects.all()
-
 
 def get_center_by_name(name) -> Optional[Center]:
     """Retrieve a Center object by its name.
@@ -21,7 +18,6 @@ def get_center_by_name(name) -> Optional[Center]:
     """
     return Center.objects.get(name=name)
 
-
 def get_center_by_id(id) -> Optional[Center]:
     """Retrieve a Center object by its id.
 
@@ -32,7 +28,6 @@ def get_center_by_id(id) -> Optional[Center]:
         Optional[Center]: The Center object with the given id, or None if it does not exist.
     """
     return Center.objects.get(id=id)
-
 
 def get_center_by_natural_key(name: str) -> Optional[Center]:
     """

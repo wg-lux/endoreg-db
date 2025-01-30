@@ -1,16 +1,14 @@
-import pandas as pd
 from django.db import models
-
+import pandas as pd
 
 class ProductWeightManager(models.Manager):
     def get_by_natural_key(self, product, product_group, weight):
         return self.get(product=product, product_group=product_group, weight=weight)
-
-
+    
 class ProductWeight(models.Model):
     objects = ProductWeightManager()
 
-    name = models.CharField(max_length=255, null=True)
+    name = models.CharField(max_length=255, null = True)
     product = models.ForeignKey("Product", on_delete=models.CASCADE)
     measured = models.FloatField(null=True)
     verified = models.FloatField(null=True)
@@ -26,7 +24,7 @@ class ProductWeight(models.Model):
             return self.manufacturer
         else:
             return None
-
+        
     def get_weight_source(self):
         if not pd.isnull(self.verified):
             return "verified"
@@ -36,6 +34,5 @@ class ProductWeight(models.Model):
             return "manufacturer"
         else:
             return None
-
     def __str__(self):
         return f"{self.product} - {self.get_weight()} {self.unit} (Source: {self.get_weight_source()})"

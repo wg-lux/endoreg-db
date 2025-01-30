@@ -1,10 +1,8 @@
 from django.db import models
 
-
 class QuizAnswerTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
 
 class QuizAnswerType(models.Model):
     objects = QuizAnswerTypeManager()
@@ -18,12 +16,10 @@ class QuizAnswerType(models.Model):
     def __str__(self):
         return self.name
 
-
 class QuizAnswerManager(models.Manager):
     def get_by_natural_key(self, text):
         return self.get(text=text)
-
-
+    
 class QuizAnswer(models.Model):
     objects = QuizAnswerManager()
 
@@ -34,10 +30,12 @@ class QuizAnswer(models.Model):
 
     last_updated = models.DateTimeField(auto_now=True)
 
-    # TODO add user as foreign key
+    #TODO add user as foreign key
 
     def natural_key(self):
         return (self.text,)
-
+    
     def __str__(self):
         return self.text
+    
+

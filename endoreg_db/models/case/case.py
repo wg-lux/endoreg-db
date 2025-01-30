@@ -1,6 +1,5 @@
 from django.db import models
 
-
 class Case(models.Model):
     """
     A class representing a case.
@@ -19,13 +18,8 @@ class Case(models.Model):
         updated_at (datetime): The last update date of the case.
 
     """
-
-    patient = models.ForeignKey(
-        "Patient", on_delete=models.CASCADE, related_name="cases"
-    )
-    patient_examinations = models.ManyToManyField(
-        "PatientExamination", related_name="cases"
-    )
+    patient = models.ForeignKey('Patient', on_delete=models.CASCADE, related_name='cases')
+    patient_examinations = models.ManyToManyField('PatientExamination', related_name='cases')
     hash = models.CharField(max_length=255, blank=True, null=True)
 
     start_date = models.DateTimeField()

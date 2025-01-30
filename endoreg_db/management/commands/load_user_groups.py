@@ -1,5 +1,7 @@
-from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand
+from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
+from django.apps import apps
 
 
 class Command(BaseCommand):
@@ -7,13 +9,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Display verbose output",
+            '--verbose',
+            action='store_true',
+            help='Display verbose output',
         )
 
     def handle(self, *args, **options):
-        verbose = options["verbose"]
+        verbose = options['verbose']
 
         # Create groups
         groups = ["demo", "verified", "agl", "endo_reg_user", "g_play_user", "ukw_user"]

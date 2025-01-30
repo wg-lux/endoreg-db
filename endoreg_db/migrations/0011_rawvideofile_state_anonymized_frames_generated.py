@@ -4,17 +4,15 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+
     dependencies = [
-        (
-            "endoreg_db",
-            "0010_sensitivemeta_center_sensitivemeta_examination_hash_and_more",
-        ),
+        ('endoreg_db', '0010_sensitivemeta_center_sensitivemeta_examination_hash_and_more'),
     ]
 
     operations = [
         migrations.AddField(
-            model_name="rawvideofile",
-            name="state_anonymized_frames_generated",
+            model_name='rawvideofile',
+            name='state_anonymized_frames_generated',
             field=models.BooleanField(default=False),
         ),
     ]

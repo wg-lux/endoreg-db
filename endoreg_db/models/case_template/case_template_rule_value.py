@@ -1,10 +1,8 @@
 from django.db import models
 
-
 class CaseTemplateRuleValueTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
 
 class CaseTemplateRuleValueType(models.Model):
     """
@@ -15,11 +13,10 @@ class CaseTemplateRuleValueType(models.Model):
         distribution_type: One of "single_categorical", "multiple_categorical", "numeric"
         description (str): A description of the case template rule value type.
     """
-
     DISTRIBUTION_TYPES = [
         ("single_categorical", "single_categorical"),
         ("multiple_categorical", "multiple_categorical"),
-        ("numeric", "numeric"),
+        ("numeric", "numeric")
     ]
     objects = CaseTemplateRuleValueTypeManager()
 
@@ -30,18 +27,17 @@ class CaseTemplateRuleValueType(models.Model):
 
     distribution_type = models.CharField(max_length=255, choices=DISTRIBUTION_TYPES)
 
+
     def natural_key(self):
         return (self.name,)
 
     def __str__(self):
         return self.name
 
-
 class CaseTemplateRuleValueManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
-
+    
 class CaseTemplateRuleValue(models.Model):
     """
     Represents a case template rule value.
@@ -53,7 +49,6 @@ class CaseTemplateRuleValue(models.Model):
         numeric_value (float): Numeric value for the rule.
         text_value (str): Text value for the rule.
     """
-
     objects = CaseTemplateRuleValueManager()
 
     name = models.CharField(max_length=255)
@@ -68,18 +63,18 @@ class CaseTemplateRuleValue(models.Model):
         Returns the natural key for the object.
         """
         return (self.name,)
-
+    
     def __str__(self):
         """
         String representation of the object.
         """
         return self.name
-
+    
     def get_value(self):
         """
         Retrieves the value based on priority:
         - fk_value > numeric_value > text_value > None.
-
+        
         Returns:
             str | float | None: The value based on the type hierarchy.
         """

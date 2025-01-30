@@ -4,41 +4,42 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+
     dependencies = [
-        ("endoreg_db", "0005_alter_examinationindication_examination"),
+        ('endoreg_db', '0005_alter_examinationindication_examination'),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name="numericvaluedistribution",
-            name="max_value",
+            model_name='numericvaluedistribution',
+            name='max_value',
         ),
         migrations.RemoveField(
-            model_name="numericvaluedistribution",
-            name="mean",
+            model_name='numericvaluedistribution',
+            name='mean',
         ),
         migrations.RemoveField(
-            model_name="numericvaluedistribution",
-            name="min_value",
+            model_name='numericvaluedistribution',
+            name='min_value',
         ),
         migrations.RemoveField(
-            model_name="numericvaluedistribution",
-            name="skewness",
+            model_name='numericvaluedistribution',
+            name='skewness',
         ),
         migrations.RemoveField(
-            model_name="numericvaluedistribution",
-            name="std_dev",
+            model_name='numericvaluedistribution',
+            name='std_dev',
         ),
         migrations.AddField(
-            model_name="numericvaluedistribution",
-            name="max_descriptor",
-            field=models.CharField(default="max_x_1", max_length=20),
+            model_name='numericvaluedistribution',
+            name='max_descriptor',
+            field=models.CharField(default='max_x_1', max_length=20),
             preserve_default=False,
         ),
         migrations.AddField(
-            model_name="numericvaluedistribution",
-            name="min_descriptor",
-            field=models.CharField(default="min_x_1", max_length=20),
+            model_name='numericvaluedistribution',
+            name='min_descriptor',
+            field=models.CharField(default='min_x_1', max_length=20),
             preserve_default=False,
         ),
     ]

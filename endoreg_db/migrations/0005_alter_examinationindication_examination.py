@@ -5,20 +5,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+
     dependencies = [
-        ("endoreg_db", "0004_patientexaminationindication_indication_choice_and_more"),
+        ('endoreg_db', '0004_patientexaminationindication_indication_choice_and_more'),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name="examinationindication",
-            name="examination",
-            field=models.ForeignKey(
-                default=1,
-                on_delete=django.db.models.deletion.CASCADE,
-                related_name="indications",
-                to="endoreg_db.examination",
-            ),
+            model_name='examinationindication',
+            name='examination',
+            field=models.ForeignKey(default=1, on_delete=django.db.models.deletion.CASCADE, related_name='indications', to='endoreg_db.examination'),
             preserve_default=False,
         ),
     ]

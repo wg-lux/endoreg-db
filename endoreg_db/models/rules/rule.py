@@ -1,10 +1,8 @@
 from django.db import models
 
-
 class RuleManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
 
 class Rule(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -18,8 +16,9 @@ class Rule(models.Model):
     objects = RuleManager()
 
     class Meta:
-        verbose_name = "Rule"
-        verbose_name_plural = "Rules"
+        verbose_name = 'Rule'
+        verbose_name_plural = 'Rules'
 
     def natural_key(self):
         return (self.name,)
+    

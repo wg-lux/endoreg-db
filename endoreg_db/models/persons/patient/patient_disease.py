@@ -1,6 +1,7 @@
 from django.db import models
 
 
+
 class PatientDisease(models.Model):
     patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
     disease = models.ForeignKey("Disease", on_delete=models.CASCADE)
@@ -14,8 +15,8 @@ class PatientDisease(models.Model):
 
     def __str__(self):
         return f"{self.patient} - {self.disease}"
-
+    
     class Meta:
         # unique_together = ('patient', 'disease', 'start_date')
-        verbose_name = "Patient Disease"
-        verbose_name_plural = "Patient Diseases"
+        verbose_name = 'Patient Disease'
+        verbose_name_plural = 'Patient Diseases'

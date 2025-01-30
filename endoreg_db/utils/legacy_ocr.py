@@ -1,18 +1,15 @@
-import os
-import re
-from collections import Counter
-from datetime import datetime
-from tempfile import TemporaryDirectory
-from typing import Dict, List
-
-import cv2
-import numpy as np
 import pytesseract
-
+# import cv2
 from endoreg_db.models import EndoscopyProcessor
+import os
+from collections import Counter
+from tempfile import TemporaryDirectory
+import re
+from datetime import datetime
+from typing import Dict, List
+import numpy as np
 
 N_FRAMES_MEAN_OCR = 2
-
 
 # Helper function to process date strings
 def process_date_text(date_text):
@@ -27,7 +24,7 @@ def process_date_text(date_text):
     """
     try:
         # Remove any non-digit characters
-        date_text_clean = re.sub(r"\D", "", date_text)
+        date_text_clean = re.sub(r'\D', '', date_text)
         # Reformat to 'ddmmyyyy' if necessary
         if len(date_text_clean) == 8:
             return datetime.strptime(date_text_clean, "%d%m%Y").date()
@@ -38,15 +35,14 @@ def process_date_text(date_text):
         # set date to 1/1/1900
         return datetime.strptime("01011900", "%d%m%Y").date()
 
-
 # Helper function to process patient names
 def process_name_text(name_text):
     """
     Remove all numbers, punctuation, and whitespace from a string of text and return the result.
     """
-    name = re.sub(r'[0-9!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\s]+', "", name_text).strip()
+    name = re.sub(r'[0-9!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\s]+', '', name_text).strip()
     # capitalize first letter of each word
-    name = " ".join([word.capitalize() for word in name.split()])
+    name = ' '.join([word.capitalize() for word in name.split()])
     return name
 
 
@@ -55,8 +51,7 @@ def process_general_text(endoscope_text):
     """
     This function takes in a string of text from an endoscope and returns a cleaned version of the text.
     """
-    return " ".join(endoscope_text.split())
-
+    return ' '.join(endoscope_text.split())
 
 def roi_values_valid(roi):
     """
@@ -64,9 +59,8 @@ def roi_values_valid(roi):
     """
     return all([value >= 0 for value in roi.values()])
 
-
 # Function to extract text from ROIs
-def extract_text_from_rois(image_path, processor: EndoscopyProcessor):
+def extract_text_from_rois(image_path, processor:EndoscopyProcessor):
     """
     Extracts text from regions of interest (ROIs) in an image using OCR.
 
@@ -85,25 +79,25 @@ def extract_text_from_rois(image_path, processor: EndoscopyProcessor):
 
     # Define your ROIs and their corresponding post-processing functions in tuples
     rois_with_postprocessing = [
-        ("examination_date", processor.get_roi_examination_date, process_date_text),
+        ('examination_date', processor.get_roi_examination_date, process_date_text),
         ("patient_first_name", processor.get_roi_patient_first_name, process_name_text),
-        ("patient_last_name", processor.get_roi_patient_last_name, process_name_text),
-        ("patient_dob", processor.get_roi_patient_dob, process_date_text),
-        ("endoscope_type", processor.get_roi_endoscope_type, process_general_text),
-        ("endoscope_sn", processor.get_roi_endoscopy_sn, process_general_text),
+        ('patient_last_name', processor.get_roi_patient_last_name, process_name_text),
+        ('patient_dob', processor.get_roi_patient_dob, process_date_text),
+        ('endoscope_type', processor.get_roi_endoscope_type, process_general_text),
+        ('endoscope_sn', processor.get_roi_endoscopy_sn, process_general_text),
     ]
 
     # Extract and post-process text for each ROI
     for roi_name, roi_function, post_process in rois_with_postprocessing:
         # Get the ROI dictionary
         roi = roi_function()
-
+        
         # Check if the ROI has values
-
+        
         if roi_values_valid(roi):
             # Crop the image to the ROI
-            x, y, w, h = roi["x"], roi["y"], roi["width"], roi["height"]
-            roi_cropped = image[y : y + h, x : x + w]
+            x, y, w, h = roi['x'], roi['y'], roi['width'], roi['height']
+            roi_cropped = image[y:y+h, x:x+w]
             # Convert to grayscale
             gray = cv2.cvtColor(roi_cropped, cv2.COLOR_BGR2GRAY)
 
@@ -114,11 +108,11 @@ def extract_text_from_rois(image_path, processor: EndoscopyProcessor):
             _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
             # Dilate the image to improve the contour of the pixelated text
-            kernel = np.ones((2, 2), np.uint8)
+            kernel = np.ones((2,2), np.uint8)
             dilation = cv2.dilate(binary, kernel, iterations=1)
 
             # OCR configuration: Recognize white text on black background without corrections
-            config = "--psm 10 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-üöäÜÖÄß"
+            config = '--psm 10 -c tessedit_char_whitelist=0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-üöäÜÖÄß'
 
             # Use pytesseract to do OCR on the preprocessed ROI
             text = pytesseract.image_to_string(dilation, config=config).strip()
@@ -126,7 +120,7 @@ def extract_text_from_rois(image_path, processor: EndoscopyProcessor):
             # Post-process extracted text
             processed_text = post_process(text)
             # processed_text = text
-
+            
             # Store the processed text in the dictionary
             extracted_texts[roi_name] = processed_text
 
@@ -157,7 +151,6 @@ def get_most_frequent_values(rois_texts: Dict[str, List[str]]) -> Dict[str, str]
         most_frequent[key], _ = counter.most_common(1)[0] if counter else (None, None)
     return most_frequent
 
-
 def process_video(video_path, processor):
     """
     Processes a video file by extracting text from regions of interest (ROIs) in each frame.
@@ -186,11 +179,11 @@ def process_video(video_path, processor):
                 frame_path = os.path.join(temp_dir, f"frame_{frame_number}.jpg")
                 cv2.imwrite(frame_path, frame)  # Save the frame as a JPEG file
                 # cv2.imwrite(f"_tmp/frame_{frame_number}.jpg", frame)
-
+                
                 # Extract text from ROIs
                 extracted_texts = extract_text_from_rois(frame_path, processor)
                 # ic(extracted_texts)
-
+                
                 # Store the extracted text from each ROI
                 for key, text in extracted_texts.items():
                     rois_texts[key].append(text)
@@ -198,11 +191,11 @@ def process_video(video_path, processor):
 
             frame_number += 1
 
-            if frames_for_mean_extraction >= N_FRAMES_MEAN_OCR:
-                break
+            if frames_for_mean_extraction >= N_FRAMES_MEAN_OCR: break
 
         # Release the video capture object
         video.release()
 
         # Get the most frequent values for each ROI
         return get_most_frequent_values(rois_texts)
+

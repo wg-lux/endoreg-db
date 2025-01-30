@@ -2,12 +2,10 @@
 
 from django.db import models
 
-
 class NetworkDeviceTypeManager(models.Manager):
     # Custom manager for NetworkDeviceType; defines name as natural key
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
 
 class NetworkDeviceType(models.Model):
     name = models.CharField(max_length=255)
@@ -20,5 +18,6 @@ class NetworkDeviceType(models.Model):
         return self.name
 
     class Meta:
-        db_table = "network_device_types"
-        ordering = ["name"]
+        db_table = 'network_device_types'
+        ordering = ['name']
+

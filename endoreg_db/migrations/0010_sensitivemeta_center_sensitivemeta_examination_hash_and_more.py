@@ -5,79 +5,70 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+
     dependencies = [
-        ("endoreg_db", "0009_videosegmentationlabel_alter_rawpdffile_file_and_more"),
+        ('endoreg_db', '0009_videosegmentationlabel_alter_rawpdffile_file_and_more'),
     ]
 
     operations = [
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="center",
-            field=models.ForeignKey(
-                blank=True,
-                null=True,
-                on_delete=django.db.models.deletion.CASCADE,
-                to="endoreg_db.center",
-            ),
+            model_name='sensitivemeta',
+            name='center',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='endoreg_db.center'),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="examination_hash",
+            model_name='sensitivemeta',
+            name='examination_hash',
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="examiners",
-            field=models.ManyToManyField(blank=True, to="endoreg_db.examiner"),
+            model_name='sensitivemeta',
+            name='examiners',
+            field=models.ManyToManyField(blank=True, to='endoreg_db.examiner'),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="patient_gender",
-            field=models.ForeignKey(
-                blank=True,
-                null=True,
-                on_delete=django.db.models.deletion.CASCADE,
-                to="endoreg_db.gender",
-            ),
+            model_name='sensitivemeta',
+            name='patient_gender',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='endoreg_db.gender'),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="patient_hash",
+            model_name='sensitivemeta',
+            name='patient_hash',
             field=models.CharField(blank=True, max_length=255, null=True),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_dob_substituted",
+            model_name='sensitivemeta',
+            name='state_dob_substituted',
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_endoscope_sn_substituted",
+            model_name='sensitivemeta',
+            name='state_endoscope_sn_substituted',
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_examination_date_substituted",
+            model_name='sensitivemeta',
+            name='state_examination_date_substituted',
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_examiners_substituted",
+            model_name='sensitivemeta',
+            name='state_examiners_substituted',
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_hash_generated",
+            model_name='sensitivemeta',
+            name='state_hash_generated',
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_names_substituted",
+            model_name='sensitivemeta',
+            name='state_names_substituted',
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name="sensitivemeta",
-            name="state_verified",
+            model_name='sensitivemeta',
+            name='state_verified',
             field=models.BooleanField(default=False),
         ),
     ]

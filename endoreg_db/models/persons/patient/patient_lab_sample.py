@@ -2,12 +2,10 @@ from django.db import models
 
 DEFAULT_PATIENT_LAB_SAMPLE_TYPE_NAME = "generic"
 
-
 class PatientLabSampleTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
-
+    
 class PatientLabSampleType(models.Model):
     """
     A class representing a patient lab sample type.
@@ -17,7 +15,6 @@ class PatientLabSampleType(models.Model):
         description (str): A description of the patient lab sample type.
 
     """
-
     name = models.CharField(max_length=255)
     name_de = models.CharField(max_length=255, null=True)
     name_en = models.CharField(max_length=255, null=True)
@@ -30,7 +27,7 @@ class PatientLabSampleType(models.Model):
 
     def __str__(self):
         return self.name
-
+    
     @classmethod
     def get_default_sample_type(cls):
         """
@@ -41,12 +38,9 @@ class PatientLabSampleType(models.Model):
 
         """
         return cls.objects.get_or_create(name="default")[0]
-
-
-from datetime import datetime as dt
+    
+from datetime import datetime as dt    
 from datetime import timezone
-
-
 class PatientLabSample(models.Model):
     """
     A class representing a patient lab sample.
@@ -59,22 +53,20 @@ class PatientLabSample(models.Model):
         unit (Unit): The unit of the lab sample.
 
     """
-
-    patient = models.ForeignKey(
-        "Patient", on_delete=models.CASCADE, related_name="lab_samples"
-    )
+    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="lab_samples")
     sample_type = models.ForeignKey("PatientLabSampleType", on_delete=models.CASCADE)
     date = models.DateTimeField()
 
     def __str__(self):
-        formatted_datetime = self.date.strftime("%Y-%m-%d %H:%M")
-        return f"{self.patient} - {self.sample_type} - {formatted_datetime} ()"
 
+        formatted_datetime = self.date.strftime('%Y-%m-%d %H:%M')
+        return f"{self.patient} - {self.sample_type} - {formatted_datetime} ()"
+    
     def get_values(self):
         return self.values.all()
-
+    
     @classmethod
-    def create_by_patient(cls, patient=None, sample_type=None, date=None, save=True):
+    def create_by_patient(cls, patient=None, sample_type=None, date=None, save = True):
         """
         Create a new patient lab sample by patient.
 
@@ -87,9 +79,8 @@ class PatientLabSample(models.Model):
             PatientLabSample: The new patient lab sample.
 
         """
+        from endoreg_db.models.persons.patient import Patient, PatientLabSampleType
         from warnings import warn
-
-        from endoreg_db.models.persons.patient import PatientLabSampleType
 
         if not patient:
             warn("No patient given. Cannot create patient lab sample.")
@@ -102,10 +93,16 @@ class PatientLabSample(models.Model):
             date = dt.now(timezone.utc)
 
         patient_lab_sample = cls.objects.create(
-            patient=patient, sample_type=sample_type, date=date
+            patient=patient,
+            sample_type=sample_type,
+            date=date
         )
 
         if save:
             patient_lab_sample.save()
 
         return patient_lab_sample
+
+
+    
+    

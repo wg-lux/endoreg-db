@@ -1,23 +1,16 @@
-import pickle
-
-import numpy as np
 from django.db import models
 
 from endoreg_db.models.label.label import LabelSet
-
-from ..data_file.frame import Frame, LegacyFrame
 from ..data_file.video import LegacyVideo, Video
-from ..data_file.video_segment import (
-    LabelVideoSegment,
-    LegacyLabelVideoSegment,
-    find_segments_in_prediction_array,
-)
-from ..information_source import get_prediction_information_source
+from ..data_file.frame import LegacyFrame, Frame
 from .image_classification import ImageClassificationPrediction
+from ..data_file.video_segment import LegacyLabelVideoSegment, LabelVideoSegment, find_segments_in_prediction_array
+from ..information_source import get_prediction_information_source
+import numpy as np
+import pickle
 
 DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
-
 
 class AbstractVideoPredictionMeta(models.Model):
     model_meta = models.ForeignKey("ModelMeta", on_delete=models.CASCADE)
@@ -28,17 +21,17 @@ class AbstractVideoPredictionMeta(models.Model):
 
     class Meta:
         abstract = True
-        unique_together = ("model_meta", "video")
+        unique_together = ('model_meta', 'video')
 
     def __str__(self):
         return f"Video {self.video.id} - {self.model_meta.name}"
-
+    
     def get_labelset(self):
         """
         Get the labelset of the predictions.
         """
         return self.model_meta.labelset
-
+    
     def get_video_model(self):
         assert 1 == 2, "This method should be overridden in derived classes"
 
@@ -49,14 +42,14 @@ class AbstractVideoPredictionMeta(models.Model):
         """
         Get the label list of the predictions.
         """
-        labelset: LabelSet = self.get_labelset()
+        labelset:LabelSet = self.get_labelset()
         label_list = labelset.get_labels_in_order()
         return label_list
-
+    
     def get_video_segment_model(self):
         assert 1 == 2, "This method should be overridden in derived classes"
-
-    def save_prediction_array(self, prediction_array: np.array):
+    
+    def save_prediction_array(self, prediction_array:np.array):
         """
         Save the prediction array to the database.
         """
@@ -71,7 +64,7 @@ class AbstractVideoPredictionMeta(models.Model):
             return None
         else:
             return pickle.loads(self.prediction_array)
-
+        
     def calculate_prediction_array(self):
         assert 1 == 2, "This method should be overridden in derived classes"
 
@@ -104,26 +97,22 @@ class AbstractVideoPredictionMeta(models.Model):
         window = np.ones(window_size_in_frames) / window_size_in_frames
 
         # Create running mean array with the same shape as the confidence array
-        np.zeros(confidence_array.shape)
+        running_mean_array = np.zeros(confidence_array.shape)
 
         # Calculate the padding size
         pad_size = window_size_in_frames // 2
 
         # Pad the array with 0.5 on both sides
-        padded_confidences = np.pad(
-            confidence_array,
-            (pad_size, pad_size),
-            "constant",
-            constant_values=(0.5, 0.5),
-        )
-
+        padded_confidences = np.pad(confidence_array, (pad_size, pad_size), 'constant', constant_values=(0.5, 0.5))
+        
         # Apply the running mean filter on the padded array
-        running_mean = np.convolve(padded_confidences, window, mode="same")
-
+        running_mean = np.convolve(padded_confidences, window, mode='same')
+        
         # Remove the padding from the result to match the original shape
         running_mean = running_mean[pad_size:-pad_size]
 
         return running_mean
+    
 
     def create_video_segments_for_label(self, segments, label):
         """
@@ -148,7 +137,7 @@ class AbstractVideoPredictionMeta(models.Model):
             )
             video_segment.save()
 
-    def create_video_segments(self, segment_length_threshold_in_s: float = None):
+    def create_video_segments(self, segment_length_threshold_in_s:float=None):
         if not segment_length_threshold_in_s:
             segment_length_threshold_in_s = DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S
 
@@ -157,7 +146,7 @@ class AbstractVideoPredictionMeta(models.Model):
         min_frame_length = int(segment_length_threshold_in_s * fps)
 
         label_list = self.get_label_list()
-
+        
         # if prediction array doesnt exist, create it
         if self.prediction_array is None:
             self.calculate_prediction_array()
@@ -174,29 +163,24 @@ class AbstractVideoPredictionMeta(models.Model):
             # create video segments
             self.create_video_segments_for_label(segments, label)
 
-
 import numpy as np
-
-
 class VideoPredictionMeta(AbstractVideoPredictionMeta):
-    video = models.OneToOneField(
-        "Video", on_delete=models.CASCADE, related_name="video_prediction_meta"
-    )
+    video = models.OneToOneField("Video", on_delete=models.CASCADE, related_name="video_prediction_meta")
 
     def get_video_model(self):
         return Video
-
+    
     def get_frame_model(self):
         return Frame
-
+    
     def get_video_segment_model(self):
         return LabelVideoSegment
-
-    def calculate_prediction_array(self, window_size_in_seconds: int = None):
+    
+    def calculate_prediction_array(self, window_size_in_seconds:int=None):
         """
         Fetches all predictions for this video, labelset, and model meta.
         """
-        video: Video = self.video
+        video:Video = self.video
 
         model_meta = self.model_meta
         label_list = self.get_label_list()
@@ -204,15 +188,9 @@ class VideoPredictionMeta(AbstractVideoPredictionMeta):
         prediction_array = np.zeros((video.get_frame_number, len(label_list)))
         for i, label in enumerate(label_list):
             # fetch all predictions for this label, video, and model meta ordered by ImageClassificationPrediction.frame.frame_number
-            predictions = ImageClassificationPrediction.objects.filter(
-                label=label, frame__video=video, model_meta=model_meta
-            ).order_by("frame__frame_number")
-            confidences = np.array(
-                [prediction.confidence for prediction in predictions]
-            )
-            smooth_confidences = self.apply_running_mean(
-                confidences, window_size_in_seconds
-            )
+            predictions = ImageClassificationPrediction.objects.filter(label=label, frame__video=video, model_meta=model_meta).order_by('frame__frame_number')
+            confidences = np.array([prediction.confidence for prediction in predictions])
+            smooth_confidences = self.apply_running_mean(confidences, window_size_in_seconds)
             # calculate binary predictions
             binary_predictions = smooth_confidences > 0.5
             # add to prediction array
@@ -223,24 +201,22 @@ class VideoPredictionMeta(AbstractVideoPredictionMeta):
 
 
 class LegacyVideoPredictionMeta(AbstractVideoPredictionMeta):
-    video = models.OneToOneField(
-        "LegacyVideo", on_delete=models.CASCADE, related_name="video_prediction_meta"
-    )
+    video = models.OneToOneField("LegacyVideo", on_delete=models.CASCADE, related_name="video_prediction_meta")
 
     def get_video_model(self):
         return LegacyVideo
 
     def get_frame_model(self):
         return LegacyFrame
-
+    
     def get_video_segment_model(self):
         return LegacyLabelVideoSegment
-
-    def calculate_prediction_array(self, window_size_in_seconds: int = None):
+    
+    def calculate_prediction_array(self, window_size_in_seconds:int=None):
         """
         Fetches all predictions for this video, labelset, and model meta.
         """
-        video: LegacyVideo = self.video
+        video:LegacyVideo = self.video
 
         model_meta = self.model_meta
         label_list = self.get_label_list()
@@ -248,15 +224,9 @@ class LegacyVideoPredictionMeta(AbstractVideoPredictionMeta):
         prediction_array = np.zeros((video.get_frame_number, len(label_list)))
         for i, label in enumerate(label_list):
             # fetch all predictions for this label, video, and model meta ordered by ImageClassificationPrediction.frame.frame_number
-            predictions = ImageClassificationPrediction.objects.filter(
-                label=label, legacy_frame__video=video, model_meta=model_meta
-            ).order_by("legacy_frame__frame_number")
-            confidences = np.array(
-                [prediction.confidence for prediction in predictions]
-            )
-            smooth_confidences = self.apply_running_mean(
-                confidences, window_size_in_seconds
-            )
+            predictions = ImageClassificationPrediction.objects.filter(label=label, legacy_frame__video=video, model_meta=model_meta).order_by('legacy_frame__frame_number')
+            confidences = np.array([prediction.confidence for prediction in predictions])
+            smooth_confidences = self.apply_running_mean(confidences, window_size_in_seconds)
             # calculate binary predictions
             binary_predictions = smooth_confidences > 0.5
             # add to prediction array
@@ -264,3 +234,11 @@ class LegacyVideoPredictionMeta(AbstractVideoPredictionMeta):
 
         # save prediction array
         self.save_prediction_array(prediction_array)
+
+    
+            
+
+
+
+
+

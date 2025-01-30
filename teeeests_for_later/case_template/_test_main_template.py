@@ -1,10 +1,12 @@
 from io import StringIO
-
 from django.core.management import call_command
 from django.test import TestCase
 
+from endoreg_db.models import (
+    CaseTemplate
+)
+
 from endoreg_db.case_generator.case_generator import CaseGenerator
-from endoreg_db.models import CaseTemplate
 
 DEFAULT_TEMPLATE_NAME = "pre_default_screening_colonoscopy"
 
@@ -18,18 +20,16 @@ RULE_ATTRIBUTES = [
     # "rule_values",
     # "extra_parameters",
     # "value_type",
-    "chained_rules",
+    "chained_rules"
 ]
-
 
 def print_rule_attributes(rule):
     print("Rule:")
     print(rule)
     print("Attributes:")
-
+    
     for attr in RULE_ATTRIBUTES:
         print(f"{attr}: {getattr(rule, attr)}")
-
 
 class LoadGplayData(TestCase):
     def setUp(self):
@@ -58,8 +58,13 @@ class LoadGplayData(TestCase):
         assert patient_create_rule
         # print_rule_attributes(patient_create_rule)
 
+
+
         cg = CaseGenerator(template)
 
         # print("Testing create patient rule:")
-        cg.apply_rule(patient_create_rule)
+        patient = cg.apply_rule(patient_create_rule)
         # print(patient)
+
+
+        

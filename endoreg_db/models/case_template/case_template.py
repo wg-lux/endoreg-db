@@ -1,11 +1,9 @@
 from django.db import models
 
-
 class CaseTemplateManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
-
+    
 class CaseTemplate(models.Model):
     """
     Represents a case template.
@@ -17,11 +15,8 @@ class CaseTemplate(models.Model):
         rules: The primary rules associated with the case template.
         secondary_rules: Secondary rules associated with the case template.
     """
-
     name = models.CharField(max_length=255, unique=True)
-    template_type = models.ForeignKey(
-        "CaseTemplateType", on_delete=models.CASCADE, related_name="case_templates"
-    )
+    template_type = models.ForeignKey("CaseTemplateType", on_delete=models.CASCADE, related_name="case_templates")
     description = models.TextField(blank=True, null=True)
 
     rules = models.ManyToManyField(
@@ -29,7 +24,8 @@ class CaseTemplate(models.Model):
     )
 
     secondary_rules = models.ManyToManyField(
-        "CaseTemplateRule", related_name="secondary_rules"
+        "CaseTemplateRule",
+        related_name="secondary_rules"
     )
 
     objects = CaseTemplateManager()
@@ -42,7 +38,7 @@ class CaseTemplate(models.Model):
             tuple: The natural key consisting of the name.
         """
         return (self.name,)
-
+    
     def __str__(self):
         """
         String representation of the case template.
@@ -51,7 +47,7 @@ class CaseTemplate(models.Model):
             str: The name of the case template.
         """
         return self.name
-
+    
     def get_rules(self):
         """
         Retrieves all primary rules associated with the case template.
@@ -60,7 +56,8 @@ class CaseTemplate(models.Model):
             A queryset of primary rules.
         """
         return self.rules.all()
-
+        
+    
     def get_secondary_rules(self):
         """
         Retrieves all secondary rules associated with the case template.
@@ -70,7 +67,7 @@ class CaseTemplate(models.Model):
         """
         rules = self.secondary_rules.all()
         return rules
-
+    
     def _assert_max_one_create_patient_rule(self):
         """
         Ensures that there is at most one rule with rule_type "create-object" and target_model "Patient".
@@ -78,14 +75,12 @@ class CaseTemplate(models.Model):
         Raises:
             ValueError: If more than one rule of the specified type exists.
         """
-        create_patient_rules = self.rules.filter(
-            rule_type__name="create-object", target_model__name="Patient"
-        )
+        create_patient_rules = self.rules.filter(rule_type__name="create-object", target_model__name="Patient")
         if len(create_patient_rules) > 1:
             raise ValueError(
                 "There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'Patient'."
             )
-
+        
     # custom save method which runs the _assert_max_one_create_patient_rule method and others
     def save(self, *args, **kwargs):
         # self._assert_max_one_create_patient_rule() #TODO Fails on first save since many to many can only be used if object has an id
@@ -102,20 +97,13 @@ class CaseTemplate(models.Model):
             ValueError: If multiple such rules exist.
         """
         from endoreg_db.models.case_template.case_template_rule import CaseTemplateRule
-
-        create_patient_rules = self.rules.filter(
-            rule_type__name="create-object", target_model="Patient"
-        )
+        create_patient_rules = self.rules.filter(rule_type__name="create-object", target_model="Patient")
         if len(create_patient_rules) > 1:
-            raise ValueError(
-                "There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'Patient'."
-            )
+            raise ValueError("There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'Patient'.")
         elif len(create_patient_rules) == 0:
-            create_patient_rules = (
-                CaseTemplateRule.objects.get_default_create_patient_rule()
-            )
+            create_patient_rules = CaseTemplateRule.objects.get_default_create_patient_rule()
         return create_patient_rules[0]
-
+    
     def get_create_patient_medication_schedule_rule(self):
         """
         Retrieves the "create-patient_medication_schedule" rule.
@@ -127,21 +115,11 @@ class CaseTemplate(models.Model):
             ValueError: If multiple such rules exist.
         """
         from endoreg_db.models.case_template.case_template_rule import CaseTemplateRule
-
-        create_patient_medication_schedule_rules = self.rules.filter(
-            rule_type__name="create-object", target_model="PatientMedicationSchedule"
-        )
+        create_patient_medication_schedule_rules = self.rules.filter(rule_type__name="create-object", target_model="PatientMedicationSchedule")
         if len(create_patient_medication_schedule_rules) > 1:
-            raise ValueError(
-                "There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'PatientMedicationSchedule'."
-            )
+            raise ValueError("There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'PatientMedicationSchedule'.")
         elif len(create_patient_medication_schedule_rules) == 0:
             from warnings import warn
-
-            warn(
-                "No create patient medication schedule rule found. Using default create patient medication schedule rule."
-            )
-            create_patient_medication_schedule_rules = (
-                CaseTemplateRule.objects.get_default_create_patient_medication_schedule_rule()
-            )
+            warn("No create patient medication schedule rule found. Using default create patient medication schedule rule.")
+            create_patient_medication_schedule_rules = CaseTemplateRule.objects.get_default_create_patient_medication_schedule_rule()
         return create_patient_medication_schedule_rules[0]

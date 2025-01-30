@@ -12,16 +12,13 @@
 #     "labelset_version": 0
 # }
 
-import json
 import os
-from uuid import uuid4
-
-from django.core.files import File
-from django.core.management.base import BaseCommand
+import json
 from tqdm import tqdm
-
-from endoreg_db.models import ImageClassificationAnnotation, LabelSet, LegacyImage
-
+from django.core.management.base import BaseCommand
+from endoreg_db.models import LegacyImage, LabelSet, Label, ImageClassificationAnnotation
+from django.core.files import File
+from uuid import uuid4
 
 class Command(BaseCommand):
     """
@@ -30,52 +27,50 @@ class Command(BaseCommand):
     Usage:
         python manage.py import_legacy_images <directory>
     """
-
-    help = "Imports images from a directory into the database"
+    help = 'Imports images from a directory into the database'
 
     def add_arguments(self, parser):
-        parser.add_argument("directory", type=str)
+        parser.add_argument('directory', type=str)
 
     def handle(self, *args, **options):
-        directory = options["directory"]
+        directory = options['directory']
         if not os.path.isdir(directory):
             raise Exception(f"Directory {directory} does not exist")
 
         # read settings.json
-        with open(os.path.join(directory, "import_settings.json"), "r") as f:
+        with open(os.path.join(directory, 'import_settings.json'), 'r') as f:
             settings = json.load(f)
 
         # read img_dicts.jsonl
-        with open(os.path.join(directory, "img_dicts.jsonl"), "r") as f:
+        with open(os.path.join(directory, 'img_dicts.jsonl'), 'r') as f:
             img_dicts = [json.loads(line) for line in f.readlines()]
 
         # get labelset
-        labelset_name = settings["labelset_name"]
-        labelset_version = settings["labelset_version"]
+        labelset_name = settings['labelset_name']
+        labelset_version = settings['labelset_version']
         try:
-            labelset = LabelSet.objects.get(
-                name=labelset_name, version=labelset_version
-            )
+            labelset = LabelSet.objects.get(name=labelset_name, version=labelset_version)
         except LabelSet.DoesNotExist:
-            raise Exception(
-                f"No labelset found with the name {labelset_name} and version {labelset_version}"
-            )
+            raise Exception(f"No labelset found with the name {labelset_name} and version {labelset_version}")
+
 
         # get labels in dict to lookup by name
         labels = {label.name: label for label in labelset.labels.all()}
 
         # create images and image_classification_annotations
         for img_dict in tqdm(img_dicts):
+
             # Open the image file
-            with open(os.path.join(directory, img_dict["path"]), "rb") as f:
+            with open(os.path.join(directory, img_dict['path']), 'rb') as f:
                 # Create the Django File object
                 django_file = File(f)
-
+                
                 # Extract only the filename
-                filename = os.path.basename(img_dict["path"])
+                filename = os.path.basename(img_dict['path'])
                 img_suffix = os.path.splitext(filename)[1]
                 # assign uuid as new filename
                 filename = str(uuid4()) + img_suffix
+                
 
                 # Create a new LegacyImage instance and save the image
                 image = LegacyImage(image=filename, suffix=img_suffix)
@@ -83,18 +78,17 @@ class Command(BaseCommand):
 
                 image_annotations = []
                 for label_name, label in labels.items():
-                    if label_name in img_dict["labels"]:
+                    if label_name in img_dict['labels']:
                         value = True
                     else:
                         value = False
 
-                    image_annotations.append(
-                        ImageClassificationAnnotation(
-                            legacy_image=image,
-                            label=label,
-                            value=value,
-                            annotator=settings["annotator"],
-                        )
-                    )
+                    image_annotations.append(ImageClassificationAnnotation(
+                        legacy_image=image,
+                        label=label,
+                        value=value,
+                        annotator=settings['annotator']
+                    ))
 
                 ImageClassificationAnnotation.objects.bulk_create(image_annotations)
+

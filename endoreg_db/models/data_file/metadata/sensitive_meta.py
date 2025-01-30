@@ -1,34 +1,25 @@
-from datetime import date
-
 from django.db import models
-
 from endoreg_db.utils.hashs import (
-    get_hash_string,
-    get_patient_examination_hash,
     get_patient_hash,
+    get_patient_examination_hash,
+    get_hash_string
 )
-
-
+from datetime import date
 class SensitiveMeta(models.Model):
     examination_date = models.DateField(blank=True, null=True)
     patient_first_name = models.CharField(max_length=255, blank=True, null=True)
     patient_last_name = models.CharField(max_length=255, blank=True, null=True)
     patient_dob = models.DateField(blank=True, null=True)
     patient_gender = models.ForeignKey(
-        "Gender",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
+        "Gender", on_delete=models.CASCADE,
+        blank=True, null=True,
     )
     examiners = models.ManyToManyField(
-        "Examiner",
-        blank=True,
+        "Examiner", blank=True,
     )
     center = models.ForeignKey(
-        "Center",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
+        "Center", on_delete=models.CASCADE,
+        blank=True, null=True,
     )
 
     examination_hash = models.CharField(max_length=255, blank=True, null=True)
@@ -47,7 +38,6 @@ class SensitiveMeta(models.Model):
     @classmethod
     def create_from_dict(cls, data: dict):
         from endoreg_db.models import Center
-
         # data can contain more fields than the model has
         field_names = [_.name for _ in cls._meta.fields]
         selected_data = {k: v for k, v in data.items() if k in field_names}
@@ -66,7 +56,8 @@ class SensitiveMeta(models.Model):
             cls._update_name_db(first_name, last_name)
 
         return cls.objects.create(**selected_data)
-
+    
+    
     def update_from_dict(self, data: dict):
         # data can contain more fields than the model has
         field_names = [_.name for _ in self._meta.fields]
@@ -74,34 +65,33 @@ class SensitiveMeta(models.Model):
 
         for k, v in selected_data.items():
             setattr(self, k, v)
-
+        
         self.save()
         first_name = self.patient_first_name
         last_name = self.patient_last_name
 
         if first_name and last_name:
             SensitiveMeta._update_name_db()
-
+    
         return self
 
     def __str__(self):
         return f"SensitiveMeta: {self.examination_date} {self.patient_first_name} {self.patient_last_name} (*{self.patient_dob})"
-
+    
     def __repr__(self):
         return self.__str__()
-
-    def _get_hash_str_raw(
-        self,
-        first_name: str = "",
-        last_name: str = "",
-        dob_str: str = "",
-        center_name: str = "",
-        examination_date: date = date(1900, 1, 1),
-        endoscope_sn: str = "",
-        salt: str = "",
+    
+    def _get_hash_str_raw(self, 
+        first_name:str="",
+        last_name:str="",
+        dob_str:str="",
+        center_name:str="",
+        examination_date:date=date(1900,1,1),
+        endoscope_sn:str="",
+        salt:str="",
     ):
         # endoscope_sn = self.endoscope_sn
-        endoscope_sn = ""  # TODO Do we want to include this?
+        endoscope_sn = "" #TODO Do we want to include this? 
         return get_hash_string(
             first_name=first_name,
             last_name=last_name,
@@ -109,11 +99,12 @@ class SensitiveMeta(models.Model):
             center_name=center_name,
             examination_date=examination_date,
             endoscope_sn=endoscope_sn,
-            salt=salt,
+            salt=salt
         )
 
     def get_patient_hash(self, salt=""):
         from hashlib import sha256
+        from datetime import datetime
 
         dob = self.patient_dob
         first_name = self.patient_first_name
@@ -122,18 +113,19 @@ class SensitiveMeta(models.Model):
 
         assert dob, "Patient DOB is required"
         assert center, "Center is required"
-
+        
         hash_str = get_patient_hash(
             first_name=first_name,
             last_name=last_name,
             dob=dob,
             center=self.center.name,
-            salt=salt,
+            salt=salt
         )
         return sha256(hash_str.encode()).hexdigest()
-
+    
     def get_patient_examination_hash(self, salt=""):
         from hashlib import sha256
+        from datetime import datetime
 
         dob = self.patient_dob
         first_name = self.patient_first_name
@@ -143,21 +135,22 @@ class SensitiveMeta(models.Model):
 
         assert dob, "Patient DOB is required"
         assert examination_date, "Examination date is required"
-
+        
         hash_str = get_patient_examination_hash(
             first_name=first_name,
             last_name=last_name,
             dob=dob,
             examination_date=examination_date,
             center=center.name,
-            salt=salt,
+            salt=salt
         )
 
         return sha256(hash_str.encode()).hexdigest()
-
+    
     @classmethod
     def _update_name_db(cls, first_name, last_name):
         from endoreg_db.models import FirstName, LastName
 
         FirstName.objects.get_or_create(name=first_name)
         LastName.objects.get_or_create(name=last_name)
+

@@ -1,10 +1,8 @@
-import datetime
+# import cv2
 from pathlib import Path
+import datetime
 
-import cv2
-
-
-def _extract_metadata_from_filename(filepath: Path, time_format=None):  # deprecated
+def _extract_metadata_from_filename(filepath:Path, time_format = None): # deprecated
     """
     Extracts metadata from a video filename.
 
@@ -24,7 +22,7 @@ def _extract_metadata_from_filename(filepath: Path, time_format=None):  # deprec
         }
     """
     # get filename without suffix
-    filename = filepath.stem
+    filename = filepath.stem    
 
     if not time_format:
         time_format = "%d.%m.%Y"
@@ -33,36 +31,31 @@ def _extract_metadata_from_filename(filepath: Path, time_format=None):  # deprec
 
     if len(_info) == 4:
         examination_date, last_name, first_name, birthdate = _info
-
+    
     else:
         examination_date, last_name, first_name, birthdate = None, None, None, None
 
     metadata = {}
-    metadata["examination_date"] = examination_date
-    metadata["patient_last_name"] = last_name
-    metadata["patient_first_name"] = first_name
-    metadata["patient_dob"] = birthdate
+    metadata['examination_date'] = examination_date
+    metadata['patient_last_name'] = last_name
+    metadata['patient_first_name'] = first_name
+    metadata['patient_dob'] = birthdate
 
     try:
-        metadata["examination_date"] = datetime.datetime.strptime(
-            examination_date, time_format
-        ).date()
-        metadata["examination_date"] = metadata["examination_date"].strftime("%Y-%m-%d")
-    except ValueError:
-        metadata["examination_date"] = None
+        metadata['examination_date'] = datetime.datetime.strptime(examination_date, time_format).date()
+        metadata['examination_date'] = metadata['examination_date'].strftime("%Y-%m-%d")
+    except:
+        metadata['examination_date'] = None
 
     try:
-        metadata["patient_dob"] = datetime.datetime.strptime(
-            birthdate, time_format
-        ).date()
-        metadata["patient_dob"] = metadata["patient_dob"].strftime("%Y-%m-%d")
-    except ValueError:
-        metadata["patient_dob"] = None
+        metadata['patient_dob'] = datetime.datetime.strptime(birthdate, time_format).date()
+        metadata['patient_dob'] = metadata['patient_dob'].strftime("%Y-%m-%d")
+    except:
+        metadata['patient_dob'] = None
 
     return metadata
 
-
-def _get_video_metadata(file_path):  # Deprecated
+def _get_video_metadata(file_path): # Deprecated
     """
     Returns the framerate, dimensions, and duration of a video file.
 

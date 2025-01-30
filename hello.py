@@ -4,8 +4,8 @@ import torch
 
 
 def write_message(message=None):
-    import datetime
     import os
+    import datetime
 
     # Create a directory if it does not exist
     os.makedirs("data", exist_ok=True)

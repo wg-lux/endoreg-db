@@ -1,14 +1,11 @@
 from django.db import models
 
-
 class GenderManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-
-
+    
 class Gender(models.Model):
     """A class representing gender."""
-
     objects = GenderManager()
 
     name = models.CharField(max_length=255)
@@ -19,6 +16,7 @@ class Gender(models.Model):
 
     def natural_key(self):
         return (self.name,)
-
+    
     def __str__(self):
         return self.name
+
