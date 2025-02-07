@@ -6,6 +6,13 @@ from .emission import *
 from .persons import *
 from .network import *
 from .logging import *
+from .persons.patient.patient import Patient
+from .patient import PatientExamination
+from .persons.patient.patient import Patient
+from .persons.gender import *  
+from .persons.patient.patient import Patient
+from .patient import PatientExamination
+
 
 from .organ import Organ
 

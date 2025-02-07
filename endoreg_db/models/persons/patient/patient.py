@@ -9,6 +9,7 @@ from faker import Faker
 import random
 from datetime import datetime
 
+
 class Patient(Person):
     """
     A class representing a patient.
@@ -22,6 +23,23 @@ class Patient(Person):
         phone (str): The phone number of the patient.
 
     """
+
+    #-----gc-08-dev--changings---
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    dob = models.DateField(null=True, blank=True)
+    gender = models.ForeignKey(
+        "Gender", on_delete=models.SET_NULL, null=True, blank=True
+    )  
+    center = models.ForeignKey(
+        "Center", on_delete=models.SET_NULL, null=True, blank=True
+    )
+  
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} ({self.dob})"
+
+
     center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
     
 
