@@ -139,3 +139,5 @@ class PatientFinding(models.Model):
         self.save()
 
         return patient_finding_location
+    
+    
