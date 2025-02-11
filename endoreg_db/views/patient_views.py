@@ -32,6 +32,20 @@ from ..models import FindingLocationClassification, FindingLocationClassificatio
         "selected_location": location_id,  # Keep previous selection
     })
 """
+from django.shortcuts import render
+from rest_framework import viewsets
+from ..models import Patient
+from ..serializers import PatientSerializer
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
+
+class PatientViewSet(viewsets.ModelViewSet):
+    """API endpoint for managing patients."""
+    queryset = Patient.objects.all()
+    serializer_class = PatientSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly] 
+
+    def perform_create(self, serializer):
+        serializer.save()
 
 from django.http import JsonResponse
 from ..models import FindingLocationClassification, FindingLocationClassificationChoice
