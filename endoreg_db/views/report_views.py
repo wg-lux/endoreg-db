@@ -1,24 +1,11 @@
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET
-from django.core.exceptions import ObjectDoesNotExist
-from rest_framework import viewsets
-from ..models import Patient
-from ..serializers import PatientSerializer
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
-from endoreg_db.models import (
-    FindingLocationClassification,
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassification,
-    FindingMorphologyClassificationType
-)
 
 @staff_member_required  # Ensures only staff members can access the page
 def start_examination(request):
     return render(request, 'admin/start_examination.html')  # Loads the simple HTML page
 
+from django.shortcuts import render
 #from ..models.patient.patient_finding_location import PatientFindingLocation
 from ..models import FindingLocationClassification, FindingLocationClassificationChoice  # Correct models
 
@@ -45,46 +32,65 @@ from ..models import FindingLocationClassification, FindingLocationClassificatio
         "selected_location": location_id,  # Keep previous selection
     })
 """
+from django.shortcuts import render
+from rest_framework import viewsets
+from ..models import Patient
+from ..serializers import PatientSerializer
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 class PatientViewSet(viewsets.ModelViewSet):
     """API endpoint for managing patients."""
     queryset = Patient.objects.all()
     serializer_class = PatientSerializer
-    #permission_classes = [IsAuthenticatedOrReadOnly] 
+    permission_classes = [IsAuthenticatedOrReadOnly] 
 
     def perform_create(self, serializer):
         serializer.save()
-    
-    def update(self, request, *args, **kwargs):
-        # custom edit logic here if needed
-        return super().update(request, *args, **kwargs)
 
-    def destroy(self, request, *args, **kwargs):
-        # custom delete logic here if needed
-        return super().destroy(request, *args, **kwargs)
+from django.http import JsonResponse
+from ..models import FindingLocationClassification, FindingLocationClassificationChoice
 
-@require_GET
 def get_location_choices(request, location_id):
-    """Fetch location choices dynamically based on FindingLocationClassification."""
+    """
+    Fetch location choices dynamically based on the selected FindingLocationClassification (Location).
+    """
     try:
         location = FindingLocationClassification.objects.get(id=location_id)
-        location_choices = location.choices.all()
+        location_choices = location.choices.all()  # Get choices via Many-to-Many relationship
         data = [{"id": choice.id, "name": choice.name} for choice in location_choices]
-        return JsonResponse({"location_choices": data})
     except FindingLocationClassification.DoesNotExist:
-        return JsonResponse({"error": "Location classification not found", "location_choices": []}, status=404)
+        data = []
 
-@require_GET
+    return JsonResponse({"location_choices": data})
+
+from django.http import JsonResponse
+from ..models import FindingMorphologyClassification, FindingMorphologyClassificationChoice, FindingMorphologyClassificationType
+from django.core.exceptions import ObjectDoesNotExist
+
+
+
 def get_morphology_choices(request, morphology_id):
-    """Fetch morphology choices dynamically based on FindingMorphologyClassification."""
+    """
+    Fetch morphology choices dynamically based on the selected FindingMorphologyClassification.
+    """
     try:
+        # Find the selected Morphology Classification
         morphology_classification = FindingMorphologyClassification.objects.get(id=morphology_id)
+
+        # Fetch choices from FindingMorphologyClassificationType using classification_type_id
         morphology_choices = FindingMorphologyClassificationType.objects.filter(
             id=morphology_classification.classification_type_id
         )
+
+        #  Cpnvert QuerySet to JSON
         data = [{"id": choice.id, "name": choice.name} for choice in morphology_choices]
-        return JsonResponse({"morphology_choices": data})
+
+        return JsonResponse({"morphology_choices": data})  #  Always return JSON
+
     except ObjectDoesNotExist:
         return JsonResponse({"error": "Morphology classification not found", "morphology_choices": []}, status=404)
+
     except Exception as e:
+        print(f"Error fetching morphology choices: {e}")  # Debugging Log
         return JsonResponse({"error": "Internal server error", "morphology_choices": []}, status=500)
+
