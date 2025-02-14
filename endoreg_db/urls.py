@@ -7,9 +7,11 @@ from .views.patient_views import (
     get_morphology_choices, 
 )
 from .views.csrf import csrf_token_view
+from .views.examination_views import ExaminationViewSet
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
+router.register(r'examinations', ExaminationViewSet)  # Registers Examination CRUD API
 
 urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
