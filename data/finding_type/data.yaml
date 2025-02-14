@@ -1,0 +1,30 @@
+- model: endoreg_db.finding_type
+  fields:
+    name: "macroscopic"
+    name_de: "Makroskopisch"
+    name_en: "Macroscopic"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "iatrogenic"
+    name_de: "Iatrogen"
+    name_en: "Iatrogenic"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "postinterventional_immediate"
+    name_de: "Postinterventionell unmittelbar"
+    name_en: "Postinterventional Immediate"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "postinterventional_delayed"
+    name_de: "Postinterventionell verzögert"
+    name_en: "Postinterventional Delayed"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "bleeding"
+    name_de: "Blutung"
+    name_en: "Bleeding"
+

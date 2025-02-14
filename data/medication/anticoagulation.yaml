@@ -1,0 +1,65 @@
+- models: endoreg_db.models.medication
+  fields:
+    name: "apixaban"
+    name_de: "Apixaban"
+    name_en: "Apixaban"
+    adapt_to_renal_function: true
+    adapt_to_hepatic_function: true
+    adapt_to_indication: true
+    adapt_to_age: true
+    adapt_to_weight: false
+    adapt_to_risk: true
+    default_unit: "miligram"
+
+- models: endoreg_db.models.medication
+  fields:
+    name: "dabigatran"
+    name_de: "Dabigatran"
+    name_en: "Dabigatran"
+    adapt_to_renal_function: true
+    adapt_to_hepatic_function: true
+    adapt_to_indication: true
+    adapt_to_age: true
+    adapt_to_weight: false
+    adapt_to_risk: true
+    default_unit: "miligram"
+
+- models: endoreg_db.models.medication
+  fields:
+    name: "edoxaban"
+    name_de: "Edoxaban"
+    name_en: "Edoxaban"
+    adapt_to_renal_function: true
+    adapt_to_hepatic_function: true
+    adapt_to_indication: true
+    adapt_to_age: true
+    adapt_to_weight: false
+    adapt_to_risk: true
+    default_unit: "miligram"
+
+- models: endoreg_db.models.medication
+  fields:
+    name: "rivaroxaban"
+    name_de: "Rivaroxaban"
+    name_en: "Rivaroxaban"
+    adapt_to_renal_function: true
+    adapt_to_hepatic_function: true
+    adapt_to_indication: true
+    adapt_to_age: true
+    adapt_to_weight: false
+    adapt_to_risk: true
+    default_unit: "miligram"
+
+- models: endoreg_db.models.medication
+  fields:
+    name: "enoxaparin"
+    name_de: "Enoxaparin"
+    name_en: "Enoxaparin"
+    adapt_to_renal_function: true
+    adapt_to_hepatic_function: false
+    adapt_to_indication: true
+    adapt_to_age: false
+    adapt_to_weight: true
+    adapt_to_risk: true
+    default_unit: "miligram"
+    

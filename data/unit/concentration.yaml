@@ -1,0 +1,92 @@
+# g / l and equivalents; ascending by gram, then ascending by liter
+- model: endoreg_db.unit
+  fields: 
+    name: "picogram per mililiter"
+    name_de: "Pikogramm pro Mililiter"
+    name_en: "picogram per mililiter"
+    abbreviation: "pg/ml"
+
+
+- model: endoreg_db.unit
+  fields:
+    name: "nanogram per mililiter"
+    name_de: "Nanogramm pro Mililiter"
+    name_en: "nanogram per mililiter"
+    abbreviation: "ng/ml"
+
+- model: endoreg_db.unit
+  fields:
+    name: "nanogram per deciliter"
+    name_de: "Nanogramm pro Deziliter"
+    name_en: "nanogram per deciliter"
+
+- model: endoreg_db.unit
+  fields:
+    name: "microgram per mililiter"
+    name_de: "Microgramm pro Mililiter"
+    name_en: "microgram per mililiter"
+    abbreviation: "µg/ml"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "microgram per deciliter"
+    abbreviation: "µg/dL"
+    name_de: "Mikrogramm pro Deziliter"
+    name_en: "microgram per deciliter"
+    description: "Micrograms per deciliter, a unit of measurement for concentration."
+
+- model: endoreg_db.unit
+  fields:
+    name: "gram per deciliter"
+    name_de: "Gramm pro Deziliter"
+    name_en: "gram per deciliter"
+  
+
+# mol / l
+- model: endoreg_db.Unit
+  fields:
+    name: "milimole per liter"
+    abbreviation: "mmol/L"
+    name_de: "milimol pro Liter"
+    name_en: "milimole per liter"
+    description: "milimoles per liter, a unit of measurement for concentration in blood."
+
+- model: endoreg_db.Unit
+  fields:
+    name: "miliequivalent per liter"
+    abbreviation: "mEq/L"
+    name_de: "miliäquivalent pro Liter"
+    name_en: "miliequivalent per liter"
+    description: "miliequivalents per liter, used for electrolytes concentration."
+
+- model: endoreg_db.Unit
+  fields:
+    name: "miligram per deciliter"
+    abbreviation: "mg/dL"
+    name_de: "miligramm pro Deziliter"
+    name_en: "miligram per deciliter"
+    description: "miligrams per deciliter, commonly used for various blood measurements."
+
+# x 10^9 per liter
+- model: endoreg_db.Unit
+  fields:
+    name: "x 10^9 per liter"
+    abbreviation: "x 10^9/L"
+    name_de: "x 10^9 pro Liter"
+    name_en: "x 10^9 per liter"
+    description: "Number of cells per liter, often used for blood cell counts."
+
+# U / l
+- model: endoreg_db.unit
+  fields:
+    name: "units per liter"
+    name_de: "Units pro Liter"
+    name_en: "units per liter"
+    abbreviation: "U/l"
+
+- model: endoreg_db.unit
+  fields:
+    name: "microinternational units per mililiter"
+    name_de: "Mikro-Internationale Einheiten pro Mililiter"
+    name_en: "micro-international units per mililiter"
+    abbreviation: "µU/ml"

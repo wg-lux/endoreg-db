@@ -1,0 +1,31 @@
+- model: endoreg_db.Unit
+  fields:
+    name: "milimeter"
+    abbreviation: "mm"
+    name_de: "milimeter"
+    name_en: "milimeter"
+    description: "milimeters"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "centimeter"
+    abbreviation: "cm"
+    name_de: "Zentimeter"
+    name_en: "Centimeter"
+    description: "centimeters"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "meter"
+    abbreviation: "m"
+    name_de: "Meter"
+    name_en: "Meter"
+    description: "meters"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "kilometer"
+    abbreviation: "km"
+    name_de: "Kilometer"
+    name_en: "Kilometer"
+    description: "kilometers"

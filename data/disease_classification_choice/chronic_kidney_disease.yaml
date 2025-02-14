@@ -1,0 +1,41 @@
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "ckd_kdigo_1"
+    name_de: "Chronische Nierenerkrankung (KDIGO) (Stadium 1)"
+    name_en: "Chronic Kidney Disease (KDIGO) (Stage 1)"
+    disease_classification: "chronic_kideny_disease_kdigo"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "ckd_kdigo_2"
+    name_de: "Chronische Nierenerkrankung (KDIGO) (Stadium 2)"
+    name_en: "Chronic Kidney Disease (KDIGO) (Stage 2)"
+    disease_classification: "chronic_kideny_disease_kdigo"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "ckd_kdigo_3a"
+    name_de: "Chronische Nierenerkrankung (KDIGO) (Stadium 3a)"
+    name_en: "Chronic Kidney Disease (KDIGO) (Stage 3a)"
+    disease_classification: "chronic_kideny_disease_kdigo"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "ckd_kdigo_3b"
+    name_de: "Chronische Nierenerkrankung (KDIGO) (Stadium 3b)"
+    name_en: "Chronic Kidney Disease (KDIGO) (Stage 3b)"
+    disease_classification: "chronic_kideny_disease_kdigo"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "ckd_kdigo_4"
+    name_de: "Chronische Nierenerkrankung (KDIGO) (Stadium 4)"
+    name_en: "Chronic Kidney Disease (KDIGO) (Stage 4)"
+    disease_classification: "chronic_kideny_disease_kdigo"
+
+- model: endoreg_db.disease_classification_choice
+  fields:
+    name: "ckd_kdigo_5"
+    name_de: "Chronische Nierenerkrankung (KDIGO) (Stadium 5)"
+    name_en: "Chronic Kidney Disease (KDIGO) (Stage 5)"
+    disease_classification: "chronic_kideny_disease_kdigo"

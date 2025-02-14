@@ -1,0 +1,14 @@
+
+- model: endoreg_db.event
+  fields:
+    name: "stroke"
+    name_de: "Schlaganfall"
+    name_en: "Stroke"
+
+- model: endoreg_db.event
+  fields:
+    name: "transient_ischemic_attack"
+    name_de: "Transitorische ischämische Attacke"
+    name_en: "Transient Ischemic Attack"
+    
+    

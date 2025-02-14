@@ -1,0 +1,29 @@
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "ukw-endoscopy-examination-report-generic"
+    patient_info_line: "ukw-examination-generic-patient-info-line"
+    endoscope_info_line: "ukw-examination-generic-endoscope-info-line"
+    examiner_info_line: "ukw-examination-generic-examiner-info-line"
+    cut_off_above_lines: [
+      "ukw-examination-generic-anamnese-info-line",
+      "ukw-examination-generic-endoscope-info-line",
+      "ukw-examination-generic-examiner-info-line",
+    ]
+    cut_off_below_lines: [
+      "ukw-examination-generic-cut-off-below-line-01"
+    ]
+
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "ukw-endoscopy-histology-report-generic"
+    patient_info_line: "ukw-histology-generic-patient-info-line"
+    endoscope_info_line: "ukw-histology-generic-endoscope-info-line"
+    examiner_info_line: "ukw-histology-generic-examiner-info-line"
+    cut_off_above_lines: [
+      "ukw-histology-generic-patient-info-line"
+    ]
+    cut_off_below_lines: [
+      "ukw-endoscopy-histology-cut-off-below-line-flag-01"
+    ]

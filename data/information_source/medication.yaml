@@ -1,0 +1,6 @@
+- model: endoreg_db.InformationSource
+  fields:
+    name: "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    name_de: "Fachinformation Apixaban (Eliquis) 2.5mg, Bristol Meyer Squibbs"
+    name_en: "Apixaban (Eliquis) 2.5mg, Bristol Meyer Squibbs"
+    date: "2024-04-28"

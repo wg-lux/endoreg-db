@@ -1,0 +1,59 @@
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-server-01"
+    device_type: "agl-server"
+    ip: "172.16.255.1"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-server-02"
+    device_type: "agl-server"
+    ip: "172.16.255.2"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-server-03"
+    device_type: "agl-server"
+    ip: "172.16.255.3"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-server-04"
+    device_type: "agl-server"
+    ip: "172.16.255.4"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-01"
+    device_type: "agl-server"
+    ip: "172.16.255.141"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-02"
+    device_type: "agl-server"
+    ip: "172.16.255.142"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-03"
+    device_type: "agl-server"
+    ip: "172.16.255.143"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-04"
+    device_type: "agl-server"
+    ip: "172.16.255.144"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-05"
+    device_type: "agl-server"
+    ip: "172.16.255.145"
+
+- model: endoreg_db.network_device
+  fields:
+    name: "agl-gpu-client-dev"
+    device_type: "agl-gpu-client"
+    ip: "172.16.255.140"
