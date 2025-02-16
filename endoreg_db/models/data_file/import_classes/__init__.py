@@ -29,4 +29,9 @@ class FileImporter:
             else:
                 raise ValueError(f"{file} is not a file")
             
-        
+
+__all__ = [
+    "RawPdfFile",
+    "RawVideoFile",
+    "FileImporter",
+]

@@ -13,3 +13,12 @@ from .patient_finding_intervention import (
     PatientFindingIntervention
 )
 
+# TODO Migrate to persons/patient
+
+__all__ = [
+    "PatientExamination",
+    "PatientFinding",
+    "PatientFindingLocation",
+    "PatientFindingMorphology",
+    "PatientFindingIntervention"
+]

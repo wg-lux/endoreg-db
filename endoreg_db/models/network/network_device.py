@@ -1,13 +1,16 @@
-# Django db class to store network devices (e.g., servers, clients, switches, etc.)
-
+import subprocess
 from django.db import models
 
+# Django db class to store network devices (e.g., servers, clients, switches, etc.)
+
 class NetworkDeviceManager(models.Manager):
-    # Custom manager for NetworkDevice; defines name as natural key
+    """Custom manager for NetworkDevice that defines name as natural key."""
     def get_by_natural_key(self, name):
+        """Return the network device with the given name as its natural key."""
         return self.get(name=name)
     
 class NetworkDevice(models.Model):
+    """Django model representing a network device."""
     name = models.CharField(max_length=255)
     ip = models.GenericIPAddressField(blank=True, null=True)
     description = models.CharField(max_length=255)
@@ -18,20 +21,22 @@ class NetworkDevice(models.Model):
     objects = NetworkDeviceManager()
 
     def __str__(self):
-        return self.name
+        """Return the device name."""
+        return str(self.name)
 
+    # pylint: disable=too-few-public-methods
     class Meta:
+        """Meta options for the NetworkDevice model."""
         db_table = 'network_devices'
         ordering = ['name']
         
     def natural_key(self):
+        """Return a tuple representing the natural key for this network device."""
         return (self.name,)
     
     def ping(self):
+        """Check device availability by sending one ping request."""
         target_ip = self.ip
-
-        # Import the required module
-        import subprocess
 
         # Define the command
         command = ['ping', '-c', '1', target_ip]
@@ -49,5 +54,5 @@ class NetworkDevice(models.Model):
         self.online = return_code == 0
         self.save()
         return self.online
-    
+
 
