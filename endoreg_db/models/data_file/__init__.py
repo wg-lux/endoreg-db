@@ -8,7 +8,6 @@ from .metadata import (
     PdfType,
     VideoMeta,
     FFMpegMeta,
-    VideoImportMeta,
 )
 
 from .import_classes import (

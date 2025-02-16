@@ -38,7 +38,6 @@ from .network import (
     NetworkDevice,
     NetworkDeviceType,
     AglService,
-    DbConfig,
 )
 
 # Logging
@@ -267,7 +266,6 @@ __all__ = [
     "NetworkDevice",
     "NetworkDeviceType",
     "AglService",
-    "DbConfig",
     "AbstractLogEntry",
     "NetworkDeviceLogEntry",
     "LogType",
