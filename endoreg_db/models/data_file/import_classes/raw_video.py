@@ -18,7 +18,8 @@ import warnings
 from ..metadata import VideoMeta, SensitiveMeta
 from tqdm import tqdm
 
-def anonymize_frame(raw_frame_path:Path, target_frame_path:Path, endo_roi):
+
+def anonymize_frame(raw_frame_path: Path, target_frame_path: Path, endo_roi):
     """
     Anonymize the frame by blacking out all pixels that are not in the endoscope ROI.
     """
@@ -37,20 +38,21 @@ def anonymize_frame(raw_frame_path:Path, target_frame_path:Path, endo_roi):
     height = endo_roi["height"]
 
     # copy endoscope roi to black frame
-    new_frame[y:y+height, x:x+width] = frame[y:y+height, x:x+width]
+    new_frame[y : y + height, x : x + width] = frame[y : y + height, x : x + width]
     cv2.imwrite(target_frame_path.as_posix(), new_frame)
 
     return frame
 
 
 # get DJANGO_NAME_SALT from environment
-DJANGO_NAME_SALT = os.environ.get('DJANGO_NAME_SALT', 'default_salt')
+DJANGO_NAME_SALT = os.environ.get("DJANGO_NAME_SALT", "default_salt")
 
-def copy_with_progress(src, dst, buffer_size=1024*1024):
+
+def copy_with_progress(src, dst, buffer_size=1024 * 1024):
     total_size = os.path.getsize(src)
     copied_size = 0
 
-    with open(src, 'rb') as fsrc, open(dst, 'wb') as fdst:
+    with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
         while True:
             buf = fsrc.read(buffer_size)
             if not buf:
@@ -58,13 +60,13 @@ def copy_with_progress(src, dst, buffer_size=1024*1024):
             fdst.write(buf)
             copied_size += len(buf)
             progress = copied_size / total_size * 100
-            print(f"\rProgress: {progress:.2f}%", end='')
+            print(f"\rProgress: {progress:.2f}%", end="")
 
 
-PSEUDO_DIR:Path = getattr(settings, 'PSEUDO_DIR', settings.BASE_DIR / 'erc_data')
+PSEUDO_DIR: Path = getattr(settings, "PSEUDO_DIR", settings.BASE_DIR / "erc_data")
 
 STORAGE_LOCATION = PSEUDO_DIR
-RAW_VIDEO_DIR_NAME = 'raw_videos'
+RAW_VIDEO_DIR_NAME = "raw_videos"
 RAW_VIDEO_DIR = STORAGE_LOCATION / RAW_VIDEO_DIR_NAME
 
 if not RAW_VIDEO_DIR.exists():
@@ -75,13 +77,13 @@ class RawVideoFile(models.Model):
     uuid = models.UUIDField()
     file = models.FileField(
         upload_to="RAW_VIDEO_DIR_NAME",
-        validators=[FileExtensionValidator(allowed_extensions=['pdf'])],
+        validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
-    
+
     sensitive_meta = models.OneToOneField(
         "SensitiveMeta", on_delete=models.CASCADE, blank=True, null=True
-    ) 
+    )
 
     center = models.ForeignKey("Center", on_delete=models.CASCADE)
     processor = models.ForeignKey(
@@ -138,7 +140,7 @@ class RawVideoFile(models.Model):
         center_name: str,
         processor_name: str,
         frame_dir_parent: Path = Path("erc_data/raw_frames"),
-        video_dir: Path=Path("erc_data/raw_videos"),
+        video_dir: Path = Path("erc_data/raw_videos"),
         delete_source: bool = False,
         save: bool = True,
     ):
@@ -173,7 +175,9 @@ class RawVideoFile(models.Model):
         new_filepath = video_dir / new_file_name
 
         print(f"Copy {file_path} to {new_filepath}")
-        copy_with_progress(file_path.resolve().as_posix(), new_filepath.resolve().as_posix())
+        copy_with_progress(
+            file_path.resolve().as_posix(), new_filepath.resolve().as_posix()
+        )
         print(f"\nCopied to {new_filepath}")
 
         # Make sure file was transferred correctly and hash is correct
@@ -213,12 +217,12 @@ class RawVideoFile(models.Model):
         if not self.state_frames_extracted:
             print(f"Frames not extracted for {self.file.name}")
             return None
-        
+
         frame_dir = Path(self.frame_dir)
         anonymized_frame_dir = frame_dir.parent / f"anonymized_{self.uuid}"
         if not anonymized_frame_dir.exists():
             anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # make sure, that the directory is empty
         for f in tqdm(anonymized_frame_dir.glob("*")):
             f.unlink()
@@ -238,7 +242,7 @@ class RawVideoFile(models.Model):
 
     def __str__(self):
         return self.file.name
-    
+
     def delete_with_file(self):
         file_path = Path(self.file.path)
         if file_path.exists():
@@ -264,10 +268,10 @@ class RawVideoFile(models.Model):
                 center=center, processor=processor
             )
             self.video_meta.initialize_ffmpeg_meta(self.file.path)
-        
+
         if not self.frame_dir:
             self.set_frame_dir()
-        
+
         super(RawVideoFile, self).save(*args, **kwargs)
 
     def extract_frames(
@@ -276,7 +280,7 @@ class RawVideoFile(models.Model):
         frame_dir: Path = None,
         overwrite: bool = False,
         ext="jpg",
-        verbose=False
+        verbose=False,
     ):
         """
         Extract frames from the video file and save them to the frame_dir.
@@ -315,19 +319,20 @@ class RawVideoFile(models.Model):
         # Extract frames from the video file
         # Execute the command
         process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
 
         # Display progress
-        
+
         while True:
             output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
+            if output == "" and process.poll() is not None:
                 break
 
             if verbose:
                 if output:
                     print(output.strip())
-        
+
         if process.returncode != 0:
             raise Exception(f"Error extracting frames: {process.stderr.read()}")
 
@@ -374,8 +379,8 @@ class RawVideoFile(models.Model):
         else:
             frame_dir = Path(self.frame_dir)
         return frame_dir / f"frame_{n:07d}.jpg"
-    
-    def get_frame_paths(self, anonymized=False):        
+
+    def get_frame_paths(self, anonymized=False):
         if anonymized:
             print("Getting anonymized frame paths")
             _frame_dir = Path(self.frame_dir)
@@ -386,38 +391,40 @@ class RawVideoFile(models.Model):
 
         print(f"Frame dir: {frame_dir}")
 
-        paths = [p for p in frame_dir.glob('*')]
+        paths = [p for p in frame_dir.glob("*")]
         indices = [int(p.stem.split("_")[1]) for p in paths]
         path_index_tuples = list(zip(paths, indices))
         # sort ascending by index
         path_index_tuples.sort(key=lambda x: x[1])
-        
+
         if not path_index_tuples:
             return []
-        
-        paths, indices = zip(*path_index_tuples)
-        paths:List[Path]
 
-        print(f"Found {len(paths)} frames for {self.file.name} (anonymized: {anonymized})")
+        paths, indices = zip(*path_index_tuples)
+        paths: List[Path]
+
+        print(
+            f"Found {len(paths)} frames for {self.file.name} (anonymized: {anonymized})"
+        )
 
         return paths
 
     def get_prediction_dir(self):
         return Path(self.prediction_dir)
 
-    def get_predictions_path(self, suffix = ".json"):
+    def get_predictions_path(self, suffix=".json"):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("predictions").with_suffix(suffix)
-    
-    def get_smooth_predictions_path(self, suffix = ".json"):
+
+    def get_smooth_predictions_path(self, suffix=".json"):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("smooth_predictions").with_suffix(suffix)
-    
-    def get_binary_predictions_path(self, suffix = ".json"):
+
+    def get_binary_predictions_path(self, suffix=".json"):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("binary_predictions").with_suffix(suffix)
-    
-    def get_raw_sequences_path(self, suffix = ".json"):
+
+    def get_raw_sequences_path(self, suffix=".json"):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("raw_sequences").with_suffix(suffix)
 
@@ -492,7 +499,7 @@ class RawVideoFile(models.Model):
             self.save()
 
         else:
-            video_meta.update_meta(video_path)    
+            video_meta.update_meta(video_path)
 
     def get_fps(self):
         if self.video_meta is None:

@@ -20,6 +20,10 @@ class Command(BaseCommand):
 
         out = StringIO()
 
+        # Load Center Data
+        call_command("load_center_data", stdout=out, verbose=verbose)
+        call_command("load_endoscope_data", stdout=out, verbose=verbose)
+
         call_command("load_gender_data", stdout=out, verbose=verbose)
         call_command("load_unit_data", stdout=out, verbose=verbose)
         call_command("load_disease_data", stdout=out, verbose=verbose)
