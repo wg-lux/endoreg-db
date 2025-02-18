@@ -1,0 +1,3 @@
+/home/admin/endoreg-db-api-production/endoreg-db-production/endoreg_db/devenv.lock
+/home/admin/endoreg-db-api-production/endoreg-db-production/endoreg_db/devenv.nix
+/home/admin/endoreg-db-api-production/endoreg-db-production/endoreg_db/devenv.yaml
