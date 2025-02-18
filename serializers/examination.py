@@ -10,7 +10,8 @@ from endoreg_db.models import (
 class ExaminationTimeTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExaminationTimeType
-        fields = '__all__'
+        exclude = ['date', 'time']  # Excludes date and time from CRUD
+        #fields = '__all__'
 
 class ExaminationTimeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -50,7 +51,9 @@ class ExaminationTypeSerializer(serializers.ModelSerializer):
 class ExaminationSerializer(serializers.ModelSerializer): 
     class Meta:
         model = Examination
-        fields = '__all__'
+        exclude = ['date', 'time']  # Excludes date and time from CRUD
+        #fields = '__all__'
+
 
 class PatientExaminationSerializer(serializers.ModelSerializer):
     class Meta:
