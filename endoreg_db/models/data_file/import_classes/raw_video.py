@@ -14,7 +14,7 @@ from django.conf import settings
 from typing import List
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 import warnings
-
+from icecream import ic
 from ..metadata import VideoMeta, SensitiveMeta
 from tqdm import tqdm
 
@@ -161,10 +161,20 @@ class RawVideoFile(models.Model):
 
         video_hash = get_video_hash(file_path)
         # make sure that no other file with the same hash exists
-        if cls.objects.filter(video_hash=video_hash).exists():
-            # log and print warnint
-            print(f"File with hash {video_hash} already exists")
-            return None
+        query_result = cls.objects.filter(video_hash=video_hash)
+        if query_result.exists():
+            existing = query_result.first()
+            file_on_disk = STORAGE_LOCATION / existing.file.name
+            if not file_on_disk.exists():
+                print(
+                    "Existing DB entry found, but file is missing on disk. Copying..."
+                )
+                copy_with_progress(
+                    file_path.as_posix(), file_on_disk.resolve().as_posix()
+                )
+                existing.original_file_name = file_path.name
+                existing.save()
+            return existing
 
         center = Center.objects.get(name=center_name)
         assert center is not None, "Center must exist"
@@ -191,10 +201,17 @@ class RawVideoFile(models.Model):
             return None
 
         print(center)
-        # Create a new instance of RawVideoFile
+        # Next, store relative path for Django's FileField
+        try:
+            relative_path = new_filepath.relative_to(STORAGE_LOCATION)
+        except ValueError:
+            raise Exception(
+                f"{new_filepath} is outside STORAGE_LOCATION {STORAGE_LOCATION}"
+            )
+
         raw_video_file = cls(
             uuid=uuid,
-            file=new_filepath.resolve().as_posix(),
+            file=relative_path.as_posix(),
             center=center,
             processor=processor,
             original_file_name=original_file_name,
@@ -296,7 +313,8 @@ class RawVideoFile(models.Model):
 
         if not overwrite and len(list(frame_dir.glob("*.jpg"))) > 0:
             print(f"Frames already extracted for {self.file.name}")
-            return
+            self.state_frames_extracted = True  # Mark frames as extracted
+            return f"Frames already extracted at {frame_dir}"
 
         video_path = Path(self.file.path).resolve().as_posix()
 
@@ -319,22 +337,15 @@ class RawVideoFile(models.Model):
         # Extract frames from the video file
         # Execute the command
         process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-
-        # Display progress
-
-        while True:
-            output = process.stdout.readline()
-            if output == "" and process.poll() is not None:
-                break
-
-            if verbose:
-                if output:
-                    print(output.strip())
+        stdout_data, stderr_data = process.communicate()
 
         if process.returncode != 0:
-            raise Exception(f"Error extracting frames: {process.stderr.read()}")
+            raise Exception(f"Error extracting frames: {stderr_data}")
+
+        if verbose and stdout_data:
+            print(stdout_data)
 
         self.state_frames_extracted = True
 
@@ -477,6 +488,13 @@ class RawVideoFile(models.Model):
     def update_text_metadata(self, ocr_frame_fraction=0.001):
         print(f"Updating metadata for {self.file.name}")
         extracted_data_dict = self.extract_text_information(ocr_frame_fraction)
+        if extracted_data_dict is None:
+            print("No text extracted; skipping metadata update.")
+            return
+        extracted_data_dict["center_name"] = self.center.name
+
+        ic(extracted_data_dict)
+
         extracted_data_dict["center_name"] = self.center.name
 
         print("____________")
