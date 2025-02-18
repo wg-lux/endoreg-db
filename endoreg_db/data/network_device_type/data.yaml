@@ -1,0 +1,12 @@
+- model: endoreg_db.network_device_type
+  fields:
+    name: "agl-server"
+
+
+- model: endoreg_db.network_device_type
+  fields:
+    name: "coloreg-client"
+
+- model: endoreg_db.network_device_type
+  fields:
+    name: "agl-gpu-client"

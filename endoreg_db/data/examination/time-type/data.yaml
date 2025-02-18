@@ -1,0 +1,8 @@
+- model:
+  fields:
+    name: "colonoscopy-time"
+    name_de: "Koloskopie-Zeit"
+    name_en: "Colonoscopy Time"
+    examinations: [
+      "colonoscopy"
+    ]

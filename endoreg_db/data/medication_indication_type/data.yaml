@@ -1,0 +1,11 @@
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "event"
+    name_de: "Ereignis"
+    name_en: "event"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "disease"
+    name_de: "Krankheit"
+    name_en: "disease"

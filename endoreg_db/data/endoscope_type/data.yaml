@@ -1,0 +1,11 @@
+- model: endoreg_db.endoscope_type
+  fields:
+    name: "gastroscope"
+    name_de: "Gastroskop"
+    name_en: "Gastroscope"
+
+- model: endoreg_db.endoscope_type
+  fields:
+    name: "colonoscope"
+    name_de: "Koloskop"
+    name_en: "Colonoscope"

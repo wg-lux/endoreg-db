@@ -1,0 +1,59 @@
+- model: endoreg_db.lab_value
+  fields:
+    name: "thyroxine_binding_globulin"
+    name_de: "Thyroxin-bindendes Globulin"
+    name_en: "Thyroxine-binding globulin"
+    abbreviation: "TBG"
+    default_unit: "microgram per mililiter"
+    default_normal_range: {"min": 12, "max": 27}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "thyroid_stimulating_hormone"
+    name_de: "Thyroidea-stimulierendes Hormon"
+    name_en: "Thyroid-stimulating hormone"
+    abbreviation: "TSH"
+    default_unit: "microinternational units per mililiter"
+    default_normal_range: {"min": 0.5, "max": 4.0}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_thyroxine"
+    name_de: "Gesamtthyroxin"
+    name_en: "Total Thyroxine"
+    abbreviation: "T4"
+    default_unit: "microgram per deciliter"
+    default_normal_range: {"min": 5, "max": 12}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_triiodothyronine"
+    name_de: "Gesamttriiodthyronin"
+    name_en: "Total Triiodothyronine"
+    abbreviation: "T3"
+    default_unit: "nanogram per deciliter"
+    default_normal_range: {"min": 80, "max": 180}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "free_triiodothyronine"
+    name_de: "Freies Triiodthyronin"
+    name_en: "Free Triiodothyronine"
+    abbreviation: "fT3"
+    default_unit: "picogram per mililiter"
+    default_normal_range: {"min": 2.3, "max": 4.2}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "free_thyroxine"
+    name_de: "Freies Thyroxin"
+    name_en: "Free Thyroxine"
+    abbreviation: "fT4"
+    default_unit: "nanogram per deciliter"
+    default_normal_range: {"min": 0.8, "max": 2.8}
+    default_numerical_value_distribution: "uniform_default"

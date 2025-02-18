@@ -1,0 +1,8 @@
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy"
+    name_de: "Koloskopie"
+    name_en: "Colonoscopy"
+    classification: "endoscopy_colonoscopy"
+    examination: "colonoscopy"
+

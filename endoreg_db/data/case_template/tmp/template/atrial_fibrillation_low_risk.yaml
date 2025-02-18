@@ -1,0 +1,7 @@
+- model: endoreg_db.case_template_type
+  fields:
+    name: "pre_endo-anticoagulation-af-low_risk"
+    template_type: "pre_endoscopy"
+    rules: [
+      "patient_add_diagnosis_atrial-fibrillation"
+    ]

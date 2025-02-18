@@ -1,0 +1,26 @@
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "enoxaparin-80mg-twice_daily"
+    name_de: "Enoxaparin 80mg, 2x täglich"
+    name_en: "Enoxaparin 80mg, twice daily"
+    therapy_duration_d: -1
+    medication: "enoxaparin"
+    dose: 80
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "enoxaparin-40mg-one_daily"
+    name_de: "Enoxaparin 80mg, 1x täglich"
+    name_en: "Enoxaparin 80mg, once daily"
+    therapy_duration_d: -1
+    medication: "enoxaparin"
+    dose: 40
+    unit: "miligram"
+    intake_times: [
+      "daily-morning"
+    ]

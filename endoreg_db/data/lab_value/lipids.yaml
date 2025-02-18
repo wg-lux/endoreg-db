@@ -1,0 +1,53 @@
+# Triglycerides: ˂150 mg/dL
+# Total cholesterol: ˂200 mg/dL
+# High-density lipoprotein (HDL): Female: ˂50 mg/dL; male: ˂40 mg/dL
+# Low-density lipoprotein (LDL): ˂100 mg/dL
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "triglycerides"
+    name_de: "Triglyceride"
+    name_en: "Triglycerides"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {
+      "min": 0,
+      "max": 150
+    }
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_cholesterol"
+    name_de: "Gesamtcholesterin"
+    name_en: "Total Cholesterol"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 0,"max": 200}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value 
+  fields:
+    name: "high_density_lipoprotein"
+    name_de: "High-Density-Lipoprotein"
+    name_en: "High-Density Lipoprotein"
+    default_unit: "miligram per deciliter"
+    normal_range_gender_dependent: true
+    default_normal_range: {
+      "female": {
+        "min": 10,
+        "max": 50
+      },
+      "male": {
+        "min": 10,
+        "max": 40
+      }
+    }
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "low_density_lipoprotein"
+    name_de: "Low-Density-Lipoprotein"
+    name_en: "Low-Density Lipoprotein"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 20, "max": 100}
+    default_numerical_value_distribution: "uniform_default"

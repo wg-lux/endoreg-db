@@ -1,0 +1,54 @@
+# Prothrombin time: 11–13 seconds 
+- model: endoreg_db.lab_value
+  fields:
+    name: "prothrombin_time"
+    name_de: "Prothrombinzeit"
+    name_en: "Prothrombin time"
+    abbreviation: "PTT"
+    default_unit: "seconds"
+    default_normal_range: {"min": 11, "max": 13}
+    default_numerical_value_distribution: "uniform_default"
+
+# International normalized ratio (INR): 0.9-1.2
+- model: endoreg_db.lab_value
+  fields:
+    name: "international_normalized_ratio"
+    name_de: "International Normalisierte Ratio"
+    name_en: "International normalized ratio"
+    abbreviation: "INR"
+    default_unit: "ratio"
+    default_normal_range: {"min": 0.9, "max": 1.2}
+    default_numerical_value_distribution: "uniform_default"
+
+# Activated partial thromboplastin time (aPTT): 25–35 seconds 
+- model: endoreg_db.lab_value
+  fields:
+    name: "activated_partial_thromboplastin_time"
+    name_de: "Aktivierte partielle Thromboplastinzeit"
+    name_en: "Activated partial thromboplastin time"
+    abbreviation: "aPTT"
+    default_unit: "seconds"
+    default_normal_range: {"min": 25, "max": 35}
+    default_numerical_value_distribution: "uniform_default"
+
+# Fibrinogen: 150-350 mg/dL (1.5-3.5 g/L)
+- model: endoreg_db.lab_value
+  fields:
+    name: "fibrinogen"
+    name_de: "Fibrinogen"
+    name_en: "Fibrinogen"
+    abbreviation: "Fib"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 150, "max": 350}
+    default_numerical_value_distribution: "uniform_default"
+
+# Bleeding time:  <8 minutes
+- model: endoreg_db.lab_value
+  fields:
+    name: "bleeding_time"
+    name_de: "Blutungszeit"
+    name_en: "Bleeding time"
+    abbreviation: "BT"
+    default_unit: "minutes"
+    default_normal_range: {"min": 0.5, "max": 8}
+    default_numerical_value_distribution: "uniform_default"

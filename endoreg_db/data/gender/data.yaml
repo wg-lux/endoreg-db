@@ -1,0 +1,18 @@
+- model: endoreg_db.gender
+  fields:
+    name: "male"
+    name_de: "männlich"
+    name_en: "male"
+    abbreviation: "m"
+- model: endoreg_db.gender
+  fields:
+    name: "female"
+    name_de: "weiblich"
+    name_en: "female"
+    abbreviation: "f"
+- model: endoreg_db.gender
+  fields:
+    name: "other"
+    name_de: "andere"
+    name_en: "other"
+    abbreviation: "x"

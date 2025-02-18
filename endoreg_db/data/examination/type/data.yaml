@@ -1,0 +1,5 @@
+- model: report.ExaminationType
+  fields:
+    name: "endoscopy"
+    name_de: "Endoskopie"
+    name_en: "Endoscopy"

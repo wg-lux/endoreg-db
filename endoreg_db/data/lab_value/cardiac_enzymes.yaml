@@ -1,0 +1,37 @@
+# Creatine kinase: Female: 30–135 U/L; male: 55–170 U/L 
+# Creatine kinase MB (CKMB): ˂5% of total 
+# Troponin: ≤0.04 ng/mL
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "creatine_kinase"
+    name_de: "Kreatinkinase"
+    name_en: "Creatine Kinase"
+    abbreviation: "CK"
+    default_unit: "units per liter"
+    normal_range_gender_dependent: true
+    default_normal_range: {
+      "female": {
+        "min": 30,
+        "max": 135
+      },
+      "male": {
+        "min": 55,
+        "max": 170
+      }
+    }
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "creatine_kinase_mb_fraction"
+    name_de: "Kreatinkinase MB"
+    name_en: "Creatine Kinase MB"
+    abbreviation: "CKMB%"
+    default_unit: "percent"
+    default_normal_range: {
+      "min": 0.01,
+      "max": 5
+    }
+    default_numerical_value_distribution: "uniform_default"
+

@@ -1,0 +1,167 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-sodium-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "sodium",
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+# potassium
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-potassium-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "potassium",
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-hemoglobin-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "hemoglobin",
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+# hematocrit
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-hematocrit-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "hematocrit",
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+# platelet count
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-platelets-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "platelets",
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+# white cell count
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-white_blood_cells-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "white_blood_cells",
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+# estimated glomerular filtration rate
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_lab_sample-add_value-egfr-default"
+    rule_type: "create-object"
+    parent_model: "PatientLabSample"
+    parent_field: "sample"
+    target_model: "PatientLabValue"
+    extra_parameters: {
+      "create_method": {
+          "name": "create_lab_value_by_sample",
+          "kwargs": {
+            "lab_value_name": "estimated_glomerular_filtration_rate", 
+          }
+        },
+        "actions": [
+          {
+            "name": "set_value_by_distribution",
+            "kwargs": {} 
+          }
+        ]
+  
+      }
+
+

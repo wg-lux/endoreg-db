@@ -1,0 +1,144 @@
+- fields:
+    center: university_hospital_wuerzburg
+    name: gas_ukw_2020
+    name_de: Erdgas
+    name_en: Gas
+    quantity: 19000
+    resource: gas
+    transport_emission_factor: transport_resource_emission_ukw_gas
+    unit: liter
+    use_emission_factor: use_resource_emission_ukw_gas
+    year: 2020
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: oil_ukw_2020
+    name_de: "Heizöl"
+    name_en: Oil
+    quantity: 0
+    resource: oil
+    transport_emission_factor: transport_resource_emission_ukw_oil
+    unit: cubic_meter
+    use_emission_factor: use_resource_emission_ukw_oil
+    year: 2020
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: electricity_ukw_extern_2020
+    name_de: Strom (Bezug)
+    name_en: Electricity (extern)
+    quantity: 48000
+    resource: electricity
+    transport_emission_factor: transport_resource_emission_ukw_electricity_extern
+    unit: kilowatt-hours
+    use_emission_factor: use_resource_emission_ukw_electricity_extern
+    year: 2020
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: electricity_ukw_selfmade_2020
+    name_de: Strom (Eigenproduktion)
+    name_en: Electricity (Selfmade)
+    quantity: 22000
+    resource: electricity
+    transport_emission_factor: transport_resource_emission_ukw_electricity_selfmade
+    unit: kilowatt-hours
+    use_emission_factor: use_resource_emission_ukw_electricity_selfmade
+    year: 2020
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: gas_ukw_2021
+    name_de: Erdgas
+    name_en: Gas
+    quantity: 18000
+    resource: gas
+    transport_emission_factor: transport_resource_emission_ukw_gas
+    unit: liter
+    use_emission_factor: use_resource_emission_ukw_gas
+    year: 2021
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: oil_ukw_2021
+    name_de: "Heiz\xF6l"
+    name_en: Oil
+    quantity: 0
+    resource: oil
+    transport_emission_factor: transport_resource_emission_ukw_oil
+    unit: cubic_meter
+    use_emission_factor: use_resource_emission_ukw_oil
+    year: 2021
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: electricity_ukw_extern_2021
+    name_de: Strom (Bezug)
+    name_en: Electricity (extern)
+    quantity: 45000
+    resource: electricity
+    transport_emission_factor: transport_resource_emission_ukw_electricity_extern
+    unit: kilowatt-hours
+    use_emission_factor: use_resource_emission_ukw_electricity_extern
+    year: 2021
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: electricity_ukw_selfmade_2021
+    name_de: Strom (Eigenproduktion)
+    name_en: Electricity (Selfmade)
+    quantity: 22000
+    resource: electricity
+    transport_emission_factor: transport_resource_emission_ukw_electricity_selfmade
+    unit: kilowatt-hours
+    use_emission_factor: use_resource_emission_ukw_electricity_selfmade
+    year: 2021
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: gas_ukw_2022
+    name_de: Erdgas
+    name_en: Gas
+    quantity: 18500
+    resource: gas
+    transport_emission_factor: transport_resource_emission_ukw_gas
+    unit: liter
+    use_emission_factor: use_resource_emission_ukw_gas
+    year: 2022
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: oil_ukw_2022
+    name_de: "Heiz\xF6l"
+    name_en: Oil
+    quantity: 0
+    resource: oil
+    transport_emission_factor: transport_resource_emission_ukw_oil
+    unit: cubic_meter
+    use_emission_factor: use_resource_emission_ukw_oil
+    year: 2022
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: electricity_ukw_extern_2022
+    name_de: Strom (Bezug)
+    name_en: Electricity (extern)
+    quantity: 46000
+    resource: electricity
+    transport_emission_factor: transport_resource_emission_ukw_electricity_extern
+    unit: kilowatt-hours
+    use_emission_factor: use_resource_emission_ukw_electricity_extern
+    year: 2022
+  model: CenterResource
+- fields:
+    center: university_hospital_wuerzburg
+    name: electricity_ukw_selfmade_2022
+    name_de: Strom (Eigenproduktion)
+    name_en: Electricity (Selfmade)
+    quantity: 22000
+    resource: electricity
+    transport_emission_factor: transport_resource_emission_ukw_electricity_selfmade
+    unit: kilowatt-hours
+    use_emission_factor: use_resource_emission_ukw_electricity_selfmade
+    year: 2022
+  model: CenterResource

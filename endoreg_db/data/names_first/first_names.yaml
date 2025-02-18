@@ -1,0 +1,51 @@
+- model: endoreg_db.first_name
+  fields:
+    name: Alexander
+- model: endoreg_db.first_name
+  fields:
+    name: Angelika
+- model: endoreg_db.first_name
+  fields:
+    name: Anja
+- model: endoreg_db.first_name
+  fields:
+    name: Doro
+- model: endoreg_db.first_name
+  fields:
+    name: Dorothea
+- model: endoreg_db.first_name
+  fields:
+    name: Florian
+- model: endoreg_db.first_name
+  fields:
+    name: Hans
+- model: endoreg_db.first_name
+  fields:
+    name: Kathrin
+- model: endoreg_db.first_name
+  fields:
+    name: Laura
+- model: endoreg_db.first_name
+  fields:
+    name: Linhel
+- model: endoreg_db.first_name
+  fields:
+    name: Mandy
+- model: endoreg_db.first_name
+  fields:
+    name: Markus
+- model: endoreg_db.first_name
+  fields:
+    name: Philip
+- model: endoreg_db.first_name
+  fields:
+    name: Rainer
+- model: endoreg_db.first_name
+  fields:
+    name: Sven
+- model: endoreg_db.first_name
+  fields:
+    name: Tanja
+- model: endoreg_db.first_name
+  fields:
+    name: Theodor

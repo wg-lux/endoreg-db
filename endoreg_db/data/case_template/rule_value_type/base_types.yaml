@@ -1,0 +1,59 @@
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "foreign_key"
+    distribution_type: "single_categorical"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "many_to_many"
+    distribution_type: "multiple_categorical"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "object"
+    distribution_type: "single_categorical"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "date"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "integer"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "string"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "boolean"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "float"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "text"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "integer_range"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type 
+  fields:
+    name: "float_range"
+    distribution_type: "numeric"
+
+- model: endoreg_db.case_template_rule_value_type
+  fields:
+    name: "date_range"
+    distribution_type: "numeric"

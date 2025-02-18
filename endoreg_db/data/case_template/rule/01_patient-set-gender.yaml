@@ -1,0 +1,9 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient-set-gender-random"
+    rule_type: "set-field-by_distribution"
+    parent_model: "Patient"
+    target_field: "gender"
+    target_model: "Gender"
+    value_type: "foreign_key"
+    single_categorical_value_distribution: "gender-random"

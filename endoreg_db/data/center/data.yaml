@@ -1,0 +1,90 @@
+# center/data.yaml
+
+- model: endoreg_db.center
+  fields:
+    name: "university_hospital_wuerzburg"
+    name_de: "Universitätsklinikum Würzburg"
+    name_en: "University Hospital Würzburg"
+
+    first_names: [
+      "Markus",
+      "Linhel",
+      "Rainer",
+      "Hans",
+      "Anja",
+      "Dorothea",
+      "Doro",
+      "Angelika",
+      "Sven",
+      "Theodor",
+      "Alexander",
+      "Mandy",
+      "Kathrin",
+      "Florian",
+      "Philip",
+      "Laura",
+      "Tanja",
+    ]
+    
+    last_names: [
+      "Kozielski",
+      "Reiter",
+      "Purrer",
+      "Hossner",
+      "Kudlich",
+      "Brand",
+      "Weich",
+      "Lux",
+      "Meining",
+      "Hann",
+      "Retzbach",
+      "Hose",
+      "Henniger",
+      "Weich",
+      "Dela Cruz",
+      "Wiesemann",
+      "Wiese",
+      "Sodmann"
+    ]
+- model: endoreg_db.center
+  fields:
+    name: "rbk_stuttgart"
+    name_de: "Robert-Bosch-Krankenhaus Stuttgart"
+    name_en: "Robert Bosch Hospital Stuttgart"
+    first_names: [] # many to many; if foreign key, we would just have a string; strings represent "name" attribute
+    last_names: []
+
+# bbk_regensburg
+- model: endoreg_db.center
+  fields:
+    name: "bbk_regensburg"
+    name_de: "Barmherzige  Brüder Krankenhaus Regensburg"
+    name_en: "Barmherzige Brüder Hospital Regensburg"
+    first_names: []
+    last_names: []
+
+# uke_hamburg
+- model: endoreg_db.center
+  fields:
+    name: "uke_hamburg"
+    name_de: "Universitätsklinikum Hamburg-Eppendorf"
+    name_en: "University Hospital Hamburg-Eppendorf"
+    first_names: []
+    last_names: []
+
+# rkh_ludwigsburg
+- model: endoreg_db.center
+  fields:
+    name: "rkh_ludwigsburg"
+    name_de: "RKH Krankenhaus Ludwigsburg"
+    name_en: "RKH Hospital Ludwigsburg"
+    first_names: []
+    last_names: []
+
+- model: endoreg_db.center
+  fields:
+    name: "endoreg_db_demo"
+    name_de: "Demo Center"
+    name_en: "Demo Center"
+    first_names: []
+    last_names: []

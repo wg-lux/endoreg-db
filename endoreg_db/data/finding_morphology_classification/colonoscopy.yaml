@@ -1,0 +1,48 @@
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_size_categorical"
+    classification_type: "colon_lesion_size"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_size_mm"
+    classification_type: "colon_lesion_size"
+    name_de: "Größenklassifikation Kolonläsion (numerisch)"
+    name_en: "Colon Lesion Size Classification (numerical)"
+
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_surface_intact_default"
+    classification_type: "colon_lesion_surface_intact"
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_planarity_default"
+    classification_type: "colon_lesion_planarity"
+    name_de: "Planaritätsklassifikation Kolonläsion"
+    name_en: "Colon Lesion Planarity Classification"
+
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_circularity_default"
+    name_de: "Kolonläsion - Zirkularität"
+    name_en: "Colon lesion - circularity"
+    classification_type: "colon_lesion_circularity"    
+
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_nice"
+    classification_type: "colon_lesion_advanced_imaging"
+    name_de: "Kolonläsion - NICE"
+    name_en: "Colon lesion - NICE"
+
+- model: endoreg_db.finding_morphology_classification
+  fields:
+    name: "colon_lesion_paris"
+    classification_type: "colon_lesion_shape"
+    name_de: "Formklassifikation Kolonläsion"
+    name_en: "Colon Lesion Shape Classification"

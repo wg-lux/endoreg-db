@@ -1,0 +1,66 @@
+- model: report.Examination
+  fields:
+    name: "colonoscopy"
+    name_de: "Koloskopie"
+    name_en: "Colonoscopy"
+    examination_types: [
+      "endoscopy"
+    ]
+
+- model: report.Examination
+  fields:
+    name: "gastroscopy"
+    name_de: "Gastroskopie"
+    name_en: "Gastroscopy"
+    examination_types: [
+      "endoscopy"
+    ]
+
+# endosonography_upper_gi
+- model: report.Examination
+  fields:
+    name: "endosonography_upper_gi"
+    name_de: "Endosonographie oberer GI-Trakt"
+    name_en: "Endosonography Upper GI Tract"
+    examination_types: [
+      "endoscopy"
+    ]
+
+- model: report.Examination
+  fields:
+    name: "endosonography_lower_gi"
+    name_de: "Endosonographie unterer GI-Trakt"
+    name_en: "Endosonography Lower GI Tract"
+    examination_types: [
+      "endoscopy"
+    ]
+
+# ERCP
+- model: report.Examination
+  fields:
+    name: "ercp"
+    name_de: "ERCP"
+    name_en: "ERCP"
+    examination_types: [
+      "endoscopy"
+    ]
+
+# small bowel endoscopy
+- model: report.Examination
+  fields:
+    name: "small_bowel_endoscopy"
+    name_de: "Dünndarmendoskopie"
+    name_en: "Small Bowel Endoscopy"
+    examination_types: [
+      "endoscopy"
+    ]
+
+# capsule endoscopy
+- model: report.Examination
+  fields:
+    name: "capsule_endoscopy"
+    name_de: "Kapselendoskopie"
+    name_en: "Capsule Endoscopy"
+    examination_types: [
+      "endoscopy"
+    ]

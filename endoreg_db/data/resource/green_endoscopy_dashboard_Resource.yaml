@@ -1,0 +1,15 @@
+- fields:
+    name: gas
+    name_de: Erdgas
+    name_en: Gas
+  model: endoreg_db.Resource
+- fields:
+    name: oil
+    name_de: "Heizöl"
+    name_en: Oil
+  model: endoreg_db.Resource
+- fields:
+    name: electricity
+    name_de: Strom
+    name_en: Electricity
+  model: endoreg_db.Resource

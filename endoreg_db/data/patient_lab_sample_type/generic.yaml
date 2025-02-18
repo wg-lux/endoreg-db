@@ -1,0 +1,6 @@
+- model: endoreg_db.patient_lab_sample_type
+  fields:
+    name: "generic"
+    name_de: "generisch"
+    name_en: "generic"
+    description: "Generische Laborprobe"

@@ -1,0 +1,95 @@
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-2.5mg-twice_daily_32d"
+    name_de: "Apixaban 2.5mg, 2x täglich, 32 Tage"
+    name_en: "Apixaban 2.5mg, twice daily, 32 days"
+    therapy_duration_d: 32
+    medication: "apixaban"
+    dose: 2.5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-2.5mg-twice_daily_10d"
+    name_de: "Apixaban 2.5mg, 2x täglich, 10 Tage"
+    name_en: "Apixaban 2.5mg, twice daily, 10 days"
+    therapy_duration_d: 10
+    medication: "apixaban"
+    dose: 2.5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-5mg-twice_daily"
+    name_de: "Apixaban 5mg, 2x täglich"
+    name_en: "Apixaban 5mg, twice daily"
+    medication: "apixaban"
+    dose: 5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-2.5mg-twice_daily"
+    name_de: "Apixaban 2.5mg, 2x täglich"
+    name_en: "Apixaban 2.5mg, twice daily"
+    medication: "apixaban"
+    dose: 2.5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-5g-twice_daily_7d"
+    name_de: "Apixaban 5g, 2x täglich, 7 Tage"
+    name_en: "Apixaban 5g, twice daily, 7 days"
+    therapy_duration_d: 7
+    medication: "apixaban"
+    dose: 5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-5g-twice_daily_3mo"
+    name_de: "Apixaban 5g, 2x täglich, 3 Monate"
+    name_en: "Apixaban 5g, twice daily, 3 months"
+    therapy_duration_d: 90
+    medication: "apixaban"
+    dose: 5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]
+
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "apixaban-5g-twice_daily_6mo"
+    name_de: "Apixaban 5g, 2x täglich, 6 Monate"
+    name_en: "Apixaban 5g, twice daily, 6 months"
+    therapy_duration_d: 180
+    medication: "apixaban"
+    dose: 5
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+      "daily-evening"
+    ]

@@ -1,0 +1,41 @@
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "thromboembolism-prevention-after_hip_replacement"
+    name_de: "Thromboembolie-Prophylaxe nach Hüft-TEP"
+    name_en: "Thromboembolism Prevention after Hip Replacement"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "thromboembolism-prevention-after_knee_replacement"
+    name_de: "Thromboembolie-Prophylaxe nach Knie-TEP"
+    name_en: "Thromboembolism Prevention after Knee Replacement"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "thromboembolism-prevention-non_valvular_af"
+    name_de: "Thromboembolie-Prophylaxe bei nicht-valvulärem Vorhofflimmern"
+    name_en: "Thromboembolism Prevention in Non-Valvular Atrial Fibrillation"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "thromboembolism-prevention-recurrent_thrombembolism"
+    name_de: "Thromboembolie-Prophylaxe bei rezidivierenden Thrombembolien"
+    name_en: "Thromboembolism Prevention in Recurrent Thrombembolism"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "deep_vein_thrombosis-treatment"
+    name_de: "Thrombose-Behandlung bei tiefer Beinvenenthrombose"
+    name_en: "Deep Vein Thrombosis Treatment"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "pulmonary_embolism-treatment"
+    name_de: "Thrombose-Behandlung bei Lungenembolie"
+    name_en: "Pulmonary Embolism Treatment"
+
+- model: endoreg_db.medication_indication_type
+  fields:
+    name: "thrombembolism-prevention-recurrent_thrombembolism"
+    name_de: "Thromboembolie-Prophylaxe bei rezidivierenden Thrombembolien"
+    name_en: "Thromboembolism Prevention in Recurrent Thrombembolism"

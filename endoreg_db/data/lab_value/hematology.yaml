@@ -1,0 +1,184 @@
+# Hematology
+# Hemoglobin: Female: 12–16 g/dL; male: 14–18 g/dL
+- model: endoreg_db.lab_value
+  fields:
+    name: "hemoglobin"
+    name_de: "Hämoglobin"
+    name_en: "Hemoglobin"
+    abbreviation: "Hb"
+    normal_range_gender_dependent: true
+    default_unit: "gram per deciliter"
+    default_normal_range: {
+      "male": {
+        "min": 14, "max": 18
+      },
+      "female": {
+        "min": 12, "max": 16
+      }
+    }
+    default_numerical_value_distribution: "uniform_default"
+
+# Hematocrit Female: 37%–47%; male: 42%–50% 
+- model: endoreg_db.lab_value
+  fields:
+    name: "hematocrit"
+    name_de: "Hämatokrit"
+    name_en: "Hematocrit"
+    abbreviation: "Hct"
+    normal_range_gender_dependent: true
+    default_unit: "percent"
+    default_normal_range: {
+      "male": {
+        "min": 42, "max": 50
+      },
+      "female": {
+        "min": 37, "max": 47
+      }
+    }
+    default_numerical_value_distribution: "uniform_default"
+
+# Glycosylated hemoglobin 4.0%–5.6% 
+- model: 
+  fields:
+    name: "glycosylated_hemoglobin"
+    name_de: "Glykosyliertes Hämoglobin"
+    name_en: "Glycosylated Hemoglobin"
+    abbreviation: "HbA1c"
+    default_unit: "percent"
+    default_normal_range: {"min": 4.0, "max": 5.6}
+    default_numerical_value_distribution: "uniform_default"
+
+# Mean corpuscular volume (MCV): 80–98 fL
+- model: endoreg_db.lab_value
+  fields:
+    name: "mean_corpuscular_volume"
+    name_de: "Mittleres korpuskuläres Volumen"
+    name_en: "Mean Corpuscular Volume"
+    abbreviation: "MCV"
+    default_unit: "femtoliter"
+    default_normal_range: {"min": 80, "max": 98}
+    default_numerical_value_distribution: "uniform_default"
+
+# Red blood cell distribution width (RDW): 9.0%–14.5% 
+- model: endoreg_db.lab_value
+  fields:
+    name: "red_blood_cell_distribution_width"
+    name_de: "Erythrozytenverteilungsbreite"
+    name_en: "Red Blood Cell Distribution Width"
+    abbreviation: "RDW"
+    default_unit: "percent"
+    default_normal_range: {"min": 9.0, "max": 14.5}
+    default_numerical_value_distribution: "uniform_default"
+
+# Mean corpuscular hemoglobin (MCH): 28–32 pg 
+- model: endoreg_db.lab_value
+  fields:
+    name: "mean_corpuscular_hemoglobin"
+    name_de: "Mittleres korpuskuläres Hämoglobin"
+    name_en: "Mean Corpuscular Hemoglobin"
+    abbreviation: "MCH"
+    default_unit: "picogram"
+    default_normal_range: {"min": 28, "max": 32}
+    default_numerical_value_distribution: "uniform_default"
+
+# Mean corpuscular hemoglobin concentration (MCHC): 33–36 g/dL  
+- model: endoreg_db.lab_value
+  fields:
+    name: "mean_corpuscular_hemoglobin_concentration"
+    name_de: "Mittleres korpuskuläres Hämoglobinkonzentration"
+    name_en: "Mean Corpuscular Hemoglobin Concentration"
+    abbreviation: "MCHC"
+    default_unit: "gram per deciliter"
+    default_normal_range: {"min": 33, "max": 36}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Reticulocytes 0.5%–1.5% of red cells 
+- model: endoreg_db.lab_value
+  fields:
+    name: "reticulocytes"
+    name_de: "Retikulozyten"
+    name_en: "Reticulocytes"
+    abbreviation: "Reti"
+    default_unit: "percent"
+    default_normal_range: {"min": 0.5, "max": 1.5}
+    default_numerical_value_distribution: "uniform_default"
+
+# White blood cells (WBC) 4-10 x 10^9/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "white_blood_cells"
+    name_de: "Leukozyten"
+    name_en: "White Blood Cells"
+    abbreviation: "WBC"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 4, "max": 10}
+    default_numerical_value_distribution: "uniform_default"
+
+# Neutrophils: 2-8 x 109/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "neutrophils"
+    name_de: "Neutrophile"
+    name_en: "Neutrophils"
+    abbreviation: "Neu"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 2, "max": 8}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Bands: < 1 x 109/L
+- model: endoreg_db.lab_value
+  fields:
+    name: "bands"
+    name_de: "Stabkernige"
+    name_en: "Bands"
+    abbreviation: "Bands"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 0.0001, "max": 1}
+    default_numerical_value_distribution: "uniform_default"
+
+# Lymphocytes: 1000 to 4800/mcL (1 to 4.8 × 109/L) 
+- model: endoreg_db.lab_value
+  fields:
+    name: "lymphocytes"
+    name_de: "Lymphozyten"
+    name_en: "Lymphocytes"
+    abbreviation: "Lym"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 1, "max": 4.8}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Monocytes: 0.2-0.8 x 109/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "monocytes"
+    name_de: "Monozyten"
+    name_en: "Monocytes"
+    abbreviation: "Mon"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 0.2, "max": 0.8}
+    default_numerical_value_distribution: "uniform_default"
+
+# Eosinophils: .000-0.600 th/uL (0-6%) 
+- model: endoreg_db.lab_value
+  fields:
+    name: "eosinophils"
+    name_de: "Eosinophile"
+    name_en: "Eosinophils"
+    abbreviation: "Eos"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 0.01, "max": 0.6}
+    default_numerical_value_distribution: "uniform_default"
+
+# Platelets: 150,000-350,000/µL (150-350 x 109/L) 
+- model: endoreg_db.lab_value
+  fields:
+    name: "platelets"
+    name_de: "Thrombozyten"
+    name_en: "Platelets"
+    abbreviation: "Plt"
+    default_unit: "x 10^9 per liter"
+    default_normal_range: {"min": 150, "max": 350}
+    default_numerical_value_distribution: "uniform_default"

@@ -1,0 +1,7 @@
+- model: endoreg_db.date_value_distribution
+  fields:
+    name: "age-screening_colo_population"
+    distribution_type: "uniform"
+    mode: "timedelta"
+    timedelta_days_min: 18250
+    timedelta_days_max: 32485

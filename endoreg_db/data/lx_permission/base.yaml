@@ -1,0 +1,24 @@
+
+# BASE_PERMISSION_NAMES = [
+#     "local_admin",
+#     "local_user",
+#     "local_base_db_read",
+#     "local_base_db_write",
+# ]
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "local_admin"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "local_user"
+
+- model: endoreg_db.lx_permission 
+  fields:
+    name: "local_base_db_read"  
+
+- model: endoreg_db.lx_permission 
+  fields:
+    name: "local_base_db_write"
+

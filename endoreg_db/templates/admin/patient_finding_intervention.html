@@ -1,0 +1,253 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+
+<h2>Patient Finding Intervention</h2>
+
+<form method="POST" id="intervention-form">
+    {% csrf_token %}
+
+    <!-- Patient Selection -->
+    <div>
+        <label>Select Patient:</label><br>
+        <select name="patient" id="patient-dropdown">
+            <option value="">-- Select Patient --</option>
+            {% for patient in patients %}
+            <option value="{{ patient.id }}">{{ patient.first_name }} {{ patient.last_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <!-- Examination Selection -->
+    <div>
+        <label>Select Examination:</label><br>
+        <select name="examination" id="examination-dropdown">
+            <option value="">-- Select Examination --</option>
+            {% for examination in examinations %}
+            <option value="{{ examination.id }}">{{ examination.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <!-- Finding Selection -->
+    <div>
+        <label>Select Finding:</label><br>
+        <select name="finding" id="finding-dropdown">
+            <option value="">-- Select Finding --</option>
+            {% for finding in findings %}
+            <option value="{{ finding.id }}">{{ finding.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <!-- Select Location -->
+    <div>
+        <label>Select Location:</label><br>
+        <select name="location" id="location-dropdown" onchange="updateFormAction(this)">
+            <option value="">-- Select Location --</option>
+            {% for location in locations %}
+            <option value="{{ location.id }}" {% if location.id == selected_location %}selected{% endif %}>
+                {{ location.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <!-- Select Location Choice -->
+    <div>
+        <label>Select Location Choice:</label><br>
+        <select name="location_choice" id="location-choice-dropdown">
+            <option value="">-- Select Location Choice --</option>
+            {% for choice in location_choices %}
+            <option value="{{ choice.id }}">{{ choice.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <!-- Select Morphology -->
+    <!-- Select Morphology (FindingMorphologyClassification) -->
+    <div>
+        <label>Select Morphology:</label><br>
+        <select name="morphology" id="morphology-dropdown">
+            <option value="">-- Select Morphology --</option>
+            {% for morphology in morphologies %}
+            <option value="{{ morphology.id }}">{{ morphology.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <!-- Select Morphology Choice (FindingMorphologyClassificationChoice) -->
+    <div>
+        <label>Select Morphology Choice:</label><br>
+        <select name="morphology_choice" id="morphology-choice-dropdown">
+            <option value="">-- Select Morphology Choice --</option>
+            {% for choice in morphology_choices %}
+            <option value="{{ choice.id }}">{{ choice.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+
+    <br>
+
+    <!-- Select Finding Interventions -->
+    <div>
+        <label>Select Finding Interventions:</label><br>
+        <select name="finding_intervention" id="finding-intervention-dropdown">
+            <option value="">-- Select Finding Intervention --</option>
+            {% for intervention in finding_interventions %}
+            <option value="{{ intervention.id }}">{{ intervention.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <br>
+
+    <div>
+        <button type="button" id="generate-report-btn">Generate Report</button>
+    </div>
+
+    <!-- Display Report Section -->
+    <div id="report-section" style="display:none; margin-top: 20px;">
+        <h3>Generated Report</h3>
+        <p><strong>Patient:</strong> <span id="report-patient"></span></p>
+        <p><strong>Examination:</strong> <span id="report-examination"></span></p>
+        <p><strong>Finding:</strong> <span id="report-finding"></span></p>
+        <p><strong>Location:</strong> <span id="report-location"></span></p>
+        <p><strong>Location Choice:</strong> <span id="report-location-choice"></span></p>
+        <p><strong>Morphology:</strong> <span id="report-morphology"></span></p>
+        <p><strong>Morphology Choice:</strong> <span id="report-morphology-choice"></span></p>
+        <p><strong>Finding Intervention:</strong> <span id="report-finding-intervention"></span></p>
+
+        <button id="download-report-btn">Download Report</button>
+    </div>
+
+</form>
+
+<script>
+    document.getElementById("location-dropdown").addEventListener("change", function() {
+        let locationId = this.value;
+        let locationChoiceDropdown = document.getElementById("location-choice-dropdown");
+
+        // Reset dropdown
+        locationChoiceDropdown.innerHTML = '<option value="">-- Select Location Choice --</option>';
+
+        // Fetch Choices Only If a Location is Selected
+        if (locationId) {
+            fetch(`/endoreg_db/get-location-choices/${locationId}/`)  
+            .then(response => response.json())
+            .then(data => {
+                if (data.location_choices.length === 0) {
+                    locationChoiceDropdown.innerHTML = `<option value="default">Rectum</option>`; // Default Value
+                } else {
+                    data.location_choices.forEach(choice => {
+                        locationChoiceDropdown.innerHTML += `<option value="${choice.id}">${choice.name}</option>`;
+                    });
+                }
+            })
+            .catch(error => {
+                console.error("Error loading location choices:", error);
+                alert("Error: Could not fetch location choices.");
+            });
+        } else {
+            locationChoiceDropdown.innerHTML = `<option value="default">Rectum</option>`; // Default Value
+        }
+    });
+</script>
+
+
+<script>
+    document.getElementById("generate-report-btn").addEventListener("click", function() {
+        let getText = (id, defaultValue = "Not Selected") => {
+            let element = document.getElementById(id);
+            return element.selectedOptions.length > 0 ? element.selectedOptions[0].text.trim() : defaultValue;
+        };
+
+        document.getElementById("report-patient").textContent = getText("patient-dropdown");
+        document.getElementById("report-examination").textContent = getText("examination-dropdown");
+        document.getElementById("report-finding").textContent = getText("finding-dropdown");
+        document.getElementById("report-location").textContent = getText("location-dropdown");
+        document.getElementById("report-location-choice").textContent = getText("location-choice-dropdown", "Rectum");
+        document.getElementById("report-morphology").textContent = getText("morphology-dropdown");
+        document.getElementById("report-morphology-choice").textContent = getText("morphology-choice-dropdown");
+        document.getElementById("report-finding-intervention").textContent = getText("finding-intervention-dropdown");
+
+        document.getElementById("report-section").style.display = "block";
+    });
+
+    document.getElementById("download-report-btn").addEventListener("click", function() {
+        let reportContent = `
+        Patient: ${document.getElementById("report-patient").textContent}
+        Examination: ${document.getElementById("report-examination").textContent}
+        Finding: ${document.getElementById("report-finding").textContent}
+        Location: ${document.getElementById("report-location").textContent}
+        Location Choice: ${document.getElementById("report-location-choice").textContent}
+        Morphology: ${document.getElementById("report-morphology").textContent}
+        Morphology Choice: ${document.getElementById("report-morphology-choice").textContent}
+        Finding Intervention: ${document.getElementById("report-finding-intervention").textContent}
+        `;
+
+        let blob = new Blob([reportContent], { type: "text/plain" });
+        let link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "Patient_Finding_Report.txt";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+</script>
+
+<script>
+    document.getElementById("morphology-dropdown").addEventListener("change", function() {
+        let morphologyId = this.value;
+        let morphologyChoiceDropdown = document.getElementById("morphology-choice-dropdown");
+
+        // Reset Morphology Choice Dropdown
+        morphologyChoiceDropdown.innerHTML = '<option value="">-- Select Morphology Choice --</option>';
+
+        // Fetch Choices Only If a Morphology is Selected
+        if (morphologyId) {
+            fetch(`/endoreg_db/get-morphology-choices/${morphologyId}/`)  
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    console.error("Server Error:", data.error);
+                    alert("Error: " + data.error);
+                } else {
+                    if (data.morphology_choices.length === 0) {
+                        morphologyChoiceDropdown.innerHTML = `<option value="default">No Choices Available</option>`; // Default Value
+                    } else {
+                        data.morphology_choices.forEach(choice => {
+                            morphologyChoiceDropdown.innerHTML += `<option value="${choice.id}">${choice.name}</option>`;
+                        });
+                    }
+                }
+            })
+            .catch(error => {
+                console.error("Error loading morphology choices:", error);
+                alert("Error: Could not fetch morphology choices.");
+            });
+        }
+    });
+</script>
+
+
+
+
+{% endblock %}
