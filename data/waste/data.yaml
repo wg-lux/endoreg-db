@@ -1,0 +1,12 @@
+- model: endoreg_db.Waste
+  fields:
+    name: general_waste
+    name_de: Allgemeiner Abfall
+    name_en: General Waste
+
+- model: endoreg_db.Waste
+  fields:
+    name: medical_waste
+    name_de: Medizinischer Abfall
+    name_en: Medical Waste
+    

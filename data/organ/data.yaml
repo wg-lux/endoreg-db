@@ -1,0 +1,29 @@
+- model: endoreg_db.organ
+  fields:
+    name: "colon"
+    name_de: "Kolon"
+    name_en: "Colon"
+  
+- model: endoreg_db.organ
+  fields:
+    name: "rectum"
+    name_de: "Rektum"
+    name_en: "Rectum"
+
+- model: endoreg_db.organ
+  fields:
+    name: "anal_canal"
+    name_de: "Analkanal"
+    name_en: "Anal Canal"
+
+- model: endoreg_db.organ
+  fields:
+    name: "ileum"
+    name_de: "Ileum"
+    name_en: "Ileum"
+
+- model: endoreg_db.organ
+  fields:
+    name: "small_bowel"
+    name_de: "Dünndarm"
+    name_en: "Small Bowel"

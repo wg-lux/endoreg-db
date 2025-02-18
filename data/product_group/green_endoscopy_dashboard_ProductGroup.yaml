@@ -1,0 +1,33 @@
+- fields:
+    name: Balloon
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Bougie
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Wire
+  model: endoreg_db.ProductGroup
+- fields:
+    name: PEG
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Instrument
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Metal-Stent
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Plastic-Stent
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Plastic
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Plastic-Large
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Coat
+  model: endoreg_db.ProductGroup
+- fields:
+    name: Absorbant-Pad
+  model: endoreg_db.ProductGroup

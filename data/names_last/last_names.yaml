@@ -1,0 +1,51 @@
+- model: endoreg_db.last_name
+  fields:
+    name: Brand
+- model: endoreg_db.last_name
+  fields:
+    name: Dela Cruz
+- model: endoreg_db.last_name
+  fields:
+    name: Hann
+- model: endoreg_db.last_name
+  fields:
+    name: Henniger
+- model: endoreg_db.last_name
+  fields:
+    name: Hose
+- model: endoreg_db.last_name
+  fields:
+    name: Hossner
+- model: endoreg_db.last_name
+  fields:
+    name: Kozielski
+- model: endoreg_db.last_name
+  fields:
+    name: Kudlich
+- model: endoreg_db.last_name
+  fields:
+    name: Lux
+- model: endoreg_db.last_name
+  fields:
+    name: Meining
+- model: endoreg_db.last_name
+  fields:
+    name: Purrer
+- model: endoreg_db.last_name
+  fields:
+    name: Reiter
+- model: endoreg_db.last_name
+  fields:
+    name: Retzbach
+- model: endoreg_db.last_name
+  fields:
+    name: Sodmann
+- model: endoreg_db.last_name
+  fields:
+    name: Weich
+- model: endoreg_db.last_name
+  fields:
+    name: Wiese
+- model: endoreg_db.last_name
+  fields:
+    name: Wiesemann

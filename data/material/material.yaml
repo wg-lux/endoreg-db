@@ -1,0 +1,91 @@
+- model: endoreg_db.Material
+  fields:
+    name: cardboard
+    name_de: Pappe
+    name_en: cardboard
+    emission_factor: material_emission_cardboard
+
+- fields:
+    name: foil
+    name_de: Folien
+    name_en: foil
+    emission_factor: material_emission_foil
+  model: endoreg_db.Material
+
+- fields:
+    name: gold
+    name_de: Gold
+    name_en: gold
+    emission_factor: material_emission_gold
+
+
+- fields:
+    name: metal
+    name_de: Metall
+    name_en: metal
+    emission_factor: material_emission_metal
+  model: endoreg_db.Material
+
+- fields:
+    name: nickel
+    name_de: Nickel
+    name_en: nickel
+    emission_factor: material_emission_nickel
+  model: endoreg_db.Material
+
+- fields:
+    name: paper
+    name_de: Papier
+    name_en: paper
+    emission_factor: material_emission_paper
+  model: endoreg_db.Material
+
+- fields:
+    name: paper_coated
+    name_de: Beschichtetes Papier
+    name_en: paper_coated
+    emission_factor: material_emission_paper_coated
+  model: endoreg_db.Material
+
+- fields:
+    name: plastic
+    name_de: Kunststoff
+    name_en: plastic
+    emission_factor: material_emission_plastic
+  model: endoreg_db.Material
+- fields:
+    name: plastic_coated
+    name_de: Kunststoff beschichtet
+    name_en: plastic_coated
+    emission_factor: material_emission_plastic_coated
+  model: endoreg_db.Material
+- fields:
+    name: silicone
+    name_de: Silikon
+    name_en: silicone
+    emission_factor: material_emission_silicone
+  model: endoreg_db.Material
+- fields:
+    name: steel
+    name_de: Stahl
+    name_en: steel
+    emission_factor: material_emission_steel
+  model: endoreg_db.Material
+- fields:
+    name: tantal
+    name_de: Tantal
+    name_en: tantal
+    emission_factor: material_emission_tantal
+  model: endoreg_db.Material
+- fields:
+    name: textile
+    name_de: Textil
+    name_en: textile
+    emission_factor: material_emission_textile
+  model: endoreg_db.Material
+- fields:
+    name: titan
+    name_de: Titan
+    name_en: titan
+    emission_factor: material_emission_titan
+  model: endoreg_db.Material

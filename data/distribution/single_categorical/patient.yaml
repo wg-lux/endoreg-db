@@ -1,0 +1,7 @@
+- model: endoreg_db.single_categorical_value_distribution
+  fields:
+    name: "gender_random"
+    categories: {
+      "male": 0.5,
+      "female": 0.5
+    }

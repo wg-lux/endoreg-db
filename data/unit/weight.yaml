@@ -1,0 +1,38 @@
+- model: endoreg_db.unit
+  fields:
+    name: "picogram"
+    abbreviation: "pg"
+    name_de: "Picogramm"
+    name_en: "Picogram"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "microgram"
+    abbreviation: "µg"
+    name_de: "Mikrogramm"
+    name_en: "Microgram"
+    description: "micrograms"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "miligram"
+    abbreviation: "mg"
+    name_de: "miligramm"
+    name_en: "miligram"
+    description: "miligrams"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "gram"
+    abbreviation: "g"
+    name_de: "Gramm"
+    name_en: "Gram"
+    description: "grams"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "kilogram"
+    abbreviation: "kg"
+    name_de: "Kilogramm"
+    name_en: "Kilogram"
+    description: "kilograms"

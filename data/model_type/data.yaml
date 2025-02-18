@@ -1,0 +1,7 @@
+- model: endoreg_db.model_type
+  fields:
+    name: "multilabel_classification"
+
+- model: endoreg_db.model_type
+  fields:
+    name: "object_detection"

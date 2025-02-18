@@ -1,0 +1,70 @@
+# ASS
+- models: endoreg_db.models.medication
+  fields:
+    name: "aspirin"
+    name_de: "Aspririn"
+    name_en: "Aspirin"
+    adapt_to_renal_function: false
+    adapt_to_hepatic_function: false
+    adapt_to_indication: true
+    adapt_to_age: false
+    adapt_to_weight: false
+    adapt_to_risk: false
+    default_unit: "miligram"
+
+# Clopidogrel
+- models: endoreg_db.models.medication
+  fields:
+    name: "clopidogrel"
+    name_de: "Clopidogrel"
+    name_en: "Clopidogrel"
+    adapt_to_renal_function: false
+    adapt_to_hepatic_function: false
+    adapt_to_indication: true
+    adapt_to_age: false
+    adapt_to_weight: false
+    adapt_to_risk: false
+    default_unit: "miligram"
+
+# Prasugrel
+- models: endoreg_db.models.medication
+  fields:
+    name: "prasugrel"
+    name_de: "Prasugrel"
+    name_en: "Prasugrel"
+    adapt_to_renal_function: false
+    adapt_to_hepatic_function: false
+    adapt_to_indication: true
+    adapt_to_age: false
+    adapt_to_weight: false
+    adapt_to_risk: false
+    default_unit: "miligram"
+
+
+# Ticagrelor
+- models: endoreg_db.models.medication
+  fields:
+    name: "ticagrelor"
+    name_de: "Ticagrelor"
+    name_en: "Ticagrelor"
+    adapt_to_renal_function: false
+    adapt_to_hepatic_function: true
+    adapt_to_indication: true
+    adapt_to_age: false
+    adapt_to_weight: false
+    adapt_to_risk: false
+    default_unit: "miligram"
+
+# Tirofiban
+- models: endoreg_db.models.medication
+  fields:
+    name: "tirofiban"
+    name_de: "Tirofiban"
+    name_en: Tirofiban"
+    adapt_to_renal_function: true
+    adapt_to_hepatic_function: true
+    adapt_to_indication: true
+    adapt_to_age: false
+    adapt_to_weight: false
+    adapt_to_risk: false
+    default_unit: "miligram"

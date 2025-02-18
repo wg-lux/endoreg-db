@@ -1,0 +1,20 @@
+- model: endoreg_db.event
+  fields:
+    name: "deep_vein_thrombosis"
+    name_de: "Tiefe Beinvenenthrombose"
+    name_en: "Deep Vein Thrombosis"
+    description: "Deep Vein Thrombosis"
+
+- model: endoreg_db.event
+  fields:
+    name: "pulmonary_embolism"
+    name_de: "Lungenembolie"
+    name_en: "Pulmonary Embolism"
+    description: "Pulmonary Embolism"
+
+- model: endoreg_db.event
+  fields:
+    name: "recurrent_thrombembolism"
+    name_de: "Rezidivierende Thrombembolien"
+    name_en: "Recurrent Thrombembolism"
+    description: "Recurrent Thrombembolism"

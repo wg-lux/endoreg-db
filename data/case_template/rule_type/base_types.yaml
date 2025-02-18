@@ -1,0 +1,35 @@
+- model: endoreg_db.case_template_rule_type
+  fields:
+    name: "set-field-default"
+    name_de: "Default Wert eines Feldes setzen"
+    name_en: "Set value of field"
+
+- model: endoreg_db.case_template_rule_type
+  fields:
+    name: "set-field-by_distribution"
+    name_de: "Wert eines Feldes anhand einer Verteilung setzen"
+    name_en: "Set value of field by distribution"
+
+- model: endoreg_db.case_template_rule_type
+  fields:
+    name: "set-field-by_value"
+    name_de: "Wert eines Feldes auf einen bestimmten Wert setzen"
+    name_en: "Set value of field to a specific value"
+
+- model: endoreg_db.case_template_rule_type
+  fields:
+    name: "set-field-single_choice"
+    name_de: "Wert eines Feldes auf einen bestimmten Wert anhand einer Auswahl setzen"
+    name_en: "Set value of field to a specific value based on a choice"
+
+- model: endoreg_db.case_template_rule_type
+  fields:
+    name: "set-field-multiple_choice"
+    name_de: "Wert eines Feldes auf einen bestimmten Wert anhand einer Mehrfachauswahl setzen"
+    name_en: "Set value of field to a specific value based on a multiple choice"
+
+- model: endoreg_db.case_template_rule_type
+  fields:
+    name: "create-object"
+    name_de: "Datenbank Objekt erstellen"
+    name_en: "Create Db Object"

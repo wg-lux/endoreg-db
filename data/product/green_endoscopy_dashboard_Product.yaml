@@ -1,0 +1,66 @@
+- fields:
+    name: extraction_balloon_escort_2
+    name_de: Escort II Extraction Balloon
+    product_group: Balloon
+    transport_route: generic_overseas
+  model: endoreg_db.Product
+- fields:
+    name: esophageal_dilator
+    name_de: Esophageal Dilator
+    product_group: Bougie
+    transport_route: generic_europe
+  model: endoreg_db.Product
+- fields:
+    name: visiglide_2
+    name_de: VisiGlide 2
+    product_group: Wire
+    transport_route: generic_overseas
+  model: endoreg_db.Product
+- fields:
+    name: peg_freka_15_ch
+    name_de: Freka PEG CH/FR15
+    product_group: PEG
+    transport_route: generic_europe
+  model: endoreg_db.Product
+- fields:
+    name: biopsy_grasper_hot_radial_jaw_4
+    name_de: Biopsiezange 4 Hot Radial Jaw
+    product_group: Instrument
+    transport_route: generic_overseas
+  model: endoreg_db.Product
+- fields:
+    name: nitinol_stent_aix_oel
+    name_de: Nitinol Stent, aix stent OEL
+    product_group: Metal-Stent
+    transport_route: generic_europe
+  model: endoreg_db.Product
+- fields:
+    name: biliary_stent_cotton_leung_sof_flex
+    name_de: Cotton-Leung Sof-Flex Biliary Stent
+    product_group: Plastic-Stent
+    transport_route: generic_overseas
+  model: endoreg_db.Product
+- fields:
+    name: bite_protector
+    name_de: "Einmal Bei\xDFring"
+    product_group: Plastic
+    transport_route: generic_europe
+  model: endoreg_db.Product
+- fields:
+    name: pressure_syringe_60_ml
+    name_de: Druckspritze 60ml System Alliance II
+    product_group: Plastic-Large
+    transport_route: generic_overseas
+  model: endoreg_db.Product
+- fields:
+    name: foliodress_gown_standard
+    name_de: Foliodress gown Standard
+    product_group: Coat
+    transport_route: generic_europe
+  model: endoreg_db.Product
+- fields:
+    name: absorbant_pad
+    name_de: Unterlage
+    product_group: Absorbant-Pad
+    transport_route: generic_overseas
+  model: endoreg_db.Product

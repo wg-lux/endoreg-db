@@ -1,0 +1,30 @@
+# yaml definitions for report reader flag objects
+# PATIENT_INFO_LINE_FLAG = "Patient: "
+# ENDOSCOPE_INFO_LINE_FLAG = "Gerät: "
+# EXAMINER_INFO_LINE_FLAG = "1. Unters.:"
+# CUT_OFF_BELOW_LINE_FLAG = "________________"
+
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "ukw-examination-generic-patient-info-line"
+    value: "Patient: "
+
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "ukw-examination-generic-endoscope-info-line"
+    value: "Gerät: "
+
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "ukw-examination-generic-examiner-info-line"
+    value: "1. Unters.:"
+
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "ukw-examination-generic-cut-off-below-line-01"
+    value: "________________"
+
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "ukw-examination-generic-anamnese-info-line"
+    value: "Anamnese: "

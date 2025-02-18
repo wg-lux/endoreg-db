@@ -1,0 +1,5 @@
+- model: endoreg_db.disease
+  fields:
+    name: "chronic_kidney_disease"
+    name_de: "Chronische Nierenerkrankung"
+    name_en: "Chronic Kidney Disease"

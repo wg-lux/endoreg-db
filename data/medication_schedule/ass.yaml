@@ -1,0 +1,12 @@
+- model: endoreg_db.medication_schedule
+  fields:
+    name: "ass-100mg-once_daily"
+    name_de: "ASS 100mg, 1x täglich"
+    name_en: "ASS 100mg, once daily"
+    therapy_duration_d: -1
+    medication: "aspirin"
+    dose: 100
+    unit: "miligram"
+    intake_times: [
+      "daily-morning",
+    ]

@@ -1,0 +1,308 @@
+- fields:
+    component: product
+    material: plastic
+    product: extraction_balloon_escort_2
+    quantity: 0.042
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: extraction_balloon_escort_2
+    quantity: 0.0225
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: extraction_balloon_escort_2
+    quantity: 0.0095
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: silicone
+    product: esophageal_dilator
+    quantity: 0.119
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: steel
+    product: esophageal_dilator
+    quantity: 0.001
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper_coated
+    product: esophageal_dilator
+    quantity: 0.007
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: esophageal_dilator
+    quantity: 0.007
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: metal
+    product: visiglide_2
+    quantity: 0.045
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: cardboard
+    product: visiglide_2
+    quantity: 0.108
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: visiglide_2
+    quantity: 0.015
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper_coated
+    product: visiglide_2
+    quantity: 0.013
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: visiglide_2
+    quantity: 0.013
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: metal
+    product: peg_freka_15_ch
+    quantity: 0.0074
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic
+    product: peg_freka_15_ch
+    quantity: 0.0222
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: silicone
+    product: peg_freka_15_ch
+    quantity: 0.0074
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: cardboard
+    product: peg_freka_15_ch
+    quantity: 0.072
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: peg_freka_15_ch
+    quantity: 0.086
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: peg_freka_15_ch
+    quantity: 0.033
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: metal
+    product: biopsy_grasper_hot_radial_jaw_4
+    quantity: 0.0295
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic
+    product: biopsy_grasper_hot_radial_jaw_4
+    quantity: 0.0295
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: biopsy_grasper_hot_radial_jaw_4
+    quantity: 0.0085
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: biopsy_grasper_hot_radial_jaw_4
+    quantity: 0.0085
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: nickel
+    product: nitinol_stent_aix_oel
+    quantity: 0.015
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic
+    product: nitinol_stent_aix_oel
+    quantity: 0.024
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: silicone
+    product: nitinol_stent_aix_oel
+    quantity: 0.003
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: tantal
+    product: nitinol_stent_aix_oel
+    quantity: 0.003
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: titan
+    product: nitinol_stent_aix_oel
+    quantity: 0.015
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: nitinol_stent_aix_oel
+    quantity: 0.106
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: nitinol_stent_aix_oel
+    quantity: 0.03
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: gold
+    product: biliary_stent_cotton_leung_sof_flex
+    quantity: 0.007
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: biliary_stent_cotton_leung_sof_flex
+    quantity: 0.014
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: biliary_stent_cotton_leung_sof_flex
+    quantity: 0.004
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic
+    product: bite_protector
+    quantity: 0.006
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: textile
+    product: bite_protector
+    quantity: 0.005
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: bite_protector
+    quantity: 0.001
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: bite_protector
+    quantity: 0.001
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic
+    product: pressure_syringe_60_ml
+    quantity: 0.07
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: steel
+    product: pressure_syringe_60_ml
+    quantity: 0.03
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: paper
+    product: pressure_syringe_60_ml
+    quantity: 0.004
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: pressure_syringe_60_ml
+    quantity: 0.039
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic
+    product: foliodress_gown_standard
+    quantity: 0.036
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: foliodress_gown_standard
+    quantity: 0.001
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: product
+    material: plastic_coated
+    product: absorbant_pad
+    quantity: 0.057
+    unit: kilogram
+  model: endoreg_db.ProductMaterial
+- fields:
+    component: package
+    material: plastic
+    product: absorbant_pad
+    quantity: 0.001
+    unit: kilogram
+  model: endoreg_db.ProductMaterial

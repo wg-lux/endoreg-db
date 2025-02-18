@@ -1,0 +1,57 @@
+- model: endoreg_db.log_type
+  fields:
+    name: 'service-alive'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'service-error'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'service-info'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'service-warning'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'service-status'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'service-task'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'device-alive'
+    description: 'Data log type'
+
+- model: endoreg_db.log_type
+  fields:
+    name: 'device-error'
+    description: 'Data log type'
+
+# device-status
+- model: endoreg_db.log_type
+  fields:
+    name: 'device-status'
+    description: 'Data log type'
+
+# device-task
+- model: endoreg_db.log_type
+  fields:
+    name: 'device-task'
+    description: 'Data log type'
+
+# device-info
+- model: endoreg_db.log_type
+  fields:
+    name: 'device-info'
+    description: 'Data log type'

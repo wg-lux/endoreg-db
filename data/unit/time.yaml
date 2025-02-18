@@ -1,0 +1,13 @@
+- model: endoreg_db.unit
+  fields:
+    name: "seconds"
+    abbreviation: "s"
+    name_de: "Sekunden"
+    name_en: "Sekunden"
+
+- model: endoreg_db.unit
+  fields:
+    name: "minutes"
+    abbreviation: "min"
+    name_de: "Minuten"
+    name_en: "Minutes"

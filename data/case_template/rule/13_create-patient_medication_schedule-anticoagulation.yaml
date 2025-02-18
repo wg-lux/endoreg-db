@@ -1,0 +1,19 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "create-patient_medication_schedule-anticoagulation-non_valvular_af"
+    rule_type: "create-object"
+    target_model: "PatientMedicationSchedule"
+    parent_field: "patient"
+
+    chained_rules: [
+
+    ]
+    
+    extra_parameters: {
+      "create_method": {
+        "name": "create_by_patient_and_indication_type",
+        "kwargs": {
+          "indication_type": "thromboembolism-prevention-non_valvular_af"
+        }
+      }
+    }

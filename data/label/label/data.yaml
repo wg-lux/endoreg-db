@@ -1,0 +1,62 @@
+# labels are: "appendix", "ileocecal_valve", "polyp", "water_jet", "digital_chromo_endoscopy", "instrument", "wound", "blood", "ileum", "low_quality", "clip", "outside"
+
+- model: endoreg_db.Label
+  fields:
+    name: "appendix"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "ileocecal_valve"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "polyp"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "water_jet"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "digital_chromo_endoscopy"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "instrument"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "wound"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "blood"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "ileum"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "low_quality"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "clip"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "outside"
+    label_type: "classification"
+

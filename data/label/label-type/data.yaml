@@ -1,0 +1,7 @@
+- model: endoreg_db.LabelType
+  fields:
+    name: "classification"
+
+- model: endoreg_db.LabelType
+  fields:
+    name: "object_detection"

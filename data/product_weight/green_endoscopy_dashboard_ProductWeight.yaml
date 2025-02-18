@@ -1,0 +1,88 @@
+- fields:
+    manufacturer: 0.1862
+    measured: 0.077
+    name: weight_extraction_balloon_escort_2
+    product: extraction_balloon_escort_2
+    unit: kilogram
+    verified: 0.074
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: .nan
+    measured: .nan
+    name: weight_esophageal_dilator
+    product: esophageal_dilator
+    unit: kilogram
+    verified: 0.134
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: 0.27
+    measured: 0.19
+    name: weight_visiglide_2
+    product: visiglide_2
+    unit: kilogram
+    verified: 0.194
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: 0.037
+    measured: 0.234
+    name: weight_peg_freka_15_ch
+    product: peg_freka_15_ch
+    unit: kilogram
+    verified: 0.228
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: 0.15
+    measured: 0.067
+    name: weight_biopsy_grasper_hot_radial_jaw_4
+    product: biopsy_grasper_hot_radial_jaw_4
+    unit: kilogram
+    verified: 0.076
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: .nan
+    measured: .nan
+    name: weight_nitinol_stent_aix_oel
+    product: nitinol_stent_aix_oel
+    unit: kilogram
+    verified: 0.413
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: .nan
+    measured: 0.061
+    name: weight_biliary_stent_cotton_leung_sof_flex
+    product: biliary_stent_cotton_leung_sof_flex
+    unit: kilogram
+    verified: 0.058
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: .nan
+    measured: 0.014
+    name: weight_bite_protector
+    product: bite_protector
+    unit: kilogram
+    verified: 0.013
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: 0.25
+    measured: 0.146
+    name: weight_pressure_syringe_60_ml
+    product: pressure_syringe_60_ml
+    unit: kilogram
+    verified: 0.143
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: .nan
+    measured: 0.094
+    name: weight_foliodress_gown_standard
+    product: foliodress_gown_standard
+    unit: kilogram
+    verified: 0.036
+  model: endoreg_db.ProductWeight
+- fields:
+    manufacturer: .nan
+    measured: 0.092
+    name: weight_absorbant_pad
+    product: absorbant_pad
+    unit: kilogram
+    verified: 0.057
+  model: endoreg_db.ProductWeight

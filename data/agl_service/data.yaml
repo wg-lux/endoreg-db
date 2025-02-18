@@ -1,0 +1,19 @@
+- model: endoreg_db.agl_service
+  fields:
+    name: "agl-home-django"
+    description: "AGL Home Django service"
+    devices: [
+      "agl-server-04",
+    ]
+    port: 9100
+    url: "https://home.endo-reg.net/"
+
+- model: endoreg_db.agl_service
+  fields:
+    name: "endoreg-client-manager"
+    description: "AGL Home Django service"
+    devices: [
+      "agl-gpu-client-dev",
+    ]
+    port: 9000
+    url: "https://home.endo-reg.net/"

@@ -1,0 +1,55 @@
+- fields:
+    name: reference_balloon_wuerzburg
+    product: extraction_balloon_escort_2
+    product_group: Balloon
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_bougie_wuerzburg
+    product: esophageal_dilator
+    product_group: Bougie
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_wire_wuerzburg
+    product: visiglide_2
+    product_group: Wire
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_peg_wuerzburg
+    product: peg_freka_15_ch
+    product_group: PEG
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_instrument_wuerzburg
+    product: biopsy_grasper_hot_radial_jaw_4
+    product_group: Instrument
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_metalstent_wuerzburg
+    product: nitinol_stent_aix_oel
+    product_group: Metal-Stent
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_plasticstent_wuerzburg
+    product: biliary_stent_cotton_leung_sof_flex
+    product_group: Plastic-Stent
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_plastic_wuerzburg
+    product: bite_protector
+    product_group: Plastic
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_plastic-large_wuerzburg
+    product: pressure_syringe_60_ml
+    product_group: Plastic-Large
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_coat_wuerzburg
+    product: foliodress_gown_standard
+    product_group: Coat
+  model: endoreg_db.ReferenceProduct
+- fields:
+    name: reference_absorbant-pad_wuerzburg
+    product: absorbant_pad
+    product_group: Absorbant-Pad
+  model: endoreg_db.ReferenceProduct

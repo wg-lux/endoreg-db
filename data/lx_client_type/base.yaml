@@ -1,0 +1,30 @@
+# Client Types
+- model: endoreg_db.lx_clienttype
+  fields:
+    name: "base-client"
+    abbreviation: "c"
+
+- model: endoreg_db.lx_clienttype
+  fields:
+    name: "gpu-client"
+    abbreviation: "gc"
+
+- model: endoreg_db.lx_clienttype
+  fields:
+    name: "coloreg-client"
+    abbreviation: "cc"
+
+- model: endoreg_db.lx_clienttype
+  fields:
+    name: "base-server"
+    abbreviation: "s"
+
+- model: endoreg_db.lx_clienttype
+  fields:
+    name: "gpu-server"
+    abbreviation: "gs"
+
+- model: endoreg_db.lx_clienttype
+  fields:
+    name: "storage-server"
+    abbreviation: "ss"

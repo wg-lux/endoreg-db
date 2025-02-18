@@ -1,0 +1,79 @@
+- model: endoreg_db.finding_morphology_classification_type
+  fields:
+    name: "colon_lesion_size"
+    name_de: "Größenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Size Classification"
+
+    required_by_findings: [
+      "colon_polyp"
+    ]
+    optional_for_findings: [
+      "tumor"
+    ]
+
+- model: endoreg_db.finding_morphology_classification_type
+  fields:
+    name: "colon_lesion_shape"
+    name_de: "Formklassifikation Kolonläsion"
+    name_en: "Colon Lesion Shape Classification"
+
+    required_by_findings: [
+      "colon_polyp"
+    ]
+    optional_for_findings: [
+      "tumor"
+    ]
+
+- model: endoreg_db.finding_morphology_classification_type
+  fields:
+    name: "colon_lesion_surface_intact"
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+
+    required_by_findings: [
+      "colon_polyp"
+    ]
+    optional_for_findings: [
+      "tumor"
+    ]
+
+- model: endoreg_db.finding_morphology_classification_type
+  fields:
+    name: "colon_lesion_planarity"
+    name_de: "Planaritätsklassifikation Kolonläsion"
+    name_en: "Colon Lesion Planarity Classification"
+
+    required_by_findings: [
+      "colon_polyp"
+    ]
+    optional_for_findings: [
+
+    ]
+
+# Circularity
+- model: endoreg_db.finding_morphology_classification_type
+  fields:
+    name: "colon_lesion_circularity"
+    name_de: "Kolonläsion - Zirkularität"
+    name_en: "Colon lesion - circularity"
+
+    required_by_findings: [
+      "colon_polyp"
+    ]
+    optional_for_findings: [
+      "tumor"
+    ]
+
+# colon_lesion_advanced_imaging
+- model: endoreg_db.finding_morphology_classification_type
+  fields:
+    name: "colon_lesion_advanced_imaging"
+    name_de: "Kolonläsion - Advanced Imaging"
+    name_en: "Colon lesion - Advanced Imaging"
+
+    required_by_findings: [
+      "colon_polyp"
+    ]
+    optional_for_findings: [
+      "tumor"
+    ]

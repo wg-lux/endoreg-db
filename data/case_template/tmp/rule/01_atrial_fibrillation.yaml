@@ -1,0 +1,21 @@
+
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient-add_medication_indication-anticoagulation-non_valvular_af"
+    rule_type: "add_one_value"
+    target_model: "endoreg_db.patient_medication_indication"
+    rule_values: [
+      "medication_schedule-apixaban-5mg-twice_daily"
+    ]
+
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient_add_diagnosis_atrial-fibrillation"
+    rule_type: "add_one_value"
+    target_model: "endoreg_db.patient_disease"
+    rule_values: [
+      "diagnosis_value-non_valvular_atrial-fibrillation"
+    ]
+    chained_rules: [
+      "patient-add_medication_indication-anticoagulation-non_valvular_af"
+    ]

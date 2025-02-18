@@ -1,0 +1,52 @@
+# EndoReg Base DB
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_base_db_read"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_base_db_write"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_base_db_admin"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_base_db_user"
+
+
+# EndoReg Backup DB
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_backup_db_read"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_backup_db_write"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_backup_db_admin"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_backup_db_user"
+
+
+# EndoReg Test DB
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_test_db_read"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_test_db_write"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_test_db_admin"
+
+- model: endoreg_db.lx_permission
+  fields:
+    name: "endoreg_test_db_user"

@@ -1,0 +1,6 @@
+- model: endoreg_db.disease_classification
+  fields:
+    name: "coronary_artery_disease_base_classification"
+    name_de: "Koronare Gefäßerkrankung (N-Gefäß-Erkrankung)"
+    name_en: "Coronary Vessel Disease (N-Vessel Disease)"
+    disease: "coronary_artery_disease"

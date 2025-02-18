@@ -1,0 +1,120 @@
+# Quellen: Fachinformationen d. entsprechenden Medikamente
+- model: endoreg_db.medication_indication
+  fields:
+    name: "te_prevention-after_hip-apixaban"
+    events: ["hip_replacement"]
+    medication_schedules: [
+      "apixaban-2.5mg-twice_daily_32d", # min 32d, max 38d
+    ]
+    indication_type: "thromboembolism-prevention-after_hip_replacement"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+- model: endoreg_db.medication_indication
+  fields:
+    name: "te_prevention-after_knee-apixaban"
+    events: ["knee_replacement"]
+    medication_schedules: [
+      "apixaban-2.5mg-twice_daily_10d", # min 10d, max 14d
+    ]
+    indication_type: "thromboembolism-prevention-after_knee_replacement"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+- model: endoreg_db.medication_indication
+  fields:
+    name: "te_prevention-non_valvular_af-apixaban"
+    diseases: ["non_valvular_af"]
+    medication_schedules: [
+      "apixaban-5mg-twice_daily", # no limit
+    ]
+    indication_type: "thromboembolism-prevention-non_valvular_af"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+# - model: endoreg_db.medication_indication
+#   fields:
+#     name: "te_prevention_non_valvular_af-apixaban-ckd_stage_4"
+#     classification_choices: [
+#       "ckd_4"
+#     ]
+#     medication_schedules: [
+#       "apixaban-2.5mg-twice_daily"
+#     ]
+#     indication_type: "thromboembolism-prevention-non_valvular_af"
+#     sources: [
+#       "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+#     ]
+
+# generally same as ckd4 above but technically different definition
+# Applies for example when risk factors (2 of three: age >= 80; KG <= 60 kg; Kreatinin >= 1.5 mg/dl)
+- model: endoreg_db.medication_indication 
+  fields:
+    name: "te_prevention-non_valvular_af-apixaban-dr" #dr = dose reduction
+    diseases: ["non_valvular_af"]
+    medication_schedules: [
+      "apixaban-2.5mg-twice_daily", # no limit
+    ]
+    indication_type: "thromboembolism-prevention-non_valvular_af"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+- model: endoreg_db.medication_indication
+  fields:
+    name: "dvt_treatment-apixaban-3mo"
+    events: ["deep_vein_thrombosis"]
+    medication_schedules: [
+      "apixaban-5g-twice_daily_7d", # first 7d of treatment 10 mg twice daily
+      "apixaban-5g-twice_daily_3mo", # no limit
+    ]
+    indication_type: "deep_vein_thrombosis-treatment"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+- model: endoreg_db.medication_indication
+  fields:
+    name: "pe_treatment-apixaban-3mo"
+    events: ["pulmonary_embolism"]
+    medication_schedules: [
+      "apixaban-5g-twice_daily_7d", # first 7d of treatment 10 mg twice daily
+      "apixaban-5g-twice_daily_3mo", # no limit
+    ]
+    indication_type: "pulmonary_embolism-treatment"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+- model: endoreg_db.medication_indication
+  fields:
+    name: "pe_treatment-apixaban-6mo"
+    events: ["pulmonary_embolism"]
+    medication_schedules: [
+      "apixaban-5g-twice_daily_7d", # first 7d of treatment 10 mg twice daily
+      "apixaban-5g-twice_daily_6mo", # no limit
+    ]
+    indication_type: "pulmonary_embolism-treatment"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+- model: endoreg_db.medication_indication
+  fields:
+    name: "te_prevention-recurrent-te-apixaban"
+    events: [
+      "recurrent_thrombembolism"
+    ]
+    medication_schedules: [
+      "apixaban-2.5mg-twice_daily"
+    ]
+    indication_type: "thrombembolism-prevention-recurrent_thrombembolism"
+    sources: [
+      "fachinformation-apixaban-eliquis_2.5mg-bristol_meyer_squibbs"
+    ]
+
+# templates to create:
+# medication_schedules:

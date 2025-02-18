@@ -1,0 +1,228 @@
+# Electrolytes
+# https://emedicine.medscape.com/article/2172316-overview?form=fpf 2024/04/27
+- model: endoreg_db.lab_value
+  fields:
+    name: "ammonia"
+    name_de: "Ammoniak"
+    name_en: "Ammonia"
+    default_unit: "microgram per deciliter"
+    default_normal_range: {"min": 40, "max": 70}
+    default_numerical_value_distribution: "uniform_default"
+
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "ceruloplasmin"
+    name_de: "Ceruloplasmin"
+    name_en: "Ceruloplasmin"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 25, "max": 43}
+    default_numerical_value_distribution: "uniform_default"
+
+
+- model: endoreg_db.lab_value  
+  fields:
+    name: "chloride"
+    name_de: "Chlorid"
+    name_en: "Chloride"
+    default_unit: "milimole per liter"
+    default_normal_range: {"min": 95, "max": 105}
+    default_numerical_value_distribution: "uniform_default"
+
+
+- model: endoreg_db.lab_value  
+  fields:
+    name: "copper"
+    name_de: "Kupfer"
+    name_en: "Copper"
+    default_unit: "microgram per deciliter"
+    default_normal_range: {"min": 100, "max": 200}
+    default_numerical_value_distribution: "uniform_default"
+
+
+- model: endoreg_db.lab_value  
+  fields:
+    name: "creatinine"
+    name_de: "Kreatinin"
+    name_en: "Creatinine"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 0.8, "max": 1.3}
+    default_numerical_value_distribution: "uniform_default"
+
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "blood_urea_nitrogen"
+    name_de: "Harnstoff"
+    name_en: "Blood Urea Nitrogen"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 8, "max": 20}
+    default_numerical_value_distribution: "uniform_default"
+
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "ferritin"
+    name_de: "Ferritin"
+    name_en: "Ferritin"
+    default_unit: "nanogram per mililiter"
+    default_normal_range: {"min": 24, "max": 336}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Glucose:70–99 mg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "glucose"
+    name_de: "Glukose"
+    name_en: "Glucose"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 70, "max": 99}
+    default_numerical_value_distribution: "uniform_default"
+
+# Inorganic phosphorous: 3-4.5 mg/dL
+- model: endoreg_db.lab_value
+  fields:
+    name: "inorganic_phosphorous"
+    name_de: "Anorganisches Phosphor"
+    name_en: "Inorganic Phosphorous"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 3, "max": 4.5}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Ionized calcium: 1.12–1.23 mmol/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "ionized_calcium"
+    name_de: "Ionisiertes Calcium"
+    name_en: "Ionized Calcium"
+    default_unit: "milimole per liter"
+    default_normal_range: {"min": 1.12, "max": 1.23}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Magnesium: 1.6–2.6 mg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "magnesium"
+    name_de: "Magnesium"
+    name_en: "Magnesium"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 1.6, "max": 2.6}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Phosphate: 2.5 to 4.5 mg/dL (0.81 to 1.45 mmol/L) 
+- model: endoreg_db.lab_value
+  fields:
+    name: "phosphate"
+    name_de: "Phosphat"
+    name_en: "Phosphate"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 2.5, "max": 4.5}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Potassium: 3.5–5.0 mEq/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "potassium"
+    name_de: "Kalium"
+    name_en: "Potassium"
+    default_unit: "miliequivalent per liter"
+    default_normal_range: {"min": 3.5, "max": 5.0}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Pyruvate: .08-0.16 mmol/L
+- model: endoreg_db.lab_value
+  fields:
+    name: "pyruvate"
+    name_de: "Pyruvat"
+    name_en: "Pyruvate"
+    default_unit: "milimole per liter"
+    default_normal_range: {"min": 0.08, "max": 0.16}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Sodium: 136–145 mEq/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "sodium"
+    name_de: "Natrium"
+    name_en: "Sodium"
+    default_unit: "miliequivalent per liter"
+    default_normal_range: {"min": 136, "max": 145}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Total calcium: 2-2.6 mmol/L (9-10.5 mg/dL) 
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_calcium"
+    name_de: "Gesamtcalcium"
+    name_en: "Total Calcium"
+    default_unit: "milimole per liter"
+    default_normal_range: {"min": 2, "max": 2.6}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Total iron-binding capacity: 250–310 μg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_iron_binding_capacity"
+    name_de: "Gesamteisenbindungskapazität"
+    name_en: "Total Iron-binding Capacity"
+    default_unit: "microgram per deciliter"
+    default_normal_range: {"min": 250, "max": 310}
+    default_numerical_value_distribution: "uniform_default"
+
+# Total serum iron: 50–150 μg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_serum_iron"
+    name_de: "Gesamteisenspiegel"
+    name_en: "Total Serum Iron"
+    default_unit: "microgram per deciliter"
+    default_normal_range: {"min": 50, "max": 150}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Transferrin: 200–400 mg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "transferrin"
+    name_de: "Transferrin"
+    name_en: "Transferrin"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 200, "max": 400}
+    default_numerical_value_distribution: "uniform_default"
+
+# Urea: 1.2-3 mmol/L
+- model: endoreg_db.lab_value
+  fields:
+    name: "urea"
+    name_de: "Harnstoff"
+    name_en: "Urea"
+    default_unit: "milimole per liter"
+    default_normal_range: {"min": 1.2, "max": 3 }
+    default_numerical_value_distribution: "uniform_default"
+# Uric acid: 0.18-0.48 mmol/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "uric_acid"
+    name_de: "Harnsäure"
+    name_en: "Uric Acid"
+    default_unit: "milimole per liter"
+    default_normal_range: {"min": 0.18, "max": 0.48}
+    default_numerical_value_distribution: "uniform_default"
+# Zinc: 75–140 μg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "zinc"
+    name_de: "Zink"
+    name_en: "Zinc"
+    default_unit: "microgram per deciliter"
+    default_normal_range: {"min": 75, "max": 140}
+    default_numerical_value_distribution: "uniform_default"

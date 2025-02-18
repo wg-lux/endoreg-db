@@ -1,0 +1,35 @@
+# Units/data.yaml
+
+# femptolitre
+- model: endoreg_db.Unit
+  fields:
+    name: "femtoliter"
+    abbreviation: "fl"
+    name_de: "Femtoliter"
+    name_en: "Femtolitre"
+    description: "femtoliters"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "mililiter"
+    abbreviation: "ml"
+    name_de: "mililiter"
+    name_en: "mililiter"
+    description: "mililiters"
+
+- model: endoreg_db.Unit
+  fields:
+    name: "liter"
+    abbreviation: "l"
+    name_de: "Liter"
+    name_en: "Liter"
+    description: "liters"
+
+# cubic_meter
+- model: endoreg_db.Unit
+  fields:
+    name: "cubic_meter"
+    abbreviation: "m³"
+    name_de: "Kubikmeter"
+    name_en: "Cubic Meter"
+    description: "cubic meters"

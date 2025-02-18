@@ -1,0 +1,3 @@
+- model: endoreg_db.active_model
+  data:
+    - name: "multilabel_image_classification"

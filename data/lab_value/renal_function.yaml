@@ -1,0 +1,12 @@
+- model: endoreg_db.lab_value
+  fields:
+    name: "estimated_glomerular_filtration_rate"
+    name_de: "Geschätzte Glomeruläre Filtrationsrate"
+    name_en: "estimated glomerular filtration rate"
+    abbreviation: "eGFR"
+    default_unit: "mililiter per minute per 1.73m^2"
+    default_normal_range: {
+      "min": 60,
+      "max": 120
+    }
+    default_numerical_value_distribution: "uniform_default"

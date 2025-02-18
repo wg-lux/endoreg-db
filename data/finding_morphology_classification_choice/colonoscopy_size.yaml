@@ -1,0 +1,57 @@
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_diminutive"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    classification: "colon_lesion_size_categorical"
+    description: "Diminutive (< 6 mm)"
+
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_small"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    classification: "colon_lesion_size_categorical"
+    description: "Small (6 - 9 mm)"
+
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_medium"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    classification: "colon_lesion_size_categorical"
+    description: "Medium (10 - 19 mm)"
+
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_large"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    classification: "colon_lesion_size_categorical"
+    description: "Large (> 19 mm)"
+
+##########
+
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_size_oval_mm"
+    name_de: "Formklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Shape Classification (categorical)"
+    classification: "colon_lesion_size_mm"
+    description: "oval lesions"
+    numerical_descriptors:
+      largest_diameter_mm:
+        unit: "mm"
+        min: 0
+        max: 35
+        distribution: "normal"
+        mean: 5
+        std: 3
+        description: "Largest diameter of the lesion in mm"
+        required: true
+      perpendicular_diameter_mm:
+        unit: "mm"
+        min: 0
+        max: 35
+        description: "Perpendicular diameter of the lesion in mm"
+        required: false

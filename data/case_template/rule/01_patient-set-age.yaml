@@ -1,0 +1,8 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "patient-set-age-screening_colo_population"
+    rule_type: "set-field-by_distribution"
+    parent_model: "Patient"
+    target_field: "dob"
+    value_type: "date"
+    date_value_distribution: "age-screening_colo_population"

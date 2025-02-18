@@ -1,0 +1,31 @@
+- model: medication_intake_time
+  fields:
+    name: "daily-morning"
+    name_de: "täglich, morgens"
+    name_en: "daily, morning"
+    repeats: "daily"
+    time: "07:00:00"
+
+- model: medication_intake_time
+  fields:
+    name: "daily-evening"
+    name_de: "täglich, abends"
+    name_en: "daily, evening"
+    repeats: "daily"
+    time: "19:00:00"
+
+- model: medication_intake_time
+  fields:
+    name: "daily-noon"
+    name_de: "täglich, mittags"
+    name_en: "daily, noon"
+    repeats: "daily"
+    time: "13:00:00"
+
+- model: medication_intake_time
+  fields:
+    name: "daily-night"
+    name_de: "täglich, nachts"
+    name_en: "daily, night"
+    repeats: "daily"
+    time: "01:00:00"

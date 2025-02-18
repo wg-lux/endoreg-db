@@ -1,0 +1,3 @@
+- model: endoreg_db.case_template_type
+  fields:
+    name: "pre_endoscopy"

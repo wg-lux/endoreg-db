@@ -1,0 +1,10 @@
+- model: endoreg_db.case_template_rule
+  fields:
+    name: "create-patient-screening_colo"
+    rule_type: "create_object"
+    target_model: "Patient"
+    rule_value_type: "object"
+    target_field: null
+    chained_rules: [
+      "patient-set-gender-random"
+    ]

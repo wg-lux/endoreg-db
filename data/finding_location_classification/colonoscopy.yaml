@@ -1,0 +1,46 @@
+- model: endoreg_db.finding_location_classification
+  fields:
+    name: "colonoscopy_default"
+    name_de: "Koloskopie Standard"
+    name_en: "Colonoscopy Default"
+    examinations: [
+      "colonoscopy"
+    ]
+    finding_types: [
+      "macroscopic"
+    ]
+    findings: [
+      "tumor",
+      "erosion",
+      "ulcer",
+      "scar"
+    ]
+    choices: [
+      "terminal_ileum",
+      "cecum",
+      "ascending_colon",
+      "right_flexure",
+      "transverse_colon",
+      "descending_colon",
+      "sigmoid_colon",
+      "rectum",
+      "anal_canal"
+    ]
+
+- model: endoreg_db.finding_location_classification_choice
+  fields:
+    name: "colonoscopy_coarse"
+    name_de: "Koloskopie Grob"
+    name_en: "Colonoscopy Coarse"
+    examinations: [
+      "colonoscopy"
+    ]
+    finding_types: [
+      "macroscopic"
+    ]
+    findings: []
+    choices: [
+      "left_colon",
+      "right_colon",
+      "rectum"
+    ]

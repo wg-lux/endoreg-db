@@ -1,0 +1,133 @@
+
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "albumin"
+    name_de: "Albumin"
+    name_en: "Albumin"
+    default_unit: "gram per deciliter"
+    default_normal_range: {"min": 3.5, "max": 5.5}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "alkaline_phosphatase"
+    name_de: "Alkalische Phosphatase"
+    name_en: "Alkaline Phosphatase"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 30, "max": 120}
+    default_numerical_value_distribution: "uniform_default"
+
+# ALT and GPT are the same enzyme
+- model: endoreg_db.lab_value 
+  fields:
+    name: "alanine_aminotransferase"
+    name_de: "Alanin-Aminotransferase"
+    name_en: "Alanine Aminotransferase"
+    abbreviation: "ALT"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "glutamic_pyruvic_transaminase"
+    name_de: "Glutamat-Pyruvat-Transaminase"
+    name_en: "Glutamic-Pyruvic Transaminase"
+    abbreviation: "GPT"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
+
+- model: endoreg_db.lab_value 
+  fields:
+    name: "amylase"
+    name_de: "Amylase"
+    name_en: "Amylase"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 25, "max": 125}
+    default_numerical_value_distribution: "uniform_default"
+
+# Aspartate aminotransferase (AST): 10–40 U/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "aspartate_aminotransferase"
+    name_de: "Aspartat-Aminotransferase"
+    name_en: "Aspartate Aminotransferase"
+    abbreviation: "AST"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
+
+# AST and GOT are the same
+- model: endoreg_db.lab_value
+  fields:
+    name: "glutamic_oxaloacetic_transaminase"
+    name_de: "Glutamat-Oxalacetat-Transaminase"
+    name_en: "Glutamic-Oxaloacetic Transaminase"
+    abbreviation: "GOT"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 10, "max": 40}
+    default_numerical_value_distribution: "uniform_default"
+
+
+# Direct bilirubin: 0.1–0.3 mg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "direct_bilirubin"
+    name_de: "Direktes Bilirubin"
+    name_en: "Direct Bilirubin"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 0.1, "max": 0.3}
+    default_numerical_value_distribution: "uniform_default"
+
+# Gamma glutamyl transferase: Female: 8–40 U/L; male: 9–50 U/L
+- model: endoreg_db.lab_value
+  fields:
+    name: "gamma_glutamyl_transferase"
+    name_de: "Gamma-Glutamyl-Transferase"
+    name_en: "Gamma-Glutamyl Transferase"
+    abbreviation: "GGT"
+    default_unit: "units per liter"
+    normal_range_gender_dependent: true
+    default_numerical_value_distribution: "uniform_default"
+    default_normal_range: {
+      "female": {
+        "min": 8,
+        "max": 40
+      },
+      "male": {
+        "min": 9,
+        "max": 50
+      }
+    }
+
+# Lipase: 10–140 U/L 
+- model: endoreg_db.lab_value
+  fields:
+    name: "lipase"
+    name_de: "Lipase"
+    name_en: "Lipase"
+    default_unit: "units per liter"
+    default_normal_range: {"min": 10, "max": 140}
+    default_numerical_value_distribution: "uniform_default"
+
+# Total bilirubin: 0.3–1.0 mg/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_bilirubin"
+    name_de: "Gesamtbilirubin"
+    name_en: "Total Bilirubin"
+    default_unit: "miligram per deciliter"
+    default_normal_range: {"min": 0.3, "max": 1.0}
+    default_numerical_value_distribution: "uniform_default"
+
+# Total protein: 5.5–9.0 g/dL 
+- model: endoreg_db.lab_value
+  fields:
+    name: "total_protein"
+    name_de: "Gesamtprotein"
+    name_en: "Total Protein"
+    default_unit: "gram per deciliter"
+    default_normal_range: {"min": 5.5, "max": 9.0}
+    default_numerical_value_distribution: "uniform_default"

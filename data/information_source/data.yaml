@@ -1,0 +1,30 @@
+- model: endoreg_db.InformationSource
+  fields:
+    name: treating_physician
+- model: endoreg_db.InformationSource
+  fields:
+    name: treating_physician_anamnestic
+- model: endoreg_db.InformationSource
+  fields:
+    name: physicians_note_anamnestic
+- model: endoreg_db.InformationSource
+  fields:
+    name: patient_anamnestic
+- model: endoreg_db.InformationSource
+  fields:
+    name: physical_measurement
+- model: endoreg_db.InformationSource
+  fields:
+    name: family_anamnestic
+- model: endoreg_db.InformationSource
+  fields:
+    name: physical_examination
+- model: endoreg_db.InformationSource
+  fields:
+    name: unknown
+- model: endoreg_db.InformationSource
+  fields:
+    name: prediction
+- model: endoreg_db.InformationSource
+  fields:
+    name: annotation

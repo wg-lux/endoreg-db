@@ -1,0 +1,14 @@
+- model: endoreg_db.numeric_value_distribution
+  fields:
+    name: "uniform_default"
+    distribution_type: "uniform"
+    min_descriptor: "min_x_1"
+    max_descriptor: "max_x_1"
+
+
+- model: endoreg_db.numeric_value_distribution
+  fields:
+    name: "uniform_high_x1.5"
+    distribution_type: "uniform"
+    min_descriptor: "min_x_1"
+    max_descriptor: "max_x_1.5"

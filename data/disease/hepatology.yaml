@@ -1,0 +1,5 @@
+- model: endoreg_db.disease
+  fields:
+    name: "liver_cirrhosis"
+    name_de: "Leberzirrhose"
+    name_en: "Liver Cirrhosis"
