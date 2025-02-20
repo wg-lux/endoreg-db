@@ -2,5 +2,4 @@
   fields:
     name: "image_multilabel_classification_colonoscopy_default"
     version: 1
-    type: "multilabel_classification" # is foreign key to model_type
     labelset: "multilabel_classification_colonoscopy_default"
