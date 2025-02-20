@@ -134,7 +134,52 @@ class RawVideoFile(models.Model):
     prediction_dir = models.CharField(max_length=255)
 
     @classmethod
-    def create_from_file(
+    def transcode_videofile(self, filepath: Path, transcoded_path: Path):
+        """
+        Transcodes a video to a compatible MP4 format using ffmpeg.
+        If the transcoded file exists, it is returned.
+
+        Parameters
+        ----------
+        mov_file : str
+            The full path to the video file.
+
+        Returns
+        -------
+        transcoded_path : str
+            The full path to the transcoded video file.
+        """
+        ic("Transcoding video")
+        ic(f"Input path: {filepath}")
+
+        # if filepath suffix is .mp4 or .MP4 we dont need to transcode and can copy the file
+        if filepath.suffix.lower() in [".mp4"]:
+            shutil.copyfile(filepath, transcoded_path)
+            return transcoded_path
+
+        ic(f"Transcoded path: {transcoded_path}")
+        if os.path.exists(transcoded_path):
+            return transcoded_path
+
+        # Run ffmpeg to transcode the video using H264 and AAC
+        # TODO Document settings, check if we need to change them
+        command = [
+            "ffmpeg",
+            "-i",
+            filepath.resolve().as_posix(),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-c:a",
+            "aac",
+            transcoded_path,
+        ]
+        subprocess.run(command, check=True)
+        return transcoded_path
+
+    @classmethod
+    def create_from_file(  # TODO Rename to get_or_create_from_file
         cls,
         file_path: Path,
         center_name: str,
@@ -142,39 +187,81 @@ class RawVideoFile(models.Model):
         frame_dir_parent: Path = Path("erc_data/raw_frames"),
         video_dir: Path = Path("erc_data/raw_videos"),
         delete_source: bool = False,
+        delete_temporary_transcoded_file: bool = False,
         save: bool = True,
     ):
-        from endoreg_db.models import Center, EndoscopyProcessor
+        """
+        Creates a RawVideoFile instance from a given video file.
+        Args:
+            cls: The class itself.
+            file_path (Path): The path to the video file.
+            center_name (str): The name of the center associated with the video.
+            processor_name (str): The name of the processor associated with the video.
+            frame_dir_parent (Path, optional): The parent directory for frame storage. Defaults to Path("erc_data/raw_frames").
+            video_dir (Path, optional): The directory for video storage. Defaults to Path("erc_data/raw_videos").
+            delete_source (bool, optional): Whether to delete the source file after processing. Defaults to False.
+            save (bool, optional): Whether to save the instance to the database. Defaults to True.
+        Returns:
+            RawVideoFile: The created RawVideoFile instance, or an existing instance if a file with the same hash already exists.
+        """
 
-        print(f"Creating RawVideoFile from {file_path}")
+        from endoreg_db.models import Center, EndoscopyProcessor  # pylint: disable=import-outside-toplevel
+
+        ic(f"Creating RawVideoFile from {file_path}")
         original_file_name = file_path.name
-        # Rename and and move
 
-        new_file_name, uuid = get_uuid_filename(file_path)
-        framedir: Path = frame_dir_parent / str(uuid)
+        # transcoded_filepath
+        transcoded_file_name = file_path.stem + "_transcoded.mp4"
+        transcoded_file_path = file_path.parent / transcoded_file_name
 
-        if not framedir.exists():
-            framedir.mkdir(parents=True, exist_ok=True)
+        if not transcoded_file_path.exists():
+            ic("Transcoding video")
+            ic(f"Input path: {file_path}")
+            # Determine transcoded output filepath (appending '_transcoded.mp4')
+            transcoded_file_path = file_path.parent / transcoded_file_name
 
-        if not video_dir.exists():
-            video_dir.mkdir(parents=True, exist_ok=True)
+            ic(f"Transcoded path: {transcoded_file_path}")
+            if not os.path.exists(transcoded_file_path):
+                RawVideoFile.transcode_videofile(
+                    file_path, transcoded_path=transcoded_file_path
+                )
 
-        video_hash = get_video_hash(file_path)
-        # make sure that no other file with the same hash exists
-        query_result = cls.objects.filter(video_hash=video_hash)
+            #
+
+        video_hash = get_video_hash(transcoded_file_path)
+
+        query_result = cls.objects.filter(video_hash=video_hash)  # pylint: disable=no-member
         if query_result.exists():
+            ic("Existing DB entry found: ", query_result.first())
             existing = query_result.first()
             file_on_disk = STORAGE_LOCATION / existing.file.name
             if not file_on_disk.exists():
-                print(
-                    "Existing DB entry found, but file is missing on disk. Copying..."
-                )
+                ic("Existing DB entry found, but file is missing on disk. Copying...")
                 copy_with_progress(
-                    file_path.as_posix(), file_on_disk.resolve().as_posix()
+                    transcoded_file_path.as_posix(), file_on_disk.resolve().as_posix()
                 )
                 existing.original_file_name = file_path.name
                 existing.save()
+            ic("Returning existing entry")
             return existing
+
+        new_file_name, uuid = get_uuid_filename(file_path)
+        ic("No existing DB entry found")
+        ic("New file name: ", new_file_name)
+        ic("UUID: ", uuid)
+
+        framedir: Path = frame_dir_parent / str(uuid)
+        ic("Frame dir: ", framedir)
+
+        if not framedir.exists():
+            ic("Creating frame dir root")
+            framedir.mkdir(parents=True, exist_ok=True)
+
+        if not video_dir.exists():
+            ic("Creating video dir root")
+            video_dir.mkdir(parents=True, exist_ok=True)
+
+        # make sure that no other file with the same hash exists
 
         center = Center.objects.get(name=center_name)
         assert center is not None, "Center must exist"
@@ -184,24 +271,25 @@ class RawVideoFile(models.Model):
 
         new_filepath = video_dir / new_file_name
 
-        print(f"Copy {file_path} to {new_filepath}")
+        ic(f"Copy {file_path} to {new_filepath}")
         copy_with_progress(
-            file_path.resolve().as_posix(), new_filepath.resolve().as_posix()
+            transcoded_file_path.resolve().as_posix(), new_filepath.resolve().as_posix()
         )
-        print(f"\nCopied to {new_filepath}")
+
+        # cleanup transcoded temporary file
+        if delete_temporary_transcoded_file:
+            transcoded_file_path.unlink()
 
         # Make sure file was transferred correctly and hash is correct
         if not new_filepath.exists():
-            print(f"File {file_path} was not transferred correctly to {new_filepath}")
+            ic(f"File {file_path} was not transferred correctly to {new_filepath}")
             return None
 
         new_hash = get_video_hash(new_filepath)
         if new_hash != video_hash:
-            print(f"Hash of file {file_path} is not correct")
+            ic(f"Hash of file {file_path} is not correct")
             return None
 
-        print(center)
-        # Next, store relative path for Django's FileField
         try:
             relative_path = new_filepath.relative_to(STORAGE_LOCATION)
         except ValueError:
@@ -227,35 +315,56 @@ class RawVideoFile(models.Model):
 
         return raw_video_file
 
+    def get_anonymized_frame_dir(self):
+        """Method to generate the path to the anonymized frame directory"""
+        return Path(self.frame_dir).parent / f"anonymized_{self.uuid}"
+
+    def check_anonymized_frames_exist(self):
+        """
+        Check if anonymized frames exist for the video file.
+        """
+        frame_dir = Path(self.frame_dir)
+        anonymized_frame_dir = self.get_anonymized_frame_dir()
+        anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
+        n_frames = len(list(frame_dir.glob("*")))
+        if len(list(anonymized_frame_dir.glob("*"))) == n_frames:
+            ic(f"Anonymized frames already generated for {self.file.name}")
+            frames_already_extracted = True
+        else:
+            ic(f"Anonymized frames not generated for {self.file.name}")
+            frames_already_extracted = False
+            # make sure directory is empty
+            for f in anonymized_frame_dir.glob("*"):
+                f.unlink()
+
+        return frames_already_extracted
+
     def generate_anonymized_frames(self):
         """
         Generate anonymized frames from the video file.
         """
+
         if not self.state_frames_extracted:
-            print(f"Frames not extracted for {self.file.name}")
+            ic(f"Frames not extracted for {self.file.name}")
             return None
 
-        frame_dir = Path(self.frame_dir)
-        anonymized_frame_dir = frame_dir.parent / f"anonymized_{self.uuid}"
-        if not anonymized_frame_dir.exists():
-            anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
-
-        # make sure, that the directory is empty
-        for f in tqdm(anonymized_frame_dir.glob("*")):
-            f.unlink()
+        anonymized_frames_already_extracted = self.check_anonymized_frames_exist()
+        anonymized_frame_dir = self.get_anonymized_frame_dir()
+        self.state_anonymized_frames_generated = anonymized_frames_already_extracted
 
         endo_roi = self.get_endo_roi()
         assert validate_endo_roi(endo_roi), "Endoscope ROI is not valid"
 
-        # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
-        for frame_path in self.get_frame_paths():
-            frame_name = frame_path.name
-            target_frame_path = anonymized_frame_dir / frame_name
-            anonymize_frame(frame_path, target_frame_path, endo_roi)
+        if not self.state_anonymized_frames_generated:
+            # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
+            for frame_path in tqdm(self.get_frame_paths()):
+                frame_name = frame_path.name
+                target_frame_path = anonymized_frame_dir / frame_name
+                anonymize_frame(frame_path, target_frame_path, endo_roi)
 
-        self.state_anonymized_frames_generated = True
+            self.state_anonymized_frames_generated = True
 
-        return f"Anonymized frames generated to {anonymized_frame_dir}"
+        return f"Anonymized frames at {anonymized_frame_dir}"
 
     def __str__(self):
         return self.file.name
