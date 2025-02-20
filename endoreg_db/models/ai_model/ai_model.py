@@ -5,8 +5,6 @@ Django model for AI models.
 from pathlib import Path
 import os
 from django.db import models
-from django.core.validators import FileExtensionValidator
-from django.core.files.storage import FileSystemStorage
 
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 
@@ -43,24 +41,13 @@ class MultilabelVideoSegmentationModel(models.Model):
 
     objects = AiModelManager()
 
-    name = models.CharField(max_length=255)
-    weights = models.FileField(upload_to="model_weights", blank=True, null=True)
+    name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     labels = models.ManyToManyField("VideoSegmentationLabel", related_name="models")
     model_type = models.CharField(max_length=255, blank=True, null=True)
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
-    version = models.IntegerField(default=1)
-    weights = models.FileField(
-        upload_to=WEIGHTS_DIR_NAME,
-        validators=[FileExtensionValidator(allowed_extensions=[".ckpt"])],  # FIXME
-        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
-    )
-    metadata = models.ForeignKey(
-        "ModelMeta",
-        on_delete=models.CASCADE,
-    )
 
     def natural_key(self):
         """

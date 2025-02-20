@@ -6,7 +6,7 @@ result/
 untracked_notes.md
 tests/sensitive/
 erc_data/
-data/
+./data/
 test_reports/*
 
 # Byte-compiled / optimized / DLL files

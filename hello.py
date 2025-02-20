@@ -24,16 +24,16 @@ def write_message(message=None):
             message += f"  Multiprocessor Count: {properties.multi_processor_count}\n"
             message += "\n"
 
-    # Get the current date and time
-    now = datetime.datetime.now()
-    date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
+    # # Get the current date and time
+    # now = datetime.datetime.now()
+    # date_time = now.strftime("%Y-%m-%d_%H-%M-%S")
 
     # Create a file with the current date and time
-    file_name = f"data/{date_time}.txt"
-    with open(file_name, "w") as file:
-        file.write(message)
+    # file_name = f"data/{date_time}.txt"
+    # with open(file_name, "w") as file:
+    #     file.write(message)
 
-    return file_name
+    # return file_name
 
 
 def main():

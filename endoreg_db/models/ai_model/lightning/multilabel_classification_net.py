@@ -7,18 +7,39 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 
 METRICS_ON_STEP = False
 
+
 def calculate_metrics(pred, target, threshold=0.5):
     pred = np.array(pred > threshold, dtype=float)
-    return {'micro/precision': precision_score(y_true=target, y_pred=pred, average='micro', zero_division = 0),
-            'micro/recall': recall_score(y_true=target, y_pred=pred, average='micro', zero_division = 0),
-            'micro/f1': f1_score(y_true=target, y_pred=pred, average='micro', zero_division = 0),
-            'macro/precision': precision_score(y_true=target, y_pred=pred, average='macro', zero_division = 0),
-            'macro/recall': recall_score(y_true=target, y_pred=pred, average='macro', zero_division = 0),
-            'macro/f1': f1_score(y_true=target, y_pred=pred, average='macro', zero_division = 0),
-            'samples/precision': precision_score(y_true=target, y_pred=pred, average=None, zero_division = 0),
-            'samples/recall': recall_score(y_true=target, y_pred=pred, average=None, zero_division = 0),
-            'samples/f1': f1_score(y_true=target, y_pred=pred, average=None, zero_division = 0),
-            }
+    return {
+        "micro/precision": precision_score(
+            y_true=target, y_pred=pred, average="micro", zero_division=0
+        ),
+        "micro/recall": recall_score(
+            y_true=target, y_pred=pred, average="micro", zero_division=0
+        ),
+        "micro/f1": f1_score(
+            y_true=target, y_pred=pred, average="micro", zero_division=0
+        ),
+        "macro/precision": precision_score(
+            y_true=target, y_pred=pred, average="macro", zero_division=0
+        ),
+        "macro/recall": recall_score(
+            y_true=target, y_pred=pred, average="macro", zero_division=0
+        ),
+        "macro/f1": f1_score(
+            y_true=target, y_pred=pred, average="macro", zero_division=0
+        ),
+        "samples/precision": precision_score(
+            y_true=target, y_pred=pred, average=None, zero_division=0
+        ),
+        "samples/recall": recall_score(
+            y_true=target, y_pred=pred, average=None, zero_division=0
+        ),
+        "samples/f1": f1_score(
+            y_true=target, y_pred=pred, average=None, zero_division=0
+        ),
+    }
+
 
 class MultiLabelClassificationNet(LightningModule):
     def __init__(
@@ -56,10 +77,12 @@ class MultiLabelClassificationNet(LightningModule):
         )
 
     def forward(self, x):
+        """Forward pass"""
         x = self.model(x)
         return x
 
     def training_step(self, batch, batch_idx):
+        """Training step"""
         x, y = batch
         y_pred = self(x)
         loss = self.criterion(y_pred, y)
@@ -72,6 +95,7 @@ class MultiLabelClassificationNet(LightningModule):
         return {"loss": loss, "preds": preds, "targets": y}
 
     def validation_step(self, batch, batch_idx):
+        """Validation step"""
         x, y = batch
         y_pred = self(x)
         loss = self.criterion(y_pred, y)
@@ -84,6 +108,7 @@ class MultiLabelClassificationNet(LightningModule):
         return {"loss": loss, "preds": preds, "targets": y}
 
     def validation_epoch_end(self, outputs):
+        """Validation epoch end"""
         self.val_preds = np.concatenate([_ for _ in self.val_preds])
         self.val_targets = np.concatenate([_ for _ in self.val_targets])
 

@@ -6,8 +6,7 @@ INFORMATION_DATA_DIR = DATA_DIR / "information_source"
 UNIT_DATA_DIR = DATA_DIR / "unit"
 CENTER_DATA_DIR = DATA_DIR / "center"
 EXAMINATION_DATA_DIR = DATA_DIR / "examination"
-LABEL_DATA_DIR = DATA_DIR / "label"
-MODEL_TYPE_DATA_DIR = DATA_DIR / "model_type"
+MODEL_TYPE_DATA_DIR = DATA_DIR / "ai_model_type"
 ENDOSCOPY_PROCESSOR_DATA_DIR = DATA_DIR / "endoscopy_processor"
 ENDOSCOPE_TYPE_DATA_DIR = DATA_DIR / "endoscope_type"
 ENDOSCOPE_DATA_DIR = DATA_DIR / "endoscope"
@@ -24,17 +23,29 @@ CONTRAINDICATION_DATA_DIR = DATA_DIR / "contraindication"
 
 # Examination
 EXAMINATION_INDICATION_DATA_DIR = DATA_DIR / "examination_indication"
-EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR = DATA_DIR / "examination_indication_classification"
-EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "examination_indication_classification_choice"
+EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR = (
+    DATA_DIR / "examination_indication_classification"
+)
+EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR = (
+    DATA_DIR / "examination_indication_classification_choice"
+)
 
 # Finding
 FINDING_TYPE_DATA_DIR = DATA_DIR / "finding_type"
 FINDING_DATA_DIR = DATA_DIR / "finding"
 FINDING_LOCATION_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_location_classification"
-FINDING_LOCATION_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_location_classification_choice"
-FINDING_MORPHOLOGY_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_morphology_classification"
-FINDING_MORPHOLOGY_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_morphology_classification_choice"
-FINDING_MORPGOLOGY_CLASSIFICATION_TYPE_DATA_DIR = DATA_DIR / "finding_morphology_classification_type"
+FINDING_LOCATION_CLASSIFICATION_CHOICE_DATA_DIR = (
+    DATA_DIR / "finding_location_classification_choice"
+)
+FINDING_MORPHOLOGY_CLASSIFICATION_DATA_DIR = (
+    DATA_DIR / "finding_morphology_classification"
+)
+FINDING_MORPHOLOGY_CLASSIFICATION_CHOICE_DATA_DIR = (
+    DATA_DIR / "finding_morphology_classification_choice"
+)
+FINDING_MORPGOLOGY_CLASSIFICATION_TYPE_DATA_DIR = (
+    DATA_DIR / "finding_morphology_classification_type"
+)
 FINDING_INTERVETION_DATA_DIR = DATA_DIR / "finding_intervention"
 FINIDNG_INTERVENTION_TYPE_DATA_DIR = DATA_DIR / "finding_intervention_type"
 
@@ -61,7 +72,9 @@ MEDICATION_INDICATION_TYPE_DATA_DIR = DATA_DIR / "medication_indication_type"
 DISTRIBUTION_BASE_DIR = DATA_DIR / "distribution"
 DISTRIBUTION_SINGLE_CATEGORICAL_DATA_DIR = DISTRIBUTION_BASE_DIR / "single_categorical"
 DISTRIBUTION_NUMERIC_DATA_DIR = DISTRIBUTION_BASE_DIR / "numeric"
-DISTRIBUTION_MULTIPLE_CATEGORICAL_DATA_DIR = DISTRIBUTION_BASE_DIR / "multiple_categorical"
+DISTRIBUTION_MULTIPLE_CATEGORICAL_DATA_DIR = (
+    DISTRIBUTION_BASE_DIR / "multiple_categorical"
+)
 DISTRIBUTION_DATE_DATA_DIR = DISTRIBUTION_BASE_DIR / "date"
 
 # G-Play Stuffs
@@ -83,6 +96,9 @@ LOG_TYPE_DATA_DIR = DATA_DIR / "log_type"
 
 # AI STUFFS
 AI_MODEL_DATA_DIR = DATA_DIR / "ai_model"
+AI_MODEL_TYPE_DATA_DIR = DATA_DIR / "ai_model_type"
+AI_MODEL_META_DATA_DIR = DATA_DIR / "ai_model_meta"
+LABEL_DATA_DIR = DATA_DIR / "ai_model_label"
 VIDEO_SEGMENTATION_LABEL_DATA_DIR = DATA_DIR / "video_segmentation_label"
 
 # To Do

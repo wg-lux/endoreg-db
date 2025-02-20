@@ -7,7 +7,7 @@
 
 - model: endoreg_db.Label
   fields:
-    name: "ileocecal_valve"
+    name: "ileocaecalvalve"
     label_type: "classification"
 
 - model: endoreg_db.Label
@@ -60,3 +60,29 @@
     name: "outside"
     label_type: "classification"
 
+- model: endoreg_db.Label
+  fields:
+    name: "diverticule"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "grasper"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "nbi"
+    label_type: "classification"
+
+# needle
+- model: endoreg_db.Label
+  fields:
+    name: "needle"
+    label_type: "classification"
+
+# snare
+- model: endoreg_db.Label
+  fields:
+    name: "snare"
+    label_type: "classification"

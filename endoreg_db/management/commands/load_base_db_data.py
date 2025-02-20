@@ -18,7 +18,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))
 
-        out = StringIO()
+        out = self.stdout
 
         # Load Center Data
         call_command("load_center_data", stdout=out, verbose=verbose)
@@ -37,6 +37,7 @@ class Command(BaseCommand):
         call_command("load_medication_data", stdout=out, verbose=verbose)
 
         # Load AI Model Data
+        call_command("load_ai_model_label_data", stdout=out, verbose=verbose)
         call_command("load_ai_model_data", stdout=out, verbose=verbose)
 
         self.stdout.write(

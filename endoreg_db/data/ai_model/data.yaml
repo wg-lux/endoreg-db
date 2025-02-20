@@ -1,20 +1,19 @@
 - model: endoreg_db.ai_model
   fields:
-    name: "image-multilabel-classification-default"
+    name: "image_multilabel_classification_colonoscopy_default"
     description: "Image multilabel classification model"
     model_type: "image"
     model_subtype: "multilabel"
     labels: [
-      "upper_gi",
-      "lower_gi",
-      # "esophagus",
-      # "stomach",
-      # "duodenum",
-      # "colon",
-      # "ileum",
-      "oob", # out of body
-      # "bli", # blue light imaging
-      # "low_quality",
-      # "instrument",
-  ]
-
+        # "upper_gi",
+        # "lower_gi",
+        # "esophagus",
+        # "stomach",
+        # "duodenum",
+        # "colon",
+        # "ileum",
+        "oob", # out of body
+        "bli", # blue light imaging
+        "low_quality",
+        "instrument",
+      ]
