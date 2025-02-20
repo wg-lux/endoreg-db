@@ -19,6 +19,16 @@ from ..metadata import VideoMeta, SensitiveMeta
 from tqdm import tqdm
 
 
+PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
+
+STORAGE_LOCATION = PSEUDO_DIR
+RAW_VIDEO_DIR_NAME = "raw_videos"
+RAW_VIDEO_DIR = STORAGE_LOCATION / RAW_VIDEO_DIR_NAME
+
+if not RAW_VIDEO_DIR.exists():
+    RAW_VIDEO_DIR.mkdir(parents=True)
+
+
 def anonymize_frame(raw_frame_path: Path, target_frame_path: Path, endo_roi):
     """
     Anonymize the frame by blacking out all pixels that are not in the endoscope ROI.
@@ -63,21 +73,11 @@ def copy_with_progress(src, dst, buffer_size=1024 * 1024):
             print(f"\rProgress: {progress:.2f}%", end="")
 
 
-PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
-
-STORAGE_LOCATION = PSEUDO_DIR
-RAW_VIDEO_DIR_NAME = "raw_videos"
-RAW_VIDEO_DIR = STORAGE_LOCATION / RAW_VIDEO_DIR_NAME
-
-if not RAW_VIDEO_DIR.exists():
-    RAW_VIDEO_DIR.mkdir(parents=True)
-
-
 class RawVideoFile(models.Model):
     uuid = models.UUIDField()
     file = models.FileField(
-        upload_to="RAW_VIDEO_DIR_NAME",
-        validators=[FileExtensionValidator(allowed_extensions=["pdf"])],  # FIXME
+        upload_to=RAW_VIDEO_DIR_NAME,
+        validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
 

@@ -1,11 +1,34 @@
-from django.db import models    
+"""
+Django model for AI models.
+"""
+
+from pathlib import Path
+import os
+from django.db import models
+from django.core.validators import FileExtensionValidator
+from django.core.files.storage import FileSystemStorage
+
+PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
+
+STORAGE_LOCATION = PSEUDO_DIR
+WEIGHTS_DIR_NAME = "db_model_weights"
+WEIGHTS_DIR = STORAGE_LOCATION / WEIGHTS_DIR_NAME
+
+if not WEIGHTS_DIR.exists():
+    WEIGHTS_DIR.mkdir(parents=True)
+
 
 class AiModelManager(models.Manager):
     """
     Manager for AI models with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "MultilabelVideoSegmentationModel":
+        """
+        Return the model with the given name.
+        """
         return self.get(name=name)
+
 
 class MultilabelVideoSegmentationModel(models.Model):
     """
@@ -17,9 +40,11 @@ class MultilabelVideoSegmentationModel(models.Model):
         labels (ManyToMany): Associated labels.
         version (int): The version of the model.
     """
+
     objects = AiModelManager()
 
     name = models.CharField(max_length=255)
+    weights = models.FileField(upload_to="model_weights", blank=True, null=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
@@ -27,9 +52,21 @@ class MultilabelVideoSegmentationModel(models.Model):
     model_type = models.CharField(max_length=255, blank=True, null=True)
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
     version = models.IntegerField(default=1)
+    weights = models.FileField(
+        upload_to=WEIGHTS_DIR_NAME,
+        validators=[FileExtensionValidator(allowed_extensions=[".ckpt"])],  # FIXME
+        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+    )
+    metadata = models.ForeignKey(
+        "ModelMeta",
+        on_delete=models.CASCADE,
+    )
 
     def natural_key(self):
+        """
+        Return the natural key for this model.
+        """
         return (self.name,)
 
     def __str__(self):
-        return self.name
+        return str(self.name)

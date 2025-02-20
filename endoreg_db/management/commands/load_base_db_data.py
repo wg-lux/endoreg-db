@@ -36,6 +36,9 @@ class Command(BaseCommand):
         call_command("load_finding_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
 
+        # Load AI Model Data
+        call_command("load_ai_model_data", stdout=out, verbose=verbose)
+
         self.stdout.write(
             self.style.SUCCESS("All data loading commands executed successfully.")
         )
