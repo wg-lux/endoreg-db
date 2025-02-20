@@ -239,121 +239,159 @@ def final_submit(request):
 '''
 it can be run using:
 
-var patient_id = 1;  // Change this to the required patient ID
+var patient_id = 7;  // Change this to the required patient ID
 
-fetch(`http://127.0.0.1:8000/endoreg_dbapi/patient-details/${patient_id}/`)  
+fetch(`http://127.0.0.1:8000/endoreg_db/api/patient-details/${patient_id}/`)  
     .then(response => response.json())
     .then(data => console.log(data))
     .catch(error => console.error('Error:', error));
 
 
 '''
-from django.db import connection  
+
+import os
+from django.db import connection
+from django.conf import settings  
+
 @api_view(['GET'])
 def get_patient_details(request, patient_id):
     """
-    API to fetch all details for a given patient ID.
+    API to fetch all details for a given patient ID, format the response, and save it to a text file.
     """
 
     query = """
-    WITH patient_examination_data AS (
-        SELECT
-            pe.id AS patient_examination_id,
-            pe.date_start,
-            pe.date_end,
-            pe.patient_id,
-            pe.examination_id,
-            e.name AS examination_name
-        FROM endoreg_db_patientexamination pe
-        JOIN endoreg_db_examination e ON pe.examination_id = e.id
-        WHERE pe.patient_id = %s
-    ),
-
-    patient_finding_data AS (
-        SELECT
-            pf.id AS patient_finding_id,
-            pf.finding_id,
-            f.name AS finding_name,
-            pf.patient_examination_id
-        FROM endoreg_db_patientfinding pf
-        JOIN endoreg_db_finding f ON pf.finding_id = f.id
-        WHERE pf.patient_examination_id IN (SELECT patient_examination_id FROM patient_examination_data)
-    ),
-
-    patient_finding_location_data AS (
-        SELECT
-            pfl.id AS patient_finding_location_id,
-            pfl.location_classification_id,
-            pfl.location_choice_id,
-            lcc.name AS location_classification_name,
-            lcc_choice.name AS location_choice_name,
-            pfl.patient_finding_id
-        FROM endoreg_db_patientfindinglocation pfl
-        JOIN endoreg_db_findinglocationclassification lcc ON pfl.location_classification_id = lcc.id
-        JOIN endoreg_db_findinglocationclassificationchoice lcc_choice ON pfl.location_choice_id = lcc_choice.id
-        WHERE pfl.patient_finding_id IN (SELECT patient_finding_id FROM patient_finding_data)
-    ),
-
-    patient_finding_morphology_data AS (
-        SELECT
-            pfm.id AS patient_finding_morphology_id,
-            pfm.morphology_classification_id,
-            pfm.morphology_choice_id,
-            mf_class.name AS morphology_classification_name,
-            mf_choice.name AS morphology_choice_name,
-            pfm.patient_finding_id
-        FROM endoreg_db_patientfindingmorphology pfm
-        JOIN endoreg_db_findingmorphologyclassification mf_class ON pfm.morphology_classification_id = mf_class.id
-        JOIN endoreg_db_findingmorphologyclassificationchoice mf_choice ON pfm.morphology_choice_id = mf_choice.id
-        WHERE pfm.patient_finding_id IN (SELECT patient_finding_id FROM patient_finding_data)
-    ),
-
-    patient_finding_intervention_data AS (
-        SELECT
-            pf_int.id AS patient_finding_intervention_id,
-            pf_int.intervention_id,
-            fi.name AS intervention_name,
-            pf_int.state,
-            pf_int.time_start,
-            pf_int.time_end,
-            pf_int.date,
-            pf_int.patient_finding_id
-        FROM endoreg_db_patientfindingintervention pf_int
-        JOIN endoreg_db_findingintervention fi ON pf_int.intervention_id = fi.id
-        WHERE pf_int.patient_finding_id IN (SELECT patient_finding_id FROM patient_finding_data)
-    )
-
+WITH patient_data AS (
     SELECT
-        pe.patient_examination_id,
-        pe.date_start,
-        pe.date_end,
+        p.id AS patient_id,
+        CONCAT(p.first_name, ' ', p.last_name) AS patient_name,  
+        p.dob AS patient_dob
+    FROM endoreg_db_patient p
+    WHERE p.id = %s
+),
+
+patient_examination_data AS (
+    SELECT
         pe.patient_id,
-        pe.examination_name,
-        pf.patient_finding_id,
+        pe.examination_id,
+        e.name AS examination_name,
+        pe.id AS patient_examination_id,
+        pe.date_start,
+        pe.date_end
+    FROM endoreg_db_patientexamination pe
+    JOIN endoreg_db_examination e ON pe.examination_id = e.id
+    WHERE pe.patient_id = %s
+),
+
+patient_finding_data AS (
+    SELECT
+        pf.id AS patient_finding_id,
         pf.finding_id,
-        pf.finding_name,
-        pfl.patient_finding_location_id,
-        pfl.location_classification_name,
-        pfl.location_choice_name,
-        pfm.patient_finding_morphology_id,
-        pfm.morphology_classification_name,
-        pfm.morphology_choice_name,
-        pfi.patient_finding_intervention_id,
-        pfi.intervention_name,
-        pfi.state AS intervention_state,
-        pfi.time_start AS intervention_time_start,
-        pfi.time_end AS intervention_time_end,
-        pfi.date AS intervention_date
-    FROM patient_examination_data pe
-    LEFT JOIN patient_finding_data pf ON pf.patient_examination_id = pe.patient_examination_id
-    LEFT JOIN patient_finding_location_data pfl ON pfl.patient_finding_id = pf.patient_finding_id
-    LEFT JOIN patient_finding_morphology_data pfm ON pfm.patient_finding_id = pf.patient_finding_id
-    LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.patient_finding_id;
+        f.name AS finding_name,
+        pf.patient_examination_id
+    FROM endoreg_db_patientfinding pf
+    JOIN endoreg_db_finding f ON pf.finding_id = f.id
+    WHERE pf.patient_examination_id IN (SELECT patient_examination_id FROM patient_examination_data)
+),
+
+patient_finding_location_data AS (
+    SELECT
+        pfl.patientfinding_id,
+        flc.id AS findinglocationclassification_id,
+        flcc.id AS findinglocationclassificationchoice_id,
+        flc.name AS location_classification_name,
+        flcc.name AS location_choice_name
+    FROM endoreg_db_patientfinding_locations pfl
+    JOIN endoreg_db_patientfindinglocation pfl_loc 
+        ON pfl.patientfindinglocation_id = pfl_loc.id
+    JOIN endoreg_db_findinglocationclassification flc 
+        ON pfl_loc.location_classification_id = flc.id
+    JOIN endoreg_db_findinglocationclassificationchoice flcc 
+        ON pfl_loc.location_choice_id = flcc.id
+    WHERE pfl.patientfinding_id IN (SELECT patient_finding_id FROM patient_finding_data)
+),
+
+patient_finding_morphology_data AS (
+    SELECT
+        pfm.morphology_choice_id,
+        pfm.morphology_classification_id,
+        pfm_rel.patientfinding_id,
+        fmc.name AS morphology_classification_name,
+        fmcc.name AS morphology_choice_name
+    FROM endoreg_db_patientfindingmorphology pfm
+    JOIN endoreg_db_findingmorphologyclassification fmc 
+        ON pfm.morphology_classification_id = fmc.id
+    JOIN endoreg_db_findingmorphologyclassificationchoice fmcc 
+        ON pfm.morphology_choice_id = fmcc.id
+    JOIN endoreg_db_patientfinding_morphologies pfm_rel
+        ON pfm.id = pfm_rel.patientfindingmorphology_id
+    WHERE pfm_rel.patientfinding_id IN (SELECT patient_finding_id FROM patient_finding_data)
+),
+
+patient_finding_intervention_data AS (
+    SELECT
+        pfi.patient_finding_id,
+        pfi.intervention_id,
+        fi.name AS intervention_name
+    FROM endoreg_db_patientfindingintervention pfi
+    JOIN endoreg_db_findingintervention fi ON pfi.intervention_id = fi.id
+    WHERE pfi.patient_finding_id IN (SELECT patient_finding_id FROM patient_finding_data)
+)
+
+SELECT
+    pd.patient_name,
+    pd.patient_dob,
+    pe.date_start,
+    pe.date_end,
+    pe.examination_name,
+    pf.finding_name,
+    pfl.findinglocationclassification_id AS location_classification_id,
+    pfl.location_classification_name,
+    pfl.location_choice_name,
+    pfm.morphology_classification_name,
+    pfm.morphology_choice_name,
+    pfi.intervention_name
+FROM patient_data pd
+LEFT JOIN patient_examination_data pe ON pe.patient_id = pd.patient_id
+LEFT JOIN patient_finding_data pf ON pf.patient_examination_id = pe.patient_examination_id
+LEFT JOIN patient_finding_location_data pfl ON pfl.patientfinding_id = pf.patient_finding_id
+LEFT JOIN patient_finding_morphology_data pfm ON pfm.patientfinding_id = pf.patient_finding_id
+LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.patient_finding_id;
+
     """
 
     with connection.cursor() as cursor:
-        cursor.execute(query, [patient_id])
+        cursor.execute(query, [patient_id, patient_id])
         columns = [col[0] for col in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-    return Response(results)
+    # If no data found
+    if not results:
+        return Response({"message": "No data found for the given patient ID"}, status=404)
+
+    # Formatting the output
+    formatted_results = []
+    for row in results:
+        formatted_text = f"""
+        {row['patient_name']} - {row['patient_dob']} - Patient Examination ({row['date_start']} - {row['date_end']})
+        {row['examination_name']} - None - {row['finding_name']}
+        Finding Location: [<PatientFindingLocation: {row['location_classification_name']} - {row['location_choice_name']}>]
+        Finding Morphology: [<PatientFindingMorphology: {row['morphology_classification_name']} - {row['morphology_choice_name']} ({row['morphology_classification_name']})>]
+        {row['intervention_name']}
+        """
+        formatted_results.append(formatted_text.strip())
+
+    # **Saving formatted text to a file**
+    save_dir = os.path.join(settings.BASE_DIR, "patient_intervention_reports_from_database")
+    os.makedirs(save_dir, exist_ok=True)  # Create the directory if it doesn't exist
+    file_path = os.path.join(save_dir, f"patient_{patient_id}_report.txt")
+
+    with open(file_path, "w", encoding="utf-8") as file:
+        file.write("\n\n".join(formatted_results))
+
+    return Response({
+        "message": "Data saved successfully",
+        "file_path": file_path,
+        "formatted_details": formatted_results
+    })
+
+
