@@ -3,7 +3,8 @@ from rest_framework import serializers
 from endoreg_db.models import (
     PatientExamination, Patient, Examination, Finding, PatientFinding, PatientFindingLocation,
     FindingLocationClassificationChoice, FindingLocationClassification, FindingMorphologyClassification, 
-    FindingMorphologyClassificationChoice, PatientFindingMorphology, PatientFinding, PatientFindingMorphology
+    FindingMorphologyClassificationChoice, PatientFindingMorphology, PatientFinding, PatientFindingMorphology,FindingIntervention,
+    PatientFindingIntervention
 )
 
 class PatientExaminationSerializer(serializers.ModelSerializer):
@@ -253,8 +254,33 @@ class PatientFindingMorphologyRelationSerializer(serializers.ModelSerializer):
 
 class FindingInterventionSerializer(serializers.ModelSerializer):
     """
-    Serializer to fetch all FindingMorphologyClassification entries.
+    Serializer to fetch all FindingIntervention entries (for dropdown in frontend).
     """
     class Meta:
-        model = FindingMorphologyClassification
-        fields = ['id', 'name']  # Fetch only ID and name
+        model = FindingIntervention
+        fields = ['id', 'name']  # Fetch ID and Name for dropdown display
+
+
+class PatientFindingInterventionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for saving PatientFindingIntervention (when user selects an intervention).
+    """
+    intervention_id = serializers.PrimaryKeyRelatedField(
+        queryset=FindingIntervention.objects.all(),
+        source="intervention",
+        write_only=True
+    )
+    
+    patient_finding_id = serializers.PrimaryKeyRelatedField(
+        queryset=PatientFinding.objects.all(),
+        source="patient_finding",
+        write_only=True
+    )
+
+    intervention_name = serializers.CharField(
+        source="intervention.name", read_only=True
+    )
+
+    class Meta:
+        model = PatientFindingIntervention
+        fields = ['id', 'patient_finding_id', 'intervention_id', 'intervention_name', 'state', 'date']

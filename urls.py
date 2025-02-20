@@ -13,7 +13,7 @@ from .views.patient_finding_intervention_views import (
     get_all_examinations,
     get_colon_polyp_finding,  
     final_submit,get_finding_location_classification,
-    get_all_morphology_classifications,get_all_interventions 
+    get_all_morphology_classifications,get_all_interventions, get_patient_details
 )
 
 # Register ViewSets
@@ -46,7 +46,11 @@ urlpatterns = [
     path('api/morphology-choices/<int:classification_id>/', get_morphology_choices, name='get_morphology_choices'),
 
     #For Intervention
-    path('api/interventions/', get_all_interventions, name = "get_all_interventions"),
+    path('api/interventions/', get_all_interventions, name="get_all_interventions"),
+
+
+
+    path('api/patient-details/<int:patient_id>/', get_patient_details, name="get_patient_details"),
 
 
 
