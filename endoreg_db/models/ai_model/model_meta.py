@@ -38,6 +38,10 @@ class ModelMeta(models.Model):
     name = models.CharField(max_length=255)
     version = models.CharField(max_length=255)
 
+    model = models.ForeignKey(
+        "AiModel", on_delete=models.CASCADE, related_name="models"
+    )
+
     labelset = models.ForeignKey(
         "LabelSet", on_delete=models.CASCADE, related_name="models"
     )
@@ -67,21 +71,37 @@ class ModelMeta(models.Model):
     objects = ModelMetaManager()
 
     @classmethod
-    def create_from_file(cls, weights_file, **kwargs):
+    def create_from_file(
+        cls, meta_name, model_name, labelset_name, weights_file, **kwargs
+    ):
         """Create a new model meta from a file"""
 
-        from endoreg_db.models import LabelSet
-        name = kwargs.get("name", weights_file.stem)
-        version = kwargs.get("version", "1")
-        labelset = kwargs.get("labelset", None)
+        from endoreg_db.models import LabelSet, AiModel
+
+        ai_model = AiModel.objects.get(name=model_name)
+
+        # check If ModelMeta with same name and model already exists
+        if cls.objects.filter(name=meta_name, model=ai_model).exists():
+            # get highest version number
+            highest_version = (
+                cls.objects.filter(name=meta_name, model=ai_model)
+                .latest("version")
+                .version
+            )
+            version = int(highest_version) + 1
+        else:
+            version = 1
+
+        assert labelset_name is not None, "Labelset name must be provided"
+        labelset = LabelSet.objects.get(name=labelset_name)
+        assert labelset is not None, "Labelset not found"
 
         return cls.objects.create(
-            name=name,
+            name=meta_name,
             version=version,
             labelset=labelset,
-            video_segmentation
             weights=weights_file,
-            **kwargs
+            **kwargs,
         )
 
     @classmethod

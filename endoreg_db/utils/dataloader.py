@@ -106,11 +106,12 @@ def load_data_with_foreign_keys(
                 command.style.SUCCESS(f"Created {model.__name__} {name}")
             )
         elif verbose:
-            command.stdout.write(
-                command.style.WARNING(
-                    f"Skipped {model.__name__} {name}, already exists"
-                )
-            )
+            pass
+            # command.stdout.write(
+            #     command.style.WARNING(
+            #         f"Skipped {model.__name__} {name}, already exists"
+            #     )
+            # )
 
         # Set many-to-many relationships
         for field_name, related_objs in m2m_relationships.items():

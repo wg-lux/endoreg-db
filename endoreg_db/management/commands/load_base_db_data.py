@@ -23,6 +23,7 @@ class Command(BaseCommand):
         # Load Center Data
         call_command("load_center_data", stdout=out, verbose=verbose)
         call_command("load_endoscope_data", stdout=out, verbose=verbose)
+        call_command("load_distribution_data", stdout=out, verbose=verbose)
 
         call_command("load_gender_data", stdout=out, verbose=verbose)
         call_command("load_unit_data", stdout=out, verbose=verbose)
@@ -41,7 +42,9 @@ class Command(BaseCommand):
         call_command("load_ai_model_data", stdout=out, verbose=verbose)
 
         self.stdout.write(
-            self.style.SUCCESS("All data loading commands executed successfully.")
+            self.style.SUCCESS(  # pylint: disable=no-member
+                "All data loading commands executed successfully."
+            )
         )
 
         # # Run the load_network_data command

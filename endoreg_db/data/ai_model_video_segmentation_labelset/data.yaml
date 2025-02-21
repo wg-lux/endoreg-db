@@ -1,6 +1,6 @@
 - model: endoreg_db.video_segmentation_label_set
   fields:
-    name: "colonoscopy_default"
+    name: "colonoscopy_video_segmentation_raw"
     labels:
       [
         "appendix",
