@@ -49,7 +49,7 @@ class ModelMeta(models.Model):
 
     weights = models.FileField(
         upload_to=WEIGHTS_DIR_NAME,
-        validators=[FileExtensionValidator(allowed_extensions=[".ckpt"])],  # FIXME
+        validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
         null=True,
         blank=True,
@@ -98,9 +98,10 @@ class ModelMeta(models.Model):
 
         return cls.objects.create(
             name=meta_name,
+            model=ai_model,
             version=version,
             labelset=labelset,
-            weights=weights_file,
+            weights=str(weights_file),
             **kwargs,
         )
 
