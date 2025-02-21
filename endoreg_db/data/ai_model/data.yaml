@@ -4,4 +4,4 @@
     description: "Image multilabel classification model"
     model_type: "image"
     model_subtype: "multilabel"
-    labelset: "colonoscopy_video_segmentation_raw"
+    video_segmentation_labelset: "colonoscopy_video_segmentation_raw"

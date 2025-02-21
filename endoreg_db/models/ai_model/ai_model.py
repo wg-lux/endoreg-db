@@ -53,8 +53,12 @@ class AiModel(models.Model):
     description = models.TextField(blank=True, null=True)
     model_type = models.CharField(max_length=255, blank=True, null=True)
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
-    video_segmentation_labels = models.ManyToManyField(
-        "VideoSegmentationLabel", related_name="models"
+    video_segmentation_labelset = models.ForeignKey(
+        "VideoSegmentationLabelSet",
+        on_delete=models.CASCADE,
+        related_name="ai_models",
+        blank=True,
+        null=True,
     )
 
     def natural_key(self):

@@ -55,7 +55,7 @@ IMPORT_METADATA = {
     AiModel.__name__: {
         "dir": AI_MODEL_DATA_DIR,  # e.g. "intervention_types"
         "model": AiModel,  # e.g. InterventionType
-        "foreign_keys": ["labelset"],  # e.g. ["interventions"]
+        "foreign_keys": ["video_segmentation_labelset"],  # e.g. ["interventions"]
         "foreign_key_models": [VideoSegmentationLabelSet],  # e.g. [Intervention]
     },
 }
