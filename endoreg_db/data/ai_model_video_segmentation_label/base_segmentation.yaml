@@ -1,0 +1,176 @@
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "upper_gi"
+    name_de: "Oberer GI-Trakt"
+    name_en: "Upper GI"
+    description: "Upper GI"
+    color: "#FF0000"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "lower_gi"
+    name_de: "Unterer GI-Trakt"
+    name_en: "Lower GI"
+    description: "Lower GI"
+    color: "#00FF00"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "esophagus"
+    name_de: "Ösophagus"
+    name_en: "Esophagus"
+    description: "Esophagus"
+    color: "#0000FF"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "stomach"
+    name_de: "Magen"
+    name_en: "Stomach"
+    description: "Stomach"
+    color: "#FFFF00"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "duodenum"
+    name_de: "Duodenum"
+    name_en: "Duodenum"
+    description: "Duodenum"
+    color: "#FF00FF"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "colon"
+    name_de: "Kolon"
+    name_en: "Colon"
+    description: "Colon"
+    color: "#00FFFF"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "ileum"
+    name_de: "Ileum"
+    name_en: "Ileum"
+    description: "Ileum"
+    color: "#800000"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "outside"
+    name_de: "Außerhalb des Körpers"
+    name_en: "Out of Body"
+    description: "Out of Body"
+    color: "#008000"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "bli"
+    name_de: "Blau-Licht-Imaging"
+    name_en: "Blue Light Imaging"
+    description: "Blue Light Imaging (high level for nbi and similar modes)"
+    color: "#000080"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "low_quality"
+    name_de: "Niedrige Qualität"
+    name_en: "Low Quality"
+    description: "Low Quality"
+    color: "#800080"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "instrument"
+    name_de: "Instrument"
+    name_en: "Instrument"
+    description: "Instrument"
+    color: "#808000"
+
+# Appendix
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "appendix"
+    name_de: "Appendix"
+    name_en: "Appendix"
+    description: "Appendix"
+    color: "#FF0000"
+# blood, diverticule, grasper, ileocaecalvalve, ileum, low_quality, nbi, needle, polyp, snare, water_jet, wound
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "blood"
+    name_de: "Blut"
+    name_en: "Blood"
+    description: "Blood"
+    color: "#00FF00"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "diverticule"
+    name_de: "Divertikel"
+    name_en: "Diverticule"
+    description: "Diverticule"
+    color: "#0000FF"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "grasper"
+    name_de: "Grasper"
+    name_en: "Grasper"
+    description: "Grasper"
+    color: "#FFFF00"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "ileocaecalvalve"
+    name_de: "Ileocaecalvalve"
+    name_en: "Ileocaecalvalve"
+    description: "Ileocaecalvalve"
+    color: "#FF00FF"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "nbi"
+    name_de: "Narrow Band Imaging"
+    name_en: "Narrow Band Imaging"
+    description: "Narrow Band Imaging"
+    color: "#00FFFF"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "needle"
+    name_de: "Needle"
+    name_en: "Needle"
+    description: "Needle"
+    color: "#800000"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "polyp"
+    name_de: "Polyp"
+    name_en: "Polyp"
+    description: "Polyp"
+    color: "#008000"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "snare"
+    name_de: "Snare"
+    name_en: "Snare"
+    description: "Snare"
+    color: "#000080"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "water_jet"
+    name_de: "Water Jet"
+    name_en: "Water Jet"
+    description: "Water Jet"
+    color: "#800080"
+
+- model: endoreg_db.video_segmentation_label
+  fields:
+    name: "wound"
+    name_de: "Wound"
+    name_en: "Wound"
+    description: "Wound"
+    color: "#808000"

@@ -1,10 +1,9 @@
-'''Module for annotation models'''
-from .image_classification import (
-    ImageClassificationAnnotation
-)
+"""Module for annotation models"""
+
+from .image_classification import ImageClassificationAnnotation
 from .binary_classification_annotation_task import (
     LegacyBinaryClassificationAnnotationTask,
-    BinaryClassificationAnnotationTask
+    BinaryClassificationAnnotationTask,
 )
 from .anonymized_image_annotation import (
     AnonymousImageAnnotation,
@@ -18,6 +17,8 @@ from .video_segmentation_annotation import (
     VideoSegmentationAnnotation,
 )
 
+from .video_segmentation_labelset import VideoSegmentationLabelSet
+
 __all__ = [
     "ImageClassificationAnnotation",
     "LegacyBinaryClassificationAnnotationTask",
@@ -30,4 +31,3 @@ __all__ = [
     "VideoSegmentationLabel",
     "VideoSegmentationAnnotation",
 ]
-

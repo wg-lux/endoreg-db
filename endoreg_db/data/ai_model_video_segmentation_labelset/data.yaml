@@ -1,0 +1,20 @@
+- model: endoreg_db.video_segmentation_label_set
+  fields:
+    name: "colonoscopy_default"
+    labels:
+      [
+        "appendix",
+        "blood",
+        "diverticule",
+        "grasper",
+        "ileocaecalvalve",
+        "ileum",
+        "low_quality",
+        "nbi",
+        "needle",
+        "outside",
+        "polyp",
+        "snare",
+        "water_jet",
+        "wound",
+      ]

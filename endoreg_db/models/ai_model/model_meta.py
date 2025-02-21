@@ -67,6 +67,24 @@ class ModelMeta(models.Model):
     objects = ModelMetaManager()
 
     @classmethod
+    def create_from_file(cls, weights_file, **kwargs):
+        """Create a new model meta from a file"""
+
+        from endoreg_db.models import LabelSet
+        name = kwargs.get("name", weights_file.stem)
+        version = kwargs.get("version", "1")
+        labelset = kwargs.get("labelset", None)
+
+        return cls.objects.create(
+            name=name,
+            version=version,
+            labelset=labelset,
+            video_segmentation
+            weights=weights_file,
+            **kwargs
+        )
+
+    @classmethod
     def get_latest(cls):
         """get the model meta with the highest version"""
         return cls.objects.latest("version")

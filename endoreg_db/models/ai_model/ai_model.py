@@ -21,22 +21,28 @@ class AiModelManager(models.Manager):
     Manager for AI models with custom query methods.
     """
 
-    def get_by_natural_key(self, name: str) -> "MultilabelVideoSegmentationModel":
+    def get_by_natural_key(self, name: str) -> "AiModel":
         """
         Return the model with the given name.
         """
         return self.get(name=name)
 
 
-class MultilabelVideoSegmentationModel(models.Model):
+class AiModel(models.Model):
     """
     Represents a multilabel video segmentation model.
+    ModelMeta objects have a foreign key to this model.
+    Here we gather high-level information about the model.
+    this contains the name, description, labels, and version of the model.
 
     Attributes:
         name (str): The name of the model.
+        name_de (str): The German name of the model.
+        name_en (str): The English name of the model.
         description (str): A description of the model.
-        labels (ManyToMany): Associated labels.
-        version (int): The version of the model.
+        model_type (str): The type of the model.
+        model_subtype (str): The subtype of the model.
+        video_segmentation_labels (QuerySet): The labels for video segmentation.
     """
 
     objects = AiModelManager()
@@ -45,9 +51,11 @@ class MultilabelVideoSegmentationModel(models.Model):
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    labels = models.ManyToManyField("VideoSegmentationLabel", related_name="models")
     model_type = models.CharField(max_length=255, blank=True, null=True)
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
+    video_segmentation_labels = models.ManyToManyField(
+        "VideoSegmentationLabel", related_name="models"
+    )
 
     def natural_key(self):
         """

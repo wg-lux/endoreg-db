@@ -99,7 +99,8 @@ AI_MODEL_DATA_DIR = DATA_DIR / "ai_model"
 AI_MODEL_TYPE_DATA_DIR = DATA_DIR / "ai_model_type"
 AI_MODEL_META_DATA_DIR = DATA_DIR / "ai_model_meta"
 LABEL_DATA_DIR = DATA_DIR / "ai_model_label"
-VIDEO_SEGMENTATION_LABEL_DATA_DIR = DATA_DIR / "video_segmentation_label"
+VIDEO_SEGMENTATION_LABEL_DATA_DIR = DATA_DIR / "ai_model_video_segmentation_label"
+VIDEO_SEGMENTATION_LABELSET_DATA_DIR = DATA_DIR / "ai_model_video_segmentation_labelset"
 
 # To Do
 LAB_VALUE_DATA_DIR = DATA_DIR / "lab_value"

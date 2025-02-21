@@ -136,7 +136,7 @@ from .examination import (
 
 # Report Reader
 from .report_reader import (
-    ReportReaderConfig, 
+    ReportReaderConfig,
     ReportReaderFlag,
 )
 
@@ -173,12 +173,13 @@ from .annotation import (
     UploadedFile,
     VideoSegmentationLabel,
     VideoSegmentationAnnotation,
+    VideoSegmentationLabelSet,
 )
 
 # Legacy data
 from .legacy_data import (
     LegacyImage,
-    LegacyFrame, 
+    LegacyFrame,
     LegacyVideo,
 )
 
@@ -209,7 +210,7 @@ from .ai_model import (
     ModelMeta,
     ModelType,
     ActiveModel,
-    MultilabelVideoSegmentationModel,
+    AiModel,
 )
 
 # Quiz
@@ -355,7 +356,7 @@ __all__ = [
     "ModelMeta",
     "ModelType",
     "ActiveModel",
-    "MultilabelVideoSegmentationModel",
+    "AiModel",
     "QuizAnswer",
     "QuizAnswerType",
     "QuizQuestion",
@@ -367,18 +368,19 @@ __all__ = [
     "Endoscope",
     "EndoscopeType",
     "TtoQuestionnaire",
-    'Frame',
-    'ReportFile',
-    'Video',
-    'LegacyLabelVideoSegment',
-    'LabelVideoSegment',
-    'SensitiveMeta',
-    'PdfMeta',
-    'PdfType',
-    'VideoMeta',
-    'FFMpegMeta',
-    'VideoImportMeta',
-    'RawPdfFile',
-    'RawVideoFile',
-    'FileImporter'
+    "Frame",
+    "ReportFile",
+    "Video",
+    "LegacyLabelVideoSegment",
+    "LabelVideoSegment",
+    "SensitiveMeta",
+    "PdfMeta",
+    "PdfType",
+    "VideoMeta",
+    "FFMpegMeta",
+    "VideoImportMeta",
+    "RawPdfFile",
+    "RawVideoFile",
+    "FileImporter",
+    "VideoSegmentationLabelSet",
 ]
