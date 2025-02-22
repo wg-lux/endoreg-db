@@ -17,6 +17,7 @@ import warnings
 from icecream import ic
 from ..metadata import VideoMeta, SensitiveMeta
 from tqdm import tqdm
+from typing import Optional
 
 
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
@@ -74,6 +75,71 @@ def copy_with_progress(src, dst, buffer_size=1024 * 1024):
 
 
 class RawVideoFile(models.Model):
+    """
+    RawVideoFile is a Django model representing a raw video file with associated metadata and processing states.
+    Attributes:
+        uuid (UUIDField): Unique identifier for the video file.
+        file (FileField): The video file, restricted to .mp4 format.
+        sensitive_meta (OneToOneField): Metadata containing sensitive information.
+        center (ForeignKey): The center associated with the video.
+        processor (ForeignKey): The processor associated with the video.
+        video_meta (OneToOneField): Metadata containing video-specific information.
+        original_file_name (CharField): The original name of the video file.
+        video_hash (CharField): Unique hash of the video file.
+        uploaded_at (DateTimeField): Timestamp of when the video was uploaded.
+        state_frames_required (BooleanField): Indicates if frame extraction is required.
+        state_frames_extracted (BooleanField): Indicates if frames have been extracted.
+        state_initial_prediction_required (BooleanField): Indicates if initial prediction is required.
+        state_initial_prediction_completed (BooleanField): Indicates if initial prediction is completed.
+        state_initial_prediction_import_required (BooleanField): Indicates if initial prediction import is required.
+        state_initial_prediction_import_completed (BooleanField): Indicates if initial prediction import is completed.
+        state_ocr_required (BooleanField): Indicates if OCR is required.
+        state_ocr_completed (BooleanField): Indicates if OCR is completed.
+        state_outside_validated (BooleanField): Indicates if outside validation is completed.
+        state_ocr_result_validated (BooleanField): Indicates if OCR result validation is completed.
+        state_sensitive_data_retrieved (BooleanField): Indicates if sensitive data has been retrieved.
+        state_histology_required (BooleanField): Indicates if histology data is required.
+        state_histology_available (BooleanField): Indicates if histology data is available.
+        state_follow_up_intervention_required (BooleanField): Indicates if follow-up intervention is required.
+        state_follow_up_intervention_available (BooleanField): Indicates if follow-up intervention data is available.
+        state_dataset_complete (BooleanField): Indicates if the dataset is complete.
+        state_anonymized_frames_generated (BooleanField): Indicates if anonymized frames have been generated.
+        state_anonym_video_required (BooleanField): Indicates if anonymized video is required.
+        state_anonym_video_performed (BooleanField): Indicates if anonymized video has been performed.
+        state_original_reports_deleted (BooleanField): Indicates if original reports have been deleted.
+        state_original_video_deleted (BooleanField): Indicates if the original video has been deleted.
+        state_finalized (BooleanField): Indicates if the video processing is finalized.
+        frame_dir (CharField): Directory where frames are stored.
+        prediction_dir (CharField): Directory where predictions are stored.
+    Methods:
+        transcode_videofile(filepath, transcoded_path): Transcodes a video to MP4 format using ffmpeg.
+        create_from_file(file_path, center_name, processor_name, ...): Creates a RawVideoFile instance from a given video file.
+        predict_video(model_meta_name, dataset_name, ...): Predicts the video file using the given model.
+        get_anonymized_frame_dir(): Generates the path to the anonymized frame directory.
+        check_anonymized_frames_exist(): Checks if anonymized frames exist for the video file.
+        generate_anonymized_frames(): Generates anonymized frames from the video file.
+        delete_with_file(): Deletes the video file along with its frames and anonymized frames.
+        get_endo_roi(): Fetches the endoscope ROI from the video meta.
+        get_crop_template(): Creates a crop template from the endoscope ROI.
+        set_frame_dir(): Sets the frame directory based on the UUID.
+        save(*args, **kwargs): Saves the RawVideoFile instance to the database.
+        extract_frames(quality, frame_dir, ...): Extracts frames from the video file using ffmpeg.
+        delete_frames(): Deletes frames extracted from the video file.
+        delete_frames_anonymized(): Deletes anonymized frames extracted from the video file.
+        get_frame_path(n, anonymized): Gets the path to the n-th frame extracted from the video file.
+        get_frame_paths(anonymized): Gets paths to all frames extracted from the video file.
+        get_prediction_dir(): Gets the directory where predictions are stored.
+        get_predictions_path(suffix): Gets the path to the predictions file.
+        get_smooth_predictions_path(suffix): Gets the path to the smooth predictions file.
+        get_binary_predictions_path(suffix): Gets the path to the binary predictions file.
+        get_raw_sequences_path(suffix): Gets the path to the raw sequences file.
+        get_filtered_sequences_path(suffix): Gets the path to the filtered sequences file.
+        extract_text_information(frame_fraction): Extracts text information from the video file.
+        update_text_metadata(ocr_frame_fraction): Updates the text metadata for the video file.
+        update_video_meta(): Updates the video metadata.
+        get_fps(): Gets the frames per second (FPS) of the video file.
+    """
+
     uuid = models.UUIDField()
     file = models.FileField(
         upload_to=RAW_VIDEO_DIR_NAME,
@@ -95,6 +161,12 @@ class RawVideoFile(models.Model):
     original_file_name = models.CharField(max_length=255)
     video_hash = models.CharField(max_length=255, unique=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    readable_predictions = models.JSONField(default=dict)
+    merged_predictions = models.JSONField(default=dict)
+    smooth_merged_predictions = models.JSONField(default=dict)
+    binary_smooth_merged_predictions = models.JSONField(default=dict)
+    sequences = models.JSONField(default=dict)
 
     # Frame Extraction States
     state_frames_required = models.BooleanField(default=True)
@@ -132,6 +204,7 @@ class RawVideoFile(models.Model):
 
     frame_dir = models.CharField(max_length=255)
     prediction_dir = models.CharField(max_length=255)
+    predictions = models.JSONField(default=dict)
 
     @classmethod
     def transcode_videofile(self, filepath: Path, transcoded_path: Path):
@@ -315,6 +388,155 @@ class RawVideoFile(models.Model):
 
         return raw_video_file
 
+    def predict_video(
+        self,
+        model_meta_name: str,
+        dataset_name: str = "inference_dataset",
+        model_meta_version: Optional[int] = None,
+        smooth_window_size_s: int = 1,
+        binarize_threshold: float = 0.5,
+        img_suffix: str = ".jpg",
+        test_run: bool = False,
+        n_test_frames: int = 100,
+    ):
+        """
+        Predict the video file using the given model.
+        Frames should be extracted and anonymized frames should be generated before prediction.
+        """
+        from endoreg_db.models import ModelMeta, AiModel  # pylint: disable=import-outside-toplevel
+        from endo_ai.predictor.inference_dataset import InferenceDataset  # pylint: disable=import-outside-toplevel
+        from endo_ai.predictor.utils import get_unorm
+        from endo_ai.predictor.model_loader import MultiLabelClassificationNet
+        from endo_ai.predictor.predict import Classifier
+        from endo_ai.predictor.postprocess import (
+            concat_pred_dicts,
+            make_smooth_preds,
+            find_true_pred_sequences,
+        )
+
+        datasets = {
+            "inference_dataset": InferenceDataset,
+        }
+
+        DatasetModel = datasets[dataset_name]
+
+        video_file = self.file
+        anonymize_frame_dir = self.get_anonymized_frame_dir()
+
+        assert self.check_anonymized_frames_exist(), "Anonymized frames not found"
+        assert self.state_anonymized_frames_generated, (
+            "State 'state_anonymized_frames_generated' must be True"
+        )
+        model_meta = ModelMeta.get_by_name(model_meta_name, model_meta_version)
+        model: AiModel = model_meta.model
+
+        model_type = model.model_type
+        model_subtype = model.model_subtype
+
+        ic(f"Model type: {model_type}, Model subtype: {model_subtype}")
+
+        paths = [p for p in anonymize_frame_dir.glob(f"*{img_suffix}")]
+        ic(f"Found {len(paths)} images in {anonymize_frame_dir}")
+
+        # frame names in format "frame_{index}.jpg"
+        indices = [int(p.stem.split("_")[1]) for p in paths]
+        path_index_tuples = list(zip(paths, indices))
+        # sort ascending by index
+        path_index_tuples.sort(key=lambda x: x[1])
+        paths, indices = zip(*path_index_tuples)
+
+        crop_template = self.get_crop_template()
+
+        string_paths = [p.resolve().as_posix() for p in paths]
+        crops = [crop_template for _ in paths]
+
+        ic(f"Detected {len(paths)} frames")
+
+        if test_run:  # only use the first 10 frames
+            ic(f"Running in test mode, using only the first {n_test_frames} frames")
+            paths = paths[:n_test_frames]
+            indices = indices[:n_test_frames]
+            string_paths = string_paths[:n_test_frames]
+            crops = crops[:n_test_frames]
+
+        assert paths, f"No images found in {anonymize_frame_dir}"
+
+        ds_config = model_meta.get_inference_dataset_config()
+
+        # Create dataset
+        ds = DatasetModel(string_paths, crops, config=ds_config)
+        ic(f"Dataset length: {len(ds)}")
+
+        # Get a sample image
+        sample = ds[0]
+        ic("Shape:", sample.shape)  # e.g., torch.Size([3, 716, 716])
+
+        # unorm = get_unorm(ds_config)
+
+        weights_path = model_meta.weights.path
+
+        ic(f"Model path: {weights_path}")
+
+        # FIXME implement support for different model types
+        ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
+            checkpoint_path=weights_path,
+        )
+
+        _ = model.cuda()
+        _ = model.eval()
+        classifier = Classifier(ai_model_instance, verbose=True)
+
+        ic("Starting inference")
+        predictions = classifier.pipe(string_paths, crops)
+
+        ic("Creating Prediction Dict")
+        prediction_dict = classifier.get_prediction_dict(predictions, string_paths)
+        self.predictions = prediction_dict
+
+        ic("Creating Readable Predictions")
+        readable_predictions = [classifier.readable(p) for p in predictions]
+        self.readable_predictions = readable_predictions
+
+        ic("Creating Merged Predictions")
+        merged_predictions = concat_pred_dicts(prediction_dict)
+        self.merged_predictions = merged_predictions
+
+        ic(
+            f"Creating Smooth Merged Predictions; FPS: {fps}, Smooth Window Size: {smooth_window_size_s}"
+        )
+        fps = self.get_fps()
+        smooth_merged_predictions = {}
+        for key in merged_predictions.keys():
+            smooth_merged_predictions[key] = make_smooth_preds(
+                prediction_array=merged_predictions[key],
+                window_size_s=smooth_window_size_s,
+                fps=fps,
+            )
+        self.smooth_merged_predictions = smooth_merged_predictions
+
+        ic(
+            "Creating Binary Smooth Merged Predictions; Binarize Threshold: ",
+            binarize_threshold,
+        )
+        binary_smooth_merged_predictions = {}
+        for key in smooth_merged_predictions.keys():  # pylint: disable=consider-using-dict-items
+            binary_smooth_merged_predictions[key] = (
+                smooth_merged_predictions[key] > binarize_threshold
+            )
+        self.binary_smooth_merged_predictions = binary_smooth_merged_predictions
+
+        ic("Creating Sequences")
+        sequences = {}
+        for label, prediction_array in binary_smooth_merged_predictions.items():
+            sequences[label] = find_true_pred_sequences(prediction_array)
+
+        self.sequences = sequences
+
+        ic("Finished inference")
+        ic("Saving predictions to DB")
+        ic(sequences)
+        self.save()
+
     def get_anonymized_frame_dir(self):
         """Method to generate the path to the anonymized frame directory"""
         return Path(self.frame_dir).parent / f"anonymized_{self.uuid}"
@@ -336,6 +558,9 @@ class RawVideoFile(models.Model):
             # make sure directory is empty
             for f in anonymized_frame_dir.glob("*"):
                 f.unlink()
+
+        self.state_anonymized_frames_generated = frames_already_extracted
+        self.save()
 
         return frames_already_extracted
 
@@ -379,8 +604,25 @@ class RawVideoFile(models.Model):
         return f"Deleted {self.file.name}; Deleted frames; Deleted anonymized frames"
 
     def get_endo_roi(self):
+        """
+        Fetches the endoscope ROI from the video meta.
+        Returns a dictionary with keys "x", "y", "width", "height"
+        """
         endo_roi = self.video_meta.get_endo_roi()
         return endo_roi
+
+    def get_crop_template(self):
+        """
+        Creates a crop template (e.g., [0, 1080, 550, 1920 - 20] for a 1080p frame) from the endoscope ROI.
+        """
+        endo_roi = self.get_endo_roi()
+        x = endo_roi["x"]
+        y = endo_roi["y"]
+        width = endo_roi["width"]
+        height = endo_roi["height"]
+
+        crop_template = [y, y + height, x, x + width]
+        return crop_template
 
     def set_frame_dir(self):
         self.frame_dir = f"{RAW_VIDEO_DIR}/{self.uuid}"
@@ -420,7 +662,7 @@ class RawVideoFile(models.Model):
         if not frame_dir.exists():
             frame_dir.mkdir(parents=True, exist_ok=True)
 
-        if not overwrite and len(list(frame_dir.glob("*.jpg"))) > 0:
+        if not overwrite and len(list(frame_dir.glob(f"*.{ext}"))) > 0:
             print(f"Frames already extracted for {self.file.name}")
             self.state_frames_extracted = True  # Mark frames as extracted
             return f"Frames already extracted at {frame_dir}"

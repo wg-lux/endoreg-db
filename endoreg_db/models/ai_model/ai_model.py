@@ -5,6 +5,7 @@ Django model for AI models.
 from pathlib import Path
 import os
 from django.db import models
+from icecream import ic
 
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 
@@ -30,7 +31,7 @@ class AiModelManager(models.Manager):
 
 class AiModel(models.Model):
     """
-    Represents a multilabel video segmentation model.
+    Represents a generic AiModel.
     ModelMeta objects have a foreign key to this model.
     Here we gather high-level information about the model.
     this contains the name, description, labels, and version of the model.
@@ -60,6 +61,37 @@ class AiModel(models.Model):
         blank=True,
         null=True,
     )
+    active_meta = models.ForeignKey(
+        "ModelMeta",
+        on_delete=models.SET_NULL,
+        related_name="active_model",
+        blank=True,
+        null=True,
+    )
+
+    @classmethod
+    def set_active_model_meta(cls, model_name: str, meta_name: str, meta_version: int):
+        """
+        Set the active model.
+        """
+        from endoreg_db.models import ModelMeta
+
+        model = cls.objects.get(name=model_name)
+        assert model is not None, "Model not found"
+
+        ic(f"Getting model meta for {model_name} {meta_name} {meta_version}")
+
+        model_meta = ModelMeta.objects.get(
+            name=meta_name, model=model, version=meta_version
+        )
+        assert model_meta is not None, "ModelMeta not found"
+
+        model.active_meta = model_meta
+        model.save()
+
+        ic(
+            f"Set active model meta for {model_name} to {meta_name} version {meta_version}"
+        )
 
     def natural_key(self):
         """

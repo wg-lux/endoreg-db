@@ -1,9 +1,15 @@
-from django.db import models
-from pathlib import Path
-import os
+"""
+This module defines the ModelMeta and ModelMetaManager classes for managing AI model metadata.
+"""
 
+import os
+from pathlib import Path
+from typing import Optional
+import shutil
+
+from django.db import models
 from django.core.validators import FileExtensionValidator
-from django.core.files.storage import FileSystemStorage
+from icecream import ic
 
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 
@@ -50,7 +56,7 @@ class ModelMeta(models.Model):
     weights = models.FileField(
         upload_to=WEIGHTS_DIR_NAME,
         validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
-        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+        # storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
         null=True,
         blank=True,
     )
@@ -72,29 +78,57 @@ class ModelMeta(models.Model):
 
     @classmethod
     def create_from_file(
-        cls, meta_name, model_name, labelset_name, weights_file, **kwargs
+        cls,
+        meta_name,
+        model_name,
+        model_meta_version,
+        labelset_name,
+        weights_file,
+        bump_version,
+        **kwargs,
     ):
         """Create a new model meta from a file"""
 
-        from endoreg_db.models import LabelSet, AiModel
+        from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
+
+        model_meta_version = kwargs.get("model_meta_version", None)
 
         ai_model = AiModel.objects.get(name=model_name)
 
         # check If ModelMeta with same name and model already exists
-        if cls.objects.filter(name=meta_name, model=ai_model).exists():
-            # get highest version number
-            highest_version = (
-                cls.objects.filter(name=meta_name, model=ai_model)
-                .latest("version")
-                .version
-            )
-            version = int(highest_version) + 1
+        if not model_meta_version:
+            if cls.objects.filter(name=meta_name, model=ai_model).exists():
+                # get highest version number
+                highest_version = (
+                    cls.objects.filter(name=meta_name, model=ai_model)
+                    .latest("version")
+                    .version
+                )
+                version = int(highest_version) + 1
+            else:
+                version = 1
         else:
-            version = 1
+            version = model_meta_version
+
+        meta_exists = cls.objects.filter(
+            name=meta_name, model=ai_model, version=version
+        ).exists()
+        if meta_exists and not bump_version:
+            raise ValueError(
+                f"ModelMeta with name {meta_name} and version {version} already exists"
+            )
 
         assert labelset_name is not None, "Labelset name must be provided"
         labelset = LabelSet.objects.get(name=labelset_name)
         assert labelset is not None, "Labelset not found"
+
+        weights_path = Path(weights_file)
+        # If not under our WEIGHTS_DIR, copy it there
+        if not str(weights_path).startswith(str(WEIGHTS_DIR)):
+            target_path = WEIGHTS_DIR / weights_path.name
+            if not target_path.exists():
+                shutil.copy(weights_path, target_path)
+            weights_file = target_path
 
         return cls.objects.create(
             name=meta_name,
@@ -106,12 +140,26 @@ class ModelMeta(models.Model):
         )
 
     @classmethod
-    def get_latest(cls):
-        """get the model meta with the highest version"""
-        return cls.objects.latest("version")
+    def get_latest_version(cls, name) -> int:
+        """
+        get the model meta with the highest version. Assumes Model Name and Meta Name are the same
+        """
+        from endoreg_db.models import AiModel  # pylint: disable=import-outside-toplevel
+
+        ai_model = AiModel.objects.get(name=name)
+        ic(f"Model: {ai_model}")
+        assert ai_model is not None, "Model not found"
+
+        model_meta = cls.objects.filter(name=name, model=ai_model).latest("version")
+        ic(f"Latest ModelMeta: {model_meta}")
+
+        latest_version = model_meta.version
+        ic(f"Latest Version: {latest_version}")
+
+        return int(latest_version)
 
     @classmethod
-    def get_activation_function(cls):
+    def get_activation_function(cls, activation: str):
         """get the activation function"""
         from torch import nn  # pylint: disable=import-outside-toplevel
 
@@ -121,7 +169,45 @@ class ModelMeta(models.Model):
             "none": nn.Identity(),
         }
 
-        return lookup[cls.activation]
+        return lookup[activation]
+
+    def get_inference_dataset_config(self):
+        """
+        Creates a dictionary with the configuration for the inference dataset.
+
+        Example:
+            sample_config = {
+                # mean and std for normalization
+                "mean": (0.45211223, 0.27139644, 0.19264949),
+                "std": (0.31418097, 0.21088019, 0.16059452),
+                # Image Size
+                "size_x": 716,
+                "size_y": 716,
+                # how to wrangle axes of the image before putting them in the network
+                "axes": [2,0,1],  # 2,1,0 for opencv
+                "batchsize": 16,
+                "num_workers": 0, # always 1 for Windows systems # FIXME: fix celery crash if multiprocessing
+                # maybe add sigmoid after prediction?
+                "activation": nn.Sigmoid(),
+                "labels": ['appendix',  'blood',  'diverticule',  'grasper',  'ileocaecalvalve',  'ileum',  'low_quality',  'nbi',  'needle',  'outside',  'polyp',  'snare',  'water_jet',  'wound']
+            }
+        """
+        mean = list(map(float, str(self.mean).split(",")))
+        std = list(map(float, str(self.std).split(",")))
+        axes = list(map(int, str(self.axes).split(",")))
+
+        config = {
+            "mean": mean,
+            "std": std,
+            "size_x": self.size_x,
+            "size_y": self.size_y,
+            "axes": axes,
+            "batchsize": self.batchsize,
+            "num_workers": self.num_workers,
+            "activation": self.get_activation_function(self.activation),
+        }
+
+        return config
 
     def natural_key(self):
         """Return the natural key for this model"""
@@ -141,5 +227,13 @@ class ModelMeta(models.Model):
             "batchsize": self.batchsize,
             "num_workers": self.num_workers,
             "activation": self.activation,
+            "labels": self.labelset.get_labels_in_order(),  # pylint: disable=no-member
         }
         return conf_dict
+
+    @classmethod
+    def get_by_name(cls, name: str, version: Optional[int]) -> "ModelMeta":
+        """Get the model by its name and version"""
+        if version is None:
+            version = cls.get_latest_version(name)
+        return cls.objects.get(name=name, version=version)
