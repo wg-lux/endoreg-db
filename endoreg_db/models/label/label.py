@@ -109,4 +109,4 @@ class LabelSet(models.Model):
         """
         labels = list(self.labels.all())
         labels.sort(key=lambda x: x.name)
-        return
+        return labels

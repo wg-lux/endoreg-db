@@ -205,6 +205,7 @@ class ModelMeta(models.Model):
             "batchsize": self.batchsize,
             "num_workers": self.num_workers,
             "activation": self.get_activation_function(self.activation),
+            # "labels": self.get_,
         }
 
         return config
