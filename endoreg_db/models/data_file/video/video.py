@@ -6,8 +6,12 @@ from endoreg_db.models.data_file.frame import LegacyFrame
 
 BATCH_SIZE = 1000
 
+
 class Video(AbstractVideo):
-    import_meta = models.OneToOneField('VideoImportMeta', on_delete=models.CASCADE, blank=True, null=True)
+    import_meta = models.OneToOneField(
+        "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
+    )
+
     def get_video_model(self):
         return Video
 

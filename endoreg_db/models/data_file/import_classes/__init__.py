@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from .raw_video import RawVideoFile
+from .raw_video import RawVideoFile, VideoFile
 from .raw_pdf import RawPdfFile
 
 # FileImporter class
@@ -14,7 +14,8 @@ from .raw_pdf import RawPdfFile
 # main method is import_files which expects a path to a directory containing files to import.
 # creates correct import file object depending on file type by checking the file extension
 
-class FileImporter:
+
+class FileImporter:  # FIXME
     def __init__(self, directory):
         self.directory = directory
 
@@ -22,15 +23,16 @@ class FileImporter:
         directory_path = Path(self.directory)
         for file in directory_path.iterdir():
             if file.is_file():
-                if file.suffix.lower() in ['.mov', '.mp4']:
+                if file.suffix.lower() in [".mov", ".mp4"]:
                     RawVideoFile.create_from_file(file)
                 else:
                     raise ValueError(f"File type {file.suffix} not supported")
             else:
                 raise ValueError(f"{file} is not a file")
-            
+
 
 __all__ = [
+    "VideoFile",
     "RawPdfFile",
     "RawVideoFile",
     "FileImporter",

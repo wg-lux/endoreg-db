@@ -5,3 +5,9 @@ from .video import (
 from ..metadata import (
     VideoImportMeta,
 )
+
+__all__ = [
+    "Video",
+    "LegacyVideo",
+    "VideoImportMeta",
+]

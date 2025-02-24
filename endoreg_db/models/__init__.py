@@ -155,6 +155,7 @@ from .data_file import (
     VideoImportMeta,
     RawPdfFile,
     RawVideoFile,
+    VideoFile,
     FileImporter,
 )
 
@@ -381,6 +382,7 @@ __all__ = [
     "VideoImportMeta",
     "RawPdfFile",
     "RawVideoFile",
+    "VideoFile",
     "FileImporter",
     "VideoSegmentationLabelSet",
 ]
