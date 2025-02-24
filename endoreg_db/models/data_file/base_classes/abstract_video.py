@@ -734,11 +734,14 @@ class AbstractVideoFile(models.Model):
             video_meta.update_meta(video_path)
 
     def get_fps(self):
-        if self.video_meta is None:
-            self.update_video_meta()
+        # FIXME
+        fps = 50
+        return fps
+        # if self.video_meta is None:
+        #     self.update_video_meta()
 
-        if self.video_meta.ffmpeg_meta is None:
-            self.video_meta.initialize_ffmpeg_meta(self.file.path)
+        # if self.video_meta.ffmpeg_meta is None:
+        #     self.video_meta.initialize_ffmpeg_meta(self.file.path)
 
         return self.video_meta.get_fps()
 
