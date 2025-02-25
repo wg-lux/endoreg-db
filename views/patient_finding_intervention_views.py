@@ -88,6 +88,47 @@ def get_all_morphology_classifications(request):
     serializer = FindingMorphologyClassificationSerializer(classifications, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from endoreg_db.models import FindingMorphologyClassification, FindingMorphologyClassificationChoice
+from endoreg_db.serializers.patient_finding_interventions import FindingMorphologyClassificationChoiceSerializer
+
+@api_view(['GET'])
+def get_morphology_choices(request, classification_id):  
+    """
+    Fetches FindingMorphologyClassificationChoice records based on the selected classification ID.
+    """
+    print("here i am ------ ----- ----- ------- ----- -------",classification_id)
+    try:
+        # Debugging: Check if classification_id is received correctly
+        print(f"Received classification_id: {classification_id}")
+
+        # Ensure classification exists
+        classification = FindingMorphologyClassification.objects.filter(id=classification_id).first()
+        print(classification)
+        
+        if not classification:
+            return Response({"error": "Morphology classification not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Fetch all choices for the given classification ID
+        choices = FindingMorphologyClassificationChoice.objects.filter(classification_id=classification_id)
+
+        # Ensure choices exist
+        if not choices.exists():
+            return Response({"error": "No morphology choices found for this classification"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Serialize and return the choices
+        serializer = FindingMorphologyClassificationChoiceSerializer(choices, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    except Exception as e:
+        print(f"-------------Error encountered----------: {e}")  # Debugging statement
+        return Response({"error": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 
 @api_view(['GET'])
 def get_all_interventions(request):
@@ -252,111 +293,112 @@ fetch(`http://127.0.0.1:8000/endoreg_db/api/patient-details/${patient_id}/`)
 import os
 from django.db import connection
 from django.conf import settings  
+from rest_framework.decorators import api_view
+from endoreg_db.serializers.patient_finding_interventions import PatientDetailsSerializer
 
 @api_view(['GET'])
 def get_patient_details(request, patient_id):
     """
-    API to fetch all details for a given patient ID, format the response, and save it to a text file.
+    API to fetch all details for a given patient ID, return JSON, and save to a formatted text file.
     """
 
     query = """
-WITH patient_data AS (
-    SELECT
-        p.id AS patient_id,
-        CONCAT(p.first_name, ' ', p.last_name) AS patient_name,  
-        p.dob AS patient_dob
-    FROM endoreg_db_patient p
-    WHERE p.id = %s
-),
+    WITH patient_data AS (
+        SELECT
+            p.id AS patient_id,
+            CONCAT(p.first_name, ' ', p.last_name) AS patient_name,  
+            p.dob AS patient_dob
+        FROM endoreg_db_patient p
+        WHERE p.id = %s
+    ),
 
-patient_examination_data AS (
+    patient_examination_data AS (
+        SELECT
+            pe.patient_id,
+            pe.examination_id,
+            e.name AS examination_name,
+            pe.id AS patient_examination_id,
+            pe.date_start,
+            pe.date_end
+        FROM endoreg_db_patientexamination pe
+        JOIN endoreg_db_examination e ON pe.examination_id = e.id
+        WHERE pe.patient_id = %s
+    ),
+
+    patient_finding_data AS (
+        SELECT
+            pf.id AS patient_finding_id,
+            pf.finding_id,
+            f.name AS finding_name,
+            pf.patient_examination_id
+        FROM endoreg_db_patientfinding pf
+        JOIN endoreg_db_finding f ON pf.finding_id = f.id
+        WHERE pf.patient_examination_id IN (SELECT patient_examination_id FROM patient_examination_data)
+    ),
+
+    patient_finding_location_data AS (
+        SELECT
+            pfl.patientfinding_id,
+            flc.id AS location_classification_id,
+            flcc.id AS location_classification_choice_id,
+            flc.name AS location_classification_name,
+            flcc.name AS location_choice_name
+        FROM endoreg_db_patientfinding_locations pfl
+        JOIN endoreg_db_patientfindinglocation pfl_loc 
+            ON pfl.patientfindinglocation_id = pfl_loc.id
+        JOIN endoreg_db_findinglocationclassification flc 
+            ON pfl_loc.location_classification_id = flc.id
+        JOIN endoreg_db_findinglocationclassificationchoice flcc 
+            ON pfl_loc.location_choice_id = flcc.id
+        WHERE pfl.patientfinding_id IN (SELECT patient_finding_id FROM patient_finding_data)
+    ),
+
+    patient_finding_morphology_data AS (
+        SELECT
+            pfm.morphology_choice_id,
+            pfm.morphology_classification_id,
+            pfm_rel.patientfinding_id,
+            fmc.name AS morphology_classification_name,
+            fmcc.name AS morphology_choice_name
+        FROM endoreg_db_patientfindingmorphology pfm
+        JOIN endoreg_db_findingmorphologyclassification fmc 
+            ON pfm.morphology_classification_id = fmc.id
+        JOIN endoreg_db_findingmorphologyclassificationchoice fmcc 
+            ON pfm.morphology_choice_id = fmcc.id
+        JOIN endoreg_db_patientfinding_morphologies pfm_rel
+            ON pfm.id = pfm_rel.patientfindingmorphology_id
+        WHERE pfm_rel.patientfinding_id IN (SELECT patient_finding_id FROM patient_finding_data)
+    ),
+
+    patient_finding_intervention_data AS (
+        SELECT
+            pfi.patient_finding_id,
+            pfi.intervention_id,
+            fi.name AS intervention_name
+        FROM endoreg_db_patientfindingintervention pfi
+        JOIN endoreg_db_findingintervention fi ON pfi.intervention_id = fi.id
+        WHERE pfi.patient_finding_id IN (SELECT patient_finding_id FROM patient_finding_data)
+    )
+
     SELECT
-        pe.patient_id,
-        pe.examination_id,
-        e.name AS examination_name,
-        pe.id AS patient_examination_id,
+        pd.patient_name,
+        pd.patient_dob,
         pe.date_start,
-        pe.date_end
-    FROM endoreg_db_patientexamination pe
-    JOIN endoreg_db_examination e ON pe.examination_id = e.id
-    WHERE pe.patient_id = %s
-),
-
-patient_finding_data AS (
-    SELECT
-        pf.id AS patient_finding_id,
-        pf.finding_id,
-        f.name AS finding_name,
-        pf.patient_examination_id
-    FROM endoreg_db_patientfinding pf
-    JOIN endoreg_db_finding f ON pf.finding_id = f.id
-    WHERE pf.patient_examination_id IN (SELECT patient_examination_id FROM patient_examination_data)
-),
-
-patient_finding_location_data AS (
-    SELECT
-        pfl.patientfinding_id,
-        flc.id AS findinglocationclassification_id,
-        flcc.id AS findinglocationclassificationchoice_id,
-        flc.name AS location_classification_name,
-        flcc.name AS location_choice_name
-    FROM endoreg_db_patientfinding_locations pfl
-    JOIN endoreg_db_patientfindinglocation pfl_loc 
-        ON pfl.patientfindinglocation_id = pfl_loc.id
-    JOIN endoreg_db_findinglocationclassification flc 
-        ON pfl_loc.location_classification_id = flc.id
-    JOIN endoreg_db_findinglocationclassificationchoice flcc 
-        ON pfl_loc.location_choice_id = flcc.id
-    WHERE pfl.patientfinding_id IN (SELECT patient_finding_id FROM patient_finding_data)
-),
-
-patient_finding_morphology_data AS (
-    SELECT
-        pfm.morphology_choice_id,
-        pfm.morphology_classification_id,
-        pfm_rel.patientfinding_id,
-        fmc.name AS morphology_classification_name,
-        fmcc.name AS morphology_choice_name
-    FROM endoreg_db_patientfindingmorphology pfm
-    JOIN endoreg_db_findingmorphologyclassification fmc 
-        ON pfm.morphology_classification_id = fmc.id
-    JOIN endoreg_db_findingmorphologyclassificationchoice fmcc 
-        ON pfm.morphology_choice_id = fmcc.id
-    JOIN endoreg_db_patientfinding_morphologies pfm_rel
-        ON pfm.id = pfm_rel.patientfindingmorphology_id
-    WHERE pfm_rel.patientfinding_id IN (SELECT patient_finding_id FROM patient_finding_data)
-),
-
-patient_finding_intervention_data AS (
-    SELECT
-        pfi.patient_finding_id,
-        pfi.intervention_id,
-        fi.name AS intervention_name
-    FROM endoreg_db_patientfindingintervention pfi
-    JOIN endoreg_db_findingintervention fi ON pfi.intervention_id = fi.id
-    WHERE pfi.patient_finding_id IN (SELECT patient_finding_id FROM patient_finding_data)
-)
-
-SELECT
-    pd.patient_name,
-    pd.patient_dob,
-    pe.date_start,
-    pe.date_end,
-    pe.examination_name,
-    pf.finding_name,
-    pfl.findinglocationclassification_id AS location_classification_id,
-    pfl.location_classification_name,
-    pfl.location_choice_name,
-    pfm.morphology_classification_name,
-    pfm.morphology_choice_name,
-    pfi.intervention_name
-FROM patient_data pd
-LEFT JOIN patient_examination_data pe ON pe.patient_id = pd.patient_id
-LEFT JOIN patient_finding_data pf ON pf.patient_examination_id = pe.patient_examination_id
-LEFT JOIN patient_finding_location_data pfl ON pfl.patientfinding_id = pf.patient_finding_id
-LEFT JOIN patient_finding_morphology_data pfm ON pfm.patientfinding_id = pf.patient_finding_id
-LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.patient_finding_id;
-
+        pe.date_end,
+        pe.examination_name,
+        pf.finding_name,
+        pfl.location_classification_id,
+        pfl.location_classification_name,
+        pfl.location_choice_name,
+        pfm.morphology_classification_name,
+        pfm.morphology_choice_name,
+        pfi.intervention_name
+    FROM patient_data pd
+    LEFT JOIN patient_examination_data pe ON pe.patient_id = pd.patient_id
+    LEFT JOIN patient_finding_data pf ON pf.patient_examination_id = pe.patient_examination_id
+    LEFT JOIN patient_finding_location_data pfl ON pfl.patientfinding_id = pf.patient_finding_id
+    LEFT JOIN patient_finding_morphology_data pfm ON pfm.patientfinding_id = pf.patient_finding_id
+    LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.patient_finding_id;
     """
 
     with connection.cursor() as cursor:
@@ -364,13 +406,15 @@ LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.p
         columns = [col[0] for col in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-    # If no data found
     if not results:
         return Response({"message": "No data found for the given patient ID"}, status=404)
 
-    # Formatting the output
+    # Serialize the data
+    serializer = PatientDetailsSerializer(results, many=True)
+
+    # Formatting the output for saving
     formatted_results = []
-    for row in results:
+    for row in serializer.data:
         formatted_text = f"""
         {row['patient_name']} - {row['patient_dob']} - Patient Examination ({row['date_start']} - {row['date_end']})
         {row['examination_name']} - None - {row['finding_name']}
@@ -380,9 +424,9 @@ LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.p
         """
         formatted_results.append(formatted_text.strip())
 
-    # **Saving formatted text to a file**
+    # Save formatted output to a file
     save_dir = os.path.join(settings.BASE_DIR, "patient_intervention_reports_from_database")
-    os.makedirs(save_dir, exist_ok=True)  # Create the directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)  # Create directory if it doesn't exist
     file_path = os.path.join(save_dir, f"patient_{patient_id}_report.txt")
 
     with open(file_path, "w", encoding="utf-8") as file:
@@ -391,7 +435,8 @@ LEFT JOIN patient_finding_intervention_data pfi ON pfi.patient_finding_id = pf.p
     return Response({
         "message": "Data saved successfully",
         "file_path": file_path,
-        "formatted_details": formatted_results
-    })
+        "formatted_details": serializer.data
+    }, status=status.HTTP_200_OK)
+
 
 

@@ -178,7 +178,8 @@ class FindingMorphologyClassificationChoiceSerializer(serializers.ModelSerialize
     """
     class Meta:
         model = FindingMorphologyClassificationChoice
-        fields = ['id', 'name', 'classification']
+        fields = ['id', 'name', 'classification_id']  # Ensure classification_id is included
+
 
 class PatientFindingMorphologySerializer(serializers.ModelSerializer):
     """
@@ -284,3 +285,19 @@ class PatientFindingInterventionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientFindingIntervention
         fields = ['id', 'patient_finding_id', 'intervention_id', 'intervention_name', 'state', 'date']
+
+
+
+class PatientDetailsSerializer(serializers.Serializer):
+    patient_name = serializers.CharField()
+    patient_dob = serializers.DateField()
+    date_start = serializers.DateField()
+    date_end = serializers.DateField()
+    examination_name = serializers.CharField()
+    finding_name = serializers.CharField(allow_null=True)
+    location_classification_id = serializers.IntegerField(allow_null=True)
+    location_classification_name = serializers.CharField(allow_null=True)
+    location_choice_name = serializers.CharField(allow_null=True)
+    morphology_classification_name = serializers.CharField(allow_null=True)
+    morphology_choice_name = serializers.CharField(allow_null=True)
+    intervention_name = serializers.CharField(allow_null=True)
