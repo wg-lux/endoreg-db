@@ -4,30 +4,56 @@
 from faker import Faker
 import gender_guesser.detector as gender_detector
 from icecream import ic
+import random
 
 
 def create_mock_patient_name(gender: str) -> tuple[str, str]:
+    """
+    Generate a mock patient's name based on the provided gender using the Faker library.
+    This function creates a tuple with a first name and a last name for a mock patient. It utilizes the "de_DE" locale for generating German names. When the input gender string is checked:
+    - If it contains "male", a male name is generated.
+    - If it contains "female", a female name is generated.
+    - Otherwise, a generic name is generated without considering gender.
+    Parameters:
+        gender (str): A string indicating the gender to be used for generating the name.
+    Returns:
+        tuple[str, str]: A tuple containing the first name and the last name.
+    """
+
     fake = Faker("de_DE")
-    if gender.lower() == "male":
+
+    if "male" in gender.lower():
+        gender = "male"
+    elif "female" in gender.lower():
+        gender = "female"
+
+    if gender == "male":
         first_name = fake.first_name_male()
         last_name = fake.last_name_male()
-    elif gender.lower() == "female":
+
+    elif gender == "female":
         first_name = fake.first_name_female()
         last_name = fake.last_name_female()
+
     else:
         first_name = fake.first_name()
         last_name = fake.last_name()
+
     return first_name, last_name
 
 
 def guess_name_gender(name: str) -> str:
     """
-    Guess the gender of a given name using the 'gender-guesser' library.
-
-    :param name: Name (typically first name) as a string.
-    :return: A string indicating the guessed gender (e.g., 'male', 'female',
-             'unknown', 'andy' for androgynous, etc.).
+    Guesses the gender for a given name by using a gender detector and retrieving the corresponding Gender model instance.
+    Parameters:
+        name (str): The name for which the gender is to be determined.
+    Returns:
+        Gender: The Gender object corresponding to the detected gender name.
+    Raises:
+        Gender.DoesNotExist: If no Gender object matching the detected gender is found.
+        Exception: For any other exceptions that occur during gender detection or database lookup.
     """
+
     from endoreg_db.models import Gender
 
     detector = gender_detector.Detector(case_sensitive=False)

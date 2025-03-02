@@ -8,6 +8,7 @@ from django.db import models
 from faker import Faker
 import random
 from datetime import datetime
+from icecream import ic
 
 
 class Patient(Person):
@@ -52,10 +53,12 @@ class Patient(Person):
         birth_month: int = None,
         birth_year: int = None,
     ):
-        from endoreg_db.utils import random_day_by_month_year
+        from endoreg_db.utils import random_day_by_month_year, create_mock_patient_name
 
         existing_pathient = cls.objects.filter(patient_hash=patient_hash).first()
         if existing_pathient:
+            ic(f"Patient with hash {patient_hash} already exists")
+            ic(f"Returning existing patient: {existing_pathient}")
             return existing_pathient
 
         # If no patient with the given hash exists, create a new pseudo patient
@@ -68,6 +71,21 @@ class Patient(Person):
 
         pseudo_dob = random_day_by_month_year(birth_month, birth_year)
         gender_name = gender.name
+        first_name, last_name = create_mock_patient_name(gender_name)
+
+        ic(f"Creating pseudo patient with hash {patient_hash}")
+        ic(f"Generated name: {first_name} {last_name}")
+
+        patient = cls.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            dob=pseudo_dob,
+            patient_hash=patient_hash,
+        )
+
+        patient.save()
+
+        return patient
 
     def __str__(self):
         return self.first_name + " " + self.last_name + " (" + str(self.dob) + ")"

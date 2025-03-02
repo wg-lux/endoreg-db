@@ -5,6 +5,7 @@ from endoreg_db.utils.hashs import (
     get_hash_string,
 )
 from datetime import date
+from icecream import ic
 
 
 class SensitiveMeta(models.Model):
@@ -75,10 +76,30 @@ class SensitiveMeta(models.Model):
 
         return cls.objects.create(**selected_data)
 
-    def get_or_create_patient(self):
+    def get_or_create_pseudo_patient(self):
         from endoreg_db.models import Patient
+        from datetime import date
+
+        dob = self.patient_dob
+
+        if isinstance(dob, str):
+            dob = date.fromisoformat(dob)
+
+        ic(type(dob))
+
+        month = dob.month
+        year = dob.year
 
         patient_hash = self.get_patient_hash()
+        patient = Patient.get_or_create_pseudo_patient_by_hash(
+            patient_hash=patient_hash,
+            center=self.center,
+            gender=self.patient_gender,
+            birth_year=year,
+            birth_month=month,
+        )
+
+        return patient
 
     def update_from_dict(self, data: dict):
         # data can contain more fields than the model has
