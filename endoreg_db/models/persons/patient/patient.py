@@ -24,83 +24,112 @@ class Patient(Person):
 
     """
 
-    #-----gc-08-dev--changings---
+    # -----gc-08-dev--changings---
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     dob = models.DateField(null=True, blank=True)
     gender = models.ForeignKey(
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
-    )  
+    )
     center = models.ForeignKey(
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
-  
+    patient_hash = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
 
+    center = models.ForeignKey(
+        "Center", on_delete=models.CASCADE, blank=True, null=True
+    )
 
-    center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
-    
+    @classmethod
+    def get_or_create_pseudo_patient_by_hash(
+        cls,
+        patient_hash: str,
+        center: "Center" = None,
+        gender: "Gender" = None,
+        birth_month: int = None,
+        birth_year: int = None,
+    ):
+        from endoreg_db.utils import random_day_by_month_year
+
+        existing_pathient = cls.objects.filter(patient_hash=patient_hash).first()
+        if existing_pathient:
+            return existing_pathient
+
+        # If no patient with the given hash exists, create a new pseudo patient
+        assert center, "Center must be provided to create a new pseudo patient"
+        assert gender, "Gender must be provided to create a new pseudo patient"
+        assert birth_month, (
+            "Birth month must be provided to create a new pseudo patient"
+        )
+        assert birth_year, "Birth year must be provided to create a new pseudo patient"
+
+        pseudo_dob = random_day_by_month_year(birth_month, birth_year)
+        gender_name = gender.name
 
     def __str__(self):
         return self.first_name + " " + self.last_name + " (" + str(self.dob) + ")"
-    
+
     def get_dob(self) -> datetime.date:
-        dob:datetime.date = self.dob
+        dob: datetime.date = self.dob
         return dob
-    
-    def get_unmatched_report_files(self): #field: self.report_files; filter: report_file.patient_examination = None
-        '''Returns all report files for this patient that are not matched to a patient examination.'''
+
+    def get_unmatched_report_files(
+        self,
+    ):  # field: self.report_files; filter: report_file.patient_examination = None
+        """Returns all report files for this patient that are not matched to a patient examination."""
 
         return self.reportfile_set.filter(patient_examination=None)
 
-    def get_unmatched_video_files(self): #field: self.videos; filter: video.patient_examination = None
-        '''Returns all video files for this patient that are not matched to a patient examination.'''
+    def get_unmatched_video_files(
+        self,
+    ):  # field: self.videos; filter: video.patient_examination = None
+        """Returns all video files for this patient that are not matched to a patient examination."""
         return self.videos.filter(patient_examination=None)
 
-    def get_patient_examinations(self): #field: self.patient_examinations
-        '''Returns all patient examinations for this patient ordered by date (most recent is first).'''
-        return self.patient_examinations.order_by('-date')
-    
+    def get_patient_examinations(self):  # field: self.patient_examinations
+        """Returns all patient examinations for this patient ordered by date (most recent is first)."""
+        return self.patient_examinations.order_by("-date")
+
     def create_examination(
-            self, 
-            examination_name_str:str=None, 
-            date_start:datetime=None,
-            date_end:datetime=None
-        ):
-        '''Creates a patient examination for this patient.'''
+        self,
+        examination_name_str: str = None,
+        date_start: datetime = None,
+        date_end: datetime = None,
+    ):
+        """Creates a patient examination for this patient."""
 
         if examination_name_str:
             from endoreg_db.models import Examination
+
             examination = Examination.objects.get(name=examination_name_str)
             patient_examination = PatientExamination(
-                patient=self, examination=examination,
-                date_start = date_start,
-                date_end = date_end
+                patient=self,
+                examination=examination,
+                date_start=date_start,
+                date_end=date_end,
             )
 
         else:
             patient_examination = PatientExamination(
-                patient=self,
-                date_start = date_start,
-                date_end = date_end
+                patient=self, date_start=date_start, date_end=date_end
             )
-            
+
         patient_examination.save()
 
         return patient_examination
-    
-    def create_examination_by_indication(self,
-        indication,
-        date_start:datetime=None,
-        date_end:datetime=None
+
+    def create_examination_by_indication(
+        self, indication, date_start: datetime = None, date_end: datetime = None
     ):
         from endoreg_db.models import (
-            ExaminationIndication, 
+            ExaminationIndication,
             Examination,
-            PatientExaminationIndication
+            PatientExaminationIndication,
         )
+
         assert isinstance(indication, ExaminationIndication)
 
         examination = indication.get_examination()
@@ -111,24 +140,27 @@ class Patient(Person):
             patient=self,
             examination=examination,
             date_start=date_start,
-            date_end=date_end
+            date_end=date_end,
         )
 
         patient_examination.save()
 
         patient_examination_indication = PatientExaminationIndication.objects.create(
-            patient_examination=patient_examination,
-            examination_indication=indication
+            patient_examination=patient_examination, examination_indication=indication
         )
         patient_examination_indication.save()
 
         return patient_examination, patient_examination_indication
 
-
     def create_event(
-            self, event_name_str:str, date_start:datetime=None, date_end:datetime=None, description:str=None
-        ):
+        self,
+        event_name_str: str,
+        date_start: datetime = None,
+        date_end: datetime = None,
+        description: str = None,
+    ):
         from endoreg_db.models import Event, PatientEvent
+
         event = Event.objects.get(name=event_name_str)
 
         if not date_start:
@@ -142,15 +174,12 @@ class Patient(Person):
 
         return patient_event
 
-
-
-
-    def create_examination_by_report_file(self, report_file:ReportFile):
-        '''Creates a patient examination for this patient based on the given report file.'''
+    def create_examination_by_report_file(self, report_file: ReportFile):
+        """Creates a patient examination for this patient based on the given report file."""
         patient_examination = PatientExamination(patient=self, report_file=report_file)
         patient_examination.save()
         return patient_examination
-    
+
     @classmethod
     def get_random_gender(self, p_male=0.5, p_female=0.5):
         """
@@ -161,33 +190,28 @@ class Patient(Person):
         :return: Gender object selected based on given probabilities.
         """
         from endoreg_db.models import Gender
-        
+
         # Extract names and probabilities
         gender_names = ["male", "female"]
         probabilities = [p_male, p_female]
-        
+
         # Debug: print the names and probabilities
         # print(f"Gender names: {gender_names}")
         # print(f"Probabilities: {probabilities}")
-        
+
         # Select a gender based on the given probabilities
         selected_gender = random.choices(gender_names, probabilities)[0]
         # Debug: print the selected gender
         # print(f"Selected gender: {selected_gender}")
-        
+
         # Fetch the corresponding Gender object from the database
         gender_obj = Gender.objects.get(name=selected_gender)
-        
+
         return gender_obj
 
-
     @classmethod
-    def get_random_age(self, 
-            min_age = 55,
-            max_age = 90,
-            mean_age = 65,
-            std_age = 10,
-            distribution = "normal"
+    def get_random_age(
+        self, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
     ):
         """
         Get a random age based on the given distribution.
@@ -203,9 +227,9 @@ class Patient(Person):
             age = int(random.normalvariate(mean_age, std_age))
         else:
             age = int(random.uniform(min_age, max_age))
-        
+
         return age
-    
+
     @classmethod
     def get_dob_from_age(self, age, current_date=None):
         """
@@ -223,22 +247,22 @@ class Patient(Person):
         # randomize the day and month by adding a random number of days (0-364) to the date
 
         return dob
-        
+
     @classmethod
     def get_random_name_for_gender(self, gender_obj, locale="de_DE"):
         gender = gender_obj.name
         fake = Faker(locale)
-        
+
         if gender == "male":
             first_name = fake.first_name_male()
             last_name = fake.last_name_male()
 
-        else: 
+        else:
             first_name = fake.first_name_female()
             last_name = fake.last_name_female()
 
         return last_name, first_name
-    
+
     @classmethod
     def create_generic(self, center="gplay_case_generator"):
         """
@@ -248,6 +272,7 @@ class Patient(Person):
         :return: The created patient.
         """
         from endoreg_db.models import Center
+
         gender = Patient.get_random_gender()
         last_name, first_name = Patient.get_random_name_for_gender(gender)
 
@@ -260,7 +285,7 @@ class Patient(Person):
             first_name=first_name,
             last_name=last_name,
             dob=dob,
-            gender = gender,
+            gender=gender,
         )
         patient.save()
         return patient
@@ -274,7 +299,11 @@ class Patient(Person):
         # calculate correct age based on current date including day and month
         current_date = datetime.now()
         dob = self.dob
-        age = current_date.year - dob.year - ((current_date.month, current_date.day) < (dob.month, dob.day))
+        age = (
+            current_date.year
+            - dob.year
+            - ((current_date.month, current_date.day) < (dob.month, dob.day))
+        )
         return age
 
     def create_lab_sample(self, sample_type="generic", date=None, save=True):
@@ -287,19 +316,22 @@ class Patient(Person):
         :return: The created lab sample.
         """
         from endoreg_db.models import PatientLabSample, PatientLabSampleType
+
         if date is None:
             date = datetime.now()
 
         if isinstance(sample_type, str):
             sample_type = PatientLabSampleType.objects.get(name=sample_type)
-            assert sample_type is not None, f"Sample type with name '{sample_type}' not found."#
+            assert sample_type is not None, (
+                f"Sample type with name '{sample_type}' not found."
+            )  #
         elif not isinstance(sample_type, PatientLabSampleType):
-            raise ValueError("Sample type must be either a string or a PatientLabSampleType object.")
-        
+            raise ValueError(
+                "Sample type must be either a string or a PatientLabSampleType object."
+            )
+
         patient_lab_sample = PatientLabSample.objects.create(
-            patient=self,
-            sample_type=sample_type,
-            date=date
+            patient=self, sample_type=sample_type, date=date
         )
 
         if save:
@@ -307,15 +339,16 @@ class Patient(Person):
 
         return patient_lab_sample
 
+
 class PatientForm(forms.ModelForm):
     class Meta:
         model = Patient
-        fields = '__all__'
+        fields = "__all__"
         widgets = {
-            'dob': DateInput(attrs={'type': 'date'}),
+            "dob": DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            field.widget.attrs['class'] = 'form-control'
+            field.widget.attrs["class"] = "form-control"

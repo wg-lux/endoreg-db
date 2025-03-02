@@ -26,6 +26,8 @@ class Command(BaseCommand):
         call_command("load_distribution_data", stdout=out, verbose=verbose)
 
         call_command("load_gender_data", stdout=out, verbose=verbose)
+        call_command("load_report_reader_flag_data", stdout=out, verbose=verbose)
+        call_command("load_pdf_type_data", stdout=out, verbose=verbose)
         call_command("load_unit_data", stdout=out, verbose=verbose)
         call_command("load_disease_data", stdout=out, verbose=verbose)
         call_command("load_event_data", stdout=out, verbose=verbose)

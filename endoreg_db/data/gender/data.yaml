@@ -6,10 +6,27 @@
     abbreviation: "m"
 - model: endoreg_db.gender
   fields:
+    name: "mostly_male"
+    name_de: "überwiegend männlich"
+    name_en: "mostly male"
+- model: endoreg_db.gender
+  fields:
     name: "female"
     name_de: "weiblich"
     name_en: "female"
     abbreviation: "f"
+- model: endoreg_db.gender
+  fields:
+    name: "mostly_femaly"
+    name_de: "überwiegend weiblich"
+    name_en: "mostly female"
+    abbreviation: "mf"
+- model: endoreg_db.gender
+  fields:
+    name: "andy"
+    name_de: "andy"
+    name_en: "andy"
+    abbreviation: "andy"
 - model: endoreg_db.gender
   fields:
     name: "other"

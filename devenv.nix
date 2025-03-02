@@ -36,7 +36,9 @@ in
   };
 
   scripts = {
+    hello.package = pkgs.zsh;
     hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
+    runtests.package = pkgs.zsh;
     runtests.exec = "${pkgs.uv}/bin/uv run python runtests.py";
   };
 
