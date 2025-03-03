@@ -55,11 +55,13 @@ class Patient(Person):
     ):
         from endoreg_db.utils import random_day_by_month_year, create_mock_patient_name
 
+        created = False
+
         existing_pathient = cls.objects.filter(patient_hash=patient_hash).first()
         if existing_pathient:
             ic(f"Patient with hash {patient_hash} already exists")
             ic(f"Returning existing patient: {existing_pathient}")
-            return existing_pathient
+            return existing_pathient, created
 
         # If no patient with the given hash exists, create a new pseudo patient
         assert center, "Center must be provided to create a new pseudo patient"
@@ -84,8 +86,9 @@ class Patient(Person):
         )
 
         patient.save()
+        created = True
 
-        return patient
+        return patient, created
 
     def __str__(self):
         return self.first_name + " " + self.last_name + " (" + str(self.dob) + ")"

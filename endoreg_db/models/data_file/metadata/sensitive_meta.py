@@ -6,6 +6,10 @@ from endoreg_db.utils.hashs import (
 )
 from datetime import date
 from icecream import ic
+import os
+
+# get DJANGO_SALT from settings
+SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
 
 
 class SensitiveMeta(models.Model):
@@ -101,6 +105,19 @@ class SensitiveMeta(models.Model):
 
         return patient
 
+    def get_or_create_pseudo_patient_examination(self):
+        from endoreg_db.models import PatientExamination
+        from datetime import date
+
+        patient_hash = self.get_patient_hash()
+        examination_hash = self.get_patient_examination_hash()
+
+        patient_examination = (
+            PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
+                patient_hash, examination_hash
+            )
+        )
+
     def update_from_dict(self, data: dict):
         # data can contain more fields than the model has
         field_names = [_.name for _ in self._meta.fields]
@@ -124,29 +141,7 @@ class SensitiveMeta(models.Model):
     def __repr__(self):
         return self.__str__()
 
-    def _get_hash_str_raw(
-        self,
-        first_name: str = "",
-        last_name: str = "",
-        dob_str: str = "",
-        center_name: str = "",
-        examination_date: date = date(1900, 1, 1),
-        endoscope_sn: str = "",
-        salt: str = "",
-    ):
-        # endoscope_sn = self.endoscope_sn
-        endoscope_sn = ""  # TODO Do we want to include this?
-        return get_hash_string(
-            first_name=first_name,
-            last_name=last_name,
-            dob_str=dob_str,
-            center_name=center_name,
-            examination_date=examination_date,
-            endoscope_sn=endoscope_sn,
-            salt=salt,
-        )
-
-    def get_patient_hash(self, salt=""):
+    def get_patient_hash(self, salt=SECRET_SALT):
         from hashlib import sha256
         from datetime import datetime
 

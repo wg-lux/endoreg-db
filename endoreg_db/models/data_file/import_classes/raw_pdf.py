@@ -17,6 +17,7 @@ from agl_report_reader.report_reader import ReportReader
 
 from endoreg_db.utils.hashs import get_pdf_hash
 from ..metadata import SensitiveMeta
+from ..base_classes.abstract_pdf import AbstractPdfFile
 
 # setup logging to pdf_import.log
 import logging
@@ -24,12 +25,12 @@ import logging
 import shutil
 from pathlib import Path
 
+from ..base_classes.utils import (
+    STORAGE_LOCATION,
+)
+
 logger = logging.getLogger("pdf_import")
 
-# get pdf location from settings, default to ~/erc_data/raw_pdf and create if not exists
-PSEUDO_DIR: Path = getattr(settings, "PSEUDO_DIR", settings.BASE_DIR / "erc_data")
-
-STORAGE_LOCATION = PSEUDO_DIR
 RAW_PDF_DIR_NAME = "raw_pdf"
 RAW_PDF_DIR = STORAGE_LOCATION / RAW_PDF_DIR_NAME
 
@@ -37,25 +38,11 @@ if not RAW_PDF_DIR.exists():
     RAW_PDF_DIR.mkdir(parents=True)
 
 
-class RawPdfFile(models.Model):
+class RawPdfFile(AbstractPdfFile):
     file = models.FileField(
         upload_to=f"{RAW_PDF_DIR_NAME}/",
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
-    )
-
-    pdf_hash = models.CharField(max_length=255, unique=True)
-    pdf_type = models.ForeignKey(
-        "PdfType",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-    )
-    center = models.ForeignKey(
-        "Center",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
     )
 
     state_report_processing_required = models.BooleanField(default=True)
@@ -70,16 +57,7 @@ class RawPdfFile(models.Model):
         blank=True,
     )
 
-    text = models.TextField(blank=True, null=True)
     anonymized_text = models.TextField(blank=True, null=True)
-
-    raw_meta = models.JSONField(blank=True, null=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        str_repr = f"RawPdfFile: {self.file.name}"
-        return str_repr
 
     @classmethod
     def create_from_file(
@@ -98,13 +76,16 @@ class RawPdfFile(models.Model):
 
         pdf_hash = get_pdf_hash(file_path)
         ic(pdf_hash)
-
+        new_file_path = RAW_PDF_DIR / new_file_name
         # check if pdf file already exists
 
         if cls.objects.filter(pdf_hash=pdf_hash).exists():
             existing_pdf_file = cls.objects.filter(pdf_hash=pdf_hash).get()
             logger.warning(f"RawPdfFile with hash {pdf_hash} already exists")
             ic(f"RawPdfFile with hash {pdf_hash} already exists")
+
+            existing_pdf_file.verify_existing_file(fallback_file=file_path)
+
             return existing_pdf_file
 
         else:
@@ -115,8 +96,6 @@ class RawPdfFile(models.Model):
 
         # pdf_type = PdfType.objects.get(name=pdf_type_name)
         center = Center.objects.get(name=center_name)
-
-        new_file_path = RAW_PDF_DIR / new_file_name
 
         logger.info(f"Copying file to {new_file_path}")
         ic(f"Copying file to {new_file_path}")
@@ -146,14 +125,16 @@ class RawPdfFile(models.Model):
 
         return raw_pdf
 
-    def delete_with_file(self):
-        file_path = Path(self.file.path)
-        if file_path.exists():
-            file_path.unlink()
-            logger.info(f"File removed: {file_path}")
+    def verify_existing_file(self, fallback_file):
+        if not Path(self.file.path).exists():
+            logger.warning(f"File not found: {self.file.path}")
+            logger.warning(f"Using fallback file: {fallback_file}")
+            ic(f"File not found: {self.file.path}")
+            ic(f"Copy fallback file: {fallback_file} to existing filepath")
 
-        r = self.delete()
-        return r
+            shutil.copy(fallback_file, self.file.path)
+
+            self.save()
 
     def process_file(self, verbose=False):
         pdf_path = self.file.path
@@ -180,33 +161,6 @@ class RawPdfFile(models.Model):
             sensitive_meta.update_from_dict(report_meta)
 
         return text, anonymized_text, report_meta
-
-    def update(self, save=True, verbose=True):
-        try:
-            self.text, self.anonymized_text, self.raw_meta = self.process_file(
-                verbose=verbose
-            )
-            self.state_report_processed = True
-            self.state_report_processing_required = False
-
-            if save:
-                self.save()
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error processing file: {self.file.path}")
-            logger.error(e)
-            return False
-
-    def save(self, *args, **kwargs):
-        if not self.file.name.endswith(".pdf"):
-            raise ValidationError("Only PDF files are allowed")
-
-        if not self.pdf_hash:
-            self.pdf_hash = get_pdf_hash(self.file.path)
-
-        super().save(*args, **kwargs)
 
     def get_report_reader_config(self):
         from endoreg_db.models import PdfType, Center
