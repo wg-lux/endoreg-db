@@ -5,7 +5,12 @@ from .parse_and_generate_yaml import collect_center_names
 from .validate_endo_roi import validate_endo_roi
 from .pydantic_models import DbConfig
 from .dates import random_day_by_month_year
-from .hashs import get_hash_string
+from .hashs import (
+    get_hash_string,
+    get_pdf_hash,
+    get_video_hash,
+    get_patient_examination_hash,
+)
 from .names import create_mock_patient_name, guess_name_gender
 
 __all__ = [
@@ -17,4 +22,7 @@ __all__ = [
     "get_hash_string",
     "create_mock_patient_name",
     "guess_name_gender",
+    "get_pdf_hash",
+    "get_video_hash",
+    "get_patient_examination_hash",
 ]

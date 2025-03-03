@@ -97,12 +97,18 @@ class RawPdfFile(models.Model):
         new_file_name, uuid = get_uuid_filename(file_path)
 
         pdf_hash = get_pdf_hash(file_path)
+        ic(pdf_hash)
 
         # check if pdf file already exists
+
         if cls.objects.filter(pdf_hash=pdf_hash).exists():
+            existing_pdf_file = cls.objects.filter(pdf_hash=pdf_hash).get()
             logger.warning(f"RawPdfFile with hash {pdf_hash} already exists")
             ic(f"RawPdfFile with hash {pdf_hash} already exists")
-            return None
+            return existing_pdf_file
+
+        else:
+            ic(f"No existing pdf file found for hash {pdf_hash}")
 
         # assert pdf_type_name is not None, "pdf_type_name is required"
         assert center_name is not None, "center_name is required"
@@ -125,6 +131,7 @@ class RawPdfFile(models.Model):
             # pdf_type=pdf_type,
             center=center,
         )
+        raw_pdf.save()
         logger.info(f"RawPdfFile object created: {raw_pdf}")
         ic(f"RawPdfFile object created: {raw_pdf}")
 
