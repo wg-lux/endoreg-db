@@ -1,6 +1,5 @@
 from .video import (
     Video,
-    LegacyVideo,
 )
 from ..metadata import (
     VideoImportMeta,
@@ -8,6 +7,5 @@ from ..metadata import (
 
 __all__ = [
     "Video",
-    "LegacyVideo",
     "VideoImportMeta",
 ]

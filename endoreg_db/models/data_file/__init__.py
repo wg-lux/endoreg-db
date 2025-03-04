@@ -1,7 +1,7 @@
-from .frame import Frame, LegacyFrame
+from .frame import Frame
 from .report_file import ReportFile
-from .video import Video, LegacyVideo, VideoImportMeta
-from .video_segment import LegacyLabelVideoSegment, LabelVideoSegment
+from .video import Video, VideoImportMeta
+from .video_segment import LabelVideoSegment
 from .metadata import (
     SensitiveMeta,
     PdfMeta,
@@ -18,11 +18,8 @@ from .import_classes import (
 
 __all__ = [
     "Frame",
-    "LegacyFrame",
     "ReportFile",
     "Video",
-    "LegacyVideo",
-    "LegacyLabelVideoSegment",
     "LabelVideoSegment",
     "SensitiveMeta",
     "PdfMeta",

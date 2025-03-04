@@ -2,7 +2,6 @@
 
 from .image_classification import ImageClassificationAnnotation
 from .binary_classification_annotation_task import (
-    LegacyBinaryClassificationAnnotationTask,
     BinaryClassificationAnnotationTask,
 )
 from .anonymized_image_annotation import (
@@ -21,7 +20,6 @@ from .video_segmentation_labelset import VideoSegmentationLabelSet
 
 __all__ = [
     "ImageClassificationAnnotation",
-    "LegacyBinaryClassificationAnnotationTask",
     "BinaryClassificationAnnotationTask",
     "AnonymousImageAnnotation",
     "DroppedName",

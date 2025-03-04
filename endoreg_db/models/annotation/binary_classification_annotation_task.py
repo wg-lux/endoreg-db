@@ -1,59 +1,59 @@
 from django.db import models
 from rest_framework import serializers
 from ..label import Label
-from ..data_file.video_segment import LegacyLabelVideoSegment
 from .image_classification import ImageClassificationAnnotation
 
 ANNOTATION_PER_S_THRESHOLD = 2
 
-def clear_finished_legacy_tasks():
-    """
-    Deletes all finished LegacyBinaryClassificationAnnotationTask entries.
-    """
-    tasks = LegacyBinaryClassificationAnnotationTask.objects.filter(is_finished=True)
-    tasks.delete()
+# TODO Migrate
+# def clear_finished_legacy_tasks():
+#     """
+#     Deletes all finished LegacyBinaryClassificationAnnotationTask entries.
+#     """
+#     tasks = LegacyBinaryClassificationAnnotationTask.objects.filter(is_finished=True)
+#     tasks.delete()
 
-def get_legacy_binary_classification_annotation_tasks_by_label(label:Label, n:int=100, legacy=False):
-    clear_finished_legacy_tasks()
-    """
-    Retrieves legacy binary classification annotation tasks for a specific label.
+# def get_legacy_binary_classification_annotation_tasks_by_label(label:Label, n:int=100, legacy=False):
+#     clear_finished_legacy_tasks()
+#     """
+#     Retrieves legacy binary classification annotation tasks for a specific label.
 
-    Args:
-        label (Label): The label to filter tasks by.
-        n (int): Maximum number of tasks to retrieve. Defaults to 100.
-        legacy (bool): If True, includes legacy tasks. Defaults to False.
-    """
-    if legacy:
-        # fetch all LegacyLabelVideoSegments with the given label
-        _segments = LegacyLabelVideoSegment.objects.filter(label=label)
-        frames_for_tasks = []
+#     Args:
+#         label (Label): The label to filter tasks by.
+#         n (int): Maximum number of tasks to retrieve. Defaults to 100.
+#         legacy (bool): If True, includes legacy tasks. Defaults to False.
+#     """
+#     if legacy:
+#         # fetch all LegacyLabelVideoSegments with the given label
+#         _segments = LegacyLabelVideoSegment.objects.filter(label=label)
+#         frames_for_tasks = []
 
-        for segment in _segments:
-            # check if the segment has already been annotated
-            annotations = list(ImageClassificationAnnotation.objects.filter(legacy_frame__in=segment.get_frames(), label=label))
-            segment_len_in_s = segment.get_segment_len_in_s()
+#         for segment in _segments:
+#             # check if the segment has already been annotated
+#             annotations = list(ImageClassificationAnnotation.objects.filter(legacy_frame__in=segment.get_frames(), label=label))
+#             segment_len_in_s = segment.get_segment_len_in_s()
 
-            target_annotation_number = segment_len_in_s * ANNOTATION_PER_S_THRESHOLD
+#             target_annotation_number = segment_len_in_s * ANNOTATION_PER_S_THRESHOLD
 
-            if len(annotations) < target_annotation_number:
-                get_frame_number = int(target_annotation_number - len(annotations))
-                frames = segment.get_frames_without_annotation(get_frame_number)
-                frames_for_tasks.extend(frames)
+#             if len(annotations) < target_annotation_number:
+#                 get_frame_number = int(target_annotation_number - len(annotations))
+#                 frames = segment.get_frames_without_annotation(get_frame_number)
+#                 frames_for_tasks.extend(frames)
 
-            if len(frames_for_tasks) >= n:
-                break
+#             if len(frames_for_tasks) >= n:
+#                 break
 
-        # create tasks
-        tasks = []
-        for frame in frames_for_tasks:
+#         # create tasks
+#         tasks = []
+#         for frame in frames_for_tasks:
 
-            # get_or_create task
-            task, created = LegacyBinaryClassificationAnnotationTask.objects.get_or_create(
-                label=label,
-                image_path=frame.image.path,
-                frame_id=frame.pk,
-            )
-        
+#             # get_or_create task
+#             task, created = LegacyBinaryClassificationAnnotationTask.objects.get_or_create(
+#                 label=label,
+#                 image_path=frame.image.path,
+#                 frame_id=frame.pk,
+#             )
+
 
 class AbstractBinaryClassificationAnnotationTask(models.Model):
     """
@@ -70,6 +70,7 @@ class AbstractBinaryClassificationAnnotationTask(models.Model):
         labelstudio_project_id (int): The Label Studio project ID.
         labelstudio_task_id (int): The Label Studio task ID.
     """
+
     label = models.ForeignKey("Label", on_delete=models.CASCADE)
     is_finished = models.BooleanField(default=False)
     date_created = models.DateTimeField(auto_now_add=True)
@@ -83,34 +84,26 @@ class AbstractBinaryClassificationAnnotationTask(models.Model):
     class Meta:
         abstract = True
 
-class BinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationTask):
-     """
-     Represents a binary classification task for a frame.
-     
-     Attributes:
-        frame (ForeignKey): The associated frame for this task.
-     """
-     frame = models.ForeignKey("Frame", on_delete=models.CASCADE, related_name="binary_classification_annotation_tasks")
-     image_type = models.CharField(max_length=255, default="frame")  # Default image type for non-legacy tasks
-     
-     def get_frame(self) -> "Frame":
-        """
-        Retrieves the frame associated with this task.
-        """
-        return self.frame
 
-class LegacyBinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationTask):
+class BinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationTask):
     """
-    Represents a legacy binary classification task for a frame.
+    Represents a binary classification task for a frame.
 
     Attributes:
-        frame (ForeignKey): The associated legacy frame for this task.
+       frame (ForeignKey): The associated frame for this task.
     """
-    frame = models.ForeignKey("LegacyFrame", on_delete=models.CASCADE, related_name="binary_classification_annotation_tasks")
-    image_type = models.CharField(max_length=255, default="legacy")  # Default image type for legacy tasks
 
-    def get_frame(self) -> "LegacyFrame":
+    frame = models.ForeignKey(
+        "Frame",
+        on_delete=models.CASCADE,
+        related_name="binary_classification_annotation_tasks",
+    )
+    image_type = models.CharField(
+        max_length=255, default="frame"
+    )  # Default image type for non-legacy tasks
+
+    def get_frame(self) -> "Frame":
         """
-        Retrieves the legacy frame associated with this task.
+        Retrieves the frame associated with this task.
         """
         return self.frame

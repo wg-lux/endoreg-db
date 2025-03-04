@@ -8,20 +8,23 @@ import cv2
 import numpy as np
 
 DJANGO_NAME_SALT = os.environ.get("DJANGO_NAME_SALT", "default_salt")
-PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 
+# Directory stuff
+PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 STORAGE_LOCATION = PSEUDO_DIR
-FRAME_DIR_NAME = "frames"
-VIDEO_DIR_NAME = "videos"
-RAW_VIDEO_DIR_NAME = "videos"  # Deprecate this
+FRAME_DIR_NAME = os.environ.get("DJANGO_FRAME_DIR_NAME", "frames")
+VIDEO_DIR_NAME = os.environ.get("DJANGO_VIDEO_DIR_NAME", "videos")
+RAW_VIDEO_DIR_NAME = VIDEO_DIR_NAME  # Deprecate this?
 
 FRAME_DIR = STORAGE_LOCATION / FRAME_DIR_NAME
 VIDEO_DIR = STORAGE_LOCATION / VIDEO_DIR_NAME
 RAW_VIDEO_DIR = STORAGE_LOCATION / RAW_VIDEO_DIR_NAME
 
-
 VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 RAW_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+
+# AI Stuff
+FRAME_PROCESSING_BATCH_SIZE = 1000
 
 
 def get_transcoded_file_path(source_file_path: Path, suffix: str = "mp4"):

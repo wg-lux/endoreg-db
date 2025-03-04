@@ -1,10 +1,7 @@
-from ..base_classes import AbstractVideo
 from django.db import models
 
 from endoreg_db.models.data_file.frame import Frame
-from endoreg_db.models.data_file.frame import LegacyFrame
 
-BATCH_SIZE = 1000
 
 from django.db import models
 from pathlib import Path
@@ -30,6 +27,7 @@ import cv2
 from ..base_classes.utils import (
     VIDEO_DIR_NAME,
     STORAGE_LOCATION,
+    FRAME_PROCESSING_BATCH_SIZE,
 )
 
 
@@ -46,8 +44,6 @@ from ..base_classes import AbstractVideoFile
 import io
 from datetime import date
 
-BATCH_SIZE = 1000
-
 
 class Video(AbstractVideoFile):
     file = models.FileField(
@@ -61,7 +57,7 @@ class Video(AbstractVideoFile):
     )
 
     raw_video = models.ForeignKey(
-        "RawVideo", on_delete=models.CASCADE, related_name="videos"
+        "RawVideoFile", on_delete=models.CASCADE, related_name="videos"
     )
 
     # Deprecate and move to video meta?
@@ -268,7 +264,7 @@ class Video(AbstractVideoFile):
             frames_to_create.append(frame)
 
             # Perform bulk create when reaching BATCH_SIZE
-            if len(frames_to_create) >= BATCH_SIZE:
+            if len(frames_to_create) >= FRAME_PROCESSING_BATCH_SIZE:
                 self._bulk_create_frames(frames_to_create)
                 frames_to_create = []
 

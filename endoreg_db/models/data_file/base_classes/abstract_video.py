@@ -64,9 +64,6 @@ class AbstractVideoFile(models.Model):
         "SensitiveMeta", on_delete=models.CASCADE, blank=True, null=True
     )
 
-    patient = models.ForeignKey(
-        "Patient", on_delete=models.SET_NULL, blank=True, null=True
-    )
     center = models.ForeignKey("Center", on_delete=models.CASCADE)
     processor = models.ForeignKey(  # TODO Migrate to VideoMeta
         "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True

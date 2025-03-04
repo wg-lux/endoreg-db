@@ -92,6 +92,10 @@ class RawVideoFile(AbstractVideoFile):
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
 
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.SET_NULL, blank=True, null=True
+    )
+
     sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
         on_delete=models.CASCADE,

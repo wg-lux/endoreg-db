@@ -7,18 +7,8 @@ from django.db import models
 
 
 class Frame(AbstractFrame):
-    video = models.ForeignKey(
-        "VideoFile", on_delete=models.CASCADE, related_name="frames"
-    )
-
-
-class LegacyFrame(AbstractFrame):
-    video = models.ForeignKey(
-        "LegacyVideo", on_delete=models.CASCADE, related_name="frames"
-    )
+    video = models.ForeignKey("Video", on_delete=models.CASCADE, related_name="frames")
     image = models.ImageField(upload_to="legacy_frames", blank=True, null=True)
-    suffix = models.CharField(max_length=255)
-    # ImageClassificationAnnotation has a foreign key to this model (related name: image_classification_annotations)
 
     class Meta:
         unique_together = ("video", "frame_number")

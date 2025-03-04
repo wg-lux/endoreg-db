@@ -145,7 +145,6 @@ from .data_file import (
     Frame,
     ReportFile,
     Video,
-    LegacyLabelVideoSegment,
     LabelVideoSegment,
     SensitiveMeta,
     PdfMeta,
@@ -163,7 +162,6 @@ from .label import Label, LabelType, LabelSet
 # Annotation
 from .annotation import (
     ImageClassificationAnnotation,
-    LegacyBinaryClassificationAnnotationTask,
     BinaryClassificationAnnotationTask,
     AnonymousImageAnnotation,
     DroppedName,
@@ -173,13 +171,6 @@ from .annotation import (
     VideoSegmentationLabel,
     VideoSegmentationAnnotation,
     VideoSegmentationLabelSet,
-)
-
-# Legacy data
-from .legacy_data import (
-    LegacyImage,
-    LegacyFrame,
-    LegacyVideo,
 )
 
 # Other
@@ -223,7 +214,6 @@ from .quiz import (
 # Prediction
 from .prediction import (
     ImageClassificationPrediction,
-    LegacyVideoPredictionMeta,
     VideoPredictionMeta,
 )
 
@@ -326,7 +316,6 @@ __all__ = [
     "LabelType",
     "LabelSet",
     "ImageClassificationAnnotation",
-    "LegacyBinaryClassificationAnnotationTask",
     "BinaryClassificationAnnotationTask",
     "AnonymousImageAnnotation",
     "DroppedName",
@@ -335,9 +324,6 @@ __all__ = [
     "UploadedFile",
     "VideoSegmentationLabel",
     "VideoSegmentationAnnotation",
-    "LegacyImage",
-    "LegacyFrame",
-    "LegacyVideo",
     "Material",
     "Resource",
     "TransportRoute",
@@ -361,7 +347,6 @@ __all__ = [
     "QuizQuestion",
     "QuizQuestionType",
     "ImageClassificationPrediction",
-    "LegacyVideoPredictionMeta",
     "VideoPredictionMeta",
     "EndoscopyProcessor",
     "Endoscope",
@@ -370,7 +355,6 @@ __all__ = [
     "Frame",
     "ReportFile",
     "Video",
-    "LegacyLabelVideoSegment",
     "LabelVideoSegment",
     "SensitiveMeta",
     "PdfMeta",

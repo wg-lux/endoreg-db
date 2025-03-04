@@ -1,15 +1,15 @@
 from django.db import models
 
 from endoreg_db.models.label.label import LabelSet
-from ..data_file.video import LegacyVideo, Video
-from ..data_file.frame import LegacyFrame, Frame
+from ..data_file.video import Video
+from ..data_file.frame import Frame
 from .image_classification import ImageClassificationPrediction
 from ..data_file.video_segment import (
-    LegacyLabelVideoSegment,
     LabelVideoSegment,
     find_segments_in_prediction_array,
 )
-from ..information_source import get_prediction_information_source
+
+# from ..information_source import get_prediction_information_source
 import numpy as np
 import pickle
 
@@ -39,9 +39,11 @@ class AbstractVideoPredictionMeta(models.Model):
 
     def get_video_model(self):
         assert 1 == 2, "This method should be overridden in derived classes"
+        return None
 
     def get_frame_model(self):
         assert 1 == 2, "This method should be overridden in derived classes"
+        return None
 
     def get_label_list(self):
         """
@@ -53,6 +55,7 @@ class AbstractVideoPredictionMeta(models.Model):
 
     def get_video_segment_model(self):
         assert 1 == 2, "This method should be overridden in derived classes"
+        return None
 
     def save_prediction_array(self, prediction_array: np.array):
         """
@@ -102,7 +105,7 @@ class AbstractVideoPredictionMeta(models.Model):
         window = np.ones(window_size_in_frames) / window_size_in_frames
 
         # Create running mean array with the same shape as the confidence array
-        running_mean_array = np.zeros(confidence_array.shape)
+        _running_mean_array = np.zeros(confidence_array.shape)
 
         # Calculate the padding size
         pad_size = window_size_in_frames // 2
@@ -123,28 +126,29 @@ class AbstractVideoPredictionMeta(models.Model):
 
         return running_mean
 
-    def create_video_segments_for_label(self, segments, label):
-        """
-        Creates video segments for the given label and segments.
-        Segments is a list of tuples (start_frame_number, end_frame_number).
-        Labels is a Label object.
-        """
-        video = self.video
-        video_segment_model = self.get_video_segment_model()
-        information_source = get_prediction_information_source()
+    # FIXME
+    # def create_video_segments_for_label(self, segments, label):
+    #     """
+    #     Creates video segments for the given label and segments.
+    #     Segments is a list of tuples (start_frame_number, end_frame_number).
+    #     Labels is a Label object.
+    #     """
+    #     video = self.video
+    #     video_segment_model = self.get_video_segment_model()
+    #     information_source = get_prediction_information_source()
 
-        for segment in segments:
-            start_frame_number, end_frame_number = segment
+    #     for segment in segments:
+    #         start_frame_number, end_frame_number = segment
 
-            video_segment = video_segment_model(
-                video=video,
-                prediction_meta=self,
-                start_frame_number=start_frame_number,
-                end_frame_number=end_frame_number,
-                source=information_source,
-                label=label,
-            )
-            video_segment.save()
+    #         video_segment = video_segment_model(
+    #             video=video,
+    #             prediction_meta=self,
+    #             start_frame_number=start_frame_number,
+    #             end_frame_number=end_frame_number,
+    #             source=information_source,
+    #             label=label,
+    #         )
+    #         video_segment.save()
 
     def create_video_segments(self, segment_length_threshold_in_s: float = None):
         if not segment_length_threshold_in_s:
@@ -171,9 +175,6 @@ class AbstractVideoPredictionMeta(models.Model):
 
             # create video segments
             self.create_video_segments_for_label(segments, label)
-
-
-import numpy as np
 
 
 class VideoPredictionMeta(AbstractVideoPredictionMeta):
@@ -209,50 +210,6 @@ class VideoPredictionMeta(AbstractVideoPredictionMeta):
             predictions = ImageClassificationPrediction.objects.filter(
                 label=label, frame__video=video, model_meta=model_meta
             ).order_by("frame__frame_number")
-            confidences = np.array(
-                [prediction.confidence for prediction in predictions]
-            )
-            smooth_confidences = self.apply_running_mean(
-                confidences, window_size_in_seconds
-            )
-            # calculate binary predictions
-            binary_predictions = smooth_confidences > 0.5
-            # add to prediction array
-            prediction_array[:, i] = binary_predictions
-
-        # save prediction array
-        self.save_prediction_array(prediction_array)
-
-
-class LegacyVideoPredictionMeta(AbstractVideoPredictionMeta):
-    video = models.OneToOneField(
-        "LegacyVideo", on_delete=models.CASCADE, related_name="video_prediction_meta"
-    )
-
-    def get_video_model(self):
-        return LegacyVideo
-
-    def get_frame_model(self):
-        return LegacyFrame
-
-    def get_video_segment_model(self):
-        return LegacyLabelVideoSegment
-
-    def calculate_prediction_array(self, window_size_in_seconds: int = None):
-        """
-        Fetches all predictions for this video, labelset, and model meta.
-        """
-        video: LegacyVideo = self.video
-
-        model_meta = self.model_meta
-        label_list = self.get_label_list()
-
-        prediction_array = np.zeros((video.get_frame_number, len(label_list)))
-        for i, label in enumerate(label_list):
-            # fetch all predictions for this label, video, and model meta ordered by ImageClassificationPrediction.frame.frame_number
-            predictions = ImageClassificationPrediction.objects.filter(
-                label=label, legacy_frame__video=video, model_meta=model_meta
-            ).order_by("legacy_frame__frame_number")
             confidences = np.array(
                 [prediction.confidence for prediction in predictions]
             )
