@@ -14,9 +14,21 @@ SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
 
 class SensitiveMeta(models.Model):
     examination_date = models.DateField(blank=True, null=True)
+    pseudo_patient = models.ForeignKey(
+        "Patient",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
     patient_first_name = models.CharField(max_length=255, blank=True, null=True)
     patient_last_name = models.CharField(max_length=255, blank=True, null=True)
     patient_dob = models.DateField(blank=True, null=True)
+    pseudo_examination = models.ForeignKey(
+        "PatientExamination",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
     patient_gender = models.ForeignKey(
         "Gender",
         on_delete=models.CASCADE,
@@ -34,6 +46,9 @@ class SensitiveMeta(models.Model):
         null=True,
     )
 
+    examiner_first_name = models.CharField(max_length=255, blank=True, null=True)
+    examiner_last_name = models.CharField(max_length=255, blank=True, null=True)
+
     examination_hash = models.CharField(max_length=255, blank=True, null=True)
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
 
@@ -49,7 +64,7 @@ class SensitiveMeta(models.Model):
 
     @classmethod
     def create_from_dict(cls, data: dict):
-        from endoreg_db.models import Center
+        from endoreg_db.models import Center, Examiner
         from endoreg_db.utils import guess_name_gender
 
         # data can contain more fields than the model has
@@ -62,8 +77,9 @@ class SensitiveMeta(models.Model):
 
         try:
             center = Center.objects.get_by_natural_key(center_name)
-        except Center.DoesNotExist:
-            raise ValueError(f"Center with name {center_name} does not exist")
+        except Exception as exc:
+            raise ValueError(f"Center with name {center_name} does not exist") from exc
+
         selected_data["center"] = center
 
         try:
@@ -78,9 +94,49 @@ class SensitiveMeta(models.Model):
             # TODO Add to documentation
             cls._update_name_db(first_name, last_name)
 
-        return cls.objects.create(**selected_data)
+        sensitive_meta = cls.objects.create(**selected_data)
+        sensitive_meta.get_or_create_pseudo_examiner()
+        sensitive_meta.get_or_create_pseudo_patient()
+        sensitive_meta.get_or_create_pseudo_patient_examination()
+
+        return sensitive_meta
+
+    def get_or_create_pseudo_examiner(self):
+        if self.examiners:
+            examiner = self.examiners.first()
+
+        else:
+            examiner = self.create_pseudo_examiner()
+
+        return examiner
+
+    def create_pseudo_examiner(self):
+        from endoreg_db.models import Examiner, Center
+
+        first_name = self.examiner_first_name
+        last_name = self.examiner_last_name
+        center = self.center
+        if not first_name or not last_name or not center:
+            default_center = Center.objects.get_by_natural_key("endoreg_db_demo")
+            examiner, created = Examiner.custom_get_or_create(
+                first_name="Unknown", last_name="Unknown", center=default_center
+            )
+        else:
+            examiner, created = Examiner.custom_get_or_create(
+                first_name=first_name, last_name=last_name, center=center
+            )
+        self.examiners.add(examiner)
+        self.save()
+
+        return examiner
 
     def get_or_create_pseudo_patient(self):
+        if not self.pseudo_patient:
+            self.pseudo_patient = self.create_pseudo_patient()
+            self.save()
+        return self.pseudo_patient
+
+    def create_pseudo_patient(self):
         from endoreg_db.models import Patient
         from datetime import date
 
@@ -89,13 +145,11 @@ class SensitiveMeta(models.Model):
         if isinstance(dob, str):
             dob = date.fromisoformat(dob)
 
-        ic(type(dob))
-
         month = dob.month
         year = dob.year
 
         patient_hash = self.get_patient_hash()
-        patient = Patient.get_or_create_pseudo_patient_by_hash(
+        patient, _created = Patient.get_or_create_pseudo_patient_by_hash(
             patient_hash=patient_hash,
             center=self.center,
             gender=self.patient_gender,
@@ -107,16 +161,21 @@ class SensitiveMeta(models.Model):
 
     def get_or_create_pseudo_patient_examination(self):
         from endoreg_db.models import PatientExamination
-        from datetime import date
 
-        patient_hash = self.get_patient_hash()
-        examination_hash = self.get_patient_examination_hash()
+        if not self.pseudo_examination:
+            patient_hash = self.get_patient_hash()
+            examination_hash = self.get_patient_examination_hash()
 
-        patient_examination = (
-            PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
-                patient_hash, examination_hash
+            patient_examination, _created = (
+                PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
+                    patient_hash, examination_hash
+                )
             )
-        )
+
+            self.pseudo_examination = patient_examination
+            self.save()
+
+        return patient_examination
 
     def update_from_dict(self, data: dict):
         # data can contain more fields than the model has
@@ -131,7 +190,21 @@ class SensitiveMeta(models.Model):
         last_name = self.patient_last_name
 
         if first_name and last_name:
-            SensitiveMeta._update_name_db()
+            SensitiveMeta._update_name_db(first_name=first_name, last_name=last_name)
+
+        if not self.examination_hash:
+            self.examination_hash = self.get_patient_examination_hash()
+        if not self.patient_hash:
+            self.patient_hash = self.get_patient_hash()
+
+        examiner = self.get_or_create_pseudo_examiner()
+
+        examiner_first_name = data.get("examiner_first_name", "")
+        examiner_last_name = data.get("examiner_last_name", "")
+
+        if examiner_first_name and examiner_last_name:
+            self.examiner_first_name = examiner_first_name
+            self.examiner_last_name = examiner_last_name
 
         return self
 

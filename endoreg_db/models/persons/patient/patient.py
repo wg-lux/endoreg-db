@@ -53,7 +53,7 @@ class Patient(Person):
         birth_month: int = None,
         birth_year: int = None,
     ):
-        from endoreg_db.utils import random_day_by_month_year, create_mock_patient_name
+        from endoreg_db.utils import random_day_by_year, create_mock_patient_name
 
         created = False
 
@@ -71,7 +71,7 @@ class Patient(Person):
         )
         assert birth_year, "Birth year must be provided to create a new pseudo patient"
 
-        pseudo_dob = random_day_by_month_year(birth_month, birth_year)
+        pseudo_dob = random_day_by_year(birth_year)
         gender_name = gender.name
         first_name, last_name = create_mock_patient_name(gender_name)
 

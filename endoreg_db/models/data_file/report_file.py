@@ -9,6 +9,13 @@ class ReportFile(AbstractPdfFile):
     center = models.ForeignKey(Center, on_delete=models.CASCADE)
     meta = models.JSONField(blank=True, null=True)
     text = models.TextField(blank=True, null=True)
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta",
+        on_delete=models.CASCADE,
+        related_name="report_files",
+        null=True,
+        blank=True,
+    )
     patient_examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,

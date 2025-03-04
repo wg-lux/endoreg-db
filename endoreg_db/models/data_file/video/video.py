@@ -11,6 +11,13 @@ class Video(AbstractVideo):
     import_meta = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
     )
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta",
+        on_delete=models.CASCADE,
+        related_name="videos",
+        null=True,
+        blank=True,
+    )
 
     def get_video_model(self):
         return Video

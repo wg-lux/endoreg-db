@@ -3,6 +3,10 @@ from pathlib import Path
 import warnings
 from datetime import datetime, date
 
+import os
+
+SALT = os.getenv("DJANGO_SALT", "default_salt")
+
 
 def get_video_hash(video_path):
     """
@@ -41,10 +45,10 @@ def get_pdf_hash(pdf_path: Path):
 def _get_date_hash_string(date_obj: date) -> str:
     # if date is datetime object, convert to date
     if isinstance(date_obj, datetime):
-        warnings.warn("Date is a datetime object. Converting to date object.")
+        # warnings.warn("Date is a datetime object. Converting to date object.")
         date_obj = date_obj.date()
     elif isinstance(date_obj, str):
-        warnings.warn(f"Date is a string ({date_obj}). Converting to date object.")
+        # warnings.warn(f"Date is a string ({date_obj}). Converting to date object.")
         date_obj = datetime.strptime(date_obj, "%Y-%m-%d").date()
 
     assert isinstance(date_obj, date), "Date must be a date object"
@@ -70,9 +74,7 @@ def get_hash_string(
     Get the string to be hashed for a patient's first name, last name, date of birth, examination date, and endoscope serial number.
     """
     if not salt:
-        warnings.warn(
-            "No salt provided for hashing. This is not recommended for production use."
-        )
+        salt = SALT
 
     examination_date_str = _get_date_hash_string(examination_date)
     dob_str = _get_date_hash_string(dob)

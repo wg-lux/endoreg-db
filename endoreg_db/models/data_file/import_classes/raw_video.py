@@ -104,6 +104,14 @@ class RawVideoFile(AbstractVideoFile):
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
 
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta",
+        on_delete=models.CASCADE,
+        related_name="raw_videos",
+        null=True,
+        blank=True,
+    )
+
     # Crop Frames
     state_anonymized_frames_generated = models.BooleanField(default=False)
 

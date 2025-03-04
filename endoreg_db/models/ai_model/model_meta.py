@@ -91,6 +91,7 @@ class ModelMeta(models.Model):
 
         from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
 
+        ic("Start")
         model_meta_version = kwargs.get("model_meta_version", None)
 
         ai_model = AiModel.objects.get(name=model_name)

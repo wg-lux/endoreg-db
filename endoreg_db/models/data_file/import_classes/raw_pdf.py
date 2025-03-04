@@ -49,10 +49,10 @@ class RawPdfFile(AbstractPdfFile):
     state_report_processed = models.BooleanField(default=False)
 
     # report_file = models.OneToOneField("ReportFile", on_delete=models.CASCADE, null=True, blank=True)
-    sensitive_meta = models.OneToOneField(
+    sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
         on_delete=models.CASCADE,
-        related_name="raw_pdf_file",
+        related_name="raw_pdf_files",
         null=True,
         blank=True,
     )
@@ -149,16 +149,20 @@ class RawPdfFile(AbstractPdfFile):
             pdf_path, verbose=verbose
         )
 
+        ic(report_meta)
+
         report_meta["center_name"] = self.center.name
         if not self.sensitive_meta:
             sensitive_meta = SensitiveMeta.create_from_dict(report_meta)
-            sensitive_meta.save()
             self.sensitive_meta = sensitive_meta
 
         else:
             # update existing sensitive meta
             sensitive_meta = self.sensitive_meta
             sensitive_meta.update_from_dict(report_meta)
+
+        sensitive_meta.save()
+        self.save()
 
         return text, anonymized_text, report_meta
 
