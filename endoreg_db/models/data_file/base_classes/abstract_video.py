@@ -1,30 +1,49 @@
-from django.db import models
+"""
+This module provides an abstract base class for video file processing in a Django application.
+The AbstractVideoFile class encapsulates the core functionality needed to handle video files, \
+    including:
+
+• Transcoding videos using FFmpeg to ensure compatibility, with support for \
+    copying files directly if already in MP4 format.
+• Creating and managing video database entries by computing unique video hashes, \
+    handling file storage, and avoiding duplicate entries.
+• Extracting video frames (raw and anonymized) into designated directories for further processing.
+• Running AI-based predictions on extracted frames using preconfigured models \
+    and generating comprehensive prediction outputs:
+    - Raw predictions, readable predictions, merged predictions, smooth merged predictions, \
+        and binarized smooth merged predictions.
+    - Detection of sequences from binary predictions.
+• Extracting textual information from video frames using OCR to update associated metadata.
+• Providing utility methods to handle various aspects of file and directory management, \
+    such as cleaning up frames and updating video metadata.
+• Integrating with other modules that manage video-specific settings, \
+    including cropping based on region-of-interest (ROI) parameters,
+  center and processor associations, and performance controls (e.g., frames per second).
+
+Designed to be inherited and extended, this module lays the groundwork for \
+    building a robust video processing pipeline,
+particularly in domains like endoscopy, where accurate video analysis and \
+    metadata extraction are critical.
+"""
+
 from pathlib import Path
 from collections import defaultdict, Counter
+import shutil
+import os
+import subprocess
+from typing import Optional, List
+from django.db import models
+from icecream import ic
 
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-from django.core.validators import FileExtensionValidator
-from django.core.files.storage import FileSystemStorage
-import shutil
-import os
-import subprocess
-from django.conf import settings
-from typing import List
-from endoreg_db.utils.validate_endo_roi import validate_endo_roi
-import warnings
-from icecream import ic
+
 from ..metadata import VideoMeta, SensitiveMeta
-from tqdm import tqdm
-from typing import Optional
-import cv2
 from .utils import (
-    anonymize_frame,
     copy_with_progress,
-    DJANGO_NAME_SALT,
-    FRAME_DIR_NAME,
     STORAGE_LOCATION,
+    FRAME_DIR,
     get_transcoded_file_path,
 )
 
@@ -90,10 +109,10 @@ class AbstractVideoFile(models.Model):
     state_dataset_complete = models.BooleanField(default=False)
 
     class Meta:
-        abstract = True
+        abstract = True  #
 
     @classmethod
-    def transcode_videofile(self, filepath: Path, transcoded_path: Path):
+    def transcode_videofile(cls, filepath: Path, transcoded_path: Path):
         """
         Transcodes a video to a compatible MP4 format using ffmpeg.
         If the transcoded file exists, it is returned.
@@ -160,12 +179,16 @@ class AbstractVideoFile(models.Model):
             file_path (Path): The path to the video file.
             center_name (str): The name of the center associated with the video.
             processor_name (str): The name of the processor associated with the video.
-            frame_dir_parent (Path, optional): The parent directory for frame storage. Defaults to Path("erc_data/raw_frames").
-            video_dir (Path, optional): The directory for video storage. Defaults to Path("erc_data/raw_videos").
-            delete_source (bool, optional): Whether to delete the source file after processing. Defaults to False.
+            frame_dir_parent (Path, optional): The parent directory for frame storage. \
+                Defaults to Path("erc_data/raw_frames").
+            video_dir (Path, optional): The directory for video storage. \
+                Defaults to Path("erc_data/raw_videos").
+            delete_source (bool, optional): Whether to delete the source file after processing. \
+                Defaults to False.
             save (bool, optional): Whether to save the instance to the database. Defaults to True.
         Returns:
-            RawVideoFile: The created RawVideoFile instance, or an existing instance if a file with the same hash already exists.
+            RawVideoFile: The created RawVideoFile instance, or an existing instance \
+                if a file with the same hash already exists.
         """
 
         from endoreg_db.models import Center, EndoscopyProcessor  # pylint: disable=import-outside-toplevel
@@ -292,7 +315,6 @@ class AbstractVideoFile(models.Model):
         """
         from endoreg_db.models import ModelMeta, AiModel  # pylint: disable=import-outside-toplevel
         from endo_ai.predictor.inference_dataset import InferenceDataset  # pylint: disable=import-outside-toplevel
-        from endo_ai.predictor.utils import get_unorm
         from endo_ai.predictor.model_loader import MultiLabelClassificationNet
         from endo_ai.predictor.predict import Classifier
         from endo_ai.predictor.postprocess import (
@@ -394,7 +416,8 @@ class AbstractVideoFile(models.Model):
 
         fps = self.get_fps()
         ic(
-            f"Creating Smooth Merged Predictions; FPS: {fps}, Smooth Window Size: {smooth_window_size_s}"
+            f"Creating Smooth Merged Predictions; FPS: {fps}, \
+                Smooth Window Size: {smooth_window_size_s}"
         )
 
         smooth_merged_predictions = {}
@@ -493,7 +516,7 @@ class AbstractVideoFile(models.Model):
         return crop_template
 
     def set_frame_dir(self):
-        self.frame_dir = f"{RAW_VIDEO_DIR}/{self.uuid}"
+        self.frame_dir = f"{FRAME_DIR}/{self.uuid}"
 
     # video meta should be created when video file is created
     def save(self, *args, **kwargs):
@@ -698,7 +721,7 @@ class AbstractVideoFile(models.Model):
                 rois_texts[roi].append(text)
 
         # Get the most frequent text values for each ROI using Counter
-        for key in rois_texts.keys():
+        for key in rois_texts.keys():  # pylint: disable=consider-using-dict-items
             counter = Counter([text for text in rois_texts[key] if text])
             rois_texts[key] = counter.most_common(1)[0][0] if counter else None
 
@@ -721,7 +744,7 @@ class AbstractVideoFile(models.Model):
         print("____________")
 
         self.sensitive_meta = SensitiveMeta.create_from_dict(extracted_data_dict)
-        self.state_sensitive_data_retrieved = True
+        self.state_sensitive_data_retrieved = True  # pylint: disable=attribute-defined-outside-init
         self.save()
 
         # Resulting dict depends on defined ROIs for this processor type!

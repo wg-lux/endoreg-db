@@ -3,8 +3,6 @@
 
 from faker import Faker
 import gender_guesser.detector as gender_detector
-from icecream import ic
-import random
 
 
 def create_mock_patient_name(gender: str) -> tuple[str, str]:

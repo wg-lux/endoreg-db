@@ -1,31 +1,19 @@
-from django.db import models
+import shutil
+import subprocess
 from pathlib import Path
-from collections import defaultdict, Counter
+from django.db import models
 
-from endoreg_db.utils.hashs import get_video_hash
-from endoreg_db.utils.file_operations import get_uuid_filename
-from endoreg_db.utils.ocr import extract_text_from_rois
+from icecream import ic
+from tqdm import tqdm
+import cv2
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import FileSystemStorage
-import shutil
-import os
-import subprocess
-from django.conf import settings
-from typing import List
+
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
-import warnings
-from icecream import ic
-from ..metadata import VideoMeta, SensitiveMeta
-from tqdm import tqdm
-from typing import Optional
-import cv2
 from ..base_classes.utils import (
-    copy_with_progress,
     anonymize_frame,
-    RAW_VIDEO_DIR,
     RAW_VIDEO_DIR_NAME,
     VIDEO_DIR,
-    VIDEO_DIR_NAME,
     STORAGE_LOCATION,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
@@ -224,6 +212,8 @@ class RawVideoFile(AbstractVideoFile):
         """
         Make an anonymized video from the anonymized frames.
         """
+        from endoreg_db.models import Video
+
         assert self.state_frames_extracted, "Frames not extracted"
         assert self.state_anonymized_frames_generated, "Anonymized frames not generated"
         assert self.state_initial_prediction_completed, (
@@ -281,7 +271,7 @@ class RawVideoFile(AbstractVideoFile):
         self.save()
 
         ic("Creating VideoFile object for anonymized video")
-        video_object = VideoFile.create_from_file(
+        video_object = Video.create_from_file(
             anonymized_video_path,
             self.center,
             self.processor,

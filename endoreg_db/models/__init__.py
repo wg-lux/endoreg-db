@@ -155,7 +155,6 @@ from .data_file import (
     VideoImportMeta,
     RawPdfFile,
     RawVideoFile,
-    FileImporter,
 )
 
 # Label
@@ -381,6 +380,5 @@ __all__ = [
     "VideoImportMeta",
     "RawPdfFile",
     "RawVideoFile",
-    "FileImporter",
     "VideoSegmentationLabelSet",
 ]

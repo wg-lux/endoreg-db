@@ -13,7 +13,6 @@ from .metadata import (
 from .import_classes import (
     RawPdfFile,
     RawVideoFile,
-    FileImporter,
 )
 
 
@@ -33,5 +32,4 @@ __all__ = [
     "VideoImportMeta",
     "RawPdfFile",
     "RawVideoFile",
-    "FileImporter",
 ]

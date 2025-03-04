@@ -1,4 +1,14 @@
 [MESSAGES CONTROL]
 disable=
     E1101,
-    W0611
+    W0611,
+    C0114, ; Missing module docstring
+    C0115, ; Missing class docstring
+    C0116, ; Missing function or method docstring
+    C0301, ; Line too long
+    C0411,
+    C0412,
+    C0413, 
+    C0415, ; Import outside toplevel
+    W0613, ; Unused argument
+    W0719, ; Broad exception raised

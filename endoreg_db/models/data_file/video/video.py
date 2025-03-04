@@ -160,12 +160,6 @@ class Video(AbstractVideoFile):
 
     #     return patient, created
 
-    def get_frame_model(self):
-        assert 1 == 2, "This method should be overridden in derived classes"
-
-    def get_video_model(self):
-        assert 1 == 2, "This method should be overridden in derived classes"
-
     def get_frame_number(self):
         """
         Get the number of frames in the video.

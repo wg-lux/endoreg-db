@@ -1,7 +1,6 @@
+from datetime import date, time
 from django.db import models
 from ..center import Center
-import hashlib
-from datetime import date, time
 from .base_classes.abstract_pdf import AbstractPdfFile
 
 
@@ -31,16 +30,6 @@ class ReportFile(AbstractPdfFile):
     )
     date = models.DateField(blank=True, null=True)
     time = models.TimeField(blank=True, null=True)
-
-    def initialize_metadata_in_db(self):
-        # FIXME
-        from endoreg_db.models import Patient, Examiner
-
-        if not report_meta:
-            report_meta = self.meta
-        self.set_examination_date_and_time(report_meta)
-        self.examiner, created = self.get_or_create_examiner(report_meta)
-        self.save()
 
     def get_or_create_examiner(self, examiner_first_name, examiner_last_name):
         from ..persons import Examiner

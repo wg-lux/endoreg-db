@@ -2,10 +2,10 @@
 Utility functions for data file classes.
 """
 
-import cv2
-import numpy as np
 import os
 from pathlib import Path
+import cv2
+import numpy as np
 
 DJANGO_NAME_SALT = os.environ.get("DJANGO_NAME_SALT", "default_salt")
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
