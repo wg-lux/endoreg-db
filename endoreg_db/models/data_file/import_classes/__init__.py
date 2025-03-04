@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from .raw_video import RawVideoFile, VideoFile
+from .raw_video import RawVideoFile
 from .raw_pdf import RawPdfFile
 
 # FileImporter class
@@ -32,7 +32,6 @@ class FileImporter:  # FIXME
 
 
 __all__ = [
-    "VideoFile",
     "RawPdfFile",
     "RawVideoFile",
     "FileImporter",
