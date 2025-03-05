@@ -53,7 +53,19 @@ class Video(AbstractVideoFile):
     )
 
     pseudo_patient = models.ForeignKey(
-        "Patient", on_delete=models.CASCADE, blank=True, null=True
+        "Patient",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="videos",
+    )
+
+    examination = models.ForeignKey(
+        "PatientExamination",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="videos",
     )
 
     # Deprecate and move to video meta?

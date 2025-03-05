@@ -82,12 +82,30 @@ class Patient(Person):
             last_name=last_name,
             dob=pseudo_dob,
             patient_hash=patient_hash,
+            is_real_person=False,
         )
 
         patient.save()
         created = True
 
         return patient, created
+
+    def export_patient_examinations(self):
+        """
+        Get all associated PatientExaminations, ReportFiles, and Videos for the patient.
+        """
+        from endoreg_db.models import PatientExamination, ReportFile, Video
+
+        patient_examinations = PatientExamination.objects.filter(patient=self)
+        report_files, videos = [], []
+        for patient_examination in patient_examinations:
+            rr = patient_examination.report_files.all()
+            vv = patient_examination.videos.all()
+
+            report_files.extend(rr)
+            videos.extend(vv)
+
+        return patient_examinations, report_files, videos
 
     def get_dob(self) -> datetime.date:
         dob: datetime.date = self.dob

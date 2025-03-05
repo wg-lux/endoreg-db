@@ -301,7 +301,7 @@ class RawVideoFile(AbstractVideoFile):
             return f"No anonymized frames to delete for {self.file.name}"
 
     def get_or_create_video(self):
-        from endoreg_db.models import Video
+        from endoreg_db.models import Video, Patient, PatientExamination
         from warnings import warn
 
         video = self.video
@@ -325,6 +325,11 @@ class RawVideoFile(AbstractVideoFile):
                     delete_temporary_transcoded_file=True,
                     save=True,
                 )
+
+                ex: PatientExamination = self.sensitive_meta.pseudo_examination
+                pat: Patient = self.sensitive_meta.patient
+                video_object.examination = ex
+                video_object.pseudo_patient = pat
 
                 self.video = video_object
                 self.save()
