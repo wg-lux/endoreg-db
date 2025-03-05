@@ -56,17 +56,13 @@ class Video(AbstractVideoFile):
         "Patient", on_delete=models.CASCADE, blank=True, null=True
     )
 
-    raw_video = models.ForeignKey(
-        "RawVideoFile", on_delete=models.CASCADE, related_name="videos"
-    )
-
     # Deprecate and move to video meta?
     date = models.DateField(blank=True, null=True)
-    suffix = models.CharField(max_length=255)
-    fps = models.FloatField()
-    duration = models.FloatField()
-    width = models.IntegerField()
-    height = models.IntegerField()
+    suffix = models.CharField(max_length=255, blank=True, null=True)
+    fps = models.FloatField(blank=True, null=True)
+    duration = models.FloatField(blank=True, null=True)
+    width = models.IntegerField(blank=True, null=True)
+    height = models.IntegerField(blank=True, null=True)
     endoscope_image_x = models.IntegerField(blank=True, null=True)
     endoscope_image_y = models.IntegerField(blank=True, null=True)
     endoscope_image_width = models.IntegerField(blank=True, null=True)
@@ -94,22 +90,23 @@ class Video(AbstractVideoFile):
         """
         from endoreg_db.models import RawVideoFile
 
-        assert self.raw_video is not None, "Raw video not associated"
-        assert isinstance(self.raw_video, RawVideoFile), "Raw video is not a file"
+        raw_video: RawVideoFile = self.raw_videos.first()
 
-        self.predictions = self.raw_video.predictions
-        self.readable_predictions = self.raw_video.readable_predictions
-        self.sequences = self.raw_video.sequences
+        assert isinstance(raw_video, RawVideoFile), "Raw video is not a file"
 
-        self.state_histology_required = self.raw_video.state_histology_required
-        self.state_histology_available = self.raw_video.state_histology_available
+        self.predictions = raw_video.predictions
+        self.readable_predictions = raw_video.readable_predictions
+        self.sequences = raw_video.sequences
+
+        self.state_histology_required = raw_video.state_histology_required
+        self.state_histology_available = raw_video.state_histology_available
         self.state_follow_up_intervention_required = (
-            self.raw_video.state_follow_up_intervention_required
+            raw_video.state_follow_up_intervention_required
         )
         self.state_follow_up_intervention_available = (
-            self.raw_video.state_follow_up_intervention_available
+            raw_video.state_follow_up_intervention_available
         )
-        self.state_dataset_complete = self.raw_video.state_dataset_complete
+        self.state_dataset_complete = raw_video.state_dataset_complete
 
         self.save()
 

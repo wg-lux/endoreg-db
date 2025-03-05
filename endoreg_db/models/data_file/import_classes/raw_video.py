@@ -104,6 +104,14 @@ class RawVideoFile(AbstractVideoFile):
         blank=True,
     )
 
+    video = models.ForeignKey(
+        "Video",
+        on_delete=models.SET_NULL,
+        related_name="raw_videos",
+        null=True,
+        blank=True,
+    )
+
     # Crop Frames
     state_anonymized_frames_generated = models.BooleanField(default=False)
 
@@ -212,6 +220,14 @@ class RawVideoFile(AbstractVideoFile):
         self.state_censor_outside_completed = True
         self.save()
 
+    def get_anonymized_video_path(self):
+        video_dir = VIDEO_DIR
+        video_name = Path(self.file.path).name
+        anonymized_video_name = f"TMP_anonymized_{video_name}"
+        anonymized_video_path = video_dir / anonymized_video_name
+
+        return anonymized_video_path
+
     def make_anonymized_video(self):
         """
         Make an anonymized video from the anonymized frames.
@@ -230,12 +246,8 @@ class RawVideoFile(AbstractVideoFile):
         )
 
         frame_paths = self.get_frame_paths(anonymized=True)
-        video_dir = VIDEO_DIR
 
-        video_name = Path(self.file.path).name
-        anonymized_video_name = f"TMP_anonymized_{video_name}"
-        anonymized_video_path = video_dir / anonymized_video_name
-
+        anonymized_video_path = self.get_anonymized_video_path()
         # if anonymized video already exists, delete it
         if anonymized_video_path.exists():
             anonymized_video_path.unlink()
@@ -274,21 +286,7 @@ class RawVideoFile(AbstractVideoFile):
         self.state_make_anonymized_video_completed = True
         self.save()
 
-        ic("Creating VideoFile object for anonymized video")
-        video_object = Video.create_from_file(
-            anonymized_video_path,
-            self.center,
-            self.processor,
-            video_dir=VIDEO_DIR,
-            delete_source=True,
-            delete_temporary_transcoded_file=True,
-            save=True,
-        )
-
-        video_object.raw_video = self
-        video_object.sync_from_raw_video()
-
-        ic(f"Video object created: {video_object}")
+        return anonymized_video_path
 
     def delete_frames_anonymized(self):
         """
@@ -301,3 +299,42 @@ class RawVideoFile(AbstractVideoFile):
             return f"Anonymized frames deleted from {anonymized_frame_dir}"
         else:
             return f"No anonymized frames to delete for {self.file.name}"
+
+    def get_or_create_video(self):
+        from endoreg_db.models import Video
+        from warnings import warn
+
+        video = self.video
+        expected_path = self.get_anonymized_video_path()
+        if not video:
+            video_hash = self.video_hash
+            if Video.objects.filter(video_hash=video_hash).exists():
+                video = Video.objects.filter(video_hash=video_hash).first()
+
+            else:
+                if not expected_path.exists():
+                    video_path = self.make_anonymized_video()
+                else:
+                    video_path = expected_path
+                video_object = Video.create_from_file(
+                    video_path,
+                    self.center,
+                    self.processor,
+                    video_dir=VIDEO_DIR,
+                    delete_source=False,
+                    delete_temporary_transcoded_file=True,
+                    save=True,
+                )
+
+                self.video = video_object
+                self.save()
+                video_object.sync_from_raw_video()
+
+                ic(f"Video object created: {video_object}")
+                return video_object
+
+            self.video = video
+            self.save()
+
+        # self.vi
+        return video
