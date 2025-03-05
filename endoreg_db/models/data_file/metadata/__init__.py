@@ -4,10 +4,10 @@ from .video_meta import VideoMeta, FFMpegMeta, VideoImportMeta
 
 
 __all__ = [
-    'SensitiveMeta',
-    'PdfMeta',
-    'PdfType',
-    'VideoMeta',
-    'FFMpegMeta',
-    'VideoImportMeta',
+    "SensitiveMeta",
+    "PdfMeta",
+    "PdfType",
+    "VideoMeta",
+    "FFMpegMeta",
+    "VideoImportMeta",
 ]

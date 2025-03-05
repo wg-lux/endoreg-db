@@ -98,7 +98,7 @@ class RawVideoFile(AbstractVideoFile):
 
     sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="raw_videos",
         null=True,
         blank=True,

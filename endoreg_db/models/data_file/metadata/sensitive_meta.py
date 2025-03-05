@@ -2,9 +2,11 @@ from django.db import models
 from endoreg_db.utils.hashs import (
     get_patient_hash,
     get_patient_examination_hash,
-    get_hash_string,
+    # get_hash_string,
 )
-from datetime import date
+from hashlib import sha256
+
+# from datetime import date
 from icecream import ic
 import os
 
@@ -99,14 +101,21 @@ class SensitiveMeta(models.Model):
         sensitive_meta.get_or_create_pseudo_patient()
         sensitive_meta.get_or_create_pseudo_patient_examination()
 
+        ic("EXAMINER_FIRST_NAME", sensitive_meta.examiner_first_name)
+        ic("EXAMINER_LAST_NAME", sensitive_meta.examiner_last_name)
+
         return sensitive_meta
 
     def get_or_create_pseudo_examiner(self):
-        if self.examiners:
+        ic("GETTING OR CREATING EXAMINER")
+
+        if self.examiners.exists():
             examiner = self.examiners.first()
+            ic(f"Exisiting examiner: {examiner}")
 
         else:
             examiner = self.create_pseudo_examiner()
+            ic(f"Created examiner: {examiner}")
 
         return examiner
 
@@ -116,13 +125,14 @@ class SensitiveMeta(models.Model):
         first_name = self.examiner_first_name
         last_name = self.examiner_last_name
         center = self.center
+        ic("CREATING EXAMINER", first_name, last_name, center)
         if not first_name or not last_name or not center:
             default_center = Center.objects.get_by_natural_key("endoreg_db_demo")
-            examiner, created = Examiner.custom_get_or_create(
+            examiner, _created = Examiner.custom_get_or_create(
                 first_name="Unknown", last_name="Unknown", center=default_center
             )
         else:
-            examiner, created = Examiner.custom_get_or_create(
+            examiner, _created = Examiner.custom_get_or_create(
                 first_name=first_name, last_name=last_name, center=center
             )
         self.examiners.add(examiner)
@@ -175,6 +185,9 @@ class SensitiveMeta(models.Model):
             self.pseudo_examination = patient_examination
             self.save()
 
+        else:
+            patient_examination = self.pseudo_examination
+
         return patient_examination
 
     def update_from_dict(self, data: dict):
@@ -197,14 +210,13 @@ class SensitiveMeta(models.Model):
         if not self.patient_hash:
             self.patient_hash = self.get_patient_hash()
 
-        examiner = self.get_or_create_pseudo_examiner()
-
         examiner_first_name = data.get("examiner_first_name", "")
         examiner_last_name = data.get("examiner_last_name", "")
 
         if examiner_first_name and examiner_last_name:
             self.examiner_first_name = examiner_first_name
             self.examiner_last_name = examiner_last_name
+        _examiner = self.get_or_create_pseudo_examiner()
 
         return self
 
@@ -215,9 +227,6 @@ class SensitiveMeta(models.Model):
         return self.__str__()
 
     def get_patient_hash(self, salt=SECRET_SALT):
-        from hashlib import sha256
-        from datetime import datetime
-
         dob = self.patient_dob
         first_name = self.patient_first_name
         last_name = self.patient_last_name
@@ -235,10 +244,7 @@ class SensitiveMeta(models.Model):
         )
         return sha256(hash_str.encode()).hexdigest()
 
-    def get_patient_examination_hash(self, salt=""):
-        from hashlib import sha256
-        from datetime import datetime
-
+    def get_patient_examination_hash(self, salt=SECRET_SALT):
         dob = self.patient_dob
         first_name = self.patient_first_name
         last_name = self.patient_last_name

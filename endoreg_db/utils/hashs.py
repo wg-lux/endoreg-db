@@ -134,5 +134,20 @@ def get_patient_examination_hash(
     return patient_examination_hash
 
 
-def get_examiner_hash():
-    pass
+def get_examiner_hash(first_name, last_name, center_name, salt):
+    """
+    Get the hash of an examiner's first name, last name, and center name.
+    """
+    # Concatenate the examiner's first name, last name, center name, and salt:
+    hash_str = get_hash_string(
+        first_name=first_name,
+        last_name=last_name,
+        center_name=center_name,
+        salt=salt,
+    )
+    # Create a hash object using SHA-256 algorithm
+    hash_object = hashlib.sha256(hash_str.encode())
+    # Get the hexadecimal representation of the hash
+    examiner_hash = hash_object.hexdigest()
+
+    return examiner_hash

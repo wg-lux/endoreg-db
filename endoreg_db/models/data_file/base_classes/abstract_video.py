@@ -54,11 +54,6 @@ class AbstractVideoFile(models.Model):
     """
 
     uuid = models.UUIDField()
-    # file = models.FileField(
-    #     upload_to=RAW_VIDEO_DIR_NAME,
-    #     validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-    #     storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
-    # )
 
     sensitive_meta = models.OneToOneField(
         "SensitiveMeta", on_delete=models.CASCADE, blank=True, null=True
@@ -324,7 +319,7 @@ class AbstractVideoFile(models.Model):
             "inference_dataset": InferenceDataset,
         }
 
-        DatasetModel = datasets[dataset_name]
+        dataset_model_class = datasets[dataset_name]
 
         if anonymized_frames:
             frame_dir = self.get_anonymized_frame_dir()
@@ -375,7 +370,7 @@ class AbstractVideoFile(models.Model):
         ds_config = model_meta.get_inference_dataset_config()
 
         # Create dataset
-        ds = DatasetModel(string_paths, crops, config=ds_config)
+        ds = dataset_model_class(string_paths, crops, config=ds_config)
         ic(f"Dataset length: {len(ds)}")
 
         # Get a sample image
@@ -759,13 +754,13 @@ class AbstractVideoFile(models.Model):
             video_meta.update_meta(video_path)
 
     def get_fps(self):
-        # FIXME
-        fps = 50
-        return fps
-        # if self.video_meta is None:
-        #     self.update_video_meta()
+        # # FIXME
+        # fps = 50
+        # return fps
+        if self.video_meta is None:
+            self.update_video_meta()
 
-        # if self.video_meta.ffmpeg_meta is None:
-        #     self.video_meta.initialize_ffmpeg_meta(self.file.path)
+        if self.video_meta.ffmpeg_meta is None:
+            self.video_meta.initialize_ffmpeg_meta(self.file.path)
 
         return self.video_meta.get_fps()

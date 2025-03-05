@@ -27,5 +27,6 @@ __all__ = [
     "AnonymizedFile",
     "UploadedFile",
     "VideoSegmentationLabel",
+    "VideoSegmentationLabelSet",
     "VideoSegmentationAnnotation",
 ]

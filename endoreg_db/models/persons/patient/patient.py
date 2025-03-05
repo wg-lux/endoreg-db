@@ -1,7 +1,6 @@
 from ..person import Person
 from django import forms
 from django.forms import DateInput
-from rest_framework import serializers
 from ...patient import PatientExamination
 from ...data_file import ReportFile
 from django.db import models
@@ -9,6 +8,10 @@ from faker import Faker
 import random
 from datetime import datetime
 from icecream import ic
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import Center, Gender
 
 
 class Patient(Person):
@@ -39,10 +42,6 @@ class Patient(Person):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
-
-    center = models.ForeignKey(
-        "Center", on_delete=models.CASCADE, blank=True, null=True
-    )
 
     @classmethod
     def get_or_create_pseudo_patient_by_hash(
@@ -89,9 +88,6 @@ class Patient(Person):
         created = True
 
         return patient, created
-
-    def __str__(self):
-        return self.first_name + " " + self.last_name + " (" + str(self.dob) + ")"
 
     def get_dob(self) -> datetime.date:
         dob: datetime.date = self.dob
@@ -202,7 +198,7 @@ class Patient(Person):
         return patient_examination
 
     @classmethod
-    def get_random_gender(self, p_male=0.5, p_female=0.5):
+    def get_random_gender(cls, p_male=0.5, p_female=0.5):
         """
         Get a Gender object by name (male, female) from the database with given probability.
 
@@ -232,7 +228,7 @@ class Patient(Person):
 
     @classmethod
     def get_random_age(
-        self, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
+        cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
     ):
         """
         Get a random age based on the given distribution.
@@ -252,7 +248,7 @@ class Patient(Person):
         return age
 
     @classmethod
-    def get_dob_from_age(self, age, current_date=None):
+    def get_dob_from_age(cls, age, current_date=None):
         """
         Get a date of birth based on the given age and current date.
 
@@ -270,7 +266,7 @@ class Patient(Person):
         return dob
 
     @classmethod
-    def get_random_name_for_gender(self, gender_obj, locale="de_DE"):
+    def get_random_name_for_gender(cls, gender_obj, locale="de_DE"):
         gender = gender_obj.name
         fake = Faker(locale)
 
@@ -285,7 +281,7 @@ class Patient(Person):
         return last_name, first_name
 
     @classmethod
-    def create_generic(self, center="gplay_case_generator"):
+    def create_generic(cls, center="gplay_case_generator"):
         """
         Create a generic patient with random attributes.
 

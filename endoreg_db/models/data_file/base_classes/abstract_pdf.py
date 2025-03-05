@@ -6,22 +6,23 @@
 # ------------------------------------------------------------------------------
 
 from django.db import models
-from django.core.files.storage import FileSystemStorage
-from django.conf import settings
-from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator
-from endoreg_db.utils.file_operations import get_uuid_filename
-from icecream import ic
 
-from agl_report_reader.report_reader import ReportReader
+# from django.core.files.storage import FileSystemStorage
+# from django.conf import settings
+from django.core.exceptions import ValidationError
+# from django.core.validators import FileExtensionValidator
+# from endoreg_db.utils.file_operations import get_uuid_filename
+# from icecream import ic
+
+# from agl_report_reader.report_reader import ReportReader
 
 from endoreg_db.utils.hashs import get_pdf_hash
-from ..metadata import SensitiveMeta
+# from ..metadata import SensitiveMeta
 
 # setup logging to pdf_import.log
 import logging
 
-import shutil
+# import shutil
 from pathlib import Path
 
 from ..base_classes.utils import (
@@ -41,20 +42,18 @@ class AbstractPdfFile(models.Model):
     pdf_hash = models.CharField(max_length=255, unique=True)
     pdf_type = models.ForeignKey(
         "PdfType",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
     center = models.ForeignKey(
         "Center",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
 
     text = models.TextField(blank=True, null=True)
-
-    raw_meta = models.JSONField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -62,14 +61,14 @@ class AbstractPdfFile(models.Model):
         abstract = True
 
     def __str__(self):
-        str_repr = f"RawPdfFile: {self.file.name}"
+        str_repr = f"{self.pdf_hash} ({self.pdf_type}, {self.center})"
         return str_repr
 
     def delete_with_file(self):
         file_path = Path(self.file.path)
         if file_path.exists():
             file_path.unlink()
-            logger.info(f"File removed: {file_path}")
+            logger.info("File removed: %s", file_path)
 
         r = self.delete()
         return r
@@ -87,16 +86,7 @@ class AbstractPdfFile(models.Model):
 
             return True
 
-        except Exception as e:
-            logger.error(f"Error processing file: {self.file.path}")
+        except (IOError, ValueError) as e:
+            logger.error("Error processing file: %s", self.file.path)
             logger.error(e)
             return False
-
-    def save(self, *args, **kwargs):
-        if not self.file.name.endswith(".pdf"):
-            raise ValidationError("Only PDF files are allowed")
-
-        if not self.pdf_hash:
-            self.pdf_hash = get_pdf_hash(self.file.path)
-
-        super().save(*args, **kwargs)

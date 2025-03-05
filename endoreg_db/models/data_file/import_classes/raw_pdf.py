@@ -47,11 +47,19 @@ class RawPdfFile(AbstractPdfFile):
 
     state_report_processing_required = models.BooleanField(default=True)
     state_report_processed = models.BooleanField(default=False)
-
+    raw_meta = models.JSONField(blank=True, null=True)
     # report_file = models.OneToOneField("ReportFile", on_delete=models.CASCADE, null=True, blank=True)
     sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        related_name="raw_pdf_files",
+        null=True,
+        blank=True,
+    )
+
+    report_file = models.ForeignKey(
+        "ReportFile",
+        on_delete=models.SET_NULL,
         related_name="raw_pdf_files",
         null=True,
         blank=True,
@@ -125,6 +133,15 @@ class RawPdfFile(AbstractPdfFile):
 
         return raw_pdf
 
+    def save(self, *args, **kwargs):
+        if not self.file.name.endswith(".pdf"):
+            raise ValidationError("Only PDF files are allowed")
+
+        if not self.pdf_hash:
+            self.pdf_hash = get_pdf_hash(self.file.path)
+
+        super().save(*args, **kwargs)
+
     def verify_existing_file(self, fallback_file):
         if not Path(self.file.path).exists():
             logger.warning(f"File not found: {self.file.path}")
@@ -149,7 +166,8 @@ class RawPdfFile(AbstractPdfFile):
             pdf_path, verbose=verbose
         )
 
-        ic(report_meta)
+        self.text = text
+        self.anonymized_text = anonymized_text
 
         report_meta["center_name"] = self.center.name
         if not self.sensitive_meta:
@@ -160,6 +178,8 @@ class RawPdfFile(AbstractPdfFile):
             # update existing sensitive meta
             sensitive_meta = self.sensitive_meta
             sensitive_meta.update_from_dict(report_meta)
+
+        self.raw_meta = report_meta
 
         sensitive_meta.save()
         self.save()
@@ -196,3 +216,37 @@ class RawPdfFile(AbstractPdfFile):
         }
 
         return settings_dict
+
+    def get_or_create_report_file(self):
+        from endoreg_db.models import ReportFile
+
+        if self.report_file:
+            report_file = self.report_file
+
+        elif ReportFile.objects.filter(pdf_hash=self.pdf_hash).exists():
+            report_file = ReportFile.objects.filter(pdf_hash=self.pdf_hash).get()
+            self.report_file = report_file
+            self.save()
+        else:
+            # TODO  Make sure all required states are set
+            patient = self.sensitive_meta.get_or_create_pseudo_patient()
+            examiner = self.sensitive_meta.get_or_create_pseudo_examiner()
+            patient_examination = (
+                self.sensitive_meta.get_or_create_pseudo_patient_examination()
+            )
+
+            report_file = ReportFile.objects.create(
+                pdf_hash=self.pdf_hash,
+                center=self.center,
+                sensitive_meta=self.sensitive_meta,
+                patient=patient,
+                examiner=examiner,
+                patient_examination=patient_examination,
+                text=self.anonymized_text,
+            )
+
+            report_file.save()
+            self.report_file = report_file
+            self.save()
+
+        return report_file

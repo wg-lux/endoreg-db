@@ -1,7 +1,7 @@
 from django.db import models
-from rest_framework import serializers
-from ..label import Label
-from .image_classification import ImageClassificationAnnotation
+# from rest_framework import serializers
+# from ..label import Label
+# from .image_classification import ImageClassificationAnnotation
 
 ANNOTATION_PER_S_THRESHOLD = 2
 
@@ -102,8 +102,16 @@ class BinaryClassificationAnnotationTask(AbstractBinaryClassificationAnnotationT
         max_length=255, default="frame"
     )  # Default image type for non-legacy tasks
 
-    def get_frame(self) -> "Frame":
+    def get_frame(self):
         """
         Retrieves the frame associated with this task.
         """
-        return self.frame
+        from endoreg_db.models.data_file.frame import Frame
+
+        frame = self.frame
+        if not frame:
+            return None
+        else:
+            assert isinstance(frame, Frame)
+
+        return frame

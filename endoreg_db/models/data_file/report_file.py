@@ -5,28 +5,27 @@ from .base_classes.abstract_pdf import AbstractPdfFile
 
 
 class ReportFile(AbstractPdfFile):
-    center = models.ForeignKey(Center, on_delete=models.CASCADE)
     meta = models.JSONField(blank=True, null=True)
     text = models.TextField(blank=True, null=True)
     sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="report_files",
         null=True,
         blank=True,
     )
     patient_examination = models.ForeignKey(
         "PatientExamination",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="report_files",
     )
     patient = models.ForeignKey(
-        "Patient", on_delete=models.CASCADE, blank=True, null=True
+        "Patient", on_delete=models.DO_NOTHING, blank=True, null=True
     )
     examiner = models.ForeignKey(
-        "Examiner", on_delete=models.CASCADE, blank=True, null=True
+        "Examiner", on_delete=models.DO_NOTHING, blank=True, null=True
     )
     date = models.DateField(blank=True, null=True)
     time = models.TimeField(blank=True, null=True)

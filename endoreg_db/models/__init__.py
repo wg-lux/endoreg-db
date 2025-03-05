@@ -228,6 +228,8 @@ from .hardware import (
 from .questionnaires import TtoQuestionnaire
 
 __all__ = [
+    "ReportReaderConfig",
+    "ReportReaderFlag",
     "Unit",
     "InformationSource",
     "EmissionFactor",

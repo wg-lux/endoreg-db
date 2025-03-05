@@ -5,6 +5,20 @@ from faker import Faker
 import gender_guesser.detector as gender_detector
 
 
+def create_mock_examiner_name() -> tuple[str, str]:
+    """
+    Generate a mock examiner's name using the Faker library.
+    This function creates a tuple with a first name and a last name for a mock examiner. It utilizes the "de_DE" locale for generating German names.
+    Returns:
+        tuple[str, str]: A tuple containing the first name and the last name.
+    """
+
+    fake = Faker("de_DE")
+    first_name = fake.first_name()
+    last_name = fake.last_name()
+    return first_name, last_name
+
+
 def create_mock_patient_name(gender: str) -> tuple[str, str]:
     """
     Generate a mock patient's name based on the provided gender using the Faker library.
