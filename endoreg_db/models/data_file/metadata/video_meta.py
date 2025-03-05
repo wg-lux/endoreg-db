@@ -1,5 +1,6 @@
 from django.db import models
-import ffmpeg
+import subprocess
+import json
 from pathlib import Path
 
 # import endoreg_center_id from django settings
@@ -88,8 +89,17 @@ class FFMpegMeta(models.Model):
 
     @classmethod
     def create_from_file(cls, file_path: Path):
-        """Creates an FFMpegMeta instance from a video file using ffmpeg probe."""
-        probe = ffmpeg.probe(file_path.resolve().as_posix())
+        cmd = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            str(file_path),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        probe = json.loads(proc.stdout)
 
         video_stream = next(
             (stream for stream in probe["streams"] if stream["codec_type"] == "video"),
@@ -99,12 +109,9 @@ class FFMpegMeta(models.Model):
             stream for stream in probe["streams"] if stream["codec_type"] == "audio"
         ]
 
-        # Check for the existence of a video stream
-        if video_stream is None:
-            print(f"No video stream found in {file_path}")
+        if not video_stream:
             return None
 
-        # Extract and store video metadata
         metadata = {
             "duration": float(video_stream.get("duration", 0)),
             "width": int(video_stream.get("width", 0)),
@@ -115,7 +122,6 @@ class FFMpegMeta(models.Model):
             "video_codec": video_stream.get("codec_name", ""),
         }
 
-        # If there are audio streams, extract and store audio metadata from the first stream
         if audio_streams:
             first_audio_stream = audio_streams[0]
             metadata.update(
@@ -126,7 +132,6 @@ class FFMpegMeta(models.Model):
                 }
             )
 
-        # Create and return the FFMpegMeta instance
         return cls.objects.create(**metadata)
 
     def __str__(self):
