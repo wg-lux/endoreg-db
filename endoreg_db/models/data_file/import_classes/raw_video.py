@@ -327,7 +327,7 @@ class RawVideoFile(AbstractVideoFile):
                 )
 
                 ex: PatientExamination = self.sensitive_meta.pseudo_examination
-                pat: Patient = self.sensitive_meta.patient
+                pat: Patient = self.sensitive_meta.pseudo_patient
                 video_object.examination = ex
                 video_object.pseudo_patient = pat
 
