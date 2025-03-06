@@ -229,13 +229,14 @@ class Video(AbstractVideoFile):
             # Clear the list for the next batch
             frames_to_create = []
 
-    def set_examination_date_from_video_meta(self, video_meta=None):
-        if not video_meta:
-            video_meta = self.meta
-        date_str = video_meta["examination_date"]  # e.g. 2020-01-01
-        if date_str:
-            self.date = date.fromisoformat(date_str)
-            self.save()
+    # DEPRECATED
+    # def set_examination_date_from_video_meta(self, video_meta=None):
+    #     if not video_meta:
+    #         video_meta = self.meta
+    #     date_str = video_meta["examination_date"]  # e.g. 2020-01-01
+    #     if date_str:
+    #         self.date = date.fromisoformat(date_str)
+    #         self.save()
 
     def extract_all_frames(self):
         """
@@ -246,7 +247,7 @@ class Video(AbstractVideoFile):
         video = cv2.VideoCapture(self.file.path)
 
         # Initialize video properties
-        self.initialize_video_specs(video)
+        self.initialize_video_specs()
 
         # Prepare for batch operation
         frames_to_create = []
@@ -286,12 +287,14 @@ class Video(AbstractVideoFile):
         video.release()
         self.set_frames_extracted(True)
 
-    def initialize_video_specs(self, video):
+    def initialize_video_specs(self):
         """
         Initialize and save video metadata like framerate, dimensions, and duration.
         """
+        video = cv2.VideoCapture(self.file.path)
         self.fps = video.get(cv2.CAP_PROP_FPS)
         self.width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.duration = video.get(cv2.CAP_PROP_FRAME_COUNT) / self.fps
         self.save()
+        video.release()

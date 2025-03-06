@@ -1,6 +1,10 @@
 from django.db import models
 import numpy as np
 from ..annotation import ImageClassificationAnnotation
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import Video, Label, InformationSource
 
 
 def find_segments_in_prediction_array(prediction_array: np.array, min_frame_len: int):
@@ -40,22 +44,26 @@ class AbstractLabelVideoSegment(models.Model):
         abstract = True
 
     def __str__(self):
-        return (
-            self.video.file.path
+        video: Video = self.video
+        label: Label = self.label
+
+        str_repr = (
+            video.file.path
             + " Label - "
-            + self.label.name
+            + label.name
             + " - "
             + str(self.start_frame_number)
             + " - "
             + str(self.end_frame_number)
         )
+        assert isinstance(str_repr, str), "String representation is not a string"
+        return str_repr
 
     def get_frames(self):
-        return self.video.get_frame_range(
-            self.start_frame_number, self.end_frame_number
-        )
+        video: Video = self.video
+        return video.get_frame_range(self.start_frame_number, self.end_frame_number)
 
-    def get_annotations(self) -> ImageClassificationAnnotation.objects:
+    def get_annotations(self):
         frames = self.get_frames()
         annotations = ImageClassificationAnnotation.objects.filter(
             frame__in=frames, label=self.label
@@ -63,7 +71,7 @@ class AbstractLabelVideoSegment(models.Model):
 
         return annotations
 
-    def get_frames_without_annotation(self):
+    def get_frames_without_annotation(self, n_frames: int):
         """
         Get a frame without an annotation.
         """
@@ -84,7 +92,7 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
 
         return Video
 
-    def get_frames_without_annotation(self, n_frames):
+    def get_frames_without_annotation(self, n_frames: int):
         """
         Get a frame without an annotation.
         """
