@@ -73,6 +73,9 @@ class AbstractLabelVideoSegment(models.Model):
         assert isinstance(str_repr, str), "String representation is not a string"
         return str_repr
 
+    def get_model_meta(self):
+        return self.prediction_meta.model_meta
+
     def get_frames(self):
         video = self.video
         return video.get_frame_range(self.start_frame_number, self.end_frame_number)
@@ -84,27 +87,6 @@ class AbstractLabelVideoSegment(models.Model):
         )
 
         return annotations
-
-    def set_binary_frame_predictions(self):
-        """
-        Set binary frame predictions based on the annotations.
-        """
-        from endoreg_db.models import ImageClassificationPrediction
-
-        if TYPE_CHECKING:
-            video: Union["Video", "RawVideoFile"] = self.video
-
-        model_meta = self.video.ai_model_meta
-
-        frames = self.get_frames()
-        label = self.label
-
-        for frame in tqdm(frames):
-            prediction, _created = ImageClassificationPrediction.objects.get_or_create(
-                frame=frame, label=label, model_meta=model_meta
-            )
-
-            prediction.value = 1
 
     def get_segment_len_in_s(self):
         return (self.end_frame_number - self.start_frame_number) / self.video.get_fps()
@@ -173,6 +155,23 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
         from endoreg_db.models import Video
 
         return Video
+
+    def generate_annotations(self):
+        """
+        Generate annotations for the segment.
+        """
+        from endoreg_db.models import InformationSource
+
+        frames = self.get_frames()
+        model_meta = self.get_model_meta()
+        information_source, _created = InformationSource.objects.get_or_create(
+            name="prediction"
+        )
+
+        for frame in tqdm(frames):
+            ImageClassificationAnnotation.objects.get_or_create(
+                frame=frame, label=self.label, model_meta=model_meta, value=1
+            )
 
 
 class LabelRawVideoSegment(AbstractLabelVideoSegment):

@@ -96,6 +96,13 @@ class Video(AbstractVideoFile):
             self.fps = self.get_fps()
         super().save(*args, **kwargs)
 
+    def label_segments_to_frame_annotations(self):
+        """
+        Generate annotations for all label video segments.
+        """
+        for lvs in self.label_video_segments.all():
+            lvs.generate_annotations()
+
     def sync_from_raw_video(self):
         """
         Sync metadata from the associated raw video file.

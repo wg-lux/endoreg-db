@@ -17,9 +17,13 @@ class AbstractFrame(models.Model):
     suffix = models.CharField(max_length=255)
     # ImageClassificationAnnotation has a foreign key to this model (related name: image_classification_annotations)
     image = models.ImageField(upload_to=FRAME_DIR_NAME, blank=True, null=True)
+    is_raw = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
         video: Union["Video", "RawVideoFile"]
+        image_classification_annotations: (
+            "models.QuerySet[ImageClassificationAnnotation]"
+        )
 
     class Meta:
         # Ensure that for each video, the frame_number is unique
@@ -28,27 +32,38 @@ class AbstractFrame(models.Model):
         # Optimize for retrieval in frame_number order
         indexes = [models.Index(fields=["video", "frame_number"])]
 
+    # Override save method to set is_raw based on the type of frame
+    def save(self, *args, **kwargs):
+        self.is_raw = self.is_raw_frame()
+        super().save(*args, **kwargs)
+
     def get_classification_annotations(self):
         """
         Get all image classification annotations for this frame.
         """
-        return ImageClassificationAnnotation.objects.filter(legacy_frame=self)
+        if self.is_raw_frame():
+            return ImageClassificationAnnotation.objects.filter(raw_frame=self)
+        return ImageClassificationAnnotation.objects.filter(frame=self)
 
     def get_classification_annotations_by_label(self, label: Label):
         """
         Get all image classification annotations for this frame with the given label.
         """
-        return ImageClassificationAnnotation.objects.filter(
-            legacy_frame=self, label=label
-        )
+        if self.is_raw_frame():
+            return ImageClassificationAnnotation.objects.filter(
+                raw_frame=self, label=label
+            )
+        return ImageClassificationAnnotation.objects.filter(frame=self, label=label)
 
     def get_classification_annotations_by_value(self, value: bool):
         """
         Get all image classification annotations for this frame with the given value.
         """
-        return ImageClassificationAnnotation.objects.filter(
-            legacy_frame=self, value=value
-        )
+        if self.is_raw_frame():
+            return ImageClassificationAnnotation.objects.filter(
+                raw_frame=self, value=value
+            )
+        return ImageClassificationAnnotation.objects.filter(frame=self, value=value)
 
     def get_classification_annotations_by_label_and_value(
         self, label: Label, value: bool
@@ -56,8 +71,12 @@ class AbstractFrame(models.Model):
         """
         Get all image classification annotations for this frame with the given label and value.
         """
+        if self.is_raw_frame():
+            return ImageClassificationAnnotation.objects.filter(
+                raw_frame=self, label=label, value=value
+            )
         return ImageClassificationAnnotation.objects.filter(
-            legacy_frame=self, label=label, value=value
+            frame=self, label=label, value=value
         )
 
     def __str__(self):
@@ -78,31 +97,3 @@ class AbstractFrame(models.Model):
             return RawFrame
         else:
             return Frame
-
-    def get_classification_annotations(self):
-        """
-        Get all image classification annotations for this frame.
-        """
-        return ImageClassificationAnnotation.objects.filter(frame=self)
-
-    def get_classification_annotations_by_label(self, label: Label):
-        """
-        Get all image classification annotations for this frame with the given label.
-        """
-        return ImageClassificationAnnotation.objects.filter(frame=self, label=label)
-
-    def get_classification_annotations_by_value(self, value: bool):
-        """
-        Get all image classification annotations for this frame with the given value.
-        """
-        return ImageClassificationAnnotation.objects.filter(frame=self, value=value)
-
-    def get_classification_annotations_by_label_and_value(
-        self, label: Label, value: bool
-    ):
-        """
-        Get all image classification annotations for this frame with the given label and value.
-        """
-        return ImageClassificationAnnotation.objects.filter(
-            frame=self, label=label, value=value
-        )
