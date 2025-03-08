@@ -31,10 +31,12 @@ from collections import defaultdict, Counter
 import shutil
 import os
 import subprocess
-from typing import Optional, List
-from django.db import models
+from typing import Optional, List, TYPE_CHECKING, Union
+from django.db import models, transaction
 from icecream import ic
-
+import io
+from django.core.files import File
+from tqdm import tqdm
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
@@ -43,9 +45,31 @@ from ..metadata import VideoMeta, SensitiveMeta
 from .utils import (
     copy_with_progress,
     STORAGE_LOCATION,
+    VIDEO_DIR,
     FRAME_DIR,
     get_transcoded_file_path,
 )
+from .frame_helpers import prepare_bulk_frames
+
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        VideoPredictionMeta,
+        Video,
+        RawVideoFile,
+        RawVideoPredictionMeta,
+        ModelMeta,
+        Center,
+        EndoscopyProcessor,
+        VideoMeta,
+    )  #
+
+TEST_RUN = os.environ.get("TEST_RUN", "False")
+TEST_RUN = TEST_RUN.lower() == "true"
+
+TEST_RUN_FRAME_NUMBER = int(os.environ.get("TEST_RUN_FRAME_NUMBER", "500"))
+
+if TEST_RUN:
+    ic("-----\nTEST RUN ENABLED\n-----")
 
 
 class AbstractVideoFile(models.Model):
@@ -75,12 +99,17 @@ class AbstractVideoFile(models.Model):
     frame_dir = models.CharField(max_length=255)
     prediction_dir = models.CharField(max_length=255)
     predictions = models.JSONField(default=dict)
+    fps = models.FloatField(blank=True, null=True)
+    duration = models.FloatField(blank=True, null=True)
 
     readable_predictions = models.JSONField(default=dict)
     merged_predictions = models.JSONField(default=dict)
     smooth_merged_predictions = models.JSONField(default=dict)
     binary_smooth_merged_predictions = models.JSONField(default=dict)
     sequences = models.JSONField(default=dict)
+    ai_model_meta = models.ForeignKey(
+        "ModelMeta", on_delete=models.CASCADE, blank=True, null=True
+    )
 
     # Frame Extraction States
     state_frames_required = models.BooleanField(default=True)
@@ -99,6 +128,16 @@ class AbstractVideoFile(models.Model):
     state_follow_up_intervention_required = models.BooleanField(blank=True, null=True)
     state_follow_up_intervention_available = models.BooleanField(default=False)
     state_dataset_complete = models.BooleanField(default=False)
+
+    is_raw = models.BooleanField(default=False)
+
+    if TYPE_CHECKING:
+        self: Union["RawVideoFile", "Video"]
+        video_meta: "VideoMeta"
+        processor: "EndoscopyProcessor"
+        center: "Center"
+        ai_model_meta: "ModelMeta"
+        sensitive_meta: "SensitiveMeta"
 
     class Meta:
         abstract = True  #
@@ -158,8 +197,8 @@ class AbstractVideoFile(models.Model):
         file_path: Path,
         center_name: str,
         processor_name: str,
-        frame_dir_parent: Path = Path("erc_data/raw_frames"),
-        video_dir: Path = Path("erc_data/raw_videos"),
+        frame_dir_parent: Path = FRAME_DIR,
+        video_dir: Path = VIDEO_DIR,
         delete_source: bool = False,
         delete_temporary_transcoded_file: bool = False,
         save: bool = True,
@@ -208,7 +247,9 @@ class AbstractVideoFile(models.Model):
 
         vid_with_hash_exists = cls.check_hash_exists(video_hash=video_hash)  # pylint: disable=no-member
         if vid_with_hash_exists:
-            existing = cls.objects.get(video_hash=video_hash)
+            existing: Union["RawVideoFile", "Video"] = cls.objects.get(
+                video_hash=video_hash
+            )
             ic(f"Existing DB entry found: {existing}")
             file_on_disk = STORAGE_LOCATION / existing.file.name
             if not file_on_disk.exists():
@@ -289,6 +330,103 @@ class AbstractVideoFile(models.Model):
 
         return video
 
+    def get_video_model(self):
+        from endoreg_db.models import RawVideoFile, Video
+
+        if self.is_raw:
+            return RawVideoFile
+        return Video
+
+    def get_frame_model(self):
+        from endoreg_db.models import RawFrame, Frame
+
+        if self.is_raw_video_file():
+            return RawFrame
+
+        return Frame
+
+    def get_label_segment_model(self):
+        from endoreg_db.models import LabelVideoSegment, LabelRawVideoSegment  # pylint: disable=import-outside-toplevel
+
+        if self.is_raw:
+            return LabelRawVideoSegment
+        return LabelVideoSegment
+
+    def sequences_to_label_video_segments(
+        self,
+        video_prediction_meta: Union["VideoPredictionMeta", "RawVideoPredictionMeta"],
+    ):
+        """
+        Convert sequences to label video segments.
+        """
+        from endoreg_db.models import Label, InformationSource
+
+        label_video_segment_model = self.get_label_segment_model()
+        for label, sequences in self.sequences.items():
+            label = Label.objects.get(name=label)
+            for sequence in sequences:
+                start_frame_number = sequence[0]
+                end_frame_number = sequence[1]
+
+                label_video_segment = label_video_segment_model.objects.create(
+                    video=self,
+                    prediction_meta=video_prediction_meta,
+                    label=label,
+                    start_frame_number=start_frame_number,
+                    end_frame_number=end_frame_number,
+                )
+                label_video_segment.save()
+
+    def get_frame_number(self):
+        """
+        Get the number of frames in the video.
+        """
+        frame_model = self.get_frame_model()
+        framecount = frame_model.objects.filter(video=self).count()
+        return framecount
+
+    def set_frames_extracted(self, value: bool = True):
+        self.state_frames_extracted = value
+        self.save()
+
+    def get_frames(self):
+        """
+        Retrieve all frames for this video in the correct order.
+        """
+        frame_model = self.get_frame_model()
+        return frame_model.objects.filter(video=self).order_by("frame_number")
+
+    def get_frame(self, frame_number):
+        """
+        Retrieve a specific frame for this video.
+        """
+        frame_model = self.get_frame_model()
+        return frame_model.objects.get(video=self, frame_number=frame_number)
+
+    def get_frame_range(self, start_frame_number: int, end_frame_number: int):
+        """
+        Expects numbers of start and stop frame.
+        Returns all frames of this video within the given range in ascending order.
+        """
+        frame_model = self.get_frame_model()
+        return frame_model.objects.filter(
+            video=self,
+            frame_number__gte=start_frame_number,
+            frame_number__lte=end_frame_number,
+        ).order_by("frame_number")
+
+    def is_raw_video_file(self):
+        if self.__class__.__name__ == "RawVideoFile":
+            return True
+        return False
+
+    def get_prediction_meta_model(self):
+        from endoreg_db.models import VideoPredictionMeta, RawVideoPredictionMeta
+
+        if self.is_raw_video_file():
+            return RawVideoPredictionMeta
+        return VideoPredictionMeta
+
     def predict_video(
         self,
         model_meta_name: str,
@@ -298,14 +436,20 @@ class AbstractVideoFile(models.Model):
         binarize_threshold: float = 0.5,
         anonymized_frames: bool = True,
         img_suffix: str = ".jpg",
-        test_run: bool = False,
-        n_test_frames: int = 100,
+        test_run: bool = TEST_RUN,
+        n_test_frames: int = TEST_RUN_FRAME_NUMBER,
     ):
         """
+        WARNING: When using with Video Objects "anonymous_frames" should be set to False
         Predict the video file using the given model.
         Frames should be extracted and anonymized frames should be generated before prediction.
         """
-        from endoreg_db.models import ModelMeta, AiModel  # pylint: disable=import-outside-toplevel
+        from endoreg_db.models import (
+            RawVideoFile,
+            Video,
+            ModelMeta,
+            AiModel,
+        )  # pylint: disable=import-outside-toplevel
         from endo_ai.predictor.inference_dataset import InferenceDataset  # pylint: disable=import-outside-toplevel
         from endo_ai.predictor.model_loader import MultiLabelClassificationNet
         from endo_ai.predictor.predict import Classifier
@@ -315,19 +459,28 @@ class AbstractVideoFile(models.Model):
             find_true_pred_sequences,
         )
 
+        if TEST_RUN:
+            test_run = True
+
         datasets = {
             "inference_dataset": InferenceDataset,
         }
 
+        if isinstance(self, RawVideoFile):
+            self: "RawVideoFile"
+        elif isinstance(self, Video):
+            self: "Video"
+        else:
+            raise Exception("Invalid instance type")
+
         dataset_model_class = datasets[dataset_name]
 
-        if anonymized_frames:
-            frame_dir = self.get_anonymized_frame_dir()
-
-            assert self.check_anonymized_frames_exist(), "Anonymized frames not found"
-            assert self.state_anonymized_frames_generated, (
-                "State 'state_anonymized_frames_generated' must be True"
-            )
+        if anonymized_frames and self.is_raw:
+            try:
+                frame_dir = self.get_anonymized_frame_dir()
+            except:  # FIXME
+                frame_dir = Path(self.frame_dir)
+                assert self.state_frames_extracted, "Frames not extracted"
 
         else:
             frame_dir = Path(self.frame_dir)
@@ -336,12 +489,32 @@ class AbstractVideoFile(models.Model):
         model_meta = ModelMeta.get_by_name(model_meta_name, model_meta_version)
         model: AiModel = model_meta.model
 
+        ic(f"Model: {model}, Model Meta: {model_meta}")
+
         model_type = model.model_type
         model_subtype = model.model_subtype
 
         ic(f"Model type: {model_type}, Model subtype: {model_subtype}")
+        ic(f"self: {self}, Type: {type(self)}")
+
+        prediction_meta_model = self.get_prediction_meta_model()
+
+        ic(
+            f"Prediction Meta Model: {prediction_meta_model}, Type: {type(prediction_meta_model)}"
+        )
+
+        video_prediction_meta, _created = prediction_meta_model.objects.get_or_create(
+            video=self, model_meta=model_meta
+        )
+
+        video_prediction_meta.save()
+
+        ic(video_prediction_meta)
 
         paths = [p for p in frame_dir.glob(f"*{img_suffix}")]
+        if not paths:
+            frame_dir = Path(self.frame_dir)
+            paths = [p for p in frame_dir.glob(f"*{img_suffix}")]
         ic(f"Found {len(paths)} images in {frame_dir}")
 
         # frame names in format "frame_{index}.jpg"
@@ -437,6 +610,10 @@ class AbstractVideoFile(models.Model):
 
         self.sequences = sequences
 
+        self.sequences_to_label_video_segments(
+            video_prediction_meta=video_prediction_meta
+        )
+
         ic("Finished inference")
         ic("Saving predictions to DB")
         ic(sequences)
@@ -491,6 +668,7 @@ class AbstractVideoFile(models.Model):
         Fetches the endoscope ROI from the video meta.
         Returns a dictionary with keys "x", "y", "width", "height"
         """
+        self.video
         endo_roi = self.video_meta.get_endo_roi()
         return endo_roi
 
@@ -512,6 +690,11 @@ class AbstractVideoFile(models.Model):
 
     # video meta should be created when video file is created
     def save(self, *args, **kwargs):
+        assert self.processor is not None, "Processor must be set"
+        if not self.fps:
+            self.fps = self.get_fps()
+        if self.is_raw_video_file():
+            self.is_raw = True
         if self.video_meta is None:
             center = self.center
             processor = self.processor
@@ -528,7 +711,6 @@ class AbstractVideoFile(models.Model):
     def extract_frames(
         self,
         quality: int = 2,
-        frame_dir: Path = None,
         overwrite: bool = False,
         ext="jpg",
         verbose=False,
@@ -537,16 +719,13 @@ class AbstractVideoFile(models.Model):
         Extract frames from the video file and save them to the frame_dir.
         For this, ffmpeg must be available in in the current environment.
         """
-        if frame_dir is None:
-            frame_dir = Path(self.frame_dir)
-        else:
-            frame_dir = Path(frame_dir)
-
+        frame_dir = Path(self.frame_dir)
+        ic(f"Extracting frames to {frame_dir}")
         if not frame_dir.exists():
             frame_dir.mkdir(parents=True, exist_ok=True)
 
         if not overwrite and len(list(frame_dir.glob(f"*.{ext}"))) > 0:
-            print(f"Frames already extracted for {self.file.name}")
+            ic(f"Frames already extracted for {self.file.name}")
             self.state_frames_extracted = True  # Mark frames as extracted
             return f"Frames already extracted at {frame_dir}"
 
@@ -581,9 +760,29 @@ class AbstractVideoFile(models.Model):
         if verbose and stdout_data:
             print(stdout_data)
 
-        self.state_frames_extracted = True
+        # After extracting frames with ffmpeg, parse frame filenames and batch-create
+        extracted_paths = sorted(frame_dir.glob(f"*.{ext}"))
+        frames_to_create = []
+        BATCH_SIZE = 500
+        for i, (frame_number, file_obj) in tqdm(
+            enumerate(prepare_bulk_frames(extracted_paths), start=1)
+        ):
+            frame_obj_instance = self._create_frame_object(
+                frame_number, image_file=file_obj
+            )
+            frames_to_create.append(frame_obj_instance)
 
-        return f"Frames extracted to {frame_dir} ({frame_path_string}) with quality {quality}"
+            if i % BATCH_SIZE == 0:
+                with transaction.atomic():
+                    self._bulk_create_frames(frames_to_create)
+                frames_to_create.clear()
+
+        if frames_to_create:
+            with transaction.atomic():
+                self._bulk_create_frames(frames_to_create)
+
+        self.set_frames_extracted(True)
+        return f"Frames extracted to {frame_dir} with quality {quality}"
 
     def delete_frames(self):
         """
@@ -720,10 +919,10 @@ class AbstractVideoFile(models.Model):
         return rois_texts
 
     def update_text_metadata(self, ocr_frame_fraction=0.001):
-        print(f"Updating metadata for {self.file.name}")
+        ic(f"Updating metadata for {self.file.name}")
         extracted_data_dict = self.extract_text_information(ocr_frame_fraction)
         if extracted_data_dict is None:
-            print("No text extracted; skipping metadata update.")
+            ic("No text extracted; skipping metadata update.")
             return
         extracted_data_dict["center_name"] = self.center.name
 
@@ -731,9 +930,9 @@ class AbstractVideoFile(models.Model):
 
         extracted_data_dict["center_name"] = self.center.name
 
-        print("____________")
-        print(extracted_data_dict)
-        print("____________")
+        ic("____________")
+        ic(extracted_data_dict)
+        ic("____________")
 
         self.sensitive_meta = SensitiveMeta.create_from_dict(extracted_data_dict)
         self.state_sensitive_data_retrieved = True  # pylint: disable=attribute-defined-outside-init
@@ -744,9 +943,15 @@ class AbstractVideoFile(models.Model):
     def update_video_meta(self):
         video_meta = self.video_meta
         video_path = Path(self.file.path)
+        center = self.center
+        assert self.processor
 
         if video_meta is None:
-            video_meta = VideoMeta.create_from_video(video_path)
+            video_meta = VideoMeta.create_from_file(
+                video_path,
+                center=center,
+                processor=self.processor,
+            )
             self.video_meta = video_meta
             self.save()
 
@@ -757,6 +962,7 @@ class AbstractVideoFile(models.Model):
         # # FIXME
         # fps = 50
         # return fps
+
         if self.video_meta is None:
             self.update_video_meta()
 
@@ -764,3 +970,25 @@ class AbstractVideoFile(models.Model):
             self.video_meta.initialize_ffmpeg_meta(self.file.path)
 
         return self.video_meta.get_fps()
+
+    def _create_frame_object(self, frame_number, image_file=None):
+        """
+        Returns a frame instance with the image_file set.
+        """
+        frame_model = self.get_frame_model()
+        return frame_model(
+            video=self,
+            frame_number=frame_number,
+            image=image_file,
+        )
+
+    def _bulk_create_frames(self, frames_to_create):
+        """
+        Bulk create frames, then save their images to storage.
+        """
+        frame_model = self.get_frame_model()
+        created = frame_model.objects.bulk_create(frames_to_create)
+        # for frame in created:
+        #     frame_name = f"frame_{frame.frame_number:07d}.jpg"
+        #     frame.image.save(frame_name, frame.image)
+        #     frame.save()

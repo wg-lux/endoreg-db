@@ -1,10 +1,18 @@
 from django.db import models
 import numpy as np
 from ..annotation import ImageClassificationAnnotation
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
+from tqdm import tqdm
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Video, Label, InformationSource
+    from endoreg_db.models import (
+        RawVideoFile,
+        Video,
+        Label,
+        InformationSource,
+        VideoPredictionMeta,
+        RawVideoPredictionMeta,
+    )
 
 
 def find_segments_in_prediction_array(prediction_array: np.array, min_frame_len: int):
@@ -33,19 +41,25 @@ def find_segments_in_prediction_array(prediction_array: np.array, min_frame_len:
 
 
 class AbstractLabelVideoSegment(models.Model):
-    video = None  # Placeholder for the video field, to be defined in derived classes
-    prediction_meta = None  # Placeholder for the prediction_meta field, to be defined in derived classes
     start_frame_number = models.IntegerField()
     end_frame_number = models.IntegerField()
-    source = models.ForeignKey("InformationSource", on_delete=models.CASCADE)
-    label = models.ForeignKey("Label", on_delete=models.CASCADE)
+    source = models.ForeignKey(
+        "InformationSource", on_delete=models.SET_NULL, null=True
+    )
+    label = models.ForeignKey("Label", on_delete=models.SET_NULL, null=True, blank=True)
+
+    if TYPE_CHECKING:
+        label: "Label"
+        source: "InformationSource"
+        prediction_meta: Union["RawVideoPredictionMeta", "VideoPredictionMeta"]
+        video: Union[Video, RawVideoFile]
 
     class Meta:
         abstract = True
 
     def __str__(self):
-        video: Video = self.video
-        label: Label = self.label
+        video = self.video
+        label = self.label
 
         str_repr = (
             video.file.path
@@ -60,7 +74,7 @@ class AbstractLabelVideoSegment(models.Model):
         return str_repr
 
     def get_frames(self):
-        video: Video = self.video
+        video = self.video
         return video.get_frame_range(self.start_frame_number, self.end_frame_number)
 
     def get_annotations(self):
@@ -71,26 +85,29 @@ class AbstractLabelVideoSegment(models.Model):
 
         return annotations
 
-    def get_frames_without_annotation(self, n_frames: int):
+    def set_binary_frame_predictions(self):
         """
-        Get a frame without an annotation.
+        Set binary frame predictions based on the annotations.
         """
-        assert 1 == 2, "This method should be overridden in derived classes"
+        from endoreg_db.models import ImageClassificationPrediction
+
+        if TYPE_CHECKING:
+            video: Union["Video", "RawVideoFile"] = self.video
+
+        model_meta = self.video.ai_model_meta
+
+        frames = self.get_frames()
+        label = self.label
+
+        for frame in tqdm(frames):
+            prediction, _created = ImageClassificationPrediction.objects.get_or_create(
+                frame=frame, label=label, model_meta=model_meta
+            )
+
+            prediction.value = 1
 
     def get_segment_len_in_s(self):
-        return (self.end_frame_number - self.start_frame_number) / self.video.fps
-
-
-class LabelVideoSegment(AbstractLabelVideoSegment):
-    video = models.ForeignKey("Video", on_delete=models.CASCADE)
-    prediction_meta = models.ForeignKey(
-        "VideoPredictionMeta", on_delete=models.CASCADE, related_name="video_segments"
-    )
-
-    def get_video_model(self):
-        from endoreg_db.models.data_file.video import Video
-
-        return Video
+        return (self.end_frame_number - self.start_frame_number) / self.video.get_fps()
 
     def get_frames_without_annotation(self, n_frames: int):
         """
@@ -113,3 +130,70 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
             )
 
         return frames_without_annotation
+
+
+class LabelVideoSegment(AbstractLabelVideoSegment):
+    video = models.ForeignKey(
+        "Video", on_delete=models.CASCADE, related_name="label_video_segments"
+    )
+    prediction_meta = models.ForeignKey(
+        "VideoPredictionMeta",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="label_video_segments",
+    )
+
+    if TYPE_CHECKING:
+        video: "Video"
+        label: "Label"
+        source: "InformationSource"
+        prediction_meta: "VideoPredictionMeta"
+
+    @classmethod
+    def from_raw(cls, video: "Video", raw_label_video_segment: "LabelRawVideoSegment"):
+        from endoreg_db.models import VideoPredictionMeta
+
+        raw_video_prediction_meta = raw_label_video_segment.prediction_meta
+
+        prediction_meta = VideoPredictionMeta.from_raw(
+            video=video, raw_video_prediction_meta=raw_video_prediction_meta
+        )
+
+        return cls(
+            start_frame_number=raw_label_video_segment.start_frame_number,
+            end_frame_number=raw_label_video_segment.end_frame_number,
+            source=raw_label_video_segment.source,
+            label=raw_label_video_segment.label,
+            video=video,
+            prediction_meta=prediction_meta,
+        )
+
+    def get_video_model(self):
+        from endoreg_db.models import Video
+
+        return Video
+
+
+class LabelRawVideoSegment(AbstractLabelVideoSegment):
+    video = models.ForeignKey(
+        "RawVideoFile", on_delete=models.CASCADE, related_name="label_video_segments"
+    )
+    prediction_meta = models.ForeignKey(
+        "RawVideoPredictionMeta",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="label_video_segments",
+    )
+
+    if TYPE_CHECKING:
+        video: "RawVideoFile"
+        label: "Label"
+        source: "InformationSource"
+        prediction_meta: "RawVideoPredictionMeta"
+
+    def get_video_model(self):
+        from endoreg_db.models import RawVideoFile
+
+        return RawVideoFile

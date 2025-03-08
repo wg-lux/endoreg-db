@@ -146,10 +146,12 @@ from .data_file import (
     ReportFile,
     Video,
     LabelVideoSegment,
+    LabelRawVideoSegment,
     SensitiveMeta,
     PdfMeta,
     PdfType,
     VideoMeta,
+    RawFrame,
     FFMpegMeta,
     VideoImportMeta,
     RawPdfFile,
@@ -215,6 +217,7 @@ from .quiz import (
 from .prediction import (
     ImageClassificationPrediction,
     VideoPredictionMeta,
+    RawVideoPredictionMeta,
 )
 
 # Hardware
@@ -237,6 +240,7 @@ __all__ = [
     "CenterProduct",
     "CenterResource",
     "CenterWaste",
+    "RawVideoPredictionMeta",
     "Gender",
     "Person",
     "Patient",
@@ -252,6 +256,7 @@ __all__ = [
     "Examiner",
     "ExaminerSerializer",
     "PortalUserInfo",
+    "RawFrame",
     "Profession",
     "FirstName",
     "LastName",
@@ -317,6 +322,7 @@ __all__ = [
     "Label",
     "LabelType",
     "LabelSet",
+    "LabelRawVideoSegment",
     "ImageClassificationAnnotation",
     "BinaryClassificationAnnotationTask",
     "AnonymousImageAnnotation",

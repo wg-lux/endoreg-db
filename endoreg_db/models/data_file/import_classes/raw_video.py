@@ -2,6 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from django.db import models
+from typing import TYPE_CHECKING
 
 from icecream import ic
 from tqdm import tqdm
@@ -17,6 +18,19 @@ from ..base_classes.utils import (
     STORAGE_LOCATION,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
+
+if TYPE_CHECKING:
+    # import Queryset
+    from django.db.models import QuerySet
+    from endoreg_db.models import (
+        Patient,
+        SensitiveMeta,
+        Video,
+        VideoPredictionMeta,
+        RawVideoPredictionMeta,
+        LabelVideoSegment,
+        LabelRawVideoSegment,
+    )
 
 
 # pylint: disable=attribute-defined-outside-init,no-member
@@ -112,6 +126,10 @@ class RawVideoFile(AbstractVideoFile):
         blank=True,
     )
 
+    if TYPE_CHECKING:
+        sensitive_meta: "SensitiveMeta"
+        label_video_segments: "QuerySet[LabelVideoSegment]"
+
     # Crop Frames
     state_anonymized_frames_generated = models.BooleanField(default=False)
 
@@ -169,7 +187,7 @@ class RawVideoFile(AbstractVideoFile):
         anonymized_frames_already_extracted = self.check_anonymized_frames_exist()
         anonymized_frame_dir = self.get_anonymized_frame_dir()
         self.state_anonymized_frames_generated = anonymized_frames_already_extracted
-
+        assert self.processor, "Processor not set"
         endo_roi = self.get_endo_roi()
         assert validate_endo_roi(endo_roi), "Endoscope ROI is not valid"
 
@@ -232,7 +250,6 @@ class RawVideoFile(AbstractVideoFile):
         """
         Make an anonymized video from the anonymized frames.
         """
-        from endoreg_db.models import Video
 
         assert self.state_frames_extracted, "Frames not extracted"
         assert self.state_anonymized_frames_generated, "Anonymized frames not generated"
@@ -302,7 +319,6 @@ class RawVideoFile(AbstractVideoFile):
 
     def get_or_create_video(self):
         from endoreg_db.models import Video, Patient, PatientExamination
-        from warnings import warn
 
         video = self.video
         expected_path = self.get_anonymized_video_path()

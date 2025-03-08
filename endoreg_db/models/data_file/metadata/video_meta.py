@@ -2,6 +2,7 @@ from django.db import models
 import subprocess
 import json
 from pathlib import Path
+from typing import Optional, TYPE_CHECKING
 
 # import endoreg_center_id from django settings
 from django.conf import settings
@@ -11,6 +12,9 @@ if not hasattr(settings, "ENDOREG_CENTER_ID"):
     ENDOREG_CENTER_ID = 9999
 else:
     ENDOREG_CENTER_ID = settings.ENDOREG_CENTER_ID
+
+if TYPE_CHECKING:
+    from endoreg_db.models import EndoscopyProcessor, Endoscope, Center
 
 
 # VideoMeta
@@ -27,7 +31,29 @@ class VideoMeta(models.Model):
     )
     ffmpeg_meta = models.OneToOneField(
         "FFMpegMeta", on_delete=models.CASCADE, blank=True, null=True
-    )
+    )  ##
+
+    @classmethod
+    def create_from_file(
+        cls,
+        file_path: Path,
+        center: Optional["Center"],
+        processor: Optional["EndoscopyProcessor"] = None,
+        endoscope: Optional["Endoscope"] = None,
+    ):
+        """Create a new VideoMeta from a file."""
+        meta = cls.objects.create(center=center)
+        meta.update_meta(file_path)
+
+        if processor:
+            meta.processor = processor
+            meta.get_endo_roi()
+        if endoscope:
+            meta.endoscope = endoscope
+
+        meta.save()
+
+        return meta
 
     def __str__(self):
         processor_name = self.processor.name if self.processor is not None else "None"

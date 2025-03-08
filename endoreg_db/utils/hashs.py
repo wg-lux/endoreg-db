@@ -1,6 +1,5 @@
 import hashlib
 from pathlib import Path
-import warnings
 from datetime import datetime, date
 
 import os

@@ -1,7 +1,11 @@
-from .frame import Frame
+from .frame import Frame, RawFrame
 from .report_file import ReportFile
 from .video import Video, VideoImportMeta
-from .video_segment import LabelVideoSegment
+from .video_segment import (
+    LabelVideoSegment,
+    LabelRawVideoSegment,
+    find_segments_in_prediction_array,
+)
 from .metadata import (
     SensitiveMeta,
     PdfMeta,
@@ -21,9 +25,11 @@ __all__ = [
     "ReportFile",
     "Video",
     "LabelVideoSegment",
+    "LabelRawVideoSegment",
     "SensitiveMeta",
     "PdfMeta",
     "PdfType",
+    "RawFrame",
     "VideoMeta",
     "FFMpegMeta",
     "VideoImportMeta",

@@ -1,10 +1,12 @@
+from typing import Union, TYPE_CHECKING
 from django.db import models
 
 from endoreg_db.models.label.label import LabelSet
 from ..data_file.video import Video
+from ..data_file.import_classes import RawVideoFile
 from ..data_file.frame import Frame
 from .image_classification import ImageClassificationPrediction
-from ..data_file.video_segment import (
+from ..data_file import (
     LabelVideoSegment,
     find_segments_in_prediction_array,
 )
@@ -16,6 +18,9 @@ import pickle
 DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
+if TYPE_CHECKING:
+    from endoreg_db.models import ModelMeta
+
 
 class AbstractVideoPredictionMeta(models.Model):
     model_meta = models.ForeignKey("ModelMeta", on_delete=models.CASCADE)
@@ -23,27 +28,51 @@ class AbstractVideoPredictionMeta(models.Model):
     date_modified = models.DateTimeField(auto_now=True)
     video = None  # Placeholder for the video field, to be defined in derived classes
     prediction_array = models.BinaryField(blank=True, null=True)
+    is_raw = models.BooleanField(default=False)
+
+    if TYPE_CHECKING:
+        model_meta: "ModelMeta"
+        video: Union["Video", "RawVideoFile"]
 
     class Meta:
         abstract = True
         unique_together = ("model_meta", "video")
 
+    def is_raw_video_prediction_meta(self):
+        if isinstance(self, RawVideoPredictionMeta):
+            return True
+        return False
+
     def __str__(self):
         return f"Video {self.video.id} - {self.model_meta.name}"
+
+    # override save method to set is_raw field
+    def save(self, *args, **kwargs):
+        self.is_raw = self.is_raw_video_prediction_meta()
+        super().save(*args, **kwargs)
 
     def get_labelset(self):
         """
         Get the labelset of the predictions.
         """
-        return self.model_meta.labelset
+        if self.is_raw:
+            return self.model_meta.labelset
 
     def get_video_model(self):
-        assert 1 == 2, "This method should be overridden in derived classes"
-        return None
+        if self.is_raw:
+            return RawVideoFile
+
+        return Video
 
     def get_frame_model(self):
-        assert 1 == 2, "This method should be overridden in derived classes"
-        return None
+        return Frame
+
+    def get_video_segment_model(self):
+        from endoreg_db.models import LabelRawVideoSegment
+
+        if self.is_raw:
+            return LabelRawVideoSegment
+        return LabelVideoSegment
 
     def get_label_list(self):
         """
@@ -52,10 +81,6 @@ class AbstractVideoPredictionMeta(models.Model):
         labelset: LabelSet = self.get_labelset()
         label_list = labelset.get_labels_in_order()
         return label_list
-
-    def get_video_segment_model(self):
-        assert 1 == 2, "This method should be overridden in derived classes"
-        return None
 
     def save_prediction_array(self, prediction_array: np.array):
         """
@@ -177,23 +202,79 @@ class AbstractVideoPredictionMeta(models.Model):
             self.create_video_segments_for_label(segments, label)
 
 
+class RawVideoPredictionMeta(AbstractVideoPredictionMeta):
+    """
+    Model for storing video predictions for a specific model and video.
+    """
+
+    video = models.ForeignKey(
+        "RawVideoFile", on_delete=models.CASCADE, related_name="video_prediction_meta"
+    )
+
+    def calculate_prediction_array(self, window_size_in_seconds: int = None):
+        """
+        Fetches all predictions for this video, labelset, and model meta.
+        """
+        video: Video = self.video
+
+        model_meta = self.model_meta
+        label_list = self.get_label_list()
+
+        prediction_array = np.zeros((video.get_frame_number, len(label_list)))
+        for i, label in enumerate(label_list):
+            # fetch all predictions for this label, video, and model meta ordered by ImageClassificationPrediction.frame.frame_number
+            predictions = ImageClassificationPrediction.objects.filter(
+                label=label, frame__video=video, model_meta=model_meta
+            ).order_by("frame__frame_number")
+            confidences = np.array(
+                [prediction.confidence for prediction in predictions]
+            )
+            smooth_confidences = self.apply_running_mean(
+                confidences, window_size_in_seconds
+            )
+            # calculate binary predictions
+            binary_predictions = smooth_confidences > 0.5
+            # add to prediction array
+            prediction_array[:, i] = binary_predictions
+
+        # save prediction array
+        self.save_prediction_array(prediction_array)
+
+
 class VideoPredictionMeta(AbstractVideoPredictionMeta):
     """
     Model for storing video predictions for a specific model and video.
     """
 
-    video = models.OneToOneField(
+    video = models.ForeignKey(
         "Video", on_delete=models.CASCADE, related_name="video_prediction_meta"
     )
 
-    def get_video_model(self):
-        return Video
+    @classmethod
+    def from_raw(
+        cls, video: "Video", raw_video_prediction_meta: RawVideoPredictionMeta
+    ):
+        """
+        Create a new VideoPrediction from an existing RawVideoPredictionMeta.
+        """
+        cls_dict = {
+            "video": video,
+            "model_meta": raw_video_prediction_meta.model_meta,
+            "date_created": raw_video_prediction_meta.date_created,
+            "date_modified": raw_video_prediction_meta.date_modified,
+            "prediction_array": raw_video_prediction_meta.prediction_array,
+            "is_raw": False,
+        }
 
-    def get_frame_model(self):
-        return Frame
-
-    def get_video_segment_model(self):
-        return LabelVideoSegment
+        # check if exists
+        if cls.objects.filter(
+            video=video, model_meta=raw_video_prediction_meta.model_meta
+        ).exists():
+            return cls.objects.get(
+                video=video, model_meta=raw_video_prediction_meta.model_meta
+            )
+        else:
+            return cls.objects.create(**cls_dict)
 
     def calculate_prediction_array(self, window_size_in_seconds: int = None):
         """

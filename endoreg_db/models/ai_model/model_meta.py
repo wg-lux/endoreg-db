@@ -4,12 +4,15 @@ This module defines the ModelMeta and ModelMetaManager classes for managing AI m
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import shutil
 
 from django.db import models
 from django.core.validators import FileExtensionValidator
 from icecream import ic
+
+if TYPE_CHECKING:
+    from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
 
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 
@@ -75,6 +78,10 @@ class ModelMeta(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
 
     objects = ModelMetaManager()
+
+    if TYPE_CHECKING:
+        labelset: "LabelSet"
+        ai_model: "AiModel"
 
     @classmethod
     def create_from_file(
@@ -208,6 +215,8 @@ class ModelMeta(models.Model):
             "activation": self.get_activation_function(self.activation),
             "labels": self.labelset.get_labels_in_order(),  # pylint: disable=no-member
         }
+
+        ic(f"ModelMeta - get_inference_dataset_config: {config}")
 
         return config
 

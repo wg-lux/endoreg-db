@@ -1,6 +1,5 @@
 from datetime import date, time
 from django.db import models
-from ..center import Center
 from .base_classes.abstract_pdf import AbstractPdfFile
 
 
