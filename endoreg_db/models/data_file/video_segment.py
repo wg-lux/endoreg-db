@@ -170,7 +170,11 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
 
         for frame in tqdm(frames):
             ImageClassificationAnnotation.objects.get_or_create(
-                frame=frame, label=self.label, model_meta=model_meta, value=1
+                frame=frame,
+                label=self.label,
+                model_meta=model_meta,
+                value=1,
+                information_source=information_source,
             )
 
 
