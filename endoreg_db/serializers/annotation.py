@@ -1,10 +1,7 @@
 from rest_framework import serializers
-from endoreg_db.models import LegacyBinaryClassificationAnnotationTask, BinaryClassificationAnnotationTask, ImageClassificationAnnotation
+from endoreg_db.models import  BinaryClassificationAnnotationTask, ImageClassificationAnnotation
 
-class LegacyBinaryClassificationAnnotationTaskSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LegacyBinaryClassificationAnnotationTask
-        fields = '__all__'
+
 
 class BinaryClassificationAnnotationTaskSerializer(serializers.ModelSerializer):
     class Meta:
