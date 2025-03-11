@@ -1,10 +1,9 @@
 from pathlib import Path
 from rest_framework import serializers
 from django.http import FileResponse, Http404,StreamingHttpResponse
-from ..models import RawVideoFile
+from ..models import RawVideoFile,Label
 import subprocess
 from django.conf import settings
-
 
 class VideoFileSerializer(serializers.ModelSerializer):
 
@@ -29,14 +28,16 @@ class VideoFileSerializer(serializers.ModelSerializer):
     label_names = serializers.SerializerMethodField()
      # Convert selected label frames into time segments (seconds)
     label_time_segments = serializers.SerializerMethodField()
-    label_predictions = serializers.SerializerMethodField()
+    #label_predictions = serializers.SerializerMethodField()
+    original_file_name = serializers.CharField()
+    
 
 
 
     class Meta:
         model = RawVideoFile
         #he fields list defines which data should be included in the API response.
-        fields = ['id', 'file', 'video_url', 'full_video_path','video_selection_field','label_names','sequences','label_time_segments',]  #  Ensure computed fields are included
+        fields = ['id','original_file_name', 'file', 'video_url', 'full_video_path','video_selection_field','label_names','sequences','label_time_segments']  #  Ensure computed fields are included
 
     def get_video_selection_field(self,obj):
         """
@@ -90,7 +91,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
        # pseudo_dir = settings.PSEUDO_DIR
         #print(f"Using pseudo directory: {pseudo_dir}")
 
-        #   full path using the actual storage directory
+        #   full path using the actual storage directory~
+        #actual_storage_dir = Path("~/test-data")  # need to change
         actual_storage_dir = Path("/home/admin/test-data")  # need to change
         #actual_storage_dir = pseudo_dir
         full_path = actual_storage_dir / video_relative_path
@@ -139,49 +141,234 @@ class VideoFileSerializer(serializers.ModelSerializer):
         """
         Converts frame sequences of a selected label into time segments in seconds.
         Also retrieves frame-wise predictions for the given label.
+
+        Includes:
+        - Frame index
+        - Corresponding frame filename (frame_0000001.jpg)
+        - Full frame file path for frontend access
+        - segment_start and segment_end (in frame index format, not divided by FPS)
         """
 
-        FPS = 50  # Frames per second, should be dynamic if stored in DB
+        fps = obj.fps if hasattr(obj, "fps") and obj.fps is not None else obj.get_fps() if hasattr(obj, "get_fps") and obj.get_fps() is not None else 50
 
-        sequences = self.get_sequences(obj)  # Get all sequences from the database
-        readable_predictions = obj.readable_predictions  # Frame-wise predictions from DB, need to change the field name for smooth predicitons values
+        print("here is fps::::::::::::::::::.-----------::::::",fps)
+        sequences = self.get_sequences(obj)  # Fetch sequence data
+        readable_predictions = obj.readable_predictions  # Predictions from DB
 
         if not isinstance(readable_predictions, list):
             return {"error": "Invalid prediction data format. Expected a list."}
+
+        frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model
 
         time_segments = {}  # Dictionary to store converted times and frame predictions
 
         for label, frame_ranges in sequences.items():
             label_times = []  # Stores time segments
-            label_predictions = {}  # Fix: Initialize label_predictions here
+            frame_predictions = {}  # Ensure frame_predictions is properly initialized for each label
 
             for frame_range in frame_ranges:
                 if len(frame_range) != 2:
                     continue  # Skip invalid frame ranges
 
-                start_frame, end_frame = frame_range
+                start_frame, end_frame = frame_range  # Raw frame indices from DB
+                start_time = start_frame / fps  # Convert frame index to seconds
+                end_time = end_frame / fps  # Convert frame index to seconds
 
-                # Convert frames to time in seconds
-                start_time = start_frame / FPS
-                end_time = end_frame / FPS
+                frame_data = {}  # Store frame-wise info
 
                 # Fetch predictions for frames within this range
-                frame_predictions = {}
                 for frame_num in range(start_frame, end_frame + 1):
                     if 0 <= frame_num < len(readable_predictions):  # Ensure index is valid
+                        frame_filename = f"frame_{str(frame_num).zfill(7)}.jpg"  # Frame filename format
+                        frame_path = frame_dir / frame_filename  # Full path to the frame
+
+                        frame_data[frame_num] = {
+                            "frame_filename": frame_filename,
+                            "frame_file_path": str(frame_path),
+                            "predictions": readable_predictions[frame_num]
+                        }
+
+                        # Store frame-wise predictions in frame_predictions
                         frame_predictions[frame_num] = readable_predictions[frame_num]
 
                 # Append the converted time segment
-                label_times.append({"start_time": round(start_time, 2), "end_time": round(end_time, 2)})
-                label_predictions.update(frame_predictions)  # Fix: Store predictions correctly
+                label_times.append({
+                    "segment_start": start_frame,  # Raw start frame (not divided by FPS)
+                    "segment_end": end_frame,  # Raw end frame (not divided by FPS)
+                    "start_time": round(start_time, 2),  # Converted start time in seconds
+                    "end_time": round(end_time, 2),  # Converted end time in seconds
+                    "frames": frame_data  # Attach frame details
+                })
 
-            # Store both time segments and frame predictions under the label
+            # Store time segments and frame_predictions under the label
             time_segments[label] = {
                 "time_ranges": label_times,
-                "frame_predictions": label_predictions,  # Fix: Ensure label_predictions is correctly assigned per label
+                "frame_predictions": frame_predictions  # Ensure frame_predictions is correctly assigned
             }
 
         return time_segments
+
+class VideoListSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer to return only `id` and `original_file_name`
+    for the video selection dropdown in Vue.js.
+    """
+    class Meta:
+        model = RawVideoFile
+        fields = ['id', 'original_file_name']  # Only fetch required fields
+
+
+
+from pathlib import Path
+from rest_framework import serializers
+from django.http import FileResponse, Http404, StreamingHttpResponse
+from ..models import RawVideoFile, Label, LabelRawVideoSegment  # Importing necessary models
+import subprocess
+from django.conf import settings
+from django.db.models import Q  # Import Q for better querying
+
+
+class LabelSerializer(serializers.ModelSerializer):
+    """
+    Serializer for fetching labels from the `endoreg_db_label` table.
+    Includes `id` (for backend processing) and `name` (for dropdown display in Vue.js).
+    """
+    class Meta:
+        model = Label
+        fields = ['id', 'name']
+
+
+class LabelSegmentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for retrieving label segments from `endoreg_db_labelrawvideosegment`.
+    """
+    class Meta:
+        model = LabelRawVideoSegment
+        fields = ['id', 'video_id', 'label_id', 'start_frame_number', 'end_frame_number']
+
+
+from django.db import transaction
+
+from django.db import transaction
+
+class LabelSegmentUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating label segments.
+
+    - Ensures that the segments stored in the database match exactly with what is sent from the frontend.
+    - Updates existing segments if their `start_frame_number` matches but `end_frame_number` has changed.
+    - Inserts new segments if they are not already present in the database.
+    - Deletes extra segments from the database if they are no longer in the frontend data.
+    """
+
+    video_id = serializers.IntegerField()
+    label_id = serializers.IntegerField()
+    segments = serializers.ListField(
+        child=serializers.DictField(
+            child=serializers.FloatField()  # Ensure we handle float values
+        )
+    )
+
+    def validate(self, data):
+        """
+        Validates that all required segment fields are provided correctly.
+
+        - Ensures that each segment contains `start_frame_number` and `end_frame_number`.
+        - Validates that `start_frame_number` is always less than or equal to `end_frame_number`.
+        """
+        if not data.get("segments"):
+            raise serializers.ValidationError("No segments provided.")
+
+        for segment in data["segments"]:
+            if "start_frame_number" not in segment or "end_frame_number" not in segment:
+                raise serializers.ValidationError("Each segment must have `start_frame_number` and `end_frame_number`.")
+
+            if segment["start_frame_number"] > segment["end_frame_number"]:
+                raise serializers.ValidationError("Start frame must be less than or equal to end frame.")
+
+        return data
+
+    def save(self):
+        """
+        Updates, inserts, and deletes label segments to ensure database consistency.
+
+        Steps:
+        1. Fetch all existing segments for the given `video_id` and `label_id`.
+        2. Compare existing segments with the new ones from the frontend.
+        3. Update segments where `start_frame_number` exists but `end_frame_number` has changed.
+        4. Insert new segments that are not already in the database.
+        5. Delete segments that exist in the database but are missing from the frontend data.
+        """
+
+        video_id = self.validated_data["video_id"]
+        label_id = self.validated_data["label_id"]
+        new_segments = self.validated_data["segments"]
+
+        # Fetch all existing segments for this video and label from the database
+        existing_segments = LabelRawVideoSegment.objects.filter(video_id=video_id, label_id=label_id)
+
+        # Convert existing segments into a dictionary for quick lookup
+        # Key format: (start_frame_number, end_frame_number)
+        existing_segments_dict = {(float(seg.start_frame_number), float(seg.end_frame_number)): seg for seg in existing_segments}
+
+        # Prepare lists for batch processing
+        updated_segments = []  # Stores segments that need to be updated
+        new_entries = []  # Stores segments that need to be created
+        existing_keys = set(existing_segments_dict.keys())  # Existing database segment keys
+        new_keys = set((float(seg["start_frame_number"]), float(seg["end_frame_number"])) for seg in new_segments)  # New frontend segment keys
+
+        # Start a transaction to ensure database consistency
+        with transaction.atomic():
+            for segment in new_segments:
+                start_frame = float(segment["start_frame_number"])
+                end_frame = float(segment["end_frame_number"])
+
+                if (start_frame, end_frame) in existing_keys:
+                    # If segment with exact start_frame and end_frame already exists, no change is needed
+                    continue
+                else:
+                    # Check if a segment exists with the same start_frame but different end_frame
+                    existing_segment = LabelRawVideoSegment.objects.filter(
+                        video_id=video_id,
+                        label_id=label_id,
+                        start_frame_number=start_frame
+                    ).first()
+
+                    if existing_segment:
+                        # If a segment with the same start_frame exists but the end_frame is different, update it
+                        if float(existing_segment.end_frame_number) != end_frame:
+                            existing_segment.end_frame_number = end_frame
+                            existing_segment.save()
+                            updated_segments.append(existing_segment)
+                    else:
+                        # If no existing segment matches, create a new one
+                        new_entries.append(LabelRawVideoSegment(
+                            video_id=video_id,
+                            label_id=label_id,
+                            start_frame_number=start_frame,
+                            end_frame_number=end_frame
+                        ))
+
+            # Delete segments that are no longer present in the frontend data
+            segments_to_delete = existing_segments.exclude(
+                start_frame_number__in=[float(seg["start_frame_number"]) for seg in new_segments]
+            )
+            deleted_count = segments_to_delete.count()
+            segments_to_delete.delete()
+
+            # Insert new segments in bulk for efficiency
+            if new_entries:
+                LabelRawVideoSegment.objects.bulk_create(new_entries)
+
+        # Return the updated, new, and deleted segment information
+        print("------------------------------,",updated_segments,"-----------------------",new_segments,"_-------",deleted_count)
+        return {
+            "updated_segments": LabelSegmentSerializer(updated_segments, many=True).data,
+            "new_segments": LabelSegmentSerializer(new_entries, many=True).data,
+            "deleted_segments": deleted_count
+        }
+
+
 
 
 
@@ -249,4 +436,30 @@ axios.get(`http://localhost:8000/api/video/${videoId}/`, {
     console.error("Error Fetching Video:", error.response ? error.response.data : error);
 });
 
+await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
+
+const videoIdUpdate = 1;  // Change to actual video ID
+const labelIdUpdate = 15; // Change to actual label ID
+
+const updatedSegments = {
+    video_id: videoIdUpdate,
+    label_id: labelIdUpdate,
+    segments: [
+        { start_frame_number: 1, end_frame_number: 15 }  // Updated end_frame (was 10)
+       // New segment
+    ]
+};
+
+axios.put(`http://localhost:8000/api/video/${videoIdUpdate}/label/${labelIdUpdate}/update_segments/`, updatedSegments, {
+    headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+})
+.then(response => {
+    console.log(" Segments Updated Successfully:", response.data);
+})
+.catch(error => {
+    console.error(" Error Updating Segments:", error.response ? error.response.data : error);
+});
 """''
