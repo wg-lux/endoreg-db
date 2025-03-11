@@ -12,9 +12,10 @@ DJANGO_NAME_SALT = os.environ.get("DJANGO_NAME_SALT", "default_salt")
 # Directory stuff
 PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
 STORAGE_LOCATION = PSEUDO_DIR
-FRAME_DIR_NAME = os.environ.get("DJANGO_FRAME_DIR_NAME", "frames")
-VIDEO_DIR_NAME = os.environ.get("DJANGO_VIDEO_DIR_NAME", "videos")
-RAW_VIDEO_DIR_NAME = VIDEO_DIR_NAME  # Deprecate this?
+FRAME_DIR_NAME = os.environ.get("DJANGO_FRAME_DIR_NAME", "db_frames")
+RAW_FRAME_DIR_NAME = os.environ.get("DJANGO_RAW_FRAME_DIR_NAME", "db_raw_frames")
+VIDEO_DIR_NAME = os.environ.get("DJANGO_VIDEO_DIR_NAME", "db_videos")
+RAW_VIDEO_DIR_NAME = os.environ.get("DJANGO_RAW_VIDEO_DIR_NAME", "db_raw_videos")
 
 FRAME_DIR = STORAGE_LOCATION / FRAME_DIR_NAME
 VIDEO_DIR = STORAGE_LOCATION / VIDEO_DIR_NAME
@@ -24,7 +25,7 @@ VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 RAW_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 
 # AI Stuff
-FRAME_PROCESSING_BATCH_SIZE = 1000
+FRAME_PROCESSING_BATCH_SIZE = os.environ.get("DJANGO_FRAME_PROCESSING_BATCH_SIZE", 10)
 
 
 def get_transcoded_file_path(source_file_path: Path, suffix: str = "mp4"):

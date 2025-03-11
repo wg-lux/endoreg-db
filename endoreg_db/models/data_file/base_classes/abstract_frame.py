@@ -16,7 +16,7 @@ class AbstractFrame(models.Model):
     # Add any other fields you need to store frame-related information
     suffix = models.CharField(max_length=255)
     # ImageClassificationAnnotation has a foreign key to this model (related name: image_classification_annotations)
-    image = models.ImageField(upload_to=FRAME_DIR_NAME, blank=True, null=True)
+    # image = models.ImageField(blank=True, null=True)
     is_raw = models.BooleanField(default=False)
 
     if TYPE_CHECKING:

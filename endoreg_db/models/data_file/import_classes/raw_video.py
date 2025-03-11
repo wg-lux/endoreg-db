@@ -148,16 +148,12 @@ class RawVideoFile(AbstractVideoFile):
     state_make_anonymized_video_required = models.BooleanField(default=True)
     state_make_anonymized_video_completed = models.BooleanField(default=False)
 
-    def get_anonymized_frame_dir(self):
-        """Method to generate the path to the anonymized frame directory"""
-        return Path(self.frame_dir).parent / f"anonymized_{self.uuid}"
-
     def check_anonymized_frames_exist(self):
         """
         Check if anonymized frames exist for the video file.
         """
         frame_dir = Path(self.frame_dir)
-        anonymized_frame_dir = self.get_anonymized_frame_dir()
+        anonymized_frame_dir = self.get_frame_dir(anonymized=True)
         anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
         n_frames = len(list(frame_dir.glob("*")))
         if len(list(anonymized_frame_dir.glob("*"))) == n_frames:
@@ -185,18 +181,17 @@ class RawVideoFile(AbstractVideoFile):
             return None
 
         anonymized_frames_already_extracted = self.check_anonymized_frames_exist()
-        anonymized_frame_dir = self.get_anonymized_frame_dir()
+        anonymized_frame_dir = self.get_frame_dir(anonymized=True)
         self.state_anonymized_frames_generated = anonymized_frames_already_extracted
         assert self.processor, "Processor not set"
         endo_roi = self.get_endo_roi()
         assert validate_endo_roi(endo_roi), "Endoscope ROI is not valid"
 
-        if not self.state_anonymized_frames_generated:
-            # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
-            for frame_path in tqdm(self.get_frame_paths()):
-                frame_name = frame_path.name
-                target_frame_path = anonymized_frame_dir / frame_name
-                anonymize_frame(frame_path, target_frame_path, endo_roi)
+        # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
+        for frame_path in tqdm(self.get_frame_paths()):
+            frame_name = frame_path.name
+            target_frame_path = anonymized_frame_dir / frame_name
+            anonymize_frame(frame_path, target_frame_path, endo_roi)
 
         self.state_anonymized_frames_generated = True
         self.save()

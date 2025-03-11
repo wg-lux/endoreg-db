@@ -26,6 +26,7 @@ __all__ = [
     "Video",
     "LabelVideoSegment",
     "LabelRawVideoSegment",
+    "find_segments_in_prediction_array",
     "SensitiveMeta",
     "PdfMeta",
     "PdfType",
