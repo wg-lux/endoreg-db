@@ -1,30 +1,4 @@
-"""
-This module provides an abstract base class for video file processing in a Django application.
-The AbstractVideoFile class encapsulates the core functionality needed to handle video files, \
-    including:
-
-• Transcoding videos using FFmpeg to ensure compatibility, with support for \
-    copying files directly if already in MP4 format.
-• Creating and managing video database entries by computing unique video hashes, \
-    handling file storage, and avoiding duplicate entries.
-• Extracting video frames (raw and anonymized) into designated directories for further processing.
-• Running AI-based predictions on extracted frames using preconfigured models \
-    and generating comprehensive prediction outputs:
-    - Raw predictions, readable predictions, merged predictions, smooth merged predictions, \
-        and binarized smooth merged predictions.
-    - Detection of sequences from binary predictions.
-• Extracting textual information from video frames using OCR to update associated metadata.
-• Providing utility methods to handle various aspects of file and directory management, \
-    such as cleaning up frames and updating video metadata.
-• Integrating with other modules that manage video-specific settings, \
-    including cropping based on region-of-interest (ROI) parameters,
-  center and processor associations, and performance controls (e.g., frames per second).
-
-Designed to be inherited and extended, this module lays the groundwork for \
-    building a robust video processing pipeline,
-particularly in domains like endoscopy, where accurate video analysis and \
-    metadata extraction are critical.
-"""
+""" """
 
 from pathlib import Path
 from collections import defaultdict, Counter
@@ -34,22 +8,25 @@ import subprocess
 from typing import Optional, List, TYPE_CHECKING, Union
 from django.db import models, transaction
 from icecream import ic
-import io
-from django.core.files import File
 from tqdm import tqdm
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
 
+from ....utils.video import (
+    transcode_videofile,
+    transcode_videofile_if_required,
+    initialize_frame_objects,
+    extract_frames,
+)
+
 from ..metadata import VideoMeta, SensitiveMeta
 from .utils import (
-    copy_with_progress,
     STORAGE_LOCATION,
     VIDEO_DIR,
     FRAME_DIR,
-    get_transcoded_file_path,
 )
-from .frame_helpers import prepare_bulk_frames
+from .prepare_bulk_frames import prepare_bulk_frames
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -101,6 +78,7 @@ class AbstractVideoFile(models.Model):
     predictions = models.JSONField(default=dict)
     fps = models.FloatField(blank=True, null=True)
     duration = models.FloatField(blank=True, null=True)
+    frame_count = models.IntegerField(blank=True, null=True)
 
     readable_predictions = models.JSONField(default=dict)
     merged_predictions = models.JSONField(default=dict)
@@ -129,6 +107,8 @@ class AbstractVideoFile(models.Model):
     state_follow_up_intervention_available = models.BooleanField(default=False)
     state_dataset_complete = models.BooleanField(default=False)
 
+    state_frames_initialized = models.BooleanField(default=False)
+
     is_raw = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
@@ -144,47 +124,8 @@ class AbstractVideoFile(models.Model):
 
     @classmethod
     def transcode_videofile(cls, filepath: Path, transcoded_path: Path):
-        """
-        Transcodes a video to a compatible MP4 format using ffmpeg.
-        If the transcoded file exists, it is returned.
-
-        Parameters
-        ----------
-        mov_file : str
-            The full path to the video file.
-
-        Returns
-        -------
-        transcoded_path : str
-            The full path to the transcoded video file.
-        """
-        ic("Transcoding video")
-        ic(f"Input path: {filepath}")
-
-        # if filepath suffix is .mp4 or .MP4 we dont need to transcode and can copy the file
-        if filepath.suffix.lower() in [".mp4"]:
-            shutil.copyfile(filepath, transcoded_path)
-            return transcoded_path
-
-        ic(f"Transcoded path: {transcoded_path}")
-        if os.path.exists(transcoded_path):
-            return transcoded_path
-
-        # Run ffmpeg to transcode the video using H264 and AAC
-        # TODO Document settings, check if we need to change them
-        command = [
-            "ffmpeg",
-            "-i",
-            filepath.resolve().as_posix(),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-c:a",
-            "aac",
-            transcoded_path,
-        ]
-        subprocess.run(command, check=True)
+        """ """
+        transcoded_path = transcode_videofile(filepath, transcoded_path)
         return transcoded_path
 
     @classmethod
@@ -203,46 +144,13 @@ class AbstractVideoFile(models.Model):
         delete_temporary_transcoded_file: bool = False,
         save: bool = True,
     ):
-        """
-        Creates a RawVideoFile instance from a given video file.
-        Args:
-            cls: The class itself.
-            file_path (Path): The path to the video file.
-            center_name (str): The name of the center associated with the video.
-            processor_name (str): The name of the processor associated with the video.
-            frame_dir_parent (Path, optional): The parent directory for frame storage. \
-                Defaults to Path("erc_data/raw_frames").
-            video_dir (Path, optional): The directory for video storage. \
-                Defaults to Path("erc_data/raw_videos").
-            delete_source (bool, optional): Whether to delete the source file after processing. \
-                Defaults to False.
-            save (bool, optional): Whether to save the instance to the database. Defaults to True.
-        Returns:
-            RawVideoFile: The created RawVideoFile instance, or an existing instance \
-                if a file with the same hash already exists.
-        """
-
         from endoreg_db.models import Center, EndoscopyProcessor  # pylint: disable=import-outside-toplevel
 
+        video_dir.mkdir(parents=True, exist_ok=True)
         ic(f"Creating {cls} from {file_path}")
         original_file_name = file_path.name
 
-        # transcoded_filepath
-        transcoded_file_path = get_transcoded_file_path(file_path, suffix="mp4")
-        transcoded_file_name = f"{file_path.stem}_transcoded.mp4"
-
-        if not transcoded_file_path.exists():
-            ic("Transcoding video")
-            ic(f"Input path: {file_path}")
-            # Determine transcoded output filepath (appending '_transcoded.mp4')
-            transcoded_file_path = file_path.parent / transcoded_file_name
-
-            ic(f"Transcoded path: {transcoded_file_path}")
-            if not os.path.exists(transcoded_file_path):
-                cls.transcode_videofile(file_path, transcoded_path=transcoded_file_path)
-
-            #
-
+        transcoded_file_path = transcode_videofile_if_required(file_path)
         video_hash = get_video_hash(transcoded_file_path)
 
         vid_with_hash_exists = cls.check_hash_exists(video_hash=video_hash)  # pylint: disable=no-member
@@ -251,84 +159,46 @@ class AbstractVideoFile(models.Model):
                 video_hash=video_hash
             )
             ic(f"Existing DB entry found: {existing}")
-            file_on_disk = STORAGE_LOCATION / existing.file.name
-            if not file_on_disk.exists():
-                ic("Existing DB entry found, but file is missing on disk. Copying...")
-                raise Exception("File on disk is missing")
-            ic("Returning existing entry")
+
             return existing
 
-        new_file_name, uuid = get_uuid_filename(file_path)
-        ic("No existing DB entry found")
-        ic("New file name: ", new_file_name)
-        ic("UUID: ", uuid)
-
-        framedir: Path = frame_dir_parent / str(uuid)
-        ic("Frame dir: ", framedir)
-
-        if not framedir.exists():
-            ic("Creating frame dir root")
-            framedir.mkdir(parents=True, exist_ok=True)
-
-        if not video_dir.exists():
-            ic("Creating video dir root")
-            video_dir.mkdir(parents=True, exist_ok=True)
-
-        # make sure that no other file with the same hash exists
-
-        center = Center.objects.get(name=center_name)
-        assert center is not None, "Center must exist"
-
-        processor = EndoscopyProcessor.objects.get(name=processor_name)
-        assert processor is not None, "Processor must exist"
-
-        new_filepath = video_dir / new_file_name
-
-        ic(f"Copy {file_path} to {new_filepath}")
-        copy_with_progress(
-            transcoded_file_path.resolve().as_posix(), new_filepath.resolve().as_posix()
-        )
-
-        # cleanup transcoded temporary file
-        if delete_temporary_transcoded_file:
-            transcoded_file_path.unlink()
-
-        # Make sure file was transferred correctly and hash is correct
-        if not new_filepath.exists():
-            ic(f"File {file_path} was not transferred correctly to {new_filepath}")
-            return None
-
-        new_hash = get_video_hash(new_filepath)
-        if new_hash != video_hash:
-            ic(f"Hash of file {file_path} is not correct")
-            return None
+        _new_file_name, uuid = get_uuid_filename(file_path)
+        ic(f"No existing DB entry found, creating new with UUID {uuid}")
 
         try:
-            relative_path = new_filepath.relative_to(STORAGE_LOCATION)
-        except ValueError:
+            relative_path = transcoded_file_path.relative_to(STORAGE_LOCATION)
+        except ValueError as e:
             raise Exception(
-                f"{new_filepath} is outside STORAGE_LOCATION {STORAGE_LOCATION}"
-            )
+                f"{transcoded_file_path} is outside STORAGE_LOCATION {STORAGE_LOCATION}"
+            ) from e
 
         video = cls(
             uuid=uuid,
             file=relative_path.as_posix(),
-            center=center,
-            processor=processor,
+            center=Center.objects.get(name=center_name),
+            processor=EndoscopyProcessor.objects.get(name=processor_name),
             original_file_name=original_file_name,
             video_hash=video_hash,
-            frame_dir=framedir.as_posix(),
         )
 
         # Save the instance to the database
         video.save()
         ic(f"Saved {video}")
 
+        video.ensure_frame_objects()
+
         if delete_source:
             ic(f"Deleting source file {file_path}")
             file_path.unlink()
 
+        if delete_temporary_transcoded_file:
+            ic(f"Deleting temporary transcoded file {transcoded_file_path}")
+            transcoded_file_path.unlink()
+
         return video
+
+    def ensure_frame_objects(self):
+        pass
 
     def get_video_model(self):
         from endoreg_db.models import RawVideoFile, Video
@@ -714,75 +584,25 @@ class AbstractVideoFile(models.Model):
         overwrite: bool = False,
         ext="jpg",
         verbose=False,
-    ):
+    ) -> List[Path]:
         """
         Extract frames from the video file and save them to the frame_dir.
         For this, ffmpeg must be available in in the current environment.
         """
-        frame_dir = Path(self.frame_dir)
-        ic(f"Extracting frames to {frame_dir}")
-        if not frame_dir.exists():
-            frame_dir.mkdir(parents=True, exist_ok=True)
 
-        if not overwrite and len(list(frame_dir.glob(f"*.{ext}"))) > 0:
-            ic(f"Frames already extracted for {self.file.name}")
-            self.state_frames_extracted = True  # Mark frames as extracted
-            return f"Frames already extracted at {frame_dir}"
-
-        video_path = Path(self.file.path).resolve().as_posix()
-
-        frame_path_string = frame_dir.resolve().as_posix()
-        command = [
-            "ffmpeg",
-            "-i",
-            video_path,  #
-            "-q:v",
-            str(quality),
-            os.path.join(frame_path_string, f"frame_%07d.{ext}"),
-        ]
-
-        # Ensure FFmpeg is available
-        if not shutil.which("ffmpeg"):
-            raise EnvironmentError(
-                "FFmpeg could not be found. Ensure it is installed and in your PATH."
-            )
-
-        # Extract frames from the video file
-        # Execute the command
-        process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        return extract_frames(
+            video=self,
+            quality=quality,
+            overwrite=overwrite,
+            ext=ext,
+            verbose=verbose,
         )
-        stdout_data, stderr_data = process.communicate()
 
-        if process.returncode != 0:
-            raise Exception(f"Error extracting frames: {stderr_data}")
-
-        if verbose and stdout_data:
-            print(stdout_data)
-
-        # After extracting frames with ffmpeg, parse frame filenames and batch-create
-        extracted_paths = sorted(frame_dir.glob(f"*.{ext}"))
-        frames_to_create = []
-        BATCH_SIZE = 500
-        for i, (frame_number, file_obj) in tqdm(
-            enumerate(prepare_bulk_frames(extracted_paths), start=1)
-        ):
-            frame_obj_instance = self._create_frame_object(
-                frame_number, image_file=file_obj
-            )
-            frames_to_create.append(frame_obj_instance)
-
-            if i % BATCH_SIZE == 0:
-                with transaction.atomic():
-                    self._bulk_create_frames(frames_to_create)
-                frames_to_create.clear()
-
-        if frames_to_create:
-            with transaction.atomic():
-                self._bulk_create_frames(frames_to_create)
-
-        self.set_frames_extracted(True)
-        return f"Frames extracted to {frame_dir} with quality {quality}"
+    def initialize_frames(self, paths: List[Path]):
+        """
+        Initialize frame objects for the video file.
+        """
+        initialize_frame_objects(self, paths)
 
     def delete_frames(self):
         """
@@ -971,7 +791,7 @@ class AbstractVideoFile(models.Model):
 
         return self.video_meta.get_fps()
 
-    def _create_frame_object(self, frame_number, image_file=None):
+    def create_frame_object(self, frame_number, image_file=None):
         """
         Returns a frame instance with the image_file set.
         """
@@ -982,7 +802,7 @@ class AbstractVideoFile(models.Model):
             image=image_file,
         )
 
-    def _bulk_create_frames(self, frames_to_create):
+    def bulk_create_frames(self, frames_to_create):
         """
         Bulk create frames, then save their images to storage.
         """

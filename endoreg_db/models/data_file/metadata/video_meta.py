@@ -59,12 +59,16 @@ class VideoMeta(models.Model):
         processor_name = self.processor.name if self.processor is not None else "None"
         endoscope_name = self.endoscope.name if self.endoscope is not None else "None"
         center_name = self.center.name if self.center is not None else "None"
+        ffmpeg_meta_str = self.ffmpeg_meta.__str__()
+        import_meta_str = self.import_meta.__str__()
 
         result_html = ""
 
         result_html += f"Processor: {processor_name}\n"
         result_html += f"Endoscope: {endoscope_name}\n"
         result_html += f"Center: {center_name}\n"
+        result_html += f"FFMpeg Meta: {ffmpeg_meta_str}\n"
+        result_html += f"Import Meta: {import_meta_str}\n"
 
         return result_html
 

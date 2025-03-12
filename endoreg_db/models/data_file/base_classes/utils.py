@@ -28,22 +28,6 @@ RAW_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 FRAME_PROCESSING_BATCH_SIZE = os.environ.get("DJANGO_FRAME_PROCESSING_BATCH_SIZE", 10)
 
 
-def get_transcoded_file_path(source_file_path: Path, suffix: str = "mp4"):
-    """
-    Method to get the transcoded file path.
-
-    Args:
-        source_file_path (Path): Source file path.
-        suffix (str): Suffix of the transcoded file.
-
-    Returns:
-        transcoded_file_path (Path): Transcoded file path.
-    """
-    transcoded_file_name = f"{source_file_path.stem}_transcoded.{suffix}"
-    transcoded_file_path = source_file_path.parent / transcoded_file_name
-    return transcoded_file_path
-
-
 def anonymize_frame(raw_frame_path: Path, target_frame_path: Path, endo_roi):
     """
     Anonymize the frame by blacking out all pixels that are not in the endoscope ROI.

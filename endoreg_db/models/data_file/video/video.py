@@ -3,10 +3,6 @@ from endoreg_db.models.data_file.frame import Frame
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import FileSystemStorage
 from typing import TYPE_CHECKING
-from PIL import Image
-import io
-from django.core.files.base import ContentFile
-from tqdm import tqdm
 import cv2
 from ..base_classes import AbstractVideoFile
 from ..base_classes.utils import (
@@ -23,7 +19,6 @@ if TYPE_CHECKING:
         SensitiveMeta,
         Patient,
         PatientExamination,
-        Frame,
         RawVideoFile,
     )
 
