@@ -2,7 +2,7 @@ from pathlib import Path
 from rest_framework import serializers
 from django.http import FileResponse, Http404,StreamingHttpResponse
 from ..models import RawVideoFile,Label
-import subprocess
+import subprocess, cv2
 from django.conf import settings
 
 class VideoFileSerializer(serializers.ModelSerializer):
@@ -30,6 +30,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
     label_time_segments = serializers.SerializerMethodField()
     #label_predictions = serializers.SerializerMethodField()
     original_file_name = serializers.CharField()
+    duration = serializers.SerializerMethodField()
+
     
 
 
@@ -37,7 +39,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
     class Meta:
         model = RawVideoFile
         #he fields list defines which data should be included in the API response.
-        fields = ['id','original_file_name', 'file', 'video_url', 'full_video_path','video_selection_field','label_names','sequences','label_time_segments']  #  Ensure computed fields are included
+        fields = ['id','original_file_name', 'file','duration', 'video_url', 'full_video_path','video_selection_field','label_names','sequences','label_time_segments']  #  Ensure computed fields are included
 
     def get_video_selection_field(self,obj):
         """
@@ -58,6 +60,28 @@ class VideoFileSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(f"/api/video/{obj.id}/")
         
         return {"error": "Video URL not avalaible"}
+    
+    def get_duration(self, obj):
+        """
+        Returns the total duration of the video in seconds.
+        If duration is not stored in the database, it extracts it dynamically using OpenCV.
+        """
+        if hasattr(obj, "duration") and obj.duration:
+            return obj.duration  # If duration is stored in the database, return it directly.
+
+        # Dynamically extract duration if not stored
+        video_path = obj.file.path
+        cap = cv2.VideoCapture(video_path)
+
+        if not cap.isOpened():
+            return None  # Error handling if video can't be opened
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        cap.release()
+
+        return round(total_frames / fps, 2) if fps > 0 else None  # Return duration in seconds
+
 
     def get_file(self, obj):
         """

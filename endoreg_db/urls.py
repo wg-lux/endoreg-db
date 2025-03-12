@@ -9,7 +9,7 @@ from .views.patient_views import (
 from .views.csrf import csrf_token_view
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
-
+from .views.views_for_timeline import video_timeline_view
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 
@@ -153,6 +153,10 @@ urlpatterns = [
     path("api/video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
 
 #----------------------------------END--VIDEO SEGMENTATION SECTION-------------------------------
+    #this is for to test the timeline
+    #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
+    path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
+
 
     
     ]
