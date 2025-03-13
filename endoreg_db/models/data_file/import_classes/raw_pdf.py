@@ -45,6 +45,14 @@ class RawPdfFile(AbstractPdfFile):
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
 
+    patient = models.ForeignKey(
+        "Patient",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="raw_pdf_files",
+    )
+
     state_report_processing_required = models.BooleanField(default=True)
     state_report_processed = models.BooleanField(default=False)
     raw_meta = models.JSONField(blank=True, null=True)

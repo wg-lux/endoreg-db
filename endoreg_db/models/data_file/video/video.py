@@ -30,7 +30,7 @@ class Video(AbstractVideoFile):
         storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
     )
 
-    pseudo_patient = models.ForeignKey(
+    patient = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         blank=True,
@@ -76,7 +76,7 @@ class Video(AbstractVideoFile):
 
     if TYPE_CHECKING:
         import_meta: "VideoImportMeta"
-        pseudo_patient: "Patient"
+        patient: "Patient"
         examination: "PatientExamination"
         frames: "QuerySet[Frame]"
         label_video_segments: (

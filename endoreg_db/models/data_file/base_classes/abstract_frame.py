@@ -18,6 +18,7 @@ class AbstractFrame(models.Model):
     # ImageClassificationAnnotation has a foreign key to this model (related name: image_classification_annotations)
     # image = models.ImageField(blank=True, null=True)
     is_raw = models.BooleanField(default=False)
+    extracted = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
         video: Union["Video", "RawVideoFile"]
