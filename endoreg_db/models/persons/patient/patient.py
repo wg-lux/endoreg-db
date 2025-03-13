@@ -99,7 +99,7 @@ class Patient(Person):
         patient_examinations = PatientExamination.objects.filter(patient=self)
         report_files, videos = [], []
         for patient_examination in patient_examinations:
-            rr = patient_examination.report_files.all()
+            rr = patient_examination.reportfile_set.all()
             vv = patient_examination.videos.all()
 
             report_files.extend(rr)
