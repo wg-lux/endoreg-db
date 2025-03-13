@@ -2,10 +2,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import FileResponse, Http404
-from ..models import RawVideoFile
-from ..serializers.video_segmentation import VideoFileSerializer
+from ..models import RawVideoFile, Label
+from ..serializers.video_segmentation import VideoFileSerializer,VideoListSerializer,LabelSerializer
 import mimetypes
 import os
+
 
 class VideoView(APIView):
     """
@@ -27,12 +28,19 @@ class VideoView(APIView):
 
     def get_all_videos(self):
         """
-        Returns a list of all available videos.
+        Returns a list of all available videos along with available labels.
         Used to populate the video selection dropdown in Vue.js.
         """
         videos = RawVideoFile.objects.all()
-        serializer = VideoFileSerializer(videos, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        labels = Label.objects.all()  # Fetch all labels
+
+        video_serializer = VideoListSerializer(videos, many=True)
+        label_serializer = LabelSerializer(labels, many=True)  # Serialize labels
+
+        return Response({
+            "videos": video_serializer.data,  # List of videos
+            "labels": label_serializer.data  # List of labels
+        }, status=status.HTTP_200_OK)
 
     def get_video_details(self, request, video_id):
         """
@@ -116,3 +124,26 @@ class VideoLabelView(APIView):
         except Exception as e:
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+from ..serializers.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
+
+class UpdateLabelSegmentsView(APIView):
+    """
+    API to update or create label segments for a video.
+    """
+
+    def put(self, request, video_id, label_id):
+        """
+        Handles PUT request to update or create label segments.
+        """
+        serializer = LabelSegmentUpdateSerializer(data=request.data)
+
+        if serializer.is_valid():
+            result = serializer.save()
+            return Response({
+                "message": "Segments updated successfully",
+                "updated_segments": result["updated_segments"],
+                "new_segments": result["new_segments"]
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

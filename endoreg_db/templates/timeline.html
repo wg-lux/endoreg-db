@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Frames Timeline (Outside Label)</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+        video { width: 80%; margin-bottom: 20px; }
+
+        /* Timeline Container */
+        .timeline-container {
+            position: relative;
+            width: 80%;
+            height: 50px;
+            margin: auto;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+
+        /* Timeline Bar */
+        .timeline-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #ccc;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            border-radius: 4px;
+        }
+
+        /* Red Highlight for Outside Label Segments */
+        .segment-box {
+            position: absolute;
+            height: 8px;
+            background-color: rgba(255, 0, 0, 0.7);
+            border-radius: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+        }
+
+        /* Draggable Vertical Markers */
+        .frame-marker {
+            position: absolute;
+            width: 6px;
+            height: 20px;
+            background-color: blue;
+            cursor: grab;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+
+        .frame-marker:hover {
+            background-color: red;
+        }
+
+        .frame-marker:active {
+            cursor: grabbing;
+        }
+
+    </style>
+</head>
+<body>
+    <h2>Frames Timeline (Outside Label)</h2>
+    
+    <video id="videoPlayer" controls>
+        <source src="{{ video_url }}" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <div class="timeline-container">
+        <div class="timeline-bar"></div>
+        <div id="segments"></div>  <!-- Highlighted segments -->
+        <div id="frameMarkers"></div> <!-- Start & End markers -->
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const segments = JSON.parse('{{ segments|safe }}');  // Get "outside" label segments
+            const video = document.getElementById("videoPlayer");
+            const timelineContainer = document.querySelector(".timeline-container");
+            const segmentsContainer = document.getElementById("segments");
+            const frameMarkersContainer = document.getElementById("frameMarkers");
+
+            let videoDuration = {{ video_duration|default:1 }};  // Ensure valid duration
+
+            console.log("Loaded Segments:", segments);
+            console.log("Video Duration:", videoDuration);
+
+            if (segments.length === 0) {
+                console.warn("No segments available!");
+                return;
+            }
+
+            // Create segment boxes
+            segments.forEach(segment => {
+                const segmentDiv = document.createElement("div");
+                segmentDiv.classList.add("segment-box");
+
+                // Convert times to percentage positions
+                let startPercent = (segment.start_time / videoDuration) * 100;
+                let endPercent = (segment.end_time / videoDuration) * 100;
+                let widthPercent = endPercent - startPercent;
+
+                // Ensure last segment does not go beyond 100%
+                startPercent = Math.min(100, startPercent);
+                endPercent = Math.min(100, endPercent);
+                widthPercent = Math.max(0, endPercent - startPercent);
+
+                segmentDiv.style.left = startPercent + "%";
+                segmentDiv.style.width = widthPercent + "%";
+
+                // Clicking on segment seeks video
+                segmentDiv.addEventListener("click", function () {
+                    video.currentTime = segment.start_time;
+                    video.play();
+                });
+
+                segmentsContainer.appendChild(segmentDiv);
+            });
+
+            // Create draggable markers
+            segments.forEach(segment => {
+                ["start_time", "end_time"].forEach(timeType => {
+                    const marker = document.createElement("div");
+                    marker.classList.add("frame-marker");
+
+                    // Position marker
+                    let percent = (segment[timeType] / videoDuration) * 100;
+                    percent = Math.min(100, Math.max(0, percent));  // Keep within bounds
+                    marker.style.left = percent + "%";
+
+                    // Store initial marker time
+                    marker.dataset.time = segment[timeType];
+
+                    // Enable dragging
+                    let isDragging = false;
+
+                    marker.addEventListener("pointerdown", (event) => {
+                        isDragging = true;
+                        marker.style.cursor = "grabbing";
+                        event.preventDefault();
+                    });
+
+                    document.addEventListener("pointermove", (event) => {
+                        if (!isDragging) return;
+
+                        const rect = timelineContainer.getBoundingClientRect();
+                        const offsetX = event.clientX - rect.left;
+                        let percentX = (offsetX / rect.width) * 100;
+                        
+                        // Keep marker within bounds (0-100%)
+                        percentX = Math.min(100, Math.max(0, percentX));
+                        
+                        const newTime = (percentX / 100) * videoDuration;
+
+                        marker.style.left = percentX + "%";
+                        video.currentTime = newTime;
+                    });
+
+                    document.addEventListener("pointerup", () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            marker.style.cursor = "grab";
+                        }
+                    });
+
+                    frameMarkersContainer.appendChild(marker);
+                });
+            });
+
+        });
+    </script>
+</body>
+</html>
