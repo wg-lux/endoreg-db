@@ -249,7 +249,7 @@ class RawPdfFile(AbstractPdfFile):
                 sensitive_meta=self.sensitive_meta,
                 patient=patient,
                 examiner=examiner,
-                patient_examination=patient_examination,
+                examination=patient_examination,
                 text=self.anonymized_text,
             )
 
