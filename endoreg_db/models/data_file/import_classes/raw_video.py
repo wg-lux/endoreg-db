@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from django.db import models
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Tuple
 
 from icecream import ic
 from tqdm import tqdm
@@ -16,6 +16,7 @@ from ..base_classes.utils import (
     RAW_VIDEO_DIR_NAME,
     VIDEO_DIR,
     STORAGE_LOCATION,
+    TEST_RUN,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
 
@@ -35,70 +36,7 @@ if TYPE_CHECKING:
 
 # pylint: disable=attribute-defined-outside-init,no-member
 class RawVideoFile(AbstractVideoFile):
-    """
-    RawVideoFile is a Django model representing a raw video file with associated metadata and processing states.
-    Attributes:
-        uuid (UUIDField): Unique identifier for the video file.
-        file (FileField): The video file, restricted to .mp4 format.
-        sensitive_meta (OneToOneField): Metadata containing sensitive information.
-        center (ForeignKey): The center associated with the video.
-        processor (ForeignKey): The processor associated with the video.
-        video_meta (OneToOneField): Metadata containing video-specific information.
-        original_file_name (CharField): The original name of the video file.
-        video_hash (CharField): Unique hash of the video file.
-        uploaded_at (DateTimeField): Timestamp of when the video was uploaded.
-        state_frames_required (BooleanField): Indicates if frame extraction is required.
-        state_frames_extracted (BooleanField): Indicates if frames have been extracted.
-        state_initial_prediction_required (BooleanField): Indicates if initial prediction is required.
-        state_initial_prediction_completed (BooleanField): Indicates if initial prediction is completed.
-        state_initial_prediction_import_required (BooleanField): Indicates if initial prediction import is required.
-        state_initial_prediction_import_completed (BooleanField): Indicates if initial prediction import is completed.
-        state_ocr_required (BooleanField): Indicates if OCR is required.
-        state_ocr_completed (BooleanField): Indicates if OCR is completed.
-        state_outside_validated (BooleanField): Indicates if outside validation is completed.
-        state_ocr_result_validated (BooleanField): Indicates if OCR result validation is completed.
-        state_sensitive_data_retrieved (BooleanField): Indicates if sensitive data has been retrieved.
-        state_histology_required (BooleanField): Indicates if histology data is required.
-        state_histology_available (BooleanField): Indicates if histology data is available.
-        state_follow_up_intervention_required (BooleanField): Indicates if follow-up intervention is required.
-        state_follow_up_intervention_available (BooleanField): Indicates if follow-up intervention data is available.
-        state_dataset_complete (BooleanField): Indicates if the dataset is complete.
-        state_anonymized_frames_generated (BooleanField): Indicates if anonymized frames have been generated.
-        state_anonym_video_required (BooleanField): Indicates if anonymized video is required.
-        state_anonym_video_performed (BooleanField): Indicates if anonymized video has been performed.
-        state_original_reports_deleted (BooleanField): Indicates if original reports have been deleted.
-        state_original_video_deleted (BooleanField): Indicates if the original video has been deleted.
-        state_finalized (BooleanField): Indicates if the video processing is finalized.
-        frame_dir (CharField): Directory where frames are stored.
-        prediction_dir (CharField): Directory where predictions are stored.
-    Methods:
-        transcode_videofile(filepath, transcoded_path): Transcodes a video to MP4 format using ffmpeg.
-        create_from_file(file_path, center_name, processor_name, ...): Creates a RawVideoFile instance from a given video file.
-        predict_video(model_meta_name, dataset_name, ...): Predicts the video file using the given model.
-        get_anonymized_frame_dir(): Generates the path to the anonymized frame directory.
-        check_anonymized_frames_exist(): Checks if anonymized frames exist for the video file.
-        generate_anonymized_frames(): Generates anonymized frames from the video file.
-        delete_with_file(): Deletes the video file along with its frames and anonymized frames.
-        get_endo_roi(): Fetches the endoscope ROI from the video meta.
-        get_crop_template(): Creates a crop template from the endoscope ROI.
-        set_frame_dir(): Sets the frame directory based on the UUID.
-        save(*args, **kwargs): Saves the RawVideoFile instance to the database.
-        extract_frames(quality, frame_dir, ...): Extracts frames from the video file using ffmpeg.
-        delete_frames(): Deletes frames extracted from the video file.
-        delete_frames_anonymized(): Deletes anonymized frames extracted from the video file.
-        get_frame_path(n, anonymized): Gets the path to the n-th frame extracted from the video file.
-        get_frame_paths(anonymized): Gets paths to all frames extracted from the video file.
-        get_prediction_dir(): Gets the directory where predictions are stored.
-        get_predictions_path(suffix): Gets the path to the predictions file.
-        get_smooth_predictions_path(suffix): Gets the path to the smooth predictions file.
-        get_binary_predictions_path(suffix): Gets the path to the binary predictions file.
-        get_raw_sequences_path(suffix): Gets the path to the raw sequences file.
-        get_filtered_sequences_path(suffix): Gets the path to the filtered sequences file.
-        extract_text_information(frame_fraction): Extracts text information from the video file.
-        update_text_metadata(ocr_frame_fraction): Updates the text metadata for the video file.
-        update_video_meta(): Updates the video metadata.
-        get_fps(): Gets the frames per second (FPS) of the video file.
-    """
+    """ """
 
     file = models.FileField(
         upload_to=RAW_VIDEO_DIR_NAME,
@@ -148,59 +86,17 @@ class RawVideoFile(AbstractVideoFile):
     state_make_anonymized_video_required = models.BooleanField(default=True)
     state_make_anonymized_video_completed = models.BooleanField(default=False)
 
-    def check_anonymized_frames_exist(self):
-        """
-        Check if anonymized frames exist for the video file.
-        """
-        frame_dir = Path(self.frame_dir)
-        anonymized_frame_dir = self.get_frame_dir(anonymized=True)
-        anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
-        n_frames = len(list(frame_dir.glob("*")))
-        if len(list(anonymized_frame_dir.glob("*"))) == n_frames:
-            ic(f"Anonymized frames already generated for {self.file.name}")
-            frames_already_extracted = True
-        else:
-            ic(f"Anonymized frames not generated for {self.file.name}")
-            frames_already_extracted = False
-            # make sure directory is empty
-            for f in anonymized_frame_dir.glob("*"):
-                f.unlink()
+    def get_anonymized_video_path(self):
+        video_dir = VIDEO_DIR
+        video_suffix = Path(self.file.path).suffix
+        video_name = f"{self.uuid}{video_suffix}"
+        anonymized_video_name = f"TMP_anonymized_{video_name}"
+        anonymized_video_path = video_dir / anonymized_video_name
 
-        self.state_anonymized_frames_generated = frames_already_extracted
-        self.save()
-
-        return frames_already_extracted
-
-    def generate_anonymized_frames(self):
-        """
-        Generate anonymized frames from the video file.
-        """
-
-        if not self.state_frames_extracted:
-            ic(f"Frames not extracted for {self.file.name}")
-            return None
-
-        anonymized_frames_already_extracted = self.check_anonymized_frames_exist()
-        anonymized_frame_dir = self.get_frame_dir(anonymized=True)
-        self.state_anonymized_frames_generated = anonymized_frames_already_extracted
-        assert self.processor, "Processor not set"
-        endo_roi = self.get_endo_roi()
-        assert validate_endo_roi(endo_roi), "Endoscope ROI is not valid"
-
-        # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
-        for frame_path in tqdm(self.get_frame_paths()):
-            frame_name = frame_path.name
-            target_frame_path = anonymized_frame_dir / frame_name
-            anonymize_frame(frame_path, target_frame_path, endo_roi)
-
-        self.state_anonymized_frames_generated = True
-        self.save()
-
-        return f"Anonymized frames at {anonymized_frame_dir}"
+        return anonymized_video_path
 
     def censor_outside_frames(self):
         assert self.state_frames_extracted, "Frames not extracted"
-        assert self.state_anonymized_frames_generated, "Anonymized frames not generated"
         assert self.state_initial_prediction_completed, (
             "Initial prediction not completed"
         )
@@ -233,31 +129,65 @@ class RawVideoFile(AbstractVideoFile):
         self.state_censor_outside_completed = True
         self.save()
 
-    def get_anonymized_video_path(self):
-        video_dir = VIDEO_DIR
-        video_name = Path(self.file.path).name
-        anonymized_video_name = f"TMP_anonymized_{video_name}"
-        anonymized_video_path = video_dir / anonymized_video_name
+    def get_anonymized_frame_dir(self):
+        anonymized_frame_dir = Path(self.frame_dir).parent / f"tmp_{self.uuid}"
+        return anonymized_frame_dir
 
-        return anonymized_video_path
+    def make_temporary_anonymized_frames(self) -> Tuple[Path, List[Path]]:
+        anonymized_frame_dir = self.get_anonymized_frame_dir()
+
+        assert self.state_frames_extracted, "Frames not extracted"
+        assert self.processor, "Processor not set"
+
+        anonymized_frame_dir.mkdir(parents=True, exist_ok=True)
+        endo_roi = self.get_endo_roi()
+        assert validate_endo_roi(endo_roi), "Endoscope ROI is not valid"
+        generated_frame_paths = []
+
+        all_frames = self.frames.all()
+        outside_frames = self.get_outside_frames()  #
+        outside_frame_numbers = [frame.frame_number for frame in outside_frames]
+
+        # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
+        for frame in tqdm(all_frames):
+            frame_path = Path(frame.image.path)
+            frame_name = frame_path.name
+            frame_number = frame.frame_number
+
+            if frame_number in outside_frame_numbers:
+                all_black = True
+            else:
+                all_black = False
+
+            target_frame_path = anonymized_frame_dir / frame_name
+            anonymize_frame(
+                frame_path, target_frame_path, endo_roi, all_black=all_black
+            )
+            generated_frame_paths.append(target_frame_path)
+
+        return anonymized_frame_dir, generated_frame_paths
 
     def make_anonymized_video(self):
         """
         Make an anonymized video from the anonymized frames.
         """
 
-        assert self.state_frames_extracted, "Frames not extracted"
-        assert self.state_anonymized_frames_generated, "Anonymized frames not generated"
         assert self.state_initial_prediction_completed, (
             "Initial prediction not completed"
         )
         assert self.state_sensitive_data_retrieved, "Sensitive data not retrieved"
-        assert self.state_outside_validated, "Outside validation not completed"
-        assert self.state_censor_outside_completed, (
-            "Censoring outside frames not completed"
-        )
 
-        frame_paths = self.get_frame_paths(anonymized=True)
+        ic(
+            "WARNING: Outside validation is not yet implemented and automatically set to true in this function"
+        )
+        self.state_outside_validated = True
+        self.save()
+
+        assert self.state_outside_validated, "Outside validation not completed"
+
+        _anonymized_frame_dir, generated_frame_paths = (
+            self.make_temporary_anonymized_frames()
+        )
 
         anonymized_video_path = self.get_anonymized_video_path()
         # if anonymized video already exists, delete it
@@ -266,7 +196,7 @@ class RawVideoFile(AbstractVideoFile):
 
         # Use ffmpeg and the frame paths to create a video
         fps = self.get_fps()
-        height, width = cv2.imread(frame_paths[0].as_posix()).shape[:2]
+        height, width = cv2.imread(generated_frame_paths[0].as_posix()).shape[:2]
         ic("Assembling anonymized video")
         ic(f"Frame width: {width}, height: {height}")
         ic(f"FPS: {fps}")
@@ -274,12 +204,14 @@ class RawVideoFile(AbstractVideoFile):
         command = [
             "ffmpeg",
             "-y",
+            "-pattern_type",
+            "glob",
             "-f",
             "image2",
             "-framerate",
             str(fps),
             "-i",
-            f"{frame_paths[0].parent.as_posix()}/frame_%07d.jpg",  # changed from '*.jpg'
+            f"{generated_frame_paths[0].parent.as_posix()}/frame_[0-9]*.jpg",
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -292,13 +224,11 @@ class RawVideoFile(AbstractVideoFile):
         subprocess.run(command, check=True)
         ic(f"Anonymized video saved at {anonymized_video_path}")
 
-        # # Create Video File Object
-
         self.state_make_anonymized_video_required = False
         self.state_make_anonymized_video_completed = True
         self.save()
 
-        return anonymized_video_path
+        return anonymized_video_path, generated_frame_paths
 
     def delete_frames_anonymized(self):
         """
@@ -324,23 +254,31 @@ class RawVideoFile(AbstractVideoFile):
 
             else:
                 if not expected_path.exists():
-                    video_path = self.make_anonymized_video()
+                    ic(
+                        f"No anonymized video found at {expected_path}, Creating new one"
+                    )
+                    video_path, frame_paths = self.make_anonymized_video()
+
                 else:
+                    ic(f"Anonymized video found at {expected_path}")
                     video_path = expected_path
+                    frame_dir = self.get_anonymized_frame_dir()
+                    ic(f"Frame dir: {frame_dir}")
+                    frame_paths = list(frame_dir.glob("*.jpg"))
+                    ic(f"Found {len(frame_paths)} frames")
+
                 video_object = Video.create_from_file(
                     video_path,
                     self.center,
                     self.processor,
                     video_dir=VIDEO_DIR,
-                    delete_source=False,
-                    delete_temporary_transcoded_file=True,
-                    save=True,
+                    frame_paths=frame_paths,
                 )
 
                 ex: PatientExamination = self.sensitive_meta.pseudo_examination
                 pat: Patient = self.sensitive_meta.pseudo_patient
                 video_object.examination = ex
-                video_object.pseudo_patient = pat
+                video_object.patient = pat
 
                 self.video = video_object
                 self.save()

@@ -24,10 +24,14 @@ import logging
 
 # import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..base_classes.utils import (
     STORAGE_LOCATION,
 )
+
+if TYPE_CHECKING:
+    from endoreg_db.models import SensitiveMeta
 
 logger = logging.getLogger("pdf_import")
 
@@ -46,8 +50,36 @@ class AbstractPdfFile(models.Model):
         blank=True,
         null=True,
     )
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta",
+        on_delete=models.SET_NULL,
+        related_name="report_files",
+        null=True,
+        blank=True,
+    )
     center = models.ForeignKey(
         "Center",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+
+    patient = models.ForeignKey(
+        "Patient",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+
+    examination = models.ForeignKey(
+        "PatientExamination",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+
+    examiner = models.ForeignKey(
+        "Examiner",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
@@ -56,6 +88,9 @@ class AbstractPdfFile(models.Model):
     text = models.TextField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        sensitive_meta: "SensitiveMeta"
 
     class Meta:
         abstract = True
@@ -90,3 +125,12 @@ class AbstractPdfFile(models.Model):
             logger.error("Error processing file: %s", self.file.path)
             logger.error(e)
             return False
+
+    # override save method to get patient and examination from sensitive meta
+    def save(self, *args, **kwargs):
+        if not self.patient and self.sensitive_meta:
+            self.patient = self.sensitive_meta.pseudo_patient
+            self.examination = self.sensitive_meta.pseudo_examination
+            self.center = self.sensitive_meta.center
+
+        super().save(*args, **kwargs)

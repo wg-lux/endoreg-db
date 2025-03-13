@@ -172,21 +172,16 @@ class SensitiveMeta(models.Model):
     def get_or_create_pseudo_patient_examination(self):
         from endoreg_db.models import PatientExamination
 
-        if not self.pseudo_examination:
-            patient_hash = self.get_patient_hash()
-            examination_hash = self.get_patient_examination_hash()
+        patient_hash = self.get_patient_hash()
+        examination_hash = self.get_patient_examination_hash()
 
-            patient_examination, _created = (
-                PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
-                    patient_hash, examination_hash
-                )
+        patient_examination, _created = (
+            PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
+                patient_hash, examination_hash
             )
+        )
 
-            self.pseudo_examination = patient_examination
-            self.save()
-
-        else:
-            patient_examination = self.pseudo_examination
+        self.pseudo_examination = patient_examination
 
         return patient_examination
 
@@ -221,7 +216,21 @@ class SensitiveMeta(models.Model):
         return self
 
     def __str__(self):
-        return f"SensitiveMeta: {self.examination_date} {self.patient_first_name} {self.patient_last_name} (*{self.patient_dob})"
+        result_str = "SensitiveMeta:"
+        result_str += f"\tExamination Date: {self.examination_date}"
+        result_str += f"\tFirst Name: {self.patient_first_name}"
+        result_str += f"\tLast Name: {self.patient_last_name}"
+        result_str += f"\tDate of Birth: (*{self.patient_dob})"
+        result_str += f"\tGender: {self.patient_gender}"
+        result_str += f"\tCenter: {self.center}"
+        result_str += f"\tExaminers: {self.examiners.all()}"
+        result_str += f"\tEndoscope Type: {self.endoscope_type}"
+        result_str += f"\tEndoscope SN: {self.endoscope_sn}"
+        result_str += f"\tState Verified: {self.state_verified}"
+        result_str += f"\tPatient Hash: {self.patient_hash}"
+        result_str += f"\tExamination Hash: {self.examination_hash}"
+
+        return result_str
 
     def __repr__(self):
         return self.__str__()
@@ -264,6 +273,14 @@ class SensitiveMeta(models.Model):
         )
 
         return sha256(hash_str.encode()).hexdigest()
+
+    # override save method to update hashes
+    def save(self, *args, **kwargs):
+        self.examination_hash = self.get_patient_examination_hash()
+        self.patient_hash = self.get_patient_hash()
+        self.pseudo_patient = self.create_pseudo_patient()
+        self.pseudo_examination = self.get_or_create_pseudo_patient_examination()
+        super().save(*args, **kwargs)
 
     @classmethod
     def _update_name_db(cls, first_name, last_name):

@@ -34,11 +34,17 @@ if TYPE_CHECKING:
         Video,
         RawVideoFile,
         RawVideoPredictionMeta,
+        LabelRawVideoSegment,
+        LabelVideoSegment,
         ModelMeta,
         Center,
         EndoscopyProcessor,
         VideoMeta,
+        Frame,
+        RawFrame,
+        PatientExamination,
     )  #
+    from django.db.models import QuerySet
 
 TEST_RUN = os.environ.get("TEST_RUN", "False")
 TEST_RUN = TEST_RUN.lower() == "true"
@@ -68,6 +74,9 @@ class AbstractVideoFile(models.Model):
 
     video_meta = models.OneToOneField(
         "VideoMeta", on_delete=models.CASCADE, blank=True, null=True
+    )
+    examination = models.ForeignKey(
+        "PatientExamination", on_delete=models.SET_NULL, blank=True, null=True
     )
     original_file_name = models.CharField(max_length=255)
     video_hash = models.CharField(max_length=255, unique=True)
@@ -113,11 +122,17 @@ class AbstractVideoFile(models.Model):
 
     if TYPE_CHECKING:
         self: Union["RawVideoFile", "Video"]
+        label_video_segments: Union[
+            "QuerySet[LabelVideoSegment]",
+            "QuerySet[LabelRawVideoSegment]",
+        ]
+        examination: "PatientExamination"
         video_meta: "VideoMeta"
         processor: "EndoscopyProcessor"
         center: "Center"
         ai_model_meta: "ModelMeta"
         sensitive_meta: "SensitiveMeta"
+        frames: Union["QuerySet[RawFrame]", "QuerySet[Frame]"]
 
     class Meta:
         abstract = True  #
@@ -140,9 +155,8 @@ class AbstractVideoFile(models.Model):
         processor_name: str,
         frame_dir_parent: Path = FRAME_DIR,
         video_dir: Path = VIDEO_DIR,
-        delete_source: bool = False,
-        delete_temporary_transcoded_file: bool = False,
         save: bool = True,
+        frame_paths: List[dict] = None,
     ):
         from endoreg_db.models import Center, EndoscopyProcessor  # pylint: disable=import-outside-toplevel
 
@@ -180,25 +194,16 @@ class AbstractVideoFile(models.Model):
             original_file_name=original_file_name,
             video_hash=video_hash,
         )
+        video.save()
+        if frame_paths:
+            ic(f"Initializing frames using provided paths ({len(frame_paths)})")
+            video.initialize_frames(frame_paths)
 
         # Save the instance to the database
         video.save()
         ic(f"Saved {video}")
 
-        video.ensure_frame_objects()
-
-        if delete_source:
-            ic(f"Deleting source file {file_path}")
-            file_path.unlink()
-
-        if delete_temporary_transcoded_file:
-            ic(f"Deleting temporary transcoded file {transcoded_file_path}")
-            transcoded_file_path.unlink()
-
         return video
-
-    def ensure_frame_objects(self):
-        pass
 
     def get_video_model(self):
         from endoreg_db.models import RawVideoFile, Video
@@ -381,10 +386,7 @@ class AbstractVideoFile(models.Model):
 
         ic(video_prediction_meta)
 
-        paths = [p for p in frame_dir.glob(f"*{img_suffix}")]
-        if not paths:
-            frame_dir = Path(self.frame_dir)
-            paths = [p for p in frame_dir.glob(f"*{img_suffix}")]
+        paths = self.get_frame_paths()
         ic(f"Found {len(paths)} images in {frame_dir}")
 
         # frame names in format "frame_{index}.jpg"
@@ -491,35 +493,40 @@ class AbstractVideoFile(models.Model):
         self.state_initial_prediction_completed = True
         self.save()
 
-    def get_outside_sequences(self, outside_label_name: str = "outside"):
+    def get_outside_segments(self, outside_label_name: str = "outside"):
         """
         Get sequences of outside frames.
         """
-        from endoreg_db.models import VideoSegmentationLabel  # pylint: disable=import-outside-toplevel
+        from endoreg_db.models import Label  # pylint: disable=import-outside-toplevel
 
-        outside_label = VideoSegmentationLabel.objects.get(name=outside_label_name)
-        assert outside_label is not None, "Outside label must exist"
+        outside_label = Label.objects.get(name="outside")
+        assert outside_label is not None
+
+        outside_segments = self.label_video_segments.filter(label=outside_label)
 
         ic(f"Getting outside sequences using label: {outside_label}")
 
-        outside_sequences = self.sequences.get(outside_label_name, [])
+        return outside_segments
 
-        if not outside_sequences:
-            ic(f"No outside sequences found for {outside_label_name}")
-
-        return outside_sequences
+    def get_outside_frames(self) -> List["Frame"]:
+        """
+        Get outside frames.
+        """
+        outside_segments = self.get_outside_segments()
+        frames = []
+        for segment in outside_segments:
+            frames.extend(segment.get_frames())
+        return frames
 
     def get_outside_frame_paths(self):
         """
         Get paths to outside frames.
         """
-        outside_sequences = self.get_outside_sequences()
-        frame_paths = self.get_frame_paths(anonymized=True)
-        outside_frame_paths = []
-        for start, stop in outside_sequences:
-            outside_frame_paths.extend(frame_paths[start:stop])
+        frames = self.get_outside_frames()
 
-        return outside_frame_paths
+        frame_paths = [Path(frame.image.path) for frame in frames]
+
+        return frame_paths
 
     def __str__(self):
         return self.file.name
@@ -538,7 +545,6 @@ class AbstractVideoFile(models.Model):
         Fetches the endoscope ROI from the video meta.
         Returns a dictionary with keys "x", "y", "width", "height"
         """
-        self.video
         endo_roi = self.video_meta.get_endo_roi()
         return endo_roi
 
@@ -575,6 +581,11 @@ class AbstractVideoFile(models.Model):
 
         if not self.frame_dir:
             self.set_frame_dir()
+
+        sm = self.sensitive_meta
+        if sm:
+            self.patient = sm.pseudo_patient
+            self.patient_examination = sm.pseudo_examination
 
         super(AbstractVideoFile, self).save(*args, **kwargs)
 
@@ -644,33 +655,13 @@ class AbstractVideoFile(models.Model):
             frame_dir = Path(self.frame_dir)
         return frame_dir / f"frame_{n:07d}.jpg"
 
-    def get_frame_paths(self, anonymized=False):
-        if anonymized:
-            print("Getting anonymized frame paths")
-            _frame_dir = Path(self.frame_dir)
-            frame_dir = _frame_dir.parent / f"anonymized_{_frame_dir.name}"
-        else:
-            print("Getting raw frame paths")
-            frame_dir = Path(self.frame_dir)
+    def get_frame_paths(self):
+        """
+        Get paths to frames extracted from the video file.
+        """
+        frames = self.frames.filter(extracted=True).order_by("frame_number")
 
-        print(f"Frame dir: {frame_dir}")
-
-        paths = [p for p in frame_dir.glob("*")]
-        indices = [int(p.stem.split("_")[1]) for p in paths]
-        path_index_tuples = list(zip(paths, indices))
-        # sort ascending by index
-        path_index_tuples.sort(key=lambda x: x[1])
-
-        if not path_index_tuples:
-            return []
-
-        paths, indices = zip(*path_index_tuples)
-        paths: List[Path]
-
-        print(
-            f"Found {len(paths)} frames for {self.file.name} (anonymized: {anonymized})"
-        )
-
+        paths = [Path(frame.image.path) for frame in frames]
         return paths
 
     def get_prediction_dir(self):
@@ -708,13 +699,12 @@ class AbstractVideoFile(models.Model):
 
         processor = self.processor
 
-        frame_dir = Path(self.frame_dir)
-        frames = list(frame_dir.glob("*"))
-        n_frames = len(frames)
+        frame_paths = self.get_frame_paths()
+        n_frames = len(frame_paths)
         n_frames_to_process = max(1, int(frame_fraction * n_frames))
 
         # Select evenly spaced frames
-        frames = frames[:: n_frames // n_frames_to_process]
+        frame_paths = frame_paths[:: n_frames // n_frames_to_process]
 
         # extract text from each frame and store the value to
         # defaultdict of lists.
@@ -726,7 +716,7 @@ class AbstractVideoFile(models.Model):
 
         print(f"Processing {n_frames_to_process} frames from {self.file.name}")
         # Process frames
-        for frame_path in frames[:n_frames_to_process]:
+        for frame_path in frame_paths[:n_frames_to_process]:
             extracted_texts = extract_text_from_rois(frame_path, processor)
             for roi, text in extracted_texts.items():
                 rois_texts[roi].append(text)
@@ -791,7 +781,9 @@ class AbstractVideoFile(models.Model):
 
         return self.video_meta.get_fps()
 
-    def create_frame_object(self, frame_number, image_file=None):
+    def create_frame_object(
+        self, frame_number, image_file=None, extracted: bool = False
+    ):
         """
         Returns a frame instance with the image_file set.
         """
@@ -800,6 +792,7 @@ class AbstractVideoFile(models.Model):
             video=self,
             frame_number=frame_number,
             image=image_file,
+            extracted=extracted,
         )
 
     def bulk_create_frames(self, frames_to_create):

@@ -100,7 +100,7 @@ def initialize_frame_objects(
         enumerate(prepare_bulk_frames(extracted_paths), start=1)
     ):
         frame_obj_instance = video.create_frame_object(
-            frame_number, image_file=file_obj
+            frame_number, image_file=file_obj, extracted=True
         )
         frames_to_create.append(frame_obj_instance)
 
