@@ -141,8 +141,17 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
         prediction_meta = VideoPredictionMeta.from_raw(
             video=video, raw_video_prediction_meta=raw_video_prediction_meta
         )
-
-        return cls(
+        existing_segment = cls.objects.filter(
+            video=video,
+            start_frame_number=raw_label_video_segment.start_frame_number,
+            end_frame_number=raw_label_video_segment.end_frame_number,
+            source=raw_label_video_segment.source,
+            label=raw_label_video_segment.label,
+            prediction_meta=prediction_meta,
+        ).first()
+        if existing_segment:
+            return existing_segment
+        segment = cls(
             start_frame_number=raw_label_video_segment.start_frame_number,
             end_frame_number=raw_label_video_segment.end_frame_number,
             source=raw_label_video_segment.source,
@@ -150,6 +159,9 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
             video=video,
             prediction_meta=prediction_meta,
         )
+
+        segment.save()
+        return segment
 
     def get_video_model(self):
         from endoreg_db.models import Video

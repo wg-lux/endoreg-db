@@ -42,6 +42,7 @@ if TYPE_CHECKING:
         VideoMeta,
         Frame,
         RawFrame,
+        PatientExamination,
     )  #
     from django.db.models import QuerySet
 
@@ -73,6 +74,9 @@ class AbstractVideoFile(models.Model):
 
     video_meta = models.OneToOneField(
         "VideoMeta", on_delete=models.CASCADE, blank=True, null=True
+    )
+    examination = models.ForeignKey(
+        "PatientExamination", on_delete=models.SET_NULL, blank=True, null=True
     )
     original_file_name = models.CharField(max_length=255)
     video_hash = models.CharField(max_length=255, unique=True)
@@ -122,6 +126,7 @@ class AbstractVideoFile(models.Model):
             "QuerySet[LabelVideoSegment]",
             "QuerySet[LabelRawVideoSegment]",
         ]
+        examination: "PatientExamination"
         video_meta: "VideoMeta"
         processor: "EndoscopyProcessor"
         center: "Center"
@@ -576,6 +581,11 @@ class AbstractVideoFile(models.Model):
 
         if not self.frame_dir:
             self.set_frame_dir()
+
+        sm = self.sensitive_meta
+        if sm:
+            self.patient = sm.pseudo_patient
+            self.patient_examination = sm.pseudo_examination
 
         super(AbstractVideoFile, self).save(*args, **kwargs)
 

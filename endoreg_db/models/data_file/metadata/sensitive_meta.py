@@ -172,21 +172,16 @@ class SensitiveMeta(models.Model):
     def get_or_create_pseudo_patient_examination(self):
         from endoreg_db.models import PatientExamination
 
-        if not self.pseudo_examination:
-            patient_hash = self.get_patient_hash()
-            examination_hash = self.get_patient_examination_hash()
+        patient_hash = self.get_patient_hash()
+        examination_hash = self.get_patient_examination_hash()
 
-            patient_examination, _created = (
-                PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
-                    patient_hash, examination_hash
-                )
+        patient_examination, _created = (
+            PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
+                patient_hash, examination_hash
             )
+        )
 
-            self.pseudo_examination = patient_examination
-            self.save()
-
-        else:
-            patient_examination = self.pseudo_examination
+        self.pseudo_examination = patient_examination
 
         return patient_examination
 
@@ -283,6 +278,8 @@ class SensitiveMeta(models.Model):
     def save(self, *args, **kwargs):
         self.examination_hash = self.get_patient_examination_hash()
         self.patient_hash = self.get_patient_hash()
+        self.pseudo_patient = self.create_pseudo_patient()
+        self.pseudo_examination = self.get_or_create_pseudo_patient_examination()
         super().save(*args, **kwargs)
 
     @classmethod
