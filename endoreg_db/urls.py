@@ -10,6 +10,7 @@ from .views.csrf import csrf_token_view
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
+from .views.raw_video_meta_validation_views import VideoFileForMetaView
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 
@@ -157,8 +158,11 @@ urlpatterns = [
     #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
     path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
 
-
     
+    
+    
+    #  const url = lastId ? `http://localhost:8000/api/video/meta/?last_id=${lastId}` : "http://localhost:8000/api/video/meta/";
+    path("api/video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
     ]
 
 

@@ -5,6 +5,8 @@ from ..models import RawVideoFile,Label
 import subprocess, cv2
 from django.conf import settings
 
+
+
 class VideoFileSerializer(serializers.ModelSerializer):
 
     
@@ -40,7 +42,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
         model = RawVideoFile
         #he fields list defines which data should be included in the API response.
         fields = ['id','original_file_name', 'file','duration', 'video_url', 'full_video_path','video_selection_field','label_names','sequences','label_time_segments']  #  Ensure computed fields are included
-
+    #@staticmethod #using @staticmethod makes it reusable without needing to create a serializer instance.
+    #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
     def get_video_selection_field(self,obj):
         """
         Returns the field used for video selection in the frontend dropdown.
