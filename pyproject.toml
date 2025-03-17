@@ -29,5 +29,9 @@ dependencies = [
     "urllib3>=2.2.3",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.setuptools]
 packages = ["endoreg_db"]
