@@ -1,8 +1,29 @@
 [project]
 name = "endoreg-db"
-version = "0.6.1"
+version = "0.6.2"
 description = "EndoReg Db Django App"
 readme = "README.md"
+authors = [
+    { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
+    { name = "Max Hild" },
+    { name = "Hamza Zahid" },
+    { name = "Peter Kowalczyk" },
+]
+maintainers = [
+    { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
+    { name = "Max Hild" },
+    { name = "Hamza Zahid" },
+    { name = "Peter Kowalczyk" },
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
 requires-python = ">=3.11"
 dependencies = [
     "agl-report-reader>=0.4.0",
@@ -28,6 +49,10 @@ dependencies = [
     "tqdm>=4.67.0",
     "urllib3>=2.2.3",
 ]
+
+[project.urls]
+Homepage = "https://info.coloreg.de"
+Repository = "https://github.com/wg-lux/endoreg-db"
 
 [build-system]
 requires = ["hatchling"]
