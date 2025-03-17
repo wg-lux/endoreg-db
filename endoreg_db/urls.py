@@ -10,7 +10,7 @@ from .views.csrf import csrf_token_view
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
-from .views.raw_video_meta_validation_views import VideoFileForMetaView
+from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 
@@ -154,20 +154,66 @@ urlpatterns = [
     path("api/video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
 
 #----------------------------------END--VIDEO SEGMENTATION SECTION-------------------------------
+
+#----------------------------------START-- SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+
+    # API Endpoint for fetching video metadata or streaming the next available video
+    # This endpoint is used by the frontend to fetch:
+    #  - The first available video if `last_id` is NOT provided.
+    #  - The next available video where `id > last_id` if `last_id` is provided.
+    #  - If `Accept: application/json` is set in headers, it returns video metadata as JSON.
+    #  - If no videos are available, it returns {"error": "No more videos available."}.
+    #  const url = lastId ? `http://localhost:8000/api/video/meta/?last_id=${lastId}` : "http://localhost:8000/api/video/meta/";
+    path("api/video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
+
+
+
+    # This API endpoint allows updating specific patient details (SensitiveMeta)
+    # linked to a video. It is used to correct or modify the patient's first name,
+    # last name, date of birth, and examination date.
+    # Fetch video metadata and update patient details
+    # The frontend should send a JSON request body like this:
+    # {
+    #     "sensitive_meta_id": 2,          # The ID of the SensitiveMeta entry (REQUIRED)
+    #     "patient_first_name": "John",    # New first name (REQUIRED, cannot be empty)
+    #     "patient_last_name": "Doe",      # New last name (REQUIRED, cannot be empty)
+    #     "patient_dob": "1985-06-15",     # New Date of Birth (REQUIRED, format YYYY-MM-DD)
+    #     "examination_date": "2024-03-20" # New Examination Date (OPTIONAL, format YYYY-MM-DD)
+    # }
+    # - The frontend sends a PATCH request to this endpoint with updated patient data.
+    # - The backend validates the input using the serializer (`SensitiveMetaUpdateSerializer`).
+    # - If validation passes, the patient information is updated in the database.
+    # - If there are errors (e.g., missing fields, incorrect date format), 
+    #   the API returns structured error messages.
+    path("api/video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
+
+
+
+
+#----------------------------------END-- SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     #this is for to test the timeline
     #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
     path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
-
-    
-    
-    
-    #  const url = lastId ? `http://localhost:8000/api/video/meta/?last_id=${lastId}` : "http://localhost:8000/api/video/meta/";
-    path("api/video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
     ]
 
-
-
-
-
-
+    
 #https://biigle.de/manual/tutorials/videos/navigating-timeline#for time line example
