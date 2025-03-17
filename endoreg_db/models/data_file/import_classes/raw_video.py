@@ -16,7 +16,6 @@ from ..base_classes.utils import (
     RAW_VIDEO_DIR_NAME,
     VIDEO_DIR,
     STORAGE_LOCATION,
-    TEST_RUN,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
 
@@ -24,13 +23,8 @@ if TYPE_CHECKING:
     # import Queryset
     from django.db.models import QuerySet
     from endoreg_db.models import (
-        Patient,
         SensitiveMeta,
-        Video,
-        VideoPredictionMeta,
-        RawVideoPredictionMeta,
         LabelVideoSegment,
-        LabelRawVideoSegment,
     )
 
 

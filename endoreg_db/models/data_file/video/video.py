@@ -113,8 +113,12 @@ class Video(AbstractVideoFile):
         self.sequences = raw_video.sequences
 
         label_video_segments = raw_video.label_video_segments.all()
+
         label_video_segments = [
-            LabelVideoSegment.from_raw(self, raw_label_video_segment)
+            LabelVideoSegment.from_raw(
+                video=self, raw_label_video_segment=raw_label_video_segment
+            )
+            # LabelVideoSegment.from_raw(self, raw_label_video_segment)
             for raw_label_video_segment in label_video_segments
         ]
 
