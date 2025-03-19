@@ -113,3 +113,36 @@ class VideoFileForMetaView(APIView):
 
         #  Return validation errors
         return Response({"error": "Invalid data.", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+
+    """
+    await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
+const updatePatientInfo = async () => {
+    const updatedData = {
+        sensitive_meta_id: 2,
+        patient_first_name: "Placeholder",
+        patient_last_name: "Placeholder",
+        patient_dob: "1994-06-15",
+        examination_date: "2024-06-15"
+    };
+
+    try {
+        const response = await axios.patch("http://localhost:8000/api/video/update_sensitivemeta/", updatedData, {
+            headers: { "Content-Type": "application/json" }
+        });
+
+        console.log("Update Success:", response.data);
+        alert("Patient information updated successfully!");
+
+        return response.data;  
+    } catch (error) {
+        console.error("Update Error:", error.response?.data || error);
+        alert("Failed to update patient information.");
+        return error.response?.data || { error: "Unknown error" };  
+    }
+};
+
+
+updatePatientInfo().then(response => console.log("Final Response:", response));
+
+    """

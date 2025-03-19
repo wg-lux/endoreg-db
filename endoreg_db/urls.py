@@ -11,8 +11,11 @@ from .views.csrf import csrf_token_view
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
 from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
+from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
+from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
+
 
 urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
@@ -20,7 +23,6 @@ urlpatterns = [
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
     path('api/', include(router.urls)),
     path('api/conf/', csrf_token_view, name='csrf_token'),
-    
 
 
 #--------------------------------------VIDEO SEGMENTATION END POINTS--------------------------------------
@@ -188,10 +190,39 @@ urlpatterns = [
     path("api/video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
 
 
-
-
 #----------------------------------END-- SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+        
+        
+#----------------------------------END-- SENSITIVE META AND RAWPDFOFILE PDF PATIENT DETAILS-------------------------------
+        
+    #The first request (without id) fetches the first available PDF metadata.
+    #The "Next" button (with id) fetches the next available PDF.
+    #If an id is provided, the API returns the actual PDF file instead of JSON.
+    path("api/pdf/sensitivemeta/", PDFFileForMetaView.as_view(), name="pdf_meta"),  
 
+
+
+
+    # This API endpoint allows updating specific patient details (SensitiveMeta)
+    # linked to a PDF record. It enables modifying the patient's first name,
+    # last name, date of birth, and examination date.
+
+    # The frontend should send a JSON request body like this:
+    # {
+    #     "sensitive_meta_id": 2,          # The ID of the SensitiveMeta entry (REQUIRED)
+    #     "patient_first_name": "John",    # New first name (OPTIONAL, if provided, cannot be empty)
+    #     "patient_last_name": "Doe",      # New last name (OPTIONAL, if provided, cannot be empty)
+    #     "patient_dob": "1985-06-15",     # New Date of Birth (OPTIONAL, format YYYY-MM-DD)
+    #     "examination_date": "2024-03-20" # New Examination Date (OPTIONAL, format YYYY-MM-DD)
+    # }
+
+    # - The frontend sends a PATCH request to this endpoint with the updated patient data.
+    # - The backend processes the request and updates only the fields that are provided.
+    # - If validation passes, the corresponding SensitiveMeta entry is updated in the database.
+    # - If errors occur (e.g., invalid ID, empty fields, incorrect date format), 
+    #   the API returns structured error messages.
+
+    path("api/pdf/update_sensitivemeta/", UpdateSensitiveMetaView.as_view(), name="update_pdf_meta"),
 
 
 
@@ -217,3 +248,7 @@ urlpatterns = [
 
     
 #https://biigle.de/manual/tutorials/videos/navigating-timeline#for time line example
+from django.conf import settings
+from django.conf.urls.static import static
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
