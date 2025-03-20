@@ -13,6 +13,7 @@ from .views.views_for_timeline import video_timeline_view
 from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
+from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 
@@ -25,7 +26,7 @@ urlpatterns = [
     path('api/conf/', csrf_token_view, name='csrf_token'),
 
 
-#--------------------------------------VIDEO SEGMENTATION END POINTS--------------------------------------
+#--------------------------------------START : VIDEO SEGMENTATION END POINTS--------------------------------------
 
        # The dropdown contains video names and their corresponding IDs, which are retrieved from the database(RawVideoFile). Additionally, this route(api/videos) also fetches labels along with their names and IDs from the label table.
        # We will modify this implementation later as per our requirements.
@@ -155,9 +156,8 @@ urlpatterns = [
     #
     path("api/video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
 
-#----------------------------------END--VIDEO SEGMENTATION SECTION-------------------------------
 
-#----------------------------------START-- SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+#----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
 
     # API Endpoint for fetching video metadata or streaming the next available video
     # This endpoint is used by the frontend to fetch:
@@ -190,10 +190,9 @@ urlpatterns = [
     path("api/video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
 
 
-#----------------------------------END-- SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
         
         
-#----------------------------------END-- SENSITIVE META AND RAWPDFOFILE PDF PATIENT DETAILS-------------------------------
+#----------------------------------START : SENSITIVE META AND RAWPDFOFILE PDF PATIENT DETAILS-------------------------------
         
     #The first request (without id) fetches the first available PDF metadata.
     #The "Next" button (with id) fetches the next available PDF.
@@ -228,6 +227,23 @@ urlpatterns = [
 
 
 
+    #  API Endpoint for Fetching PDF Data (Including Anonymized Text)
+    # - This endpoint is used when the page loads.
+    # - Fetches the first available PDF (if no `last_id` is provided).
+    # - If `last_id` is given, fetches the next available PDF.
+    # - The frontend calls this endpoint on **page load** and when clicking the **next button**.
+    # Example frontend usage:
+    #     const url = lastId ? `http://localhost:8000/api/pdf/anony_text/?last_id=${lastId}` 
+    #                        : "http://localhost:8000/api/pdf/anony_text/";
+    path("api/pdf/anony_text/", RawPdfAnonyTextView.as_view(), name="pdf_anony_text"),  
+
+    #  API Endpoint for Updating the `anonymized_text` Field in `RawPdfFile`
+    # - This endpoint is called when the user edits the anonymized text and clicks **Save**.
+    # - Updates only the `anonymized_text` field for the specified PDF `id`.
+    # - The frontend sends a **PATCH request** to this endpoint with the updated text.
+    # Example frontend usage:
+    #     axios.patch("http://localhost:8000/api/pdf/update_anony_text/", { id: 1, anonymized_text: "Updated text" });
+    path("api/pdf/update_anony_text/", UpdateAnonymizedTextView.as_view(), name="update_pdf_anony_text"),
 
 
 
@@ -241,7 +257,9 @@ urlpatterns = [
 
 
 
-    #this is for to test the timeline
+
+
+    #this is for, to test the timeline
     #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
     path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
     ]
