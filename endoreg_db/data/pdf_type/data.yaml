@@ -20,3 +20,41 @@
     examiner_info_line: "ukw-histology-generic-examiner-info-line"
     cut_off_above_lines: ["ukw-histology-generic-patient-info-line"]
     cut_off_below_lines: ["ukw-histology-generic-cut-off-below-line-01"]
+
+### RKH
+
+# Histology
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "rkh-endoscopy-histology-report-generic"
+    patient_info_line: "rkh-histology-generic-patient-info-line"
+    endoscope_info_line: "ukw-examination-generic-endoscope-info-line"
+    examiner_info_line: "ukw-examination-generic-examiner-info-line"
+    cut_off_above_lines: [
+      "ukw-examination-generic-anamnese-info-line",
+      "ukw-examination-generic-endoscope-info-line",
+      "ukw-examination-generic-examiner-info-line",
+    ]
+    cut_off_below_lines: [
+      "rkh-histology-generic-cut-off-below-line"
+    ]
+
+### RKH
+
+# Histology
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "rkh-endoscopy-histology-report-generic"
+    patient_info_line: "rkh-histology-generic-patient-info-line"
+    endoscope_info_line: "ukw-examination-generic-endoscope-info-line"
+    examiner_info_line: "ukw-examination-generic-examiner-info-line"
+    cut_off_above_lines: [
+      "ukw-examination-generic-anamnese-info-line",
+      "ukw-examination-generic-endoscope-info-line",
+      "ukw-examination-generic-examiner-info-line",
+    ]
+    cut_off_below_lines: [
+      "rkh-histology-generic-cut-off-below-line"
+    ]

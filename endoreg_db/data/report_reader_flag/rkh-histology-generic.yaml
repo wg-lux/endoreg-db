@@ -1,0 +1,10 @@
+
+- model: endoreg_db.report_reader_flag
+  fields:
+    name: "rkh-histology-generic-cut-off-below-line"
+    value: "Mitkollegialen Grüßen"
+
+- model: endoreg_db.pdf_type
+  fields:
+    name: "rkh-histology-generic-patient-info-line"
+    value: "Pat.: "
