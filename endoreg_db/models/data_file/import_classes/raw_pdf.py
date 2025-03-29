@@ -13,7 +13,7 @@ from django.core.validators import FileExtensionValidator
 from endoreg_db.utils.file_operations import get_uuid_filename
 from icecream import ic
 
-from agl_report_reader.report_reader import ReportReader
+
 
 from endoreg_db.utils.hashs import get_pdf_hash
 from ..metadata import SensitiveMeta
@@ -161,18 +161,9 @@ class RawPdfFile(AbstractPdfFile):
 
             self.save()
 
-    def process_file(self, verbose=False):
-        pdf_path = self.file.path
-        rr_config = self.get_report_reader_config()
-
-        rr = ReportReader(
-            **rr_config
-        )  # FIXME In future we need to pass a configuration file
-        # This configuration file should be associated with pdf type
-
-        text, anonymized_text, report_meta = rr.process_report(
-            pdf_path, verbose=verbose
-        )
+    #TODO RENAME FUNCTION
+    def process_file(self, text, anonymized_text, report_meta,verbose=False):
+        
 
         self.text = text
         self.anonymized_text = anonymized_text
