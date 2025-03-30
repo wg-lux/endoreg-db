@@ -31,8 +31,13 @@ class VideoView(APIView):
         Returns a list of all available videos along with available labels.
         Used to populate the video selection dropdown in Vue.js.
         """
+        
         videos = RawVideoFile.objects.all()
         labels = Label.objects.all()  # Fetch all labels
+
+        if not videos.exists():
+            return Response({"error": "No videos found in the database."}, status=status.HTTP_404_NOT_FOUND)
+
 
         video_serializer = VideoListSerializer(videos, many=True)
         label_serializer = LabelSerializer(labels, many=True)  # Serialize labels
@@ -134,16 +139,28 @@ class UpdateLabelSegmentsView(APIView):
 
     def put(self, request, video_id, label_id):
         """
-        Handles PUT request to update or create label segments.
+        Updates segments for a given video & label.
         """
-        serializer = LabelSegmentUpdateSerializer(data=request.data)
 
-        if serializer.is_valid():
-            result = serializer.save()
-            return Response({
-                "message": "Segments updated successfully",
-                "updated_segments": result["updated_segments"],
-                "new_segments": result["new_segments"]
-            }, status=status.HTTP_200_OK)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Ensure required fields are provided
+        required_fields = ["video_id", "label_id", "segments"]
+        missing_fields = [field for field in required_fields if field not in request.data]
+
+        if missing_fields:
+            return Response({"error": "Missing required fields", "missing": missing_fields}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate input data
+        serializer = LabelSegmentUpdateSerializer(data=request.data, partial=True)
+
+        if not serializer.is_valid():
+            return Response({"error": "Invalid segment data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Process and save segment updates
+        result = serializer.save()
+
+        return Response({
+            "message": "Segments updated successfully.",
+            "updated_segments": result["updated_segments"],
+            "new_segments": result["new_segments"],
+            "deleted_segments": result["deleted_segments"]
+        }, status=status.HTTP_200_OK)

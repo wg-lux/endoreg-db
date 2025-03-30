@@ -10,9 +10,13 @@ from .views.csrf import csrf_token_view
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
-from .views.raw_video_meta_validation_views import VideoFileForMetaView
+from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
+from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
+from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
+from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
+
 
 urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
@@ -20,10 +24,9 @@ urlpatterns = [
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
     path('api/', include(router.urls)),
     path('api/conf/', csrf_token_view, name='csrf_token'),
-    
 
 
-#--------------------------------------VIDEO SEGMENTATION END POINTS--------------------------------------
+#--------------------------------------START : VIDEO SEGMENTATION END POINTS--------------------------------------
 
        # The dropdown contains video names and their corresponding IDs, which are retrieved from the database(RawVideoFile). Additionally, this route(api/videos) also fetches labels along with their names and IDs from the label table.
        # We will modify this implementation later as per our requirements.
@@ -153,21 +156,117 @@ urlpatterns = [
     #
     path("api/video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
 
-#----------------------------------END--VIDEO SEGMENTATION SECTION-------------------------------
-    #this is for to test the timeline
-    #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
-    path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
 
-    
-    
-    
+#----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+
+    # API Endpoint for fetching video metadata or streaming the next available video
+    # This endpoint is used by the frontend to fetch:
+    #  - The first available video if `last_id` is NOT provided.
+    #  - The next available video where `id > last_id` if `last_id` is provided.
+    #  - If `Accept: application/json` is set in headers, it returns video metadata as JSON.
+    #  - If no videos are available, it returns {"error": "No more videos available."}.
     #  const url = lastId ? `http://localhost:8000/api/video/meta/?last_id=${lastId}` : "http://localhost:8000/api/video/meta/";
     path("api/video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
+
+
+
+    # This API endpoint allows updating specific patient details (SensitiveMeta)
+    # linked to a video. It is used to correct or modify the patient's first name,
+    # last name, date of birth, and examination date.
+    # Fetch video metadata and update patient details
+    # The frontend should send a JSON request body like this:
+    # {
+    #     "sensitive_meta_id": 2,          # The ID of the SensitiveMeta entry (REQUIRED)
+    #     "patient_first_name": "John",    # New first name (REQUIRED, cannot be empty)
+    #     "patient_last_name": "Doe",      # New last name (REQUIRED, cannot be empty)
+    #     "patient_dob": "1985-06-15",     # New Date of Birth (REQUIRED, format YYYY-MM-DD)
+    #     "examination_date": "2024-03-20" # New Examination Date (OPTIONAL, format YYYY-MM-DD)
+    # }
+    # - The frontend sends a PATCH request to this endpoint with updated patient data.
+    # - The backend validates the input using the serializer (`SensitiveMetaUpdateSerializer`).
+    # - If validation passes, the patient information is updated in the database.
+    # - If there are errors (e.g., missing fields, incorrect date format), 
+    #   the API returns structured error messages.
+    path("api/video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
+
+
+        
+        
+#----------------------------------START : SENSITIVE META AND RAWPDFOFILE PDF PATIENT DETAILS-------------------------------
+        
+    #The first request (without id) fetches the first available PDF metadata.
+    #The "Next" button (with id) fetches the next available PDF.
+    #If an id is provided, the API returns the actual PDF file instead of JSON.
+    path("api/pdf/sensitivemeta/", PDFFileForMetaView.as_view(), name="pdf_meta"),  
+
+
+
+
+    # This API endpoint allows updating specific patient details (SensitiveMeta)
+    # linked to a PDF record. It enables modifying the patient's first name,
+    # last name, date of birth, and examination date.
+
+    # The frontend should send a JSON request body like this:
+    # {
+    #     "sensitive_meta_id": 2,          # The ID of the SensitiveMeta entry (REQUIRED)
+    #     "patient_first_name": "John",    # New first name (OPTIONAL, if provided, cannot be empty)
+    #     "patient_last_name": "Doe",      # New last name (OPTIONAL, if provided, cannot be empty)
+    #     "patient_dob": "1985-06-15",     # New Date of Birth (OPTIONAL, format YYYY-MM-DD)
+    #     "examination_date": "2024-03-20" # New Examination Date (OPTIONAL, format YYYY-MM-DD)
+    # }
+
+    # - The frontend sends a PATCH request to this endpoint with the updated patient data.
+    # - The backend processes the request and updates only the fields that are provided.
+    # - If validation passes, the corresponding SensitiveMeta entry is updated in the database.
+    # - If errors occur (e.g., invalid ID, empty fields, incorrect date format), 
+    #   the API returns structured error messages.
+
+    path("api/pdf/update_sensitivemeta/", UpdateSensitiveMetaView.as_view(), name="update_pdf_meta"),
+
+
+
+
+
+    #  API Endpoint for Fetching PDF Data (Including Anonymized Text)
+    # - This endpoint is used when the page loads.
+    # - Fetches the first available PDF (if no `last_id` is provided).
+    # - If `last_id` is given, fetches the next available PDF.
+    # - The frontend calls this endpoint on **page load** and when clicking the **next button**.
+    # Example frontend usage:
+    #     const url = lastId ? `http://localhost:8000/api/pdf/anony_text/?last_id=${lastId}` 
+    #                        : "http://localhost:8000/api/pdf/anony_text/";
+    path("api/pdf/anony_text/", RawPdfAnonyTextView.as_view(), name="pdf_anony_text"),  
+
+    #  API Endpoint for Updating the `anonymized_text` Field in `RawPdfFile`
+    # - This endpoint is called when the user edits the anonymized text and clicks **Save**.
+    # - Updates only the `anonymized_text` field for the specified PDF `id`.
+    # - The frontend sends a **PATCH request** to this endpoint with the updated text.
+    # Example frontend usage:
+    #     axios.patch("http://localhost:8000/api/pdf/update_anony_text/", { id: 1, anonymized_text: "Updated text" });
+    path("api/pdf/update_anony_text/", UpdateAnonymizedTextView.as_view(), name="update_pdf_anony_text"),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    #this is for, to test the timeline
+    #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
+    path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
     ]
 
-
-
-
-
-
+    
 #https://biigle.de/manual/tutorials/videos/navigating-timeline#for time line example
+from django.conf import settings
+from django.conf.urls.static import static
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
