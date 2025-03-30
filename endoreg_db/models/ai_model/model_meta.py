@@ -14,7 +14,7 @@ from icecream import ic
 if TYPE_CHECKING:
     from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
 
-PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
+PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data"))).expanduser()
 
 STORAGE_LOCATION = PSEUDO_DIR
 WEIGHTS_DIR_NAME = "db_model_weights"

@@ -7,7 +7,7 @@ import os
 from django.db import models
 from icecream import ic
 
-PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
+PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data"))).expanduser()
 
 STORAGE_LOCATION = PSEUDO_DIR
 WEIGHTS_DIR_NAME = "db_model_weights"

@@ -10,7 +10,7 @@ import numpy as np
 DJANGO_NAME_SALT = os.environ.get("DJANGO_NAME_SALT", "default_salt")
 
 # Directory stuff
-PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data")))
+PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data"))).expanduser()
 STORAGE_LOCATION = PSEUDO_DIR
 FRAME_DIR_NAME = os.environ.get("DJANGO_FRAME_DIR_NAME", "db_frames")
 RAW_FRAME_DIR_NAME = os.environ.get("DJANGO_RAW_FRAME_DIR_NAME", "db_raw_frames")
