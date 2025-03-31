@@ -162,8 +162,7 @@ class RawPdfFile(AbstractPdfFile):
             self.save()
 
     #TODO RENAME FUNCTION
-    def process_file(self, text, anonymized_text, report_meta,verbose=False):
-        
+    def process_file(self, text, anonymized_text, report_meta, verbose=True):
 
         self.text = text
         self.anonymized_text = anonymized_text
