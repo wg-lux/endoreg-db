@@ -7,7 +7,13 @@ from .views.patient_views import (
     get_morphology_choices, 
 )
 from .views.csrf import csrf_token_view
-#from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
+# endoreg_db_production/endoreg_db/urls.py
+from endoreg_db.views.views import (
+    VideoView,
+    keycloak_login,
+    keycloak_callback,
+    public_home,
+)#from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
 from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
@@ -34,7 +40,7 @@ urlpatterns = [
         # will be displayed on the frontend using route(api/video/<int:video_id>/).
         # once label is selected from the dropdown,using its name, details can be fetched from rawvideofile using route("api/video/<int:video_id>/label/<str:label_name>/) 
         #If editing is required, a form will be available for each label. This form dynamically updates when the selected label changes. It will display all segments associated with the selected label, each with a delete option. Below these segments, there may be a button for adding more segments.
-        #If any values in the form are modified, the updated data will be saved in the database table.
+        #If any values in the form are modified, the updated data will be saved in the dafrom .views import VideoView, keycloak_login, keycloak_callbacktabase table.
     
     
     
@@ -45,7 +51,15 @@ urlpatterns = [
     # Example request: GET /api/videos/
     # Response: Returns a JSON list of videos (id, file path, video_url, sequences, label_names).
     # it also fetch the label from teh label table
-    path("api/videos/", VideoView.as_view(), name="video_list"),
+
+    # for kaycloak:-
+    # /api/videos/ , protected API
+    # /login/ , sends user to Keycloak login page
+    # /login/callback/ , where Keycloak sends the user after login
+    path('', public_home, name='public_home'),
+    path('api/videos/', VideoView.as_view(), name='video_list'),
+    path('login/', keycloak_login, name='keycloak_login'),
+    path('login/callback/', keycloak_callback, name='keycloak_callback'),
     
     #need to change this route
     #path('api/prediction/', FetchSingleFramePredictionView.as_view(), name='fetch-single-frame-prediction'),#.as_view() converts the class-based view into a function that Django can use for routing.
