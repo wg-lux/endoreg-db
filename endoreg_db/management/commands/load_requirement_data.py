@@ -110,7 +110,7 @@ IMPORT_METADATA = {
         "foreign_keys": [
             "requirement_set_type",
             "requirements",  # This is a many-to-many field
-            "linked_sets",
+            "links_to_sets",
             "information_sources",
         ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
