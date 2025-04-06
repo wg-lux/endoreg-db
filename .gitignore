@@ -16,6 +16,8 @@ __pycache__/
 _build
 .direnv
 
+*.sqlite3
+
 .devenv.flake.nix
 
 ###### Do not Remove ###### # Deprecated?

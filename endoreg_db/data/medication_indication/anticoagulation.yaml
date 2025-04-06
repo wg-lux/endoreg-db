@@ -2,7 +2,7 @@
 - model: endoreg_db.medication_indication
   fields:
     name: "te_prevention-after_hip-apixaban"
-    events: ["hip_replacement"]
+    events: ["hip_replacement_surgery"]
     diseases: []
     disease_classification_choices: []
     medication_schedules: [
@@ -14,7 +14,7 @@
 - model: endoreg_db.medication_indication
   fields:
     name: "te_prevention-after_knee-apixaban"
-    events: ["knee_replacement"]
+    events: ["knee_replacement_surgery"]
     diseases: []
     disease_classification_choices: []
     medication_schedules: [
@@ -27,7 +27,7 @@
   fields:
     name: "te_prevention-non_valvular_af-apixaban"
     events: []
-    diseases: ["non_valvular_af"]
+    diseases: ["non_valvular_atrial_fibrillation"]
     disease_classification_choices: []
     medication_schedules: [
         "apixaban-5mg-twice_daily", # no limit
@@ -55,7 +55,7 @@
   fields:
     name: "te_prevention-non_valvular_af-apixaban-dr" #dr = dose reduction
     events: []
-    diseases: ["non_valvular_af"]
+    diseases: ["non_valvular_atrial_fibrillation"]
     disease_classification_choices: []
     medication_schedules: [
         "apixaban-2.5mg-twice_daily", # no limit

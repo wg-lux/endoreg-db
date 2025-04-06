@@ -1,0 +1,76 @@
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_examination"
+    name_de: "Patientenuntersuchung"
+    name_en: "Patient examination"
+    description: "Requirements of this type are used on PatientExamination Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "examination"
+    name_de: "Untersuchung"
+    name_en: "Examination"
+    description: "Examination-related requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "examination_indication"
+    name_de: "Untersuchungsindikation"
+    name_en: "Examination Indication"
+    description: "Examination indication requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "disease"
+    name_de: "Erkrankung"
+    name_en: "Disease"
+    description: "Disease-related requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "disease_classification_choice"
+    name_de: "Erkrankungsklassifikation"
+    name_en: "Disease Classification"
+    description: "Disease classification choice requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "event"
+    name_de: "Ereignis"
+    name_en: "Event"
+    description: "Event-related requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "lab_value"
+    name_de: "Laborwert"
+    name_en: "Lab Value"
+    description: "Lab value requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "finding"
+    name_de: "Befund"
+    name_en: "Finding"
+    description: "Finding requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "finding_morphology"
+    name_de: "Befundmorphologie"
+    name_en: "Finding Morphology"
+    description: "Finding morphology requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "finding_location"
+    name_de: "Befundlokalisation"
+    name_en: "Finding Location"
+    description: "Finding location requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "finding_intervention"
+    name_de: "Befundintervention"
+    name_en: "Finding Intervention"
+    description: "Finding intervention requirements"

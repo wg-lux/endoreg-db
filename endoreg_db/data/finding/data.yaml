@@ -1,19 +1,26 @@
 - model: endoreg_db.finding
   fields:
+    name: "placeholder"
+    name_de: "Platzhalter"
+    name_en: "Placeholder"
+    description: "This is a placeholder finding."
+
+- model: endoreg_db.finding
+  fields:
     name: "colon_polyp"
     name_de: "Kolonpolyp"
     name_en: "Colon Polyp"
 
     finding_interventions:
       [
-        "colon-lesion-polypectomy-cold-snare",
-        "colon-lesion-polypectomy-hot-snare",
-        "colon-lesion-injection-liftup",
-        "colon-lesion-injection-vasoactive",
-        "colon-lesion-biopsy",
-        "colon-lesion-emr",
-        "colon-lesion-esd",
-        "colon-lesion-clip",
+        "colon_lesion_polypectomy_cold_snare",
+        "colon_lesion_polypectomy_hot_snare",
+        "colon_lesion_injection_liftup",
+        "colon_lesion_injection_vasoactive",
+        "colon_lesion_biopsy",
+        "colon_lesion_emr",
+        "colon_lesion_esd",
+        "colon_lesion_clip",
       ]
 
     causing_finding_interventions: []
@@ -28,9 +35,9 @@
     name: "post-intervention-wound"
     name_de: "Postinterventionelle Wunde"
 
-    finding_interventions: ["colon-lesion-clip"]
+    finding_interventions: ["colon_lesion_clip"]
 
-    causing_finding_interventions: ["colon-lesion-polypectomy-cold-snare"]
+    causing_finding_interventions: ["colon_lesion_polypectomy_cold_snare"]
 
     opt_causing_finding_interventions: []
 
@@ -126,7 +133,7 @@
     name_en: "Scar"
     finding_interventions: []
     causing_finding_interventions: []
-    opt_causing_finding_interventions: ["colon-lesion-polypectomy-cold-snare"]
+    opt_causing_finding_interventions: ["colon_lesion_polypectomy_cold_snare"]
 
     examinations:
       [

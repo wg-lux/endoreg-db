@@ -1,5 +1,6 @@
 from django.db import models
 
+
 def get_prediction_information_source():
     _source = InformationSource.objects.get(name="prediction")
 
@@ -7,9 +8,11 @@ def get_prediction_information_source():
     assert _source, "No prediction information source found"
     return _source
 
+
 class InformationSourceManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
+
 
 class InformationSource(models.Model):
     objects = InformationSourceManager()
@@ -26,4 +29,4 @@ class InformationSource(models.Model):
         return (self.name,)
 
     def __str__(self):
-        return self.name
+        return str(self.name)

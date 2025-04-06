@@ -20,6 +20,10 @@ class Command(BaseCommand):
 
         out = self.stdout
 
+        call_command("load_information_source", stdout=out, verbose=verbose)
+
+        call_command("load_risk_data", stdout=out, verbose=verbose)
+
         # Load Center Data
         call_command("load_center_data", stdout=out, verbose=verbose)
         call_command("load_endoscope_data", stdout=out, verbose=verbose)
@@ -34,10 +38,12 @@ class Command(BaseCommand):
         call_command("load_organ_data", stdout=out, verbose=verbose)
         call_command("load_contraindication_data", stdout=out, verbose=verbose)
         call_command("load_examination_data", stdout=out, verbose=verbose)
+        call_command("load_finding_data", stdout=out, verbose=verbose)
         call_command("load_examination_indication_data", stdout=out, verbose=verbose)
         call_command("load_lab_value_data", stdout=out, verbose=verbose)
-        call_command("load_finding_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
+
+        call_command("load_requirement_data", stdout=out, verbose=verbose)
 
         # Load AI Model Data
         call_command("load_ai_model_label_data", stdout=out, verbose=verbose)

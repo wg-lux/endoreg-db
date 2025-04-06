@@ -56,7 +56,10 @@ def load_data_with_foreign_keys(
 
         # Handle foreign keys and many-to-many relationships
         for fk_field, fk_model in zip(foreign_keys, foreign_key_models):
-            # print(fk_field, fk_model)
+            # Skip fields that are not in the data
+            if fk_field not in fields:
+                continue
+
             target_keys = fields.pop(fk_field, None)
 
             # Ensure the foreign key exists
@@ -73,18 +76,20 @@ def load_data_with_foreign_keys(
             if isinstance(target_keys, list):  # Assume many-to-many relationship
                 related_objects = []
                 for key in target_keys:
-                    obj, created = fk_model.objects.get_or_create(name=key)
-                    if created and verbose:
-                        command.stdout.write(
-                            command.style.SUCCESS(f"Created {fk_model.__name__} {key}")
-                        )
+                    try:
+                        obj = fk_model.objects.get_by_natural_key(key)
+                    except ObjectDoesNotExist:
+                        if verbose:
+                            command.stdout.write(
+                                command.style.WARNING(
+                                    f"{fk_model.__name__} with key {key} not found"
+                                )
+                            )
+                        continue
                     related_objects.append(obj)
                 m2m_relationships[fk_field] = related_objects
             else:  # Single foreign key relationship
                 try:
-                    if model == "endoreg_db.case_template_rule":
-                        # print(fk_model, target_keys)
-                        pass
                     obj = fk_model.objects.get_by_natural_key(target_keys)
                 except ObjectDoesNotExist:
                     if verbose:
@@ -115,4 +120,11 @@ def load_data_with_foreign_keys(
 
         # Set many-to-many relationships
         for field_name, related_objs in m2m_relationships.items():
-            getattr(obj, field_name).set(related_objs)
+            if related_objs:  # Only set if there are objects to set
+                getattr(obj, field_name).set(related_objs)
+                if verbose:
+                    command.stdout.write(
+                        command.style.SUCCESS(
+                            f"Set {len(related_objs)} {field_name} for {model.__name__} {name}"
+                        )
+                    )

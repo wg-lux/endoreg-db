@@ -17,6 +17,9 @@ REPORT_READER_FLAG_DATA_DIR = DATA_DIR / "report_reader_flag"
 EVENT_DATA_DIR = DATA_DIR / "event"
 GENDER_DATA_DIR = DATA_DIR / "gender"
 ORGAN_DATA_DIR = DATA_DIR / "organ"
+NAMES_FIRST_DATA_DIR = DATA_DIR / "names_first"
+NAMES_LAST_DATA_DIR = DATA_DIR / "names_last"
+
 
 # Contraindication
 CONTRAINDICATION_DATA_DIR = DATA_DIR / "contraindication"
@@ -101,6 +104,17 @@ AI_MODEL_META_DATA_DIR = DATA_DIR / "ai_model_meta"
 LABEL_DATA_DIR = DATA_DIR / "ai_model_label"
 VIDEO_SEGMENTATION_LABEL_DATA_DIR = DATA_DIR / "ai_model_video_segmentation_label"
 VIDEO_SEGMENTATION_LABELSET_DATA_DIR = DATA_DIR / "ai_model_video_segmentation_labelset"
+
+# RISK
+RISK_DATA_DIR = DATA_DIR / "risk"
+RISK_TYPE_DATA_DIR = DATA_DIR / "risk_type"
+
+# REQUIREMENT
+REQUIREMENT_DATA_DIR = DATA_DIR / "requirement"
+REQUIREMENT_OPERATOR_DATA_DIR = DATA_DIR / "requirement_operator"
+REQUIREMENT_SET_DATA_DIR = DATA_DIR / "requirement_set"
+REQUIREMENT_SET_TYPE_DATA_DIR = DATA_DIR / "requirement_set_type"
+REQUIREMENT_TYPE_DATA_DIR = DATA_DIR / "requirement_type"
 
 # To Do
 LAB_VALUE_DATA_DIR = DATA_DIR / "lab_value"

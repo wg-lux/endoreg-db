@@ -1,0 +1,12 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "endoscopy_bleeding_risk_high"
+    name_de: "Endoskopie - Blutungsrisiko: hoch"
+    name_en: "Endoscopy - Bleeding Risk: High"
+    description: "Endoskopie - Blutungsrisiko: hoch"
+    # linked_sets: [] # if this rule depends on others
+    requirement_set_type: "any"
+    information_sources:
+      - "guideline_quality_in_gi"
+    requirements:
+      - "endoscopy_intervention_bleeding_risk_high"

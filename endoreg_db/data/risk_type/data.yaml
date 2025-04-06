@@ -1,0 +1,27 @@
+- model: endoreg_db.risk_type
+  fields:
+    name: "bleeding"
+    name_de: "Blutung"
+    name_en: "Bleeding"
+    description: "Bleeding risk"
+
+- model: endoreg_db.risk_type
+  fields:
+    name: "perforation"
+    name_de: "Perforation"
+    name_en: "Perforation"
+    description: "Perforation risk"
+
+- model: endoreg_db.risk_type
+  fields:
+    name: "infection"
+    name_de: "Infektion"
+    name_en: "Infection"
+    description: "Infection risk"
+
+- model: endoreg_db.risk_type
+  fields:
+    name: "thrombosis"
+    name_de: "Thrombose"
+    name_en: "Thrombosis"
+    description: "Thrombosis risk"
