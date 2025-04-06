@@ -23,6 +23,10 @@ SUPPORTED_OPERATORS = {
 }
 
 
+def get_operator_function(operator_name):
+    pass
+
+
 def get_values_from_kwargs(
     requirement: Requirement,
     patient: Optional[Patient] = None,
@@ -40,20 +44,24 @@ def get_values_from_kwargs(
         dict: A dictionary containing the extracted values.
     """
     requirement_types = [_.name for _ in requirement.requirement_types]
-    operators = [_.name for _ in requirement.operators]
+    # operators = [_.name for _ in requirement.operators]  # Uncomment when needed
 
     for requirement_type in requirement_types:
-        assert requirement_type in SUPPORTED_REQUIREMENT_TYPES, (
-            f"Unsupported requirement type: {requirement_type}"
-        )
+        if requirement_type not in SUPPORTED_REQUIREMENT_TYPES:
+            raise ValueError(f"Unsupported requirement type: {requirement_type}")
 
     if "patient_examination" in requirement_types:
-        assert patient_examination is not None, (
-            "patient_examination is required for this requirement type"
-        )
+        if patient_examination is None:
+            raise ValueError(
+                "patient_examination is required for this requirement type"
+            )
 
     if "patient" in requirement_types:
-        assert patient is not None, "patient is required for this requirement type"
+        if patient is None:
+            raise ValueError("patient is required for this requirement type")
+
+    # Prepare and return the extracted values
+    return {"patient": patient, "patient_examination": patient_examination, **kwargs}
 
 
 def evaluate_requirement(

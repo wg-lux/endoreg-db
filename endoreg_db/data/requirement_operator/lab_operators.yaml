@@ -72,20 +72,6 @@
 
 - model: endoreg_db.requirement_operator
   fields:
-    name: "lab_numeric_decreased_factor_in_timeframe"
-    name_de: "Laborwert um Faktor verringert im angegebenen Zeitraum"
-    name_en: "Lab value decreased by factor in the given timeframe"
-    description: "Make sure that the provided numeric lab value is always decreased by a factor within the given timeframe. The factor is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
-
-- model: endoreg_db.requirement_operator
-  fields:
-    name: "lab_numeric_increased_factor_in_timeframe"
-    name_de: "Laborwert um Faktor erhöht im angegebenen Zeitraum"
-    name_en: "Lab value increased by factor in the given timeframe"
-    description: "Make sure that the provided numeric lab value is always increased by a factor within the given timeframe. The factor is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
-
-- model: endoreg_db.requirement_operator
-  fields:
     name: "lab_numeric_lower_than_value_in_timeframe"
     name_de: "Laborwert kleiner als Wert im angegebenen Zeitraum"
     name_en: "Lab value lower than value in the given timeframe"
@@ -97,13 +83,6 @@
     name_de: "Laborwert größer als Wert im angegebenen Zeitraum"
     name_en: "Lab value greater than value in the given timeframe"
     description: "Make sure that the provided numeric lab value is greater than the given value within the given timeframe. The value is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
-
-- model: endoreg_db.requirement_operator
-  fields:
-    name: "lab_numeric_lower_than_value_in_timeframe"
-    name_de: "Laborwert kleiner als Wert im angegebenen Zeitraum"
-    name_en: "Lab value lower than value in the given timeframe"
-    description: "Make sure that the provided numeric lab value is lower than the given value within the given timeframe. The value is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
 
 - model: endoreg_db.requirement_operator
   fields:

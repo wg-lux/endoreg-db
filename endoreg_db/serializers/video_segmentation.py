@@ -391,10 +391,6 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             (float(seg.start_frame_number), float(seg.end_frame_number)): seg
             for seg in existing_segments
         }
-        existing_segments_dict = {
-            (float(seg.start_frame_number), float(seg.end_frame_number)): seg
-            for seg in existing_segments
-        }
 
         # Prepare lists for batch processing
         updated_segments = []  # Stores segments that need to be updated
