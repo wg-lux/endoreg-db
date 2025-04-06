@@ -124,8 +124,9 @@ IMPORT_METADATA = {
 
 
 class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
+    help = """Load all requirement-related YAML files from their respective directories
+    into the database, including RequirementType, RequirementOperator, Requirement, 
+    RequirementSetType, and RequirementSet models"""
 
     def add_arguments(self, parser):
         parser.add_argument(
