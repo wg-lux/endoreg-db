@@ -1,0 +1,20 @@
+- model: endoreg_db.requirement_set_type
+  fields:
+    name: "all"
+    name_de: "alle"
+    name_en: "all"
+    description: "All requirement are true"
+
+- model: endoreg_db.requirement_set_type
+  fields:
+    name: "any"
+    name_de: "mindestens eine"
+    name_en: "at least one"
+    description: "At least one requirement is true"
+
+- model: endoreg_db.requirement_set_type
+  fields:
+    name: "none"
+    name_de: "keine"
+    name_en: "none"
+    description: "No requirement is true"

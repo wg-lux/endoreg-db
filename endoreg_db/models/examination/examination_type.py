@@ -1,12 +1,15 @@
 from django.db import models
 
+
 class ExaminationTypeManager(models.Manager):
     """
     Manager for ExaminationType with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "ExaminationType":
         return self.get(name=name)
-    
+
+
 class ExaminationType(models.Model):
     """
     Represents a type of examination.
@@ -16,6 +19,7 @@ class ExaminationType(models.Model):
         name_de (str): The German name of the examination type.
         name_en (str): The English name of the examination type.
     """
+
     objects = ExaminationTypeManager()
     name = models.CharField(max_length=100, unique=True)
     name_de = models.CharField(max_length=100, blank=True, null=True)
@@ -28,7 +32,9 @@ class ExaminationType(models.Model):
         Returns:
             str: The name of the examination type.
         """
-        return self.name_en or self.name
+        name = self.name_en or self.name
+        name = str(name)
+        return name
 
     def natural_key(self) -> tuple:
         """

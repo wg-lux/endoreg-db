@@ -369,13 +369,21 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         new_segments = self.validated_data["segments"]
 
         # Fetch the correct `prediction_meta_id` based on `video_id`
-        prediction_meta_entry = RawVideoPredictionMeta.objects.filter(video_id=video_id).first()
+        prediction_meta_entry = RawVideoPredictionMeta.objects.filter(
+            video_id=video_id
+        ).first()
         if not prediction_meta_entry:
-            raise serializers.ValidationError({"error": "No prediction metadata found for this video."})
+            raise serializers.ValidationError(
+                {"error": "No prediction metadata found for this video."}
+            )
 
-        prediction_meta_id = prediction_meta_entry.id  # Get the correct prediction_meta_id
+        prediction_meta_id = (
+            prediction_meta_entry.id
+        )  # Get the correct prediction_meta_id
 
-        existing_segments = LabelRawVideoSegment.objects.filter(video_id=video_id, label_id=label_id)
+        existing_segments = LabelRawVideoSegment.objects.filter(
+            video_id=video_id, label_id=label_id
+        )
 
         # Convert existing segments into a dictionary for quick lookup
         # Key format: (start_frame_number, end_frame_number)
@@ -383,7 +391,6 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             (float(seg.start_frame_number), float(seg.end_frame_number)): seg
             for seg in existing_segments
         }
-        existing_segments_dict = {(float(seg.start_frame_number), float(seg.end_frame_number)): seg for seg in existing_segments}
 
         # Prepare lists for batch processing
         updated_segments = []  # Stores segments that need to be updated
@@ -400,7 +407,10 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         updated_segments = []
         new_entries = []
         existing_keys = set(existing_segments_dict.keys())
-        new_keys = set((float(seg["start_frame_number"]), float(seg["end_frame_number"])) for seg in new_segments)
+        new_keys = set(
+            (float(seg["start_frame_number"]), float(seg["end_frame_number"]))
+            for seg in new_segments
+        )
 
         print(f" Before Update: Found {existing_segments.count()} existing segments.")
         print(f" New Segments Received: {len(new_segments)}")
@@ -438,14 +448,18 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                                 end_frame_number=end_frame,
                             )
                         )
-                        print(f" Adding new segment: Start {start_frame} → End {end_frame}")
-                        new_entries.append(LabelRawVideoSegment(
-                            video_id=video_id,
-                            label_id=label_id,
-                            start_frame_number=start_frame,
-                            end_frame_number=end_frame,
-                            prediction_meta_id=prediction_meta_id  # Assign correct prediction_meta_id
-                        ))
+                        print(
+                            f" Adding new segment: Start {start_frame} → End {end_frame}"
+                        )
+                        new_entries.append(
+                            LabelRawVideoSegment(
+                                video_id=video_id,
+                                label_id=label_id,
+                                start_frame_number=start_frame,
+                                end_frame_number=end_frame,
+                                prediction_meta_id=prediction_meta_id,  # Assign correct prediction_meta_id
+                            )
+                        )
 
             # Delete segments that are no longer present in the frontend data
             segments_to_delete = existing_segments.exclude(
@@ -469,7 +483,9 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             "_-------",
             deleted_count,
         )
-        print(f" After Update: Updated {len(updated_segments)} segments, Added {len(new_entries)}, Deleted {deleted_count}")
+        print(
+            f" After Update: Updated {len(updated_segments)} segments, Added {len(new_entries)}, Deleted {deleted_count}"
+        )
 
         return {
             "updated_segments": LabelSegmentSerializer(
@@ -565,5 +581,3 @@ axios.put(`http://localhost:8000/api/video/${videoIdUpdate}/label/${labelIdUpdat
     console.error(" Error Updating Segments:", error.response ? error.response.data : error);
 });
 """ ""
-
-labelrawvideosegment"""''

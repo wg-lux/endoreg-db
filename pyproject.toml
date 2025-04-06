@@ -1,6 +1,6 @@
 [project]
 name = "endoreg-db"
-version = "0.6.2"
+version = "0.6.4"
 description = "EndoReg Db Django App"
 readme = "README.md"
 authors = [

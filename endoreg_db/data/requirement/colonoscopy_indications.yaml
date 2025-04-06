@@ -1,0 +1,21 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "endoscopy_intervention_bleeding_risk_high"
+    name_de: "Endoskopische Intervention - Blutungsrisiko: hoch"
+    name_en: "Endoscopy Intervention - Bleeding Risk: High"
+    description: "Endoskopische Intervention - Blutungsrisiko: hoch"
+    requirement_types:
+      - "finding_intervention"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_is_colon_emr"
+    name_de: "Indikation Kolon EMR"
+    name_en: "Indication colon EMR"
+    description: "This functions evaluates whether the input ()"
+    operators:
+      - "models_match_any"
+    # when creating a requirement involving other models,
+    # we need to create the relationship here:
+    examination_indications:
+      - "colonoscopy_lesion_removal_emr"

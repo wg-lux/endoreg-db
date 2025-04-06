@@ -97,6 +97,19 @@ from .case_template import (
     CaseTemplateRuleValueType,
 )
 
+from .risk import (
+    Risk,
+    RiskType,
+)
+
+from .requirement import (
+    Requirement,
+    RequirementSet,
+    RequirementSetType,
+    RequirementOperator,
+    RequirementType,
+)
+
 # Rules
 from .rules import (
     Rule,
@@ -373,4 +386,11 @@ __all__ = [
     "RawPdfFile",
     "RawVideoFile",
     "VideoSegmentationLabelSet",
+    "RequirementSet",
+    "RequirementSetType",
+    "Requirement",
+    "RequirementOperator",
+    "RequirementType",
+    "Risk",
+    "RiskType",
 ]

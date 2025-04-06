@@ -1,0 +1,37 @@
+# high medium low thrombosis risk
+
+- model: endoreg_db.risk
+  fields:
+    name: "thrombosis_high"
+    name_de: "Thrombose hoch"
+    name_en: "Thrombosis high"
+    description: "High thrombosis risk"
+    risk_type: "thrombosis"
+    risk_value: 3
+
+- model: endoreg_db.risk
+  fields:
+    name: "thrombosis_medium"
+    name_de: "Thrombose mittel"
+    name_en: "Thrombosis medium"
+    description: "Medium thrombosis risk"
+    risk_type: "thrombosis"
+    risk_value: 2
+
+- model: endoreg_db.risk
+  fields:
+    name: "thrombosis_low"
+    name_de: "Thrombose niedrig"
+    name_en: "Thrombosis low"
+    description: "Low thrombosis risk"
+    risk_type: "thrombosis"
+    risk_value: 1
+
+- model: endoreg_db.risk
+  fields:
+    name: "thrombosis_unknown"
+    name_de: "Thrombose unbekannt"
+    name_en: "Thrombosis unknown"
+    description: "Unknown thrombosis risk"
+    risk_type: "thrombosis"
+    risk_value: 0

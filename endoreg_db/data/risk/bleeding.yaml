@@ -1,0 +1,26 @@
+- model: endoreg_db.risk
+  fields:
+    name: "bleeding_low"
+    name_de: "Blutung (niedrig)"
+    name_en: "Bleeding (low)"
+    description: "Low bleeding risk"
+    risk_type: "bleeding"
+    risk_value: 1
+
+- model: endoreg_db.risk
+  fields:
+    name: "bleeding_high"
+    name_de: "Blutung (hoch)"
+    name_en: "Bleeding (high)"
+    description: "High bleeding risk"
+    risk_type: "bleeding"
+    risk_value: 3
+
+- model: endoreg_db.risk
+  fields:
+    name: "bleeding_unknown"
+    name_de: "Blutung (unbekannt)"
+    name_en: "Bleeding (unknown)"
+    description: "Unknown bleeding risk"
+    risk_type: "bleeding"
+    risk_value: 0
