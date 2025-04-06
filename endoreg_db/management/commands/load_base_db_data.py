@@ -38,9 +38,9 @@ class Command(BaseCommand):
         call_command("load_organ_data", stdout=out, verbose=verbose)
         call_command("load_contraindication_data", stdout=out, verbose=verbose)
         call_command("load_examination_data", stdout=out, verbose=verbose)
+        call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_finding_data", stdout=out, verbose=verbose)
         call_command("load_examination_indication_data", stdout=out, verbose=verbose)
-        call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
 
         call_command("load_requirement_data", stdout=out, verbose=verbose)

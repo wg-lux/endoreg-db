@@ -6,7 +6,7 @@ from pprint import pprint
 out_dir = Path("./data/requirement_dev/")
 out_dir.mkdir(parents=True, exist_ok=True)
 
-requirements = Requirement.objects.all()
+requirement_set_bleeding_high = Requirement.objects.get(name="Bleeding High")
 
 # requirement = requirements[0]
 
