@@ -17,6 +17,11 @@ from endoreg_db.models import (
     FindingIntervention,
     InformationSource,
     Unit,
+    Risk,
+    RiskType,
+    MedicationIndication,
+    MedicationIndicationType,
+    MedicationSchedule,
 )
 from ...utils import load_model_data_from_yaml
 from ...data import (
@@ -86,6 +91,11 @@ IMPORT_METADATA = {
             FindingMorphologyClassificationChoice,
             FindingLocationClassificationChoice,
             FindingIntervention,
+            Risk,
+            RiskType,
+            MedicationIndication,
+            MedicationIndicationType,
+            MedicationSchedule,
         ],
     },
     RequirementSetType.__name__: {
