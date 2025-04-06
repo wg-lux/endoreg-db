@@ -36,7 +36,7 @@
 - model: endoreg_db.unit
   fields:
     name: "months"
-    abbreviation: "m"
+    abbreviation: "mo"
     name_de: "Monate"
     name_en: "Months"
 
