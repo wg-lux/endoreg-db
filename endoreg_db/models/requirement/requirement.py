@@ -254,7 +254,7 @@ class Requirement(models.Model):
         models_dict = RequirementsModelDict(
             requirement_types=self.requirement_types.all(),
             operators=self.operators.all(),
-            requirement_sets=self.operators.all(),
+            requirement_sets=self.requirement_sets.all(),
             examinations=self.examinations.all(),
             examination_indications=self.examination_indications.all(),
             lab_values=self.lab_values.all(),
