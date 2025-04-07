@@ -6,6 +6,11 @@ LANG = "de"
 
 class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieves a LabValue instance by its natural key.
+        
+        Returns the LabValue object corresponding to the provided unique name.
+        """
         return self.get(name=name)
 
 
@@ -53,12 +58,33 @@ class LabValue(models.Model):
     objects = LabValueManager()
 
     def natural_key(self):
+        """
+        Return the natural key tuple for this lab value.
+        
+        This tuple contains the unique name for the lab value and is used for
+        natural key lookups and serialization.
+        """
         return (self.name,)
 
     def __str__(self):
+        """Return the lab value as a string.
+        
+            The string representation is derived from the lab value's name attribute.
+            """
         return str(self.name)
 
     def get_default_default_distribution(self):
+        """
+        Returns the first available default distribution for the lab value.
+        
+        Checks and returns the default distribution in the following order:
+          1. Single categorical value distribution.
+          2. Numerical value distribution.
+          3. Multiple categorical value distribution.
+          4. Date value distribution.
+        
+        If none of these distributions are set, a warning is issued and None is returned.
+        """
         if self.default_single_categorical_value_distribution:
             return self.default_single_categorical_value_distribution
         elif self.default_numerical_value_distribution:
@@ -72,6 +98,23 @@ class LabValue(models.Model):
             return None
 
     def get_normal_range(self, age: int = None, gender=None):
+        """
+        Retrieves the normal range for the lab value.
+        
+        Determines the lab's normal range based on default settings and conditional
+        dependencies. When no age, gender, or special-case dependency is indicated, the
+        default normal range is used. If the lab value is gender-dependent and no gender is
+        provided, a random gender is chosen. Note that age-dependent and special-case ranges
+        are not implemented.
+         
+        Args:
+            age: Optional integer used to adjust the normal range if age-dependent.
+            gender: Optional Gender instance used when the normal range depends on gender.
+            
+        Returns:
+            A dictionary with keys "min" and "max" representing the lower and upper bounds
+            of the normal range.
+        """
         from endoreg_db.models import Gender
 
         assert isinstance(age, int) or age is None

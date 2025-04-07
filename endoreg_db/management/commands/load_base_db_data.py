@@ -14,6 +14,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # verbose = options['verbose']
+        """
+        Executes a series of data loading commands for base database models.
+        
+        This method sequentially calls multiple data loading commands via Django’s
+        call_command to populate the database. It enables verbose output by setting the
+        verbose flag to True and writes progress messages to stdout before and after 
+        execution. No value is returned.
+        """
         verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))

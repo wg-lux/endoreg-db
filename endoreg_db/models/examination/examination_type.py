@@ -7,6 +7,15 @@ class ExaminationTypeManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationType":
+        """
+        Retrieves an ExaminationType instance by its natural key.
+        
+        Args:
+            name (str): The unique name that identifies the ExaminationType.
+        
+        Returns:
+            ExaminationType: The ExaminationType instance corresponding to the provided name.
+        """
         return self.get(name=name)
 
 
@@ -27,10 +36,13 @@ class ExaminationType(models.Model):
 
     def __str__(self) -> str:
         """
-        String representation of the examination type.
-
+        Return the examination type's string representation.
+        
+        This method returns the English name if available; otherwise, it falls back to the default name.
+        The output is explicitly cast to a string.
+        
         Returns:
-            str: The name of the examination type.
+            str: The examination type's name.
         """
         name = self.name_en or self.name
         name = str(name)

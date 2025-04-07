@@ -110,7 +110,7 @@ IMPORT_METADATA = {
         "foreign_keys": [
             "requirement_set_type",
             "requirements",  # This is a many-to-many field
-            "links_to_sets",
+            "linked_sets",
             "information_sources",
         ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
@@ -124,11 +124,15 @@ IMPORT_METADATA = {
 
 
 class Command(BaseCommand):
-    help = """Load all requirement-related YAML files from their respective directories
-    into the database, including RequirementType, RequirementOperator, Requirement, 
-    RequirementSetType, and RequirementSet models"""
+    help = """Load all .yaml files in the data/intervention directory
+    into the Intervention and InterventionType model"""
 
     def add_arguments(self, parser):
+        """
+        Add command-line option for verbose output.
+        
+        Extends the argument parser with a '--verbose' flag that enables detailed output.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -136,6 +140,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Loads YAML data into each model specified in IMPORT_MODELS.
+        
+        Iterates over all models listed in IMPORT_MODELS, retrieves their metadata from
+        IMPORT_METADATA, and imports data using load_model_data_from_yaml. The verbose
+        option controls the level of output during processing.
+        """
         verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

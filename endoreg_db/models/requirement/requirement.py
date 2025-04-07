@@ -66,6 +66,15 @@ class RequirementsModelDict(BaseModel):
 
 class RequirementTypeManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve a model instance by its natural key.
+        
+        Args:
+            name: The unique key value used to query the instance.
+        
+        Returns:
+            The model instance matching the provided natural key.
+        """
         return self.get(name=name)
 
 
@@ -87,11 +96,25 @@ class RequirementType(models.Model):
     objects = RequirementTypeManager()
 
     def natural_key(self):
+        """
+        Returns the natural key tuple for this instance.
+        
+        The key consists solely of the instance's name attribute, allowing for natural key lookups.
+        """
         return (self.name,)
 
 
 class RequirementManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieves the model instance corresponding to the provided natural key.
+        
+        Args:
+            name: The unique identifier, typically matching the model's 'name' attribute.
+        
+        Returns:
+            The model instance with the matching name.
+        """
         return self.get(name=name)
 
 
@@ -242,14 +265,29 @@ class Requirement(models.Model):
         finding_interventions: models.QuerySet[FindingIntervention]
 
     def natural_key(self):
+        """Return the natural key for the instance.
+        
+        The natural key is defined as a tuple containing the instance's name, which is used for natural key lookups.
+        """
         return (self.name,)
 
     def __str__(self):
+        """Return the string representation of the requirement.
+        
+        Returns:
+            str: The requirement's name converted to a string.
+        """
         return str(self.name)
 
     def get_models_dict(self) -> RequirementsModelDict:
-        """
-        Returns a dictionary of all models related to this requirement.
+        """Return a RequirementsModelDict populated with querysets for associated models.
+        
+        This method aggregates all many-to-many related models for the requirement
+        instance into a structured RequirementsModelDict. Each attribute of the returned
+        object holds a queryset for a specific related model, including requirement types,
+        operators, requirement sets, examinations, examination indications, lab values,
+        diseases, disease classification choices, events, findings, finding morphology
+        classification choices, finding location classification choices, and finding interventions.
         """
         models_dict = RequirementsModelDict(
             requirement_types=self.requirement_types.all(),

@@ -4,6 +4,18 @@ from typing import List, TYPE_CHECKING
 
 class RiskManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve a risk instance by its natural key.
+        
+        Retrieves and returns the risk object where the 'name' field matches the given natural key,
+        typically used for deserialization and natural key lookups within Django.
+        
+        Args:
+            name: The unique identifier for the risk, corresponding to its 'name' attribute.
+        
+        Returns:
+            The risk instance matching the provided name.
+        """
         return self.get(name=name)
 
 
@@ -45,7 +57,14 @@ class Risk(models.Model):
         risk_types: RiskType
 
     def natural_key(self):
+        """
+        Returns a tuple with the risk's unique name used as its natural key.
+        
+        This method supports natural key serialization by returning the
+        unique identifier of the risk, which can be used for data interchange.
+        """
         return (self.name,)
 
     def __str__(self):
+        """Return the risk's name as its string representation."""
         return str(self.name)

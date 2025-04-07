@@ -38,15 +38,14 @@ def load_data_with_foreign_keys(
     command, model, yaml_data, foreign_keys, foreign_key_models, verbose
 ):
     """
-    Load data handling foreign keys and many-to-many relationships.
-
-    Args:
-        command: Command object for stdout writing.
-        model: The Django model for the data.
-        yaml_data: Data loaded from YAML.
-        foreign_keys: List of foreign keys.
-        foreign_key_models: Corresponding models for the foreign keys.
-        verbose: Boolean indicating whether to print verbose output.
+    Process YAML data to create or update Django model instances with managed relationships.
+    
+    This function iterates over each entry in the supplied YAML data, extracting model fields and
+    processing foreign key fields using natural keys. When a foreign key field contains a list,
+    it is treated as a many-to-many relationship, and all valid related objects are aggregated before
+    being set on the instance. If an entry includes a 'name' attribute, the instance is updated (or
+    created if absent); otherwise, a new instance is created. Warnings are issued in verbose mode for
+    missing or unresolved foreign key values.
     """
     for entry in yaml_data:
         fields = entry.get("fields", {})

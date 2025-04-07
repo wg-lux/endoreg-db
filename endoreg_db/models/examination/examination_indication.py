@@ -11,6 +11,15 @@ class ExaminationIndicationManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationIndication":
+        """
+        Retrieve an ExaminationIndication instance by its natural key.
+        
+        Args:
+            name (str): The unique name identifying the ExaminationIndication.
+        
+        Returns:
+            ExaminationIndication: The instance corresponding to the provided name.
+        """
         return self.get(name=name)
 
 
@@ -78,10 +87,12 @@ class ExaminationIndication(models.Model):
 
     def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
         """
-        Retrieves all choices associated with the classification.
-
+        Return all classification choices for this examination indication.
+        
+        Iterates over each classification associated with the indication and aggregates the choices from each one.
+        
         Returns:
-            list: A list of classification choices.
+            List[ExaminationIndicationClassificationChoice]: A list of classification choices.
         """
         classifications = self.classifications.all()
         choices = []
@@ -105,6 +116,17 @@ class ExaminationIndicationClassificationManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationIndicationClassification":
+        """
+        Retrieves an ExaminationIndicationClassification instance by its natural key.
+        
+        Returns the classification with the specified unique name.
+        
+        Args:
+            name: Unique name used as the natural key for the classification.
+            
+        Returns:
+            The ExaminationIndicationClassification instance corresponding to the given name.
+        """
         return self.get(name=name)
 
 
@@ -138,10 +160,9 @@ class ExaminationIndicationClassification(models.Model):
 
     def natural_key(self) -> tuple:
         """
-        Returns the natural key for the classification.
-
-        Returns:
-            tuple: The natural key consisting of the name.
+        Returns the natural key for this instance.
+        
+        The natural key is represented as a tuple containing the instance's unique name.
         """
         return (self.name,)
 
@@ -155,11 +176,10 @@ class ExaminationIndicationClassification(models.Model):
         return str(self.name)
 
     def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
-        """
-        Retrieves all choices associated with this classification.
-
+        """Return all ExaminationIndicationClassificationChoice instances associated with this classification.
+        
         Returns:
-            list: A list of classification choices.
+            list: A list of ExaminationIndicationClassificationChoice instances.
         """
         return list(self.choices.all())
 
@@ -172,6 +192,15 @@ class ExaminationIndicationClassificationChoiceManager(models.Manager):
     def get_by_natural_key(
         self, name: str
     ) -> "ExaminationIndicationClassificationChoice":
+        """
+        Retrieve an ExaminationIndicationClassificationChoice instance by its natural key.
+        
+        Args:
+            name (str): The unique name of the classification choice serving as its natural key.
+        
+        Returns:
+            ExaminationIndicationClassificationChoice: The instance corresponding to the provided name.
+        """
         return self.get(name=name)
 
 
