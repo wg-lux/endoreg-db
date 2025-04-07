@@ -30,6 +30,11 @@ class Command(BaseCommand):
     into the Intervention and InterventionType model"""
 
     def add_arguments(self, parser):
+        """
+        Add command-line arguments for the management command.
+        
+        Configures the argument parser by adding a '--verbose' flag that enables verbose output during execution.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -37,6 +42,14 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Load YAML model data into the database.
+        
+        Extracts the verbosity option from the command line arguments and iterates over 
+        each model specified in IMPORT_MODELS. For every model, retrieves the corresponding 
+        metadata from IMPORT_METADATA and calls the load_model_data_from_yaml function to 
+        import data from YAML files into the database.
+        """
         verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

@@ -4,6 +4,15 @@ from typing import TYPE_CHECKING
 
 class RiskTypeManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve a risk type instance using its natural key.
+        
+        Args:
+            name: The natural key identifying the risk type.
+        
+        Returns:
+            The RiskType instance matching the provided name.
+        """
         return self.get(name=name)
 
 
@@ -31,7 +40,18 @@ class RiskType(models.Model):
         risks: models.QuerySet[Risk]
 
     def natural_key(self):
+        """
+        Return the natural key for the RiskType instance.
+        
+        The natural key is a tuple containing the name attribute.
+        """
         return (self.name,)
 
     def __str__(self):
+        """
+        Return the string representation of the risk type instance.
+        
+        Returns:
+            str: The risk type's name.
+        """
         return str(self.name)

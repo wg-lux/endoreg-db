@@ -14,6 +14,15 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # verbose = options['verbose']
+        """
+        Execute a series of data loading subcommands to populate base database models.
+        
+        This method enforces verbose output and sequentially invokes Django's call_command to run
+        various subcommands that load data into the database. The sequence begins with loading
+        information sources and risk data, followed by center, endoscope, gender, medication,
+        examination, and AI model related data, among others. A success message is printed both
+        before and after executing all of these commands.
+        """
         verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))

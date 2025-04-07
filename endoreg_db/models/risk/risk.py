@@ -4,6 +4,18 @@ from typing import List, TYPE_CHECKING
 
 class RiskManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve a risk instance by its natural key.
+        
+        This method returns the Risk instance that matches the given unique name, which
+        serves as its natural key.
+        
+        Args:
+            name (str): The unique name identifying the risk.
+        
+        Returns:
+            Risk: The risk instance with the matching name.
+        """
         return self.get(name=name)
 
 
@@ -45,7 +57,16 @@ class Risk(models.Model):
         risk_types: RiskType
 
     def natural_key(self):
+        """
+        Return a tuple containing the risk's unique name.
+        
+        Returns:
+            tuple: A one-element tuple with the risk's name, used as its natural key.
+        """
         return (self.name,)
 
     def __str__(self):
+        """
+        Return the risk's name as its string representation.
+        """
         return str(self.name)

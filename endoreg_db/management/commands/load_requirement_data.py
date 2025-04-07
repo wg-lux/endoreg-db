@@ -129,6 +129,11 @@ class Command(BaseCommand):
     RequirementSetType, and RequirementSet models"""
 
     def add_arguments(self, parser):
+        """
+        Adds the '--verbose' flag to the argument parser.
+        
+        When set, this flag enables detailed output during command execution.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -136,6 +141,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """Load requirement data for each model from YAML files.
+        
+        Retrieves the verbosity flag from the command options and iterates through the list of models defined in IMPORT_MODELS.
+        For each model, it extracts the associated metadata and delegates to load_model_data_from_yaml to load the YAML data into
+        the database.
+        """
         verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

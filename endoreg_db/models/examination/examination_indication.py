@@ -11,6 +11,14 @@ class ExaminationIndicationManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationIndication":
+        """Retrieve an ExaminationIndication instance by its natural key.
+        
+        Args:
+            name: The unique name identifying the examination indication.
+        
+        Returns:
+            The ExaminationIndication instance corresponding to the provided name.
+        """
         return self.get(name=name)
 
 
@@ -78,10 +86,14 @@ class ExaminationIndication(models.Model):
 
     def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
         """
-        Retrieves all choices associated with the classification.
-
+        Retrieves all classification choices from all associated classifications.
+        
+        This method aggregates and returns the choices from every classification
+        linked to this examination indication.
+        
         Returns:
-            list: A list of classification choices.
+            List[ExaminationIndicationClassificationChoice]: A list of all associated
+            classification choices.
         """
         classifications = self.classifications.all()
         choices = []
@@ -105,6 +117,15 @@ class ExaminationIndicationClassificationManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationIndicationClassification":
+        """
+        Retrieves an ExaminationIndicationClassification instance by its natural key.
+        
+        Args:
+            name: The unique name identifying the classification.
+        
+        Returns:
+            ExaminationIndicationClassification: The classification instance matching the provided name.
+        """
         return self.get(name=name)
 
 
@@ -172,6 +193,15 @@ class ExaminationIndicationClassificationChoiceManager(models.Manager):
     def get_by_natural_key(
         self, name: str
     ) -> "ExaminationIndicationClassificationChoice":
+        """
+        Retrieves an ExaminationIndicationClassificationChoice instance by its natural key.
+        
+        Args:
+            name: The unique name serving as the natural key for the classification choice.
+        
+        Returns:
+            The ExaminationIndicationClassificationChoice instance corresponding to the provided name.
+        """
         return self.get(name=name)
 
 

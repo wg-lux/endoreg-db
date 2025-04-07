@@ -65,6 +65,14 @@ class TestGeneratePatientMedication(TestCase):
         Center.objects.create(name=TEST_CENTER_NAME)
 
     def test_patient_anticoagulation(self):
+        """
+            Tests creation of a patient medication schedule from anticoagulation indications.
+        
+            A generic patient and its medication schedule are created. The method iterates over a set of
+            anticoagulation indication types, retrieves corresponding medication indications and their
+            schedules, and generates patient medications with the current start date. The details of the
+            process are accumulated in a formatted output that is written to a specified file.
+            """
         patient = Patient.create_generic(center=TEST_CENTER_NAME)
         out = ""
 
