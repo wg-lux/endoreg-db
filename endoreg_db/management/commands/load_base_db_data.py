@@ -14,6 +14,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # verbose = options['verbose']
+        """
+        Orchestrates the sequential execution of data loading commands to populate base database models.
+        
+        This management command displays an initial message and then runs a series of data loading routines 
+        (via call_command) in a specified order. It ignores any verbose setting from the command-line options 
+        and forces verbose output. A final success message is printed after all commands complete.
+        """
         verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))

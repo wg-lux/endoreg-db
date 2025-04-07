@@ -129,6 +129,12 @@ class Command(BaseCommand):
     RequirementSetType, and RequirementSet models"""
 
     def add_arguments(self, parser):
+        """
+        Add command-line arguments to enable verbose output.
+        
+        Adds an optional '--verbose' flag to the command parser. When specified,
+        this flag causes the command to display detailed output during execution.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -136,6 +142,14 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Executes data import for requirement models from YAML files.
+        
+        Retrieves the verbosity setting from the command options and iterates over each model 
+        listed in IMPORT_MODELS. For each model, it obtains the corresponding metadata from 
+        IMPORT_METADATA and calls a helper to load the YAML data into the database. Verbose mode 
+        enables detailed output during the process.
+        """
         verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

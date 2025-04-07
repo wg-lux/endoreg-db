@@ -354,14 +354,16 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
     def save(self):
         """
-        Updates, inserts, and deletes label segments to ensure database consistency.
-
-        Steps:
-        1. Fetch all existing segments for the given `video_id` and `label_id`.
-        2. Compare existing segments with the new ones from the frontend.
-        3. Update segments where `start_frame_number` exists but `end_frame_number` has changed.
-        4. Insert new segments that are not already in the database.
-        5. Delete segments that exist in the database but are missing from the frontend data.
+        Synchronizes label segments with updated frontend data.
+        
+        This method compares the incoming segments with the current database entries for a given video and label.
+        It updates segments with modified end frame numbers, inserts new segments, and deletes existing segments
+        that are not present in the provided data. All operations are performed within a transaction to ensure
+        database consistency. A validation error is raised if no prediction metadata is found for the video.
+        
+        Returns:
+            dict: A dictionary containing serialized updated segments, serialized new segments, and the count
+                  of deleted segments.
         """
 
         video_id = self.validated_data["video_id"]
