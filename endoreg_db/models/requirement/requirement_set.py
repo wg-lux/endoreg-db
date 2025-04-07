@@ -8,6 +8,15 @@ class RequirementSetTypeManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "RequirementSetType":
+        """
+        Retrieves a RequirementSetType instance using its natural key.
+        
+        Args:
+            name (str): The unique name that serves as the natural key.
+        
+        Returns:
+            RequirementSetType: The matching RequirementSetType instance.
+        """
         return self.get(name=name)
 
 
@@ -34,11 +43,26 @@ class RequirementSetType(models.Model):
         requirement_types: models.QuerySet[RequirementType]
 
     def natural_key(self):
+        """
+        Return the natural key tuple for the instance.
+        
+        Returns:
+            tuple: A one-element tuple containing the instance's name, used as its natural key.
+        """
         return (self.name,)
 
 
 class RequirementSetManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieves a model instance by its natural key.
+        
+        Args:
+            name: The natural key value, typically corresponding to the model's unique name.
+        
+        Returns:
+            The model instance whose name matches the provided natural key.
+        """
         return self.get(name=name)
 
 
@@ -90,7 +114,14 @@ class RequirementSet(models.Model):
         linked_sets: models.QuerySet["RequirementSet"]
 
     def natural_key(self):
+        """Return the natural key as a tuple containing the instance's name."""
         return (self.name,)
 
     def __str__(self):
+        """
+        Return the string representation of the requirement set.
+        
+        Returns:
+            str: The name of the requirement set.
+        """
         return str(self.name)
