@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         InformationSource,
         VideoPredictionMeta,
         RawVideoPredictionMeta,
+        PatientFinding
     )
 
 
@@ -126,11 +127,20 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
         related_name="label_video_segments",
     )
 
+    # for M2M relationship with patient finding
+    patient_findings = models.ManyToManyField(
+        "PatientFinding",
+        related_name="video_segments",
+        blank=True,
+        )
+
     if TYPE_CHECKING:
+        from django.db.models import Manager
         video: "Video"
         label: "Label"
         source: "InformationSource"
         prediction_meta: "VideoPredictionMeta"
+        patient_findings: Manager["PatientFinding"] # added during - M2M relationship with patient finding
 
     @classmethod
     def from_raw(cls, video: "Video", raw_label_video_segment: "LabelRawVideoSegment"):

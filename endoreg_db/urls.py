@@ -6,14 +6,12 @@ from .views.patient_views import (
     get_location_choices,
     get_morphology_choices, 
 )
+
 from .views.csrf import csrf_token_view
 # endoreg_db_production/endoreg_db/urls.py
-from endoreg_db.views.views import (
-    VideoView,
-    keycloak_login,
-    keycloak_callback,
-    public_home,
-)#from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
+from .views.keycloak_views import VideoView, keycloak_login, keycloak_callback, public_home
+
+#from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
 from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
@@ -56,6 +54,7 @@ urlpatterns = [
     # /api/videos/ , protected API
     # /login/ , sends user to Keycloak login page
     # /login/callback/ , where Keycloak sends the user after login
+    
     path('', public_home, name='public_home'),
     path('api/videos/', VideoView.as_view(), name='video_list'),
     path('login/', keycloak_login, name='keycloak_login'),

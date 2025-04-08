@@ -1,4 +1,3 @@
-#for keycloak need to make separate onne,demo
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -7,6 +6,8 @@ from django.shortcuts import redirect, render
 from django.conf import settings
 from urllib.parse import urlencode
 import requests
+from django.http import HttpResponse, HttpResponseRedirect
+import json
 
 """
     User hits /api/videos/
@@ -20,6 +21,7 @@ import requests
 """
 class VideoView(APIView):
     permission_classes = [IsAuthenticated] #This uses DRF permissions to ensure request.user.is_authenticated == True.
+    print("1")
 
     def get(self, request):
         """
@@ -31,6 +33,7 @@ class VideoView(APIView):
 
 
 def keycloak_login(request):
+    print("1")
 
     """
     - This gets triggered when middleware redirects to /login/.
@@ -47,14 +50,11 @@ def keycloak_login(request):
         "redirect_uri": redirect_uri,
     }
     # Redirect user to Keycloak login page.
+    print("1")
+
     return redirect(f"{auth_url}?{urlencode(params)}")
 
 
-import json
-from django.http import HttpResponse
-
-from django.http import HttpResponse, HttpResponseRedirect
-import json
 
 def keycloak_callback(request):
 
@@ -104,4 +104,6 @@ def keycloak_callback(request):
 
 
 def public_home(request):
-    return HttpResponse("just for demo - This is a public home page — no login required.")
+    print("Reached the public home page!")  
+    return HttpResponse("This is a public home page — no login required.")
+

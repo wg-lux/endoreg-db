@@ -11,7 +11,7 @@ class PatientFinding(models.Model):
     )
     morphologies = models.ManyToManyField(
         'PatientFindingMorphology',
-        blank=True,
+        blank=True, 
         related_name='patient_findings'
     )
     
@@ -139,5 +139,13 @@ class PatientFinding(models.Model):
         self.save()
 
         return patient_finding_location
+    #for m2m 
+    def add_video_segment(self, video_segment):
+        self.video_segments.add(video_segment)
+        return video_segment
+
+
+    
+    
     
     
