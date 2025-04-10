@@ -26,20 +26,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..base_classes.utils import (
-    STORAGE_LOCATION,
-)
 
 if TYPE_CHECKING:
     from endoreg_db.models import SensitiveMeta
 
 logger = logging.getLogger("pdf_import")
-
-RAW_PDF_DIR_NAME = "raw_pdf"
-RAW_PDF_DIR = STORAGE_LOCATION / RAW_PDF_DIR_NAME
-
-if not RAW_PDF_DIR.exists():
-    RAW_PDF_DIR.mkdir(parents=True)
 
 
 class AbstractPdfFile(models.Model):

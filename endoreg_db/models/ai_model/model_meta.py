@@ -2,7 +2,6 @@
 This module defines the ModelMeta and ModelMetaManager classes for managing AI model metadata.
 """
 
-import os
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 import shutil
@@ -10,19 +9,10 @@ import shutil
 from django.db import models
 from django.core.validators import FileExtensionValidator
 from icecream import ic
+from ...utils import WEIGHTS_DIR
 
 if TYPE_CHECKING:
     from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
-
-PSEUDO_DIR = Path(os.environ.get("DJANGO_PSEUDO_DIR", Path("./erc_data"))).expanduser()
-
-STORAGE_LOCATION = PSEUDO_DIR
-WEIGHTS_DIR_NAME = "db_model_weights"
-WEIGHTS_DIR = STORAGE_LOCATION / WEIGHTS_DIR_NAME
-
-if not WEIGHTS_DIR.exists():
-    WEIGHTS_DIR.mkdir(parents=True)
-
 
 class ModelMetaManager(models.Manager):
     """
@@ -57,7 +47,7 @@ class ModelMeta(models.Model):
     activation = models.CharField(max_length=255, default="sigmoid")
 
     weights = models.FileField(
-        upload_to=WEIGHTS_DIR_NAME,
+        upload_to=WEIGHTS_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
         # storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
         null=True,

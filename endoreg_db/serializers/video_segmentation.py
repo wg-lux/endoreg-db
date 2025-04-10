@@ -112,14 +112,12 @@ class VideoFileSerializer(serializers.ModelSerializer):
             obj.file.name
         ).strip()  #  Only return the file path, no URL,#obj.file returning a FieldFile object instead of a string
 
-    """The error "muxer does not support non-seekable output" 
-    happens because MP4 format requires seeking, but FFmpeg does not support writing MP4 directly to a non-seekable stream (like STDOUT)."""
-
     def get_full_video_path(self, obj):
         """
         Constructs the absolute file path dynamically.
         - Uses the actual storage directory (`/home/admin/test-data/`)
         """
+        from ..utils import STORAGE_DIR
         if not obj.file:
             return {"error": "No video file associated with this entry"}
 
@@ -129,16 +127,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 "error": "Video file path is empty or invalid"
             }  #  none might cause, 500 error, Handle edge case where the file name is empty
 
-        print("-----------------------------------------")
-        # pseudo_dir = settings.PSEUDO_DIR
-        # print(f"Using pseudo directory: {pseudo_dir}")
-
-        #   full path using the actual storage directory~
-        # actual_storage_dir = Path("~/test-data")  # need to change
-        actual_storage_dir = Path("/home/admin/test-data")  # need to change
-        # actual_storage_dir = pseudo_dir
-        full_path = actual_storage_dir / video_relative_path
-        # full_path = Path("/home/admin/test-data/video/lux-gastro-video.mp4")
+        full_path = STORAGE_DIR / video_relative_path
 
         return (
             str(full_path)

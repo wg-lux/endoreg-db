@@ -1,14 +1,12 @@
 """ """
 
+from django.db import models
 from pathlib import Path
 from collections import defaultdict, Counter
 import shutil
 import os
-import subprocess
 from typing import Optional, List, TYPE_CHECKING, Union
-from django.db import models, transaction
 from icecream import ic
-from tqdm import tqdm
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
@@ -21,12 +19,11 @@ from ....utils.video import (
 )
 
 from ..metadata import VideoMeta, SensitiveMeta
-from .utils import (
-    STORAGE_LOCATION,
+from ....utils import (
+    STORAGE_DIR,
     VIDEO_DIR,
     FRAME_DIR,
 )
-from .prepare_bulk_frames import prepare_bulk_frames
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -180,10 +177,10 @@ class AbstractVideoFile(models.Model):
         ic(f"No existing DB entry found, creating new with UUID {uuid}")
 
         try:
-            relative_path = transcoded_file_path.relative_to(STORAGE_LOCATION)
+            relative_path = transcoded_file_path.relative_to(STORAGE_DIR)
         except ValueError as e:
             raise Exception(
-                f"{transcoded_file_path} is outside STORAGE_LOCATION {STORAGE_LOCATION}"
+                f"{transcoded_file_path} is outside STORAGE_DIR {STORAGE_DIR}"
             ) from e
 
         video = cls(
@@ -325,6 +322,8 @@ class AbstractVideoFile(models.Model):
             ModelMeta,
             AiModel,
         )  # pylint: disable=import-outside-toplevel
+        #TODO Create issue to movie this function to the endo-ai module
+        #endoreg-db is our "base" module, so it should not depend "upstream" models
         from endo_ai.predictor.inference_dataset import InferenceDataset  # pylint: disable=import-outside-toplevel
         from endo_ai.predictor.model_loader import MultiLabelClassificationNet
         from endo_ai.predictor.predict import Classifier

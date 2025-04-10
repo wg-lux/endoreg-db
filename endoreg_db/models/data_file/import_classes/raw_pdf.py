@@ -7,7 +7,6 @@
 
 from django.db import models
 from django.core.files.storage import FileSystemStorage
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from endoreg_db.utils.file_operations import get_uuid_filename
@@ -25,24 +24,19 @@ import logging
 import shutil
 from pathlib import Path
 
-from ..base_classes.utils import (
-    STORAGE_LOCATION,
+from ....utils import (
+    STORAGE_DIR,
+    RAW_PDF_DIR_NAME,
+    RAW_PDF_DIR,
 )
 
 logger = logging.getLogger("pdf_import")
-
-RAW_PDF_DIR_NAME = "raw_pdf"
-RAW_PDF_DIR = STORAGE_LOCATION / RAW_PDF_DIR_NAME
-
-if not RAW_PDF_DIR.exists():
-    RAW_PDF_DIR.mkdir(parents=True)
-
 
 class RawPdfFile(AbstractPdfFile):
     file = models.FileField(
         upload_to=f"{RAW_PDF_DIR_NAME}/",
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+        storage=FileSystemStorage(location=STORAGE_DIR.resolve().as_posix()),
     )
 
     patient = models.ForeignKey(

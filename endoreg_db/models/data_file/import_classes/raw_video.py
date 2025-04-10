@@ -13,12 +13,14 @@ from django.core.files.storage import FileSystemStorage
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 from ..base_classes.utils import (
     anonymize_frame,
-    RAW_VIDEO_DIR_NAME,
-    VIDEO_DIR,
-    STORAGE_LOCATION,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
+from ....utils import (
 
+    RAW_VIDEO_DIR_NAME,
+    VIDEO_DIR,
+    STORAGE_DIR,
+)
 if TYPE_CHECKING:
     # import Queryset
     from django.db.models import QuerySet
@@ -35,7 +37,7 @@ class RawVideoFile(AbstractVideoFile):
     file = models.FileField(
         upload_to=RAW_VIDEO_DIR_NAME,
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+        storage=FileSystemStorage(location=STORAGE_DIR.resolve().as_posix()),
     )
 
     patient = models.ForeignKey(
