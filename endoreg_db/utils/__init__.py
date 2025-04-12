@@ -4,7 +4,7 @@ from .dataloader import load_model_data_from_yaml
 from .parse_and_generate_yaml import collect_center_names
 from .validate_endo_roi import validate_endo_roi
 from .pydantic_models import DbConfig
-from .dates import random_day_by_month_year, random_day_by_year
+from .dates import random_day_by_month_year, random_day_by_year, ensure_aware_datetime
 from .hashs import (
     get_hash_string,
     get_pdf_hash,
@@ -49,6 +49,7 @@ __all__ = [
     "DbConfig",
     "random_day_by_month_year",
     "random_day_by_year",
+    "ensure_aware_datetime",
     "get_hash_string",
     "create_mock_examiner_name",
     "create_mock_patient_name",
