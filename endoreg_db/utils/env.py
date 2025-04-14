@@ -2,7 +2,7 @@ import os
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-def get_env_var(var_name: str) -> str:
+def get_env_var(var_name: str, default: str = None) -> str | None:
     """
     Get the value of an environment variable, with an optional default value.
     If the environment variable is set, we need to remove flanking quotation marks and spaces.
@@ -14,12 +14,10 @@ def get_env_var(var_name: str) -> str:
     value = os.environ.get(var_name)
     if value:
         value = value.strip('"\'')  # Strip both single and double quotes
-        
-
         if DEBUG:
             print(f"Environment variable {var_name}: {value}")
         return value
-    return None
+    return default
 
 def set_env_var(var_name: str, value: str) -> None:
     """
