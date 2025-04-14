@@ -393,7 +393,7 @@ class AbstractVideoFile(models.Model):
 
         crop_template = self.get_crop_template()
 
-        string_paths = [p.as_posix() for p:Path in paths]
+        string_paths = [p.as_posix() for p in paths]
         crops = [crop_template for _ in paths]
 
         ic(f"Detected {len(paths)} frames")
