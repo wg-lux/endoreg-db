@@ -2,10 +2,16 @@ import os
 from pathlib import Path
 import dotenv
 
+"""
+Centralizes path management for the application.
+
+This module sets up all necessary directories for storage and import operations.
+It provides a unified dictionary 'data_paths' for accessing all path objects.
+"""
+
 dotenv.load_dotenv()
 
 from icecream import ic
-
 debug = os.getenv("DEBUG", "false").lower() == "true"
 
 BASE_DIR = os.getcwd()
