@@ -15,12 +15,8 @@ from ..base_classes.utils import (
     anonymize_frame,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
-from ....utils import (
+from ....utils import data_paths
 
-    RAW_VIDEO_DIR_NAME,
-    VIDEO_DIR,
-    STORAGE_DIR,
-)
 if TYPE_CHECKING:
     # import Queryset
     from django.db.models import QuerySet
@@ -35,9 +31,9 @@ class RawVideoFile(AbstractVideoFile):
     """ """
 
     file = models.FileField(
-        upload_to=RAW_VIDEO_DIR_NAME,
+        upload_to=data_paths["raw_video"],
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-        storage=FileSystemStorage(location=STORAGE_DIR.resolve().as_posix()),
+        storage=FileSystemStorage(location=data_paths["storage"].resolve().as_posix()),
     )
 
     patient = models.ForeignKey(
@@ -83,7 +79,7 @@ class RawVideoFile(AbstractVideoFile):
     state_make_anonymized_video_completed = models.BooleanField(default=False)
 
     def get_anonymized_video_path(self):
-        video_dir = VIDEO_DIR
+        video_dir = data_paths["raw_video"]
         video_suffix = Path(self.file.path).suffix
         video_name = f"{self.uuid}{video_suffix}"
         anonymized_video_name = f"TMP_anonymized_{video_name}"
@@ -267,7 +263,7 @@ class RawVideoFile(AbstractVideoFile):
                     video_path,
                     self.center,
                     self.processor,
-                    video_dir=VIDEO_DIR,
+                    video_dir=data_paths["raw_video"],
                     frame_paths=frame_paths,
                 )
 

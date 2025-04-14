@@ -19,11 +19,8 @@ from ....utils.video import (
 )
 
 from ..metadata import VideoMeta, SensitiveMeta
-from ....utils import (
-    STORAGE_DIR,
-    VIDEO_DIR,
-    FRAME_DIR,
-)
+from ....utils import data_paths
+
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -150,8 +147,7 @@ class AbstractVideoFile(models.Model):
         file_path: Path,
         center_name: str,
         processor_name: str,
-        frame_dir_parent: Path = FRAME_DIR,
-        video_dir: Path = VIDEO_DIR,
+        video_dir: Path = data_paths["video"],
         save: bool = True,
         frame_paths: List[dict] = None,
     ):
@@ -177,10 +173,10 @@ class AbstractVideoFile(models.Model):
         ic(f"No existing DB entry found, creating new with UUID {uuid}")
 
         try:
-            relative_path = transcoded_file_path.relative_to(STORAGE_DIR)
+            relative_path = transcoded_file_path.relative_to(data_paths["storage"])
         except ValueError as e:
             raise Exception(
-                f"{transcoded_file_path} is outside STORAGE_DIR {STORAGE_DIR}"
+                f"{transcoded_file_path} is outside STORAGE_DIR {data_paths['storage']}"
             ) from e
 
         video = cls(
@@ -561,7 +557,7 @@ class AbstractVideoFile(models.Model):
         return crop_template
 
     def set_frame_dir(self):
-        self.frame_dir = f"{FRAME_DIR}/{self.uuid}"
+        self.frame_dir = f"{data_paths['frame']}/{self.uuid}"
 
     # video meta should be created when video file is created
     def save(self, *args, **kwargs):
@@ -799,7 +795,7 @@ class AbstractVideoFile(models.Model):
         Bulk create frames, then save their images to storage.
         """
         frame_model = self.get_frame_model()
-        created = frame_model.objects.bulk_create(frames_to_create)
+        _created = frame_model.objects.bulk_create(frames_to_create)
         # for frame in created:
         #     frame_name = f"frame_{frame.frame_number:07d}.jpg"
         #     frame.image.save(frame_name, frame.image)

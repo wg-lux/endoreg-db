@@ -5,11 +5,7 @@ from django.core.files.storage import FileSystemStorage
 from typing import TYPE_CHECKING
 import cv2
 from ..base_classes import AbstractVideoFile
-from ....utils import (
-    VIDEO_DIR_NAME,
-    STORAGE_DIR,
-    FRAME_PROCESSING_BATCH_SIZE,
-)
+from ....utils import data_paths
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -25,9 +21,9 @@ if TYPE_CHECKING:
 
 class Video(AbstractVideoFile):
     file = models.FileField(
-        upload_to=VIDEO_DIR_NAME,
+        upload_to=data_paths["video"],
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-        storage=FileSystemStorage(location=STORAGE_DIR.resolve().as_posix()),
+        storage=FileSystemStorage(location=data_paths["storage"]),
     )
 
     patient = models.ForeignKey(

@@ -24,19 +24,15 @@ import logging
 import shutil
 from pathlib import Path
 
-from ....utils import (
-    STORAGE_DIR,
-    RAW_PDF_DIR_NAME,
-    RAW_PDF_DIR,
-)
+from ....utils import data_paths
 
 logger = logging.getLogger("pdf_import")
 
 class RawPdfFile(AbstractPdfFile):
     file = models.FileField(
-        upload_to=f"{RAW_PDF_DIR_NAME}/",
+        upload_to=f"{data_paths['raw_report']}/",
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-        storage=FileSystemStorage(location=STORAGE_DIR.resolve().as_posix()),
+        storage=FileSystemStorage(location=data_paths["storage"]),
     )
 
     patient = models.ForeignKey(
@@ -86,7 +82,7 @@ class RawPdfFile(AbstractPdfFile):
 
         pdf_hash = get_pdf_hash(file_path)
         ic(pdf_hash)
-        new_file_path = RAW_PDF_DIR / new_file_name
+        new_file_path = data_paths["raw_report"] / new_file_name
         # check if pdf file already exists
 
         if cls.objects.filter(pdf_hash=pdf_hash).exists():

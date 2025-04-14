@@ -9,7 +9,7 @@ import shutil
 from django.db import models
 from django.core.validators import FileExtensionValidator
 from icecream import ic
-from ...utils import WEIGHTS_DIR
+from ...utils import data_paths
 
 if TYPE_CHECKING:
     from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
@@ -47,8 +47,9 @@ class ModelMeta(models.Model):
     activation = models.CharField(max_length=255, default="sigmoid")
 
     weights = models.FileField(
-        upload_to=WEIGHTS_DIR.name,
+        upload_to=data_paths["weights"],
         validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
+        #FIXME
         # storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
         null=True,
         blank=True,
@@ -122,8 +123,8 @@ class ModelMeta(models.Model):
 
         weights_path = Path(weights_file)
         # If not under our WEIGHTS_DIR, copy it there
-        if not str(weights_path).startswith(str(WEIGHTS_DIR)):
-            target_path = WEIGHTS_DIR / weights_path.name
+        if not str(weights_path).startswith(str(data_paths["weights"])):
+            target_path = data_paths["weights"] / weights_path.name
             if not target_path.exists():
                 shutil.copy(weights_path, target_path)
             weights_file = target_path

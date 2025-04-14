@@ -1,86 +1,59 @@
 import os
 from pathlib import Path
+import dotenv
 
-STORAGE_DIR_NAME = os.environ.get("DJANGO_STORAGE_DIR_NAME", "data")
-FRAME_DIR_NAME = os.environ.get("DJANGO_FRAME_DIR_NAME", "db_frames")
-VIDEO_DIR_NAME = os.environ.get("DJANGO_VIDEO_DIR_NAME", "db_videos")
-WEIGHTS_DIR_NAME = os.environ.get("DJANGO_WEIGHTS_DIR_NAME", "db_model_weights")
-PDF_DIR_NAME = os.environ.get("DJANGO_PDF_DIR_NAME", "pdfs")
+debug = os.getenv("DEBUG", "false").lower() == "true"
 
-def get_storage_dir(raw: bool = False):
-    """
-    Get the storage directory from the environment variable or settings.
-    """
-    storage_dir = os.environ.get("DJANGO_STORAGE_DIR", "data")
-    storage_dir = Path(storage_dir).expanduser()
+BASE_DIR = os.getcwd()
 
-    if raw:
-        name = storage_dir.name
-        storage_dir = storage_dir.parent / f"raw_{name}"
+PREFIX_RAW = "raw_"
+STORAGE_DIR_NAME = "data"
+IMPORT_DIR_NAME = "import"
+
+VIDEO_DIR_NAME = "videos"
+FRAME_DIR_NAME = "frames"
+REPORT_DIR_NAME = "reports"
+WEIGHTS_DIR_NAME = "model_weights"
+
+RAW_VIDEO_DIR_NAME = f"{PREFIX_RAW}videos"
+RAW_FRAME_DIR_NAME = f"{PREFIX_RAW}frames"
+RAW_REPORT_DIR_NAME = f"{PREFIX_RAW}reports"
 
 
-    if not storage_dir.exists():
-        storage_dir.mkdir(parents=True, exist_ok=True)
-    return storage_dir
+STORAGE_DIR = Path(STORAGE_DIR_NAME)
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+VIDEO_DIR = STORAGE_DIR / VIDEO_DIR_NAME
+FRAME_DIR = STORAGE_DIR / FRAME_DIR_NAME
+REPORT_DIR = STORAGE_DIR / REPORT_DIR_NAME
+WEIGHTS_DIR = STORAGE_DIR / WEIGHTS_DIR_NAME
+RAW_VIDEO_DIR = STORAGE_DIR / RAW_VIDEO_DIR_NAME
+RAW_FRAME_DIR = STORAGE_DIR / RAW_FRAME_DIR_NAME
+RAW_REPORT_DIR = STORAGE_DIR / RAW_REPORT_DIR_NAME
 
-def get_frame_dir(raw: bool = False):
-    """
-    Get the frame directory from the environment variable or settings.
-    """
-    frame_dir_name = os.environ.get("DJANGO_FRAME_DIR_NAME", FRAME_DIR_NAME)
-    storage_dir = get_storage_dir(raw)
-    frame_dir = storage_dir / frame_dir_name
-    if not frame_dir.exists():
-        frame_dir.mkdir(parents=True, exist_ok=True)
-    return frame_dir
+IMPORT_DIR = STORAGE_DIR / IMPORT_DIR_NAME
+VIDEO_IMPORT_DIR = IMPORT_DIR / VIDEO_DIR_NAME
+FRAME_IMPORT_DIR = IMPORT_DIR / FRAME_DIR_NAME
+REPORT_IMPORT_DIR = IMPORT_DIR / REPORT_DIR_NAME
+WEIGHTS_IMPORT_DIR = IMPORT_DIR / WEIGHTS_DIR_NAME
 
-def get_video_dir(raw: bool = False):
-    """
-    Get the video directory from the environment variable or settings.
-    """
-    video_dir_name = os.environ.get("DJANGO_VIDEO_DIR_NAME", VIDEO_DIR_NAME)
-    storage_dir = get_storage_dir(raw)
-    video_dir = storage_dir / video_dir_name
-    if not video_dir.exists():
-        video_dir.mkdir(parents=True, exist_ok=True)
-    return video_dir
+data_paths = {
+    "storage": STORAGE_DIR,
+    "video": VIDEO_DIR,
+    "frame": FRAME_DIR,
+    "report": REPORT_DIR,
+    "import": IMPORT_DIR,
+    "video_import": VIDEO_IMPORT_DIR,
+    "frame_import": FRAME_IMPORT_DIR,
+    "report_import": REPORT_IMPORT_DIR,
+    "raw_video": RAW_VIDEO_DIR,
+    "raw_frame": RAW_FRAME_DIR,
+    "raw_report": RAW_REPORT_DIR,
+    "weights": WEIGHTS_DIR,
+    "weights_import": WEIGHTS_IMPORT_DIR,
+}
 
-def get_weights_dir():
-    """
-    Get the weights directory from the environment variable or settings.
-    """
-    weights_dir_name = os.environ.get("DJANGO_WEIGHTS_DIR_NAME", WEIGHTS_DIR_NAME)
-    storage_dir = get_storage_dir()
-    weights_dir = storage_dir / weights_dir_name
-    if not weights_dir.exists():
-        weights_dir.mkdir(parents=True, exist_ok=True)
-    return weights_dir
-
-def get_pdf_dir(raw: bool = False):
-    """
-    Get the pdf directory from the environment variable or settings.
-    """
-    pdf_dir_name = os.environ.get("DJANGO_PDF_DIR_NAME", PDF_DIR_NAME)
-    storage_dir = get_storage_dir(raw)
-    pdf_dir = storage_dir / pdf_dir_name
-    if not pdf_dir.exists():
-        pdf_dir.mkdir(parents=True, exist_ok=True)
-    return pdf_dir
-
-STORAGE_DIR = get_storage_dir()
-FRAME_DIR = get_frame_dir()
-VIDEO_DIR = get_video_dir()
-PDF_DIR = get_pdf_dir()
-PDF_DIR_NAME = PDF_DIR.name
-RAW_VIDEO_DIR = get_video_dir(raw=True)
-RAW_VIDEO_DIR_NAME = RAW_VIDEO_DIR.name
-RAW_FRAME_DIR = get_frame_dir(raw=True)
-RAW_FRAME_DIR_NAME = RAW_FRAME_DIR.name
-RAW_PDF_DIR = get_pdf_dir(raw=True)
-RAW_PDF_DIR_NAME = RAW_PDF_DIR.name
-WEIGHTS_DIR = get_weights_dir()
-TEST_RUN = os.environ.get("TEST_RUN", False)
-TEST_RUN_FRAME_NUMBER = os.environ.get("TEST_RUN_FRAME_NUMBER", 1000)
-# AI Stuff
-FRAME_PROCESSING_BATCH_SIZE = os.environ.get("DJANGO_FRAME_PROCESSING_BATCH_SIZE", 10)
+for key, path in data_paths.items():
+    path.mkdir(parents=True, exist_ok=True)
+    if debug:
+        print(f"{key.capitalize()} directory: {path}")
 
