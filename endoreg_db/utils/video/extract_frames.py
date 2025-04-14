@@ -48,9 +48,9 @@ def extract_frames(
         extracted_paths = sorted(frame_dir.glob(f"*.{ext}"))
         return extracted_paths
 
-    video_path = Path(video.file.path).resolve().as_posix()
+    video_path = Path(video.file.path).as_posix()
 
-    frame_path_string = frame_dir.resolve().as_posix()
+    frame_path_string = frame_dir.as_posix()
     command = [
         "ffmpeg",
         "-i",

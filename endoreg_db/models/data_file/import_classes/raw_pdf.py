@@ -111,7 +111,7 @@ class RawPdfFile(AbstractPdfFile):
         assert get_pdf_hash(new_file_path) == pdf_hash, "Copy operation failed"
 
         raw_pdf = cls(
-            file=new_file_path.resolve().as_posix(),
+            file=new_file_path.as_posix(),
             pdf_hash=pdf_hash,
             # pdf_type=pdf_type,
             center=center,

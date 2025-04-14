@@ -10,7 +10,7 @@ from icecream import ic
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-
+from pathlib import Path
 from ....utils.video import (
     transcode_videofile,
     transcode_videofile_if_required,
@@ -393,7 +393,7 @@ class AbstractVideoFile(models.Model):
 
         crop_template = self.get_crop_template()
 
-        string_paths = [p.resolve().as_posix() for p in paths]
+        string_paths = [p.as_posix() for p:Path in paths]
         crops = [crop_template for _ in paths]
 
         ic(f"Detected {len(paths)} frames")

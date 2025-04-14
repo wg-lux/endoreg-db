@@ -98,7 +98,7 @@ def transcode_videofile(filepath: Path, transcoded_path: Path):
     command = [
         "ffmpeg",
         "-i",
-        filepath.resolve().as_posix(),
+        filepath.as_posix(),
         "-c:v",
         "libx264",
         "-preset",

@@ -33,7 +33,7 @@ class RawVideoFile(AbstractVideoFile):
     file = models.FileField(
         upload_to=data_paths["raw_video"],
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-        storage=FileSystemStorage(location=data_paths["storage"].resolve().as_posix()),
+        storage=FileSystemStorage(location=data_paths["storage"].as_posix()),
     )
 
     patient = models.ForeignKey(
