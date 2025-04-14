@@ -7,10 +7,11 @@ import logging
 
 
 class ForNiceClassificationView(APIView):
+
+   
     def get(self, request):
-        print("🚀 [DEBUG] NICE Classification View hit")
-
-
+        print(" [DEBUG] NICE Classification View hit")
+        
         try:
             videos = RawVideoFile.objects.all()
             print(f"[DEBUG] Total videos found in RawVideoFile: {videos.count()}")
@@ -39,12 +40,18 @@ class ForNiceClassificationView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            #  Use a single serializer call for all filtered videos
-            serializer = ForNiceClassificationSerializer(filtered_videos)
-            response_data = serializer.data
+            #  Use a single serializer call for all filtered videos - NEED TO CHECK:it should automatically call to_representation function
+            #serializer = ForNiceClassificationSerializer(filtered_videos)
+            #serializer.is_valid()  # This won't do anything, but required for .data to be populated
+            #response_data = serializer.data
 
+            print("serializers ::: -- START")
+            serializer = ForNiceClassificationSerializer()
+            response_data = serializer.to_representation(filtered_videos)
+            print("serializers response data::: --", response_data)
+
+          
             if not response_data:
-                print("------------------")
                 return Response(
                     {"error": "No valid segments - found for NICE classification."},
                     status=status.HTTP_404_NOT_FOUND

@@ -60,7 +60,6 @@ urlpatterns = [
     
     path('', public_home, name='public_home'),
     path('api/videos/', VideoView.as_view(), name='video_list'),
-    path('api/videos/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
     path('login/', keycloak_login, name='keycloak_login'),
     path('login/callback/', keycloak_callback, name='keycloak_callback'),
     
@@ -314,6 +313,8 @@ urlpatterns = [
     #  Frontend Usage:
     # - Trigger this from Vue.js when clinician or AI needs to preview high-quality polyp classification frames.
     # - Ideal for NICE classification training dataset generation or QA workflows.
+    path('api/video/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
+
     # ---------------------------------------------------------------------------------------
 
 

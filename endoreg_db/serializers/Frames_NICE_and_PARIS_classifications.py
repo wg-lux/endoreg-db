@@ -24,23 +24,18 @@ FRAMES_PER_SEQUENCE = 5  # Number of frames to select per matched sequence
 # === Frame Filtering Rules ===
 # All rules must return True to accept the frame
 FRAME_SELECTION_RULES = [
-    lambda pred: pred.get("low_quality", 1.0) < 0.1,
-    lambda pred: pred.get("outside", 1.0) < 0.1,
+    lambda pred: pred.get("low_quality", 1.0) < 1.0,
+    lambda pred: pred.get("outside", 1.0) < 1.0,
     # Add more rules easily here
 ]
 
 
 class ForNiceClassificationSerializer(serializers.Serializer):
-
-    def __init__(self, videos, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.videos = videos
     
     def get_label_id_by_name(self, label_name):
         """
         Fetch the label ID by name. Raises a friendly ValidationError if not found.
         """
-        print("-------------------------------")
         print(f"[DEBUG] Requested label lookup for name: '{label_name}'")
         if not label_name:
             raise serializers.ValidationError({
@@ -126,6 +121,7 @@ class ForNiceClassificationSerializer(serializers.Serializer):
 
         # Step 2: Fallback if fewer than 3 valid segments exist
         if len(valid_segments) < 3:
+            print("......... -- -- -- -- -- -- FALLBACK CONDITION -- -- -- -- -- -- .........")
             valid_segments.sort(
                 key=lambda seg: seg['polyp'].end_frame_number - seg['polyp'].start_frame_number,
                 reverse=True
@@ -176,6 +172,7 @@ class ForNiceClassificationSerializer(serializers.Serializer):
         - Have the lowest 'low_quality' score
         - Are at least MIN_FRAME_GAP_IN_SEQUENCE apart from each other
         """
+
         polyp_sequence = sequence['polyp']
         video = polyp_sequence.video
 
@@ -276,28 +273,35 @@ class ForNiceClassificationSerializer(serializers.Serializer):
 
         return selected_frames
 '''
-
-    def to_representation(self, _):
-
+    def to_representation(self, videos):
         results = []
 
-        #all_videos = RawVideoFile.objects.all()
+        for video in videos:
+            print(f"serializers ::: video ID: {video.id}")
+            try:
+                video_id = video.id
+                matching_segments = self.get_matching_sequences(video_id)
+                print(f"serializers ::: matching_segments: {len(matching_segments)}")
+                diverse_segments = self.apply_sequence_diversity(matching_segments)
+                print(f"serializers ::: diverse_segments: {len(diverse_segments)}")
 
-        for video in self.videos:
-            video_id = video.id
-            matching_segments = self.get_matching_sequences(video_id)
-            diverse_segments = self.apply_sequence_diversity(matching_segments)
+                for segment in diverse_segments:
+                    frames = self.select_frames_for_sequence(segment)
+                    print(f"serializers ::: selected {len(frames)} frames for segment {segment['polyp'].start_frame_number}–{segment['polyp'].end_frame_number}")
+                    results.append({
+                        "video_id": video_id,
+                        "segment_start": segment['polyp'].start_frame_number,
+                        "segment_end": segment['polyp'].end_frame_number,
+                        "frames": frames
+                    })
 
-            for segment in diverse_segments:
-                frames = self.select_frames_for_sequence(segment)
-                results.append({
-                    "video_id": video_id,
-                    "segment_start": segment['polyp'].start_frame_number,
-                    "segment_end": segment['polyp'].end_frame_number,
-                    "frames": frames
-                })
+            except Exception as e:
+                print(f" ERROR while processing video ID {video.id}: {e}")
 
+        print("serializers ::: returning results")
         return results
+
+
 
 
 
