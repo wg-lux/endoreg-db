@@ -2,6 +2,10 @@ import os
 from pathlib import Path
 import dotenv
 
+dotenv.load_dotenv()
+
+from icecream import ic
+
 debug = os.getenv("DEBUG", "false").lower() == "true"
 
 BASE_DIR = os.getcwd()
@@ -51,6 +55,10 @@ data_paths = {
     "weights": WEIGHTS_DIR,
     "weights_import": WEIGHTS_IMPORT_DIR,
 }
+
+ic("Backend storage paths:")
+for key, path in data_paths.items():
+    ic(f"{key.capitalize()} directory: {path}")
 
 for key, path in data_paths.items():
     path.mkdir(parents=True, exist_ok=True)

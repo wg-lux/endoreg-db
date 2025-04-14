@@ -61,3 +61,6 @@ build-backend = "hatchling.build"
 
 [tool.setuptools]
 packages = ["endoreg_db"]
+
+[tool.uv.sources]
+endoreg-db = { path = "endoreg-db" }
