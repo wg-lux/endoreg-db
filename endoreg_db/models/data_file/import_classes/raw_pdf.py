@@ -162,8 +162,16 @@ class RawPdfFile(AbstractPdfFile):
             self.save()
 
     #TODO RENAME FUNCTION
-    def process_file(self, text, anonymized_text, report_meta, verbose=True):
-
+    def process_file(self, text, anonymized_text, report_meta, verbose):
+        """
+        Process text, anonymized_text and report_meta and save it to the report file.
+        
+        Args:
+            text: Extracted text from the PDF file
+            anonymized_text: Anonymized text from the PDF file
+            report_meta: Metadata extracted from the PDF file
+            verbose: Whether to print verbose output (default: True)
+        """
         self.text = text
         self.anonymized_text = anonymized_text
 
