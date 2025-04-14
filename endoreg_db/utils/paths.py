@@ -62,12 +62,12 @@ data_paths = {
     "weights_import": WEIGHTS_IMPORT_DIR,
 }
 
-ic("Backend storage paths:")
-for key, path in data_paths.items():
-    ic(f"{key.capitalize()} directory: {path}")
-
 for key, path in data_paths.items():
     path.mkdir(parents=True, exist_ok=True)
     if debug:
         print(f"{key.capitalize()} directory: {path}")
 
+if debug:
+    ic("Backend storage paths:")
+    for key, path in data_paths.items():
+        ic(f"{key.capitalize()} directory: {path}")
