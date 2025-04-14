@@ -69,15 +69,15 @@ class Event(models.Model):
 class EventClassificationManager(models.Manager):
     def get_by_natural_key(self, name):
         """
-        Retrieves an Event instance using its natural key.
+        Retrieves an EventClassification instance using its natural key.
         
-        This method returns the Event whose "name" attribute matches the provided natural key.
+        This method returns the EventClassification whose "name" attribute matches the provided natural key.
         
         Args:
             name (str): The natural key representing the Event's name.
         
         Returns:
-            Event: The Event instance with the specified name.
+            EventClassification: The EventClassification instance with the specified name.
         """
         return self.get(name=name)
 
