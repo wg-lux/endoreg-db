@@ -84,7 +84,7 @@ def evaluate_requirement(requirement: Requirement, **kwargs):
     for requirement_operator in requirement_operators:
         # Create tuples
         requirement_type_operator_tuples = [
-            OperatorTypeTuple(requirement_operator, rt) for ro in requirement_types
+            OperatorTypeTuple(requirement_operator, rt) for rt in requirement_types
         ]
 
         eval_result = [
