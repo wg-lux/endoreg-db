@@ -7,7 +7,7 @@ from .views.patient_views import (
     get_location_choices,
     get_morphology_choices, 
 )
-from .views.Frames_NICE_and_PARIS_classifications_views import ForNiceClassificationView
+from .views.Frames_NICE_and_PARIS_classifications_views import ForNiceClassificationView, ForParisClassificationView
 # endoreg_db_production/endoreg_db/urls.py
 from .views.keycloak_views import VideoView, keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
@@ -314,6 +314,7 @@ urlpatterns = [
     # - Trigger this from Vue.js when clinician or AI needs to preview high-quality polyp classification frames.
     # - Ideal for NICE classification training dataset generation or QA workflows.
     path('api/video/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
+    path('api/video/parisclassification/', ForParisClassificationView.as_view(), name="parisclassification"),
 
     # ---------------------------------------------------------------------------------------
 

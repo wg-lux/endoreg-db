@@ -65,6 +65,33 @@ class ForNiceClassificationView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+from ..serializers.Frames_NICE_and_PARIS_classifications import ForParisClassificationSerializer
+
+class ForParisClassificationView(APIView):
+    def get(self, request):
+        print(" [DEBUG] PARIS Classification View hit")
+
+        try:
+            videos = RawVideoFile.objects.all()
+            filtered_videos = [
+                video for video in videos
+                if getattr(video, "readable_predictions", None)
+                and getattr(video, "frame_dir", None)
+            ]
+
+            if not filtered_videos:
+                return Response({"error": "No valid videos found."}, status=status.HTTP_404_NOT_FOUND)
+
+            serializer = ForParisClassificationSerializer()
+            response_data = serializer.to_representation(filtered_videos)
+
+            if not response_data:
+                return Response({"error": "No valid PARIS segments found."}, status=status.HTTP_404_NOT_FOUND)
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": f"Internal server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 ''''
