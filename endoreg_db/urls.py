@@ -9,7 +9,7 @@ from .views.patient_views import (
 )
 from .views.Frames_NICE_and_PARIS_classifications_views import ForNiceClassificationView, ForParisClassificationView
 # endoreg_db_production/endoreg_db/urls.py
-from .views.keycloak_views import VideoView, keycloak_login, keycloak_callback, public_home
+from .views.keycloak_views import KeycloakVideoView, keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
