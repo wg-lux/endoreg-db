@@ -25,6 +25,6 @@ def rename_file_uuid(old_file:Path):
 
     # Rename the file
     new_file = old_file.with_name(new_file_name)
-    shutil.move(old_file.resolve().as_posix(), new_file.resolve().as_posix())
+    shutil.move(old_file.as_posix(), new_file.as_posix())
 
     return new_file, uuid

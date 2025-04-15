@@ -1,8 +1,160 @@
 - model: endoreg_db.examination_indication_classification
   fields:
-    name: "endoscopy_colonoscopy"
-    name_de: "Koloskopie"
-    name_en: "Colonoscopy"
+    name: endoscopy_colonoscopy
+    name_de: Koloskopie (unspezifisch)
+    name_en: Colonoscopy (unspecific)
+    description: Colonoscopy without further specification
+    examination: colonoscopy
+    indications:
+      [
+        "colonoscopy",
+        "colonoscopy_screening",
+        "colonoscopy_lesion_removal_small",
+        "colonoscopy_lesion_removal_large",
+        "colonoscopy_diagnostic_acute_symptomatic",
+      ]
 
-    
-  
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endoscopy_colonoscopy_acute
+    name_de: Koloskopie (akut)
+    name_en: Colonoscopy (acute)
+    description: Colonoscopy for acute indications
+    examination: colonoscopy
+    indications: ["colonoscopy_diagnostic_acute_symptomatic"]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endoscopy_colonoscopy_elective
+    name_de: Koloskopie (elektiv)
+    name_en: Colonoscopy (elective)
+    description: Colonoscopy for elective indications
+    examination: colonoscopy
+    indications:
+      [
+        "colonoscopy_screening",
+        "colonoscopy_lesion_removal_small",
+        "colonoscopy_lesion_removal_large",
+      ]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endoscopy_gastroscopy
+    name_de: Gastroskopie
+    name_en: Gastroscopy
+    description: Gastroscopy without further specification
+    examination: gastroscopy
+    indications:
+      [
+        "gastroscopy",
+        "gastroscopy_baseline",
+        "gastroscopy_diagnostic_acute_symptomatic",
+        "gastroscopy_acute_bleeding",
+        "gastroscopy_diagnostic_elective",
+        "gastroscopy_percutane_enterostomy",
+        "gastroscopy_therapeutic_varicosis_esophagus",
+        "gastroscopy_therapeutic_varicosis_stomach",
+        "gastroscopy_therapeutic_varicosis_intestine",
+        "gastroscopy_lesion_removal_small",
+        "gastroscopy_lesion_removal_large",
+        "gastroscopy_obstruction_generic",
+      ]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endoscopy_gastroscopy_acute
+    name_de: Gastroskopie (akut)
+    name_en: Gastroscopy (acute)
+    description: Gastroscopy for acute indications
+    examination: gastroscopy
+    indications:
+      ["gastroscopy_diagnostic_acute_symptomatic", "gastroscopy_acute_bleeding"]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endoscopy_gastroscopy_elective
+    name_de: Gastroskopie (elektiv)
+    name_en: Gastroscopy (elective)
+    description: Gastroscopy for elective indications
+    examination: gastroscopy
+    indications:
+      [
+        "gastroscopy_diagnostic_elective",
+        "gastroscopy_percutane_enterostomy",
+        "gastroscopy_therapeutic_varicosis_esophagus",
+        "gastroscopy_therapeutic_varicosis_stomach",
+        "gastroscopy_therapeutic_varicosis_intestine",
+        "gastroscopy_lesion_removal_small",
+        "gastroscopy_lesion_removal_large",
+        "gastroscopy_obstruction_generic",
+      ]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: small_bowel_endoscopy
+    name_de: "Dünndarmendoskopie"
+    name_en: Small Bowel Endoscopy
+    description: Small Bowel Endoscopy without further specification
+    examination: small_bowel_endoscopy
+    indications: []
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: capsule_endoscopy
+    name_de: Kapselendoskopie
+    name_en: Capsule Endoscopy
+    description: Capsule Endoscopy without further specification
+    examination: capsule_endoscopy
+    indications: []
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endosonography_lower_gi
+    name_de: Endosonographie unterer GI-Trakt
+    name_en: Endosonography Lower GI Tract
+    description: Endosonography Lower GI Tract without further specification
+    examination: endosonography_lower_gi
+    indications: ["endosonography_lower_gi"]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endosonography_upper_gi
+    name_de: Endosonographie oberer GI-Trakt
+    name_en: Endosonography Upper GI Tract
+    description: Endosonography Upper GI Tract without further specification
+    examination: endosonography_upper_gi
+    indications: ["endosonography_upper_gi", "endosonography_upper_gi_invasive"]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: endoscopy_ercp
+    name_de: Endoskopische retrograde Cholangiopankreatikographie
+    name_en: Endoscopic Retrograde Cholangiopancreatography
+    description: Endoscopic Retrograde Cholangiopancreatography without further specification
+    examination: ercp
+    indications:
+      ["erc", "erc_no_est", "ERCP", "ercp_no_est", "ercp_therapeutic_stenosis"]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: sonography_guided
+    name_de: Sonographisch gesteuert
+    name_en: Sonography guided
+    description: Sonography guided procedures
+    indications:
+      [
+        "percutaneous_transhepatic_cholangiography",
+        "percutaneous_transhepatic_biliary_drainage",
+      ]
+
+- model: endoreg_db.examination_indication_classification
+  fields:
+    name: xray_guided
+    name_de: Röntgen gesteuert
+    name_en: X-ray guided
+    description: X-ray guided procedures
+    indications:
+      [
+        "percutaneous_transhepatic_cholangiography",
+        "percutaneous_transhepatic_biliary_drainage",
+      ]

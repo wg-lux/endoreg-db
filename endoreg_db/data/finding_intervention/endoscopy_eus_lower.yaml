@@ -1,0 +1,9 @@
+# (currently no interventions)
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_lower_gi_solid_lesion_fna
+
+# endosonography_lower_gi_lymph_node_fna
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_lower_gi_lymph_node_fna

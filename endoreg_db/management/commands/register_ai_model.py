@@ -25,7 +25,7 @@ class Command(BaseCommand):
         parser.add_argument('model_meta_path', type=str)
 
     def handle(self, *args, **options):
-        model_meta_path = Path(options['model_meta_path']).resolve()
+        model_meta_path = Path(options['model_meta_path'])
 
         with open(model_meta_path, 'r') as f:
             model_meta = json.load(f)

@@ -40,6 +40,7 @@ in
     hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
     runtests.package = pkgs.zsh;
     runtests.exec = "${pkgs.uv}/bin/uv run python runtests.py";
+    pyshell.exec = "${pkgs.uv}/bin/uv run python manage.py shell";
   };
 
   tasks = {

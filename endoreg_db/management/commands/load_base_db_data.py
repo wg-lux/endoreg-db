@@ -14,11 +14,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # verbose = options['verbose']
+        """
+        Orchestrates the sequential execution of data loading commands to populate base database models.
+        
+        This management command displays an initial message and then runs a series of data loading routines 
+        (via call_command) in a specified order. It ignores any verbose setting from the command-line options 
+        and forces verbose output. A final success message is printed after all commands complete.
+        """
         verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))
 
         out = self.stdout
+
+        call_command("load_information_source", stdout=out, verbose=verbose)
+
+        call_command("load_risk_data", stdout=out, verbose=verbose)
 
         # Load Center Data
         call_command("load_center_data", stdout=out, verbose=verbose)
@@ -34,10 +45,12 @@ class Command(BaseCommand):
         call_command("load_organ_data", stdout=out, verbose=verbose)
         call_command("load_contraindication_data", stdout=out, verbose=verbose)
         call_command("load_examination_data", stdout=out, verbose=verbose)
-        call_command("load_examination_indication_data", stdout=out, verbose=verbose)
         call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_finding_data", stdout=out, verbose=verbose)
+        call_command("load_examination_indication_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
+
+        call_command("load_requirement_data", stdout=out, verbose=verbose)
 
         # Load AI Model Data
         call_command("load_ai_model_label_data", stdout=out, verbose=verbose)

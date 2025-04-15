@@ -38,15 +38,22 @@ def load_data_with_foreign_keys(
     command, model, yaml_data, foreign_keys, foreign_key_models, verbose
 ):
     """
-    Load data handling foreign keys and many-to-many relationships.
-
-    Args:
-        command: Command object for stdout writing.
-        model: The Django model for the data.
-        yaml_data: Data loaded from YAML.
-        foreign_keys: List of foreign keys.
-        foreign_key_models: Corresponding models for the foreign keys.
-        verbose: Boolean indicating whether to print verbose output.
+    Load YAML data into Django model instances with FK and M2M support.
+    
+    Processes each YAML entry to create or update a model instance. For each entry, the
+    function extracts field data and uses the presence of a 'name' field to decide whether
+    to update an existing instance or create a new one. Foreign key fields listed in
+    foreign_keys are handled by retrieving related objects via natural keys. When a field
+    contains a list, it is treated as a many-to-many relationship and the corresponding
+    objects are set after the instance is saved. Missing or unresolved foreign keys trigger
+    warnings if verbose output is enabled.
+    
+    Parameters:
+        model: The Django model class representing the data.
+        yaml_data: A list of dictionaries representing YAML entries.
+        foreign_keys: A list of foreign key field names to process from each entry.
+        foreign_key_models: The corresponding Django model classes for each foreign key.
+        verbose: If True, prints detailed output and warnings during processing.
     """
     for entry in yaml_data:
         fields = entry.get("fields", {})
@@ -56,7 +63,10 @@ def load_data_with_foreign_keys(
 
         # Handle foreign keys and many-to-many relationships
         for fk_field, fk_model in zip(foreign_keys, foreign_key_models):
-            # print(fk_field, fk_model)
+            # Skip fields that are not in the data
+            if fk_field not in fields:
+                continue
+
             target_keys = fields.pop(fk_field, None)
 
             # Ensure the foreign key exists
@@ -73,18 +83,20 @@ def load_data_with_foreign_keys(
             if isinstance(target_keys, list):  # Assume many-to-many relationship
                 related_objects = []
                 for key in target_keys:
-                    obj, created = fk_model.objects.get_or_create(name=key)
-                    if created and verbose:
-                        command.stdout.write(
-                            command.style.SUCCESS(f"Created {fk_model.__name__} {key}")
-                        )
+                    try:
+                        obj = fk_model.objects.get_by_natural_key(key)
+                    except ObjectDoesNotExist:
+                        if verbose:
+                            command.stdout.write(
+                                command.style.WARNING(
+                                    f"{fk_model.__name__} with key {key} not found"
+                                )
+                            )
+                        continue
                     related_objects.append(obj)
                 m2m_relationships[fk_field] = related_objects
             else:  # Single foreign key relationship
                 try:
-                    if model == "endoreg_db.case_template_rule":
-                        # print(fk_model, target_keys)
-                        pass
                     obj = fk_model.objects.get_by_natural_key(target_keys)
                 except ObjectDoesNotExist:
                     if verbose:
@@ -115,4 +127,11 @@ def load_data_with_foreign_keys(
 
         # Set many-to-many relationships
         for field_name, related_objs in m2m_relationships.items():
-            getattr(obj, field_name).set(related_objs)
+            if related_objs:  # Only set if there are objects to set
+                getattr(obj, field_name).set(related_objs)
+                if verbose:
+                    command.stdout.write(
+                        command.style.SUCCESS(
+                            f"Set {len(related_objs)} {field_name} for {model.__name__} {name}"
+                        )
+                    )

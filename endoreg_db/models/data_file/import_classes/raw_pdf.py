@@ -7,7 +7,6 @@
 
 from django.db import models
 from django.core.files.storage import FileSystemStorage
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from endoreg_db.utils.file_operations import get_uuid_filename
@@ -25,24 +24,15 @@ import logging
 import shutil
 from pathlib import Path
 
-from ..base_classes.utils import (
-    STORAGE_LOCATION,
-)
+from ....utils import data_paths
 
 logger = logging.getLogger("pdf_import")
 
-RAW_PDF_DIR_NAME = "raw_pdf"
-RAW_PDF_DIR = STORAGE_LOCATION / RAW_PDF_DIR_NAME
-
-if not RAW_PDF_DIR.exists():
-    RAW_PDF_DIR.mkdir(parents=True)
-
-
 class RawPdfFile(AbstractPdfFile):
     file = models.FileField(
-        upload_to=f"{RAW_PDF_DIR_NAME}/",
+        upload_to=f"{data_paths['raw_report']}/",
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+        storage=FileSystemStorage(location=data_paths["storage"]),
     )
 
     patient = models.ForeignKey(
@@ -92,7 +82,7 @@ class RawPdfFile(AbstractPdfFile):
 
         pdf_hash = get_pdf_hash(file_path)
         ic(pdf_hash)
-        new_file_path = RAW_PDF_DIR / new_file_name
+        new_file_path = data_paths["raw_report"] / new_file_name
         # check if pdf file already exists
 
         if cls.objects.filter(pdf_hash=pdf_hash).exists():
@@ -121,7 +111,7 @@ class RawPdfFile(AbstractPdfFile):
         assert get_pdf_hash(new_file_path) == pdf_hash, "Copy operation failed"
 
         raw_pdf = cls(
-            file=new_file_path.resolve().as_posix(),
+            file=new_file_path.as_posix(),
             pdf_hash=pdf_hash,
             # pdf_type=pdf_type,
             center=center,

@@ -1,0 +1,7 @@
+- model: endoreg_db.InformationSource
+  fields:
+    name: "guideline_quality_in_gi"
+    name_de: "Qualitätsanforderungen in der gastrointestinalen Endoskopie v2.0"
+    name_en: "Quality requirements in gastrointestinal endoscopy v2.0"
+    date: "2025-01-01" # not final
+    #TODO Implement information_source

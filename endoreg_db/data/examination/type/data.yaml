@@ -3,3 +3,15 @@
     name: "endoscopy"
     name_de: "Endoskopie"
     name_en: "Endoscopy"
+
+- model: report.ExaminationType
+  fields:
+    name: "sonography"
+    name_de: "Sonographie"
+    name_en: "Sonography"
+
+- model: report.ExaminationType
+  fields:
+    name: "xray"
+    name_de: "Röntgen"
+    name_en: "X-ray"

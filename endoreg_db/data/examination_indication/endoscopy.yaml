@@ -1,8 +1,424 @@
+# Colonoscopy
+## Generic
 - model: endoreg_db.examination_indication
   fields:
     name: "colonoscopy"
     name_de: "Koloskopie"
     name_en: "Colonoscopy"
-    classification: "endoscopy_colonoscopy"
     examination: "colonoscopy"
+    description: "Colonoscopy without further specification"
 
+## Colonoscopy elective
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy_screening"
+    name_de: "Koloskopie (Screening)"
+    name_en: "Colonoscopy (Screening)"
+    examination: "colonoscopy"
+    description: "Colonoscopy for screening purposes"
+    expected_interventions: # Many2Many to finding intervention
+      [
+        "colon_lesion_polypectomy_cold_snare",
+        "colon_lesion_injection_liftup",
+        "colon_lesion_biopsy",
+        "colon_lesion_clip",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy_lesion_removal_small"
+    name_de: "Koloskopie (Läsionsentfernung, klein (< 10 mm), elektiv)"
+    name_en: "Colonoscopy (Lesion removal, small (< 10 mm), elective)"
+    examination: "colonoscopy"
+    description: "Elective colonoscopy for removal of small lesions (< 10 mm)"
+    expected_interventions:
+      [
+        "colon_lesion_polypectomy_cold_snare",
+        "colon_lesion_polypectomy_hot_snare",
+        "colon_lesion_injection_liftup",
+        "colon_lesion_injection_vasoactive",
+        "colon_lesion_biopsy",
+        "colon_lesion_clip",
+      ]
+
+# colonoscopy_lesion_removal_emr
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy_lesion_removal_emr"
+    name_de: "Koloskopie (Läsionsentfernung, EMR, elektiv)"
+    name_en: "Colonoscopy (Lesion removal, EMR, elective)"
+    examination: "colonoscopy"
+    description: "Elective colonoscopy for removal of lesions using EMR"
+    expected_interventions:
+      [
+        "colon_lesion_emr",
+        "colon_lesion_injection_vasoactive",
+        "colon_lesion_injection_liftup",
+        "colon_lesion_clip",
+        "colon_lesion_over_the_scope_clip",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy_lesion_removal_large"
+    name_de: "Koloskopie (Läsionsentfernung, groß (≥ 10 mm), elektiv)"
+    name_en: "Colonoscopy (Lesion removal, large (≥ 10 mm), elective)"
+    examination: "colonoscopy"
+    description: "Elective colonoscopy for removal of large lesions (≥ 10 mm)"
+    expected_interventions:
+      [
+        "colon_lesion_injection_vasoactive",
+        "colon_lesion_injection_liftup",
+        "colon_lesion_clip",
+        "colon_lesion_over_the_scope_clip",
+        "colon_lesion_emr",
+        "colon_lesion_esd",
+        "colon_eftr",
+      ]
+
+## Colonoscopy Acute
+- model: endoreg_db.examination_indication
+  fields:
+    name: "colonoscopy_diagnostic_acute_symptomatic"
+    name_de: "Koloskopie (Diagnostik, akut-symptomatisch)"
+    name_en: "Colonoscopy (Diagnostic, Acute Symptomatic)"
+    examination: "colonoscopy"
+    description: "Colonoscopy for diagnostic purposes in acute symptomatic patients"
+    expected_interventions:
+      ["colon_lesion_clip", "colon_lesion_injection_vasoactive"]
+
+# Gastroscopy
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy"
+    name_de: "Gastroskopie"
+    name_en: "Gastroscopy"
+    examination: "gastroscopy"
+    description: "Gastroscopy without further specification"
+    expected_interventions: # Many2Many to finding intervention
+      [
+        "egd_lesion_polypectomy_cold_snare",
+        "egd_lesion_injection_liftup",
+        "egd_lesion_biopsy",
+        "egd_lesion_clip",
+        "egd_lesion_over_the_scope_clip",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_baseline"
+    name_de: "Gastroskopie (Basis)"
+    name_en: "Gastroscopy (Baseline)"
+    examination: "gastroscopy"
+    description: "Baseline gastroscopy"
+    expected_interventions: ["egd_lesion_biopsy"]
+
+## Gastroscopy Acute
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_diagnostic_acute_symptomatic"
+    name_de: "Gastroskopie (Diagnostik, akut-symptomatisch)"
+    name_en: "Gastroscopy (Diagnostic, Acute Symptomatic)"
+    examination: "gastroscopy"
+    description: "Gastroscopy for diagnostic purposes in acute symptomatic patients"
+    expected_interventions: [
+        "egd_hp_biopsy", # default
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_acute_bleeding"
+    name_de: "Gastroskopie (akute Blutung)"
+    name_en: "Gastroscopy (acute bleeding)"
+    examination: "gastroscopy"
+    description: "Gastroscopy for acute bleeding"
+    expected_interventions: [
+        "egd_lesion_injection_vasoactive",
+        "egd_lesion_clip", # default
+        "egd_lesion_over_the_scope_clip",
+        "egd_varice_band_ligation",
+        "egd_varice_sclerotherapy",
+        "egd_argon_plasma_coagulation",
+      ]
+
+## Gastroscopy Elective
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_diagnostic_elective"
+    name_de: "Gastroskopie (Diagnostik, elektiv)"
+    name_en: "Gastroscopy (Diagnostic, Elective)"
+    examination: "gastroscopy"
+    description: "Gastroscopy for diagnostic purposes in elective patients"
+    expected_interventions: ["egd_hp_biopsy"]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_percutane_enterostomy"
+    name_de: "Gastroskopie (perkutane Enterostomie)"
+    name_en: "Gastroscopy (percutaneous enterostomy)"
+    examination: "gastroscopy"
+    description: "Gastroscopy for percutaneous enterostomy"
+    expected_interventions:
+      [
+        "egd_percutaneous_gastroenterostomy",
+        "egd_percutaneous_jejunostomy",
+        "egd_lesion_biopsy",
+        "egd_clip",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_therapeutic_varicosis_esophagus"
+    name_de: "Gastroskopie (Therapie, Varikosis Ösophagus, elektiv)"
+    name_en: "Gastroscopy (Therapeutic, Varicosis Esophagus, elective)"
+    examination: "gastroscopy"
+    description: "Elective gastroscopy for therapeutic purposes in elective patients with varicosis of the esophagus"
+    expected_interventions:
+      [
+        "egd_varicosis_band_ligation",
+        "egd_varicosis_sclerotherapy",
+        "egd_injection_vasoactive",
+        "egd_clip",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_therapeutic_varicosis_stomach"
+    name_de: "Gastroskopie (Therapie, Varikosis Magen, elektiv)"
+    name_en: "Gastroscopy (Therapeutic, Varicosis Stomach, elective)"
+    examination: "gastroscopy"
+    description: "Elective gastroscopy for therapeutic purposes in elective patients with varicosis of the stomach"
+    expected_interventions:
+      [
+        "egd_varicosis_band_ligation",
+        "egd_clip",
+        "egd_injection_varicosis",
+        "egd_injection_vasoactive",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_therapeutic_varicosis_intestine"
+    name_de: "Gastroskopie (Therapie, Varikosis Darm, elektiv)"
+    name_en: "Gastroscopy (Therapeutic, Varicosis Intestine, elective)"
+    examination: "gastroscopy"
+    description: "Elective gastroscopy for therapeutic purposes in elective patients with varicosis of the intestine"
+    expected_interventions:
+      [
+        "egd_varicosis_band_ligation",
+        "egd_clip",
+        "egd_injection_varicosis",
+        "egd_injection_vasoactive",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_lesion_removal_small"
+    name_de: "Gastroskopie (Läsionsentfernung, klein (< 10 mm), elektiv)"
+    name_en: "Gastroscopy (Lesion removal, small (< 10 mm), elective)"
+    examination: "gastroscopy"
+    description: "Elective gastroscopy for removal of small lesions (< 10 mm)"
+    expected_interventions:
+      [
+        "egd_lesion_polypectomy_cold_snare",
+        "egd_lesion_polypectomy_hot_snare",
+        "egd_lesion_polypectomy_forceps",
+        "egd_lesion_injection_vasoactive",
+        "egd_lesion_injection_liftup",
+        "egd_lesion_clip",
+        "egd_lesion_over_the_scope_clip",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_lesion_removal_large"
+    name_de: "Gastroskopie (Läsionsentfernung, groß (≥ 10 mm), elektiv)"
+    name_en: "Gastroscopy (Lesion removal, large (≥ 10 mm), elective)"
+    examination: "gastroscopy"
+    description: "Elective gastroscopy for removal of large lesions (≥ 10 mm)"
+    expected_interventions:
+      [
+        "egd_lesion_injection_vasoactive",
+        "egd_lesion_injection_liftup",
+        "egd_lesion_clip",
+        "egd_lesion_over_the_scope_clip",
+        "egd_lesion_emr",
+        "egd_lesion_esd",
+        "egd_eftr",
+        "egd_poem",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "gastroscopy_obstruction_generic"
+    name_de: "Gastroskopie (Obstruktion / Dysphagie, generisch, elektiv)"
+    name_en: "Gastroscopy (Obstruction / Dysphagia, generic, elective)"
+    examination: "gastroscopy"
+    description: "Elective gastroscopy for patients with obstruction / dysphagia"
+    expected_interventions:
+      [
+        "egd_stepwise_biopsy",
+        "egd_lesion_biopsy",
+        "egd_clip",
+        "egd_esophagus_injection_botox",
+        "egd_stenosis_dilation",
+        "egd_stenosis_bougie",
+        "egd_stenosis_balloon",
+        "egd_stenosis_stent",
+        "egd_lesion_radiofrequency_ablation",
+        "egd_lesion_cryotherapy",
+        "egd_stenosis_laser",
+      ]
+
+# Endosonography
+- model: endoreg_db.examination_indication
+  fields:
+    name: "endosonography_upper_gi"
+    name_de: "Endosonographie oberer GI-Trakt"
+    name_en: "Endosonography Upper GI Tract"
+    examination: "endosonography_upper_gi"
+    description: "Endosonography of the upper GI tract without further specification"
+    expected_interventions: []
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "endosonography_upper_gi_invasive"
+    name_de: "Endosonographie oberer GI-Trakt (invasiv)"
+    name_en: "Endosonography Upper GI Tract (invasive)"
+    examination: "endosonography_upper_gi"
+    description: "Invasive endosonography of the upper GI tract"
+    expected_interventions:
+      [
+        "endosonography_upper_gi_solid_lesion_fna",
+        "endosonography_upper_gi_cyst_fna",
+        "endosonography_upper_gi_pseudocyst_fna",
+        "endosonography_upper_gi_biliary_drainage",
+        "endosonography_upper_gi_pancreatic_drainage",
+        "endosonography_upper_gi_cyst_gastrostomy",
+        "endosonography_upper_gi_pancreaticogastrostomy",
+        "endosonography_upper_gi_cholangioduodenostomy",
+        "endosonography_upper_gi_pancreaticoduodenostomy",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "endosonography_lower_gi"
+    name_de: "Endosonographie unterer GI-Trakt"
+    name_en: "Endosonography Lower GI Tract"
+    examination: "endosonography_lower_gi"
+    description: "Endosonography of the lower GI tract without further specification"
+    expected_interventions: []
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "endosonography_lower_gi_invasive"
+    name_de: "Endosonographie unterer GI-Trakt (invasiv)"
+    name_en: "Endosonography Lower GI Tract (invasive)"
+    examination: "endosonography_lower_gi"
+    description: "Invasive endosonography of the lower GI tract"
+    expected_interventions:
+      [
+        "endosonography_lower_gi_solid_lesion_fna",
+        "endosonography_lower_gi_lymph_node_fna",
+      ]
+
+# PTC(D)
+- model: endoreg_db.examination_indication
+  fields:
+    name: "percutaneous_transhepatic_cholangiography"
+    name_de: "Perkutane transhepatische Cholangiographie"
+    name_en: "Percutaneous Transhepatic Cholangiography"
+    examination: "percutaneous_transhepatic_cholangiography"
+    description: "Percutaneous transhepatic cholangiography without further specification"
+    expected_interventions:
+      [
+        "percutaneous_transhepatic_cholangiography",
+        "sonography_guided_liver_punction",
+        "xray_guided_liver_punction",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "percutaneous_transhepatic_biliary_drainage"
+    name_de: "Perkutane transhepatische Gallengangdrainage"
+    name_en: "Percutaneous Transhepatic Biliary Drainage"
+    examination: "percutaneous_transhepatic_cholangiography"
+    description: "Percutaneous transhepatic biliary drainage without further specification"
+    expected_interventions:
+      [
+        "percutaneous_transhepatic_cholangiography",
+        "percutaneous_transhepatic_biliary_drainage",
+        "biliary_stent",
+      ]
+
+# ERCP
+- model: endoreg_db.examination_indication
+  fields:
+    name: "erc"
+    name_de: "Endoskopische retrograde Cholangiographie"
+    name_en: "Endoscopic Retrograde Cholangiography"
+    examination: "ercp"
+    description: "ERC without further specification"
+    expected_interventions:
+      [
+        "ercp",
+        "ercp_sphincterotomy",
+        "ercp_stent",
+        "ercp_extraction",
+        "ercp_biopsy",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "erc_no_est"
+    name_de: "ERC (ohne EST)"
+    name_en: "ERC (without EST)"
+    examination: "ercp"
+    description: "ERC without endoscopic sphincterotomy"
+    expected_interventions:
+      ["erc", "ercp_stent", "ercp_extraction", "ercp_biopsy"]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "ERCP"
+    name_de: "Endoskopische retrograde Cholangiopankreatikographie"
+    name_en: "Endoscopic Retrograde Cholangiopancreatography"
+    examination: "ercp"
+    description: "ERCP without further specification"
+    expected_interventions:
+      [
+        "erp",
+        "erc",
+        "ercp_sphincterotomy",
+        "ercp_stent",
+        "ercp_extraction",
+        "ercp_biopsy",
+      ]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "ercp_no_est"
+    name_de: "ERCP (ohne EST)"
+    name_en: "ERCP (without EST)"
+    examination: "ercp"
+    description: "ERCP without endoscopic sphincterotomy"
+    expected_interventions:
+      ["erc", "erp", "ercp_stent", "ercp_extraction", "ercp_biopsy"]
+
+- model: endoreg_db.examination_indication
+  fields:
+    name: "ercp_therapeutic_stenosis"
+    name_de: "ERC(P) (Therapie, Stenose)"
+    name_en: "ERC(P) (Therapeutic, Stenosis)"
+    examination: "ercp"
+    description: "ERC(P) for therapeutic purposes in patients with stenosis"
+    expected_interventions:
+      [
+        "erc",
+        "erp",
+        "ercp_sphincterotomy",
+        "ercp_stent",
+        "ercp_extraction",
+        "ercp_biopsy",
+        "ercp_radiofrequency_ablation",
+      ]

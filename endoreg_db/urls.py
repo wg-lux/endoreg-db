@@ -1,3 +1,4 @@
+from .views.csrf import csrf_token_view
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views.patient_views import (
@@ -6,14 +7,17 @@ from .views.patient_views import (
     get_location_choices,
     get_morphology_choices, 
 )
-from .views.csrf import csrf_token_view
-#from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in ando-ai other project need to add here
+from .views.Frames_NICE_and_PARIS_classifications_views import ForNiceClassificationView, ForParisClassificationView
+# endoreg_db_production/endoreg_db/urls.py
+from .views.keycloak_views import VideoView, keycloak_login, keycloak_callback, public_home
+#from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video_segmentation_views import VideoView, VideoLabelView,UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
 from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFileForMetaView
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
+
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 
@@ -22,8 +26,11 @@ urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
+
     path('api/', include(router.urls)),
     path('api/conf/', csrf_token_view, name='csrf_token'),
+
+
 
 
 #--------------------------------------START : VIDEO SEGMENTATION END POINTS--------------------------------------
@@ -34,7 +41,7 @@ urlpatterns = [
         # will be displayed on the frontend using route(api/video/<int:video_id>/).
         # once label is selected from the dropdown,using its name, details can be fetched from rawvideofile using route("api/video/<int:video_id>/label/<str:label_name>/) 
         #If editing is required, a form will be available for each label. This form dynamically updates when the selected label changes. It will display all segments associated with the selected label, each with a delete option. Below these segments, there may be a button for adding more segments.
-        #If any values in the form are modified, the updated data will be saved in the database table.
+        #If any values in the form are modified, the updated data will be saved in the dafrom .views import VideoView, keycloak_login, keycloak_callbacktabase table.
     
     
     
@@ -45,7 +52,16 @@ urlpatterns = [
     # Example request: GET /api/videos/
     # Response: Returns a JSON list of videos (id, file path, video_url, sequences, label_names).
     # it also fetch the label from teh label table
-    path("api/videos/", VideoView.as_view(), name="video_list"),
+
+    # for kaycloak:-
+    # /api/videos/ , protected API
+    # /login/ , sends user to Keycloak login page
+    # /login/callback/ , where Keycloak sends the user after login
+    
+    path('', public_home, name='public_home'),
+    path('api/videos/', VideoView.as_view(), name='video_list'),
+    path('login/', keycloak_login, name='keycloak_login'),
+    path('login/callback/', keycloak_callback, name='keycloak_callback'),
     
     #need to change this route
     #path('api/prediction/', FetchSingleFramePredictionView.as_view(), name='fetch-single-frame-prediction'),#.as_view() converts the class-based view into a function that Django can use for routing.
@@ -247,6 +263,66 @@ urlpatterns = [
 
 
 
+    # ---------------------------------------------------------------------------------------
+    # NICE CLASSIFICATION FRAME SELECTION ENDPOINT
+    #
+    # API to return **3 diverse polyp + chromo segments** per video and **5 low_quality-filtered frames** per segment.
+    #
+    #  What it does:
+    # - Automatically loops over all videos in the database.
+    # - For each video:
+    #   - Finds segments where both `"polyp"` and `"digital_chromo_endoscopy"` labels overlap.
+    #   - From matching sequences:
+    #     - Selects 3 **diverse** segments that are:
+    #         - At least 2 seconds (100 frames) long
+    #         - At least 10 seconds (500 frames) apart
+    #     - If > 3 valid segments are found:
+    #         - Chooses the 3 that are **most spread out in time** (max total gap)
+    #     - If < 3 valid sequences:
+    #         - Falls back to top 3 longest available sequences
+    #   - For each selected segment:
+    #     - Selects 5 frames that:
+    #         - Have the **lowest "low_quality" prediction**
+    #         - Are at least 2 seconds (100 frames) apart from each other
+    #
+    #  Fully configurable via constants at the top:
+    #   - POLYP_LABEL_NAME, CHROMO_LABEL_NAME
+    #   - FPS, MIN_SEGMENT_LENGTH_SECONDS, MIN_SEQUENCE_GAP_SECONDS, etc.
+    #
+    # Example URL:
+    #   GET /api/videos/nice-classification/
+    #
+    #  Example response (per segment):
+    # [
+    #     {
+    #         "video_id": 5,
+    #         "segment_start": 125,
+    #         "segment_end": 275,
+    #         "frames": [
+    #             {
+    #                 "frame_number": 130,
+    #                 "low_quality": 0.021,
+    #                 "frame_path": "/home/.../frame_0000130.jpg"
+    #             },
+    #             ...
+    #         ]
+    #     },
+    #     ...
+    # ]
+    #
+    #  Frontend Usage:
+    # - Trigger this from Vue.js when clinician or AI needs to preview high-quality polyp classification frames.
+    # - Ideal for NICE classification training dataset generation or QA workflows.
+    path('api/video/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
+    path('api/video/parisclassification/', ForParisClassificationView.as_view(), name="parisclassification"),
+
+    # ---------------------------------------------------------------------------------------
+
+
+
+
+
+
 
 
 
@@ -266,7 +342,7 @@ urlpatterns = [
 
     
 #https://biigle.de/manual/tutorials/videos/navigating-timeline#for time line example
-from django.conf import settings
+'''from django.conf import settings
 from django.conf.urls.static import static
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)'''

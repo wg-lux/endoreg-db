@@ -1,0 +1,120 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_creatinine_above_normal"
+    name_de: "Laborwert über Normalwert"
+    name_en: "Lab value above normal"
+    description: "Lab value above normal"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_increased
+    lab_values:
+      - "creatinine"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_hb_below_normal"
+    name_de: "Laborwert Hämoglobin unter Normalwert"
+    name_en: "Lab value hemoglobin below normal"
+    description: "Lab value hemoglobin below normal"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_decreased
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_hb_below_8"
+    name_de: "Laborwert Hämoglobin unter 8"
+    name_en: "Lab value hemoglobin below 8"
+    description: "Lab value hemoglobin below 8"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_lower_than_value
+    numeric_value: 8
+    unit: "gram per deciliter"
+
+# acute kidney injury
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_creatinine_above_1_5"
+    name_de: "Laborwert Kreatinin über 1,5"
+    name_en: "Lab value creatinine above 1.5"
+    description: "Lab value creatinine above 1.5"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_greater_than_value
+
+- model: endoreg_db.requirement
+  fields: # increase by factor 1.5 in 3 days
+    name: "lab_value_creatinine_increased_factor_1_5_in_3_days"
+    name_de: "Laborwert Kreatinin um Faktor 1,5 erhöht innerhalb 3 Tage"
+    name_en: "Lab value creatinine increased by factor 1.5 within 3 days"
+    description: "Lab value creatinine increased by factor 1.5 within 3 days"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_increased_factor
+    numeric_value: 1.5
+    numeric_value_min: -3
+    numeric_value_max: 0
+    unit: "days"
+
+# Coagulation
+## Prothrombin time above normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_prothrombin_time_above_normal"
+    name_de: "Laborwert Prothrombinzeit über Normalwert"
+    name_en: "Lab value prothrombin time above normal"
+    description: "Lab value prothrombin time above normal"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_increased
+    lab_values:
+      - "prothrombin_time"
+
+## Activated partial thromboplastin time (aPTT) above normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_activated_partial_thromboplastin_time_above_normal"
+    name_de: "Laborwert aktivierte partielle Thromboplastinzeit über Normalwert"
+    name_en: "Lab value activated partial thromboplastin time above normal"
+    description: "Lab value activated partial thromboplastin time above normal"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_increased
+    lab_values:
+      - "activated_partial_thromboplastin_time"
+
+## Fibrinogen below normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_fibrinogen_below_normal"
+    name_de: "Laborwert Fibrinogen unter Normalwert"
+    name_en: "Lab value fibrinogen below normal"
+    description: "Lab value fibrinogen below normal"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_decreased
+    lab_values:
+      - "fibrinogen"
+
+## INR above normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_international_normalized_ratio_above_normal"
+    name_de: "Laborwert International Normalisierte Ratio über Normalwert"
+    name_en: "Lab value international normalized ratio above normal"
+    description: "Lab value international normalized ratio above normal"
+    requirement_types:
+      - "lab_value"
+    operators:
+      - lab_numeric_increased
+    lab_values:
+      - "international_normalized_ratio"

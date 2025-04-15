@@ -3,18 +3,14 @@
     name: "colonoscopy"
     name_de: "Koloskopie"
     name_en: "Colonoscopy"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
 
 - model: report.Examination
   fields:
     name: "gastroscopy"
     name_de: "Gastroskopie"
     name_en: "Gastroscopy"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
 
 # endosonography_upper_gi
 - model: report.Examination
@@ -22,18 +18,14 @@
     name: "endosonography_upper_gi"
     name_de: "Endosonographie oberer GI-Trakt"
     name_en: "Endosonography Upper GI Tract"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
 
 - model: report.Examination
   fields:
     name: "endosonography_lower_gi"
     name_de: "Endosonographie unterer GI-Trakt"
     name_en: "Endosonography Lower GI Tract"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
 
 # ERCP
 - model: report.Examination
@@ -41,9 +33,7 @@
     name: "ercp"
     name_de: "ERCP"
     name_en: "ERCP"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
 
 # small bowel endoscopy
 - model: report.Examination
@@ -51,9 +41,7 @@
     name: "small_bowel_endoscopy"
     name_de: "Dünndarmendoskopie"
     name_en: "Small Bowel Endoscopy"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
 
 # capsule endoscopy
 - model: report.Examination
@@ -61,6 +49,19 @@
     name: "capsule_endoscopy"
     name_de: "Kapselendoskopie"
     name_en: "Capsule Endoscopy"
-    examination_types: [
-      "endoscopy"
-    ]
+    examination_types: ["endoscopy"]
+
+- model: report.Examination
+  fields:
+    name: "percutaneous_transhepatic_biliary_drainage"
+    name_de: "Perkutane transhepatische Gallengangdrainage"
+    name_en: "Percutaneous Transhepatic Biliary Drainage"
+    examination_types: ["endoscopy", "sonography", "xray"]
+
+# percutaneous_transhepatic_cholangiography
+- model: report.Examination
+  fields:
+    name: "percutaneous_transhepatic_cholangiography"
+    name_de: "Perkutane transhepatische Cholangiographie"
+    name_en: "Percutaneous Transhepatic Cholangiography"
+    examination_types: ["endoscopy", "sonography", "xray"]
