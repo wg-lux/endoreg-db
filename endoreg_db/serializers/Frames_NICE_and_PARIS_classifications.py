@@ -135,6 +135,7 @@ class BaseClassificationSerializer(serializers.Serializer):
 
         # here we are getting the predictions and frame directory from the video object
         frame_dir = getattr(video, "frame_dir", "") #need to check
+        predictions = getattr(video, "readable_predictions", [])
 
         # If either predictions or frame_dir is missing, return an empty list
         if not predictions or not frame_dir:
@@ -158,6 +159,8 @@ class BaseClassificationSerializer(serializers.Serializer):
 
         # Try frame selection with decreasing polyp confidence thresholds
         #for polyp_threshold in [0.9, 0.8, 0.7]:
+        selected_frames = []
+
         for polyp_threshold in POLYP_CONFIDENCE_THRESHOLDS:
 
             # Filter frames that meet the current polyp threshold
