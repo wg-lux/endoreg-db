@@ -73,9 +73,10 @@ class SensitiveMeta(models.Model):
         field_names = [_.name for _ in cls._meta.fields]
         selected_data = {k: v for k, v in data.items() if k in field_names}
 
-        first_name = selected_data.get("patient_first_name")
-        last_name = selected_data.get("patient_last_name")
+        first_name = selected_data.get("patient_first_name", "unknown")
+        last_name = selected_data.get("patient_last_name", "unknown")
         center_name = data.get("center_name")
+        assert center_name
 
         try:
             center = Center.objects.get_by_natural_key(center_name)

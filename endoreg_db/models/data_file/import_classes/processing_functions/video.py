@@ -96,7 +96,7 @@ def get_videos_scheduled_for_initial_prediction():
 from pathlib import Path
 def get_multilabel_model(model_path:Path):
     from agl_predict_endo_frame.model_loader import MultiLabelClassificationNet
-    model_path_str = model_path.resolve().as_posix()
+    model_path_str = model_path.as_posix()
     model = MultiLabelClassificationNet.load_from_checkpoint(model_path_str)
     model.cuda()
     model.eval()
@@ -130,7 +130,7 @@ def perform_initial_prediction_on_video(
     classifier = get_multilabel_classifier(model, verbose = True)
 
     paths = video.get_frame_paths()
-    string_paths = [p.resolve().as_posix() for p in paths]
+    string_paths = [p.as_posix() for p in paths]
     crops = get_crops(video, string_paths)
     fps = video.get_fps()
 

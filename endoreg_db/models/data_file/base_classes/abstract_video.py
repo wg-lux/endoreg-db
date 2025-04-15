@@ -1,18 +1,16 @@
 """ """
 
+from django.db import models
 from pathlib import Path
 from collections import defaultdict, Counter
 import shutil
 import os
-import subprocess
 from typing import Optional, List, TYPE_CHECKING, Union
-from django.db import models, transaction
 from icecream import ic
-from tqdm import tqdm
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-
+from pathlib import Path
 from ....utils.video import (
     transcode_videofile,
     transcode_videofile_if_required,
@@ -21,12 +19,8 @@ from ....utils.video import (
 )
 
 from ..metadata import VideoMeta, SensitiveMeta
-from .utils import (
-    STORAGE_LOCATION,
-    VIDEO_DIR,
-    FRAME_DIR,
-)
-from .prepare_bulk_frames import prepare_bulk_frames
+from ....utils import data_paths
+
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -153,8 +147,7 @@ class AbstractVideoFile(models.Model):
         file_path: Path,
         center_name: str,
         processor_name: str,
-        frame_dir_parent: Path = FRAME_DIR,
-        video_dir: Path = VIDEO_DIR,
+        video_dir: Path = data_paths["video"],
         save: bool = True,
         frame_paths: List[dict] = None,
     ):
@@ -180,10 +173,10 @@ class AbstractVideoFile(models.Model):
         ic(f"No existing DB entry found, creating new with UUID {uuid}")
 
         try:
-            relative_path = transcoded_file_path.relative_to(STORAGE_LOCATION)
+            relative_path = transcoded_file_path.relative_to(data_paths["storage"])
         except ValueError as e:
             raise Exception(
-                f"{transcoded_file_path} is outside STORAGE_LOCATION {STORAGE_LOCATION}"
+                f"{transcoded_file_path} is outside STORAGE_DIR {data_paths['storage']}"
             ) from e
 
         video = cls(
@@ -325,6 +318,8 @@ class AbstractVideoFile(models.Model):
             ModelMeta,
             AiModel,
         )  # pylint: disable=import-outside-toplevel
+        #TODO Create issue to movie this function to the endo-ai module
+        #endoreg-db is our "base" module, so it should not depend "upstream" models
         from endo_ai.predictor.inference_dataset import InferenceDataset  # pylint: disable=import-outside-toplevel
         from endo_ai.predictor.model_loader import MultiLabelClassificationNet
         from endo_ai.predictor.predict import Classifier
@@ -398,7 +393,7 @@ class AbstractVideoFile(models.Model):
 
         crop_template = self.get_crop_template()
 
-        string_paths = [p.resolve().as_posix() for p in paths]
+        string_paths = [p.as_posix() for p in paths]
         crops = [crop_template for _ in paths]
 
         ic(f"Detected {len(paths)} frames")
@@ -562,7 +557,7 @@ class AbstractVideoFile(models.Model):
         return crop_template
 
     def set_frame_dir(self):
-        self.frame_dir = f"{FRAME_DIR}/{self.uuid}"
+        self.frame_dir = f"{data_paths['frame']}/{self.uuid}"
 
     # video meta should be created when video file is created
     def save(self, *args, **kwargs):
@@ -800,7 +795,7 @@ class AbstractVideoFile(models.Model):
         Bulk create frames, then save their images to storage.
         """
         frame_model = self.get_frame_model()
-        created = frame_model.objects.bulk_create(frames_to_create)
+        _created = frame_model.objects.bulk_create(frames_to_create)
         # for frame in created:
         #     frame_name = f"frame_{frame.frame_number:07d}.jpg"
         #     frame.image.save(frame_name, frame.image)

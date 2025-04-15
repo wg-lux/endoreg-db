@@ -1,4 +1,4 @@
-from endoreg_db.models import Requirement
+from endoreg_db.models import Requirement, RequirementSet
 from pathlib import Path
 import yaml
 from pprint import pprint
@@ -6,7 +6,21 @@ from pprint import pprint
 out_dir = Path("./data/requirement_dev/")
 out_dir.mkdir(parents=True, exist_ok=True)
 
-requirement_set_bleeding_high = Requirement.objects.get(name="Bleeding High")
+requirement_set_bleeding_high = RequirementSet.objects.get(
+    name="endoscopy_bleeding_risk_high"
+)
+
+requirements = requirement_set_bleeding_high.requirements.all()
+
+for requirement in requirements:
+    print(f"Requirement: {requirement}")
+    print(f"Requirement Set: {requirement.requirement_sets.all()}")
+    print(f"Requirement Type: {requirement.requirement_types.all()}")
+    print(f"Operators: {requirement.operators.all()}")
+    print(f"Unit: {requirement.unit}")
+    print(f"Examinations: {requirement.examinations.all()}")
+    print(f"Examination Indications: {requirement.examination_indications.all()}")
+    print(f"Diseases: {requirement.diseases.all()}")
 
 # requirement = requirements[0]
 

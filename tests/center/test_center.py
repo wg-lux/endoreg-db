@@ -4,6 +4,7 @@ from django.test import TestCase
 from io import StringIO
 from .conf import TEST_CENTER_NAME, TEST_CENTER_OUTPUT_PATH, TEST_CENTERS_AVAILABLE
 
+
 class TestCenter(TestCase):
     def setUp(self):
         # Reset the output file
@@ -13,7 +14,7 @@ class TestCenter(TestCase):
         # Load required data
         out = StringIO()
         call_command("load_gender_data", stdout=out)
-        call_command("load_name_data", stdout=out)
+        # call_command("load_name_data", stdout=out)
         call_command("load_center_data", stdout=out)
 
         # Create a test center

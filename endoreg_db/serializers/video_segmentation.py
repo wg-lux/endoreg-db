@@ -112,14 +112,12 @@ class VideoFileSerializer(serializers.ModelSerializer):
             obj.file.name
         ).strip()  #  Only return the file path, no URL,#obj.file returning a FieldFile object instead of a string
 
-    """The error "muxer does not support non-seekable output" 
-    happens because MP4 format requires seeking, but FFmpeg does not support writing MP4 directly to a non-seekable stream (like STDOUT)."""
-
     def get_full_video_path(self, obj):
         """
         Constructs the absolute file path dynamically.
         - Uses the actual storage directory (`/home/admin/test-data/`)
         """
+        from ..utils import STORAGE_DIR
         if not obj.file:
             return {"error": "No video file associated with this entry"}
 
@@ -129,16 +127,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 "error": "Video file path is empty or invalid"
             }  #  none might cause, 500 error, Handle edge case where the file name is empty
 
-        print("-----------------------------------------")
-        # pseudo_dir = settings.PSEUDO_DIR
-        # print(f"Using pseudo directory: {pseudo_dir}")
-
-        #   full path using the actual storage directory~
-        # actual_storage_dir = Path("~/test-data")  # need to change
-        actual_storage_dir = Path("/home/admin/test-data")  # need to change
-        # actual_storage_dir = pseudo_dir
-        full_path = actual_storage_dir / video_relative_path
-        # full_path = Path("/home/admin/test-data/video/lux-gastro-video.mp4")
+        full_path = STORAGE_DIR / video_relative_path
 
         return (
             str(full_path)
@@ -354,14 +343,16 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
     def save(self):
         """
-        Updates, inserts, and deletes label segments to ensure database consistency.
-
-        Steps:
-        1. Fetch all existing segments for the given `video_id` and `label_id`.
-        2. Compare existing segments with the new ones from the frontend.
-        3. Update segments where `start_frame_number` exists but `end_frame_number` has changed.
-        4. Insert new segments that are not already in the database.
-        5. Delete segments that exist in the database but are missing from the frontend data.
+        Synchronizes label segments with updated frontend data.
+        
+        This method compares the incoming segments with the current database entries for a given video and label.
+        It updates segments with modified end frame numbers, inserts new segments, and deletes existing segments
+        that are not present in the provided data. All operations are performed within a transaction to ensure
+        database consistency. A validation error is raised if no prediction metadata is found for the video.
+        
+        Returns:
+            dict: A dictionary containing serialized updated segments, serialized new segments, and the count
+                  of deleted segments.
         """
 
         video_id = self.validated_data["video_id"]

@@ -74,3 +74,10 @@
     name_de: "Befundintervention"
     name_en: "Finding Intervention"
     description: "Finding intervention requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "finding_interventions"
+    name_de: "Befundinterventionen (multiple)"
+    name_en: "Finding Interventions (multiple)"
+    description: "Finding interventions (multiple) requirements"

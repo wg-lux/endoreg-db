@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from icecream import ic
 
 DEBUG = True
 SECRET_KEY = "fake-key"
@@ -13,7 +14,8 @@ INSTALLED_APPS = [
 ]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-BASE_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = Path(__file__).parent.parent
+ic(f"endoreg_db.dev.dev_settings.py - BASE_DIR: {BASE_DIR}")
 
 DATABASES = {
     "default": {

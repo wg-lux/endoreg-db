@@ -5,6 +5,7 @@ from datetime import datetime, date
 import os
 
 SALT = os.getenv("DJANGO_SALT", "default_salt")
+DJANGO_NAME_SALT = os.environ.get("DJANGO_SALT", "default_salt")
 
 
 def get_video_hash(video_path):

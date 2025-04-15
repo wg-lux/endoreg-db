@@ -13,11 +13,9 @@ from django.core.files.storage import FileSystemStorage
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 from ..base_classes.utils import (
     anonymize_frame,
-    RAW_VIDEO_DIR_NAME,
-    VIDEO_DIR,
-    STORAGE_LOCATION,
 )
 from ..base_classes.abstract_video import AbstractVideoFile
+from ....utils import data_paths
 
 if TYPE_CHECKING:
     # import Queryset
@@ -33,9 +31,9 @@ class RawVideoFile(AbstractVideoFile):
     """ """
 
     file = models.FileField(
-        upload_to=RAW_VIDEO_DIR_NAME,
+        upload_to=data_paths["raw_video"],
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-        storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
+        storage=FileSystemStorage(location=data_paths["storage"].as_posix()),
     )
 
     patient = models.ForeignKey(
@@ -81,7 +79,7 @@ class RawVideoFile(AbstractVideoFile):
     state_make_anonymized_video_completed = models.BooleanField(default=False)
 
     def get_anonymized_video_path(self):
-        video_dir = VIDEO_DIR
+        video_dir = data_paths["raw_video"]
         video_suffix = Path(self.file.path).suffix
         video_name = f"{self.uuid}{video_suffix}"
         anonymized_video_name = f"TMP_anonymized_{video_name}"
@@ -265,7 +263,7 @@ class RawVideoFile(AbstractVideoFile):
                     video_path,
                     self.center,
                     self.processor,
-                    video_dir=VIDEO_DIR,
+                    video_dir=data_paths["raw_video"],
                     frame_paths=frame_paths,
                 )
 

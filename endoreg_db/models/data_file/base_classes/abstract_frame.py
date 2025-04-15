@@ -5,11 +5,9 @@ from endoreg_db.models.annotation.image_classification import (
 from endoreg_db.models.label.label import Label
 
 from django.db import models
-from .utils import FRAME_DIR_NAME
 
 if TYPE_CHECKING:
     from endoreg_db.models import Video, RawVideoFile
-
 
 class AbstractFrame(models.Model):
     frame_number = models.IntegerField()

@@ -12,45 +12,6 @@
     diseases:
       - "coronary_artery_disease"
 
-- model: endoreg_db.requirement
-  fields:
-    name: "disease_is_coronary_artery_disease_1_vessel"
-    name_de: "Koronare Gefäßerkrankung (1-Gefäß-Erkrankung)"
-    name_en: "Coronary artery disease (1-vessel disease)"
-    description: "Coronary artery disease (1-vessel disease)"
-    requirement_types:
-      - "disease"
-    operators:
-      - models_match_all
-    diseases:
-      - "coronary_artery_disease_1_vessel"
-
-- model: endoreg_db.requirement
-  fields:
-    name: "disease_is_coronary_artery_disease_2_vessel"
-    name_de: "Koronare Gefäßerkrankung (2-Gefäß-Erkrankung)"
-    name_en: "Coronary artery disease (2-vessel disease)"
-    description: "Coronary artery disease (2-vessel disease)"
-    requirement_types:
-      - "disease"
-    operators:
-      - models_match_all
-    diseases:
-      - "coronary_artery_disease_2_vessel"
-
-- model: endoreg_db.requirement
-  fields:
-    name: "disease_is_coronary_artery_disease_3_vessel"
-    name_de: "Koronare Gefäßerkrankung (3-Gefäß-Erkrankung)"
-    name_en: "Coronary artery disease (3-vessel disease)"
-    description: "Coronary artery disease (3-vessel disease)"
-    requirement_types:
-      - "disease"
-    operators:
-      - models_match_all
-    diseases:
-      - "coronary_artery_disease_3_vessel"
-
 # Hypertension
 - model: endoreg_db.requirement
   fields:
