@@ -33,6 +33,9 @@ FRAME_SELECTION_RULES = [
 
 REQUIRED_FRAME_KEYS = ["low_quality", "outside", "snare"]  # need tp update when adding rules
 
+POLYP_CONFIDENCE_THRESHOLDS = [0.9, 0.8, 0.7] # basically this is the prediction value/score,  we are using for frame selection
+
+
 class BaseClassificationSerializer(serializers.Serializer):
     LABEL_NAME = "polyp"  # default (can be overridden)
     INSTRUMENT_LABEL_NAME = "instrument"
@@ -119,8 +122,90 @@ class BaseClassificationSerializer(serializers.Serializer):
             reverse=True
         )
         return valid_segments[:3]
-
+    
+    # # If any error occurs in this function, use the commented one below(fallback:select_frames_for_sequence).
     def select_frames_for_sequence(self, sequence):
+        # Extract the polyp segment from the current sequence
+        polyp_sequence = sequence['polyp']
+        video = polyp_sequence.video
+
+        # Get the start and end frame numbers of the segment/sequence
+        start_frame = polyp_sequence.start_frame_number
+        end_frame = polyp_sequence.end_frame_number
+
+        # here we aregetting the predictions and frame directory from the video object
+        predictions = getattr(video, "readable_predictions", [])
+        frame_dir = getattr(video, "frame_dir", "") #need to check
+
+        # If either predictions or frame_dir is missing, return an empty list
+        if not predictions or not frame_dir:
+            return []
+
+        # Build a list of prediction dictionaries for each frame in the segment
+        # Each entry includes frame number, selected prediction keys, path, and full prediction
+        segment_predictions = [
+            {
+                "frame_number": idx,
+                **{key: pred.get(key, 1.0) for key in REQUIRED_FRAME_KEYS + ["polyp"]},
+                "frame_path": f"{frame_dir}/frame_{str(idx).zfill(7)}.jpg",
+                "prediction": pred
+            }
+            for idx, pred in enumerate(predictions[start_frame:end_frame + 1], start=start_frame)
+            if isinstance(pred, dict)
+        ]
+
+        # Sort the frames by lowest 'low_quality' value first,# for higher quality images// changeable, 
+        segment_predictions.sort(key=lambda x: x["low_quality"])
+
+        # Try frame selection with decreasing polyp confidence thresholds
+        #for polyp_threshold in [0.9, 0.8, 0.7]:
+        for polyp_threshold in POLYP_CONFIDENCE_THRESHOLDS:
+
+            # Filter frames that meet the current polyp threshold
+            candidate_frames = [
+                frame for frame in segment_predictions
+                if frame["prediction"].get("polyp", 0.0) > polyp_threshold
+            ]
+
+            # If no candidates at this threshold, try the next lower threshold
+            if not candidate_frames:
+                continue
+
+            # Initialize list of selected frames and track last selected frame number
+            selected_frames = []
+            last_selected_frame = -float('inf')
+
+            # Iterate through the candidate frames
+            for frame in candidate_frames:
+                # Stop if we've already selected enough frames
+                if len(selected_frames) >= FRAMES_PER_SEQUENCE:
+                    break
+
+                # Apply the standard filtering rules and spacing condition
+                if (
+                    frame["prediction"].get("low_quality", 1.0) < 0.1 and
+                    frame["prediction"].get("outside", 1.0) < 0.1 and
+                    frame["prediction"].get("snare", 1.0) < 0.1 and
+                    frame["frame_number"] - last_selected_frame >= MIN_FRAME_GAP_IN_SEQUENCE
+                ):
+                    # Frame passes all filters and spacing rule, so select it
+                    selected_frames.append({
+                        "frame_number": frame["frame_number"],
+                        "low_quality": frame["low_quality"],
+                        "polyp_score": frame["prediction"]["polyp"],
+                        "frame_path": frame["frame_path"]
+                    })
+                    last_selected_frame = frame["frame_number"]
+
+            # If we found enough valid frames at this threshold, return them
+            if len(selected_frames) >= FRAMES_PER_SEQUENCE:
+                return selected_frames
+
+        # If no threshold yielded enough frames, return what was found in the last attempt (could be empty)
+        return selected_frames if selected_frames else []
+
+    # fallback:select_frames_for_sequence
+    '''def select_frames_for_sequence(self, sequence):
         print("----------------------in selected_frames fro sequnces funtion ----------------------------------------")
         polyp_sequence = sequence['polyp']
         video = polyp_sequence.video
@@ -162,7 +247,7 @@ class BaseClassificationSerializer(serializers.Serializer):
                     })
                     last_selected_frame = frame["frame_number"]
 
-        return selected_frames
+        return selected_frames'''
 class ForNiceClassificationSerializer(BaseClassificationSerializer):
     
     def get_matching_sequences(self, video_id):
