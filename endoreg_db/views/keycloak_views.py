@@ -17,9 +17,9 @@ import json
     /login/callback/ exchanges code for token, stores it in session
     User is redirected to /api/videos/ again
     Middleware now sees token, verifies it, injects user
-    DRF view (VideoView) is allowed to execute and returns data
+    DRF view (KeycloakVideoView) is allowed to execute and returns data
 """
-class VideoView(APIView):
+class KeycloakVideoView(APIView):
     permission_classes = [IsAuthenticated] #This uses DRF permissions to ensure request.user.is_authenticated == True.
     print("1")
 
