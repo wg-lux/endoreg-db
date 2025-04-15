@@ -133,8 +133,7 @@ class BaseClassificationSerializer(serializers.Serializer):
         start_frame = polyp_sequence.start_frame_number
         end_frame = polyp_sequence.end_frame_number
 
-        # here we aregetting the predictions and frame directory from the video object
-        predictions = getattr(video, "readable_predictions", [])
+        # here we are getting the predictions and frame directory from the video object
         frame_dir = getattr(video, "frame_dir", "") #need to check
 
         # If either predictions or frame_dir is missing, return an empty list
