@@ -8,6 +8,7 @@ import shutil
 
 from django.db import models
 from django.core.validators import FileExtensionValidator
+from django.conf import settings  # Import settings
 from icecream import ic
 from ...utils import data_paths
 
@@ -49,8 +50,6 @@ class ModelMeta(models.Model):
     weights = models.FileField(
         upload_to=data_paths["weights"],
         validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
-        #FIXME
-        # storage=FileSystemStorage(location=STORAGE_LOCATION.resolve().as_posix()),
         null=True,
         blank=True,
     )
@@ -90,24 +89,26 @@ class ModelMeta(models.Model):
         from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
 
         ic("Start")
-        model_meta_version = kwargs.get("model_meta_version", None)
+        cmd_model_meta_version = kwargs.get("model_meta_version", None)
 
         ai_model = AiModel.objects.get(name=model_name)
 
-        # check If ModelMeta with same name and model already exists
-        if not model_meta_version:
+        # Determine version
+        if not cmd_model_meta_version:
             if cls.objects.filter(name=meta_name, model=ai_model).exists():
-                # get highest version number
-                highest_version = (
-                    cls.objects.filter(name=meta_name, model=ai_model)
-                    .latest("version")
-                    .version
-                )
-                version = int(highest_version) + 1
+                try:
+                    highest_version = (
+                        cls.objects.filter(name=meta_name, model=ai_model)
+                        .latest("version")
+                        .version
+                    )
+                    version = int(highest_version) + 1
+                except cls.DoesNotExist:
+                    version = 1
             else:
                 version = 1
         else:
-            version = model_meta_version
+            version = cmd_model_meta_version
 
         meta_exists = cls.objects.filter(
             name=meta_name, model=ai_model, version=version
@@ -116,27 +117,50 @@ class ModelMeta(models.Model):
             raise ValueError(
                 f"ModelMeta with name {meta_name} and version {version} already exists"
             )
+        elif meta_exists and bump_version:
+            latest_meta = cls.objects.filter(name=meta_name, model=ai_model).latest("version")
+            version = int(latest_meta.version) + 1
+            ic(f"Bumping version for {meta_name} to {version}")
 
         assert labelset_name is not None, "Labelset name must be provided"
         labelset = LabelSet.objects.get(name=labelset_name)
         assert labelset is not None, "Labelset not found"
 
-        weights_path = Path(weights_file)
-        # If not under our WEIGHTS_DIR, copy it there
-        if not str(weights_path).startswith(str(data_paths["weights"])):
-            target_path = data_paths["weights"] / weights_path.name
-            if not target_path.exists():
-                shutil.copy(weights_path, target_path)
-            weights_file = target_path
+        weights_src_path = Path(weights_file).expanduser().resolve()
+        weights_dir_abs = Path(data_paths["weights"]).resolve()
+        weights_dir_abs.mkdir(parents=True, exist_ok=True)
 
-        return cls.objects.create(
+        target_path_abs = weights_dir_abs / weights_src_path.name
+
+        if weights_src_path != target_path_abs and not target_path_abs.exists():
+            ic(f"Copying weights from {weights_src_path} to {target_path_abs}")
+            shutil.copy(weights_src_path, target_path_abs)
+        elif not target_path_abs.exists():
+            raise FileNotFoundError(f"Weights file not found at source {weights_src_path} or target {target_path_abs}")
+        else:
+            ic(f"Weights file already exists at target {target_path_abs}")
+
+        try:
+            media_root_path = Path(settings.MEDIA_ROOT).resolve()
+            weights_path_relative = target_path_abs.relative_to(media_root_path)
+            ic(f"Calculated relative path for DB: {weights_path_relative}")
+        except ValueError as e:
+            ic(f"Error calculating relative path: {target_path_abs} is not inside MEDIA_ROOT {media_root_path}. Storing absolute path. Error: {e}")
+            weights_path_relative = target_path_abs
+
+        kwargs.pop('model_meta_version', None)
+        kwargs.pop('bump_version', None)
+
+        model_meta = cls.objects.create(
             name=meta_name,
             model=ai_model,
-            version=version,
+            version=str(version),
             labelset=labelset,
-            weights=str(weights_file),
+            weights=str(weights_path_relative),
             **kwargs,
         )
+        ic(f"Created ModelMeta: {model_meta}")
+        return model_meta
 
     @classmethod
     def get_latest_version(cls, name) -> int:

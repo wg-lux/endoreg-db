@@ -15,5 +15,10 @@
 
 - model: endoreg_db.report_reader_flag
   fields:
+    name: "ukw-endoscopy-histology-cut-off-below-line-flag-01"
+    value: "$$-3"
+
+- model: endoreg_db.report_reader_flag
+  fields:
     name: "ukw-histology-generic-endoscope-info-line"
     value: ""

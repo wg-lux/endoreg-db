@@ -71,4 +71,6 @@ def guess_name_gender(name: str) -> str:
     detector = gender_detector.Detector(case_sensitive=False)
     gender_name = detector.get_gender(name)
     gender = Gender.objects.get(name=gender_name)
+    if not gender:
+        gender = Gender.objects.get(name="unknown")
     return gender

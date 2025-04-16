@@ -682,7 +682,7 @@ class AbstractVideoFile(models.Model):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("filtered_sequences").with_suffix(suffix)
 
-    def extract_text_information(self, frame_fraction: float = 0.001):
+    def extract_text_information(self, frame_fraction: float = 0.001, cap:int = 15):
         """
         Extract text information from the video file.
         Makes sure that frames are extracted and then processes the frames.
@@ -697,6 +697,15 @@ class AbstractVideoFile(models.Model):
         frame_paths = self.get_frame_paths()
         n_frames = len(frame_paths)
         n_frames_to_process = max(1, int(frame_fraction * n_frames))
+
+        if n_frames_to_process > cap:
+            n_frames_to_process = cap
+        if n_frames_to_process > n_frames:
+            n_frames_to_process = n_frames
+        if n_frames_to_process == 0:
+            raise ValueError(
+                f"n_frames_to_process is 0 for {self.file.name} with {n_frames} frames"
+            )
 
         # Select evenly spaced frames
         frame_paths = frame_paths[:: n_frames // n_frames_to_process]
