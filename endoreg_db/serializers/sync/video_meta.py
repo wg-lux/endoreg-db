@@ -2,6 +2,7 @@ from rest_framework import serializers
 from endoreg_db.models import VideoMeta, EndoscopyProcessor
 
 from .endoscopy_processor import EndoscopyProcessorSerializer
+from .endoscope import EndoscopeSerializer
 
 class VideoMetaSerializer(serializers.ModelSerializer):
     """Serializer for VideoMeta representation."""
@@ -28,4 +29,5 @@ class VideoMetaSerializer(serializers.ModelSerializer):
         model = VideoMeta
         fields = [
             "endoscope",
+            "processor",
         ]

@@ -49,6 +49,7 @@ class VideoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Video
         fields = [
+            "uuid",
             "patient",
             "sensitive_meta",
             "file",
