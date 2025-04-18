@@ -631,11 +631,16 @@ class AbstractVideoFile(models.Model):
         frame_dir = Path(self.frame_dir)
         if frame_dir.exists():
             shutil.rmtree(frame_dir)
-            self.state_frames_extracted = False
-            self.save()
-            return f"Frames deleted from {frame_dir}"
+            out = f"Frames deleted from {frame_dir}"
+            
         else:
-            return f"No frames to delete for {self.file.name}"
+            out = f"No frames to delete for {self.file.name}"
+        
+        ic(out)
+            
+        self.state_frames_extracted = False
+        self.save()
+        return out
 
     def delete_frames_anonymized(self):
         """
