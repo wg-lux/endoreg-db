@@ -1,9 +1,9 @@
 from rest_framework import serializers
 from endoreg_db.models import LabelVideoSegment
 # from .video import VideoSerializer
-from .patient_finding import PatientFindingSerializer
+# from .patient_finding import PatientFindingSerializer
 from .label import LabelSerializer
-from .prediction_meta import VideoPredictionMetaSerializer
+# from .prediction_meta import VideoPredictionMetaSerializer
 from .source import InformationSourceSerializer
 
 class LabelVideoSegmentSerializer(serializers.ModelSerializer):
