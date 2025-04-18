@@ -1,5 +1,9 @@
 from django.db import models
 from typing import List
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import Finding
 
 
 class ExaminationManager(models.Manager):
@@ -38,7 +42,7 @@ class Examination(models.Model):
         Returns:
             str: The name of the examination.
         """
-        return self.name
+        return str(self.name)
 
     def natural_key(self) -> tuple:
         """

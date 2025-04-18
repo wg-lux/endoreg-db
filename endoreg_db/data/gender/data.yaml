@@ -33,3 +33,10 @@
     name_de: "andere"
     name_en: "other"
     abbreviation: "x"
+- model: endoreg_db.gender
+  fields:
+    name: "unknown"
+    name_de: "unbekannt"
+    name_en: "unknown"
+    abbreviation: "?"
+

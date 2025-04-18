@@ -180,24 +180,61 @@ class LabelVideoSegment(AbstractLabelVideoSegment):
 
     def generate_annotations(self):
         """
-        Generate annotations for the segment.
+        Generate annotations for the segment efficiently using bulk_create.
         """
-        from endoreg_db.models import InformationSource
+        from endoreg_db.models import InformationSource, Frame, ImageClassificationAnnotation
 
-        frames = self.get_frames()
+        # 1. Get related objects
+        information_source, _ = InformationSource.objects.get_or_create(name="prediction")
         model_meta = self.get_model_meta()
-        information_source, _created = InformationSource.objects.get_or_create(
-            name="prediction"
+        label = self.label
+
+        # Check if essential objects exist
+        if not model_meta or not label:
+            print(f"Warning: Missing model_meta or label for segment {self.id}. Skipping annotation generation.")
+            return
+
+        # 2. Get the queryset for frames in the segment
+        frames_queryset = self.video.frames.filter(
+            frame_number__gte=self.start_frame_number,
+            frame_number__lt=self.end_frame_number # Use lt for end frame as range is [start, end)
+        ).only('id', 'frame_number') # Optimize by fetching only needed fields
+
+        # 3. Find existing annotation frame IDs for this segment, label, model, and source
+        existing_annotation_frame_ids = set(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                frame__frame_number__gte=self.start_frame_number,
+                frame__frame_number__lt=self.end_frame_number,
+                label=label,
+                model_meta=model_meta,
+                information_source=information_source,
+            ).values_list('frame_id', flat=True)
         )
 
-        for frame in tqdm(frames):
-            ImageClassificationAnnotation.objects.get_or_create(
-                frame=frame,
-                label=self.label,
-                model_meta=model_meta,
-                value=1,
-                information_source=information_source,
-            )
+        # 4. Prepare list of annotations to create
+        annotations_to_create = []
+        # Iterate through the frame *queryset* efficiently
+        for frame in tqdm(frames_queryset, desc=f"Preparing annotations for segment {self.id} ({label.name})"):
+            if frame.id not in existing_annotation_frame_ids:
+                annotations_to_create.append(
+                    ImageClassificationAnnotation(
+                        frame=frame,
+                        label=label,
+                        model_meta=model_meta,
+                        value=1, # Assuming default value is 1
+                        information_source=information_source,
+                    )
+                )
+
+        # 5. Bulk create the missing annotations
+        if annotations_to_create:
+            print(f"Bulk creating {len(annotations_to_create)} annotations for segment {self.id}...")
+            # Consider adding batch_size for very large segments if memory becomes an issue
+            ImageClassificationAnnotation.objects.bulk_create(annotations_to_create, ignore_conflicts=True)
+            print("Bulk creation complete.")
+        else:
+            print(f"No new annotations needed for segment {self.id}.")
 
 
 class LabelRawVideoSegment(AbstractLabelVideoSegment):

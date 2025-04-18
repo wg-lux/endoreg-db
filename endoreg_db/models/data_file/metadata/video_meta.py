@@ -117,8 +117,12 @@ class FFMpegMeta(models.Model):
 
     # Existing __str__ method can be updated to include new fields
 
+
     @classmethod
     def create_from_file(cls, file_path: Path):
+        # make sure our script has read permissions for the file
+        assert isinstance(file_path, Path), "file_path must be a Path object"
+        assert file_path.exists(), "file_path does not exist"
         cmd = [
             "ffprobe",
             "-v",

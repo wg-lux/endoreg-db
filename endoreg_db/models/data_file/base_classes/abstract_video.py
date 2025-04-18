@@ -10,7 +10,6 @@ from icecream import ic
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-from pathlib import Path
 from ....utils.video import (
     transcode_videofile,
     transcode_videofile_if_required,
@@ -92,10 +91,19 @@ class AbstractVideoFile(models.Model):
         "ModelMeta", on_delete=models.CASCADE, blank=True, null=True
     )
 
+    width = models.IntegerField(blank=True, null=True)
+    height = models.IntegerField(blank=True, null=True)
+    endoscope_image_x = models.IntegerField(blank=True, null=True)
+    endoscope_image_y = models.IntegerField(blank=True, null=True)
+    endoscope_image_width = models.IntegerField(blank=True, null=True)
+    endoscope_image_height = models.IntegerField(blank=True, null=True)
+    date = models.DateField(blank=True, null=True)
+    
+
     # Frame Extraction States
     state_frames_required = models.BooleanField(default=True)
     state_frames_extracted = models.BooleanField(default=False)
-
+    
     # Video
     ## Prediction
     state_initial_prediction_required = models.BooleanField(default=True)
@@ -113,6 +121,12 @@ class AbstractVideoFile(models.Model):
     state_frames_initialized = models.BooleanField(default=False)
 
     is_raw = models.BooleanField(default=False)
+
+    # Validation
+    state_anonymous_validated = models.BooleanField(default=False)
+
+    suffix = models.CharField(max_length=255, blank=True, null=True)
+    
 
     if TYPE_CHECKING:
         self: Union["RawVideoFile", "Video"]
@@ -682,7 +696,7 @@ class AbstractVideoFile(models.Model):
         pred_dir = self.get_prediction_dir()
         return pred_dir.joinpath("filtered_sequences").with_suffix(suffix)
 
-    def extract_text_information(self, frame_fraction: float = 0.001):
+    def extract_text_information(self, frame_fraction: float = 0.001, cap:int = 15):
         """
         Extract text information from the video file.
         Makes sure that frames are extracted and then processes the frames.
@@ -697,6 +711,15 @@ class AbstractVideoFile(models.Model):
         frame_paths = self.get_frame_paths()
         n_frames = len(frame_paths)
         n_frames_to_process = max(1, int(frame_fraction * n_frames))
+
+        if n_frames_to_process > cap:
+            n_frames_to_process = cap
+        if n_frames_to_process > n_frames:
+            n_frames_to_process = n_frames
+        if n_frames_to_process == 0:
+            raise ValueError(
+                f"n_frames_to_process is 0 for {self.file.name} with {n_frames} frames"
+            )
 
         # Select evenly spaced frames
         frame_paths = frame_paths[:: n_frames // n_frames_to_process]

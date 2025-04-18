@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Dict
 import dotenv
 
 """
@@ -19,11 +20,13 @@ BASE_DIR = os.getcwd()
 PREFIX_RAW = "raw_"
 STORAGE_DIR_NAME = "data"
 IMPORT_DIR_NAME = "import"
+EXPORT_DIR_NAME = "export"
 
 VIDEO_DIR_NAME = "videos"
 FRAME_DIR_NAME = "frames"
 REPORT_DIR_NAME = "reports"
 WEIGHTS_DIR_NAME = "model_weights"
+EXAMINATION_DIR_NAME = "examinations"
 
 RAW_VIDEO_DIR_NAME = f"{PREFIX_RAW}videos"
 RAW_FRAME_DIR_NAME = f"{PREFIX_RAW}frames"
@@ -46,7 +49,9 @@ FRAME_IMPORT_DIR = IMPORT_DIR / FRAME_DIR_NAME
 REPORT_IMPORT_DIR = IMPORT_DIR / REPORT_DIR_NAME
 WEIGHTS_IMPORT_DIR = IMPORT_DIR / WEIGHTS_DIR_NAME
 
-data_paths = {
+EXPORT_DIR = STORAGE_DIR / EXPORT_DIR_NAME
+
+data_paths:Dict[str,Path] = {
     "storage": STORAGE_DIR,
     "video": VIDEO_DIR,
     "frame": FRAME_DIR,
@@ -60,6 +65,14 @@ data_paths = {
     "raw_report": RAW_REPORT_DIR,
     "weights": WEIGHTS_DIR,
     "weights_import": WEIGHTS_IMPORT_DIR,
+    "export": EXPORT_DIR,
+    "video_export": EXPORT_DIR / VIDEO_DIR_NAME,
+    "frame_export": EXPORT_DIR / FRAME_DIR_NAME,
+    "report_export": EXPORT_DIR / REPORT_DIR_NAME,
+    "weights_export": EXPORT_DIR / WEIGHTS_DIR_NAME,
+    "examination_export": EXPORT_DIR / EXAMINATION_DIR_NAME,
+    "raw_video_export": EXPORT_DIR / RAW_VIDEO_DIR_NAME,
+    "raw_frame_export": EXPORT_DIR / RAW_FRAME_DIR_NAME,
 }
 
 for key, path in data_paths.items():
