@@ -11,19 +11,20 @@ class SensitiveMetaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SensitiveMeta
-        fields = [
-            "center", # probably remove later
-            "examination_date",
-            "pseudo_patient",
-            "patient_gender",
-            "examiners",
-            "pseudo_examination",
-            "examination_hash",
-            "patient_hash",
-            "endoscope_type",
-            "endoscope_sn",
-            "state_verified",
-            "state_names_substituted",
-            "state_dob_substituted",
-            "state_examiners_substituted",
-        ]
+        fields = "__all__" 
+        # [
+        #     "center", # probably remove later
+        #     "examination_date",
+        #     "pseudo_patient",
+        #     "patient_gender",
+        #     "examiners",
+        #     "pseudo_examination",
+        #     "examination_hash",
+        #     "patient_hash",
+        #     "endoscope_type",
+        #     "endoscope_sn",
+        #     "state_verified",
+        #     "state_names_substituted",
+        #     "state_dob_substituted",
+        #     "state_examiners_substituted",
+        # ]
