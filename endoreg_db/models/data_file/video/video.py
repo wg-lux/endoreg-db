@@ -43,19 +43,6 @@ class Video(AbstractVideoFile):
     )
 
     # Deprecate and move to video meta?
-    date = models.DateField(blank=True, null=True)
-    suffix = models.CharField(max_length=255, blank=True, null=True)
-    fps = models.FloatField(blank=True, null=True)
-    duration = models.FloatField(blank=True, null=True)
-    width = models.IntegerField(blank=True, null=True)
-    height = models.IntegerField(blank=True, null=True)
-    endoscope_image_x = models.IntegerField(blank=True, null=True)
-    endoscope_image_y = models.IntegerField(blank=True, null=True)
-    endoscope_image_width = models.IntegerField(blank=True, null=True)
-    endoscope_image_height = models.IntegerField(blank=True, null=True)
-
-    state_frames_extracted = models.BooleanField(default=False)
-
     meta = models.JSONField(blank=True, null=True)
 
     sensitive_meta = models.ForeignKey(
@@ -92,7 +79,11 @@ class Video(AbstractVideoFile):
         Generate annotations for all label video segments.
         """
         for lvs in self.label_video_segments.all():
-            lvs.generate_annotations()
+            #TODO we should try to significantly increase the speed of this
+            # get len of lvs in seconds
+            lvs_duration = lvs.get_segment_len_in_s()
+            if lvs_duration >= 3:
+                lvs.generate_annotations()
 
     def sync_from_raw_video(self):
         """
@@ -132,52 +123,6 @@ class Video(AbstractVideoFile):
         self.state_dataset_complete = raw_video.state_dataset_complete
 
         self.save()
-
-    ## Deprecated
-    # def get_roi_endoscope_image(self):
-    #     return {
-    #         "x": self.endoscope_image_content_x,
-    #         "y": self.endoscope_image_content_y,
-    #         "width": self.endoscope_image_content_width,
-    #         "height": self.endoscope_image_content_height,
-    #     }
-
-    # def initialize_metadata_in_db(self, video_meta=None):
-    #     if not video_meta:
-    #         video_meta = self.meta
-    #     self.set_examination_date_from_video_meta(video_meta)
-    #     self.patient, created = self.get_or_create_patient(video_meta)
-    #     self.save()
-
-    # def get_or_create_patient(self, video_meta=None):
-    #     from ...persons import Patient
-
-    #     if not video_meta:
-    #         video_meta = self.meta
-
-    #     patient_first_name = video_meta["patient_first_name"]
-    #     patient_last_name = video_meta["patient_last_name"]
-    #     patient_dob = video_meta["patient_dob"]
-
-    #     # assert that we got all the necessary information
-    #     assert patient_first_name and patient_last_name and patient_dob, (
-    #         "Missing patient information"
-    #     )
-
-    #     patient, created = Patient.objects.get_or_create(
-    #         first_name=patient_first_name, last_name=patient_last_name, dob=patient_dob
-    #     )
-
-    #     return patient, created
-
-    # DEPRECATED
-    # def set_examination_date_from_video_meta(self, video_meta=None):
-    #     if not video_meta:
-    #         video_meta = self.meta
-    #     date_str = video_meta["examination_date"]  # e.g. 2020-01-01
-    #     if date_str:
-    #         self.date = date.fromisoformat(date_str)
-    #         self.save()
 
     def initialize_video_specs(self):
         """

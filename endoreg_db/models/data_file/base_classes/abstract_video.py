@@ -10,7 +10,6 @@ from icecream import ic
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-from pathlib import Path
 from ....utils.video import (
     transcode_videofile,
     transcode_videofile_if_required,
@@ -92,10 +91,19 @@ class AbstractVideoFile(models.Model):
         "ModelMeta", on_delete=models.CASCADE, blank=True, null=True
     )
 
+    width = models.IntegerField(blank=True, null=True)
+    height = models.IntegerField(blank=True, null=True)
+    endoscope_image_x = models.IntegerField(blank=True, null=True)
+    endoscope_image_y = models.IntegerField(blank=True, null=True)
+    endoscope_image_width = models.IntegerField(blank=True, null=True)
+    endoscope_image_height = models.IntegerField(blank=True, null=True)
+    date = models.DateField(blank=True, null=True)
+    
+
     # Frame Extraction States
     state_frames_required = models.BooleanField(default=True)
     state_frames_extracted = models.BooleanField(default=False)
-
+    
     # Video
     ## Prediction
     state_initial_prediction_required = models.BooleanField(default=True)
@@ -113,6 +121,12 @@ class AbstractVideoFile(models.Model):
     state_frames_initialized = models.BooleanField(default=False)
 
     is_raw = models.BooleanField(default=False)
+
+    # Validation
+    state_anonymous_validated = models.BooleanField(default=False)
+
+    suffix = models.CharField(max_length=255, blank=True, null=True)
+    
 
     if TYPE_CHECKING:
         self: Union["RawVideoFile", "Video"]

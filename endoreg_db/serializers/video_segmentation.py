@@ -1,11 +1,14 @@
 from pathlib import Path
 from rest_framework import serializers
-from django.http import FileResponse, Http404, StreamingHttpResponse
 from ..models import RawVideoFile, Label, LabelRawVideoSegment, RawVideoPredictionMeta
-import subprocess, cv2
-from django.conf import settings
+import cv2
+from django.db import transaction
 
+# from django.conf import settings
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from endoreg_db.models import Video
 class VideoFileSerializer(serializers.ModelSerializer):
     """
     Serializer that dynamically handles video retrieval and streaming.
@@ -49,7 +52,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     # @staticmethod #using @staticmethod makes it reusable without needing to create a serializer instance.
     #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
-    def get_video_selection_field(self, obj):
+    def get_video_selection_field(self, obj:"Video"):
         """
         Returns the field used for video selection in the frontend dropdown.
         Currently, it shows the video ID, but this can be changed easily later.
@@ -73,7 +76,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         return {"error": "Video URL not avalaible"}
 
-    def get_duration(self, obj):
+    def get_duration(self, obj:"Video"):
         """
         Returns the total duration of the video in seconds.
         If duration is not stored in the database, it extracts it dynamically using OpenCV.
@@ -98,7 +101,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             round(total_frames / fps, 2) if fps > 0 else None
         )  # Return duration in seconds
 
-    def get_file(self, obj):
+    def get_file(self, obj:"Video"):
         """
         Ensures the file field returns only the relative path, adn also validates it
         """
@@ -112,12 +115,13 @@ class VideoFileSerializer(serializers.ModelSerializer):
             obj.file.name
         ).strip()  #  Only return the file path, no URL,#obj.file returning a FieldFile object instead of a string
 
-    def get_full_video_path(self, obj):
+    def get_full_video_path(self, obj:"Video"):
         """
         Constructs the absolute file path dynamically.
         - Uses the actual storage directory (`/home/admin/test-data/`)
         """
-        from ..utils import STORAGE_DIR
+        from ..utils import data_paths
+        STORAGE_DIR = data_paths["storage"]  #  Get the storage directory from the utility
         if not obj.file:
             return {"error": "No video file associated with this entry"}
 
@@ -135,7 +139,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             else {"error": f"file not found at: {full_path}"}
         )
 
-    def get_sequences(self, obj):
+    def get_sequences(self, obj:"Video"):
         """
         Extracts the sequences field from the RawVideoFile model.
         Example Output:
@@ -149,7 +153,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "error": "no sequence found, check database first"
         }  #  Get from sequences, return {} if missing
 
-    def get_label_names(self, obj):
+    def get_label_names(self, obj:"Video"):
         """
         Extracts only label names from the sequences data.
         Example Output:
@@ -158,7 +162,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         sequences = self.get_sequences(obj)
         return list(sequences.keys()) if sequences else []
 
-    def get_label_time_segments(self, obj):
+    def get_label_time_segments(self, obj:"Video"):
         """
         Converts frame sequences of a selected label into time segments in seconds.
         Also retrieves frame-wise predictions for the given label.
@@ -255,17 +259,7 @@ class VideoListSerializer(serializers.ModelSerializer):
         fields = ["id", "original_file_name"]  # Only fetch required fields
 
 
-from pathlib import Path
-from rest_framework import serializers
-from django.http import FileResponse, Http404, StreamingHttpResponse
-from ..models import (
-    RawVideoFile,
-    Label,
-    LabelRawVideoSegment,
-)  # Importing necessary models
-import subprocess
-from django.conf import settings
-from django.db.models import Q  # Import Q for better querying
+
 
 
 class LabelSerializer(serializers.ModelSerializer):
@@ -295,9 +289,7 @@ class LabelSegmentSerializer(serializers.ModelSerializer):
         ]
 
 
-from django.db import transaction
 
-from django.db import transaction
 
 
 class LabelSegmentUpdateSerializer(serializers.Serializer):
@@ -485,90 +477,3 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             "new_segments": LabelSegmentSerializer(new_entries, many=True).data,
             "deleted_segments": deleted_count,
         }
-
-    # Use StreamingHttpResponse to stream FFmpeg output to browser
-    # return StreamingHttpResponse(subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE).stdout, content_type="video/mp4")
-
-    # Ensure the path exists before returning
-    # return str(full_path) if full_path.exists() else None
-
-
-'''    def get_classification_data(self, obj):
-        """
-        Returns binary classification data in a **scalable** way.
-        Currently hardcoded for testing, but can later integrate a model.
-        """
-        classifications = [
-            {
-                "label": "OUTSIDE",
-                "start_time": 0.1,
-                "end_time": 19,
-                "confidence": 0.85,  # Hardcoded but has to - dynamically computed
-            },
-            
-            {
-                "label": "Needle",
-                "start_time": 36,
-                "end_time": 141,
-                "confidence": 0.95,  # Hardcoded but has to - dynamically computed
-            },
-            {
-                "label": "Kolonpolyp",
-                "start_time": 91,
-                "end_time": 126,
-                "confidence": 0.89,  # Hardcoded but has to - dynamically computed
-            }
-        ]
-
-        return classifications'''
-
-
-"""
-await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
-const videoId = 1;  
-axios.get(`http://localhost:8000/api/video/${videoId}/`, {
-    headers: {
-        'Accept': 'application/json' }
-})
-.then(response => {
-    console.log("Video Metadata:", response.data);
-
-    const videoUrl = response.data.video_url;
-
-    const videoElement = document.createElement("video");
-    videoElement.src = videoUrl;
-    videoElement.controls = true;
-    videoElement.width = 600;  
-    document.body.appendChild(videoElement);
-})
-.catch(error => {
-    console.error("Error Fetching Video:", error.response ? error.response.data : error);
-});
-
-await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
-
-const videoIdUpdate = 1;  // Change to actual video ID
-const labelIdUpdate = 15; // Change to actual label ID
-
-const updatedSegments = {
-    video_id: videoIdUpdate,
-    label_id: labelIdUpdate,
-    segments: [
-        { start_frame_number: 1, end_frame_number: 15 }  // Updated end_frame (was 10)
-       // New segment
-    ]
-};
-
-axios.put(`http://localhost:8000/api/video/${videoIdUpdate}/label/${labelIdUpdate}/update_segments/`, updatedSegments, {
-    headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-    }
-})
-.then(response => {
-    console.log(" Segments Updated Successfully:", response.data);
-})
-.catch(error => {
-    console.error(" Error Updating Segments:", error.response ? error.response.data : error);
-});
-""" ""
