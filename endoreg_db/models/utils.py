@@ -26,7 +26,8 @@ if TYPE_CHECKING:
 
 STORAGE_DIR = data_paths["storage"]
 ANONYM_VIDEO_DIR = data_paths["video_export"]
-
+WEIGHTS_DIR = data_paths["weights"]
+STORAGE_DIR = data_paths["storage"]
 def anonymize_frame(
     raw_frame_path: Path, target_frame_path: Path, endo_roi, all_black: bool = False
 ):
@@ -131,8 +132,10 @@ def _censor_outside_frames(
         # use cv2 to replace all outside frames with completely black frames
 
         for frame_path in tqdm(iterable=outside_frame_paths):
-            frame = cv2.imread(filename=frame_path.as_posix())
-            frame.fill(value=0)
+            frame = cv2.imread(frame_path.as_posix())
+            if frame is None:
+                continue  # or raise, depending on policy
+            frame.fill(0)
             cv2.imwrite(filename=frame_path.as_posix(), img=frame)
 
     return True

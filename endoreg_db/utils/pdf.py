@@ -1,4 +1,4 @@
-from ..raw_pdf import RawPdfFile
+from ..models.report.raw_pdf import RawPdfFile
 from logging import getLogger
 #
 # # setup logging to pdf_import.log

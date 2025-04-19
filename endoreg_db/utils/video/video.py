@@ -1,4 +1,4 @@
-from ..raw_video import RawVideoFile
+from ...models.video.raw_video import RawVideoFile
 import json 
 
 # # Starting point

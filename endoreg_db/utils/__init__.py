@@ -19,6 +19,13 @@ from .names import (
     guess_name_gender,
 )
 
+from .file_operations import (
+    get_uuid_filename,
+    rename_file_uuid,
+    copy_with_progress
+
+)
+
 from .paths import data_paths
 
 from .env import (
@@ -28,6 +35,11 @@ from .env import (
 )
 
 __all__ = [
+
+    "get_uuid_filename",
+    "rename_file_uuid",
+    "copy_with_progress",
+
     "load_model_data_from_yaml",
     "collect_center_names",
     "validate_endo_roi",
@@ -50,22 +62,3 @@ __all__ = [
     "DJANGO_SETTINGS_MODULE"
 ]
 
-__all__ = [
-    "load_model_data_from_yaml",
-    "collect_center_names",
-    "validate_endo_roi",
-    "get_examiner_hash",
-    "DbConfig",
-    "random_day_by_month_year",
-    "random_day_by_year",
-    "ensure_aware_datetime",
-    "get_hash_string",
-    "create_mock_examiner_name",
-    "create_mock_patient_name",
-    "guess_name_gender",
-    "get_pdf_hash",
-    "get_video_hash",
-    "get_patient_examination_hash",
-    "DJANGO_NAME_SALT",
-    "data_paths"
-]

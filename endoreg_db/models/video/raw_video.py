@@ -7,8 +7,8 @@ import subprocess
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import FileSystemStorage
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
-from ..base_classes.abstract_video import AbstractVideoFile
-from ...utils import _assemble_anonymized_video, _create_anonymized_frame_files, _censor_outside_frames, ANONYM_VIDEO_DIR, STORAGE_DIR, _get_anonymized_video_path
+from .abstract_video import AbstractVideoFile
+from ..utils import _assemble_anonymized_video, _create_anonymized_frame_files, _censor_outside_frames, ANONYM_VIDEO_DIR, STORAGE_DIR, _get_anonymized_video_path
 
 
 # pylint: disable=attribute-defined-outside-init,no-member
