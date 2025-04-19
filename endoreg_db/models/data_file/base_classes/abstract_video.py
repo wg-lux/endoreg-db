@@ -545,7 +545,7 @@ class AbstractVideoFile(models.Model):
         if file_path.exists():
             file_path.unlink()
         self.delete_frames()
-        self.delete_frames_anonymized()
+        self._delete_frames_anonymized()
         self.delete()
         return f"Deleted {self.file.name}; Deleted frames; Deleted anonymized frames"
 
@@ -642,7 +642,7 @@ class AbstractVideoFile(models.Model):
         self.save()
         return out
 
-    def delete_frames_anonymized(self):
+    def _delete_frames_anonymized(self):
         """
         Delete anonymized frames extracted from the video file.
         """

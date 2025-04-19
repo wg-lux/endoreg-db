@@ -56,11 +56,11 @@ class Patient(Person):
 
         created = False
 
-        existing_pathient = cls.objects.filter(patient_hash=patient_hash).first()
-        if existing_pathient:
+        existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
+        if existing_patient:
             ic(f"Patient with hash {patient_hash} already exists")
-            ic(f"Returning existing patient: {existing_pathient}")
-            return existing_pathient, created
+            ic(f"Returning existing patient: {existing_patient}")
+            return existing_patient, created
 
         # If no patient with the given hash exists, create a new pseudo patient
         assert center, "Center must be provided to create a new pseudo patient"
