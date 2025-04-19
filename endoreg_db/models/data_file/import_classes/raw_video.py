@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 # pylint: disable=attribute-defined-outside-init,no-member
 class RawVideoFile(AbstractVideoFile):
-    """ """
+    """"""
 
     file = models.FileField(
         upload_to=data_paths["raw_video"],
