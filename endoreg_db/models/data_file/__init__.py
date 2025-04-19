@@ -1,5 +1,5 @@
 from .frame import Frame, RawFrame
-from .report_file import ReportFile
+from ..report.report_file import ReportFile
 from .video import Video, VideoImportMeta
 from .video_segment import (
     LabelVideoSegment,

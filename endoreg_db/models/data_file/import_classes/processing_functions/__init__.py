@@ -1,4 +1,4 @@
-from .video import (
+from .....utils.video.video import (
     get_videos_scheduled_for_frame_extraction, 
     extract_frames_from_video,
     extract_frames_from_videos,
@@ -28,7 +28,7 @@ from .video import (
     delete_frames,
 )
 
-from .pdf import (
+from .....utils.pdf import (
     get_pdf_files_scheduled_for_processing,
     process_pdf_file,
     process_pdf_files,

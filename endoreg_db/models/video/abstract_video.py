@@ -10,7 +10,7 @@ from icecream import ic
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.ocr import extract_text_from_rois
-from ....utils.video import (
+from ...utils.video import (
     transcode_videofile,
     transcode_videofile_if_required,
     initialize_frame_objects,
@@ -18,7 +18,7 @@ from ....utils.video import (
 )
 
 from ..metadata import VideoMeta, SensitiveMeta
-from ....utils import data_paths
+from ...utils import data_paths
 
 
 if TYPE_CHECKING:
@@ -545,7 +545,7 @@ class AbstractVideoFile(models.Model):
         if file_path.exists():
             file_path.unlink()
         self.delete_frames()
-        self.delete_frames_anonymized()
+        self._delete_frames_anonymized()
         self.delete()
         return f"Deleted {self.file.name}; Deleted frames; Deleted anonymized frames"
 
@@ -642,7 +642,7 @@ class AbstractVideoFile(models.Model):
         self.save()
         return out
 
-    def delete_frames_anonymized(self):
+    def _delete_frames_anonymized(self):
         """
         Delete anonymized frames extracted from the video file.
         """

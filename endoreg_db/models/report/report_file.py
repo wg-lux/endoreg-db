@@ -1,6 +1,6 @@
 from datetime import date, time
 from django.db import models
-from .base_classes.abstract_pdf import AbstractPdfFile
+from .abstract_pdf import AbstractPdfFile
 
 
 class ReportFile(AbstractPdfFile):

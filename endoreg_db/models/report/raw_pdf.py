@@ -16,7 +16,7 @@ from icecream import ic
 
 from endoreg_db.utils.hashs import get_pdf_hash
 from ..metadata import SensitiveMeta
-from ..base_classes.abstract_pdf import AbstractPdfFile
+from .abstract_pdf import AbstractPdfFile
 
 # setup logging to pdf_import.log
 import logging
@@ -24,7 +24,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from ....utils import data_paths
+from ...utils import data_paths
 
 logger = logging.getLogger("pdf_import")
 

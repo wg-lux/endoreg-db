@@ -1,5 +1,5 @@
-from .raw_video import RawVideoFile
-from .raw_pdf import RawPdfFile
+from ...video.raw_video import RawVideoFile
+from ...report.raw_pdf import RawPdfFile
 
 # FileImporter class
 # This class is used to import data from a file into the database.

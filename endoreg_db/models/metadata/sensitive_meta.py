@@ -12,6 +12,16 @@ from icecream import ic
 import os
 import random
 # get DJANGO_SALT from settings
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        Patient,
+        PatientExamination,
+        Gender,
+        Examiner,
+        Center,
+        SensitiveMetaState, # Added import
+    )
 SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
 
 
@@ -60,13 +70,14 @@ class SensitiveMeta(models.Model):
 
     endoscope_type = models.CharField(max_length=255, blank=True, null=True)
     endoscope_sn = models.CharField(max_length=255, blank=True, null=True)
-    state_verified = models.BooleanField(default=False)
-    state_hash_generated = models.BooleanField(default=False)
-    state_names_substituted = models.BooleanField(default=False)
-    state_dob_substituted = models.BooleanField(default=False)
-    state_examination_date_substituted = models.BooleanField(default=False)
-    state_endoscope_sn_substituted = models.BooleanField(default=False)
-    state_examiners_substituted = models.BooleanField(default=False)
+    
+    if TYPE_CHECKING:
+        examiners: models.QuerySet["Examiner"]
+        pseudo_patient: "Patient"
+        patient_gender: "Gender"
+        pseudo_examination: "PatientExamination"
+        state: "SensitiveMetaState"
+        center: "Center"
 
     @staticmethod
     def _generate_random_dob():
@@ -312,6 +323,8 @@ class SensitiveMeta(models.Model):
         return sha256(hash_str.encode()).hexdigest()
 
     def save(self, *args, **kwargs):
+        from endoreg_db.models import SensitiveMetaState # Import here to avoid circular dependency issues at module level
+
         # Ensure DOB exists before calculating hashes or creating related objects
         if not self.patient_dob:
             ic("Patient DOB is missing, generating a random one.")
@@ -344,6 +357,16 @@ class SensitiveMeta(models.Model):
             m2m_kwargs['examiners'] = kwargs.pop('examiners')
 
         super().save(*args, **kwargs) # Save non-M2M fields
+
+        # Ensure a SensitiveMetaState exists after saving the main instance
+        # Use related name 'state' if defined, otherwise access via SensitiveMetaState manager
+        try:
+            # Check if the related state object already exists
+            _ = self.state
+        except SensitiveMetaState.DoesNotExist:
+            # If not, create a new one
+            SensitiveMetaState.objects.create(origin=self)
+
 
         # Now handle the ManyToMany relationship (examiners)
         # Get or create the examiner instance

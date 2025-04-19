@@ -3,6 +3,7 @@ Django model for AI models.
 """
 from django.db import models
 from icecream import ic
+from typing import TYPE_CHECKING
 
 class AiModelManager(models.Manager):
     """
@@ -18,20 +19,23 @@ class AiModelManager(models.Manager):
 
 class AiModel(models.Model):
     """
-    Represents a generic AiModel.
-    ModelMeta objects have a foreign key to this model.
-    Here we gather high-level information about the model.
-    this contains the name, description, labels, and version of the model.
+    Represents a generic AI model that encapsulates high-level metadata about the model,
+    including names (default, German, and English), a description, categorization details,
+    and associated label sets and meta information.
 
-    Attributes:
-        name (str): The name of the model.
-        name_de (str): The German name of the model.
-        name_en (str): The English name of the model.
-        description (str): A description of the model.
-        model_type (str): The type of the model.
-        model_subtype (str): The subtype of the model.
-        video_segmentation_labels (QuerySet): The labels for video segmentation.
+        name (str): Unique name of the AI model.
+        name_de (str): Optional German name of the AI model.
+        name_en (str): Optional English name of the AI model.
+        description (str): Optional detailed description of the AI model.
+        model_type (str): Optional type/category of the AI model.
+        model_subtype (str): Optional subtype within the broader model type.
+        video_segmentation_labelset (VideoSegmentationLabelSet): Optional associated label set for video segmentation tasks.
+        active_meta (ModelMeta): Optional reference to the currently active ModelMeta instance associated with the model.
     """
+    if TYPE_CHECKING:
+        from endoreg_db.models import VideoSegmentationLabelSet, ModelMeta
+        video_segmentation_labelset: "VideoSegmentationLabelSet"
+        active_meta: "ModelMeta"
 
     objects = AiModelManager()
 

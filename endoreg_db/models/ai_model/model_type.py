@@ -1,7 +1,4 @@
 from django.db import models
-from django.core import serializers
-
-
 class ModelTypeManager(models.Manager):
     """
     Custom manager for ModelType with additional query methods.
