@@ -39,6 +39,8 @@ def copy_with_progress(src: str, dst: str, buffer_size=1024 * 1024):
         dst (str): Destination file path.
         buffer_size (int): Buffer size for copying.
     """
+    # Ensure the destination directory exists
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
     total_size = os.path.getsize(src)
     copied_size = 0
 
@@ -52,3 +54,5 @@ def copy_with_progress(src: str, dst: str, buffer_size=1024 * 1024):
             progress = copied_size / total_size * 100
             print(f"\rProgress: {progress:.2f}%", end="")
 
+    # Print newline once copying is finished so the next log starts on a new line
+    print()

@@ -94,10 +94,14 @@ class ModelMeta(models.Model):
     activation = models.CharField(
         max_length=50, default="sigmoid", help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none')."
     )
+    # weights = models.FileField(
+    from django.core.files.storage import FileSystemStorage
+    from ..utils import WEIGHTS_DIR, STORAGE_DIR
+
     weights = models.FileField(
         upload_to=WEIGHTS_DIR.relative_to(STORAGE_DIR).as_posix(),  # Ensure posix path for consistency
         validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
-        storage=STORAGE_DIR,  # Uses the storage defined in settings
+        storage=FileSystemStorage(location=STORAGE_DIR),
         null=True,
         blank=True,
         help_text="Path to the model weights file (.ckpt), relative to MEDIA_ROOT.",
@@ -255,8 +259,7 @@ class ModelMeta(models.Model):
             **kwargs,
         )
         return model_meta
-
-    @classmethod
+    
     def get_latest_version_number(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
         """
         Gets the latest version *number* for a given ModelMeta name and AiModel name.
@@ -284,7 +287,13 @@ class ModelMeta(models.Model):
             raise AiModel.DoesNotExist(f"AiModel with name '{model_name}' not found.") from e
 
         try:
-            latest_meta = cls.objects.filter(name=meta_name, model=ai_model).latest("version")
+
+            latest_meta = (
+                cls.objects
+                .filter(name=meta_name, model=ai_model)
+                .annotate(version_int=models.functions.Cast("version", models.IntegerField()))
+                .latest("version_int")
+            )
         except cls.DoesNotExist as e:
             raise cls.DoesNotExist(
                 f"No ModelMeta found for name '{meta_name}' and model '{model_name}'."
@@ -297,6 +306,7 @@ class ModelMeta(models.Model):
             raise ValueError(
                 f"Latest version '{latest_meta.version}' for '{meta_name}' / '{model_name}' is not an integer."
             ) from e
+
 
     @staticmethod
     def get_activation_function(activation_name: str) -> "TorchModule":

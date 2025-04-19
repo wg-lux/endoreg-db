@@ -151,14 +151,20 @@ class RawVideoFile(AbstractVideoFile):
             anonymized_video_path.unlink()
 
         fps = self.get_fps()
+        if fps is None:
+            raise ValueError(f"FPS could not be determined for {self}")
+
         try:
             _assemble_anonymized_video(
-                generated_frame_paths=generated_frame_paths,
-                anonymized_video_path=anonymized_video_path,
-                fps=fps,
+            generated_frame_paths=generated_frame_paths,
+            anonymized_video_path=anonymized_video_path,
+            fps=fps,
             )
         except subprocess.CalledProcessError as exc:
             raise RuntimeError("Failed to assemble anonymized video") from exc
+        finally:
+            # Clean up tmp frames irrespective of ffmpeg success/failure
+            shutil.rmtree(_anonymized_frame_dir, ignore_errors=True)
         # Note: Consider deleting the temporary anonymized frames directory here
         # or ensuring it's cleaned up elsewhere.
         # Example: shutil.rmtree(_anonymized_frame_dir)
@@ -228,7 +234,6 @@ class RawVideoFile(AbstractVideoFile):
         from endoreg_db.models import Video #, Patient, PatientExamination - Removed unused imports
 
         video_hash = self.video_hash # Assuming video_hash is inherited or defined
-        anonym_video_object_exists = self._anonym_video_object_exists()
         anonym_video_file_exists = self._anonym_video_file_exists()
         anonym_video_path = self.get_anonymized_video_path()
 
@@ -239,13 +244,6 @@ class RawVideoFile(AbstractVideoFile):
             # self._delete_frames_anonymized()
 
         video = None
-        if anonym_video_object_exists:
-            # If the link exists, trust it. Alternatively, could query by hash.
-            video = self.video
-            # Optional: Verify consistency if needed
-            # video = Video.objects.filter(video_hash=video_hash).first()
-            # assert video == self.video, "Mismatch between linked video and hash lookup"
-
         if video is None: # If not linked or link was None
             # Attempt to find existing video by hash before creating a new one
             video = Video.objects.filter(video_hash=video_hash).first()
@@ -256,12 +254,12 @@ class RawVideoFile(AbstractVideoFile):
                 if not anonym_frame_dir.exists():
                      _, _ = self.make_temporary_anonymized_frames() # Regenerate if missing
 
-                anonym_frame_paths = list(anonym_frame_dir.glob("*.jpg"))
+                first_suffix = next(anonym_frame_dir.iterdir()).suffix
+                anonym_frame_paths = list(anonym_frame_dir.glob(f"*{first_suffix}"))
                 if not anonym_frame_paths:
                     # Handle case where frame generation might have failed silently
                     # or directory is empty unexpectedly
                     raise FileNotFoundError(f"Anonymized frames not found in {anonym_frame_dir}")
-
 
                 video = Video.create_from_file(
                     file_path=anonym_video_path,
@@ -272,8 +270,6 @@ class RawVideoFile(AbstractVideoFile):
                     # Pass hash explicitly if create_from_file doesn't calculate it
                     # video_hash=video_hash
                 )
-                # Optional cleanup after successful creation
-                # self._delete_frames_anonymized()
 
 
         if sync:
@@ -290,3 +286,8 @@ class RawVideoFile(AbstractVideoFile):
             self.save() # Save the link
 
         return video
+
+
+
+                # Optional cleanup after successful creation
+                # self._delete_frames_anonymized()

@@ -36,6 +36,8 @@ def anonymize_frame(
     """
 
     frame = cv2.imread(raw_frame_path.as_posix())  # pylint: disable=no-member
+    if frame is None:
+        raise FileNotFoundError(f"Could not read frame at {raw_frame_path}")
 
     # make black frame with same size as original frame
     new_frame = np.zeros_like(frame)

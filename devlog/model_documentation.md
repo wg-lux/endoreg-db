@@ -1,7 +1,8 @@
 # endoreg-db-model-documentation
 
 ## AI
-### AiModel
+### Models
+#### AiModel
 Represents a generic AI model that encapsulates high-level metadata about the model,
     including names (default, German, and English), a description, categorization details,
     and associated label sets and meta information.
@@ -16,7 +17,7 @@ Represents a generic AI model that encapsulates high-level metadata about the mo
         active_meta (ModelMeta): Optional reference to the currently active ModelMeta instance associated with the model.
  
 
-### ActiveModel
+#### ActiveModel
 ActiveModel represents an active instance of a model within the application.
 
 Attributes:
@@ -29,3 +30,26 @@ Notes:
 Managers:
     objects (ActiveModelManager): Custom manager providing specialized query capabilities for ActiveModel instances.
 
+
+#### ModelType
+A class representing a model type.
+
+Attributes:
+    name (str): The name of the model type.
+    description (str): A description of the model type.
+
+### Data
+'endoreg_db/data/ai_model' content (ai_model.name):
+- image_multilabel_classification_colonoscopy_default
+
+'endoreg_db/data/ai_model_type/data.yaml':
+- multilabel_classification
+- object_detection
+
+## Annotation
+### Models
+#### ImageClassificationAnnotation
+
+### Data
+#### ImageClassificationAnnotation
+None.
