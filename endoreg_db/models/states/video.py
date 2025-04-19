@@ -3,6 +3,15 @@ from typing import TYPE_CHECKING
 from .abstract import AbstractState
 
 class AbstractVideoState(AbstractState):
+    """
+    Abstract base class for video-related states.
+    
+    Tracks common processing state flags for video entities:
+    - Whether frames have been extracted
+    - Whether initial predictions have been generated
+    - Whether label video segments have been created
+    - Whether label video segments have been annotated
+    """
     frames_extracted = models.BooleanField(default=False)
     initial_prediction = models.BooleanField(default=False)
     lvs_created = models.BooleanField(default=False)
@@ -24,7 +33,7 @@ class RawVideoFileState(AbstractVideoState):
     if TYPE_CHECKING:
         from endoreg_db.models import RawVideoFile
 
-        raw_video_file: "RawVideoFile"
+        origin: "RawVideoFile"
 
     class Meta:
         verbose_name = "Raw Video File State"
@@ -42,8 +51,7 @@ class VideoState(AbstractVideoState):
     )
     if TYPE_CHECKING:
         from endoreg_db.models import Video
-
-        video: "Video"
+        origin: "Video"
     
 
     class Meta:

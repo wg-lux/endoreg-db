@@ -2,6 +2,7 @@ import shutil
 from pathlib import Path
 from django.db import models
 from typing import TYPE_CHECKING, List, Tuple
+import subprocess
 
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import FileSystemStorage
@@ -28,9 +29,8 @@ class RawVideoFile(AbstractVideoFile):
                                      potentially identifying information related to the video.
         video (ForeignKey): Link to the anonymized Video model, created after processing.
     """
-
     file = models.FileField(
-        upload_to=ANONYM_VIDEO_DIR,
+        upload_to=str(ANONYM_VIDEO_DIR.relative_to(STORAGE_DIR)),
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME: Review allowed extensions
         storage=FileSystemStorage(location=STORAGE_DIR.as_posix()),
     )
@@ -151,12 +151,14 @@ class RawVideoFile(AbstractVideoFile):
             anonymized_video_path.unlink()
 
         fps = self.get_fps()
-        assert _assemble_anonymized_video(
-            generated_frame_paths=generated_frame_paths,
-            anonymized_video_path=anonymized_video_path,
-            fps=fps,
-        ), "Failed to assemble anonymized video"
-
+        try:
+            _assemble_anonymized_video(
+                generated_frame_paths=generated_frame_paths,
+                anonymized_video_path=anonymized_video_path,
+                fps=fps,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError("Failed to assemble anonymized video") from exc
         # Note: Consider deleting the temporary anonymized frames directory here
         # or ensuring it's cleaned up elsewhere.
         # Example: shutil.rmtree(_anonymized_frame_dir)

@@ -1,14 +1,14 @@
-import os
-from pathlib import Path
-from typing import Dict
-import dotenv
-
 """
 Centralizes path management for the application.
 
 This module sets up all necessary directories for storage and import operations.
 It provides a unified dictionary 'data_paths' for accessing all path objects.
 """
+
+import os
+from pathlib import Path
+from typing import Dict
+import dotenv
 
 dotenv.load_dotenv()
 

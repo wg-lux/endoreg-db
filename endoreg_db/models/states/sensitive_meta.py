@@ -19,8 +19,7 @@ class SensitiveMetaState(AbstractState):
     if TYPE_CHECKING:
         from endoreg_db.models import SensitiveMeta
 
-        sensitive_meta: "SensitiveMeta"
-
+        origin: "SensitiveMeta"
     class Meta:
         verbose_name = "Sensitive Meta State"
         verbose_name_plural = "Sensitive Meta States"
