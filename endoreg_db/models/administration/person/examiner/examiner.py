@@ -20,27 +20,18 @@ class Examiner(Person):
 
     @classmethod
     def custom_get_or_create(cls, first_name: str, last_name: str, center: "Center"):
-        created = False
-
-        _hash = get_examiner_hash(
-            first_name=first_name,  #
+        real_hash = get_examiner_hash(
+            first_name=first_name,
             last_name=last_name,
             center_name=center.name,
             salt=DJANGO_NAME_SALT,
         )
 
-        examiner_exists = cls.objects.filter(hash=_hash).exists()
-        if examiner_exists:
-            examiner = cls.objects.get(hash=_hash)
-
-        else:
-            first_name, last_name = create_mock_examiner_name()
-            examiner = cls.objects.create(
-                first_name=first_name,
-                last_name=last_name,
-                center=center,
-                hash=_hash,
-            )
-            examiner.save()
-            created = True
+        name_tuple = create_mock_examiner_name()
+        defaults = dict(
+            first_name=name_tuple[0],
+            last_name=name_tuple[1],
+            center=center,
+        )
+        examiner, created = cls.objects.get_or_create(hash=real_hash, defaults=defaults)
         return examiner, created

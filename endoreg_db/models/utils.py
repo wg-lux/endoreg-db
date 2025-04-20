@@ -14,6 +14,7 @@ from ..utils import (
     guess_name_gender,
 )
 from django.core.files import File
+from django.core.files.storage import FileSystemStorage
 import io
 
 from icecream import ic
@@ -27,12 +28,11 @@ if TYPE_CHECKING:
     from endoreg_db.models import RawVideoFile, Frame
 
 STORAGE_DIR = data_paths["storage"]
+FILE_STORAGE = FileSystemStorage(location = STORAGE_DIR)
+VIDEO_DIR = data_paths["video"]
 ANONYM_VIDEO_DIR = data_paths["video_export"]
+FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
-STORAGE_DIR = data_paths["storage"]
-
-
-
 
 def prepare_bulk_frames(frame_paths: List[Path]):
     """
@@ -223,4 +223,10 @@ __all__ = [
     "get_patient_examination_hash",
     "DJANGO_NAME_SALT",
     "guess_name_gender",
+    "FILE_STORAGE",
+    "VIDEO_DIR",
+    "ANONYM_VIDEO_DIR",
+    "FRAME_DIR",
+    "WEIGHTS_DIR",
+    "prepare_bulk_frames",
 ]

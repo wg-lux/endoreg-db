@@ -1,29 +1,17 @@
 from django.db import models
-from endoreg_db.models.frame.frame import Frame
 from django.core.validators import FileExtensionValidator
-from django.core.files.storage import FileSystemStorage
 from typing import TYPE_CHECKING
 import cv2
-from ..base_classes import AbstractVideoFile
-from ....utils import data_paths
+from .abstract_video import AbstractVideoFile
+from ...utils import VIDEO_DIR, FILE_STORAGE
 
-if TYPE_CHECKING:
-    from django.db.models import QuerySet
-    from endoreg_db.models import (
-        LabelVideoSegment,
-        VideoImportMeta,
-        SensitiveMeta,
-        Patient,
-        PatientExamination,
-        RawVideoFile,
-    )
 
 
 class Video(AbstractVideoFile):
     file = models.FileField(
-        upload_to=data_paths["video"],
+        upload_to=VIDEO_DIR,
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],  # FIXME
-        storage=FileSystemStorage(location=data_paths["storage"]),
+        storage=FILE_STORAGE,
     )
 
     patient = models.ForeignKey(
@@ -58,15 +46,27 @@ class Video(AbstractVideoFile):
     )
 
     if TYPE_CHECKING:
+        from ...metadata import (
+            VideoImportMeta,
+            SensitiveMeta,
+        )
+
+        from .raw_video import RawVideoFile
+        from ...label.label_video_segment import LabelVideoSegment
+        from ...administration.person import Patient
+        from ...medical.patient import PatientExamination
+        from ..frame import Frame
+    
+
         import_meta: "VideoImportMeta"
         patient: "Patient"
         examination: "PatientExamination"
-        frames: "QuerySet[Frame]"
+        frames: "models.QuerySet[Frame]"
         label_video_segments: (
-            "QuerySet[LabelVideoSegment]"  # Foreign key in LabelVideoSegment.video
+            "models.QuerySet[LabelVideoSegment]"  # Foreign key in LabelVideoSegment.video
         )
         sensitive_meta: "SensitiveMeta"
-        raw_videos: "QuerySet[RawVideoFile]"
+        raw_videos: "models.QuerySet[RawVideoFile]"
 
     # override the save method to set fps if not set
     def save(self, *args, **kwargs):
@@ -89,11 +89,9 @@ class Video(AbstractVideoFile):
         """
         Sync metadata from the associated raw video file.
         """
-        from endoreg_db.models import RawVideoFile, LabelVideoSegment
-
-        raw_video: RawVideoFile = self.raw_videos.first()
-
-        assert isinstance(raw_video, RawVideoFile), "Raw video is not a file"
+        from ...label import LabelVideoSegment
+        
+        raw_video = self.raw_videos.first()
 
         self.predictions = raw_video.predictions
         self.readable_predictions = raw_video.readable_predictions
@@ -102,6 +100,7 @@ class Video(AbstractVideoFile):
         label_video_segments = raw_video.label_video_segments.all()
 
         label_video_segments = [
+            #TODO Fix this
             LabelVideoSegment.from_raw(
                 video=self, raw_label_video_segment=raw_label_video_segment
             )

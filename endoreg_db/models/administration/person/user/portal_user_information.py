@@ -8,8 +8,8 @@ if TYPE_CHECKING:
 
 
 class PortalUserInfo(models.Model):
-    user = models.OneToOneField("User", on_delete=models.CASCADE)
-    profession = models.ForeignKey('Profession', on_delete=models.CASCADE, blank=True, null=True)
+    user = models.OneToOneField("auth.User", on_delete=models.CASCADE)
+    profession = models.ForeignKey('endoreg_db.Profession', on_delete=models.CASCADE, blank=True, null=True)
     works_in_endoscopy = models.BooleanField(blank=True, null=True)
     # Add other fields as needed
 

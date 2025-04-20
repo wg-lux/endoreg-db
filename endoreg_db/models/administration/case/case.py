@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..person import Patient
     from ...medical.patient.patient_examination import PatientExamination
+from django.utils import timezone
 
 class Case(models.Model):
     """
@@ -89,3 +90,25 @@ class Case(models.Model):
         if self.end_date:
             string_representation += f" - {self.end_date.strftime('%Y-%m-%d')}"
         return string_representation
+
+    def close(self, end_date=None):
+        """Close this case with optional end date."""
+        self.is_closed = True
+        self.is_active = False
+        if end_date:
+            self.end_date = end_date
+        elif not self.end_date:
+            self.end_date = timezone.now()
+        self.save()
+
+    def reopen(self):
+        """Reopen this case if it was closed."""
+        self.is_closed = False
+        self.is_active = True
+        self.save()
+
+    def mark_as_deleted(self):
+        """Mark this case as deleted."""
+        self.is_deleted = True
+        self.is_active = False
+        self.save()

@@ -1,35 +1,11 @@
 from typing import TYPE_CHECKING, Union, Optional
 from django.db import models
 from django.db.models import Q, CheckConstraint
-from ...utils import data_paths
-
+from ...utils import FRAME_DIR, FILE_STORAGE
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        RawVideoFile, Video, ImageClassificationAnnotation,
-        Label
-    )
-
-
-# Define dynamic upload path function
-def frame_upload_path(instance: "Frame", filename: str) -> str:
-    """ Determine upload path based on linked video type. """
-    if instance.video_id is not None:
-        # Use path for processed video frames
-        base_path = data_paths["frame"]
-        video_pk = instance.video_id
-    elif instance.raw_video_id is not None:
-        # Use path for raw video frames
-        base_path = data_paths["raw_frame"]
-        video_pk = instance.raw_video_id
-    else:
-        # Should not happen due to constraints, but provide a fallback
-        base_path = "frames/unknown/"
-        video_pk = "unknown"
-
-    # Construct path (example: frames/processed/123/frame_100.jpg)
-    # Ensure filename uniqueness if needed, or rely on Django's handling
-    return f"{base_path}{video_pk}/frame_{instance.frame_number}{instance.suffix}"
-
+    from ..video import Video, RawVideoFile
+    from ...label.label import Label
+    from ...label.annotation import ImageClassificationAnnotation
 
 # Unified Frame model
 class Frame(models.Model):
@@ -59,8 +35,12 @@ class Frame(models.Model):
         blank=True,
     )
 
-    # Image field using dynamic path
-    image = models.ImageField(upload_to=frame_upload_path, blank=True, null=True)
+    image = models.ImageField(
+        upload_to=FRAME_DIR,
+        storage=FILE_STORAGE,
+        blank=True,
+        null=True
+    )
 
     # Reverse relation defined in ImageClassificationAnnotation
     # image_classification_annotations: defined by related_name in ImageClassificationAnnotation
@@ -68,17 +48,27 @@ class Frame(models.Model):
     if TYPE_CHECKING:
         video: Optional["Video"]
         raw_video: Optional["RawVideoFile"]
-        image_classification_annotations: "models.Manager[ImageClassificationAnnotation]"
+        image_classification_annotations: "models.QuerySet[ImageClassificationAnnotation]"
 
     class Meta:
         constraints = [
             CheckConstraint(
-                check=(
-                    Q(video__isnull=True, raw_video__isnull=False) |
-                    Q(video__isnull=False, raw_video__isnull=True)
-                ),
-                name='frame_exactly_one_video_or_raw_video'
-            )
+            check=(
+                Q(video__isnull=True, raw_video__isnull=False) |
+                Q(video__isnull=False, raw_video__isnull=True)
+            ),
+            name='frame_exactly_one_video_or_raw_video'
+            ),
+            models.UniqueConstraint(
+            fields=["video", "frame_number"],
+            condition=Q(video__isnull=False),
+            name="unique_frame_per_video"
+            ),
+            models.UniqueConstraint(
+            fields=["raw_video", "frame_number"],
+            condition=Q(raw_video__isnull=False),
+            name="unique_frame_per_raw_video"
+            ),
         ]
         indexes = [
             models.Index(fields=["video", "frame_number"]),
