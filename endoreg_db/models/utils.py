@@ -13,6 +13,8 @@ from ..utils import (
     DJANGO_NAME_SALT,
     guess_name_gender,
 )
+from django.core.files import File
+import io
 
 from icecream import ic
 import subprocess
@@ -28,6 +30,22 @@ STORAGE_DIR = data_paths["storage"]
 ANONYM_VIDEO_DIR = data_paths["video_export"]
 WEIGHTS_DIR = data_paths["weights"]
 STORAGE_DIR = data_paths["storage"]
+
+
+
+
+def prepare_bulk_frames(frame_paths: List[Path]):
+    """
+    Reads the frame paths into memory as Django File objects.
+    This avoids 'seek of closed file' errors by using BytesIO for each frame.
+    """
+    for path in frame_paths:
+        frame_number = int(path.stem.split("_")[1])
+        with open(path, "rb") as f:
+            content = f.read()
+        file_obj = File(io.BytesIO(content), name=path.name)
+        yield frame_number, file_obj
+
 
 def find_segments_in_prediction_array(prediction_array: np.array, min_frame_len: int):
     """

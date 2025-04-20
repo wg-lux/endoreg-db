@@ -8,7 +8,7 @@ if TYPE_CHECKING:
         PatientFindingMorphology,
         PatientFindingIntervention
     )
-
+import random
 class PatientFinding(models.Model):
     patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')
     finding = models.ForeignKey('Finding', on_delete=models.CASCADE, related_name='patient_findings')
@@ -135,8 +135,7 @@ class PatientFinding(models.Model):
             FindingLocationClassification, 
             PatientFindingLocation
         )
-        import random
-        from typing import List
+
         location_classification:FindingLocationClassification
 
         # assert location_classification in self.finding.location_classifications.all()

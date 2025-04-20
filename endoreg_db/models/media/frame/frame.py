@@ -4,7 +4,10 @@ from django.db.models import Q, CheckConstraint
 from ...utils import data_paths
 
 if TYPE_CHECKING:
-    from endoreg_db.models import RawVideoFile, Video, ImageClassificationAnnotation
+    from endoreg_db.models import (
+        RawVideoFile, Video, ImageClassificationAnnotation,
+        Label
+    )
 
 
 # Define dynamic upload path function

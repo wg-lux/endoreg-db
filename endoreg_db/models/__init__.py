@@ -4,7 +4,7 @@ from .information_source import InformationSource
 from .emission import EmissionFactor
 
 # States
-from .states import (
+from .state import (
     LabelVideoSegmentState,
     VideoState,
     SensitiveMetaState
@@ -118,7 +118,7 @@ from .requirement import (
 )
 
 # Rules
-from .rules import (
+from .rule import (
     Rule,
     RuleType,
     Ruleset,
@@ -200,7 +200,7 @@ from .product import (
 )
 
 # AI models
-from .ai_model import (
+from .ai import (
     ModelMeta,
     ModelType,
     ActiveModel,

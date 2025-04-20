@@ -3,12 +3,12 @@ from django.db import models
 from django.db.models import Q, CheckConstraint
 
 from endoreg_db.models.label import LabelSet
-from ..data_file.frame import Frame
+
 from ..label.label_video_segment import (
     LabelVideoSegment,
 
 )
-from ..utils import find_segments_in_prediction_array,
+from ..utils import find_segments_in_prediction_array
 from ..video.video import Video, RawVideoFile
 
 import numpy as np
@@ -19,7 +19,7 @@ DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
     from endoreg_db.models import ModelMeta, InformationSource, Label
-    from .image_classification import ImageClassificationPrediction
+    from ..prediction.image_classification import ImageClassificationPrediction
 
 
 class VideoPredictionMeta(models.Model):
@@ -118,7 +118,7 @@ class VideoPredictionMeta(models.Model):
         Fetches all predictions for the associated video, labelset, and model meta,
         applies smoothing, and saves the resulting binary prediction array.
         """
-        from .image_classification import ImageClassificationPrediction
+        from ..prediction.image_classification import ImageClassificationPrediction
 
         video_obj = self.get_video()
         model_meta = self.model_meta

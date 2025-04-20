@@ -1,5 +1,5 @@
 from django.db import models
-from endoreg_db.models.data_file.frame import Frame
+from endoreg_db.models.frame.frame import Frame
 from django.core.validators import FileExtensionValidator
 from django.core.files.storage import FileSystemStorage
 from typing import TYPE_CHECKING
