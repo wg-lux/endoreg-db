@@ -1,20 +1,31 @@
 from django.db import models
-from typing import List
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ...other.emission import EmissionFactor
+    from .product import Product
+    from .product_group import ProductGroup
 class ReferenceProductManager(models.Manager):
     def get_by_natural_key(self, product_name:str, product_group_name:str):
         return self.get(product__name=product_name, product_group__name=product_group_name)
 
 class ReferenceProduct(models.Model):
     name = models.CharField(max_length=255)
-    product = models.ForeignKey("Product", on_delete=models.CASCADE)
-    product_group = models.OneToOneField("ProductGroup", on_delete=models.CASCADE, related_name="reference_product")
+    product = models.ForeignKey(
+        "Product",
+        on_delete=models.CASCADE,
+        related_name="reference_products",
+    )
+    product_group = models.OneToOneField(
+        "ProductGroup",
+        on_delete=models.CASCADE,
+        related_name="reference_products"
+    )
     emission_factor_total = models.ForeignKey(
         "EmissionFactor", 
         on_delete=models.SET_NULL, 
         null=True, 
         blank = True,
-        # related_name="reference_product_total"
+        related_name="reference_products"
         )
     emission_factor_package = models.ForeignKey(
         "EmissionFactor", 
@@ -28,6 +39,13 @@ class ReferenceProduct(models.Model):
         null=True, 
         related_name="reference_product_product"
     )
+
+    if TYPE_CHECKING:
+        product: "Product"
+        product_group: "ProductGroup"
+        emission_factor_total: "EmissionFactor"
+        emission_factor_package: "EmissionFactor"
+        emission_factor_product: "EmissionFactor"
     
     objects = ReferenceProductManager()
 
@@ -35,11 +53,8 @@ class ReferenceProduct(models.Model):
         return self.product.name + " (" + self.product_group.name + ")"
     
     def set_emission_factors(self):
-        from .product import Product
-        from .product_material import ProductMaterial
-        from ..emission import EmissionFactor
-
-        product:Product = self.product
+        from ...other.emission import EmissionFactor
+        product = self.product
         materials = product.product_materials.all()
         emission_factor_name = f"{self.product_group.name}_{product.name}_total_emission_factor"
         emission_factor_package_name = f"{self.product_group.name}_{product.name}_package_emission_factor"

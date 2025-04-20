@@ -1,10 +1,18 @@
 from django.db import models
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    from ...other.transport_route import TransportRoute
+    from .product_group import ProductGroup
+    from .reference_product import ReferenceProduct
+    from .product_material import ProductMaterial
+    # from .product_weight import ProductWeight
 
 class ProductManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
     
-def sum_weights(product_materials):
+def sum_weights(product_materials: List["ProductMaterial"]):
     # sum up the weights
     weight = 0
     reference_unit = None
@@ -17,7 +25,7 @@ def sum_weights(product_materials):
 
     return weight, reference_unit
 
-def sum_emissions(product_materials):
+def sum_emissions(product_materials:List["ProductMaterial"]):
     # sum up the emissions
     emission = 0
     reference_unit = None
@@ -41,8 +49,18 @@ class Product(models.Model):
 
     transport_route = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
     product_group = models.ForeignKey(
-        "ProductGroup", on_delete=models.SET_NULL, null=True
+        "ProductGroup",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="products",
     )
+
+    if TYPE_CHECKING:
+        transport_route: "TransportRoute"
+        product_group: "ProductGroup"
+        reference_products: models.QuerySet["ReferenceProduct"]
+        product_materials: models.QuerySet["ProductMaterial"]
+
 
     def natural_key(self):
         return (self.name,)

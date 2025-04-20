@@ -2,6 +2,11 @@ from django.db import models
 
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from ..label import Label
+    from ...media.frame import Frame
+    from ...metadata import ModelMeta
+    from ...other.information_source import InformationSource
 
 class ImageClassificationAnnotation(models.Model):
     """
@@ -59,12 +64,6 @@ class ImageClassificationAnnotation(models.Model):
     )
 
     if TYPE_CHECKING:
-        from endoreg_db.models import (
-            Frame,  # Updated type hint
-            Label,
-            ModelMeta,
-            InformationSource
-        )
         frame: "Frame"  # Updated type hint
         label: "Label"
         information_source: "InformationSource"

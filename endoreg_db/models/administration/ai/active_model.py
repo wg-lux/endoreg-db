@@ -2,7 +2,8 @@ from django.db import models
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from endoreg_db.models import ModelMeta
+    #FIXME Validate import
+    from endoreg_db.models.metadata import ModelMeta
 
 
 class ActiveModelManager(models.Manager):
@@ -30,7 +31,6 @@ class ActiveModel(models.Model):
     model_meta = models.ForeignKey('ModelMeta', on_delete=models.SET_NULL, blank=True, null=True)
 
     if TYPE_CHECKING:
-        from endoreg_db.models import ModelMeta
         model_meta: "ModelMeta"
 
     objects = ActiveModelManager()

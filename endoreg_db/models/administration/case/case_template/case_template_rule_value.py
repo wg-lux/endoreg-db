@@ -32,7 +32,7 @@ class CaseTemplateRuleValueType(models.Model):
         return (self.name,)
 
     def __str__(self):
-        return self.name
+        return str(self.name)
 
 class CaseTemplateRuleValueManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -68,7 +68,7 @@ class CaseTemplateRuleValue(models.Model):
         """
         String representation of the object.
         """
-        return self.name
+        return str(self.name)
     
     def get_value(self):
         """

@@ -1,5 +1,10 @@
 from django.db import models
 import pandas as pd
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .product import Product
+    from ...other.unit import Unit
 
 class ProductWeightManager(models.Manager):
     def get_by_natural_key(self, product, product_group, weight):
@@ -14,6 +19,10 @@ class ProductWeight(models.Model):
     verified = models.FloatField(null=True)
     manufacturer = models.FloatField(null=True)
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+
+    if TYPE_CHECKING:
+        product: "Product"
+        unit: "Unit"
 
     def get_weight(self):
         if not pd.isnull(self.verified):

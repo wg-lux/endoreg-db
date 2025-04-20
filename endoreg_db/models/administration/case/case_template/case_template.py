@@ -46,7 +46,7 @@ class CaseTemplate(models.Model):
         Returns:
             str: The name of the case template.
         """
-        return self.name
+        return str(self.name)
     
     def get_rules(self):
         """
@@ -96,7 +96,7 @@ class CaseTemplate(models.Model):
         Raises:
             ValueError: If multiple such rules exist.
         """
-        from endoreg_db.models.case_template.case_template_rule import CaseTemplateRule
+        from .case_template_rule import CaseTemplateRule
         create_patient_rules = self.rules.filter(rule_type__name="create-object", target_model="Patient")
         if len(create_patient_rules) > 1:
             raise ValueError("There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'Patient'.")
@@ -114,7 +114,7 @@ class CaseTemplate(models.Model):
         Raises:
             ValueError: If multiple such rules exist.
         """
-        from endoreg_db.models.case_template.case_template_rule import CaseTemplateRule
+        from .case_template_rule import CaseTemplateRule
         create_patient_medication_schedule_rules = self.rules.filter(rule_type__name="create-object", target_model="PatientMedicationSchedule")
         if len(create_patient_medication_schedule_rules) > 1:
             raise ValueError("There can be at most one rule with the rule_type__name 'create-object' and target_model__name 'PatientMedicationSchedule'.")

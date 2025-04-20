@@ -1,5 +1,13 @@
 from django.db import models
-from typing import List
+from typing import TYPE_CHECKING, List
+
+from endoreg_db.models.administration.product import reference_product
+
+if TYPE_CHECKING:
+    from ...administration.product import ReferenceProduct
+    from ..unit import Unit
+    from ...administration.product import ReferenceProduct
+
 class EmissionFactorManager(models.Manager):
     """
     Manager for EmissionFactor with custom query methods.
@@ -29,6 +37,14 @@ class EmissionFactor(models.Model):
     name_en = models.CharField(max_length=255, null=True)
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
     value = models.FloatField()
+
+    if TYPE_CHECKING:
+        unit: "Unit"
+        reference_products: models.QuerySet["ReferenceProduct"]
+        reference_product_package: models.QuerySet["ReferenceProduct"]
+        reference_product_product: models.QuerySet["ReferenceProduct"]
+
+        
     
     def natural_key(self) -> tuple:
         """
@@ -64,7 +80,7 @@ class EmissionFactor(models.Model):
         Returns:
             list: A list of ReferenceProduct instances associated with this emission factor.
         """
-        from endoreg_db.models import ReferenceProduct
+        from ...administration.product import ReferenceProduct
 
         reference_products = []
         reference_products += ReferenceProduct.objects.filter(emission_factor_total=self)

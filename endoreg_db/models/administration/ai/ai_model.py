@@ -7,12 +7,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .model_type import ModelType
-    from .active_model import ActiveModel
-    from endoreg_db.models import (
-        ModelMeta,
-        VideoSegmentationLabelSet
-    )
-    
+    from ...metadata import ModelMeta #FIXME Validate import
+    from ...label import VideoSegmentationLabelSet
+
      
 class AiModelManager(models.Manager):
     """
@@ -81,7 +78,7 @@ class AiModel(models.Model):
         """
         Set the active model.
         """
-        from endoreg_db.models import ModelMeta
+        from ...metadata import ModelMeta #FIXME Validate import
 
         model = cls.objects.get(name=model_name)
         assert model is not None, "Model not found"

@@ -3,9 +3,8 @@ from django.db import models
 from django.db.models import Q, CheckConstraint, F
 
 if TYPE_CHECKING:
-    from endoreg_db.models.video.video import Video
-    from endoreg_db.models.video.raw_video import RawVideoFile
-    from endoreg_db.models.label.video_segmentation_label import VideoSegmentationLabel
+    from ...media.video import Video, RawVideoFile
+    from ..video_segmentation_label import VideoSegmentationLabel
 
 class VideoSegmentationAnnotation(models.Model):
     """

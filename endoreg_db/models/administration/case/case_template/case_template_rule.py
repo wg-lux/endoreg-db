@@ -25,7 +25,7 @@ class CaseTemplateRuleType(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)
 
 class CaseTemplateRuleManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -124,7 +124,7 @@ class CaseTemplateRule(models.Model):
 
         :return: A string representation of the rule.
         """
-        return self.name
+        return str(self.name)
 
     def get_rule_type(self):
         """
