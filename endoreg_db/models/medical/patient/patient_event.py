@@ -1,5 +1,9 @@
 from django.db import models
-from .patient import Patient
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ...administration.person.patient.patient import Patient
+    from ..event import Event, EventClassificationChoice
 
 class PatientEvent(models.Model):
     """
@@ -10,7 +14,7 @@ class PatientEvent(models.Model):
         date (datetime.date): The date of the event.
         description (str): A description of the event.
     """
-    patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
+    patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
     event = models.ForeignKey("Event", on_delete=models.CASCADE)
     date_start = models.DateField()
     date_end = models.DateField(blank=True, null=True)
@@ -24,6 +28,11 @@ class PatientEvent(models.Model):
 
     last_update = models.DateTimeField(auto_now=True)
     
+    if TYPE_CHECKING:
+        patient: "Patient"
+        event: "Event"
+        classification_choice: "EventClassificationChoice"
+
     def __str__(self):
         return str(self.date_start) + ": " + self.event.name
     
@@ -31,9 +40,7 @@ class PatientEvent(models.Model):
         """
         Sets the subcategories for this event from the classification choice.
         """
-        from endoreg_db.models import EventClassificationChoice
         if self.classification_choice:
-            self.classification_choice:EventClassificationChoice
             self.subcategories = self.classification_choice.subcategories
             self.save()
         
@@ -43,9 +50,7 @@ class PatientEvent(models.Model):
         """
         Sets the numerical descriptors for this event from the classification choice.
         """
-        from endoreg_db.models import EventClassificationChoice
         if self.classification_choice:
-            self.classification_choice:EventClassificationChoice
             self.numerical_descriptors = self.classification_choice.numerical_descriptors
             self.save()
         

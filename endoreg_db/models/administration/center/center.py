@@ -1,12 +1,16 @@
 from django.db import models
 from typing import TYPE_CHECKING
 
+from endoreg_db.models.administration.person.names.first_name import FirstName
+from endoreg_db.models.administration.person.names.last_name import LastName
+from endoreg_db.models.medical.hardware.endoscope import Endoscope
+
 if TYPE_CHECKING:
-    from endoreg_db.models.hardware.endoscope import Endoscope
-    from endoreg_db.models.persons.first_name import FirstName
-    from endoreg_db.models.persons.last_name import LastName
-
-
+    from ...medical.hardware import Endoscope, EndoscopyProcessor
+    from ..person import FirstName, LastName
+    from .center_product import CenterProduct
+    from .center_resource import CenterResource
+    from .center_waste import CenterWaste
 
 class CenterManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -28,8 +32,9 @@ class Center(models.Model):
     last_names = models.ManyToManyField("LastName", related_name="centers")
 
     if TYPE_CHECKING:
-        from endoreg_db.models.hardware.endoscopy_processor import EndoscopyProcessor
-        from endoreg_db.models import FirstName, LastName
+        center_products: models.QuerySet["CenterProduct"]
+        center_resources: models.QuerySet["CenterResource"]
+        center_wastes: models.QuerySet["CenterWaste"]
         endoscopy_processors: models.QuerySet["EndoscopyProcessor"]
         endoscopes: models.QuerySet["Endoscope"]
         first_names: models.QuerySet["FirstName"]
@@ -45,20 +50,20 @@ class Center(models.Model):
     def __str__(self) -> str:
         return str(object=self.name)
 
-    def get_first_names(self):
-        from endoreg_db.models import FirstName
+    def get_first_names(self) -> models.BaseManager[FirstName]:
+        from ..person import FirstName
 
         names = FirstName.objects.filter(centers=self)
         return names
 
-    def get_last_names(self):
-        from endoreg_db.models import LastName
+    def get_last_names(self) -> models.BaseManager[LastName]:
+        from ..person import LastName
 
         names = LastName.objects.filter(centers=self)
         return names
 
-    def get_endoscopes(self):
-        from endoreg_db.models import Endoscope
+    def get_endoscopes(self) -> models.BaseManager[Endoscope]:
+        from endoreg_db.models.medical.hardware import Endoscope
 
         endoscopes = Endoscope.objects.filter(center=self)
         return endoscopes

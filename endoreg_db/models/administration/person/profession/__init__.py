@@ -1,8 +1,5 @@
 from django.db import models
 
-# models.py in your main app
-from django.contrib.auth.models import User
-
 class ProfessionManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
@@ -15,13 +12,4 @@ class Profession(models.Model):
     description = models.TextField(blank=True, null=True)
 
     def __str__(self):
-        return self.name_de
-
-class PortalUserInfo(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    profession = models.ForeignKey('Profession', on_delete=models.CASCADE, blank=True, null=True)
-    works_in_endoscopy = models.BooleanField(blank=True, null=True)
-    # Add other fields as needed
-
-    def __str__(self):
-        return self.user.username
+        return str(self.name_de)

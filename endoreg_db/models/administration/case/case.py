@@ -2,40 +2,85 @@ from django.db import models
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from endoreg_db.models import Patient, PatientExamination
+    from ..person import Patient
+    from ...medical.patient.patient_examination import PatientExamination
+
 class Case(models.Model):
     """
-    A class representing a case.
+    Represents a clinical case, linking a patient to one or more examinations over a specific period.
 
     Attributes:
-        name (str): The name of the case.
-        description (str): A description of the case.
-        case_template (CaseTemplate): The case template of the case.
-        patient (Patient): The patient of the case.
-        start_date (datetime): The start date of the case.
-        end_date (datetime): The end date of the case.
-        is_active (bool): A flag indicating whether the case is active.
-        is_closed (bool): A flag indicating whether the case is closed.
-        is_deleted (bool): A flag indicating whether the case is deleted.
-        created_at (datetime): The creation date of the case.
-        updated_at (datetime): The last update date of the case.
-
+        patient (Patient): The patient associated with this case.
+        patient_examinations (QuerySet[PatientExamination]): Examinations included in this case.
+        hash (str): An optional hash value for the case.
+        start_date (datetime): The start date and time of the case.
+        end_date (datetime): The end date and time of the case (optional).
+        is_active (bool): Indicates if the case is currently active.
+        is_closed (bool): Indicates if the case has been closed.
+        is_deleted (bool): Indicates if the case is marked as deleted.
+        created_at (datetime): Timestamp of case creation.
+        updated_at (datetime): Timestamp of last case update.
     """
-    patient = models.ForeignKey('Patient', on_delete=models.CASCADE, related_name='cases')
-    patient_examinations = models.ManyToManyField('PatientExamination', related_name='cases')
-    hash = models.CharField(max_length=255, blank=True, null=True)
+    patient = models.ForeignKey(
+        'Patient',
+        on_delete=models.CASCADE,
+        related_name='cases',
+        help_text="The patient associated with this case.",
+        db_index=True
+    )
+    patient_examinations = models.ManyToManyField(
+        'PatientExamination',
+        related_name='cases',
+        help_text="The examinations included in this case."
+    )
+    hash = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="An optional hash value associated with the case."
+    )
 
-    start_date = models.DateTimeField()
-    end_date = models.DateTimeField(null=True)
-    is_active = models.BooleanField(default=True)
-    is_closed = models.BooleanField(default=False)
-    is_deleted = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    start_date = models.DateTimeField(
+        help_text="The start date and time of the case.",
+        db_index=True
+    )
+    end_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="The end date and time of the case (optional)."
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Flag indicating if the case is currently active.",
+        db_index=True
+    )
+    is_closed = models.BooleanField(
+        default=False,
+        help_text="Flag indicating if the case has been closed.",
+        db_index=True
+    )
+    is_deleted = models.BooleanField(
+        default=False,
+        help_text="Flag indicating if the case is marked as deleted.",
+        db_index=True
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="The date and time the case was created."
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="The date and time the case was last updated."
+    )
 
     if TYPE_CHECKING:
         patient: "Patient"
         patient_examinations: models.QuerySet["PatientExamination"]
+
+    class Meta:
+        ordering = ['-start_date', 'patient']
+        verbose_name = "Case"
+        verbose_name_plural = "Cases"
 
     def __str__(self):
         string_representation = f"Case {self.pk} ({self.patient})"

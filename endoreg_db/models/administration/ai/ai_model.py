@@ -5,6 +5,15 @@ from django.db import models
 from icecream import ic
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from .model_type import ModelType
+    from .active_model import ActiveModel
+    from endoreg_db.models import (
+        ModelMeta,
+        VideoSegmentationLabelSet
+    )
+    
+     
 class AiModelManager(models.Manager):
     """
     Manager for AI models with custom query methods.
@@ -32,18 +41,19 @@ class AiModel(models.Model):
         video_segmentation_labelset (VideoSegmentationLabelSet): Optional associated label set for video segmentation tasks.
         active_meta (ModelMeta): Optional reference to the currently active ModelMeta instance associated with the model.
     """
-    if TYPE_CHECKING:
-        from endoreg_db.models import VideoSegmentationLabelSet, ModelMeta
-        video_segmentation_labelset: "VideoSegmentationLabelSet"
-        active_meta: "ModelMeta"
-
     objects = AiModelManager()
 
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    model_type = models.CharField(max_length=255, blank=True, null=True)
+    model_type = models.ForeignKey(
+        "ModelType",
+        on_delete=models.CASCADE,
+        related_name="ai_models",
+        blank=True,
+        null=True,
+    )
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
     video_segmentation_labelset = models.ForeignKey(
         "VideoSegmentationLabelSet",
@@ -59,6 +69,12 @@ class AiModel(models.Model):
         blank=True,
         null=True,
     )
+
+    if TYPE_CHECKING:
+        model_type: "ModelType"
+        active_meta: "ModelMeta"
+        video_segmentation_labelset: "VideoSegmentationLabelSet"
+
 
     @classmethod
     def set_active_model_meta(cls, model_name: str, meta_name: str, meta_version: int):

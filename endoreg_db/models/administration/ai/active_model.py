@@ -1,5 +1,10 @@
 from django.db import models
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import ModelMeta
+
+
 class ActiveModelManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
