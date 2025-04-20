@@ -1,11 +1,10 @@
 from .video import (
     Video,
 )
-from ..metadata import (
-    VideoImportMeta,
+from .raw_video import (
+    RawVideoFile,
 )
-
 __all__ = [
     "Video",
-    "VideoImportMeta",
+    "RawVideoFile",
 ]

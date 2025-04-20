@@ -1,5 +1,8 @@
 from django.db import models
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from endoreg_db.models import Patient, PatientExamination
 class Case(models.Model):
     """
     A class representing a case.
@@ -30,5 +33,14 @@ class Case(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    if TYPE_CHECKING:
+        patient: "Patient"
+        patient_examinations: models.QuerySet["PatientExamination"]
+
     def __str__(self):
-        return self.name
+        string_representation = f"Case {self.pk} ({self.patient})"
+        if self.start_date:
+            string_representation += f" - {self.start_date.strftime('%Y-%m-%d')}"
+        if self.end_date:
+            string_representation += f" - {self.end_date.strftime('%Y-%m-%d')}"
+        return string_representation

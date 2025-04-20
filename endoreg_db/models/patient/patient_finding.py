@@ -1,5 +1,13 @@
 from django.db import models
-from typing import List
+from typing import List, TYPE_CHECKING
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        PatientExamination,
+        Finding,
+        PatientFindingLocation,
+        PatientFindingMorphology,
+        PatientFindingIntervention
+    )
 
 class PatientFinding(models.Model):
     patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')
@@ -15,6 +23,12 @@ class PatientFinding(models.Model):
         related_name='patient_findings'
     )
     
+    if TYPE_CHECKING:
+        patient_examination: "PatientExamination"
+        finding: "Finding"
+        locations: models.QuerySet["PatientFindingLocation"]
+        morphologies: models.QuerySet["PatientFindingMorphology"]
+        interventions: models.QuerySet["PatientFindingIntervention"]
 
     class Meta:
         verbose_name = 'Patient Finding'

@@ -1,22 +1,17 @@
 from django.db import models
-from django.db.models import Q, CheckConstraint
 
-from typing import TYPE_CHECKING, Union
-
-if TYPE_CHECKING:
-    from endoreg_db.models import Frame, RawFrame, Label
+from typing import TYPE_CHECKING
 
 
 class ImageClassificationAnnotation(models.Model):
     """
     Represents an image classification annotation, linking a label to a specific frame.
 
-    An annotation must be associated with exactly one of either a `Frame` or a `RawFrame`.
-    This exclusivity is enforced by a database constraint.
+    An annotation is associated with a single `Frame` instance, which itself
+    links to either a `Video` or `RawVideoFile`.
 
     Attributes:
-        frame (ForeignKey): The processed frame associated with the annotation (nullable).
-        raw_frame (ForeignKey): The raw frame associated with the annotation (nullable).
+        frame (ForeignKey): The frame associated with the annotation.
         label (ForeignKey): The label assigned to the annotation.
         value (bool): Indicates if the classification is true/positive.
         float_value (FloatField): Optional float value associated with the classification (e.g., confidence score).
@@ -27,21 +22,13 @@ class ImageClassificationAnnotation(models.Model):
         information_source (ForeignKey): Optional link to the source of this information.
     """
 
-    # Foreign keys to Frame and RawFrame. Exactly one must be non-null.
+    # Single ForeignKey to the unified Frame model
     frame = models.ForeignKey(
-        "Frame",
+        "Frame",  # Points to the unified Frame model
         on_delete=models.CASCADE,
-        blank=True,
-        null=True,
         related_name="image_classification_annotations",
-    )
-
-    raw_frame = models.ForeignKey(
-        "RawFrame",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        related_name="image_classification_annotations",
+        blank=False,
+        null=False,
     )
 
     label = models.ForeignKey(
@@ -72,35 +59,27 @@ class ImageClassificationAnnotation(models.Model):
     )
 
     if TYPE_CHECKING:
-        frame: "Frame"
-        raw_frame: "RawFrame"
+        from endoreg_db.models import (
+            Frame,  # Updated type hint
+            Label,
+            ModelMeta,
+            InformationSource
+        )
+        frame: "Frame"  # Updated type hint
         label: "Label"
+        information_source: "InformationSource"
+        model_meta: "ModelMeta"  # Added for completeness
 
     class Meta:
-        constraints = [
-            CheckConstraint(
-                check=(
-                    Q(frame__isnull=True, raw_frame__isnull=False) |
-                    Q(frame__isnull=False, raw_frame__isnull=True)
-                ),
-                name='exactly_one_frame_or_raw_frame'
-            )
+        indexes = [
+            models.Index(fields=['frame', 'label']),
+            models.Index(fields=['frame']),
         ]
 
     def __str__(self) -> str:
         """
         String representation of the annotation.
         """
-        return f"{self.label.name} - {self.value}"
-
-    def get_frame(self):
-        """
-        Get the frame or raw_frame associated with the annotation.
-
-        Returns the non-null frame instance (`Frame` or `RawFrame`).
-        Based on the database constraint, exactly one of these will be non-null.
-        """
-        if self.frame:
-            return self.frame
-        else:
-            return self.raw_frame
+        frame_str = str(self.frame) if self.frame else "No Frame"
+        label_name = self.label.name if self.label else "No Label"
+        return f"{frame_str} - {label_name} - {self.value}"

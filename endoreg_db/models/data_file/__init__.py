@@ -1,24 +1,11 @@
 from .frame import Frame, RawFrame
 from ..report.report_file import ReportFile
-from .video import Video, VideoImportMeta
-from .video_segment import (
+
+from ..label.label_video_segment import (
     LabelVideoSegment,
     LabelRawVideoSegment,
     find_segments_in_prediction_array,
 )
-from .metadata import (
-    SensitiveMeta,
-    PdfMeta,
-    PdfType,
-    VideoMeta,
-    FFMpegMeta,
-)
-
-from .import_classes import (
-    RawPdfFile,
-    RawVideoFile,
-)
-
 
 
 __all__ = [

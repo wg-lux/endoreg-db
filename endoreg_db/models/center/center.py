@@ -29,9 +29,11 @@ class Center(models.Model):
 
     if TYPE_CHECKING:
         from endoreg_db.models.hardware.endoscopy_processor import EndoscopyProcessor
-
+        from endoreg_db.models import FirstName, LastName
         endoscopy_processors: models.QuerySet["EndoscopyProcessor"]
-
+        endoscopes: models.QuerySet["Endoscope"]
+        first_names: models.QuerySet["FirstName"]
+        last_names: models.QuerySet["LastName"]
 
     @classmethod
     def get_by_name(cls, name):
@@ -61,4 +63,4 @@ class Center(models.Model):
         endoscopes = Endoscope.objects.filter(center=self)
         return endoscopes
 
-    # def get_endoscopy_processor
+    

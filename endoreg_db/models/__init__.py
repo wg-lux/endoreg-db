@@ -160,39 +160,21 @@ from .report_reader import (
     ReportReaderFlag,
 )
 
-# Data file
-from .data_file import (
-    Frame,
-    ReportFile,
+from .video import (
     Video,
-    LabelVideoSegment,
-    LabelRawVideoSegment,
-    SensitiveMeta,
-    PdfMeta,
-    PdfType,
-    VideoMeta,
-    RawFrame,
-    FFMpegMeta,
-    VideoImportMeta,
-    RawPdfFile,
     RawVideoFile,
 )
 
+
 # Label
-from .label import Label, LabelType, LabelSet
+from .label import (
+    Label, LabelType, LabelSet
+)
 
 # Annotation
 from .annotation import (
     ImageClassificationAnnotation,
-    BinaryClassificationAnnotationTask,
-    AnonymousImageAnnotation,
-    DroppedName,
-    AnonymizedImageLabel,
-    AnonymizedFile,
-    UploadedFile,
-    VideoSegmentationLabel,
     VideoSegmentationAnnotation,
-    VideoSegmentationLabelSet,
 )
 
 # Other

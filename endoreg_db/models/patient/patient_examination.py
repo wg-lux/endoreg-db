@@ -1,9 +1,17 @@
 from django.db import models
-from typing import List
+from typing import TYPE_CHECKING, List
 
 # Serializer located in serializers/examination.py
 from typing import Optional
-from datetime import datetime
+if TYPE_CHECKING: 
+    from endoreg_db.models import (
+        Patient,
+        Examination,
+        Video,
+        PatientFinding,
+        PatientExaminationIndication,
+        ExaminationIndicationClassificationChoice,
+    )
 
 
 class PatientExamination(models.Model):
@@ -23,6 +31,12 @@ class PatientExamination(models.Model):
     date_start = models.DateField(null=True, blank=True)
     date_end = models.DateField(null=True, blank=True)
     hash = models.CharField(max_length=255, unique=True)
+
+    if TYPE_CHECKING:
+        patient: "Patient"
+        examination: "Examination"
+        video: "Video"
+        patient_findings: models.QuerySet["PatientFinding"]
 
     # report_files
     class Meta:
@@ -90,7 +104,6 @@ class PatientExamination(models.Model):
         Returns the patient's age at the time of the examination.
         """
         from endoreg_db.models import Patient
-        from datetime import datetime
 
         patient: Patient = self.patient
         dob = patient.get_dob()
