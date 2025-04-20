@@ -6,14 +6,23 @@
 # ------------------------------------------------------------------------------
 
 from django.db import models
-from django.core.files.storage import FileSystemStorage
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from endoreg_db.utils.file_operations import get_uuid_filename
 from icecream import ic
 from typing import TYPE_CHECKING
-
+from ...utils import FILE_STORAGE, PDF_DIR
 from endoreg_db.utils.hashs import get_pdf_hash
+
+if TYPE_CHECKING:
+    from endoreg_db.models.administration.person import (
+        Patient,
+        Examiner,
+    )
+    from .report_file import AnonymExaminationReport
+    from ...medical.patient import PatientExamination
+    from ...administration import Center
+    from ...metadata.pdf_meta import PdfType
 from ...metadata import SensitiveMeta
 
 # setup logging to pdf_import.log
@@ -58,9 +67,9 @@ class RawPdfFile(models.Model):
 
     # Fields specific to RawPdfFile (keeping existing related_names)
     file = models.FileField(
-        upload_to=f"{data_paths['raw_report']}/",
+        upload_to=PDF_DIR,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-        storage=FileSystemStorage(location=data_paths["storage"]),
+        storage=FILE_STORAGE,
     )
     patient = models.ForeignKey(
         "Patient",
@@ -79,17 +88,23 @@ class RawPdfFile(models.Model):
     state_report_processing_required = models.BooleanField(default=True)
     state_report_processed = models.BooleanField(default=False)
     raw_meta = models.JSONField(blank=True, null=True)
-    report_file = models.ForeignKey(
-        "ReportFile",
+    anonym_examination_report = models.OneToOneField(
+        "AnonymExaminationReport",
         on_delete=models.SET_NULL,
-        related_name="raw_pdf_files",
-        null=True,
         blank=True,
+        null=True,
+        related_name="raw_pdf_file",
     )
     anonymized_text = models.TextField(blank=True, null=True)
 
     # Type hinting if needed
     if TYPE_CHECKING:
+        pdf_type: "PdfType"
+        examination: "PatientExamination"
+        examiner: "Examiner"
+        patient: "Patient"
+        center: "Center"
+        anonym_examination_report: "AnonymExaminationReport"
         sensitive_meta: "SensitiveMeta"
 
     def __str__(self):
@@ -166,7 +181,7 @@ class RawPdfFile(models.Model):
                 self.pdf_hash = get_pdf_hash(self.file.path)
             except FileNotFoundError:
                 pass
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.error("Could not calculate hash for %s: %s", self.file.name, e)
 
         if not self.patient and self.sensitive_meta:
@@ -184,7 +199,7 @@ class RawPdfFile(models.Model):
             try:
                 self.pdf_hash = get_pdf_hash(self.file.path)
                 super().save(update_fields=['pdf_hash'])
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.error("Could not calculate hash after save for %s: %s", self.file.name, e)
 
     def verify_existing_file(self, fallback_file):
@@ -213,7 +228,8 @@ class RawPdfFile(models.Model):
         return text, anonymized_text, report_meta
 
     def get_report_reader_config(self):
-        from endoreg_db.models.administration import PdfType, Center
+        from ...administration import Center
+        from ...metadata.pdf_meta import PdfType
         from warnings import warn
 
         if not self.pdf_type:
@@ -242,40 +258,3 @@ class RawPdfFile(models.Model):
         }
 
         return settings_dict
-
-    def get_or_create_report_file(self):
-        # TODO
-        # MAJOR CHANGE: Remove ReportFile in favor of PdfType and ReportType dependent post processing
-        # if pdf_type is not set, use default settings
-        # default is to identify a main report text and add it create a AnonymizedDocument Object
-        #TODO Implement AnonymizedDocument Object
-
-        if self.report_file:
-            report_file = self.report_file
-
-        elif ReportFile.objects.filter(pdf_hash=self.pdf_hash).exists():
-            report_file = ReportFile.objects.filter(pdf_hash=self.pdf_hash).get()
-            self.report_file = report_file
-            self.save()
-        else:
-            patient = self.sensitive_meta.get_or_create_pseudo_patient()
-            examiner = self.sensitive_meta.get_or_create_pseudo_examiner()
-            patient_examination = (
-                self.sensitive_meta.get_or_create_pseudo_patient_examination()
-            )
-
-            report_file = ReportFile.objects.create(
-                pdf_hash=self.pdf_hash,
-                center=self.center,
-                sensitive_meta=self.sensitive_meta,
-                patient=patient,
-                examiner=examiner,
-                examination=patient_examination,
-                text=self.anonymized_text,
-            )
-
-            report_file.save()
-            self.report_file = report_file
-            self.save()
-
-        return report_file

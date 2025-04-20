@@ -26,10 +26,17 @@ class ProductGroup(models.Model):
     def __str__(self):
         return str(self.name)
     
-    def get_products(self) -> models.BaseManager["Product"]:
+    def get_products(self) -> models.QuerySet["Product"]:
         from .product import Product
-        return Product.objects.filter(product_group=self)
-    
+        products = self.products.all()
+        if products:
+            return products
+        else:
+            # If no products are found, return an empty queryset
+            # This is to avoid returning None, which is not a queryset
+            # and would cause issues in the calling code.
+            return Product.objects.none()
+        
     def get_reference_product(self) -> "None | ReferenceProduct":
         reference_products = self.reference_products.all()
         if reference_products:

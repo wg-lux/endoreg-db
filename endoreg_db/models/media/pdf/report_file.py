@@ -1,4 +1,4 @@
-from datetime import date, time
+from ...utils import FILE_STORAGE, DOCUMENT_DIR
 from django.db import models
 
 
@@ -39,6 +39,11 @@ class AbstractDocument(models.Model):
     date = models.DateField(blank=True, null=True)
     time = models.TimeField(blank=True, null=True)
     file = models.FileField(
+        upload_to=DOCUMENT_DIR,
+        storage=FILE_STORAGE,
+        blank=True,
+        null=True,
+    )
 
     center = models.ForeignKey(
         "Center",

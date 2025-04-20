@@ -33,6 +33,8 @@ VIDEO_DIR = data_paths["video"]
 ANONYM_VIDEO_DIR = data_paths["video_export"]
 FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
+PDF_DIR = data_paths["raw_report"]
+DOCUMENT_DIR = data_paths["report"]
 
 def prepare_bulk_frames(frame_paths: List[Path]):
     """

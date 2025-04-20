@@ -1,7 +1,6 @@
 from django.db import models
 from typing import TYPE_CHECKING
 
-from endoreg_db.models.administration.product import product_material
 
 if TYPE_CHECKING:
     from .emission import EmissionFactor
@@ -9,7 +8,7 @@ if TYPE_CHECKING:
 
 class MaterialManager(models.Manager):
     def get_by_natural_key(self, name):
-        return self.get(name=name)
+        return str(self.get(name=name))
 
 class Material(models.Model):
     objects = MaterialManager()
