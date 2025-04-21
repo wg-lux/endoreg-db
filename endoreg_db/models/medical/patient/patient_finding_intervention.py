@@ -1,7 +1,12 @@
 from django.db import models 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..finding import FindingIntervention
+    from .patient_finding import PatientFinding
 
 class PatientFindingIntervention(models.Model):
-    patient_finding = models.ForeignKey(
+    finding = models.ForeignKey(
         'PatientFinding', 
         on_delete=models.CASCADE, 
         related_name='interventions'
@@ -15,6 +20,10 @@ class PatientFindingIntervention(models.Model):
     time_start = models.DateTimeField(blank=True, null=True)
     time_end = models.DateTimeField(blank=True, null=True)
     date = models.DateField(blank=True, null=True)
+
+    if TYPE_CHECKING:
+        finding: "PatientFinding"
+        intervention: "FindingIntervention"
 
     def __str__(self):
         return self.intervention.name

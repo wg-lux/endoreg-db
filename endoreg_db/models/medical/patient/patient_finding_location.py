@@ -1,10 +1,26 @@
 from django.db import models
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..finding import (
+        FindingLocationClassification,
+        FindingLocationClassificationChoice,
+    )
+    from .patient_finding import PatientFinding
 
 class PatientFindingLocation(models.Model):
+    finding = models.ForeignKey('PatientFinding', on_delete=models.CASCADE, related_name='locations')
     location_classification = models.ForeignKey('FindingLocationClassification', on_delete=models.CASCADE, related_name='patient_finding_locations')
     location_choice = models.ForeignKey('FindingLocationClassificationChoice', on_delete=models.CASCADE, related_name='patient_finding_locations')
     subcategories = models.JSONField(blank=True, null=True)
     numerical_descriptors = models.JSONField(blank=True, null=True)
+
+    if TYPE_CHECKING:
+        patient_finding: "PatientFinding"
+        location_classification: "FindingLocationClassification"
+        location_choice: "FindingLocationClassificationChoice"
+        subcategories: dict
+        numerical_descriptors: dict
 
     class Meta:
         verbose_name = 'Patient Finding Location'
@@ -93,7 +109,6 @@ class PatientFindingLocation(models.Model):
         Sets random numerical descriptors for this location if they are required.
         """
         import random
-        from endoreg_db.models import FindingLocationClassificationChoice
         if not self.subcategories or not self.numerical_descriptors:
             self.save()
 

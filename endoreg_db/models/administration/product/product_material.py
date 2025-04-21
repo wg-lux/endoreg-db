@@ -14,17 +14,17 @@ class ProductMaterial(models.Model):
     material = models.ForeignKey(
         "Material",
         on_delete=models.CASCADE,
-        related_name="product_materials",
+        related_name="material_product_materials", # Changed related_name
     )
     product = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
-        related_name="product_materials"
+        related_name="product_product_materials" # Changed related_name
     )
     unit = models.ForeignKey(
         "Unit",
         on_delete=models.CASCADE,
-        related_name="product_materials",
+        related_name="unit_product_materials", # Changed related_name
     )
     quantity = models.FloatField()
 
@@ -49,6 +49,6 @@ class ProductMaterial(models.Model):
     
     def __str__(self) -> str:
         return f"{self.product.name} - {self.material.name} - {self.quantity} {self.unit.name}"
-    
-        
+
+
 

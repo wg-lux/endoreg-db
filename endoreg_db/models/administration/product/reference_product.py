@@ -18,7 +18,7 @@ class ReferenceProduct(models.Model):
     product_group = models.OneToOneField(
         "ProductGroup",
         on_delete=models.CASCADE,
-        related_name="reference_products"
+        related_name="reference_product" # Changed from "reference_products"
     )
     emission_factor_total = models.ForeignKey(
         "EmissionFactor", 
@@ -125,6 +125,6 @@ class ReferenceProduct(models.Model):
             return self.emission_factor_product
         else:
             raise Exception("Unknown component: " + component)
-        
+
 
 

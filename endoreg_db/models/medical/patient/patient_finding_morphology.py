@@ -1,6 +1,17 @@
 from django.db import models
+from typing import TYPE_CHECKING
 
+
+if TYPE_CHECKING:
+    from ..finding import (
+        FindingLocationClassification,
+        FindingLocationClassificationChoice,
+    )
+    from .patient_finding import PatientFinding
 class PatientFindingMorphology(models.Model):
+    finding = models.ForeignKey(
+        'PatientFinding', on_delete=models.CASCADE, related_name='morphologies'
+    )
     morphology_classification = models.ForeignKey(
         'FindingMorphologyClassification', on_delete=models.CASCADE, related_name='patient_finding_morphologies'
     ) 
@@ -10,6 +21,12 @@ class PatientFindingMorphology(models.Model):
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
 
+    if TYPE_CHECKING:
+        patient_finding: "PatientFinding"
+        morphology_classification: "FindingLocationClassification"
+        morphology_choice: "FindingLocationClassificationChoice"
+        subcategories: dict
+        numerical_descriptors: dict
     class Meta:
         verbose_name = 'Patient Finding Morphology'
         verbose_name_plural = 'Patient Finding Morphologies'
