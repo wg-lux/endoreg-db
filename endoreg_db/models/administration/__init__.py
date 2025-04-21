@@ -34,7 +34,7 @@ from .center import (
 from .person import (
     Person,
     Examiner, 
-    Patient, PatientForm,
+    Patient, 
     PortalUserInfo,     
     FirstName,
     LastName,
@@ -73,7 +73,7 @@ __all__ = [
 
     # Person
     "Person",
-    "Patient", "PatientForm",
+    "Patient",
     "Examiner",
     "PortalUserInfo",
     "FirstName",

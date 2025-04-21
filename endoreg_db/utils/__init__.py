@@ -49,6 +49,7 @@ from .ffmpeg_wrapper import (
     get_stream_info,
     transcode_video,
     transcode_videofile_if_required,
+    extract_frames,
 )
 
 
@@ -82,5 +83,6 @@ __all__ = [
     "get_stream_info",
     "transcode_video",
     "transcode_videofile_if_required",  # Added
+    "extract_frames",  # Added
 ]
 

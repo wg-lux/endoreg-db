@@ -1,7 +1,7 @@
 from pathlib import Path
 from rest_framework import serializers
 from django.conf import settings
-from ..models import RawVideoFile, SensitiveMeta
+from ..models import VideoFile, SensitiveMeta
 import cv2
 from datetime import datetime
 
@@ -30,7 +30,7 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
     file = serializers.SerializerMethodField()
 
     class Meta:
-        model = RawVideoFile
+        model = VideoFile
         fields = ['id', 'original_file_name', 'file', 'video_url', 'full_video_path', 
                   'sensitive_meta_id', 'patient_first_name', 'patient_last_name', 'patient_dob', 'examination_date','duration']
 
@@ -43,7 +43,7 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
         query_filter = {} if last_id is None else {"id__gt": int(last_id)}
 
         # Get next available video
-        video_entry = RawVideoFile.objects.select_related("sensitive_meta").filter(**query_filter).order_by('id').first()
+        video_entry = VideoFile.objects.select_related("sensitive_meta").filter(**query_filter).order_by('id').first()
 
         return video_entry  # Always return model instance or None
 

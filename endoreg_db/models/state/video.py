@@ -1,24 +1,15 @@
 from django.db import models
 from .abstract import AbstractState
 from typing import TYPE_CHECKING, Optional
-
+if TYPE_CHECKING:
+    from ..media import VideoFile
 class AbstractVideoState(AbstractState):
     """
     Abstract base class for video-related states.
 
     Tracks common processing state flags for video entities.
     """
-    # Link to the unified VideoFile model
-    video_file = models.OneToOneField(
-        "VideoFile",
-        on_delete=models.CASCADE,
-        related_name="state",
-        null=True,
-        blank=True,
-    )
-
     if TYPE_CHECKING:
-        from ..media.video.video_file import VideoFile
         video_file: Optional["VideoFile"]
 
     # --- Processing State Flags ---
@@ -42,6 +33,4 @@ class VideoState(AbstractVideoState):
     class Meta:
         verbose_name = "Video State"
         verbose_name_plural = "Video States"
-        indexes = [
-            models.Index(fields=['video_file']),
-        ]
+

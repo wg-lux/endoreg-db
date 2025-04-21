@@ -1,6 +1,6 @@
 from .person import Person
 from .patient import (
-    Patient, PatientForm,
+    Patient,
 )
 from .examiner import Examiner
 from .user.portal_user_information import PortalUserInfo
@@ -11,7 +11,7 @@ from .profession import Profession
 
 __all__ = [
     "Person",
-    "Patient", "PatientForm",
+    "Patient",
     "Examiner",
     "PortalUserInfo",
     "FirstName",

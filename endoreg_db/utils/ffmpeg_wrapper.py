@@ -223,9 +223,83 @@ def transcode_videofile_if_required(
                  return None
         return input_path # Return original path if no copy needed
 
+def extract_frames(
+    input_path: Path,
+    output_dir: Path,
+    quality: int = 2, # FFmpeg quality scale (2=best for JPEG)
+    ext: str = "jpg",
+    fps: Optional[float] = None # Optional: Extract at a specific frame rate
+) -> List[Path]:
+    """
+    Extracts frames from a video file using FFmpeg.
+    Returns a list of paths to the extracted frames.
+    """
+    if not input_path.exists():
+        logger.error("Input file not found for frame extraction: %s", input_path)
+        return []
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_pattern = output_dir / f"frame_%06d.{ext}" # e.g., frame_000001.jpg
+
+    command = [
+        "ffmpeg",
+        "-i", str(input_path),
+        "-qscale:v", str(quality), # Quality scale for video
+    ]
+
+    if fps is not None:
+        command.extend(["-vf", f"fps={fps}"]) # Add fps filter if specified
+
+    command.append(str(output_pattern))
+
+    logger.info("Starting frame extraction: %s -> %s", input_path.name, output_dir)
+    logger.debug("FFmpeg command: %s", " ".join(command))
+
+    extracted_paths = []
+    try:
+        # Run ffmpeg and wait for completion
+        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+        stderr_output = ""
+        if process.stderr:
+            # You might want to parse stderr for progress if needed, but it's complex.
+            # For now, just capture it for error reporting.
+            for line in process.stderr:
+                stderr_output += line
+                # logger.debug(f"ffmpeg: {line.strip()}") # Optional detailed logging
+
+        process.wait()
+
+        if process.returncode == 0:
+            logger.info("Frame extraction finished successfully for %s.", input_path.name)
+            # List the files created by ffmpeg
+            extracted_paths = sorted(list(output_dir.glob(f"frame_*.{ext}")))
+            logger.info("Found %d extracted frames.", len(extracted_paths))
+        else:
+            logger.error("FFmpeg frame extraction failed for %s with return code %d.", input_path.name, process.returncode)
+            logger.error("FFmpeg stderr:\n%s", stderr_output)
+            # Clean up potentially created frames if extraction failed partially
+            for f in output_dir.glob(f"frame_*.{ext}"):
+                try:
+                    f.unlink()
+                except OSError as e:
+                    logger.error("Failed to delete partial frame %s: %s", f, e)
+            return [] # Return empty list on failure
+
+    except FileNotFoundError:
+        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        return []
+    except Exception as e:
+        logger.error("Error during frame extraction of %s: %s", input_path.name, e, exc_info=True)
+        return []
+
+    return extracted_paths
+
+
 __all__ = [
     "get_stream_info",
     "assemble_video_from_frames", # Updated name
     "transcode_video",
     "transcode_videofile_if_required",
+    "extract_frames"
+
 ]

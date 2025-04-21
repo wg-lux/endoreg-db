@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from ..finding import Finding
     from .patient_finding import PatientFinding
     from ..examination import Examination
-    from ...media.video import VideoFile
+    from ...media import VideoFile, RawPdfFile
     from .patient_examination_indication import PatientExaminationIndication
 
 
@@ -37,6 +37,7 @@ class PatientExamination(models.Model):
         video: "VideoFile"
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
+        raw_pdf_files: models.QuerySet["RawPdfFile"]
 
     # report_files
     class Meta:

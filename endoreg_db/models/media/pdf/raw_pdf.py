@@ -55,6 +55,7 @@ class RawPdfFile(models.Model):
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
+        related_name="raw_pdf_files",
     )
     examiner = models.ForeignKey(
         "Examiner",

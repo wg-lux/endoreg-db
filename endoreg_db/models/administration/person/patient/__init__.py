@@ -1,5 +1,5 @@
-from .patient import Patient, PatientForm
+from .patient import Patient
 
 __all__ = [
-    "Patient", "PatientForm",
+    "Patient",
 ]

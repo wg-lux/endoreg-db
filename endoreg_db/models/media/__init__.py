@@ -1,6 +1,6 @@
 from .video import VideoFile
 from .frame import Frame
-from .pdf import RawPdfFile, DocumentType, AnonymExaminationReport
+from .pdf import RawPdfFile, DocumentType, AnonymExaminationReport, ReportReaderConfig, ReportReaderFlag
 
 __all__ = [
     "VideoFile",
@@ -8,4 +8,6 @@ __all__ = [
     "RawPdfFile",
     "DocumentType",
     "AnonymExaminationReport",
+    'ReportReaderConfig',
+    'ReportReaderFlag',
 ]

@@ -108,7 +108,7 @@ class SensitiveMeta(models.Model):
     # --- Methods related to pseudo-entities are now primarily handled within save logic ---
     # Keep simple getters if needed, but creation logic is centralized.
 
-    def get_pseudo_examiner(self) -> "Examiner" | None:
+    def get_pseudo_examiner(self) -> "Examiner | None":
         """Returns the linked pseudo examiner, if one exists."""
         if self.pk:
             return self.examiners.first()
@@ -116,13 +116,13 @@ class SensitiveMeta(models.Model):
 
     # Removed create_pseudo_examiner - logic is now in sensitive_meta_logic.create_pseudo_examiner_logic
 
-    def get_pseudo_patient(self) -> "Patient" | None:
+    def get_pseudo_patient(self) -> "Patient | None":
         """Returns the linked pseudo patient, if one exists."""
         return self.pseudo_patient # Access the FK directly
 
     # Removed create_pseudo_patient - logic is now in sensitive_meta_logic.get_or_create_pseudo_patient_logic
 
-    def get_pseudo_patient_examination(self) -> "PatientExamination" | None:
+    def get_pseudo_patient_examination(self) -> "PatientExamination | None":
         """Returns the linked pseudo patient examination, if one exists."""
         return self.pseudo_examination # Access the FK directly
 

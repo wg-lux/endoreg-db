@@ -8,7 +8,7 @@ from tqdm import tqdm
 from typing import TYPE_CHECKING, Union, List, Optional
 
 if TYPE_CHECKING:
-    from endoreg_db.models import RawVideoFile, Video
+    from ...models.media import VideoFile
 
 from django.core.files import File
 import io

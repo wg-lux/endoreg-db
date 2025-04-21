@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404
-from ..models import RawVideoFile
+from ..models import VideoFile
 import json
 from ..serializers.video_segmentation import VideoFileSerializer
 
@@ -7,7 +7,7 @@ def video_timeline_view(request, video_id):
     """
     Fetches 'outside' label segments and passes their timestamps to the template.
     """
-    video_entry = get_object_or_404(RawVideoFile, id=video_id)
+    video_entry = get_object_or_404(VideoFile, id=video_id)
 
     # Get metadata (Assumes serializer method exists)
     video_serializer = VideoFileSerializer(video_entry, context={'request': request})

@@ -51,22 +51,13 @@ class Center(models.Model):
     def __str__(self) -> str:
         return str(object=self.name)
 
-    def get_first_names(self) -> models.BaseManager[FirstName]:
-        from ..person import FirstName
+    def get_first_names(self):
+        return self.first_names.all()
 
-        names = FirstName.objects.filter(centers=self)
-        return names
+    def get_last_names(self):
+        return self.last_names.all()
 
-    def get_last_names(self) -> models.BaseManager[LastName]:
-        from ..person import LastName
-
-        names = LastName.objects.filter(centers=self)
-        return names
-
-    def get_endoscopes(self) -> models.BaseManager[Endoscope]:
-        from endoreg_db.models.medical.hardware import Endoscope
-
-        endoscopes = Endoscope.objects.filter(center=self)
-        return endoscopes
+    def get_endoscopes(self):
+        return self.endoscopes.all()
 
     

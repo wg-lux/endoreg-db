@@ -1,8 +1,6 @@
 from ..person import Person
 from django import forms
 from django.forms import DateInput
-from ...patient import PatientExamination
-from ...data_file import ReportFile
 from django.db import models
 from faker import Faker
 import random
@@ -11,7 +9,10 @@ from icecream import ic
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Center, Gender
+    from ....other import Gender
+    from ....medical.patient import PatientExamination
+    from ....administration import Center
+    from ....media import RawPdfFile, AnonymExaminationReport
 
 
 class Patient(Person):
@@ -39,6 +40,14 @@ class Patient(Person):
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
+
+    if TYPE_CHECKING:
+        first_name: str
+        last_name: str
+        dob: datetime.date
+        gender: "Gender"
+        center: "Center"
+        patient_examinations: models.QuerySet["PatientExamination"]
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
@@ -94,9 +103,7 @@ class Patient(Person):
         """
         Get all associated PatientExaminations, ReportFiles, and Videos for the patient.
         """
-        from endoreg_db.models import PatientExamination, ReportFile, Video
-
-        patient_examinations = PatientExamination.objects.filter(patient=self)
+        patient_examinations = self.patient_examinations.all()
         report_files, videos = [], []
         for patient_examination in patient_examinations:
             rr = patient_examination.reportfile_set.all()
@@ -137,7 +144,7 @@ class Patient(Person):
         """Creates a patient examination for this patient."""
 
         if examination_name_str:
-            from endoreg_db.models import Examination
+            from ....medical import Examination, PatientExamination
 
             examination = Examination.objects.get(name=examination_name_str)
             patient_examination = PatientExamination(
@@ -159,10 +166,11 @@ class Patient(Person):
     def create_examination_by_indication(
         self, indication, date_start: datetime = None, date_end: datetime = None
     ):
-        from endoreg_db.models import (
+        from ....medical import (
             ExaminationIndication,
             Examination,
             PatientExaminationIndication,
+            PatientExamination,
         )
 
         assert isinstance(indication, ExaminationIndication)
@@ -194,7 +202,7 @@ class Patient(Person):
         date_end: datetime = None,
         description: str = None,
     ):
-        from endoreg_db.models import Event, PatientEvent
+        from ....medical import Event, PatientEvent
 
         event = Event.objects.get(name=event_name_str)
 
@@ -209,10 +217,14 @@ class Patient(Person):
 
         return patient_event
 
-    def create_examination_by_report_file(self, report_file: ReportFile):
+    def create_examination_by_pdf(self, pdf: "RawPdfFile"):
         """Creates a patient examination for this patient based on the given report file."""
-        patient_examination = PatientExamination(patient=self, report_file=report_file)
+        from ....medical import PatientExamination
+        patient_examination = PatientExamination(patient=self)
         patient_examination.save()
+        pdf.examination = patient_examination
+        pdf.save()
+
         return patient_examination
 
     @classmethod
@@ -224,7 +236,7 @@ class Patient(Person):
         :param p_female: Probability of selecting 'female' gender.
         :return: Gender object selected based on given probabilities.
         """
-        from endoreg_db.models import Gender
+        from ....other import Gender
 
         # Extract names and probabilities
         gender_names = ["male", "female"]
@@ -306,7 +318,7 @@ class Patient(Person):
         :param center: The center of the patient.
         :return: The created patient.
         """
-        from endoreg_db.models import Center
+        from ....administration import Center
 
         gender = Patient.get_random_gender()
         last_name, first_name = Patient.get_random_name_for_gender(gender)
@@ -350,7 +362,7 @@ class Patient(Person):
         :param date: The date of the lab sample.
         :return: The created lab sample.
         """
-        from endoreg_db.models import PatientLabSample, PatientLabSampleType
+        from ....medical import PatientLabSample, PatientLabSampleType
 
         if date is None:
             date = datetime.now()
@@ -375,15 +387,15 @@ class Patient(Person):
         return patient_lab_sample
 
 
-class PatientForm(forms.ModelForm):
-    class Meta:
-        model = Patient
-        fields = "__all__"
-        widgets = {
-            "dob": DateInput(attrs={"type": "date"}),
-        }
+# class PatientForm(forms.ModelForm):
+#     class Meta:
+#         model = Patient
+#         fields = "__all__"
+#         widgets = {
+#             "dob": DateInput(attrs={"type": "date"}),
+#         }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for field in self.fields.values():
-            field.widget.attrs["class"] = "form-control"
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         for field in self.fields.values():
+#             field.widget.attrs["class"] = "form-control"

@@ -83,7 +83,6 @@ class AbstractExaminationReport(AbstractDocument):
     examiners = models.ManyToManyField(
         "Examiner",
         blank=True,
-        null=True,
     )
 
     sensitive_meta = models.ForeignKey(

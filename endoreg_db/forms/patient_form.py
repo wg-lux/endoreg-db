@@ -1,11 +1,12 @@
 from django import forms
 from django.forms import ModelForm, Select
-from endoreg_db.models.persons.patient.patient import Patient
-from django import forms
-from django.forms import ModelForm, Select
-from endoreg_db.models.persons.patient.patient import Patient
-from endoreg_db.models.persons.gender import Gender  
-from endoreg_db.models.center import Center  
+from endoreg_db.models import (
+    Patient,
+    Gender,
+    Center
+)
+
+
 class PatientForm(ModelForm):
     gender = forms.ModelChoiceField(
         queryset=Gender.objects.all(),  

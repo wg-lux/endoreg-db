@@ -30,6 +30,14 @@ from .patient import (
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientFindingIntervention,
+    PatientDisease,
+    PatientEvent,
+    PatientExaminationIndication,
+    PatientLabSample,
+    PatientLabSampleType,
+    PatientLabValue,
+    PatientMedication,
+    PatientMedicationSchedule,
 )
 
 from .risk import (
@@ -40,13 +48,19 @@ from .medication import (
     Medication,
     MedicationManager,
     MedicationSchedule,
-    MedicationScheduleManager,
     MedicationIntakeTime,
-    MedicationIntakeTimeManager,
     MedicationIndicationType,
-    MedicationIndicationTypeManager,
     MedicationIndication,
-    MedicationIndicationManager
+)
+
+from .hardware import (
+    Endoscope,
+    EndoscopeType,
+    EndoscopyProcessor,
+)
+
+from .laboratory import (
+    LabValue,
 )
 
 __all__ = [
@@ -84,11 +98,25 @@ __all__ = [
     "FindingInterventionType",
 
     # Patient
+    ## Disease
+    "PatientDisease",
+    ## Event
+    "PatientEvent",
+    ## Examination
+    "PatientExaminationIndication",
     "PatientExamination",
+    ## Finding
     "PatientFinding",
     "PatientFindingLocation",
     "PatientFindingMorphology",
     "PatientFindingIntervention",
+    ## Laboratory
+    "PatientLabSample",
+    "PatientLabSampleType",
+    "PatientLabValue",
+    ## Medication
+    "PatientMedication",
+    "PatientMedicationSchedule",
 
     # Risk
     "Risk",
@@ -97,11 +125,15 @@ __all__ = [
     "Medication",
     "MedicationManager",
     "MedicationSchedule",
-    "MedicationScheduleManager",
     "MedicationIntakeTime",
-    "MedicationIntakeTimeManager",
     "MedicationIndicationType",
-    "MedicationIndicationTypeManager",
     "MedicationIndication",
-    "MedicationIndicationManager"
+
+    # Hardware
+    "Endoscope",
+    "EndoscopeType",
+    "EndoscopyProcessor",
+
+    # Laboratory
+    "LabValue",
 ]
