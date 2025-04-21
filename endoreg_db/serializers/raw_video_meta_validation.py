@@ -3,7 +3,6 @@ from rest_framework import serializers
 from django.conf import settings
 from ..models import VideoFile, SensitiveMeta
 import cv2
-from datetime import datetime
 
 
 class VideoFileForMetaSerializer(serializers.ModelSerializer):

@@ -274,4 +274,3 @@ class VideoImportMeta(models.Model):
         result_html += f"Patient data removed: {self.patient_data_removed}\n"
         result_html += f"Outside removed: {self.outside_removed}\n"
         return result_html
-

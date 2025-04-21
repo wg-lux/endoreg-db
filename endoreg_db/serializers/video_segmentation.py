@@ -8,7 +8,7 @@ from django.db import transaction
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Video
+    from endoreg_db.models import VideoFile
 class VideoFileSerializer(serializers.ModelSerializer):
     """
     Serializer that dynamically handles video retrieval and streaming.
@@ -52,7 +52,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     # @staticmethod #using @staticmethod makes it reusable without needing to create a serializer instance.
     #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
-    def get_video_selection_field(self, obj:"Video"):
+    def get_video_selection_field(self, obj:"VideoFile"):
         """
         Returns the field used for video selection in the frontend dropdown.
         Currently, it shows the video ID, but this can be changed easily later.
@@ -76,7 +76,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         return {"error": "Video URL not avalaible"}
 
-    def get_duration(self, obj:"Video"):
+    def get_duration(self, obj:"VideoFile"):
         """
         Returns the total duration of the video in seconds.
         If duration is not stored in the database, it extracts it dynamically using OpenCV.
@@ -87,7 +87,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             )  # If duration is stored in the database, return it directly.
 
         # Dynamically extract duration if not stored
-        video_path = obj.file.path
+        video_path = obj.active_file_path
         cap = cv2.VideoCapture(video_path)
 
         if not cap.isOpened():
@@ -101,31 +101,28 @@ class VideoFileSerializer(serializers.ModelSerializer):
             round(total_frames / fps, 2) if fps > 0 else None
         )  # Return duration in seconds
 
-    def get_file(self, obj:"Video"):
+    def get_file(self, obj:"VideoFile"):
         """
         Ensures the file field returns only the relative path, adn also validates it
         """
-        if not obj.file:
+        if not obj.active_file or not obj.active_file_path.name:
             return {"error": "No file  associated with this entry"}
-        # obj.file.name is an attribute of FieldFile that returns the file path as a string and name is not the database attribute, it is an attribute of Django’s FieldFile object that holds the file path as a string.
-        if not hasattr(obj.file, "name") or not obj.file.name.strip():
-            return {"error": "Invalid file name"}
+
 
         return str(
-            obj.file.name
+            obj.active_file_path.name
         ).strip()  #  Only return the file path, no URL,#obj.file returning a FieldFile object instead of a string
 
-    def get_full_video_path(self, obj:"Video"):
+    def get_full_video_path(self, obj:"VideoFile"):
         """
         Constructs the absolute file path dynamically.
         - Uses the actual storage directory (`/home/admin/test-data/`)
         """
-        from ..utils import data_paths
-        STORAGE_DIR = data_paths["storage"]  #  Get the storage directory from the utility
-        if not obj.file:
+        from ..models.utils import STORAGE_DIR
+        if not obj.active_file:
             return {"error": "No video file associated with this entry"}
 
-        video_relative_path = str(obj.file.name).strip()  #  Convert FieldFile to string
+        video_relative_path = str(obj.active_file_path).strip()  #  Convert FieldFile to string
         if not video_relative_path:
             return {
                 "error": "Video file path is empty or invalid"
@@ -139,7 +136,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             else {"error": f"file not found at: {full_path}"}
         )
 
-    def get_sequences(self, obj:"Video"):
+    def get_sequences(self, obj:"VideoFile"):
         """
         Extracts the sequences field from the RawVideoFile model.
         Example Output:
@@ -153,7 +150,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "error": "no sequence found, check database first"
         }  #  Get from sequences, return {} if missing
 
-    def get_label_names(self, obj:"Video"):
+    def get_label_names(self, obj:"VideoFile"):
         """
         Extracts only label names from the sequences data.
         Example Output:
@@ -162,7 +159,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         sequences = self.get_sequences(obj)
         return list(sequences.keys()) if sequences else []
 
-    def get_label_time_segments(self, obj:"Video"):
+    def get_label_time_segments(self, obj:"VideoFile"):
         """
         Converts frame sequences of a selected label into time segments in seconds.
         Also retrieves frame-wise predictions for the given label.
@@ -184,7 +181,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         print("here is fps::::::::::::::::::.-----------::::::", fps)
         sequences = self.get_sequences(obj)  # Fetch sequence data
-        readable_predictions = obj.readable_predictions  # Predictions from DB
+        readable_predictions = "FIXME"
+        # readable_predictions = obj.readable_predictions  # Predictions from DB
 
         if not isinstance(readable_predictions, list):
             return {"error": "Invalid prediction data format. Expected a list."}
@@ -375,22 +373,12 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             for seg in existing_segments
         }
 
-        # Prepare lists for batch processing
-        updated_segments = []  # Stores segments that need to be updated
-        new_entries = []  # Stores segments that need to be created
-        existing_keys = set(
-            existing_segments_dict.keys()
-        )  # Existing database segment keys
-        new_keys = set(
-            (float(seg["start_frame_number"]), float(seg["end_frame_number"]))
-            for seg in new_segments
-        )  # New frontend segment keys
 
         # Start a transaction to ensure database consistency
         updated_segments = []
         new_entries = []
         existing_keys = set(existing_segments_dict.keys())
-        new_keys = set(
+        _new_keys = set(
             (float(seg["start_frame_number"]), float(seg["end_frame_number"]))
             for seg in new_segments
         )

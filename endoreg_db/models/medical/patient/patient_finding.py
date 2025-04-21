@@ -132,8 +132,3 @@ class PatientFinding(models.Model):
     def add_video_segment(self, video_segment):
         self.video_segments.add(video_segment)
         return video_segment
-
-
-
-
-

@@ -19,3 +19,4 @@ class EndoscopeTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = EndoscopeType
         fields = '__all__'
+        

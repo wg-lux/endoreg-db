@@ -33,4 +33,3 @@ class VideoState(AbstractVideoState):
     class Meta:
         verbose_name = "Video State"
         verbose_name_plural = "Video States"
-

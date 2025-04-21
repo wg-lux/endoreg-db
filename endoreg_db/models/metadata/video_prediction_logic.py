@@ -1,7 +1,6 @@
 import logging
 from typing import TYPE_CHECKING, List, Tuple, Optional
 import numpy as np
-import pickle
 
 # Import necessary models and utils used by the logic
 from ..utils import find_segments_in_prediction_array

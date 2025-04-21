@@ -26,3 +26,4 @@ class Unit(models.Model):
     
     def natural_key(self):
         return (self.name,)
+    

@@ -153,7 +153,6 @@ class LabValue(models.Model):
         if age_dependent:
             # get normal range for age)
             warnings.warn("Age dependent normal range not implemented yet")
-            pass
 
         if gender_dependent:
             if not gender:
