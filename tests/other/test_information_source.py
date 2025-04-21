@@ -21,7 +21,6 @@ class InformationSourceModelTest(TestCase):
             self.fail(f"load_information_source command failed: {e}")
 
     def test_abbreviation_unique_constraint(self):
-    def test_abbreviation_unique_constraint(self):
         """Test if the abbreviation field is unique."""
         from django.db.utils import IntegrityError
         with self.assertRaises(IntegrityError):
