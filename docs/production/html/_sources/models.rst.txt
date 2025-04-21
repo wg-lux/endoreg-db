@@ -62,7 +62,7 @@ Frame
 
 Report
 ====================
-.. automodule:: endoreg_db.models.media.report
+.. automodule:: endoreg_db.models.media.pdf
    :members:
    :undoc-members:
    :show-inheritance:
@@ -132,21 +132,21 @@ Metadata
 
 Requirement
 ====================
-.. automodule:: endoreg_db.models.medical.requirement
+.. automodule:: endoreg_db.models.requirement
    :members:
    :undoc-members:
    :show-inheritance:
 
 State
 ====================
-.. automodule:: endoreg_db.models.medical.state
+.. automodule:: endoreg_db.models.state
    :members:
    :undoc-members:
    :show-inheritance:
 
 Other
 ====================
-.. automodule:: endoreg_db.models.medical.other
+.. automodule:: endoreg_db.models.other
    :members:
    :undoc-members:
    :show-inheritance:
