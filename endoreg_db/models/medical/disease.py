@@ -1,22 +1,32 @@
 from django.db import models
-from typing import List
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .patient import PatientDisease
 
 
 class DiseaseManager(models.Manager):
+    """Manager for Disease with natural key support."""
+
     def get_by_natural_key(self, name):
         """
-        Retrieve a model instance by its natural key.
-        
+        Retrieve a Disease instance by its natural key (name).
+
         Args:
             name: The natural key value used to match the model's 'name' field.
-        
+
         Returns:
-            The model instance corresponding to the provided natural key.
+            The Disease instance corresponding to the provided natural key.
         """
         return self.get(name=name)
 
 
 class Disease(models.Model):
+    """
+    Represents a specific disease or medical condition.
+
+    Can define associated subcategories and numerical descriptors applicable to the disease itself.
+    """
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
@@ -25,24 +35,22 @@ class Disease(models.Model):
 
     objects = DiseaseManager()
 
+    if TYPE_CHECKING:
+        disease_classifications: models.QuerySet["DiseaseClassification"]
+        patient_diseases: models.QuerySet["PatientDisease"]
+
     def natural_key(self):
-        """
-        Return the natural key for this model instance.
-        
-        The natural key is defined as a tuple containing the instance's name.
-        """
+        """Returns the natural key (name) as a tuple."""
         return (self.name,)
 
     def __str__(self):
-        """
-        Return the string representation of the instance using its name attribute.
-        """
+        """Returns the name of the disease."""
         return str(self.name)
 
     def get_classifications(self) -> List["DiseaseClassification"]:
         """
-        Retrieves all classifications associated with this disease.
-        
+        Retrieves all classification systems associated with this disease.
+
         Returns:
             List[DiseaseClassification]: A list of related disease classification objects.
         """
@@ -53,20 +61,25 @@ class Disease(models.Model):
 
 
 class DiseaseClassificationManager(models.Manager):
+    """Manager for DiseaseClassification with natural key support."""
+
     def get_by_natural_key(self, name):
         """
-        Retrieves a model instance using its natural key.
-        
+        Retrieve a DiseaseClassification instance by its natural key (name).
+
         Args:
             name: A unique identifier representing the natural key of the instance.
-        
+
         Returns:
-            The model instance corresponding to the given natural key.
+            The DiseaseClassification instance corresponding to the given natural key.
         """
         return self.get(name=name)
 
 
 class DiseaseClassification(models.Model):
+    """
+    Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
+    """
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
@@ -77,28 +90,22 @@ class DiseaseClassification(models.Model):
 
     objects = DiseaseClassificationManager()
 
+    if TYPE_CHECKING:
+        disease: "Disease"
+        disease_classification_choices: models.QuerySet["DiseaseClassificationChoice"]
+
     def natural_key(self):
-        """
-        Return the natural key for the instance.
-        
-        Returns a single-element tuple containing the object's name, which is used as a
-        unique identifier for natural key-based lookups.
-        """
+        """Returns the natural key (name) as a tuple."""
         return (self.name,)
 
     def __str__(self):
-        """
-        Return the string representation of the model instance.
-        
-        This method converts the instance's name attribute to a string, ensuring a clear
-        and consistent display across Django interfaces.
-        """
+        """Returns the name of the classification."""
         return str(self.name)
 
     def get_choices(self) -> List["DiseaseClassificationChoice"]:
         """
-        Retrieves all choices associated with this disease classification.
-        
+        Retrieves all choices within this classification system.
+
         Returns:
             List[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
@@ -109,15 +116,27 @@ class DiseaseClassification(models.Model):
 
 
 class DiseaseClassificationChoiceManager(models.Manager):
+    """Manager for DiseaseClassificationChoice with natural key support."""
+
     def get_by_natural_key(self, name):
-        """Retrieve an object by its natural key.
-        
+        """
+        Retrieve a DiseaseClassificationChoice instance by its natural key (name).
+
         Queries for and returns the instance whose 'name' attribute matches the provided key.
+
+        Args:
+            name: The natural key value used to match the model's 'name' field.
+
+        Returns:
+            The DiseaseClassificationChoice instance corresponding to the provided natural key.
         """
         return self.get(name=name)
 
 
 class DiseaseClassificationChoice(models.Model):
+    """
+    Represents a specific choice within a disease classification system (e.g., Forrest IIa).
+    """
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
@@ -130,19 +149,14 @@ class DiseaseClassificationChoice(models.Model):
 
     objects = DiseaseClassificationChoiceManager()
 
+    if TYPE_CHECKING:
+        disease_classification: "DiseaseClassification"
+        patient_diseases: models.QuerySet["PatientDisease"]
+
     def natural_key(self):
-        """
-        Return a tuple representing the natural key for the instance.
-        
-        The tuple contains the unique name of the model instance, which is used to
-        identify it naturally.
-        """
+        """Returns the natural key (name) as a tuple."""
         return (self.name,)
 
     def __str__(self):
-        """
-        Return the string representation of the object's name.
-        
-        This method converts the model's 'name' attribute to a string for a human-readable display.
-        """
+        """Returns the name of the classification choice."""
         return str(self.name)

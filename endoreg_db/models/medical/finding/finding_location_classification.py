@@ -26,10 +26,10 @@ class FindingLocationClassification(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)
     
     def get_available_findings(self):
-        from endoreg_db.models import Finding
+        from ..finding import Finding
         available_findings:List[Finding] = [_ for _ in self.findings.all()]
         return available_findings
     
@@ -40,7 +40,7 @@ class FindingLocationClassification(models.Model):
         """
         Returns a list of findings that are in the input list but not available for this location classification.
         """
-        from endoreg_db.models import Finding
+        from ..finding import Finding
         for _ in findings:
             assert isinstance(_, Finding)
         available_findings:List['Finding'] = self.get_available_findings()
@@ -85,7 +85,7 @@ class FindingLocationClassificationChoice(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)
     
     def get_subcategories(self)->dict:
         return self.subcategories

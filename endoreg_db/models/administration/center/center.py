@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .center_waste import CenterWaste
 
 class CenterManager(models.Manager):
-    def get_by_natural_key(self, name):
+    def get_by_natural_key(self, name) -> "Center":
         return self.get(name=name)
 
 
@@ -39,6 +39,7 @@ class Center(models.Model):
         endoscopes: models.QuerySet["Endoscope"]
         first_names: models.QuerySet["FirstName"]
         last_names: models.QuerySet["LastName"]
+        objects: CenterManager
 
     @classmethod
     def get_by_name(cls, name):

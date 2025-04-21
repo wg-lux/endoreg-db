@@ -1,5 +1,10 @@
 from django.db import models
-
+from typing import TYPE_CHECKING, Optional
+if TYPE_CHECKING:
+    from ...administration.person.patient import Patient
+    from ..laboratory import LabValue
+    from ...other.unit import Unit
+    from .patient_lab_sample import PatientLabSample
 class PatientLabValue(models.Model):
     """
     A class representing a patient lab value.
@@ -29,17 +34,23 @@ class PatientLabValue(models.Model):
     )
     unit = models.ForeignKey('Unit', on_delete=models.CASCADE, blank=True, null=True)
 
+    if TYPE_CHECKING:
+
+        patient: "Patient"
+        lab_value: "LabValue"
+        unit: "Unit"
+        sample: "PatientLabSample"
+
     @classmethod
     def create_lab_value_by_sample(
-        cls, sample=None, lab_value_name=None, 
-        value=None, value_str=None, 
-        unit=None
+        cls, sample:"PatientLabSample", lab_value_name:str, 
+        value:Optional[float]=None, value_str:Optional[str]=None, 
+        unit:Optional["Unit"]=None
     ):
-        from endoreg_db.models import LabValue
+        from ..laboratory import LabValue
         patient = sample.patient
         lab_value = LabValue.objects.get(name=lab_value_name)
-        value = value
-        value_str = value_str
+
 
         pat_lab_val = cls.objects.create(
             patient = patient,
@@ -62,9 +73,8 @@ class PatientLabValue(models.Model):
         return _str
     
     def get_normal_range(self):
-        from endoreg_db.models import LabValue, Patient
-        lab_value:LabValue = self.lab_value
-        patient:Patient = self.patient
+        lab_value = self.lab_value
+        patient = self.patient
 
         age = patient.age()
         gender = patient.gender
@@ -116,8 +126,10 @@ class PatientLabValue(models.Model):
         super().save(*args, **kwargs)
 
     def set_value_by_distribution(self, distribution=None, save = True):
-        from endoreg_db.models import (
-            Patient, LabValue, Gender,
+        from ...other.gender import Gender
+        from ...administration.person.patient import Patient
+        from ..laboratory import LabValue
+        from ...other.distribution import (
             DateValueDistribution,
             SingleCategoricalValueDistribution,
             NumericValueDistribution,
@@ -156,7 +168,7 @@ class PatientLabValue(models.Model):
                     distribution_type = "uniform"
                 )
 
-                value = distribution.generate_value(lab_value=lab_value)
+                value = distribution.generate_value(lab_value=lab_value, patient=patient)
                 self.value = value
                 if save:
                     self.save()

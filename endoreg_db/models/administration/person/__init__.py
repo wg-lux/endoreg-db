@@ -13,7 +13,7 @@ __all__ = [
     "Person",
     "Patient", "PatientForm",
     "Examiner",
-    "PortalUserInfo", "Profession",
+    "PortalUserInfo",
     "FirstName",
     "LastName",
     "Profession",

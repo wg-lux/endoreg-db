@@ -3,7 +3,7 @@ from .patient_finding import (
     PatientFinding
 )
 from .patient_finding_location import (
-    PatientFindingLocation
+    PatientFindingLocation, 
 )
 from .patient_finding_morphology import (
     PatientFindingMorphology

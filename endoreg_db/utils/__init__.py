@@ -81,6 +81,6 @@ __all__ = [
     "assemble_video_from_frames",  # Updated name
     "get_stream_info",
     "transcode_video",
-    "transcode_videofile_if_required",
+    "transcode_videofile_if_required",  # Added
 ]
 

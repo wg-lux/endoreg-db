@@ -3,39 +3,30 @@ from django.db import models
 from django.db.models import Q, CheckConstraint, F
 
 if TYPE_CHECKING:
-    from ...media.video import Video, RawVideoFile
+    from ...media.video.video_file import VideoFile
     from ..video_segmentation_label import VideoSegmentationLabel
 
 class VideoSegmentationAnnotation(models.Model):
     """
     Represents a video segmentation annotation, linking a label to a time segment
-    within a specific video or raw video file.
+    within a specific video file.
 
-    An annotation must be associated with exactly one of either a `Video` or a `RawVideoFile`.
-    This exclusivity is enforced by a database constraint.
+    An annotation must be associated with exactly one `VideoFile`.
 
     Attributes:
-        video (ForeignKey): The processed video associated with the annotation (nullable).
-        raw_video (ForeignKey): The raw video file associated with the annotation (nullable).
+        video_file (ForeignKey): The video file associated with the annotation.
         label (ForeignKey): The label for the annotation.
         start_time (float): The start time of the annotation in seconds.
         stop_time (float): The stop time of the annotation in seconds.
         is_true (bool): Indicates if the annotation is valid (defaults to True).
     """
-    # Foreign keys to Video and RawVideoFile. Exactly one must be non-null.
-    video = models.ForeignKey(
-        "Video",
+    # Foreign key to the unified VideoFile model.
+    video_file = models.ForeignKey(
+        "VideoFile",
         on_delete=models.CASCADE,
         related_name="video_segmentation_annotations",
-        null=True,
-        blank=True,
-    )
-    raw_video = models.ForeignKey(
-        "RawVideoFile",
-        on_delete=models.CASCADE,
-        related_name="video_segmentation_annotations",
-        null=True,
-        blank=True,
+        null=False,
+        blank=False,
     )
 
     label = models.ForeignKey("VideoSegmentationLabel", on_delete=models.CASCADE)
@@ -44,8 +35,7 @@ class VideoSegmentationAnnotation(models.Model):
     is_true = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
-        video: "Video"
-        raw_video: "RawVideoFile"
+        video_file: "VideoFile"
         label: "VideoSegmentationLabel"
 
     def __str__(self) -> str:
@@ -55,20 +45,17 @@ class VideoSegmentationAnnotation(models.Model):
         video_repr = self.get_video() # Get the actual video object for representation
         return f"{video_repr} - {self.label.name} - {self.start_time} to {self.stop_time}"
 
-    def get_video(self) -> Union["Video", "RawVideoFile"]:
+    def get_video(self) -> "VideoFile":
         """
-        Get the video or raw_video associated with this annotation.
+        Get the video file associated with this annotation.
 
-        Returns the non-null video instance (`Video` or `RawVideoFile`).
-        Based on the database constraint, exactly one of these will be non-null.
+        Returns the `VideoFile` instance.
         """
-        if self.video:
-            return self.video
-        elif self.raw_video:
-            return self.raw_video
+        if self.video_file:
+            return self.video_file
         else:
-            # This state should ideally not be reachable due to the CheckConstraint
-            raise ValueError("Annotation is not linked to either a Video or RawVideoFile.")
+            # This state should ideally not be reachable due to null=False, blank=False
+            raise ValueError("Annotation is not linked to a VideoFile.")
 
     class Meta:
         constraints = [
@@ -76,11 +63,4 @@ class VideoSegmentationAnnotation(models.Model):
                 check=Q(start_time__lt=F("stop_time")),
                 name="start_time_less_than_stop_time",
             ),
-            CheckConstraint(
-                check=(
-                    Q(video__isnull=True, raw_video__isnull=False) |
-                    Q(video__isnull=False, raw_video__isnull=True)
-                ),
-                name='exactly_one_video_or_raw_video'
-            )
         ]

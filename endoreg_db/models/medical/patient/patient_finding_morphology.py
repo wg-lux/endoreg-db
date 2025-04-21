@@ -1,14 +1,23 @@
 from django.db import models
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
+from regex import E
 
+# Corrected imports for type hints
 if TYPE_CHECKING:
     from ..finding import (
-        FindingLocationClassification,
-        FindingLocationClassificationChoice,
+        FindingMorphologyClassification, # Corrected
+        FindingMorphologyClassificationChoice, # Corrected
     )
     from .patient_finding import PatientFinding
+
 class PatientFindingMorphology(models.Model):
+    """
+    Represents the morphological description of a specific patient finding.
+
+    Links a PatientFinding to a specific choice within a morphology classification,
+    and stores associated subcategory values and numerical descriptors.
+    """
     finding = models.ForeignKey(
         'PatientFinding', on_delete=models.CASCADE, related_name='morphologies'
     )
@@ -22,18 +31,19 @@ class PatientFindingMorphology(models.Model):
     numerical_descriptors = models.JSONField(default=dict)
 
     if TYPE_CHECKING:
-        patient_finding: "PatientFinding"
-        morphology_classification: "FindingLocationClassification"
-        morphology_choice: "FindingLocationClassificationChoice"
-        subcategories: dict
-        numerical_descriptors: dict
+        patient_finding: "PatientFinding" # Corrected name
+        morphology_classification: "FindingMorphologyClassification" # Corrected type
+        morphology_choice: "FindingMorphologyClassificationChoice" # Corrected type
+        subcategories: Dict[str, Dict[str, str]]  # Corrected type
+        numerical_descriptors: Dict[str, Dict[str, str]]  # Corrected type
+
     class Meta:
         verbose_name = 'Patient Finding Morphology'
         verbose_name_plural = 'Patient Finding Morphologies'
         ordering = ['morphology_classification', 'morphology_choice']
 
     def __str__(self):
-
+        """Returns a string representation including classification, choice, and any set values."""
         _str = f"{self.morphology_classification} - {self.morphology_choice}"
         
         if self.subcategories:
@@ -50,15 +60,8 @@ class PatientFindingMorphology(models.Model):
         
         return _str
 
-    # override save method to do the following:
-    # - check if morphology_choice is in morphology_classification.choices
-    # - check if subcategories and numerical_descriptors exist
-    # - if not set, fetch them from morphology_choice and set them
-
     def set_subcategory(self, subcategory_name, subcategory_value):
-        """
-        Sets a subcategory for this morphology.
-        """
+        """Sets the value for a specific subcategory."""
         assert subcategory_name in self.subcategories, "Subcategory must be in subcategories."
         self.subcategories[subcategory_name]["value"] = subcategory_value
         self.save()
@@ -66,6 +69,10 @@ class PatientFindingMorphology(models.Model):
         return self.subcategories[subcategory_name]
 
     def save(self, *args, **kwargs):
+        """
+        Overrides save to validate choice and initialize subcategories/descriptors
+        from the morphology choice if they are not already set.
+        """
         if self.morphology_choice not in self.morphology_classification.choices.all():
             raise ValueError("morphology_choice must be in morphology_classification.choices")
 
@@ -83,25 +90,19 @@ class PatientFindingMorphology(models.Model):
         super().save(*args, **kwargs)
 
     def get_subcategories(self):
-        """
-        Returns all subcategories that are associated with this patient finding morphology.
-        """
+        """Returns the dictionary of subcategories, ensuring it's initialized."""
         if not self.subcategories:
             self.save()
         return self.subcategories
     
     def get_numerical_descriptors(self):
-        """
-        Returns all numerical descriptors that are associated with this patient finding morphology.
-        """
+        """Returns the dictionary of numerical descriptors, ensuring it's initialized."""
         if not self.numerical_descriptors:
             self.save()
         return self.numerical_descriptors
 
     def get_random_value_for_numerical_descriptor(self, descriptor_name):
-        """
-        Returns a random value for a numerical descriptor.
-        """
+        """Generates a random value for a specified numerical descriptor based on its definition."""
         import numpy as np
         assert descriptor_name in self.numerical_descriptors, "Descriptor must be in numerical descriptors."
         descriptor = self.numerical_descriptors[descriptor_name]
@@ -122,9 +123,7 @@ class PatientFindingMorphology(models.Model):
         return value
 
     def set_numerical_descriptor_random(self, descriptor_name):
-        """
-        Sets a numerical descriptor for this patient finding morphology.
-        """
+        """Sets a random value for a specified numerical descriptor."""
         assert descriptor_name in self.numerical_descriptors, "Descriptor must be in numerical descriptors."
         
         value = self.get_random_value_for_numerical_descriptor(descriptor_name)
@@ -134,16 +133,13 @@ class PatientFindingMorphology(models.Model):
         return self.numerical_descriptors[descriptor_name]
 
     def set_random_numerical_descriptors(self): #TODO Update
-        """
-        Sets random numerical descriptors for this patient finding morphology.
-        """
+        """Sets random values for all required numerical descriptors based on their definitions."""
         import numpy as np
         # get numerical descriptors from morphology_choice
         try:
             numerical_descriptors = self.morphology_choice.numerical_descriptors
             assert numerical_descriptors
-            return numerical_descriptors
-        except:
+        except Exception as e:
             # print(f"Numerical descriptors not found for {self.morphology_choice}")
             return None
         # If available, numerical descriptors is a dict like this:

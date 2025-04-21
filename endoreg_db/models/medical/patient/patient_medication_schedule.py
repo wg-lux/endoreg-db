@@ -1,6 +1,16 @@
 from django.db import models
+from typing import TYPE_CHECKING
+from datetime import datetime as dt
+
+if TYPE_CHECKING:
+    from ...administration.person.patient import Patient
+    from .patient_medication import PatientMedication
+    from ..medication import MedicationSchedule
 
 class PatientMedicationSchedule(models.Model):
+    """
+    Represents a collection of medications associated with a patient, forming their schedule.
+    """
     patient = models.ForeignKey("Patient", on_delete= models.CASCADE)
     medication = models.ManyToManyField(
         'PatientMedication', 
@@ -11,12 +21,19 @@ class PatientMedicationSchedule(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    if TYPE_CHECKING:
+        patient: "Patient"
+        medication: models.QuerySet["PatientMedication"]
+
     def __str__(self):
+        """Returns a string representation including the patient and associated medications."""
         return f'{self.patient} - {self.medication.all()}'
     
     @classmethod
     def create_by_patient_and_indication_type(cls, patient, indication_type):
-        from endoreg_db.models import MedicationIndicationType, PatientMedication
+        """Creates a schedule and adds a medication based on a random indication of a given type."""
+        from ..medication import MedicationIndicationType
+        from .patient_medication import PatientMedication
 
         medication_indication = MedicationIndicationType.get_random_indication_by_type(name=indication_type)
 
@@ -31,10 +48,11 @@ class PatientMedicationSchedule(models.Model):
     
     @classmethod
     def create_by_patient_and_indication(cls, patient, medication_indication):
-        from endoreg_db.models import (
-            MedicationIndication, PatientMedication,
-            Patient
-        )
+        """Creates a schedule and adds a medication based on a specific indication."""
+        from ..medication import MedicationIndication
+        from .patient_medication import PatientMedication
+        from ...administration.person.patient import Patient
+
 
         assert isinstance(medication_indication, MedicationIndication)
         assert isinstance(patient, Patient)
@@ -49,16 +67,14 @@ class PatientMedicationSchedule(models.Model):
     
     def create_patient_medication_from_medication_schedule(
             self,
-            medication_schedule,
+            medication_schedule: "MedicationSchedule",
             medication_indication=None,
             start_date=None,
         ):
+        """Creates and adds a PatientMedication based on a generic MedicationSchedule template."""
         
-        from endoreg_db.models import MedicationSchedule, PatientMedication
-        from datetime import datetime as dt
-
-        assert isinstance(medication_schedule, MedicationSchedule)
-
+        from .patient_medication import PatientMedication
+        
         if not start_date:
             start_date = dt.now()
 
@@ -85,4 +101,5 @@ class PatientMedicationSchedule(models.Model):
     
     
     def get_patient_medication(self):
+        """Returns all PatientMedication instances associated with this schedule."""
         return self.medication.all()

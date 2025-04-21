@@ -1,5 +1,15 @@
 from django.db import models
 import warnings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models.other.unit import Unit
+    from ...other.distribution import (
+        SingleCategoricalValueDistribution,
+        NumericValueDistribution,
+        MultipleCategoricalValueDistribution,
+        DateValueDistribution,
+    )
 
 LANG = "de"
 
@@ -63,6 +73,13 @@ class LabValue(models.Model):
     normal_range_special_case = models.BooleanField(default=False)
     objects = LabValueManager()
 
+    if TYPE_CHECKING:
+        default_unit: "Unit"
+        default_single_categorical_value_distribution: "SingleCategoricalValueDistribution"
+        default_numerical_value_distribution: "NumericValueDistribution"
+        default_multiple_categorical_value_distribution: "MultipleCategoricalValueDistribution"
+        default_date_value_distribution: "DateValueDistribution"
+
     def natural_key(self):
         """
         Return a tuple representing the natural key for this instance.
@@ -117,7 +134,7 @@ class LabValue(models.Model):
         Returns:
             dict: A dictionary with 'min' and 'max' keys indicating the lower and upper bounds of the normal range.
         """
-        from endoreg_db.models import Gender
+        from ...other.gender import Gender
 
         assert isinstance(age, int) or age is None
         assert isinstance(gender, Gender) or gender is None

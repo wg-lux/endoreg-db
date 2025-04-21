@@ -27,7 +27,12 @@ if TYPE_CHECKING:
     from ....metadata import PdfType
 
 class ReportReaderConfig(models.Model):
+    """
+    Configuration settings for parsing PDF reports (ReportReader).
 
+    Stores locale, name lists, date format, and flags used to identify key information lines
+    and text sections to ignore.
+    """
     locale = models.CharField(default="de_DE", max_length=10)
     first_names = models.ManyToManyField('FirstName', related_name='report_reader_configs')
     last_names = models.ManyToManyField('LastName', related_name='report_reader_configs')
@@ -49,17 +54,19 @@ class ReportReaderConfig(models.Model):
     
 
     def __str__(self):
+        """Returns a string representation including the locale and primary key."""
         _str = f"ReportReaderConfig: {self.locale} (id: {self.pk}\n"
         return _str
     
     def update_names_by_center(self, center:"Center", save = True):
+        """Updates the first and last name lists based on the names associated with a Center."""
         self.first_names.set(center.first_names.all())
         self.last_names.set(center.last_names.all())
         if save:
             self.save()
 
     def update_flags_by_pdf_type(self, pdf_type:"PdfType", save = True):
-        #FIXME
+        """Updates the line identification flags based on a specific PdfType."""
         self.patient_info_line_flag = pdf_type.patient_info_line_flag
         self.endoscope_info_line_flag = pdf_type.endoscope_info_line_flag
         self.examiner_info_line_flag = pdf_type.examiner_info_line_flag

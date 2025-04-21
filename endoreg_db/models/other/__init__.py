@@ -10,6 +10,9 @@ from .distribution import (
     DateValueDistribution,
 )
 
+from .gender import Gender
+from .information_source import InformationSource
+
 __all__ = [
     'Material',
     'Resource',
@@ -20,4 +23,6 @@ __all__ = [
     'SingleCategoricalValueDistribution',
     'MultipleCategoricalValueDistribution',
     'DateValueDistribution',
+    "Gender",
+    "InformationSource",
 ]

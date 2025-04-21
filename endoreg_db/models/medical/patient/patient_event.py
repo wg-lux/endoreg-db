@@ -7,12 +7,10 @@ if TYPE_CHECKING:
 
 class PatientEvent(models.Model):
     """
-    A class representing an event for a patient.
+    Represents a specific event occurrence for a patient, potentially with classification details.
 
-    Attributes:
-        patient (Patient): The patient associated with this event.
-        date (datetime.date): The date of the event.
-        description (str): A description of the event.
+    Links a patient to an event type, dates, description, and optional classification choices,
+    subcategories, and numerical descriptors.
     """
     patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
     event = models.ForeignKey("Event", on_delete=models.CASCADE)
@@ -34,12 +32,11 @@ class PatientEvent(models.Model):
         classification_choice: "EventClassificationChoice"
 
     def __str__(self):
+        """Returns a string representation including the date and event name."""
         return str(self.date_start) + ": " + self.event.name
     
     def set_subcategories_from_classification_choice(self):
-        """
-        Sets the subcategories for this event from the classification choice.
-        """
+        """Copies subcategory definitions from the linked classification choice."""
         if self.classification_choice:
             self.subcategories = self.classification_choice.subcategories
             self.save()
@@ -47,9 +44,7 @@ class PatientEvent(models.Model):
         return self.subcategories
     
     def set_numerical_descriptors_from_classification_choice(self):
-        """
-        Sets the numerical descriptors for this event from the classification choice.
-        """
+        """Copies numerical descriptor definitions from the linked classification choice."""
         if self.classification_choice:
             self.numerical_descriptors = self.classification_choice.numerical_descriptors
             self.save()

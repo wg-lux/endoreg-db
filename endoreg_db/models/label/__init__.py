@@ -5,8 +5,11 @@ from .video_segmentation_label import VideoSegmentationLabel
 from .video_segmentation_labelset import VideoSegmentationLabelSet
 from .label_video_segment import (
     LabelVideoSegment,
-    LabelRawVideoSegment,
-    find_segments_in_prediction_array,
+)
+
+from .annotation import (
+    ImageClassificationAnnotation,
+    VideoSegmentationAnnotation,
 )
 
 __all__ = [
@@ -15,4 +18,7 @@ __all__ = [
     "LabelType",
     "VideoSegmentationLabel",
     "VideoSegmentationLabelSet",
+    "LabelVideoSegment",
+    "ImageClassificationAnnotation",
+    "VideoSegmentationAnnotation",
 ]

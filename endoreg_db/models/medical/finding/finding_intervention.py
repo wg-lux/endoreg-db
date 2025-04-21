@@ -36,7 +36,7 @@ class FindingIntervention(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)
     
 
 class FindingInterventionTypeManager(models.Manager):
@@ -57,4 +57,4 @@ class FindingInterventionType(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)

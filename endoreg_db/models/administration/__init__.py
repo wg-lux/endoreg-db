@@ -26,8 +26,29 @@ from .center import (
     CenterWaste,
 )
 
+
 #TODO Review module
 # from .permissions import () 
+
+# Person
+from .person import (
+    Person,
+    Examiner, 
+    Patient, PatientForm,
+    PortalUserInfo,     
+    FirstName,
+    LastName,
+    Profession,
+)
+
+# Product
+from .product import (
+    Product,
+    ProductMaterial,
+    ProductGroup,
+    ReferenceProduct,
+    ProductWeight,
+)
 
 __all__ = [
     # AI
@@ -49,5 +70,21 @@ __all__ = [
     "CenterProduct",
     "CenterResource",
     "CenterWaste",
+
+    # Person
+    "Person",
+    "Patient", "PatientForm",
+    "Examiner",
+    "PortalUserInfo",
+    "FirstName",
+    "LastName",
+    "Profession",
+
+    # Product
+    'Product',
+    'ProductMaterial',
+    'ProductGroup',
+    'ReferenceProduct',
+    'ProductWeight',
 ]
 

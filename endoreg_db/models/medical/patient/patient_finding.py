@@ -14,21 +14,6 @@ import random
 class PatientFinding(models.Model):
     patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')
     finding = models.ForeignKey('Finding', on_delete=models.CASCADE, related_name='finding_patient_findings') # Changed related_name
-    # locations = models.ManyToManyField(
-    #     'PatientFindingLocation',
-    #     blank=True,
-    #     related_name='location_patient_findings' # Changed related_name
-    # )
-    # morphologies = models.ManyToManyField(
-    #     'PatientFindingMorphology',
-    #     blank=True, 
-    #     related_name='morphology_patient_findings' # Changed related_name
-    # )
-    # interventions = models.ManyToManyField(
-    #     'PatientFindingIntervention',
-    #     blank=True,
-    #     related_name='intervention_patient_findings' # Changed related_name
-    # )
     
     if TYPE_CHECKING:
         patient_examination: "PatientExamination"

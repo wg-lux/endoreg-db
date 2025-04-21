@@ -67,22 +67,18 @@ class Event(models.Model):
 
 
 class EventClassificationManager(models.Manager):
+    """Manager for EventClassification with natural key support."""
+
     def get_by_natural_key(self, name):
-        """
-        Retrieves an EventClassification instance using its natural key.
-        
-        This method returns the EventClassification whose "name" attribute matches the provided natural key.
-        
-        Args:
-            name (str): The natural key representing the Event's name.
-        
-        Returns:
-            EventClassification: The EventClassification instance with the specified name.
-        """
+        """Retrieves an EventClassification instance by its natural key (name)."""
         return self.get(name=name)
 
 
 class EventClassification(models.Model):
+    """
+    Represents a classification system for events (e.g., TNM staging for cancer).
+    """
+
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
@@ -90,26 +86,15 @@ class EventClassification(models.Model):
     objects = EventClassificationManager()
 
     def natural_key(self):
-        """
-        Return a tuple containing the natural key of the instance.
-        
-        The tuple consists solely of the object's name attribute, serving as its unique identifier for natural key lookups.
-        """
+        """Returns the natural key (name) as a tuple."""
         return (self.name,)
 
     def __str__(self):
-        """
-        Return the object's name as a string.
-        """
+        """Returns the name of the classification."""
         return str(self.name)
 
     def get_choices(self) -> List["EventClassificationChoice"]:
-        """
-        Retrieves the event classification choices.
-        
-        Returns:
-            List[EventClassificationChoice]: The list of choices associated with this classification.
-        """
+        """Retrieves all choices associated with this classification."""
         choices: List[EventClassificationChoice] = [
             _ for _ in self.event_classification_choices.all()
         ]
@@ -117,20 +102,20 @@ class EventClassification(models.Model):
 
 
 class EventClassificationChoiceManager(models.Manager):
+    """Manager for EventClassificationChoice with natural key support."""
+
     def get_by_natural_key(self, name):
-        """
-        Retrieves a model instance using its natural key.
-        
-        Args:
-            name: The value of the natural key corresponding to the instance's name field.
-        
-        Returns:
-            The model instance with a name matching the provided natural key.
-        """
+        """Retrieves an EventClassificationChoice instance by its natural key (name)."""
         return self.get(name=name)
 
 
 class EventClassificationChoice(models.Model):
+    """
+    Represents a specific choice within an event classification system (e.g., T1, N0, M0).
+
+    Can define associated subcategories and numerical descriptors.
+    """
+
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
@@ -146,15 +131,9 @@ class EventClassificationChoice(models.Model):
     objects = EventClassificationChoiceManager()
 
     def natural_key(self):
-        """
-        Returns the natural key for the model instance.
-        
-        The natural key is defined as a tuple containing the instance's name, uniquely identifying it.
-        """
+        """Returns the natural key (name) as a tuple."""
         return (self.name,)
 
     def __str__(self):
-        """
-        Return the string representation of the instance's name.
-        """
+        """Returns the name of the classification choice."""
         return str(self.name)

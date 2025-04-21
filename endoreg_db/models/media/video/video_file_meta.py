@@ -196,7 +196,12 @@ def _get_fps(video: "VideoFile") -> Optional[float]:
 
 
 def _get_endo_roi(video: "VideoFile") -> Optional[Dict[str, int]]:
-    """Gets the endoscope ROI dictionary from the linked VideoMeta."""
+    """
+    Gets the endoscope region of interest (ROI) dictionary from the linked VideoMeta.
+
+    The ROI dictionary typically contains 'x', 'y', 'width', 'height'.
+    Returns None if VideoMeta is not linked or ROI is not properly defined.
+    """
     if not video.video_meta:
         logger.warning("VideoMeta not linked for video %s. Cannot get endo ROI.", video.uuid)
         ic("VideoMeta not linked, cannot get endo ROI.")

@@ -5,6 +5,12 @@ if TYPE_CHECKING:
     from ..disease import Disease, DiseaseClassificationChoice
 
 class PatientDisease(models.Model):
+    """
+    Represents a specific disease diagnosed for a patient, with optional classification and dates.
+
+    Links a patient to a disease type, optional classification choices, start/end dates,
+    and stores associated subcategory values and numerical descriptors.
+    """
     patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
     disease = models.ForeignKey("Disease", on_delete=models.CASCADE)
     classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
@@ -21,6 +27,7 @@ class PatientDisease(models.Model):
         classification_choices: models.QuerySet["DiseaseClassificationChoice"]
 
     def __str__(self):
+        """Returns a string representation including the patient and disease name."""
         return f"{self.patient} - {self.disease}"
     
     class Meta:

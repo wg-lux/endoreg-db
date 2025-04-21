@@ -17,15 +17,14 @@ class FindingMorphologyClassificationType(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)
     
     @classmethod
     def get_required_classifications_for_finding(cls, finding):
         """
         Returns all required morphology classification types for a given finding.
         """
-        from endoreg_db.models import FindingMorphologyClassificationType
-        required_classification_types:List[FindingMorphologyClassificationType] = [
+        required_classification_types = [
             _ for _ in finding.required_morphology_classification_types.all()
         ]
         return required_classification_types
@@ -47,7 +46,7 @@ class FindingMorphologyClassification(models.Model):
         return (self.name,)
     
     def __str__(self):
-        return self.name
+        return str(self.name)
     
     def get_choices(self):
         choices: List[FindingMorphologyClassificationChoice] = [_ for _ in self.choices.all()]

@@ -1,17 +1,16 @@
 from django.db import models
-from typing import TYPE_CHECKING, List
-
-# Serializer located in serializers/examination.py
-from typing import Optional
+from typing import TYPE_CHECKING, List, Optional
+from endoreg_db.models.medical.examination.examination_indication import ExaminationIndicationClassificationChoice
+from endoreg_db.models.medical.patient.patient_examination_indication import PatientExaminationIndication
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 if TYPE_CHECKING: 
-    from endoreg_db.models import (
-        Patient,
-        Examination,
-        Video,
-        PatientFinding,
-        PatientExaminationIndication,
-        ExaminationIndicationClassificationChoice,
-    )
+    from ...administration.person.patient import Patient
+    from ..finding import Finding
+    from .patient_finding import PatientFinding
+    from ..examination import Examination
+    from ...media.video import VideoFile
+    from .patient_examination_indication import PatientExaminationIndication
+
 
 
 class PatientExamination(models.Model):
@@ -22,7 +21,7 @@ class PatientExamination(models.Model):
         "Examination", on_delete=models.CASCADE, null=True, blank=True
     )
     video = models.OneToOneField(
-        "Video",
+        "VideoFile",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -35,8 +34,9 @@ class PatientExamination(models.Model):
     if TYPE_CHECKING:
         patient: "Patient"
         examination: "Examination"
-        video: "Video"
+        video: "VideoFile"
         patient_findings: models.QuerySet["PatientFinding"]
+        indications: models.QuerySet["PatientExaminationIndication"]
 
     # report_files
     class Meta:
@@ -51,7 +51,8 @@ class PatientExamination(models.Model):
         examination_hash: str,
         examination_name: Optional[str] = None,
     ):
-        from endoreg_db.models import Patient, Examination
+        from ...administration.person import Patient
+        from ..examination import Examination
 
         created = False
 
@@ -103,7 +104,7 @@ class PatientExamination(models.Model):
         """
         Returns the patient's age at the time of the examination.
         """
-        from endoreg_db.models import Patient
+        from ...administration.person.patient import Patient
 
         patient: Patient = self.patient
         dob = patient.get_dob()
@@ -114,55 +115,40 @@ class PatientExamination(models.Model):
         """
         Returns all findings that are associated with the examination of this patient examination.
         """
-        from endoreg_db.models import Finding, Examination
 
-        examination: Examination = self.examination
-        findings: List[Finding] = [_ for _ in examination.get_available_findings()]
-        return findings
+        return self.examination.get_available_findings()
 
-    def get_findings(self):
+    def get_findings(self) -> models.QuerySet["PatientFinding"]:
         """
         Returns all findings that are associated with this patient examination.
         """
-        from endoreg_db.models import PatientFinding
 
-        patient_findings: List[PatientFinding] = [
-            _ for _ in self.patient_findings.all()
-        ]
-        return patient_findings
+        return self.patient_findings.all()
 
-    def get_indications(self):
+    def get_indications(self) -> models.QuerySet["PatientExaminationIndication"]:
         """
         Returns all indications that are associated with this patient examination.
         """
-        from endoreg_db.models import PatientExaminationIndication
+        return self.indications.all()
 
-        indications: List[PatientExaminationIndication] = [
-            _ for _ in self.indications.all()
-        ]
-        return indications
-
-    def get_indication_choices(self):
+    def get_indication_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
         """
         Returns all indication choices that are associated with this patient examination.
         """
-        from endoreg_db.models import ExaminationIndicationClassificationChoice
 
-        choices: List[ExaminationIndicationClassificationChoice] = [
+        choices = [
             _.indication_choice for _ in self.get_indications()
         ]
         return choices
 
-    def create_finding(self, finding):
+    def create_finding(self, finding:"Finding") -> "PatientFinding":
         """
         Adds a finding to this patient examination.
         """
-        from endoreg_db.models import Finding, Examination, PatientFinding
+        from .patient_finding import PatientFinding
 
         examination: Examination = self.examination
         assert examination
-
-        finding: Finding
 
         patient_finding = PatientFinding.objects.create(
             patient_examination=self, finding=finding
@@ -171,25 +157,3 @@ class PatientExamination(models.Model):
         patient_finding.save()
 
         return patient_finding
-
-    def find_matching_video_from_patient(self):
-        """
-        Finds a video for this patient examination based on the patient's videos.
-        For this, the videos date must be the same as the report file's date.
-        #TODO add more criteria for matching: Examination type
-        """
-        videos = self.patient.video_set.filter(
-            date=self.report_file.date, patient_examination__isnull=True
-        )
-        if videos:
-            if len(videos) > 1:
-                print(
-                    f"Warning: Found more than one video for patient {self.patient} on date {self.report_file.date}. Choosing the first one."
-                )
-            return videos[0]
-        else:
-            videos = self.patient.video_set.filter(patient_examination__isnull=True)
-            if len(videos) == 1:
-                return videos[0]
-
-        return None
