@@ -1,29 +1,27 @@
 from django.db import models
 from django.db.models import Q, CheckConstraint, F
 import numpy as np
-from ..annotation import ImageClassificationAnnotation
 from typing import TYPE_CHECKING, Union, Optional
 from tqdm import tqdm
+import logging
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        RawVideoFile,
-        Video,
-        Label,
-        InformationSource,
-        VideoPredictionMeta,
-        PatientFinding,
-        Frame,
-        ModelMeta
-    )
-    from django.db.models import Manager
-
+    from ..media.video.video_file import VideoFile
+    from ..media.frame import Frame
+    from ..label.label import Label
+    from ..other.information_source import InformationSource
+    from ..metadata.model_meta import ModelMeta
+    from ..metadata.video_prediction_meta import VideoPredictionMeta
+    from ..medical.patient.patient_finding import PatientFinding
+    from .annotation import ImageClassificationAnnotation
 
 class LabelVideoSegment(models.Model):
     """
     Represents a labeled segment within a video, defined by start and end frame numbers.
 
-    A segment must be associated with exactly one of either a `Video` or a `RawVideoFile`.
+    A segment must be associated with exactly one `VideoFile`.
     If it originates from a prediction, it links to a single `VideoPredictionMeta`.
     """
     start_frame_number = models.IntegerField()
@@ -33,20 +31,13 @@ class LabelVideoSegment(models.Model):
     )
     label = models.ForeignKey("Label", on_delete=models.SET_NULL, null=True, blank=True)
 
-    # Foreign keys to Video and RawVideoFile
-    video = models.ForeignKey(
-        "Video",
+    # Single ForeignKey to the unified VideoFile model
+    video_file = models.ForeignKey(
+        "VideoFile",
         on_delete=models.CASCADE,
         related_name="label_video_segments",
-        null=True,
-        blank=True,
-    )
-    raw_video = models.ForeignKey(
-        "RawVideoFile",
-        on_delete=models.CASCADE,
-        related_name="label_video_segments",
-        null=True,
-        blank=True,
+        null=False,
+        blank=False,
     )
 
     # Single ForeignKey to the unified VideoPredictionMeta model
@@ -66,12 +57,11 @@ class LabelVideoSegment(models.Model):
     )
 
     if TYPE_CHECKING:
-        video: Optional["Video"]
-        raw_video: Optional["RawVideoFile"]
+        video_file: "VideoFile"
         label: Optional["Label"]
         source: Optional["InformationSource"]
         prediction_meta: Optional["VideoPredictionMeta"]
-        patient_findings: Manager["PatientFinding"]
+        patient_findings: models.QuerySet["PatientFinding"]
         model_meta: Optional["ModelMeta"]
 
     class Meta:
@@ -80,38 +70,63 @@ class LabelVideoSegment(models.Model):
                 check=Q(start_frame_number__lt=F("end_frame_number")),
                 name="segment_start_lt_end"
             ),
-            CheckConstraint(
-                check=(
-                    Q(video__isnull=True, raw_video__isnull=False) |
-                    Q(video__isnull=False, raw_video__isnull=True)
-                ),
-                name='exactly_one_video_or_raw_video_segment'
-            ),
         ]
         indexes = [
-            models.Index(fields=['video', 'label', 'start_frame_number']),
-            models.Index(fields=['raw_video', 'label', 'start_frame_number']),
+            models.Index(fields=['video_file', 'label', 'start_frame_number']),
             models.Index(fields=['prediction_meta', 'label']),
         ]
 
-    def get_video(self) -> Union["Video", "RawVideoFile"]:
-        """Returns the associated Video or RawVideoFile instance."""
-        if self.video:
-            return self.video
-        elif self.raw_video:
-            return self.raw_video
+    @classmethod
+    def create_from_video(
+        cls,
+        source: "VideoFile",
+        prediction_meta: Optional["VideoPredictionMeta"],
+        label: Optional["Label"],
+        start_frame_number: int,
+        end_frame_number: int,
+    ):
+        """
+        Create a LabelVideoSegment instance from a VideoFile.
+        """
+        from ..media.video.video_file import VideoFile
+
+        if not isinstance(source, VideoFile):
+            raise ValueError("Source must be a VideoFile instance.")
+
+        segment = cls(
+            start_frame_number=start_frame_number,
+            end_frame_number=end_frame_number,
+            source=source,
+            label=label,
+            video_file=source,
+            prediction_meta=prediction_meta,
+        )
+        return segment
+
+    def get_video(self) -> "VideoFile":
+        """Returns the associated VideoFile instance."""
+        if self.video_file:
+            return self.video_file
         else:
-            raise ValueError("LabelVideoSegment has neither video nor raw_video set.")
+            raise ValueError("LabelVideoSegment is not associated with a VideoFile.")
 
     def __str__(self):
-        video_obj = self.get_video()
-        label_name = self.label.name if self.label else "No Label"
-        video_path = getattr(getattr(video_obj, 'file', None), 'path', str(video_obj.id))
+        try:
+            video_obj = self.get_video()
+            label_name = self.label.name if self.label else "No Label"
+            active_path = video_obj.active_file_path
+            video_identifier = active_path.name if active_path else f"UUID {video_obj.uuid}"
 
-        str_repr = (
-            f"{video_path} Label - {label_name} - "
-            f"{self.start_frame_number} - {self.end_frame_number}"
-        )
+            str_repr = (
+                f"{video_identifier} Label - {label_name} - "
+                f"{self.start_frame_number} - {self.end_frame_number}"
+            )
+        except ValueError:
+            str_repr = f"Segment {self.pk} (Error: No VideoFile)"
+        except Exception as e:
+            logger.warning("Error generating string representation for LabelVideoSegment %s: %s", self.pk, e)
+            str_repr = f"Segment {self.pk} (Error: {e})"
+
         return str_repr
 
     def get_model_meta(self) -> Optional["ModelMeta"]:
@@ -122,34 +137,38 @@ class LabelVideoSegment(models.Model):
 
     def get_frames(self) -> Union[models.QuerySet["Frame"], list]:
         """
-        Returns frames associated with the segment.
-        Returns a QuerySet of Frame objects if linked to a Video.
-        Returns an empty list if linked to a RawVideoFile.
+        Returns frames associated with the segment from the linked VideoFile.
         """
-        if self.video:
-            return self.video.frames.filter(
+        try:
+            video_obj = self.get_video()
+            return video_obj.frames.filter(
                 frame_number__gte=self.start_frame_number,
                 frame_number__lt=self.end_frame_number
-            )
-        else:
-            print("Warning: get_frames() called on a segment linked to RawVideoFile. Returning empty list.")
-            return []
+            ).order_by('frame_number')
+        except ValueError:
+            logger.error("Cannot get frames for segment %s: No associated VideoFile.", self.pk)
+            return models.QuerySet().none()
+        except AttributeError:
+            logger.error("Cannot get frames for segment %s: 'frames' related manager not found on VideoFile.", self.pk)
+            return models.QuerySet().none()
 
     def get_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
         """
         Returns ImageClassificationAnnotations associated with the frames in this segment.
-        Only applicable if the segment is linked to a processed Video.
         """
-        if not self.video:
-            print("Warning: get_annotations() called on a segment linked to RawVideoFile. Returning empty queryset.")
-            return ImageClassificationAnnotation.objects.none()
+        from .annotation import ImageClassificationAnnotation
 
-        return ImageClassificationAnnotation.objects.filter(
-            frame__video=self.video,
-            frame__frame_number__gte=self.start_frame_number,
-            frame__frame_number__lt=self.end_frame_number,
-            label=self.label
-        )
+        try:
+            video_obj = self.get_video()
+            return ImageClassificationAnnotation.objects.filter(
+                frame__video_file=video_obj,
+                frame__frame_number__gte=self.start_frame_number,
+                frame__frame_number__lt=self.end_frame_number,
+                label=self.label
+            )
+        except ValueError:
+            logger.error("Cannot get annotations for segment %s: No associated VideoFile.", self.pk)
+            return ImageClassificationAnnotation.objects.none()
 
     def get_segment_len_in_s(self) -> float:
         """Calculates the segment length in seconds."""
@@ -163,39 +182,37 @@ class LabelVideoSegment(models.Model):
     def get_frames_without_annotation(self, n_frames: int) -> Union[list["Frame"], list]:
         """
         Get up to n frames within the segment that do not have an ImageClassificationAnnotation
-        for this segment's label. Only applicable if linked to a processed Video.
+        for this segment's label.
         """
-        if not self.video:
-            print("Warning: get_frames_without_annotation() called on a segment linked to RawVideoFile. Returning empty list.")
-            return []
+        from .annotation import ImageClassificationAnnotation
 
         frames_qs = self.get_frames()
-        if not isinstance(frames_qs, models.QuerySet):
+        if not isinstance(frames_qs, models.QuerySet) or not frames_qs.exists():
+            return []
+
+        if not self.label:
+            logger.warning("Segment %s has no label. Cannot find frames without annotation.", self.pk)
             return []
 
         annotated_frame_ids = ImageClassificationAnnotation.objects.filter(
-            frame__in=frames_qs.values('id'),
+            frame__in=frames_qs.values_list('id', flat=True),
             label=self.label
         ).values_list('frame_id', flat=True)
 
-        frames_without_annotation = list(frames_qs.exclude(id__in=annotated_frame_ids))
-
-        if len(frames_without_annotation) > n_frames:
-            return list(np.random.choice(frames_without_annotation, n_frames, replace=False))
-        else:
-            return frames_without_annotation
+        frames_without_annotation = list(frames_qs.exclude(id__in=annotated_frame_ids)[:n_frames])
+        return frames_without_annotation
 
     def generate_annotations(self):
         """
         Generate ImageClassificationAnnotations for the frames within this segment,
-        if the segment is linked to a processed Video and originated from a prediction.
-        Uses bulk_create for efficiency.
+        if the segment originated from a prediction. Uses bulk_create for efficiency.
         """
-        if not self.video or not self.prediction_meta:
-            print(f"Skipping annotation generation for segment {self.id}: Requires linked Video and VideoPredictionMeta.")
+        if not self.prediction_meta:
+            logger.info(f"Skipping annotation generation for segment {self.id}: Requires linked VideoPredictionMeta.")
             return
 
-        from endoreg_db.models import InformationSource, ImageClassificationAnnotation
+        from .annotation import ImageClassificationAnnotation
+        from ..other.information_source import InformationSource
 
         information_source = self.source
         if not information_source:
@@ -205,12 +222,12 @@ class LabelVideoSegment(models.Model):
         label = self.label
 
         if not model_meta or not label:
-            print(f"Warning: Missing model_meta or label for segment {self.id}. Skipping annotation generation.")
+            logger.warning(f"Missing model_meta or label for segment {self.id}. Skipping annotation generation.")
             return
 
         frames_queryset = self.get_frames().only('id')
         if not isinstance(frames_queryset, models.QuerySet):
-            print(f"Error: Could not get frame queryset for segment {self.id}. Skipping.")
+            logger.error(f"Could not get frame queryset for segment {self.id}. Skipping.")
             return
 
         existing_annotation_frame_ids = set(
@@ -237,8 +254,8 @@ class LabelVideoSegment(models.Model):
             )
 
         if annotations_to_create:
-            print(f"Bulk creating {len(annotations_to_create)} annotations for segment {self.id}...")
+            logger.info(f"Bulk creating {len(annotations_to_create)} annotations for segment {self.id}...")
             ImageClassificationAnnotation.objects.bulk_create(annotations_to_create, ignore_conflicts=True)
-            print("Bulk creation complete.")
+            logger.info("Bulk creation complete.")
         else:
-            print(f"No new annotations needed for segment {self.id}.")
+            logger.info(f"No new annotations needed for segment {self.id}.")

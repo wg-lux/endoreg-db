@@ -1,5 +1,9 @@
 from ..utils import (
     random_day_by_month_year,
+    transcode_videofile,
+    transcode_videofile_if_required,
+    get_uuid_filename,
+    
     random_day_by_year,
     get_examiner_hash,
     ensure_aware_datetime,
@@ -16,16 +20,17 @@ from ..utils import (
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 import io
-
+import os
 from icecream import ic
 import subprocess
-from tqdm import tqdm
+from tqdm import tqdmw
 import numpy as np
 import cv2
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Tuple
 from pathlib import Path
+from django.db import models
 if TYPE_CHECKING:
-    from endoreg_db.models import RawVideoFile, Frame
+    from endoreg_db.models import VideoFile, Frame
 
 STORAGE_DIR = data_paths["storage"]
 FILE_STORAGE = FileSystemStorage(location = STORAGE_DIR)
@@ -35,6 +40,12 @@ FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
 PDF_DIR = data_paths["raw_report"]
 DOCUMENT_DIR = data_paths["report"]
+
+TEST_RUN = os.environ.get("TEST_RUN", "False")
+TEST_RUN = TEST_RUN.lower() == "true"
+
+TEST_RUN_FRAME_NUMBER = int(os.environ.get("TEST_RUN_FRAME_NUMBER", "500"))
+
 
 def prepare_bulk_frames(frame_paths: List[Path]):
     """
@@ -102,30 +113,36 @@ def anonymize_frame(
 
 
 def _create_anonymized_frame_files(
-    anonymized_frame_dir:Path,
-    endo_roi:Dict[str, int], 
-    frames :List["Frame"],
-    outside_frame_numbers:List[int],
-    ) -> List[Path]:
+    video: "VideoFile",
+    anonymized_frame_dir: Path,
+    endo_roi: Dict[str, int],
+    frames: List["Frame"],
+    outside_frame_numbers: set,
+) -> List[Path]:
 
     generated_frame_paths = []
-    
-    # anonymize frames: copy endo-roi content while making other pixels black. (frames are Path objects to jpgs or pngs)
-    for frame in tqdm(frames):
-        frame_path = Path(frame.image.path)
-        frame_name = frame_path.name
-        frame_number = frame.frame_number
 
-        if frame_number in outside_frame_numbers:
-            all_black = True
-        else:
-            all_black = False
+    # Ensure frames is iterable (handle QuerySet or list)
+    frame_iterator = frames.iterator() if isinstance(frames, models.QuerySet) else iter(frames)
 
-        target_frame_path = anonymized_frame_dir / frame_name
-        anonymize_frame(
-            frame_path, target_frame_path, endo_roi, all_black=all_black
-        )
-        generated_frame_paths.append(target_frame_path)
+    # anonymize frames: copy endo-roi content while making other pixels black.
+    for frame in tqdm(frame_iterator, total=frames.count() if isinstance(frames, models.QuerySet) else len(frames), desc=f"Anonymizing frames for {video.uuid}"):
+        try:
+            frame_path = Path(frame.image.path)
+            frame_name = frame_path.name
+            frame_number = frame.frame_number
+
+            # Check if frame number is in the set of outside frames
+            all_black = frame_number in outside_frame_numbers
+
+            target_frame_path = anonymized_frame_dir / frame_name
+            anonymize_frame(
+                frame_path, target_frame_path, endo_roi, all_black=all_black
+            )
+            generated_frame_paths.append(target_frame_path)
+        except Exception as e:
+            logger.error("Error processing frame %s (Number: %d) for anonymization: %s", frame.pk, getattr(frame, 'frame_number', -1), e, exc_info=True)
+            ic(f"Error processing frame {getattr(frame, 'frame_number', -1)}: {e}")
 
     return generated_frame_paths
 
@@ -166,47 +183,58 @@ def _assemble_anonymized_video(
     return anonymized_video_path
 
 def _censor_outside_frames(
-    raw_video: "RawVideoFile",
+    video: "VideoFile",
 ):
-    raw_video.save()
-    outside_frame_paths = raw_video.get_outside_frame_paths()
+    outside_frame_paths = video.get_outside_frame_paths()
 
     if not outside_frame_paths:
-        ic("No outside frames found")
+        ic("No outside frames found to censor")
+        logger.info("No outside frames found to censor for video %s", video.uuid)
 
     else:
-        ic(f"Found {len(outside_frame_paths)} outside frames")
-        # use cv2 to replace all outside frames with completely black frames
+        ic(f"Found {len(outside_frame_paths)} outside frames to censor")
+        logger.info("Censoring %d outside frames for video %s", len(outside_frame_paths), video.uuid)
 
-        for frame_path in tqdm(iterable=outside_frame_paths):
-            frame = cv2.imread(frame_path.as_posix())
-            if frame is None:
-                continue  # or raise, depending on policy
-            frame.fill(0)
-            cv2.imwrite(filename=frame_path.as_posix(), img=frame)
+        censored_count = 0
+        error_count = 0
+        for frame_path in tqdm(iterable=outside_frame_paths, desc=f"Censoring frames for {video.uuid}"):
+            try:
+                frame = cv2.imread(frame_path.as_posix())
+                if frame is None:
+                    logger.warning("Could not read frame for censoring: %s", frame_path)
+                    error_count += 1
+                    continue
+                frame.fill(0)
+                if not cv2.imwrite(filename=frame_path.as_posix(), img=frame):
+                    logger.error("Failed to write censored frame: %s", frame_path)
+                    error_count += 1
+                else:
+                    censored_count += 1
+            except Exception as e:
+                logger.error("Error censoring frame %s: %s", frame_path, e, exc_info=True)
+                error_count += 1
+
+        logger.info("Finished censoring for video %s. Censored: %d, Errors: %d", video.uuid, censored_count, error_count)
+        if error_count > 0:
+            return False
 
     return True
 
-def _get_anonymized_frame_dir(raw_video: "RawVideoFile") -> Path:
+def _get_anonymized_frame_dir(video: "VideoFile") -> Path:
     """
-    Get the path to the anonymized frame directory.
+    Get the path to the temporary anonymized frame directory.
+    Uses the VideoFile's UUID.
     """
-    anonymized_frame_dir = Path(raw_video.frame_dir).parent / f"tmp_{raw_video.uuid}"
-    return anonymized_frame_dir
+    return video._get_temp_anonymized_frame_dir()
 
-def _get_anonymized_video_path(raw_video:"RawVideoFile") -> Path:
-    """
-    Get the path to the anonymized video file.
-    """
-    video_dir = ANONYM_VIDEO_DIR
 
-    video_dir.mkdir(parents=True, exist_ok=True)
-    video_suffix = Path(raw_video.file.path).suffix
-    video_name = f"{raw_video.uuid}{video_suffix}"
-    anonymized_video_name = f"anonymized_{video_name}"
-    anonymized_video_path = video_dir / anonymized_video_name
+def _get_anonymized_video_path(video: "VideoFile") -> Path:
+    """
+    Get the final path for the anonymized video file.
+    Uses the VideoFile's UUID and raw file name structure.
+    """
+    return video._get_target_anonymized_video_path()
 
-    return anonymized_video_path
 
 __all__ = [
     "_censor_outside_frames",
@@ -231,4 +259,9 @@ __all__ = [
     "FRAME_DIR",
     "WEIGHTS_DIR",
     "prepare_bulk_frames",
+    "_create_anonymized_frame_files",
+    "_assemble_anonymized_video",
+    "transcode_videofile",
+    "transcode_videofile_if_required",
+    "get_uuid_filename",
 ]

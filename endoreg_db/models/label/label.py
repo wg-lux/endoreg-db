@@ -1,5 +1,10 @@
 from django.db import models
 from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from .label_type import LabelType
+    from .label_set import LabelSet
 class LabelManager(models.Manager):
     """Manager class for handling Label model operations."""
 
@@ -28,8 +33,8 @@ class Label(models.Model):
     objects = LabelManager()
 
     if TYPE_CHECKING:
-        from .label_type import LabelType
         label_type: "LabelType"
+        label_sets: models.QuerySet["LabelSet"]
 
     def natural_key(self):
         """Return the natural key of this label"""

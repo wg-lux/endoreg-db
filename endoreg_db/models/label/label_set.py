@@ -28,7 +28,7 @@ class LabelSet(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     version = models.IntegerField()
-    labels = models.ManyToManyField("Label", related_name="labels")
+    labels = models.ManyToManyField("Label", related_name="label_sets")
 
     objects = LabelSetManager()
 

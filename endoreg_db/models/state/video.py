@@ -1,59 +1,47 @@
 from django.db import models
-from typing import TYPE_CHECKING
 from .abstract import AbstractState
+from typing import TYPE_CHECKING, Optional
 
 class AbstractVideoState(AbstractState):
     """
     Abstract base class for video-related states.
-    
-    Tracks common processing state flags for video entities:
-    - Whether frames have been extracted
-    - Whether initial predictions have been generated
-    - Whether label video segments have been created
-    - Whether label video segments have been annotated
+
+    Tracks common processing state flags for video entities.
     """
-    frames_extracted = models.BooleanField(default=False)
-    initial_prediction = models.BooleanField(default=False)
-    lvs_created = models.BooleanField(default=False)
-    lvs_annotated = models.BooleanField(default=False)
-    
+    # Link to the unified VideoFile model
+    video_file = models.OneToOneField(
+        "VideoFile",
+        on_delete=models.CASCADE,
+        related_name="state",
+        null=True,
+        blank=True,
+    )
+
+    if TYPE_CHECKING:
+        from ..media.video.video_file import VideoFile
+        video_file: Optional["VideoFile"]
+
+    # --- Processing State Flags ---
+    frames_extracted = models.BooleanField(default=False, help_text="Have frames been extracted from the raw video?")
+    sensitive_data_retrieved = models.BooleanField(default=False, help_text="Has OCR text been extracted and processed?")
+    anonymized = models.BooleanField(default=False, help_text="Has the video been processed into an anonymized version?")
+
+    # --- Prediction/Annotation State Flags ---
+    initial_prediction_completed = models.BooleanField(default=False, help_text="Have initial AI predictions been run?")
+    lvs_created = models.BooleanField(default=False, help_text="Have LabelVideoSegments been created from predictions?")
+    lvs_annotated = models.BooleanField(default=False, help_text="Have annotations been generated from LabelVideoSegments?")
+
+    # --- Dataset/Validation Flags ---
+    frames_initialized = models.BooleanField(default=False, help_text="Have Frame objects been created in the DB?")
+
     class Meta:
         abstract = True
 
-class RawVideoFileState(AbstractVideoState):
-    """State for raw video file data."""
-
-    origin = models.OneToOneField(
-        "RawVideoFile",
-        on_delete=models.CASCADE,
-        related_name="state",
-        null=True,
-        blank=True,
-    )
-    if TYPE_CHECKING:
-        from endoreg_db.models import RawVideoFile
-
-        origin: "RawVideoFile"
-
-    class Meta:
-        verbose_name = "Raw Video File State"
-        verbose_name_plural = "Raw Video File States"
-
 class VideoState(AbstractVideoState):
     """State for video data."""
-
-    origin = models.OneToOneField(
-        "Video",
-        on_delete=models.CASCADE,
-        related_name="state",
-        null=True,
-        blank=True,
-    )
-    if TYPE_CHECKING:
-        from endoreg_db.models import Video
-        origin: "Video"
-    
-
     class Meta:
         verbose_name = "Video State"
         verbose_name_plural = "Video States"
+        indexes = [
+            models.Index(fields=['video_file']),
+        ]

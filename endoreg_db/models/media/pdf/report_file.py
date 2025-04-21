@@ -105,7 +105,7 @@ class AbstractExaminationReport(AbstractDocument):
 
 
 
-class AnonymExaminationReport(models.Model):
+class AnonymExaminationReport(AbstractExaminationReport):
 
     def get_or_create_examiner(self, examiner_first_name:str, examiner_last_name:str):
         from ...administration.person import Examiner
@@ -121,14 +121,15 @@ class AnonymExaminationReport(models.Model):
         return examiner, created
 
     def set_examination_date_and_time(self, report_meta=None):
+        #TODO
         if not report_meta:
             report_meta = self.meta
-        examination_date_str = report_meta["examination_date"]
-        examination_time_str = report_meta["examination_time"]
+        # examination_date_str = report_meta["examination_date"]
+        # examination_time_str = report_meta["examination_time"]
 
-        if examination_date_str:
-            # TODO: get django DateField compatible date from string (e.g. "2021-01-01")
-            self.date = date.fromisoformat(examination_date_str)
-        if examination_time_str:
-            # TODO: get django TimeField compatible time from string (e.g. "12:00")
-            self.time = time.fromisoformat(examination_time_str)
+        # if examination_date_str:
+        #     # TODO: get django DateField compatible date from string (e.g. "2021-01-01")
+        #     self.date = date.fromisoformat(examination_date_str)
+        # if examination_time_str:
+        #     # TODO: get django TimeField compatible time from string (e.g. "12:00")
+        #     self.time = time.fromisoformat(examination_time_str)

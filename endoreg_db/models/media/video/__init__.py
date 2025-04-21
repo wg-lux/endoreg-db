@@ -1,10 +1,4 @@
-from .video import (
-    Video,
-)
-from .raw_video import (
-    RawVideoFile,
-)
+from .video_file import VideoFile
 __all__ = [
-    "Video",
-    "RawVideoFile",
+    "VideoFile",
 ]

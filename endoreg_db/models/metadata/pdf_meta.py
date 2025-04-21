@@ -1,5 +1,9 @@
 from django.db import models
 from django.core.files import File
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..media.pdf.report_reader.report_reader_flag import ReportReaderFlag
 
 class PdfType(models.Model):
     name = models.CharField(max_length=255)
@@ -28,6 +32,13 @@ class PdfType(models.Model):
         related_name="pdf_type_cut_off_below_lines", 
     )
 
+    if TYPE_CHECKING:
+        patient_info_line: "ReportReaderFlag"
+        endoscope_info_line: "ReportReaderFlag"
+        examiner_info_line: "ReportReaderFlag"
+        cut_off_above_lines: models.QuerySet["ReportReaderFlag"]
+        cut_off_below_lines: models.QuerySet["ReportReaderFlag"]
+
 
     def __str__(self):
         summary = f"{self.name}"
@@ -49,6 +60,9 @@ class PdfMeta(models.Model):
     date = models.DateField()
     time = models.TimeField()
     pdf_hash = models.CharField(max_length=255, unique=True)
+
+    if TYPE_CHECKING:
+        pdf_type: "PdfType"
 
     def __str__(self):
         return str(self.pdf_hash)
