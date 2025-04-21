@@ -1,0 +1,325 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.metadata.model_meta &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.metadata.model_meta</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.metadata.model_meta</h1><div class="highlight"><pre>
+<span></span><span class="c1"># filepath: /home/admin/dev/endo-ai/endoreg-db/endoreg_db/models/metadata/model_meta.py</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Defines the ModelMeta model and its manager for storing metadata related to AI models,</span>
+<span class="sd">including versioning, configuration, and associated weights files.</span>
+<span class="sd">Logic is primarily handled in model_meta_logic.py.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Type</span>
+<span class="c1"># Removed shutil import, now in logic</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.core.validators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FileExtensionValidator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.conf</span><span class="w"> </span><span class="kn">import</span> <span class="n">settings</span>
+<span class="c1"># Removed torch import, now in logic</span>
+<span class="c1"># from torch import nn</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">WEIGHTS_DIR</span><span class="p">,</span> <span class="n">STORAGE_DIR</span>
+<span class="c1"># Import logic functions</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">model_meta_logic</span> <span class="k">as</span> <span class="n">logic</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">endoreg_db.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">LabelSet</span><span class="p">,</span> <span class="n">AiModel</span>  <span class="c1"># pylint: disable=import-outside-toplevel</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="kn">import</span> <span class="n">Module</span> <span class="k">as</span> <span class="n">TorchModule</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ModelMetaManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Custom manager for the ModelMeta model.</span>
+
+<span class="sd">    Provides methods for retrieving ModelMeta instances using natural keys.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># ... existing code ...</span>
+
+
+<div class="viewcode-block" id="ModelMeta">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ModelMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents the metadata for a specific version of an AI model.</span>
+<span class="sd">    Logic for creation, querying, and configuration is in model_meta_logic.py.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># ... (fields remain the same: name, version, model, labelset, activation, weights, mean, std, etc.) ...</span>
+    <span class="c1"># --- Model Identification ---</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;User-defined name for this specific model metadata set (e.g., &#39;segmentation_base&#39;).&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">version</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Version identifier for this metadata set (e.g., &#39;1&#39;, &#39;2a&#39;).&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;AiModel&quot;</span><span class="p">,</span>
+        <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span>
+        <span class="n">related_name</span><span class="o">=</span><span class="s2">&quot;metadata_versions&quot;</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;The base AI model architecture this metadata belongs to.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># --- Model Configuration ---</span>
+    <span class="n">labelset</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;LabelSet&quot;</span><span class="p">,</span>
+        <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span>
+        <span class="n">related_name</span><span class="o">=</span><span class="s2">&quot;model_metadata&quot;</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;The set of labels this model version predicts.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">activation</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;sigmoid&quot;</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Output activation function (e.g., &#39;sigmoid&#39;, &#39;softmax&#39;, &#39;none&#39;).&quot;</span>
+    <span class="p">)</span>
+    <span class="c1"># weights = models.FileField(</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">django.core.files.storage</span><span class="w"> </span><span class="kn">import</span> <span class="n">FileSystemStorage</span>
+    <span class="c1"># from ..utils import WEIGHTS_DIR, STORAGE_DIR # Already imported</span>
+
+    <span class="n">weights</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">FileField</span><span class="p">(</span>
+        <span class="n">upload_to</span><span class="o">=</span><span class="n">WEIGHTS_DIR</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="n">STORAGE_DIR</span><span class="p">)</span><span class="o">.</span><span class="n">as_posix</span><span class="p">(),</span>  <span class="c1"># Ensure posix path for consistency</span>
+        <span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">FileExtensionValidator</span><span class="p">(</span><span class="n">allowed_extensions</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;ckpt&quot;</span><span class="p">])],</span>
+        <span class="n">storage</span><span class="o">=</span><span class="n">FileSystemStorage</span><span class="p">(</span><span class="n">location</span><span class="o">=</span><span class="n">STORAGE_DIR</span><span class="p">),</span>
+        <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Path to the model weights file (.ckpt), relative to MEDIA_ROOT.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># --- Normalization and Input Shape ---</span>
+    <span class="n">mean</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;0.45211223,0.27139644,0.19264949&quot;</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Comma-separated mean values for input normalization.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">std</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;0.31418097,0.21088019,0.16059452&quot;</span><span class="p">,</span>
+        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Comma-separated standard deviation values for input normalization.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">size_x</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">716</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Expected input image width.&quot;</span><span class="p">)</span>
+    <span class="n">size_y</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">716</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Expected input image height.&quot;</span><span class="p">)</span>
+    <span class="n">axes</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;2,0,1&quot;</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Comma-separated target axis order (e.g., &#39;2,0,1&#39; for CHW).&quot;</span>
+    <span class="p">)</span>
+
+    <span class="c1"># --- Inference Parameters ---</span>
+    <span class="n">batchsize</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Default batch size for inference.&quot;</span><span class="p">)</span>
+    <span class="n">num_workers</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Default number of workers for data loading.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># --- Metadata ---</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Optional description.&quot;</span><span class="p">)</span>
+    <span class="n">date_created</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now_add</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">ModelMetaManager</span><span class="p">()</span>
+
+    <span class="c1"># --- Type Hinting for Related Fields ---</span>
+    <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+        <span class="n">labelset</span><span class="p">:</span> <span class="s2">&quot;LabelSet&quot;</span>
+        <span class="n">model</span><span class="p">:</span> <span class="s2">&quot;AiModel&quot;</span>  <span class="c1"># Corrected from ai_model to match field name</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Metadata options for the ModelMeta model.&quot;&quot;&quot;</span>
+        <span class="c1"># ... existing code ...</span>
+
+<div class="viewcode-block" id="ModelMeta.create_from_file">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.create_from_file">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_from_file</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span>
+        <span class="n">meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">labelset_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">weights_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">requested_version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">bump_if_exists</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ModelMeta&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates or updates a ModelMeta instance using external logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Delegate to logic function, passing the class (cls)</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">create_model_meta_from_file</span><span class="p">(</span>
+            <span class="bp">cls</span><span class="p">,</span> <span class="n">meta_name</span><span class="p">,</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">labelset_name</span><span class="p">,</span> <span class="n">weights_file</span><span class="p">,</span>
+            <span class="n">requested_version</span><span class="p">,</span> <span class="n">bump_if_exists</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ModelMeta.get_latest_version_number">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_latest_version_number">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_latest_version_number</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span> <span class="n">meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Gets the latest version *number* using external logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Delegate to logic function</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">get_latest_version_number_logic</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">meta_name</span><span class="p">,</span> <span class="n">model_name</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ModelMeta.get_activation_function">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_activation_function">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_activation_function</span><span class="p">(</span><span class="n">activation_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;TorchModule&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves a PyTorch activation function using external logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Delegate to logic function</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">get_activation_function_logic</span><span class="p">(</span><span class="n">activation_name</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ModelMeta.get_inference_dataset_config">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_inference_dataset_config">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_inference_dataset_config</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generates an inference dataset configuration using external logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Delegate to logic function</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">get_inference_dataset_config_logic</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ModelMeta.natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.natural_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the natural key for serialization.</span>
+<span class="sd">        &quot;&quot;&quot;</span></div>
+
+        <span class="c1"># ... existing code ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;String representation of the ModelMeta instance.&quot;&quot;&quot;</span>
+        <span class="c1"># ... existing code ...</span>
+
+<div class="viewcode-block" id="ModelMeta.get_config_dict">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_config_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_config_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the model&#39;s configuration parameters using external logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Delegate to logic function</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">get_config_dict_logic</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ModelMeta.get_by_name_version">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_by_name_version">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_name_version</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span>
+        <span class="n">meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ModelMeta&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves a ModelMeta instance by name, model name, and optionally version using external logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Delegate to logic function</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">get_model_meta_by_name_version_logic</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">meta_name</span><span class="p">,</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">version</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ModelMeta.get_latest">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_latest">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_latest</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span> <span class="n">meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ModelMeta&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Alias for get_by_name_version(meta_name, model_name, version=None) using external logic.&quot;&quot;&quot;</span>
+        <span class="c1"># Delegate directly to the specific logic function</span>
+        <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">get_model_meta_by_name_version_logic</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">meta_name</span><span class="p">,</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,543 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.administration.person.patient.patient &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html">Models Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.administration.person.patient.patient</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.administration.person.patient.patient</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">..person</span><span class="w"> </span><span class="kn">import</span> <span class="n">Person</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django</span><span class="w"> </span><span class="kn">import</span> <span class="n">forms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.forms</span><span class="w"> </span><span class="kn">import</span> <span class="n">DateInput</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">faker</span><span class="w"> </span><span class="kn">import</span> <span class="n">Faker</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">icecream</span><span class="w"> </span><span class="kn">import</span> <span class="n">ic</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">....other</span><span class="w"> </span><span class="kn">import</span> <span class="n">Gender</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">....medical.patient</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientExamination</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">....administration</span><span class="w"> </span><span class="kn">import</span> <span class="n">Center</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">....media</span><span class="w"> </span><span class="kn">import</span> <span class="n">RawPdfFile</span><span class="p">,</span> <span class="n">AnonymExaminationReport</span><span class="p">,</span> <span class="n">AnonymHistologyReport</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">....</span><span class="w"> </span><span class="kn">import</span> <span class="n">media</span>
+
+<div class="viewcode-block" id="Patient">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Patient</span><span class="p">(</span><span class="n">Person</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class representing a patient.</span>
+
+<span class="sd">    Attributes inhereted from Person:</span>
+<span class="sd">        first_name (str): The first name of the patient.</span>
+<span class="sd">        last_name (str): The last name of the patient.</span>
+<span class="sd">        dob (datetime.date): The date of birth of the patient.</span>
+<span class="sd">        gender (Foreign Key): The gender of the patient.</span>
+<span class="sd">        email (str): The email address of the patient.</span>
+<span class="sd">        phone (str): The phone number of the patient.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># -----gc-08-dev--changings---</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+    <span class="n">dob</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateField</span><span class="p">(</span><span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">gender</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;Gender&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">center</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;Center&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">patient_hash</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+        <span class="n">first_name</span><span class="p">:</span> <span class="nb">str</span>
+        <span class="n">last_name</span><span class="p">:</span> <span class="nb">str</span>
+        <span class="n">dob</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span>
+        <span class="n">gender</span><span class="p">:</span> <span class="s2">&quot;Gender&quot;</span>
+        <span class="n">center</span><span class="p">:</span> <span class="s2">&quot;Center&quot;</span>
+        <span class="n">patient_examinations</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;PatientExamination&quot;</span><span class="p">]</span>
+        <span class="n">anonymexaminationreport_set</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;AnonymExaminationReport&quot;</span><span class="p">]</span>
+        <span class="n">anonymhistologyreport_set</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;AnonymHistologyReport&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">first_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">last_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dob</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_or_create_pseudo_patient_by_hash</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">patient_hash</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">center</span><span class="p">:</span> <span class="s2">&quot;Center&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">gender</span><span class="p">:</span> <span class="s2">&quot;Gender&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">birth_month</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">birth_year</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">endoreg_db.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">random_day_by_year</span><span class="p">,</span> <span class="n">create_mock_patient_name</span>
+
+        <span class="n">created</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="n">existing_patient</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">patient_hash</span><span class="o">=</span><span class="n">patient_hash</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">existing_patient</span><span class="p">:</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Patient with hash </span><span class="si">{</span><span class="n">patient_hash</span><span class="si">}</span><span class="s2"> already exists&quot;</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Returning existing patient: </span><span class="si">{</span><span class="n">existing_patient</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">existing_patient</span><span class="p">,</span> <span class="n">created</span>
+
+        <span class="c1"># If no patient with the given hash exists, create a new pseudo patient</span>
+        <span class="k">assert</span> <span class="n">center</span><span class="p">,</span> <span class="s2">&quot;Center must be provided to create a new pseudo patient&quot;</span>
+        <span class="k">assert</span> <span class="n">gender</span><span class="p">,</span> <span class="s2">&quot;Gender must be provided to create a new pseudo patient&quot;</span>
+        <span class="k">assert</span> <span class="n">birth_month</span><span class="p">,</span> <span class="p">(</span>
+            <span class="s2">&quot;Birth month must be provided to create a new pseudo patient&quot;</span>
+        <span class="p">)</span>
+        <span class="k">assert</span> <span class="n">birth_year</span><span class="p">,</span> <span class="s2">&quot;Birth year must be provided to create a new pseudo patient&quot;</span>
+
+        <span class="n">pseudo_dob</span> <span class="o">=</span> <span class="n">random_day_by_year</span><span class="p">(</span><span class="n">birth_year</span><span class="p">)</span>
+        <span class="n">gender_name</span> <span class="o">=</span> <span class="n">gender</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span> <span class="o">=</span> <span class="n">create_mock_patient_name</span><span class="p">(</span><span class="n">gender_name</span><span class="p">)</span>
+
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Creating pseudo patient with hash </span><span class="si">{</span><span class="n">patient_hash</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Generated name: </span><span class="si">{</span><span class="n">first_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">last_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">patient</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">first_name</span><span class="o">=</span><span class="n">first_name</span><span class="p">,</span>
+            <span class="n">last_name</span><span class="o">=</span><span class="n">last_name</span><span class="p">,</span>
+            <span class="n">dob</span><span class="o">=</span><span class="n">pseudo_dob</span><span class="p">,</span>
+            <span class="n">patient_hash</span><span class="o">=</span><span class="n">patient_hash</span><span class="p">,</span>
+            <span class="n">is_real_person</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">patient</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">created</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">return</span> <span class="n">patient</span><span class="p">,</span> <span class="n">created</span>
+
+<div class="viewcode-block" id="Patient.export_patient_examinations">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.export_patient_examinations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">export_patient_examinations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get all associated PatientExaminations, ReportFiles, and Videos for the patient.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">patient_examinations</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">patient_examinations</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="n">report_files</span><span class="p">,</span> <span class="n">videos</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">patient_examination</span> <span class="ow">in</span> <span class="n">patient_examinations</span><span class="p">:</span>
+            <span class="n">rr</span> <span class="o">=</span> <span class="n">patient_examination</span><span class="o">.</span><span class="n">reportfile_set</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+            <span class="n">vv</span> <span class="o">=</span> <span class="n">patient_examination</span><span class="o">.</span><span class="n">videos</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="n">report_files</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">rr</span><span class="p">)</span>
+            <span class="n">videos</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">vv</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">patient_examinations</span><span class="p">,</span> <span class="n">report_files</span><span class="p">,</span> <span class="n">videos</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_dob</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">:</span>
+        <span class="n">dob</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dob</span>
+        <span class="k">return</span> <span class="n">dob</span>
+
+<div class="viewcode-block" id="Patient.get_unmatched_report_files">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_unmatched_report_files">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_unmatched_report_files</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">):</span>  <span class="c1"># field: self.report_files; filter: report_file.patient_examination = None</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all report files for this patient that are not matched to a patient examination.&quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">reportfile_set</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">patient_examination</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Patient.get_unmatched_video_files">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_unmatched_video_files">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_unmatched_video_files</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">):</span>  <span class="c1"># field: self.videos; filter: video.patient_examination = None</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all video files for this patient that are not matched to a patient examination.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">videos</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">patient_examination</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Patient.get_patient_examinations">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_patient_examinations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_patient_examinations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>  <span class="c1"># field: self.patient_examinations</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all patient examinations for this patient ordered by date (most recent is first).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">patient_examinations</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s2">&quot;-date&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Patient.create_examination">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_examination">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_examination</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">examination_name_str</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">date_start</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">date_end</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a patient examination for this patient.&quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">examination_name_str</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">....medical</span><span class="w"> </span><span class="kn">import</span> <span class="n">Examination</span><span class="p">,</span> <span class="n">PatientExamination</span>
+
+            <span class="n">examination</span> <span class="o">=</span> <span class="n">Examination</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">examination_name_str</span><span class="p">)</span>
+            <span class="n">patient_examination</span> <span class="o">=</span> <span class="n">PatientExamination</span><span class="p">(</span>
+                <span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                <span class="n">examination</span><span class="o">=</span><span class="n">examination</span><span class="p">,</span>
+                <span class="n">date_start</span><span class="o">=</span><span class="n">date_start</span><span class="p">,</span>
+                <span class="n">date_end</span><span class="o">=</span><span class="n">date_end</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">patient_examination</span> <span class="o">=</span> <span class="n">PatientExamination</span><span class="p">(</span>
+                <span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">date_start</span><span class="o">=</span><span class="n">date_start</span><span class="p">,</span> <span class="n">date_end</span><span class="o">=</span><span class="n">date_end</span>
+            <span class="p">)</span>
+
+        <span class="n">patient_examination</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">patient_examination</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_examination_by_indication</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">indication</span><span class="p">,</span> <span class="n">date_start</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">date_end</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">....medical</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+            <span class="n">ExaminationIndication</span><span class="p">,</span>
+            <span class="n">Examination</span><span class="p">,</span>
+            <span class="n">PatientExaminationIndication</span><span class="p">,</span>
+            <span class="n">PatientExamination</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">indication</span><span class="p">,</span> <span class="n">ExaminationIndication</span><span class="p">)</span>
+
+        <span class="n">examination</span> <span class="o">=</span> <span class="n">indication</span><span class="o">.</span><span class="n">get_examination</span><span class="p">()</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">examination</span><span class="p">,</span> <span class="n">Examination</span><span class="p">)</span>
+
+        <span class="n">patient_examination</span> <span class="o">=</span> <span class="n">PatientExamination</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">examination</span><span class="o">=</span><span class="n">examination</span><span class="p">,</span>
+            <span class="n">date_start</span><span class="o">=</span><span class="n">date_start</span><span class="p">,</span>
+            <span class="n">date_end</span><span class="o">=</span><span class="n">date_end</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">patient_examination</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">patient_examination_indication</span> <span class="o">=</span> <span class="n">PatientExaminationIndication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">patient_examination</span><span class="o">=</span><span class="n">patient_examination</span><span class="p">,</span> <span class="n">examination_indication</span><span class="o">=</span><span class="n">indication</span>
+        <span class="p">)</span>
+        <span class="n">patient_examination_indication</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">patient_examination</span><span class="p">,</span> <span class="n">patient_examination_indication</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_event</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event_name_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">date_start</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">date_end</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">....medical</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span><span class="p">,</span> <span class="n">PatientEvent</span>
+
+        <span class="n">event</span> <span class="o">=</span> <span class="n">Event</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">event_name_str</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">date_start</span><span class="p">:</span>
+            <span class="n">date_start</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+
+        <span class="n">patient_event</span> <span class="o">=</span> <span class="n">PatientEvent</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">=</span><span class="n">event</span><span class="p">,</span>
+            <span class="n">date_start</span><span class="o">=</span><span class="n">date_start</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">patient_event</span>
+
+<div class="viewcode-block" id="Patient.create_examination_by_pdf">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_examination_by_pdf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_examination_by_pdf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pdf</span><span class="p">:</span> <span class="s2">&quot;media.RawPdfFile&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a patient examination for this patient based on the given report file.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">....medical</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientExamination</span>
+        <span class="n">patient_examination</span> <span class="o">=</span> <span class="n">PatientExamination</span><span class="p">(</span><span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">patient_examination</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">pdf</span><span class="o">.</span><span class="n">examination</span> <span class="o">=</span> <span class="n">patient_examination</span>
+        <span class="n">pdf</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">patient_examination</span></div>
+
+
+<div class="viewcode-block" id="Patient.get_random_gender">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_random_gender">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_random_gender</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">p_male</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">p_female</span><span class="o">=</span><span class="mf">0.5</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a Gender object by name (male, female) from the database with given probability.</span>
+
+<span class="sd">        :param p_male: Probability of selecting &#39;male&#39; gender.</span>
+<span class="sd">        :param p_female: Probability of selecting &#39;female&#39; gender.</span>
+<span class="sd">        :return: Gender object selected based on given probabilities.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">....other</span><span class="w"> </span><span class="kn">import</span> <span class="n">Gender</span>
+
+        <span class="c1"># Extract names and probabilities</span>
+        <span class="n">gender_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;male&quot;</span><span class="p">,</span> <span class="s2">&quot;female&quot;</span><span class="p">]</span>
+        <span class="n">probabilities</span> <span class="o">=</span> <span class="p">[</span><span class="n">p_male</span><span class="p">,</span> <span class="n">p_female</span><span class="p">]</span>
+
+        <span class="c1"># Debug: print the names and probabilities</span>
+        <span class="c1"># print(f&quot;Gender names: {gender_names}&quot;)</span>
+        <span class="c1"># print(f&quot;Probabilities: {probabilities}&quot;)</span>
+
+        <span class="c1"># Select a gender based on the given probabilities</span>
+        <span class="n">selected_gender</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choices</span><span class="p">(</span><span class="n">gender_names</span><span class="p">,</span> <span class="n">probabilities</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># Debug: print the selected gender</span>
+        <span class="c1"># print(f&quot;Selected gender: {selected_gender}&quot;)</span>
+
+        <span class="c1"># Fetch the corresponding Gender object from the database</span>
+        <span class="n">gender_obj</span> <span class="o">=</span> <span class="n">Gender</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">selected_gender</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">gender_obj</span></div>
+
+
+<div class="viewcode-block" id="Patient.get_random_age">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_random_age">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_random_age</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span> <span class="n">min_age</span><span class="o">=</span><span class="mi">55</span><span class="p">,</span> <span class="n">max_age</span><span class="o">=</span><span class="mi">90</span><span class="p">,</span> <span class="n">mean_age</span><span class="o">=</span><span class="mi">65</span><span class="p">,</span> <span class="n">std_age</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">distribution</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a random age based on the given distribution.</span>
+
+<span class="sd">        :param min_age: Minimum age.</span>
+<span class="sd">        :param max_age: Maximum age.</span>
+<span class="sd">        :param mean_age: Mean age.</span>
+<span class="sd">        :param std_age: Standard deviation of the age.</span>
+<span class="sd">        :param distribution: Distribution of the age.</span>
+<span class="sd">        :return: Random age based on the given distribution.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;normal&quot;</span><span class="p">:</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">normalvariate</span><span class="p">(</span><span class="n">mean_age</span><span class="p">,</span> <span class="n">std_age</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">min_age</span><span class="p">,</span> <span class="n">max_age</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">age</span></div>
+
+
+<div class="viewcode-block" id="Patient.get_dob_from_age">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_dob_from_age">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_dob_from_age</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span> <span class="n">current_date</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get a date of birth based on the given age and current date.</span>
+
+<span class="sd">        :param age: Age of the patient.</span>
+<span class="sd">        :param current_date: Current date.</span>
+<span class="sd">        :return: Date of birth based on the given age and current date.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">current_date</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">current_date</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+        <span class="n">dob</span> <span class="o">=</span> <span class="n">current_date</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">year</span><span class="o">=</span><span class="n">current_date</span><span class="o">.</span><span class="n">year</span> <span class="o">-</span> <span class="n">age</span><span class="p">)</span><span class="o">.</span><span class="n">date</span><span class="p">()</span>
+
+        <span class="c1"># TODO</span>
+        <span class="c1"># randomize the day and month by adding a random number of days (0-364) to the date</span>
+
+        <span class="k">return</span> <span class="n">dob</span></div>
+
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_random_name_for_gender</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">gender_obj</span><span class="p">,</span> <span class="n">locale</span><span class="o">=</span><span class="s2">&quot;de_DE&quot;</span><span class="p">):</span>
+        <span class="n">gender</span> <span class="o">=</span> <span class="n">gender_obj</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">fake</span> <span class="o">=</span> <span class="n">Faker</span><span class="p">(</span><span class="n">locale</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">gender</span> <span class="o">==</span> <span class="s2">&quot;male&quot;</span><span class="p">:</span>
+            <span class="n">first_name</span> <span class="o">=</span> <span class="n">fake</span><span class="o">.</span><span class="n">first_name_male</span><span class="p">()</span>
+            <span class="n">last_name</span> <span class="o">=</span> <span class="n">fake</span><span class="o">.</span><span class="n">last_name_male</span><span class="p">()</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">first_name</span> <span class="o">=</span> <span class="n">fake</span><span class="o">.</span><span class="n">first_name_female</span><span class="p">()</span>
+            <span class="n">last_name</span> <span class="o">=</span> <span class="n">fake</span><span class="o">.</span><span class="n">last_name_female</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">last_name</span><span class="p">,</span> <span class="n">first_name</span>
+
+<div class="viewcode-block" id="Patient.create_generic">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_generic">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_generic</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">center</span><span class="o">=</span><span class="s2">&quot;gplay_case_generator&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a generic patient with random attributes.</span>
+
+<span class="sd">        :param center: The center of the patient.</span>
+<span class="sd">        :return: The created patient.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">....administration</span><span class="w"> </span><span class="kn">import</span> <span class="n">Center</span>
+
+        <span class="n">gender</span> <span class="o">=</span> <span class="n">Patient</span><span class="o">.</span><span class="n">get_random_gender</span><span class="p">()</span>
+        <span class="n">last_name</span><span class="p">,</span> <span class="n">first_name</span> <span class="o">=</span> <span class="n">Patient</span><span class="o">.</span><span class="n">get_random_name_for_gender</span><span class="p">(</span><span class="n">gender</span><span class="p">)</span>
+
+        <span class="n">age</span> <span class="o">=</span> <span class="n">Patient</span><span class="o">.</span><span class="n">get_random_age</span><span class="p">()</span>
+        <span class="n">dob</span> <span class="o">=</span> <span class="n">Patient</span><span class="o">.</span><span class="n">get_dob_from_age</span><span class="p">(</span><span class="n">age</span><span class="p">)</span>
+
+        <span class="n">center</span> <span class="o">=</span> <span class="n">Center</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">center</span><span class="p">)</span>
+
+        <span class="n">patient</span> <span class="o">=</span> <span class="n">Patient</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">first_name</span><span class="o">=</span><span class="n">first_name</span><span class="p">,</span>
+            <span class="n">last_name</span><span class="o">=</span><span class="n">last_name</span><span class="p">,</span>
+            <span class="n">dob</span><span class="o">=</span><span class="n">dob</span><span class="p">,</span>
+            <span class="n">gender</span><span class="o">=</span><span class="n">gender</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">patient</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">patient</span></div>
+
+
+<div class="viewcode-block" id="Patient.age">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.age">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">age</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get the age of the patient.</span>
+
+<span class="sd">        :return: The age of the patient.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># calculate correct age based on current date including day and month</span>
+        <span class="n">current_date</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+        <span class="n">dob</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dob</span>
+        <span class="n">age</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">current_date</span><span class="o">.</span><span class="n">year</span>
+            <span class="o">-</span> <span class="n">dob</span><span class="o">.</span><span class="n">year</span>
+            <span class="o">-</span> <span class="p">((</span><span class="n">current_date</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">current_date</span><span class="o">.</span><span class="n">day</span><span class="p">)</span> <span class="o">&lt;</span> <span class="p">(</span><span class="n">dob</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">dob</span><span class="o">.</span><span class="n">day</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">age</span></div>
+
+
+<div class="viewcode-block" id="Patient.create_lab_sample">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_lab_sample">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_lab_sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sample_type</span><span class="o">=</span><span class="s2">&quot;generic&quot;</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Create a lab sample for this patient.</span>
+
+<span class="sd">        :param sample_type: The sample type. Should be either string of the sample types</span>
+<span class="sd">            name or the sample type object. If not set, the default sample type (&quot;generic&quot;) is used.</span>
+<span class="sd">        :param date: The date of the lab sample.</span>
+<span class="sd">        :return: The created lab sample.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">....medical</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientLabSample</span><span class="p">,</span> <span class="n">PatientLabSampleType</span>
+
+        <span class="k">if</span> <span class="n">date</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">date</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sample_type</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">sample_type</span> <span class="o">=</span> <span class="n">PatientLabSampleType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">sample_type</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">sample_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Sample type with name &#39;</span><span class="si">{</span><span class="n">sample_type</span><span class="si">}</span><span class="s2">&#39; not found.&quot;</span>
+            <span class="p">)</span>  <span class="c1">#</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sample_type</span><span class="p">,</span> <span class="n">PatientLabSampleType</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Sample type must be either a string or a PatientLabSampleType object.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">patient_lab_sample</span> <span class="o">=</span> <span class="n">PatientLabSample</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">sample_type</span><span class="o">=</span><span class="n">sample_type</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="n">date</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">save</span><span class="p">:</span>
+            <span class="n">patient_lab_sample</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">patient_lab_sample</span></div>
+</div>
+
+
+
+<span class="c1"># class PatientForm(forms.ModelForm):</span>
+<span class="c1">#     class Meta:</span>
+<span class="c1">#         model = Patient</span>
+<span class="c1">#         fields = &quot;__all__&quot;</span>
+<span class="c1">#         widgets = {</span>
+<span class="c1">#             &quot;dob&quot;: DateInput(attrs={&quot;type&quot;: &quot;date&quot;}),</span>
+<span class="c1">#         }</span>
+
+<span class="c1">#     def __init__(self, *args, **kwargs):</span>
+<span class="c1">#         super().__init__(*args, **kwargs)</span>
+<span class="c1">#         for field in self.fields.values():</span>
+<span class="c1">#             field.widget.attrs[&quot;class&quot;] = &quot;form-control&quot;</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

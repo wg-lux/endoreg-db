@@ -1,0 +1,221 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.medical.patient.patient_medication_schedule &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.medical.patient.patient_medication_schedule</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.medical.patient.patient_medication_schedule</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span> <span class="k">as</span> <span class="n">dt</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...administration.person.patient</span><span class="w"> </span><span class="kn">import</span> <span class="n">Patient</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientMedication</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">..medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">MedicationSchedule</span>
+
+<div class="viewcode-block" id="PatientMedicationSchedule">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatientMedicationSchedule</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a collection of medications associated with a patient, forming their schedule.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">patient</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s2">&quot;Patient&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">)</span>
+    <span class="n">medication</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ManyToManyField</span><span class="p">(</span>
+        <span class="s1">&#39;PatientMedication&#39;</span><span class="p">,</span> 
+        <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;patient_medication_schedules&#39;</span><span class="p">,</span>
+        <span class="n">blank</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+
+    <span class="n">created_at</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now_add</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">updated_at</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+        <span class="n">patient</span><span class="p">:</span> <span class="s2">&quot;Patient&quot;</span>
+        <span class="n">medication</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;PatientMedication&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a string representation including the patient and associated medications.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">patient</span><span class="si">}</span><span class="s1"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="si">}</span><span class="s1">&#39;</span>
+    
+<div class="viewcode-block" id="PatientMedicationSchedule.create_by_patient_and_indication_type">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.create_by_patient_and_indication_type">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_by_patient_and_indication_type</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">patient</span><span class="p">,</span> <span class="n">indication_type</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a schedule and adds a medication based on a random indication of a given type.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">..medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">MedicationIndicationType</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientMedication</span>
+
+        <span class="n">medication_indication</span> <span class="o">=</span> <span class="n">MedicationIndicationType</span><span class="o">.</span><span class="n">get_random_indication_by_type</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">indication_type</span><span class="p">)</span>
+
+        <span class="n">patient_medication_schedule</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">patient</span><span class="o">=</span><span class="n">patient</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">patient_medication</span> <span class="o">=</span> <span class="n">PatientMedication</span><span class="o">.</span><span class="n">create_by_patient_and_indication</span><span class="p">(</span><span class="n">patient</span><span class="p">,</span> <span class="n">medication_indication</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">patient_medication</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">patient_medication_schedule</span></div>
+
+    
+<div class="viewcode-block" id="PatientMedicationSchedule.create_by_patient_and_indication">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.create_by_patient_and_indication">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_by_patient_and_indication</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">patient</span><span class="p">,</span> <span class="n">medication_indication</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a schedule and adds a medication based on a specific indication.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">..medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">MedicationIndication</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientMedication</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">...administration.person.patient</span><span class="w"> </span><span class="kn">import</span> <span class="n">Patient</span>
+
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">medication_indication</span><span class="p">,</span> <span class="n">MedicationIndication</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">patient</span><span class="p">,</span> <span class="n">Patient</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">patient</span><span class="o">=</span><span class="n">patient</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">patient_medication</span> <span class="o">=</span> <span class="n">PatientMedication</span><span class="o">.</span><span class="n">create_by_patient_and_indication</span><span class="p">(</span><span class="n">patient</span><span class="p">,</span> <span class="n">medication_indication</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">patient_medication</span><span class="p">)</span>
+        <span class="n">patient_medication_schedule</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">patient_medication_schedule</span></div>
+
+    
+<div class="viewcode-block" id="PatientMedicationSchedule.create_patient_medication_from_medication_schedule">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.create_patient_medication_from_medication_schedule">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_patient_medication_from_medication_schedule</span><span class="p">(</span>
+            <span class="bp">self</span><span class="p">,</span>
+            <span class="n">medication_schedule</span><span class="p">:</span> <span class="s2">&quot;MedicationSchedule&quot;</span><span class="p">,</span>
+            <span class="n">medication_indication</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">start_date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates and adds a PatientMedication based on a generic MedicationSchedule template.&quot;&quot;&quot;</span>
+        
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientMedication</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">start_date</span><span class="p">:</span>
+            <span class="n">start_date</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+
+        <span class="n">drug</span> <span class="o">=</span> <span class="n">medication_schedule</span><span class="o">.</span><span class="n">medication</span>
+        <span class="n">unit</span> <span class="o">=</span> <span class="n">medication_schedule</span><span class="o">.</span><span class="n">unit</span>
+        <span class="n">dosage</span> <span class="o">=</span> <span class="n">medication_schedule</span><span class="o">.</span><span class="n">dose</span>
+        <span class="n">intake_times</span> <span class="o">=</span> <span class="n">medication_schedule</span><span class="o">.</span><span class="n">get_intake_times</span><span class="p">()</span>
+
+        <span class="n">patient_medication</span> <span class="o">=</span> <span class="n">PatientMedication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">patient</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">patient</span><span class="p">,</span>
+            <span class="n">medication</span><span class="o">=</span><span class="n">drug</span><span class="p">,</span>
+            <span class="n">medication_indication</span><span class="o">=</span><span class="n">medication_indication</span><span class="p">,</span>
+            <span class="n">unit</span><span class="o">=</span><span class="n">unit</span><span class="p">,</span>
+            <span class="n">dosage</span><span class="o">=</span><span class="n">dosage</span>
+        <span class="p">)</span>
+
+        <span class="n">patient_medication</span><span class="o">.</span><span class="n">intake_times</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">intake_times</span><span class="p">)</span>
+        <span class="n">patient_medication</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">patient_medication</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>  
+
+        <span class="k">return</span> <span class="n">patient_medication</span></div>
+
+    
+    
+<div class="viewcode-block" id="PatientMedicationSchedule.get_patient_medication">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.get_patient_medication">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_patient_medication</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all PatientMedication instances associated with this schedule.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

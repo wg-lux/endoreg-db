@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ....medical.patient import PatientExamination
     from ....administration import Center
     from ....media import RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
-
+    from .... import media
 
 class Patient(Person):
     """
@@ -219,7 +219,7 @@ class Patient(Person):
 
         return patient_event
 
-    def create_examination_by_pdf(self, pdf: "RawPdfFile"):
+    def create_examination_by_pdf(self, pdf: "media.RawPdfFile"):
         """Creates a patient examination for this patient based on the given report file."""
         from ....medical import PatientExamination
         patient_examination = PatientExamination(patient=self)

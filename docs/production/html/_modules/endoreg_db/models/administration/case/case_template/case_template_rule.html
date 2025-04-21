@@ -1,0 +1,414 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.administration.case.case_template.case_template_rule &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html">Models Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.administration.case.case_template.case_template_rule</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.administration.case.case_template.case_template_rule</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplateRuleTypeManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="CaseTemplateRuleType">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRuleType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplateRuleType</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a type of rule for a case template.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        name (str): The name of the rule type.</span>
+<span class="sd">        name_de (str): The German name of the rule type.</span>
+<span class="sd">        name_en (str): The English name of the rule type.</span>
+<span class="sd">        description (str): A description of the rule type.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">)</span>
+    <span class="n">name_de</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_en</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">CaseTemplateRuleTypeManager</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></div>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplateRuleManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_default_create_patient_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the default create patient rule.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;create-patient-default&quot;</span><span class="p">)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_default_create_patient_lab_sample_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the default create patient lab sample rules.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;create-patient_lab_sample-default&quot;</span><span class="p">)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_default_create_patient_medication_schedule_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the create patient medication schedule rule.&quot;&quot;&quot;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;create-patient_medication_schedule&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">r</span><span class="p">,</span> <span class="s2">&quot;No create patient medication schedule rule found&quot;</span>
+        <span class="k">return</span> <span class="n">r</span>
+    
+<div class="viewcode-block" id="CaseTemplateRule">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplateRule</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class representing a case template rule.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        name (str): The name of the case template rule.</span>
+<span class="sd">        description (str): A description of the case template rule.</span>
+<span class="sd">        name_de (str): The name of the case template rule in German.</span>
+<span class="sd">        name_en (str): The name of the case template rule in English.</span>
+<span class="sd">        rule_type (CaseTemplateRuleType): The type of the rule.</span>
+<span class="sd">        parent_model (str): The model on which the rule is applied.</span>
+<span class="sd">        target_field (str): The field of the parent model on which the rule is applied.</span>
+<span class="sd">        target_model (str): The model to which the foreign key points (used for foreign key and many-to-many rules).</span>
+<span class="sd">        rule_values (list): A list of string values for the rule.</span>
+<span class="sd">        extra_parameters (dict): A dictionary of extra parameters for the rule.</span>
+<span class="sd">        value_type (CaseTemplateRuleValueType): The type of the rule value.</span>
+<span class="sd">        chained_rules (QuerySet): The chained rules associated with the current rule.</span>
+<span class="sd">        single_categorical_value_distribution (SingleCategoricalValueDistribution): The single categorical value distribution for the rule.</span>
+<span class="sd">        numerical_value_distribution (NumericValueDistribution): The numerical value distribution for the rule.</span>
+<span class="sd">        multiple_categorical_value_distribution (MultipleCategoricalValueDistribution): The multiple categorical value distribution for the rule.</span>
+<span class="sd">        date_value_distribution (DateValueDistribution): The date value distribution for the rule.</span>
+<span class="sd">        objects (CaseTemplateRuleManager): The manager for the CaseTemplateRule model.</span>
+
+<span class="sd">    Methods:</span>
+<span class="sd">        natural_key(): Returns the natural key of the rule.</span>
+<span class="sd">        __str__(): Returns a string representation of the rule.</span>
+<span class="sd">        get_rule_type(): Returns the name of the rule type.</span>
+<span class="sd">        get_chained_rules(): Returns all the chained rules associated with the current rule.</span>
+<span class="sd">        get_all_downward_chained_rules(): Returns all the chained rules of the current rule, including indirectly chained rules.</span>
+<span class="sd">        chained_rules_has_self_reference(): Checks if any directly or indirectly chained rules reference this rule, creating a non-terminating loop.</span>
+<span class="sd">        save(*args, **kwargs): Customizes the save method to check for self-references.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">)</span>
+    <span class="n">name_de</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_en</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">rule_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;CaseTemplateRuleType&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span>
+    <span class="p">)</span>
+    <span class="n">parent_model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">parent_field</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">target_field</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">target_model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">rule_values</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">extra_parameters</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">value_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s2">&quot;CaseTemplateRuleValueType&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">chained_rules</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ManyToManyField</span><span class="p">(</span>
+        <span class="s2">&quot;CaseTemplateRule&quot;</span><span class="p">,</span>
+        <span class="n">related_name</span><span class="o">=</span><span class="s2">&quot;calling_rules&quot;</span>
+    <span class="p">)</span>
+    <span class="n">single_categorical_value_distribution</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;SingleCategoricalValueDistribution&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">numerical_value_distribution</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;NumericValueDistribution&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">multiple_categorical_value_distribution</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;MultipleCategoricalValueDistribution&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">date_value_distribution</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s2">&quot;DateValueDistribution&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">SET_NULL</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">CaseTemplateRuleManager</span><span class="p">()</span>
+
+<div class="viewcode-block" id="CaseTemplateRule.natural_key">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.natural_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the natural key of the rule.</span>
+
+<span class="sd">        :return: A tuple representing the natural key of the rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
+
+
+<div class="viewcode-block" id="CaseTemplateRule.__str__">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.__str__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a string representation of the rule.</span>
+
+<span class="sd">        :return: A string representation of the rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CaseTemplateRule.get_rule_type">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_rule_type">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_rule_type</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the name of the rule type.</span>
+
+<span class="sd">        :return: The name of the rule type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rule_type</span><span class="o">.</span><span class="n">name</span></div>
+
+
+<div class="viewcode-block" id="CaseTemplateRule.get_chained_rules">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_chained_rules">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_chained_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns all the chained rules associated with the current rule.</span>
+
+<span class="sd">        :return: A queryset of all the chained rules associated with the current rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">chained_rules</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>
+
+    
+<div class="viewcode-block" id="CaseTemplateRule.get_distribution">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_distribution">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_distribution</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the value distribution of the rule.</span>
+
+<span class="sd">        :return: The value distribution of the rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">DEBUG</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">DEBUG</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Rule: &quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;single_categorical_value_distribution: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">single_categorical_value_distribution</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;numerical_value_distribution: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">numerical_value_distribution</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;multiple_categorical_value_distribution: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">multiple_categorical_value_distribution</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;date_value_distribution: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">date_value_distribution</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">single_categorical_value_distribution</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">single_categorical_value_distribution</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_value_distribution</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_value_distribution</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">multiple_categorical_value_distribution</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">multiple_categorical_value_distribution</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">date_value_distribution</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">date_value_distribution</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CaseTemplateRule.get_all_downward_chained_rules">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_all_downward_chained_rules">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_all_downward_chained_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get all chained rules of the current rule, including indirectly chained rules.</span>
+
+<span class="sd">        :return: A set of all chained rules of the current rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">all_chained_rules</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">traverse_chained_rules</span><span class="p">(</span><span class="n">rule</span><span class="p">):</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Helper function to recursively traverse chained rules.</span>
+
+<span class="sd">            :param rule: The current CaseTemplateRule being checked.</span>
+<span class="sd">            :return: None</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="k">for</span> <span class="n">chained_rule</span> <span class="ow">in</span> <span class="n">rule</span><span class="o">.</span><span class="n">chained_rules</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">chained_rule</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">all_chained_rules</span><span class="p">:</span>
+                    <span class="n">all_chained_rules</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">chained_rule</span><span class="p">)</span>
+                    <span class="n">traverse_chained_rules</span><span class="p">(</span><span class="n">chained_rule</span><span class="p">)</span>
+
+        <span class="c1"># Initialize the traversal starting with the current rule</span>
+        <span class="n">traverse_chained_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">all_chained_rules</span></div>
+
+
+<div class="viewcode-block" id="CaseTemplateRule.chained_rules_has_self_reference">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.chained_rules_has_self_reference">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">chained_rules_has_self_reference</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        :noindex:</span>
+<span class="sd">        Check if any directly or indirectly chained rules reference this rule, creating a non-terminating loop.</span>
+<span class="sd">        Return a list containing a tuple (first_rule, self_referencing_rule) for each self-reference.</span>
+<span class="sd">        first_rule is the most upward rule in the chain that references the rule.</span>
+<span class="sd">        self_referencing_rule is the rule that references the current rule itself.</span>
+
+<span class="sd">        :return: A list of tuples representing the self-referencing rules.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">result_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">traverse_chained_rules</span><span class="p">(</span><span class="n">rule</span><span class="p">,</span> <span class="n">visited_rules</span><span class="p">):</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Helper function to recursively traverse chained rules and check for self-references.</span>
+
+<span class="sd">            :param rule: The current CaseTemplateRule being checked.</span>
+<span class="sd">            :param visited_rules: A list of tuples representing the path of rules visited so far.</span>
+<span class="sd">            :return: None</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="k">for</span> <span class="n">chained_rule</span> <span class="ow">in</span> <span class="n">rule</span><span class="o">.</span><span class="n">chained_rules</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">chained_rule</span> <span class="o">==</span> <span class="bp">self</span><span class="p">:</span>
+                    <span class="c1"># A self-reference is detected</span>
+                    <span class="n">first_rule</span> <span class="o">=</span> <span class="n">visited_rules</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">self_referencing_rule</span> <span class="o">=</span> <span class="n">visited_rules</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="n">result_list</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">first_rule</span><span class="p">,</span> <span class="n">self_referencing_rule</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="n">chained_rule</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">visited_rules</span><span class="p">]:</span>
+                    <span class="c1"># Continue to check chained rules of the current chained rule</span>
+                    <span class="n">traverse_chained_rules</span><span class="p">(</span><span class="n">chained_rule</span><span class="p">,</span> <span class="n">visited_rules</span> <span class="o">+</span> <span class="p">[(</span><span class="n">rule</span><span class="p">,</span> <span class="n">chained_rule</span><span class="p">)])</span>
+
+        <span class="c1"># Initialize the traversal starting with the current rule</span>
+        <span class="n">traverse_chained_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="p">[(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="p">)])</span>
+        <span class="k">return</span> <span class="n">result_list</span></div>
+
+    
+<div class="viewcode-block" id="CaseTemplateRule.get_target_model">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_target_model">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_target_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the target model of the rule.</span>
+
+<span class="sd">        :return: The target model of the rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">django.apps</span><span class="w"> </span><span class="kn">import</span> <span class="n">apps</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_model</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">target_model</span> <span class="o">=</span> <span class="n">apps</span><span class="o">.</span><span class="n">get_model</span><span class="p">(</span><span class="s2">&quot;endoreg_db&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_model</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">LookupError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target_model</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">target_model</span></div>
+
+    
+<div class="viewcode-block" id="CaseTemplateRule.get_target_field">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_target_field">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_target_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the target field of the rule.</span>
+
+<span class="sd">        :return: The target field of the rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_field</span></div>
+
+    
+<div class="viewcode-block" id="CaseTemplateRule.get_parent_model">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplateRule.get_parent_model">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_parent_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the parent model of the rule.</span>
+
+<span class="sd">        :return: The parent model of the rule.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">django.apps</span><span class="w"> </span><span class="kn">import</span> <span class="n">apps</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_model</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parent_model</span> <span class="o">=</span> <span class="n">apps</span><span class="o">.</span><span class="n">get_model</span><span class="p">(</span><span class="s2">&quot;endoreg_db&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_model</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">LookupError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">parent_model</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_model</span></div>
+</div>
+
+
+    <span class="c1"># customize the save method to check for self-references</span>
+    <span class="c1"># def save(self, *args, **kwargs):</span>
+    <span class="c1">#     # Check for self-references</span>
+    <span class="c1">#     self_referencing_rules = self.chained_rules_has_self_reference()</span>
+    <span class="c1">#     if self_referencing_rules:</span>
+    <span class="c1">#         raise ValueError(f&quot;Self-references detected: {self_referencing_rules}&quot;)</span>
+    <span class="c1">#     super().save(*args, **kwargs)</span>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

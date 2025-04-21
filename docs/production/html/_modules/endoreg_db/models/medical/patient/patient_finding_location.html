@@ -1,0 +1,254 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.medical.patient.patient_finding_location &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.medical.patient.patient_finding_location</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.medical.patient.patient_finding_location</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">..finding</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">FindingLocationClassification</span><span class="p">,</span>
+        <span class="n">FindingLocationClassificationChoice</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_finding</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientFinding</span>
+
+<div class="viewcode-block" id="PatientFindingLocation">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatientFindingLocation</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">finding</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;PatientFinding&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;locations&#39;</span><span class="p">)</span>
+    <span class="n">location_classification</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;FindingLocationClassification&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;patient_finding_locations&#39;</span><span class="p">)</span>
+    <span class="n">location_choice</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;FindingLocationClassificationChoice&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;patient_finding_locations&#39;</span><span class="p">)</span>
+    <span class="n">subcategories</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+        <span class="n">patient_finding</span><span class="p">:</span> <span class="s2">&quot;PatientFinding&quot;</span>
+        <span class="n">location_classification</span><span class="p">:</span> <span class="s2">&quot;FindingLocationClassification&quot;</span>
+        <span class="n">location_choice</span><span class="p">:</span> <span class="s2">&quot;FindingLocationClassificationChoice&quot;</span>
+        <span class="n">subcategories</span><span class="p">:</span> <span class="nb">dict</span>
+        <span class="n">numerical_descriptors</span><span class="p">:</span> <span class="nb">dict</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">verbose_name</span> <span class="o">=</span> <span class="s1">&#39;Patient Finding Location&#39;</span>
+        <span class="n">verbose_name_plural</span> <span class="o">=</span> <span class="s1">&#39;Patient Finding Locations&#39;</span>
+        <span class="n">ordering</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;location_classification&#39;</span><span class="p">,</span> <span class="s1">&#39;location_choice&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">location_classification</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">location_choice</span><span class="si">}</span><span class="s2">&quot;</span>
+    
+    <span class="c1"># override save method to do the following:</span>
+    <span class="c1"># - check if location_choice is in location_classification.choices</span>
+    <span class="c1"># - check if subcategories and numerical_descriptors exist</span>
+    <span class="c1"># - if not set, fetch them from location_choice and set them</span>
+
+<div class="viewcode-block" id="PatientFindingLocation.save">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_choice</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_classification</span><span class="o">.</span><span class="n">choices</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;location_choice must be in location_classification.choices&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_choice</span><span class="o">.</span><span class="n">subcategories</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_choice</span><span class="o">.</span><span class="n">numerical_descriptors</span>
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingLocation.set_subcategory">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_subcategory">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_subcategory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">subcategory_name</span><span class="p">,</span> <span class="n">subcategory_value</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets a subcategory for this location.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">subcategory_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">,</span> <span class="s2">&quot;Subcategory must be in subcategories.&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">[</span><span class="n">subcategory_name</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">subcategory_value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">[</span><span class="n">subcategory_name</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingLocation.set_random_subcategories">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_random_subcategories">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_random_subcategories</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets random subcategories for this location if they are required.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">refresh_from_db</span><span class="p">()</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">,</span> <span class="s2">&quot;Subcategories must be set.&quot;</span>
+
+        <span class="n">subcategories</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span>
+        <span class="c1"># print(&quot;SUBCATS&quot;)</span>
+        <span class="c1"># print(subcategories)</span>
+
+        <span class="c1"># subcategories is dict with keys as subcategory names and values as dict with keys as &quot;choices&quot; (List of str) and &quot;required&quot; (bool)</span>
+        <span class="c1"># for each subcategory, set a random choice if it is required</span>
+        <span class="k">for</span> <span class="n">subcategory_name</span><span class="p">,</span> <span class="n">subcategory_dict</span> <span class="ow">in</span> <span class="n">subcategories</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">subcategory_dict</span><span class="p">[</span><span class="s2">&quot;required&quot;</span><span class="p">]:</span>
+                <span class="n">subcategory_choice</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">subcategory_dict</span><span class="p">[</span><span class="s2">&quot;choices&quot;</span><span class="p">])</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">[</span><span class="n">subcategory_name</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">subcategory_choice</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span></div>
+
+    
+<div class="viewcode-block" id="PatientFindingLocation.set_random_numerical_descriptor">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_random_numerical_descriptor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_random_numerical_descriptor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptor_name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets a random numerical descriptor for this location.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+        <span class="k">if</span> <span class="n">descriptor_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Descriptor name must be in numerical descriptors.&quot;</span><span class="p">)</span>
+
+        <span class="n">numerical_descriptor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">]</span>
+        <span class="n">min_value</span> <span class="o">=</span> <span class="n">numerical_descriptor</span><span class="p">[</span><span class="s2">&quot;min&quot;</span><span class="p">]</span>
+        <span class="n">max_value</span> <span class="o">=</span> <span class="n">numerical_descriptor</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]</span>
+
+        <span class="k">assert</span> <span class="n">min_value</span> <span class="o">&lt;=</span> <span class="n">max_value</span><span class="p">,</span> <span class="s2">&quot;Min value must be less than or equal to max value.&quot;</span>
+
+        <span class="n">random_value</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">min_value</span><span class="p">,</span> <span class="n">max_value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">random_value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="PatientFindingLocation.set_random_numerical_descriptors">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_random_numerical_descriptors">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_random_numerical_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets random numerical descriptors for this location if they are required.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span>
+        <span class="n">numerical_descriptor</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># numerical_descriptors is dict with keys as numerical descriptor names </span>
+        <span class="c1"># and values as dict with keys as &quot;min&quot; (float), &quot;max&quot; (float), required (bool), distribution_name (str)</span>
+        <span class="c1"># distribution name can be either &quot;uniform&quot; or &quot;normal&quot;</span>
+        <span class="c1"># for each numerical descriptor, set a random value between min and max</span>
+        <span class="k">for</span> <span class="n">numerical_descriptor_name</span><span class="p">,</span> <span class="n">numerical_descriptor_dict</span> <span class="ow">in</span> <span class="n">numerical_descriptors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">min_value</span> <span class="o">=</span> <span class="n">numerical_descriptor_dict</span><span class="p">[</span><span class="s2">&quot;min&quot;</span><span class="p">]</span>
+            <span class="n">max_value</span> <span class="o">=</span> <span class="n">numerical_descriptor_dict</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">]</span>
+
+            <span class="k">assert</span> <span class="n">min_value</span> <span class="o">&lt;=</span> <span class="n">max_value</span><span class="p">,</span> <span class="s2">&quot;Min value must be less than or equal to max value.&quot;</span>
+
+
+            <span class="n">random_value</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">min_value</span><span class="p">,</span> <span class="n">max_value</span><span class="p">)</span>
+            <span class="n">numerical_descriptor</span><span class="p">[</span><span class="n">numerical_descriptor_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">random_value</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="n">numerical_descriptor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">numerical_descriptor</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

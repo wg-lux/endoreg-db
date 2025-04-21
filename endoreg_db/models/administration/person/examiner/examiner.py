@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from ....utils import DJANGO_NAME_SALT
 if TYPE_CHECKING:
-    from endoreg_db.models import Center
+    from endoreg_db.models import administration
 class Examiner(Person):
     center = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
@@ -13,13 +13,13 @@ class Examiner(Person):
     hash = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        center: "Center"
+        center: "administration.Center"
 
     def __str__(self):
         return self.first_name + " " + self.last_name
 
     @classmethod
-    def custom_get_or_create(cls, first_name: str, last_name: str, center: "Center", substitute_names: bool = True):
+    def custom_get_or_create(cls, first_name: str, last_name: str, center: "administration.Center", substitute_names: bool = True):
         from endoreg_db.models import (
             FirstName,
             LastName,

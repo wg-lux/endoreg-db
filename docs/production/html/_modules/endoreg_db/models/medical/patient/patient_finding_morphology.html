@@ -1,0 +1,302 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.medical.patient.patient_finding_morphology &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.medical.patient.patient_finding_morphology</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.medical.patient.patient_finding_morphology</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Dict</span>
+
+<span class="c1"># Corrected imports for type hints</span>
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">..finding</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">FindingMorphologyClassification</span><span class="p">,</span> <span class="c1"># Corrected</span>
+        <span class="n">FindingMorphologyClassificationChoice</span><span class="p">,</span> <span class="c1"># Corrected</span>
+    <span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_finding</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientFinding</span>
+
+<div class="viewcode-block" id="PatientFindingMorphology">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatientFindingMorphology</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents the morphological description of a specific patient finding.</span>
+
+<span class="sd">    Links a PatientFinding to a specific choice within a morphology classification,</span>
+<span class="sd">    and stores associated subcategory values and numerical descriptors.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">finding</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s1">&#39;PatientFinding&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;morphologies&#39;</span>
+    <span class="p">)</span>
+    <span class="n">morphology_classification</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s1">&#39;FindingMorphologyClassification&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;patient_finding_morphologies&#39;</span>
+    <span class="p">)</span> 
+    <span class="n">morphology_choice</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="s1">&#39;FindingMorphologyClassificationChoice&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;patient_finding_morphologies&#39;</span>
+    <span class="p">)</span>
+    <span class="n">subcategories</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+        <span class="n">patient_finding</span><span class="p">:</span> <span class="s2">&quot;PatientFinding&quot;</span> <span class="c1"># Corrected name</span>
+        <span class="n">morphology_classification</span><span class="p">:</span> <span class="s2">&quot;FindingMorphologyClassification&quot;</span> <span class="c1"># Corrected type</span>
+        <span class="n">morphology_choice</span><span class="p">:</span> <span class="s2">&quot;FindingMorphologyClassificationChoice&quot;</span> <span class="c1"># Corrected type</span>
+        <span class="n">subcategories</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span>  <span class="c1"># Corrected type</span>
+        <span class="n">numerical_descriptors</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span>  <span class="c1"># Corrected type</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">verbose_name</span> <span class="o">=</span> <span class="s1">&#39;Patient Finding Morphology&#39;</span>
+        <span class="n">verbose_name_plural</span> <span class="o">=</span> <span class="s1">&#39;Patient Finding Morphologies&#39;</span>
+        <span class="n">ordering</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;morphology_classification&#39;</span><span class="p">,</span> <span class="s1">&#39;morphology_choice&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a string representation including classification, choice, and any set values.&quot;&quot;&quot;</span>
+        <span class="n">_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">morphology_classification</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">morphology_choice</span><span class="si">}</span><span class="s2">&quot;</span>
+        
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">_dict</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">value</span><span class="p">:</span>
+                    <span class="n">_str</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; - </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">_dict</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">value</span><span class="p">:</span>
+                    <span class="n">_str</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; - </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span>
+        
+        <span class="k">return</span> <span class="n">_str</span>
+
+<div class="viewcode-block" id="PatientFindingMorphology.set_subcategory">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.set_subcategory">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_subcategory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">subcategory_name</span><span class="p">,</span> <span class="n">subcategory_value</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets the value for a specific subcategory.&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">subcategory_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">,</span> <span class="s2">&quot;Subcategory must be in subcategories.&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">[</span><span class="n">subcategory_name</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">subcategory_value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">[</span><span class="n">subcategory_name</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingMorphology.save">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Overrides save to validate choice and initialize subcategories/descriptors</span>
+<span class="sd">        from the morphology choice if they are not already set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">morphology_choice</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">morphology_classification</span><span class="o">.</span><span class="n">choices</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;morphology_choice must be in morphology_classification.choices&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">morphology_choice</span><span class="o">.</span><span class="n">subcategories</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">morphology_choice</span><span class="o">.</span><span class="n">numerical_descriptors</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="p">{}</span>
+                
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingMorphology.get_subcategories">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.get_subcategories">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_subcategories</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the dictionary of subcategories, ensuring it&#39;s initialized.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span></div>
+
+    
+<div class="viewcode-block" id="PatientFindingMorphology.get_numerical_descriptors">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.get_numerical_descriptors">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_numerical_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the dictionary of numerical descriptors, ensuring it&#39;s initialized.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingMorphology.get_random_value_for_numerical_descriptor">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.get_random_value_for_numerical_descriptor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_random_value_for_numerical_descriptor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptor_name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a random value for a specified numerical descriptor based on its definition.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+        <span class="k">assert</span> <span class="n">descriptor_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">,</span> <span class="s2">&quot;Descriptor must be in numerical descriptors.&quot;</span>
+        <span class="n">descriptor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">]</span>
+        <span class="n">min_val</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;min&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">max_val</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">distribution</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;distribution&quot;</span><span class="p">,</span> <span class="s2">&quot;normal&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;normal&quot;</span><span class="p">:</span>
+            <span class="n">mean</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+            <span class="n">std</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;std&quot;</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">mean</span><span class="p">,</span> <span class="n">std</span><span class="p">)</span>
+            <span class="c1"># clip value to min and max</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">min_val</span><span class="p">,</span> <span class="n">max_val</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">min_val</span><span class="p">,</span> <span class="n">max_val</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Distribution not supported&quot;</span><span class="p">)</span>
+        
+        <span class="k">return</span> <span class="n">value</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingMorphology.set_numerical_descriptor_random">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.set_numerical_descriptor_random">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_numerical_descriptor_random</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptor_name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a random value for a specified numerical descriptor.&quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">descriptor_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">,</span> <span class="s2">&quot;Descriptor must be in numerical descriptors.&quot;</span>
+        
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_random_value_for_numerical_descriptor</span><span class="p">(</span><span class="n">descriptor_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="PatientFindingMorphology.set_random_numerical_descriptors">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.set_random_numerical_descriptors">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_random_numerical_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="c1">#TODO Update</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets random values for all required numerical descriptors based on their definitions.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+        <span class="c1"># get numerical descriptors from morphology_choice</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">morphology_choice</span><span class="o">.</span><span class="n">numerical_descriptors</span>
+            <span class="k">assert</span> <span class="n">numerical_descriptors</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="c1"># print(f&quot;Numerical descriptors not found for {self.morphology_choice}&quot;)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># If available, numerical descriptors is a dict like this:</span>
+        <span class="c1"># {</span>
+        <span class="c1">#     &quot;DESCRIPTOR_NAME&quot;: {</span>
+        <span class="c1">#         &quot;min&quot;: 0.5,</span>
+        <span class="c1">#         &quot;max&quot;: 1.5,</span>
+        <span class="c1">#         &quot;unit&quot;: &quot;mm&quot;</span>
+        <span class="c1">#         &quot;mean&quot;: 1.0</span>
+        <span class="c1">#         &quot;std&quot;: 0.1</span>
+        <span class="c1">#         &quot;required&quot;: True</span>
+        <span class="c1">#     }</span>
+        <span class="c1">#}</span>
+        <span class="c1"># Iterate over all numerical descriptors</span>
+        <span class="c1"># if required is true, set random values following the constraints and distribution</span>
+        <span class="c1"># available distributions are: normal, uniform </span>
+        
+        <span class="k">for</span> <span class="n">descriptor_name</span><span class="p">,</span> <span class="n">descriptor</span> <span class="ow">in</span> <span class="n">numerical_descriptors</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">required</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;required&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">required</span><span class="p">:</span>
+                <span class="n">min_val</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;min&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">max_val</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;max&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">distribution</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;distribution&quot;</span><span class="p">,</span> <span class="s2">&quot;normal&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;normal&quot;</span><span class="p">:</span>
+                    <span class="n">mean</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+                    <span class="n">std</span> <span class="o">=</span> <span class="n">descriptor</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;std&quot;</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">mean</span><span class="p">,</span> <span class="n">std</span><span class="p">)</span>
+                    <span class="c1"># clip value to min and max</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">min_val</span><span class="p">,</span> <span class="n">max_val</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">distribution</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">min_val</span><span class="p">,</span> <span class="n">max_val</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Distribution not supported&quot;</span><span class="p">)</span>
+                
+                <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">[</span><span class="n">descriptor_name</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
