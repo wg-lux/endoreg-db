@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -95,7 +116,7 @@
 <span class="c1"># SECRET_SALT moved to logic</span>
 
 <div class="viewcode-block" id="SensitiveMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">SensitiveMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Stores potentially sensitive information extracted from media.</span>
@@ -173,7 +194,7 @@
         <span class="k">return</span> <span class="n">logic</span><span class="o">.</span><span class="n">generate_random_examination_date</span><span class="p">()</span>
 
 <div class="viewcode-block" id="SensitiveMeta.create_from_dict">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.create_from_dict">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.create_from_dict">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_dict</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;SensitiveMeta&quot;</span><span class="p">],</span> <span class="n">data</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a SensitiveMeta instance from a dictionary using external logic.&quot;&quot;&quot;</span>
@@ -185,7 +206,7 @@
     <span class="c1"># Keep simple getters if needed, but creation logic is centralized.</span>
 
 <div class="viewcode-block" id="SensitiveMeta.get_pseudo_examiner">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.get_pseudo_examiner">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.get_pseudo_examiner">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_pseudo_examiner</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Examiner | None&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the linked pseudo examiner, if one exists.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pk</span><span class="p">:</span>
@@ -196,7 +217,7 @@
     <span class="c1"># Removed create_pseudo_examiner - logic is now in sensitive_meta_logic.create_pseudo_examiner_logic</span>
 
 <div class="viewcode-block" id="SensitiveMeta.get_pseudo_patient">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.get_pseudo_patient">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.get_pseudo_patient">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_pseudo_patient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Patient | None&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the linked pseudo patient, if one exists.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">pseudo_patient</span> <span class="c1"># Access the FK directly</span></div>
@@ -205,7 +226,7 @@
     <span class="c1"># Removed create_pseudo_patient - logic is now in sensitive_meta_logic.get_or_create_pseudo_patient_logic</span>
 
 <div class="viewcode-block" id="SensitiveMeta.get_pseudo_patient_examination">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.get_pseudo_patient_examination">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.get_pseudo_patient_examination">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_pseudo_patient_examination</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PatientExamination | None&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the linked pseudo patient examination, if one exists.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">pseudo_examination</span> <span class="c1"># Access the FK directly</span></div>
@@ -215,7 +236,7 @@
 
     <span class="c1"># --- Update method delegates to logic ---</span>
 <div class="viewcode-block" id="SensitiveMeta.update_from_dict">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.update_from_dict">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.update_from_dict">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_from_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Updates the instance from a dictionary using external logic.&quot;&quot;&quot;</span>
         <span class="c1"># Delegate to logic function</span>
@@ -268,7 +289,7 @@
 
     <span class="c1"># --- Hashing methods delegate to logic ---</span>
 <div class="viewcode-block" id="SensitiveMeta.get_patient_hash">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.get_patient_hash">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.get_patient_hash">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_patient_hash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the patient hash using external logic.&quot;&quot;&quot;</span>
         <span class="c1"># Use default salt from logic if None is passed</span>
@@ -278,7 +299,7 @@
 
 
 <div class="viewcode-block" id="SensitiveMeta.get_patient_examination_hash">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.get_patient_examination_hash">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.get_patient_examination_hash">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_patient_examination_hash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the examination hash using external logic.&quot;&quot;&quot;</span>
         <span class="n">salt_to_use</span> <span class="o">=</span> <span class="n">salt</span> <span class="k">if</span> <span class="n">salt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">logic</span><span class="o">.</span><span class="n">SECRET_SALT</span>
@@ -288,7 +309,7 @@
 
     <span class="c1"># --- Save method orchestrates calls to logic ---</span>
 <div class="viewcode-block" id="SensitiveMeta.save">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.SensitiveMeta.save">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.SensitiveMeta.save">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Overrides the default save method to ensure data integrity, calculate hashes,</span>

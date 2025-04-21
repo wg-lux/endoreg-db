@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -95,7 +116,7 @@
 
 <span class="c1"># VideoMeta</span>
 <div class="viewcode-block" id="VideoMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">VideoMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Stores technical and contextual metadata related to a video file.</span>
@@ -117,7 +138,7 @@
     <span class="p">)</span>
 
 <div class="viewcode-block" id="VideoMeta.create_from_file">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoMeta.create_from_file">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoMeta.create_from_file">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_file</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
@@ -164,7 +185,7 @@
         <span class="k">return</span> <span class="n">result_html</span>
 
 <div class="viewcode-block" id="VideoMeta.save">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoMeta.save">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoMeta.save">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Ensures VideoImportMeta exists before saving.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">import_meta</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -173,7 +194,7 @@
 
 
 <div class="viewcode-block" id="VideoMeta.initialize_ffmpeg_meta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoMeta.initialize_ffmpeg_meta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoMeta.initialize_ffmpeg_meta">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">initialize_ffmpeg_meta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">video_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes FFMpeg metadata for the video file if not already done.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ffmpeg_meta</span><span class="p">:</span>
@@ -192,7 +213,7 @@
 
 
 <div class="viewcode-block" id="VideoMeta.update_meta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoMeta.update_meta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoMeta.update_meta">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_meta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">video_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Updates the FFMpeg metadata from the file, replacing existing data.&quot;&quot;&quot;</span>
         <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Updating FFMpegMeta for VideoMeta PK </span><span class="si">%s</span><span class="s2"> from </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">video_path</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
@@ -205,7 +226,7 @@
 
 
 <div class="viewcode-block" id="VideoMeta.get_endo_roi">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoMeta.get_endo_roi">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoMeta.get_endo_roi">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_endo_roi</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieves the endoscope region of interest (ROI) from the associated processor.&quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">..medical.hardware</span><span class="w"> </span><span class="kn">import</span> <span class="n">EndoscopyProcessor</span>
@@ -248,7 +269,7 @@
 
 
 <div class="viewcode-block" id="FFMpegMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.FFMpegMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.FFMpegMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">FFMpegMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Stores technical video stream information extracted using FFmpeg (ffprobe).</span>
@@ -271,7 +292,7 @@
         <span class="k">return</span> <span class="kc">None</span>
 
 <div class="viewcode-block" id="FFMpegMeta.create_from_file">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.FFMpegMeta.create_from_file">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.FFMpegMeta.create_from_file">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_file</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">file_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -348,7 +369,7 @@
 
 
 <div class="viewcode-block" id="VideoImportMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoImportMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoImportMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">VideoImportMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Stores metadata related to the import and processing status of a video.</span>

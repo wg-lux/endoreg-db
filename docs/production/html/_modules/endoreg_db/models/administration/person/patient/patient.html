@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -87,7 +108,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">....</span><span class="w"> </span><span class="kn">import</span> <span class="n">media</span>
 
 <div class="viewcode-block" id="Patient">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Patient</span><span class="p">(</span><span class="n">Person</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A class representing a patient.</span>
@@ -127,6 +148,8 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">first_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">last_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dob</span><span class="si">}</span><span class="s2">)&quot;</span>
 
+<div class="viewcode-block" id="Patient.get_or_create_pseudo_patient_by_hash">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_or_create_pseudo_patient_by_hash">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_or_create_pseudo_patient_by_hash</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
@@ -172,10 +195,11 @@
         <span class="n">patient</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
         <span class="n">created</span> <span class="o">=</span> <span class="kc">True</span>
 
-        <span class="k">return</span> <span class="n">patient</span><span class="p">,</span> <span class="n">created</span>
+        <span class="k">return</span> <span class="n">patient</span><span class="p">,</span> <span class="n">created</span></div>
+
 
 <div class="viewcode-block" id="Patient.export_patient_examinations">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.export_patient_examinations">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.export_patient_examinations">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">export_patient_examinations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get all associated PatientExaminations, ReportFiles, and Videos for the patient.</span>
@@ -192,12 +216,15 @@
         <span class="k">return</span> <span class="n">patient_examinations</span><span class="p">,</span> <span class="n">report_files</span><span class="p">,</span> <span class="n">videos</span></div>
 
 
+<div class="viewcode-block" id="Patient.get_dob">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_dob">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dob</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">:</span>
         <span class="n">dob</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dob</span>
-        <span class="k">return</span> <span class="n">dob</span>
+        <span class="k">return</span> <span class="n">dob</span></div>
+
 
 <div class="viewcode-block" id="Patient.get_unmatched_report_files">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_unmatched_report_files">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_unmatched_report_files">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_unmatched_report_files</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">):</span>  <span class="c1"># field: self.report_files; filter: report_file.patient_examination = None</span>
@@ -207,7 +234,7 @@
 
 
 <div class="viewcode-block" id="Patient.get_unmatched_video_files">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_unmatched_video_files">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_unmatched_video_files">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_unmatched_video_files</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">):</span>  <span class="c1"># field: self.videos; filter: video.patient_examination = None</span>
@@ -216,14 +243,14 @@
 
 
 <div class="viewcode-block" id="Patient.get_patient_examinations">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_patient_examinations">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_patient_examinations">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_patient_examinations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>  <span class="c1"># field: self.patient_examinations</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all patient examinations for this patient ordered by date (most recent is first).&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">patient_examinations</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s2">&quot;-date&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Patient.create_examination">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_examination">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.create_examination">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_examination</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">examination_name_str</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -253,6 +280,8 @@
         <span class="k">return</span> <span class="n">patient_examination</span></div>
 
 
+<div class="viewcode-block" id="Patient.create_examination_by_indication">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.create_examination_by_indication">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_examination_by_indication</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">indication</span><span class="p">,</span> <span class="n">date_start</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">date_end</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">):</span>
@@ -283,8 +312,11 @@
         <span class="p">)</span>
         <span class="n">patient_examination_indication</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
 
-        <span class="k">return</span> <span class="n">patient_examination</span><span class="p">,</span> <span class="n">patient_examination_indication</span>
+        <span class="k">return</span> <span class="n">patient_examination</span><span class="p">,</span> <span class="n">patient_examination_indication</span></div>
 
+
+<div class="viewcode-block" id="Patient.create_event">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.create_event">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_event</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">event_name_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -305,10 +337,11 @@
             <span class="n">date_start</span><span class="o">=</span><span class="n">date_start</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">patient_event</span>
+        <span class="k">return</span> <span class="n">patient_event</span></div>
+
 
 <div class="viewcode-block" id="Patient.create_examination_by_pdf">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_examination_by_pdf">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.create_examination_by_pdf">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_examination_by_pdf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pdf</span><span class="p">:</span> <span class="s2">&quot;media.RawPdfFile&quot;</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a patient examination for this patient based on the given report file.&quot;&quot;&quot;</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">....medical</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientExamination</span>
@@ -321,7 +354,7 @@
 
 
 <div class="viewcode-block" id="Patient.get_random_gender">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_random_gender">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_random_gender">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_random_gender</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">p_male</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">p_female</span><span class="o">=</span><span class="mf">0.5</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -353,7 +386,7 @@
 
 
 <div class="viewcode-block" id="Patient.get_random_age">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_random_age">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_random_age">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_random_age</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">min_age</span><span class="o">=</span><span class="mi">55</span><span class="p">,</span> <span class="n">max_age</span><span class="o">=</span><span class="mi">90</span><span class="p">,</span> <span class="n">mean_age</span><span class="o">=</span><span class="mi">65</span><span class="p">,</span> <span class="n">std_age</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">distribution</span><span class="o">=</span><span class="s2">&quot;normal&quot;</span>
@@ -377,7 +410,7 @@
 
 
 <div class="viewcode-block" id="Patient.get_dob_from_age">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.get_dob_from_age">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_dob_from_age">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_dob_from_age</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">age</span><span class="p">,</span> <span class="n">current_date</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -397,6 +430,8 @@
         <span class="k">return</span> <span class="n">dob</span></div>
 
 
+<div class="viewcode-block" id="Patient.get_random_name_for_gender">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.get_random_name_for_gender">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_random_name_for_gender</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">gender_obj</span><span class="p">,</span> <span class="n">locale</span><span class="o">=</span><span class="s2">&quot;de_DE&quot;</span><span class="p">):</span>
         <span class="n">gender</span> <span class="o">=</span> <span class="n">gender_obj</span><span class="o">.</span><span class="n">name</span>
@@ -410,10 +445,11 @@
             <span class="n">first_name</span> <span class="o">=</span> <span class="n">fake</span><span class="o">.</span><span class="n">first_name_female</span><span class="p">()</span>
             <span class="n">last_name</span> <span class="o">=</span> <span class="n">fake</span><span class="o">.</span><span class="n">last_name_female</span><span class="p">()</span>
 
-        <span class="k">return</span> <span class="n">last_name</span><span class="p">,</span> <span class="n">first_name</span>
+        <span class="k">return</span> <span class="n">last_name</span><span class="p">,</span> <span class="n">first_name</span></div>
+
 
 <div class="viewcode-block" id="Patient.create_generic">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_generic">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.create_generic">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_generic</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">center</span><span class="o">=</span><span class="s2">&quot;gplay_case_generator&quot;</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -443,7 +479,7 @@
 
 
 <div class="viewcode-block" id="Patient.age">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.age">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.age">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">age</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get the age of the patient.</span>
@@ -462,7 +498,7 @@
 
 
 <div class="viewcode-block" id="Patient.create_lab_sample">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.Patient.create_lab_sample">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.person.Patient.create_lab_sample">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_lab_sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sample_type</span><span class="o">=</span><span class="s2">&quot;generic&quot;</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Create a lab sample for this patient.</span>

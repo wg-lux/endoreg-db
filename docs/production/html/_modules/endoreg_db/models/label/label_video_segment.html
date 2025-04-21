@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -88,7 +109,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">.annotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">ImageClassificationAnnotation</span>
 
 <div class="viewcode-block" id="LabelVideoSegment">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LabelVideoSegment</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a labeled segment within a video, defined by start and end frame numbers.</span>
@@ -151,7 +172,7 @@
         <span class="p">]</span>
 
 <div class="viewcode-block" id="LabelVideoSegment.create_from_video">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.create_from_video">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.create_from_video">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_video</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
@@ -181,7 +202,7 @@
 
 
 <div class="viewcode-block" id="LabelVideoSegment.get_video">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.get_video">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.get_video">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_video</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the associated VideoFile instance.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">video_file</span><span class="p">:</span>
@@ -210,7 +231,7 @@
         <span class="k">return</span> <span class="n">str_repr</span>
 
 <div class="viewcode-block" id="LabelVideoSegment.get_model_meta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.get_model_meta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.get_model_meta">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_model_meta</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the ModelMeta associated via the prediction metadata, if any.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">prediction_meta</span><span class="p">:</span>
@@ -219,7 +240,7 @@
 
 
 <div class="viewcode-block" id="LabelVideoSegment.get_frames">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.get_frames">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.get_frames">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_frames</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;Frame&quot;</span><span class="p">],</span> <span class="nb">list</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns frames associated with the segment from the linked VideoFile.</span>
@@ -239,7 +260,7 @@
 
 
 <div class="viewcode-block" id="LabelVideoSegment.get_annotations">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.get_annotations">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.get_annotations">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_annotations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;ImageClassificationAnnotation&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns ImageClassificationAnnotations associated with the frames in this segment.</span>
@@ -260,7 +281,7 @@
 
 
 <div class="viewcode-block" id="LabelVideoSegment.get_segment_len_in_s">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.get_segment_len_in_s">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.get_segment_len_in_s">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_segment_len_in_s</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the segment length in seconds.&quot;&quot;&quot;</span>
         <span class="n">video_obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_video</span><span class="p">()</span>
@@ -272,7 +293,7 @@
 
 
 <div class="viewcode-block" id="LabelVideoSegment.get_frames_without_annotation">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.get_frames_without_annotation">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.get_frames_without_annotation">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_frames_without_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_frames</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="s2">&quot;Frame&quot;</span><span class="p">],</span> <span class="nb">list</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get up to n frames within the segment that do not have an ImageClassificationAnnotation</span>
@@ -298,7 +319,7 @@
 
 
 <div class="viewcode-block" id="LabelVideoSegment.generate_annotations">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.LabelVideoSegment.generate_annotations">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.label.LabelVideoSegment.generate_annotations">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">generate_annotations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Generate ImageClassificationAnnotations for the frames within this segment,</span>

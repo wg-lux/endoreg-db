@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -76,7 +97,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
     
 <div class="viewcode-block" id="CaseTemplate">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplate</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a case template.</span>
@@ -104,7 +125,7 @@
     <span class="n">objects</span> <span class="o">=</span> <span class="n">CaseTemplateManager</span><span class="p">()</span>
 
 <div class="viewcode-block" id="CaseTemplate.natural_key">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the natural key for the case template.</span>
@@ -125,7 +146,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
     
 <div class="viewcode-block" id="CaseTemplate.get_rules">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate.get_rules">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_rules">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves all primary rules associated with the case template.</span>
@@ -138,7 +159,7 @@
         
     
 <div class="viewcode-block" id="CaseTemplate.get_secondary_rules">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate.get_secondary_rules">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_secondary_rules">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_secondary_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves all secondary rules associated with the case template.</span>
@@ -165,14 +186,14 @@
         
     <span class="c1"># custom save method which runs the _assert_max_one_create_patient_rule method and others</span>
 <div class="viewcode-block" id="CaseTemplate.save">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate.save">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.save">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="c1"># self._assert_max_one_create_patient_rule() #TODO Fails on first save since many to many can only be used if object has an id</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="CaseTemplate.get_create_patient_rule">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate.get_create_patient_rule">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_create_patient_rule">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_create_patient_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves the &quot;create-patient&quot; rule.</span>
@@ -193,7 +214,7 @@
 
     
 <div class="viewcode-block" id="CaseTemplate.get_create_patient_medication_schedule_rule">
-<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.CaseTemplate.get_create_patient_medication_schedule_rule">[docs]</a>
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_create_patient_medication_schedule_rule">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_create_patient_medication_schedule_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves the &quot;create-patient_medication_schedule&quot; rule.</span>

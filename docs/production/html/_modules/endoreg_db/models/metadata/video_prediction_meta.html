@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -97,7 +118,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">VideoPredictionMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Stores metadata about predictions made by a model for a specific video.</span>
@@ -131,7 +152,7 @@
         <span class="p">]</span>
 
 <div class="viewcode-block" id="VideoPredictionMeta.get_video">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.get_video">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_video">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_video</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the associated VideoFile instance.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">video_file</span><span class="p">:</span>
@@ -151,14 +172,14 @@
             <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Prediction Meta </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2"> (Error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">)&quot;</span>
 
 <div class="viewcode-block" id="VideoPredictionMeta.get_labelset">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.get_labelset">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_labelset">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_labelset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">&quot;LabelSet&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the labelset associated with the model.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_meta</span><span class="o">.</span><span class="n">labelset</span></div>
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.get_label_list">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.get_label_list">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_label_list">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_label_list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="s2">&quot;Label&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the ordered list of labels from the model&#39;s labelset.&quot;&quot;&quot;</span>
         <span class="n">labelset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_labelset</span><span class="p">()</span>
@@ -168,7 +189,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.save_prediction_array">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.save_prediction_array">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.save_prediction_array">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save_prediction_array</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prediction_array</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Save the prediction array to the database.</span>
@@ -178,7 +199,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.get_prediction_array">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.get_prediction_array">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_prediction_array">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_prediction_array</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Get the prediction array from the database.</span>
@@ -194,7 +215,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.calculate_prediction_array">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.calculate_prediction_array">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.calculate_prediction_array">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">calculate_prediction_array</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">window_size_in_seconds</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Fetches all predictions for the associated video, labelset, and model meta,</span>
@@ -250,7 +271,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.apply_running_mean">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.apply_running_mean">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.apply_running_mean">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">apply_running_mean</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">confidence_array</span><span class="p">,</span> <span class="n">window_size_in_seconds</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Apply a running mean filter to the confidence array for smoothing, assuming a padding</span>
@@ -292,7 +313,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.create_video_segments_for_label">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.create_video_segments_for_label">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.create_video_segments_for_label">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_video_segments_for_label</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">segments</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span> <span class="n">label</span><span class="p">:</span> <span class="s2">&quot;Label&quot;</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Creates LabelVideoSegment instances for the given label and segments.</span>
@@ -329,7 +350,7 @@
 
 
 <div class="viewcode-block" id="VideoPredictionMeta.create_video_segments">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.VideoPredictionMeta.create_video_segments">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.VideoPredictionMeta.create_video_segments">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_video_segments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">segment_length_threshold_in_s</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Generates LabelVideoSegments based on the stored prediction array.</span>

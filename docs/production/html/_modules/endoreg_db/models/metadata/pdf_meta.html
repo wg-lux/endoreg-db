@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -77,7 +98,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">..media.pdf.report_reader.report_reader_flag</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReportReaderFlag</span>
 
 <div class="viewcode-block" id="PdfType">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.PdfType">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.PdfType">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PdfType</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Defines a specific type or format of PDF report, linking to flags used for parsing.</span>
@@ -130,7 +151,7 @@
         <span class="k">return</span> <span class="n">summary</span>
 
 <div class="viewcode-block" id="PdfType.default_pdf_type">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.PdfType.default_pdf_type">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.PdfType.default_pdf_type">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">default_pdf_type</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a default PdfType instance, typically used as a fallback.&quot;&quot;&quot;</span>
@@ -139,7 +160,7 @@
 
 
 <div class="viewcode-block" id="PdfMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.PdfMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.PdfMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PdfMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Stores metadata associated with a specific PDF document file.</span>
@@ -157,7 +178,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pdf_hash</span><span class="p">)</span>
 
 <div class="viewcode-block" id="PdfMeta.create_from_file">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.PdfMeta.create_from_file">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.PdfMeta.create_from_file">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_file</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">pdf_file</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>

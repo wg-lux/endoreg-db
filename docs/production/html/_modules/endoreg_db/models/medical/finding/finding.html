@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -78,7 +99,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Finding">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.Finding">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.Finding">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Finding</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
     <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">name_de</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -121,15 +142,23 @@
 
     <span class="n">objects</span> <span class="o">=</span> <span class="n">FindingManager</span><span class="p">()</span>
 
+<div class="viewcode-block" id="Finding.natural_key">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.Finding.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
+
     
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
     
+<div class="viewcode-block" id="Finding.get_finding_types">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.Finding.get_finding_types">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_finding_types</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">finding_types</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">finding_types</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>
+
     
+<div class="viewcode-block" id="Finding.get_location_classifications">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.Finding.get_location_classifications">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_location_classifications</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">endoreg_db.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">FindingLocationClassification</span>
         <span class="c1"># FindingLocationClassification is a class with a many-to-many relationship to Finding</span>
@@ -137,14 +166,18 @@
 
         <span class="n">location_classifications</span><span class="p">:</span><span class="n">FindingLocationClassification</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_classifications</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
         
-        <span class="k">return</span> <span class="n">location_classifications</span> 
+        <span class="k">return</span> <span class="n">location_classifications</span> </div>
+
     
+<div class="viewcode-block" id="Finding.get_required_morphology_classification_types">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.Finding.get_required_morphology_classification_types">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_required_morphology_classification_types</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">endoreg_db.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">FindingMorphologyClassificationType</span>
         <span class="n">finding_morphology_classification_types</span><span class="p">:</span><span class="n">List</span><span class="p">[</span><span class="n">FindingMorphologyClassificationType</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">_</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">required_morphology_classification_types</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
         <span class="p">]</span>
         <span class="k">return</span> <span class="n">finding_morphology_classification_types</span></div>
+</div>
 
     
 </pre></div>

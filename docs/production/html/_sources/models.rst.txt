@@ -122,3 +122,31 @@ Organ
    :members:
    :undoc-members:
    :show-inheritance:
+
+Metadata
+====================
+.. automodule:: endoreg_db.models.metadata
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Requirement
+====================
+.. automodule:: endoreg_db.models.medical.requirement
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+State
+====================
+.. automodule:: endoreg_db.models.medical.state
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Other
+====================
+.. automodule:: endoreg_db.models.medical.other
+   :members:
+   :undoc-members:
+   :show-inheritance:

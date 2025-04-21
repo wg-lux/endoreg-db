@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -82,7 +103,7 @@
 
 <span class="c1"># Unified Frame model</span>
 <div class="viewcode-block" id="Frame">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.Frame">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.media.frame.Frame">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Frame</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
     <span class="n">video</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
         <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span>
@@ -107,7 +128,7 @@
         <span class="k">return</span> <span class="n">base_dir</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">relative_path</span>
 
 <div class="viewcode-block" id="Frame.get_image">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.Frame.get_image">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.media.frame.Frame.get_image">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_image</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Reads and returns the frame image using OpenCV.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
@@ -122,7 +143,7 @@
 
 
 <div class="viewcode-block" id="Frame.anonymize">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.Frame.anonymize">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.media.frame.Frame.anonymize">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">anonymize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">output_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
@@ -165,8 +186,11 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Frame </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">frame_number</span><span class="si">}</span><span class="s2"> of Video </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span>
 
+<div class="viewcode-block" id="Frame.get_classification_annotations">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.media.frame.Frame.get_classification_annotations">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_classification_annotations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;ImageClassificationAnnotation&quot;</span><span class="p">]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">image_classification_annotations</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>
+</div>
 
 </pre></div>
 

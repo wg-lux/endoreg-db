@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -78,7 +99,7 @@
 
 
 <div class="viewcode-block" id="CenterProduct">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.CenterProduct">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.administration.center.CenterProduct">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CenterProduct</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Associates a Product with a Center, indicating its usage on a specific date.</span>
@@ -112,21 +133,21 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">product</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">center</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">date_used</span><span class="si">}</span><span class="s2">&quot;</span>
 <div class="viewcode-block" id="CenterProduct.get_product_name">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.CenterProduct.get_product_name">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.administration.center.CenterProduct.get_product_name">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_product_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the name of the product.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">product</span><span class="o">.</span><span class="n">name</span></div>
 
 
 <div class="viewcode-block" id="CenterProduct.get_product_group">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.CenterProduct.get_product_group">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.administration.center.CenterProduct.get_product_group">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_product_group</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ProductGroup | None&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the ProductGroup associated with this product.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">product</span><span class="o">.</span><span class="n">product_group</span></div>
 
 
 <div class="viewcode-block" id="CenterProduct.get_reference_product">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.CenterProduct.get_reference_product">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.administration.center.CenterProduct.get_reference_product">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_reference_product</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Product | None&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the reference Product for this product&#39;s group.&quot;&quot;&quot;</span>
         <span class="n">product_group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_product_group</span><span class="p">()</span>
@@ -135,15 +156,21 @@
         <span class="k">return</span> <span class="kc">None</span></div>
 
 
+<div class="viewcode-block" id="CenterProduct.get_product_weight">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.administration.center.CenterProduct.get_product_weight">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_product_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">product</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">product</span>
         
-        <span class="k">return</span> <span class="n">product</span><span class="o">.</span><span class="n">get_product_weight</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">product</span><span class="o">.</span><span class="n">get_product_weight</span><span class="p">()</span></div>
 
+
+<div class="viewcode-block" id="CenterProduct.get_package_weight">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.administration.center.CenterProduct.get_package_weight">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_package_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">product</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">product</span>
 
         <span class="k">return</span> <span class="n">product</span><span class="o">.</span><span class="n">get_package_weight</span><span class="p">()</span></div>
+</div>
 
 </pre></div>
 

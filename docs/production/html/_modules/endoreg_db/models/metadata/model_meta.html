@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -105,7 +126,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ModelMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents the metadata for a specific version of an AI model.</span>
@@ -190,7 +211,7 @@
         <span class="c1"># ... existing code ...</span>
 
 <div class="viewcode-block" id="ModelMeta.create_from_file">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.create_from_file">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.create_from_file">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_file</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span>
@@ -213,7 +234,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta.get_latest_version_number">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_latest_version_number">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.get_latest_version_number">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_latest_version_number</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span> <span class="n">meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -225,7 +246,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta.get_activation_function">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_activation_function">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.get_activation_function">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_activation_function</span><span class="p">(</span><span class="n">activation_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;TorchModule&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -236,7 +257,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta.get_inference_dataset_config">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_inference_dataset_config">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.get_inference_dataset_config">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_inference_dataset_config</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Generates an inference dataset configuration using external logic.</span>
@@ -246,7 +267,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the natural key for serialization.</span>
@@ -259,7 +280,7 @@
         <span class="c1"># ... existing code ...</span>
 
 <div class="viewcode-block" id="ModelMeta.get_config_dict">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_config_dict">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.get_config_dict">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_config_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the model&#39;s configuration parameters using external logic.</span>
@@ -269,7 +290,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta.get_by_name_version">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_by_name_version">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.get_by_name_version">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_name_version</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span>
@@ -285,7 +306,7 @@
 
 
 <div class="viewcode-block" id="ModelMeta.get_latest">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.ModelMeta.get_latest">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.ModelMeta.get_latest">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_latest</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="s2">&quot;ModelMeta&quot;</span><span class="p">],</span> <span class="n">meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ModelMeta&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Alias for get_by_name_version(meta_name, model_name, version=None) using external logic.&quot;&quot;&quot;</span>

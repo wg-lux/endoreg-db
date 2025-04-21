@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -81,7 +102,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_finding</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientFinding</span>
 
 <div class="viewcode-block" id="PatientFindingMorphology">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PatientFindingMorphology</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents the morphological description of a specific patient finding.</span>
@@ -132,7 +153,7 @@
         <span class="k">return</span> <span class="n">_str</span>
 
 <div class="viewcode-block" id="PatientFindingMorphology.set_subcategory">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.set_subcategory">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.set_subcategory">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_subcategory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">subcategory_name</span><span class="p">,</span> <span class="n">subcategory_value</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets the value for a specific subcategory.&quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="n">subcategory_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">,</span> <span class="s2">&quot;Subcategory must be in subcategories.&quot;</span>
@@ -143,7 +164,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingMorphology.save">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.save">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.save">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Overrides save to validate choice and initialize subcategories/descriptors</span>
@@ -167,7 +188,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingMorphology.get_subcategories">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.get_subcategories">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.get_subcategories">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_subcategories</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the dictionary of subcategories, ensuring it&#39;s initialized.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">subcategories</span><span class="p">:</span>
@@ -176,7 +197,7 @@
 
     
 <div class="viewcode-block" id="PatientFindingMorphology.get_numerical_descriptors">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.get_numerical_descriptors">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.get_numerical_descriptors">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_numerical_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the dictionary of numerical descriptors, ensuring it&#39;s initialized.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">:</span>
@@ -185,7 +206,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingMorphology.get_random_value_for_numerical_descriptor">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.get_random_value_for_numerical_descriptor">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.get_random_value_for_numerical_descriptor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_random_value_for_numerical_descriptor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptor_name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a random value for a specified numerical descriptor based on its definition.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -209,7 +230,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingMorphology.set_numerical_descriptor_random">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.set_numerical_descriptor_random">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.set_numerical_descriptor_random">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_numerical_descriptor_random</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptor_name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets a random value for a specified numerical descriptor.&quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="n">descriptor_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">numerical_descriptors</span><span class="p">,</span> <span class="s2">&quot;Descriptor must be in numerical descriptors.&quot;</span>
@@ -222,7 +243,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingMorphology.set_random_numerical_descriptors">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingMorphology.set_random_numerical_descriptors">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.set_random_numerical_descriptors">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_random_numerical_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> <span class="c1">#TODO Update</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets random values for all required numerical descriptors based on their definitions.&quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>

@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -86,7 +107,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
 
 <div class="viewcode-block" id="PatientLabSampleType">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientLabSampleType">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientLabSampleType">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PatientLabSampleType</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents the type of a patient lab sample (e.g., Blood, Urine).</span>
@@ -105,7 +126,7 @@
     <span class="n">objects</span> <span class="o">=</span> <span class="n">PatientLabSampleTypeManager</span><span class="p">()</span>
 
 <div class="viewcode-block" id="PatientLabSampleType.natural_key">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientLabSampleType.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientLabSampleType.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the natural key (name) as a tuple.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
@@ -116,7 +137,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
     
 <div class="viewcode-block" id="PatientLabSampleType.get_default_sample_type">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientLabSampleType.get_default_sample_type">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientLabSampleType.get_default_sample_type">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_default_sample_type</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets or creates the default patient lab sample type (&#39;default&#39;).&quot;&quot;&quot;</span>
@@ -125,7 +146,7 @@
 
 
 <div class="viewcode-block" id="PatientLabSample">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientLabSample">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientLabSample">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PatientLabSample</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a specific lab sample taken from a patient at a certain date and time.</span>
@@ -153,14 +174,14 @@
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">patient</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sample_type</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="n">formatted_datetime</span><span class="si">}</span><span class="s2"> ()&quot;</span>
     
 <div class="viewcode-block" id="PatientLabSample.get_values">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientLabSample.get_values">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientLabSample.get_values">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_values</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all PatientLabValue instances associated with this sample.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>
 
     
 <div class="viewcode-block" id="PatientLabSample.create_by_patient">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientLabSample.create_by_patient">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientLabSample.create_by_patient">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_by_patient</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">patient</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sample_type</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>

@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -73,11 +94,15 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 
 
+<div class="viewcode-block" id="EventManager">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Manager for Event with custom query methods.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="EventManager.get_by_natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventManager.get_by_natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Event&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves an Event instance using its natural key.</span>
@@ -92,11 +117,13 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The Event object corresponding to the given name.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="Event">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.Event">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.Event">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Event</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A class representing an event.</span>
@@ -122,7 +149,7 @@
     <span class="n">objects</span> <span class="o">=</span> <span class="n">EventManager</span><span class="p">()</span>
 
 <div class="viewcode-block" id="Event.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.Event.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.Event.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Return the natural key for this instance.</span>
@@ -143,16 +170,22 @@
 
 
 
+<div class="viewcode-block" id="EventClassificationManager">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassificationManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventClassificationManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Manager for EventClassification with natural key support.&quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="EventClassificationManager.get_by_natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassificationManager.get_by_natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieves an EventClassification instance by its natural key (name).&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="EventClassification">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.EventClassification">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassification">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventClassification</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a classification system for events (e.g., TNM staging for cancer).</span>
@@ -165,7 +198,7 @@
     <span class="n">objects</span> <span class="o">=</span> <span class="n">EventClassificationManager</span><span class="p">()</span>
 
 <div class="viewcode-block" id="EventClassification.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.EventClassification.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassification.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the natural key (name) as a tuple.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
@@ -176,7 +209,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
 
 <div class="viewcode-block" id="EventClassification.get_choices">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.EventClassification.get_choices">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassification.get_choices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_choices</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;EventClassificationChoice&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieves all choices associated with this classification.&quot;&quot;&quot;</span>
         <span class="n">choices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">EventClassificationChoice</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
@@ -187,16 +220,22 @@
 
 
 
+<div class="viewcode-block" id="EventClassificationChoiceManager">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassificationChoiceManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventClassificationChoiceManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Manager for EventClassificationChoice with natural key support.&quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="EventClassificationChoiceManager.get_by_natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassificationChoiceManager.get_by_natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieves an EventClassificationChoice instance by its natural key (name).&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="EventClassificationChoice">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.EventClassificationChoice">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassificationChoice">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventClassificationChoice</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a specific choice within an event classification system (e.g., T1, N0, M0).</span>
@@ -219,7 +258,7 @@
     <span class="n">objects</span> <span class="o">=</span> <span class="n">EventClassificationChoiceManager</span><span class="p">()</span>
 
 <div class="viewcode-block" id="EventClassificationChoice.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.EventClassificationChoice.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.event.EventClassificationChoice.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the natural key (name) as a tuple.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>

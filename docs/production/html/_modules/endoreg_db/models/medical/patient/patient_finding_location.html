@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -80,7 +101,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">.patient_finding</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientFinding</span>
 
 <div class="viewcode-block" id="PatientFindingLocation">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingLocation">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PatientFindingLocation</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
     <span class="n">finding</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;PatientFinding&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;locations&#39;</span><span class="p">)</span>
     <span class="n">location_classification</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s1">&#39;FindingLocationClassification&#39;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;patient_finding_locations&#39;</span><span class="p">)</span>
@@ -109,7 +130,7 @@
     <span class="c1"># - if not set, fetch them from location_choice and set them</span>
 
 <div class="viewcode-block" id="PatientFindingLocation.save">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.save">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingLocation.save">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_choice</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">location_classification</span><span class="o">.</span><span class="n">choices</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;location_choice must be in location_classification.choices&quot;</span><span class="p">)</span>
@@ -124,7 +145,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingLocation.set_subcategory">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_subcategory">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_subcategory">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_subcategory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">subcategory_name</span><span class="p">,</span> <span class="n">subcategory_value</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Sets a subcategory for this location.</span>
@@ -137,7 +158,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingLocation.set_random_subcategories">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_random_subcategories">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_random_subcategories">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_random_subcategories</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Sets random subcategories for this location if they are required.</span>
@@ -166,7 +187,7 @@
 
     
 <div class="viewcode-block" id="PatientFindingLocation.set_random_numerical_descriptor">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_random_numerical_descriptor">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_random_numerical_descriptor">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_random_numerical_descriptor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">descriptor_name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Sets a random numerical descriptor for this location.</span>
@@ -190,7 +211,7 @@
 
 
 <div class="viewcode-block" id="PatientFindingLocation.set_random_numerical_descriptors">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientFindingLocation.set_random_numerical_descriptors">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_random_numerical_descriptors">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_random_numerical_descriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Sets random numerical descriptors for this location if they are required.</span>

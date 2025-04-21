@@ -59,6 +59,10 @@
 <li class="toctree-l1"><a class="reference internal" href="models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
 <li class="toctree-l1"><a class="reference internal" href="models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
 <li class="toctree-l1"><a class="reference internal" href="models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -128,6 +132,8 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Person.Meta.abstract">abstract (endoreg_db.models.administration.person.Person.Meta attribute)</a>, <a href="models.html#id156">[1]</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.activation">activation (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedication.active">active (endoreg_db.models.medical.patient.PatientMedication attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.active_file">active_file (endoreg_db.models.media.video.VideoFile property)</a>
@@ -138,11 +144,15 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.AiModel.active_meta_id">active_meta_id (endoreg_db.models.administration.ai.AiModel attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.active_model">active_model (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ActiveModel">ActiveModel (class in endoreg_db.models.administration.ai)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ActiveModel.DoesNotExist">ActiveModel.DoesNotExist</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ActiveModel.MultipleObjectsReturned">ActiveModel.MultipleObjectsReturned</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.activemodel_set">activemodel_set (endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFinding.add_intervention">add_intervention() (endoreg_db.models.medical.patient.PatientFinding method)</a>
 </li>
@@ -185,6 +195,8 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.anonymexaminationreport_set">(endoreg_db.models.medical.patient.PatientExamination attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.anonymexaminationreport_set">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.anonymhistologyreport_set">anonymhistologyreport_set (endoreg_db.models.administration.center.Center attribute)</a>
 
@@ -195,6 +207,8 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.anonymhistologyreport_set">(endoreg_db.models.medical.patient.PatientExamination attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.anonymhistologyreport_set">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.anonymize">anonymize() (endoreg_db.models.media.frame.Frame method)</a>
 
@@ -202,12 +216,26 @@
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.anonymize">(endoreg_db.models.media.video.VideoFile method)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.apply_running_mean">apply_running_mean() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.axes">axes (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
 <h2 id="B">B</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.base_location">base_location (endoreg_db.models.metadata.ModelMeta.FileSystemStorage attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.base_url">base_url (endoreg_db.models.metadata.ModelMeta.FileSystemStorage attribute)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.batchsize">batchsize (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.bit_rate">bit_rate (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.bulk_create_frames">bulk_create_frames() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
   </ul></td>
@@ -216,6 +244,8 @@
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.calculate_prediction_array">calculate_prediction_array() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplateRule.calling_rules">calling_rules (endoreg_db.models.administration.case.CaseTemplateRule attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.Case">Case (class in endoreg_db.models.administration.case)</a>
@@ -297,6 +327,10 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.center">(endoreg_db.models.medical.hardware.Endoscope attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.center">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.center">(endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.DoesNotExist">Center.DoesNotExist</a>
 </li>
@@ -317,15 +351,19 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.center_id">(endoreg_db.models.medical.hardware.Endoscope attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.center_id">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.center_id">(endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.center_products">center_products (endoreg_db.models.administration.center.Center attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.center_resources">center_resources (endoreg_db.models.administration.center.Center attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.center_wastes">center_wastes (endoreg_db.models.administration.center.Center attribute)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct">CenterProduct (class in endoreg_db.models.administration.center)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct.DoesNotExist">CenterProduct.DoesNotExist</a>
@@ -378,6 +416,8 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.Case.close">close() (endoreg_db.models.administration.case.Case method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.codec_name">codec_name (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.label.VideoSegmentationLabel.color">color (endoreg_db.models.label.VideoSegmentationLabel attribute)</a>, <a href="models.html#id206">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.finding.FindingIntervention.contraindications">contraindications (endoreg_db.models.medical.finding.FindingIntervention attribute)</a>
@@ -404,8 +444,20 @@
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.create_frame_object">create_frame_object() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
-      <li><a href="models.html#endoreg_db.models.media.video.VideoFile.create_from_file">create_from_file() (endoreg_db.models.media.video.VideoFile class method)</a>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.create_from_dict">create_from_dict() (endoreg_db.models.metadata.SensitiveMeta class method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.media.video.VideoFile.create_from_file">create_from_file() (endoreg_db.models.media.video.VideoFile class method)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.create_from_file">(endoreg_db.models.metadata.FFMpegMeta class method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.create_from_file">(endoreg_db.models.metadata.ModelMeta class method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.create_from_file">(endoreg_db.models.metadata.PdfMeta class method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.create_from_file">(endoreg_db.models.metadata.VideoMeta class method)</a>
+</li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.create_from_video">create_from_video() (endoreg_db.models.label.LabelVideoSegment class method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.create_generic">create_generic() (endoreg_db.models.administration.person.Patient class method)</a>, <a href="models.html#id115">[1]</a>
@@ -416,6 +468,10 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.create_patient_medication_from_medication_schedule">create_patient_medication_from_medication_schedule() (endoreg_db.models.medical.patient.PatientMedicationSchedule method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.create_video_segments">create_video_segments() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.create_video_segments_for_label">create_video_segments_for_label() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.case.Case.created_at">created_at (endoreg_db.models.administration.case.Case attribute)</a>, <a href="models.html#id3">[1]</a>
 
       <ul>
@@ -423,6 +479,10 @@
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.person.Examiner.custom_get_or_create">custom_get_or_create() (endoreg_db.models.administration.person.Examiner class method)</a>, <a href="models.html#id70">[1]</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.cut_off_above_lines">cut_off_above_lines (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.cut_off_below_lines">cut_off_below_lines (endoreg_db.models.metadata.PdfType attribute)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -439,11 +499,17 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabValue.date">(endoreg_db.models.medical.patient.PatientLabValue attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.date">(endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.date_created">date_created (endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>, <a href="models.html#id186">[1]</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.date_created">(endoreg_db.models.media.video.VideoFile attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.date_created">(endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.date_created">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientEvent.date_end">date_end (endoreg_db.models.medical.patient.PatientEvent attribute)</a>
@@ -456,6 +522,8 @@
 
       <ul>
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.date_modified">(endoreg_db.models.media.video.VideoFile attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.date_modified">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientEvent.date_start">date_start (endoreg_db.models.medical.patient.PatientEvent attribute)</a>
@@ -472,6 +540,8 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabValue.datetime">datetime (endoreg_db.models.medical.patient.PatientLabValue attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.deconstruct">deconstruct() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_date_value_distribution">default_date_value_distribution (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_date_value_distribution_id">default_date_value_distribution_id (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
@@ -486,6 +556,8 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_numerical_value_distribution_id">default_numerical_value_distribution_id (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.default_pdf_type">default_pdf_type() (endoreg_db.models.metadata.PdfType class method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_single_categorical_value_distribution">default_single_categorical_value_distribution (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_single_categorical_value_distribution_id">default_single_categorical_value_distribution_id (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
@@ -493,6 +565,8 @@
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_unit">default_unit (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.default_unit_id">default_unit_id (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.delete">delete() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.delete_frames">delete_frames() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
@@ -557,6 +631,8 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.risk.RiskType.description">(endoreg_db.models.medical.risk.RiskType attribute)</a>, <a href="models.html#id231">[1]</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.description">(endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -592,6 +668,8 @@
         <li><a href="models.html#endoreg_db.models.medical.organ.Organ.description_en">(endoreg_db.models.medical.organ.Organ attribute)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.directory_permissions_mode">directory_permissions_mode (endoreg_db.models.metadata.ModelMeta.FileSystemStorage attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.disease.Disease">Disease (class in endoreg_db.models.medical.disease)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.disease.DiseaseClassification.disease">disease (endoreg_db.models.medical.disease.DiseaseClassification attribute)</a>
@@ -651,7 +729,13 @@
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedication.dosage">dosage (endoreg_db.models.medical.patient.PatientMedication attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.duration">duration (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.duration">(endoreg_db.models.metadata.FFMpegMeta attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.duration">(endoreg_db.models.metadata.VideoMeta property)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -783,11 +867,22 @@
         <li><a href="models.html#module-endoreg_db.models.medical.risk">module</a>
 </li>
       </ul></li>
+      <li>
+    endoreg_db.models.metadata
+
+      <ul>
+        <li><a href="models.html#module-endoreg_db.models.metadata">module</a>
+</li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope">Endoscope (class in endoreg_db.models.medical.hardware)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.endoscope">endoscope (endoreg_db.models.metadata.VideoMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.DoesNotExist">Endoscope.DoesNotExist</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.MultipleObjectsReturned">Endoscope.MultipleObjectsReturned</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.endoscope_id">endoscope_id (endoreg_db.models.metadata.VideoMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.endoscope_image_height">endoscope_image_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
@@ -796,6 +891,12 @@
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.endoscope_image_x">endoscope_image_x (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.endoscope_image_y">endoscope_image_y (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.endoscope_info_line">endoscope_info_line (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.endoscope_info_line_id">endoscope_info_line_id (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.endoscope_sn">endoscope_sn (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.endoscope_sn_height">endoscope_sn_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
@@ -806,7 +907,11 @@
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.endoscope_sn_y">endoscope_sn_y (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.endoscope_type">endoscope_type (endoreg_db.models.medical.hardware.Endoscope attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.endoscope_type">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.endoscope_type_height">endoscope_type_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.endoscope_type_id">endoscope_type_id (endoreg_db.models.medical.hardware.Endoscope attribute)</a>
@@ -889,6 +994,8 @@
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.examination">(endoreg_db.models.medical.patient.PatientExamination attribute)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.examination_date">examination_date (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.examination_date_height">examination_date_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.examination_date_width">examination_date_width (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
@@ -896,6 +1003,8 @@
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.examination_date_x">examination_date_x (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.examination_date_y">examination_date_y (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.examination_hash">examination_hash (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.examination_id">examination_id (endoreg_db.models.media.video.VideoFile attribute)</a>
 
@@ -927,7 +1036,19 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Examiner.MultipleObjectsReturned">Examiner.MultipleObjectsReturned</a>, <a href="models.html#id65">[1]</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.examiner_first_name">examiner_first_name (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.examiner_info_line">examiner_info_line (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.examiner_info_line_id">examiner_info_line_id (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.examiner_last_name">examiner_last_name (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.examiner_set">examiner_set (endoreg_db.models.administration.center.Center attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.examiners">examiners (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.exists">exists() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.export_patient_examinations">export_patient_examinations() (endoreg_db.models.administration.person.Patient method)</a>, <a href="models.html#id119">[1]</a>
 </li>
@@ -943,7 +1064,19 @@
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.ffmpeg_meta">ffmpeg_meta (endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.ffmpeg_meta_id">ffmpeg_meta_id (endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta">FFMpegMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.DoesNotExist">FFMpegMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.MultipleObjectsReturned">FFMpegMeta.MultipleObjectsReturned</a>
+</li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.file_path">file_path (endoreg_db.models.media.frame.Frame property)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.file_permissions_mode">file_permissions_mode (endoreg_db.models.metadata.ModelMeta.FileSystemStorage attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.finding.Finding">Finding (class in endoreg_db.models.medical.finding)</a>
 </li>
@@ -1062,7 +1195,13 @@
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.float_value">float_value (endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>, <a href="models.html#id188">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.fps">fps (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.fps">(endoreg_db.models.metadata.FFMpegMeta property)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.fps">(endoreg_db.models.metadata.VideoMeta property)</a>
+</li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame">Frame (class in endoreg_db.models.media.frame)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.frame">frame (endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>, <a href="models.html#id189">[1]</a>
@@ -1072,12 +1211,20 @@
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.MultipleObjectsReturned">Frame.MultipleObjectsReturned</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.frame_count">frame_count (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.frame_count">(endoreg_db.models.metadata.VideoMeta property)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.frame_dir">frame_dir (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.frame_id">frame_id (endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.frame_number">frame_number (endoreg_db.models.media.frame.Frame attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.frame_rate_den">frame_rate_den (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.frame_rate_num">frame_rate_num (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.frames">frames (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
@@ -1107,7 +1254,13 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.generate_default_hash">generate_default_hash() (endoreg_db.models.medical.patient.PatientExamination method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.get_accessed_time">get_accessed_time() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_activation_function">get_activation_function() (endoreg_db.models.metadata.ModelMeta static method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplateRule.get_all_downward_chained_rules">get_all_downward_chained_rules() (endoreg_db.models.administration.case.CaseTemplateRule method)</a>, <a href="models.html#id23">[1]</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.get_alternative_name">get_alternative_name() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.get_annotations">get_annotations() (endoreg_db.models.label.LabelVideoSegment method)</a>
 </li>
@@ -1125,6 +1278,8 @@
         <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.get_by_name">(endoreg_db.models.medical.hardware.EndoscopyProcessor class method)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_by_name_version">get_by_name_version() (endoreg_db.models.metadata.ModelMeta class method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.disease.DiseaseClassificationChoiceManager.get_by_natural_key">get_by_natural_key() (endoreg_db.models.medical.disease.DiseaseClassificationChoiceManager method)</a>
 
       <ul>
@@ -1159,9 +1314,13 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.disease.Disease.get_classifications">get_classifications() (endoreg_db.models.medical.disease.Disease method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_config_dict">get_config_dict() (endoreg_db.models.metadata.ModelMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplate.get_create_patient_medication_schedule_rule">get_create_patient_medication_schedule_rule() (endoreg_db.models.administration.case.CaseTemplate method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplate.get_create_patient_rule">get_create_patient_rule() (endoreg_db.models.administration.case.CaseTemplate method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.get_created_time">get_created_time() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.get_crop_template">get_crop_template() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
@@ -1178,7 +1337,11 @@
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.get_dob_from_age">get_dob_from_age() (endoreg_db.models.administration.person.Patient class method)</a>, <a href="models.html#id124">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.get_endo_roi">get_endo_roi() (endoreg_db.models.media.video.VideoFile method)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.get_endo_roi">(endoreg_db.models.metadata.VideoMeta method)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.get_endoscopes">get_endoscopes() (endoreg_db.models.administration.center.Center method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExaminationIndication.get_examination">get_examination() (endoreg_db.models.medical.patient.PatientExaminationIndication method)</a>
@@ -1217,17 +1380,29 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.get_indications">get_indications() (endoreg_db.models.medical.patient.PatientExamination method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_inference_dataset_config">get_inference_dataset_config() (endoreg_db.models.metadata.ModelMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFinding.get_interventions">get_interventions() (endoreg_db.models.medical.patient.PatientFinding method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_label_list">get_label_list() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet.get_labels_in_order">get_labels_in_order() (endoreg_db.models.label.LabelSet method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_labelset">get_labelset() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.get_last_names">get_last_names() (endoreg_db.models.administration.center.Center method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_latest">get_latest() (endoreg_db.models.metadata.ModelMeta class method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_latest_version_number">get_latest_version_number() (endoreg_db.models.metadata.ModelMeta class method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.finding.Finding.get_location_classifications">get_location_classifications() (endoreg_db.models.medical.finding.Finding method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFinding.get_locations">get_locations() (endoreg_db.models.medical.patient.PatientFinding method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.get_model_meta">get_model_meta() (endoreg_db.models.label.LabelVideoSegment method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.get_modified_time">get_modified_time() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFinding.get_morphologies">get_morphologies() (endoreg_db.models.medical.patient.PatientFinding method)</a>
 </li>
@@ -1238,11 +1413,19 @@
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabSample.get_next_by_date">get_next_by_date() (endoreg_db.models.medical.patient.PatientLabSample method)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.get_next_by_date">(endoreg_db.models.metadata.PdfMeta method)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.get_next_by_date_created">get_next_by_date_created() (endoreg_db.models.label.ImageClassificationAnnotation method)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.get_next_by_date_created">(endoreg_db.models.media.video.VideoFile method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_next_by_date_created">(endoreg_db.models.metadata.ModelMeta method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_next_by_date_created">(endoreg_db.models.metadata.VideoPredictionMeta method)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.get_next_by_date_modified">get_next_by_date_modified() (endoreg_db.models.label.ImageClassificationAnnotation method)</a>
@@ -1250,15 +1433,17 @@
       <ul>
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.get_next_by_date_modified">(endoreg_db.models.media.video.VideoFile method)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_next_by_date_modified">(endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientEvent.get_next_by_date_start">get_next_by_date_start() (endoreg_db.models.medical.patient.PatientEvent method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct.get_next_by_date_used">get_next_by_date_used() (endoreg_db.models.administration.center.CenterProduct method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabValue.get_next_by_datetime">get_next_by_datetime() (endoreg_db.models.medical.patient.PatientLabValue method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientDisease.get_next_by_last_update">get_next_by_last_update() (endoreg_db.models.medical.patient.PatientDisease method)</a>
 
       <ul>
@@ -1303,9 +1488,15 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExaminationIndication.get_patient_examination">get_patient_examination() (endoreg_db.models.medical.patient.PatientExaminationIndication method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.get_patient_examination_hash">get_patient_examination_hash() (endoreg_db.models.metadata.SensitiveMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.get_patient_examinations">get_patient_examinations() (endoreg_db.models.administration.person.Patient method)</a>, <a href="models.html#id126">[1]</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.get_patient_hash">get_patient_hash() (endoreg_db.models.metadata.SensitiveMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.get_patient_medication">get_patient_medication() (endoreg_db.models.medical.patient.PatientMedicationSchedule method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_prediction_array">get_prediction_array() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.Case.get_previous_by_created_at">get_previous_by_created_at() (endoreg_db.models.administration.case.Case method)</a>
 
@@ -1314,17 +1505,27 @@
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabSample.get_previous_by_date">get_previous_by_date() (endoreg_db.models.medical.patient.PatientLabSample method)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.get_previous_by_date">(endoreg_db.models.metadata.PdfMeta method)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.get_previous_by_date_created">get_previous_by_date_created() (endoreg_db.models.label.ImageClassificationAnnotation method)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.get_previous_by_date_created">(endoreg_db.models.media.video.VideoFile method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.get_previous_by_date_created">(endoreg_db.models.metadata.ModelMeta method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_previous_by_date_created">(endoreg_db.models.metadata.VideoPredictionMeta method)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.get_previous_by_date_modified">get_previous_by_date_modified() (endoreg_db.models.label.ImageClassificationAnnotation method)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.media.video.VideoFile.get_previous_by_date_modified">(endoreg_db.models.media.video.VideoFile method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_previous_by_date_modified">(endoreg_db.models.metadata.VideoPredictionMeta method)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientEvent.get_previous_by_date_start">get_previous_by_date_start() (endoreg_db.models.medical.patient.PatientEvent method)</a>
@@ -1356,6 +1557,12 @@
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct.get_product_name">get_product_name() (endoreg_db.models.administration.center.CenterProduct method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct.get_product_weight">get_product_weight() (endoreg_db.models.administration.center.CenterProduct method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.get_pseudo_examiner">get_pseudo_examiner() (endoreg_db.models.metadata.SensitiveMeta method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.get_pseudo_patient">get_pseudo_patient() (endoreg_db.models.metadata.SensitiveMeta method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.get_pseudo_patient_examination">get_pseudo_patient_examination() (endoreg_db.models.metadata.SensitiveMeta method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.get_random_age">get_random_age() (endoreg_db.models.administration.person.Patient class method)</a>, <a href="models.html#id127">[1]</a>
 </li>
@@ -1432,6 +1639,8 @@
       <ul>
         <li><a href="models.html#endoreg_db.models.label.VideoSegmentationAnnotation.get_video">(endoreg_db.models.label.VideoSegmentationAnnotation method)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.get_video">(endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
       </ul></li>
   </ul></td>
 </tr></table>
@@ -1452,7 +1661,13 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.height">height (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.height">(endoreg_db.models.metadata.FFMpegMeta attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.height">(endoreg_db.models.metadata.VideoMeta property)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -1590,6 +1805,22 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.risk.RiskType.id">(endoreg_db.models.medical.risk.RiskType attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.id">(endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.id">(endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.id">(endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfType.id">(endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.id">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.id">(endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.id">(endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.id">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
+</li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -1597,6 +1828,8 @@
 
       <ul>
         <li><a href="models.html#endoreg_db.models.media.frame.Frame.image_classification_annotations">(endoreg_db.models.media.frame.Frame attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.image_classification_annotations">(endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.image_height">image_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
@@ -1610,9 +1843,17 @@
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.MultipleObjectsReturned">ImageClassificationAnnotation.MultipleObjectsReturned</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.import_meta">import_meta (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.import_meta">(endoreg_db.models.metadata.VideoMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.import_meta_id">import_meta_id (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.import_meta_id">(endoreg_db.models.metadata.VideoMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExaminationIndication.indication_choice">indication_choice (endoreg_db.models.medical.patient.PatientExaminationIndication attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExaminationIndication.indication_choice_id">indication_choice_id (endoreg_db.models.medical.patient.PatientExaminationIndication attribute)</a>
@@ -1626,6 +1867,8 @@
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.information_source">information_source (endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>, <a href="models.html#id190">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.information_source_id">information_source_id (endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.initialize_ffmpeg_meta">initialize_ffmpeg_meta() (endoreg_db.models.metadata.VideoMeta method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.initialize_frames">initialize_frames() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
@@ -1652,6 +1895,8 @@
       <li><a href="models.html#endoreg_db.models.administration.case.Case.is_deleted">is_deleted (endoreg_db.models.administration.case.Case attribute)</a>, <a href="models.html#id8">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.is_extracted">is_extracted (endoreg_db.models.media.frame.Frame attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.is_name_available">is_name_available() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.is_processed">is_processed (endoreg_db.models.media.video.VideoFile property)</a>
 </li>
@@ -1710,7 +1955,11 @@
       <li><a href="models.html#endoreg_db.models.label.Label.label_type_id">label_type_id (endoreg_db.models.label.Label attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.label_video_segments">label_video_segments (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.label_video_segments">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet.labels">labels (endoreg_db.models.label.LabelSet attribute)</a>
 
       <ul>
@@ -1721,18 +1970,22 @@
       </ul></li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet">LabelSet (class in endoreg_db.models.label)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.labelset">labelset (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet.DoesNotExist">LabelSet.DoesNotExist</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet.MultipleObjectsReturned">LabelSet.MultipleObjectsReturned</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.labelset_id">labelset_id (endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.VideoSegmentationLabel.labelsets">labelsets (endoreg_db.models.label.VideoSegmentationLabel attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelType">LabelType (class in endoreg_db.models.label)</a>
 </li>
-      <li><a href="models.html#endoreg_db.models.label.LabelType.DoesNotExist">LabelType.DoesNotExist</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.label.LabelType.DoesNotExist">LabelType.DoesNotExist</a>
+</li>
       <li><a href="models.html#endoreg_db.models.label.LabelType.MultipleObjectsReturned">LabelType.MultipleObjectsReturned</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment">LabelVideoSegment (class in endoreg_db.models.label)</a>
@@ -1771,6 +2024,10 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.LastName.MultipleObjectsReturned">LastName.MultipleObjectsReturned</a>, <a href="models.html#id95">[1]</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.listdir">listdir() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.location">location (endoreg_db.models.metadata.ModelMeta.FileSystemStorage attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingLocation.location_choice">location_choice (endoreg_db.models.medical.patient.PatientFindingLocation attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingLocation.location_choice_id">location_choice_id (endoreg_db.models.medical.patient.PatientFindingLocation attribute)</a>
@@ -1799,6 +2056,8 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.administration.case.Case.mark_as_deleted">mark_as_deleted() (endoreg_db.models.administration.case.Case method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.mean">mean (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedication.medication">medication (endoreg_db.models.medical.patient.PatientMedication attribute)</a>
 
       <ul>
@@ -1823,16 +2082,24 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.AiModel.metadata_versions">metadata_versions (endoreg_db.models.administration.ai.AiModel attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.model">model (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.model_id">model_id (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ActiveModel.model_meta">model_meta (endoreg_db.models.administration.ai.ActiveModel attribute)</a>, <a href="models.html#id0">[1]</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.model_meta">(endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>, <a href="models.html#id192">[1]</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.model_meta">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ActiveModel.model_meta_id">model_meta_id (endoreg_db.models.administration.ai.ActiveModel attribute)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.label.ImageClassificationAnnotation.model_meta_id">(endoreg_db.models.label.ImageClassificationAnnotation attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.model_meta_id">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet.model_metadata">model_metadata (endoreg_db.models.label.LabelSet attribute)</a>
@@ -1843,14 +2110,22 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.AiModel.model_type_id">model_type_id (endoreg_db.models.administration.ai.AiModel attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta">ModelMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.DoesNotExist">ModelMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage">ModelMeta.FileSystemStorage (class in endoreg_db.models.metadata)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.MultipleObjectsReturned">ModelMeta.MultipleObjectsReturned</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ModelType">ModelType (class in endoreg_db.models.administration.ai)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ModelType.DoesNotExist">ModelType.DoesNotExist</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.ModelType.MultipleObjectsReturned">ModelType.MultipleObjectsReturned</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     module
 
@@ -1884,6 +2159,8 @@
         <li><a href="models.html#module-endoreg_db.models.medical.patient">endoreg_db.models.medical.patient</a>
 </li>
         <li><a href="models.html#module-endoreg_db.models.medical.risk">endoreg_db.models.medical.risk</a>
+</li>
+        <li><a href="models.html#module-endoreg_db.models.metadata">endoreg_db.models.metadata</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFinding.morphologies">morphologies (endoreg_db.models.medical.patient.PatientFinding attribute)</a>
@@ -1990,6 +2267,10 @@
         <li><a href="models.html#endoreg_db.models.medical.risk.Risk.name">(endoreg_db.models.medical.risk.Risk attribute)</a>, <a href="models.html#id228">[1]</a>
 </li>
         <li><a href="models.html#endoreg_db.models.medical.risk.RiskType.name">(endoreg_db.models.medical.risk.RiskType attribute)</a>, <a href="models.html#id232">[1]</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.name">(endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfType.name">(endoreg_db.models.metadata.PdfType attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.ai.AiModel.name_de">name_de (endoreg_db.models.administration.ai.AiModel attribute)</a>
@@ -2203,6 +2484,8 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.risk.RiskType.natural_key">(endoreg_db.models.medical.risk.RiskType method)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.natural_key">(endoreg_db.models.metadata.ModelMeta method)</a>
+</li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabValue.normal_range">normal_range (endoreg_db.models.medical.patient.PatientLabValue attribute)</a>
 </li>
@@ -2211,6 +2494,8 @@
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.normal_range_gender_dependent">normal_range_gender_dependent (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.normal_range_special_case">normal_range_special_case (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.num_workers">num_workers (endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.laboratory.LabValue.numeric_precision">numeric_precision (endoreg_db.models.medical.laboratory.LabValue attribute)</a>
 </li>
@@ -2375,6 +2660,22 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.risk.RiskType.objects">(endoreg_db.models.medical.risk.RiskType attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.objects">(endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.objects">(endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.objects">(endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfType.objects">(endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.objects">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.objects">(endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.objects">(endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.objects">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
+</li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -2400,6 +2701,12 @@
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.original_file_name">original_file_name (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.OS_OPEN_FLAGS">OS_OPEN_FLAGS (endoreg_db.models.metadata.ModelMeta.FileSystemStorage attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.outside_detected">outside_detected (endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.outside_removed">outside_removed (endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -2409,6 +2716,8 @@
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplateRule.parent_field">parent_field (endoreg_db.models.administration.case.CaseTemplateRule attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplateRule.parent_model">parent_model (endoreg_db.models.administration.case.CaseTemplateRule attribute)</a>, <a href="models.html#id33">[1]</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.path">path() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient">Patient (class in endoreg_db.models.administration.person)</a>, <a href="models.html#id102">[1]</a>
 </li>
@@ -2435,6 +2744,10 @@
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.DoesNotExist">Patient.DoesNotExist</a>, <a href="models.html#id103">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.MultipleObjectsReturned">Patient.MultipleObjectsReturned</a>, <a href="models.html#id104">[1]</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.patient_data_removed">patient_data_removed (endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.patient_dob">patient_dob (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.patient_dob_height">patient_dob_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
@@ -2484,6 +2797,8 @@
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.patient_findings">(endoreg_db.models.medical.patient.PatientExamination attribute)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.patient_first_name">patient_first_name (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.patient_first_name_height">patient_first_name_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.patient_first_name_width">patient_first_name_width (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
@@ -2492,8 +2807,16 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.patient_first_name_y">patient_first_name_y (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
-      <li><a href="models.html#endoreg_db.models.administration.person.Patient.patient_hash">patient_hash (endoreg_db.models.administration.person.Patient attribute)</a>, <a href="models.html#id139">[1]</a>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.patient_gender">patient_gender (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.patient_gender_id">patient_gender_id (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.administration.person.Patient.patient_hash">patient_hash (endoreg_db.models.administration.person.Patient attribute)</a>, <a href="models.html#id139">[1]</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.patient_hash">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.case.Case.patient_id">patient_id (endoreg_db.models.administration.case.Case attribute)</a>
 
       <ul>
@@ -2514,6 +2837,12 @@
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.patient_id">(endoreg_db.models.medical.patient.PatientMedicationSchedule attribute)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.patient_info_line">patient_info_line (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.patient_info_line_id">patient_info_line_id (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.patient_last_name">patient_last_name (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.patient_last_name_height">patient_last_name_height (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.patient_last_name_width">patient_last_name_width (endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
@@ -2554,12 +2883,12 @@
         <li><a href="models.html#endoreg_db.models.medical.event.EventClassificationChoice.patientevent_set">(endoreg_db.models.medical.event.EventClassificationChoice attribute)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination">PatientExamination (class in endoreg_db.models.medical.patient)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.DoesNotExist">PatientExamination.DoesNotExist</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.MultipleObjectsReturned">PatientExamination.MultipleObjectsReturned</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientExaminationIndication">PatientExaminationIndication (class in endoreg_db.models.medical.patient)</a>
@@ -2630,6 +2959,26 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.patientmedicationschedule_set">patientmedicationschedule_set (endoreg_db.models.administration.person.Patient attribute)</a>, <a href="models.html#id143">[1]</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.pdf_hash">pdf_hash (endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.pdf_type">pdf_type (endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.pdf_type_id">pdf_type_id (endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta">PdfMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.DoesNotExist">PdfMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.MultipleObjectsReturned">PdfMeta.MultipleObjectsReturned</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.pdfmeta_set">pdfmeta_set (endoreg_db.models.metadata.PdfType attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType">PdfType (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.DoesNotExist">PdfType.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfType.MultipleObjectsReturned">PdfType.MultipleObjectsReturned</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.person.Person">Person (class in endoreg_db.models.administration.person)</a>, <a href="models.html#id148">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.Person.Meta">Person.Meta (class in endoreg_db.models.administration.person)</a>, <a href="models.html#id155">[1]</a>
@@ -2642,6 +2991,8 @@
         <li><a href="models.html#endoreg_db.models.administration.person.Person.phone">(endoreg_db.models.administration.person.Person attribute)</a>, <a href="models.html#id154">[1]</a>, <a href="models.html#id164">[2]</a>, <a href="models.html#id62">[3]</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.pixel_format">pixel_format (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.person.PortalUserInfo">PortalUserInfo (class in endoreg_db.models.administration.person)</a>, <a href="models.html#id165">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.PortalUserInfo.DoesNotExist">PortalUserInfo.DoesNotExist</a>, <a href="models.html#id166">[1]</a>
@@ -2652,6 +3003,8 @@
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.predict_video">predict_video() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.prediction_array">prediction_array (endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.prediction_meta">prediction_meta (endoreg_db.models.label.LabelVideoSegment attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.prediction_meta_id">prediction_meta_id (endoreg_db.models.label.LabelVideoSegment attribute)</a>
@@ -2661,9 +3014,17 @@
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.processed_video_hash">processed_video_hash (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.processor">processor (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.processor">(endoreg_db.models.metadata.VideoMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.processor_id">processor_id (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.processor_id">(endoreg_db.models.metadata.VideoMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct.product">product (endoreg_db.models.administration.center.CenterProduct attribute)</a>, <a href="models.html#id56">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterProduct.product_id">product_id (endoreg_db.models.administration.center.CenterProduct attribute)</a>
@@ -2677,6 +3038,14 @@
       <li><a href="models.html#endoreg_db.models.administration.person.Profession.MultipleObjectsReturned">Profession.MultipleObjectsReturned</a>, <a href="models.html#id177">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.person.PortalUserInfo.profession_id">profession_id (endoreg_db.models.administration.person.PortalUserInfo attribute)</a>, <a href="models.html#id171">[1]</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.pseudo_examination">pseudo_examination (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.pseudo_examination_id">pseudo_examination_id (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.pseudo_patient">pseudo_patient (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.pseudo_patient_id">pseudo_patient_id (endoreg_db.models.metadata.SensitiveMeta attribute)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -2703,11 +3072,17 @@
       <ul>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.raw_pdf_files">(endoreg_db.models.medical.patient.PatientExamination attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.raw_pdf_files">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.raw_probe_data">raw_probe_data (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.rawpdffile_set">rawpdffile_set (endoreg_db.models.administration.center.Center attribute)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.administration.person.Examiner.rawpdffile_set">(endoreg_db.models.administration.person.Examiner attribute)</a>, <a href="models.html#id82">[1]</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.PdfType.rawpdffile_set">(endoreg_db.models.metadata.PdfType attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.relative_path">relative_path (endoreg_db.models.media.frame.Frame attribute)</a>
@@ -2811,7 +3186,13 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabValue.save">(endoreg_db.models.medical.patient.PatientLabValue method)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.save">(endoreg_db.models.metadata.SensitiveMeta method)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.save">(endoreg_db.models.metadata.VideoMeta method)</a>
+</li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.save_prediction_array">save_prediction_array() (endoreg_db.models.metadata.VideoPredictionMeta method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplate.secondary_rules">secondary_rules (endoreg_db.models.administration.case.CaseTemplate attribute)</a>, <a href="models.html#id16">[1]</a>
 
       <ul>
@@ -2821,6 +3202,12 @@
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.sensitive_meta">sensitive_meta (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.sensitive_meta_id">sensitive_meta_id (endoreg_db.models.media.video.VideoFile attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta">SensitiveMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.DoesNotExist">SensitiveMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.MultipleObjectsReturned">SensitiveMeta.MultipleObjectsReturned</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.sensitivemeta_set">sensitivemeta_set (endoreg_db.models.administration.center.Center attribute)</a>
 
@@ -2852,14 +3239,14 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_random_numerical_descriptor">set_random_numerical_descriptor() (endoreg_db.models.medical.patient.PatientFindingLocation method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_random_numerical_descriptors">set_random_numerical_descriptors() (endoreg_db.models.medical.patient.PatientFindingLocation method)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingMorphology.set_random_numerical_descriptors">(endoreg_db.models.medical.patient.PatientFindingMorphology method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingLocation.set_random_subcategories">set_random_subcategories() (endoreg_db.models.medical.patient.PatientFindingLocation method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientEvent.set_subcategories_from_classification_choice">set_subcategories_from_classification_choice() (endoreg_db.models.medical.patient.PatientEvent method)</a>
@@ -2877,6 +3264,12 @@
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplateRule.single_categorical_value_distribution">single_categorical_value_distribution (endoreg_db.models.administration.case.CaseTemplateRule attribute)</a>, <a href="models.html#id36">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.CaseTemplateRule.single_categorical_value_distribution_id">single_categorical_value_distribution_id (endoreg_db.models.administration.case.CaseTemplateRule attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.size">size() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.size_x">size_x (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.size_y">size_y (endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.hardware.Endoscope.sn">sn (endoreg_db.models.medical.hardware.Endoscope attribute)</a>
 </li>
@@ -2901,8 +3294,12 @@
 </li>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingIntervention.state">(endoreg_db.models.medical.patient.PatientFindingIntervention attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.state">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.state_id">state_id (endoreg_db.models.media.video.VideoFile attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.std">std (endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.VideoSegmentationAnnotation.stop_time">stop_time (endoreg_db.models.label.VideoSegmentationAnnotation attribute)</a>, <a href="models.html#id204">[1]</a>
 </li>
@@ -2944,6 +3341,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.metadata.PdfMeta.time">time (endoreg_db.models.metadata.PdfMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingIntervention.time_end">time_end (endoreg_db.models.medical.patient.PatientFindingIntervention attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFindingIntervention.time_start">time_start (endoreg_db.models.medical.patient.PatientFindingIntervention attribute)</a>
@@ -2980,10 +3379,14 @@
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientMedication.unit_id">(endoreg_db.models.medical.patient.PatientMedication attribute)</a>
 </li>
       </ul></li>
-      <li><a href="models.html#endoreg_db.models.media.video.VideoFile.update_text_metadata">update_text_metadata() (endoreg_db.models.media.video.VideoFile method)</a>
+      <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.update_from_dict">update_from_dict() (endoreg_db.models.metadata.SensitiveMeta method)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.update_meta">update_meta() (endoreg_db.models.metadata.VideoMeta method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="models.html#endoreg_db.models.media.video.VideoFile.update_text_metadata">update_text_metadata() (endoreg_db.models.media.video.VideoFile method)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.update_video_meta">update_video_meta() (endoreg_db.models.media.video.VideoFile method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.case.Case.updated_at">updated_at (endoreg_db.models.administration.case.Case attribute)</a>, <a href="models.html#id12">[1]</a>
@@ -2993,6 +3396,8 @@
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.uploaded_at">uploaded_at (endoreg_db.models.media.video.VideoFile attribute)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.FileSystemStorage.url">url() (endoreg_db.models.metadata.ModelMeta.FileSystemStorage method)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterResource.use_emission_factor">use_emission_factor (endoreg_db.models.administration.center.CenterResource attribute)</a>
 </li>
@@ -3025,23 +3430,37 @@
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientLabSample.values">values (endoreg_db.models.medical.patient.PatientLabSample attribute)</a>, <a href="models.html#id219">[1]</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.LabelSet.version">version (endoreg_db.models.label.LabelSet attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.version">(endoreg_db.models.metadata.ModelMeta attribute)</a>
 </li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.media.frame.Frame.video">video (endoreg_db.models.media.frame.Frame attribute)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.medical.patient.PatientExamination.video">(endoreg_db.models.medical.patient.PatientExamination attribute)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.video_anonymized">video_anonymized (endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.video_file">video_file (endoreg_db.models.label.LabelVideoSegment attribute)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.label.VideoSegmentationAnnotation.video_file">(endoreg_db.models.label.VideoSegmentationAnnotation attribute)</a>, <a href="models.html#id205">[1]</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.SensitiveMeta.video_file">(endoreg_db.models.metadata.SensitiveMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.video_file">(endoreg_db.models.metadata.VideoMeta attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.video_file">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.label.LabelVideoSegment.video_file_id">video_file_id (endoreg_db.models.label.LabelVideoSegment attribute)</a>
 
       <ul>
         <li><a href="models.html#endoreg_db.models.label.VideoSegmentationAnnotation.video_file_id">(endoreg_db.models.label.VideoSegmentationAnnotation attribute)</a>
+</li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.video_file_id">(endoreg_db.models.metadata.VideoPredictionMeta attribute)</a>
 </li>
       </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.person.Patient.video_files">video_files (endoreg_db.models.administration.person.Patient attribute)</a>, <a href="models.html#id147">[1]</a>
@@ -3062,10 +3481,10 @@
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.video_meta_id">video_meta_id (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.video_patient_data_detected">video_patient_data_detected (endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.video_prediction_meta">video_prediction_meta (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.video_segmentation_annotations">video_segmentation_annotations (endoreg_db.models.media.video.VideoFile attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.administration.ai.AiModel.video_segmentation_labelset">video_segmentation_labelset (endoreg_db.models.administration.ai.AiModel attribute)</a>
@@ -3074,7 +3493,11 @@
 </li>
       <li><a href="models.html#endoreg_db.models.medical.patient.PatientFinding.video_segments">video_segments (endoreg_db.models.medical.patient.PatientFinding attribute)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile">VideoFile (class in endoreg_db.models.media.video)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.videofile">videofile (endoreg_db.models.metadata.VideoImportMeta attribute)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.DoesNotExist">VideoFile.DoesNotExist</a>
 </li>
@@ -3085,7 +3508,27 @@
       <ul>
         <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.videofile_set">(endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.videofile_set">(endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta">VideoImportMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.DoesNotExist">VideoImportMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.MultipleObjectsReturned">VideoImportMeta.MultipleObjectsReturned</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta">VideoMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.videometa">videometa (endoreg_db.models.metadata.FFMpegMeta attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoImportMeta.videometa">(endoreg_db.models.metadata.VideoImportMeta attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.DoesNotExist">VideoMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.MultipleObjectsReturned">VideoMeta.MultipleObjectsReturned</a>
+</li>
       <li><a href="models.html#endoreg_db.models.administration.center.Center.videometa_set">videometa_set (endoreg_db.models.administration.center.Center attribute)</a>
 
       <ul>
@@ -3094,6 +3537,14 @@
         <li><a href="models.html#endoreg_db.models.medical.hardware.EndoscopyProcessor.videometa_set">(endoreg_db.models.medical.hardware.EndoscopyProcessor attribute)</a>
 </li>
       </ul></li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta">VideoPredictionMeta (class in endoreg_db.models.metadata)</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.DoesNotExist">VideoPredictionMeta.DoesNotExist</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.VideoPredictionMeta.MultipleObjectsReturned">VideoPredictionMeta.MultipleObjectsReturned</a>
+</li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.videopredictionmeta_set">videopredictionmeta_set (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
       <li><a href="models.html#endoreg_db.models.label.VideoSegmentationAnnotation">VideoSegmentationAnnotation (class in endoreg_db.models.label)</a>
 </li>
       <li><a href="models.html#endoreg_db.models.label.VideoSegmentationAnnotation.DoesNotExist">VideoSegmentationAnnotation.DoesNotExist</a>
@@ -3124,10 +3575,18 @@
 </li>
       <li><a href="models.html#endoreg_db.models.administration.center.CenterWaste.waste_id">waste_id (endoreg_db.models.administration.center.CenterWaste attribute)</a>
 </li>
+      <li><a href="models.html#endoreg_db.models.metadata.ModelMeta.weights">weights (endoreg_db.models.metadata.ModelMeta attribute)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="models.html#endoreg_db.models.media.video.VideoFile.width">width (endoreg_db.models.media.video.VideoFile attribute)</a>
+
+      <ul>
+        <li><a href="models.html#endoreg_db.models.metadata.FFMpegMeta.width">(endoreg_db.models.metadata.FFMpegMeta attribute)</a>
 </li>
+        <li><a href="models.html#endoreg_db.models.metadata.VideoMeta.width">(endoreg_db.models.metadata.VideoMeta property)</a>
+</li>
+      </ul></li>
       <li><a href="models.html#endoreg_db.models.administration.person.PortalUserInfo.works_in_endoscopy">works_in_endoscopy (endoreg_db.models.administration.person.PortalUserInfo attribute)</a>, <a href="models.html#id174">[1]</a>
 </li>
   </ul></td>

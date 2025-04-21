@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -79,7 +100,7 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">..medication</span><span class="w"> </span><span class="kn">import</span> <span class="n">MedicationSchedule</span>
 
 <div class="viewcode-block" id="PatientMedicationSchedule">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PatientMedicationSchedule</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a collection of medications associated with a patient, forming their schedule.</span>
@@ -103,7 +124,7 @@
         <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">patient</span><span class="si">}</span><span class="s1"> - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="si">}</span><span class="s1">&#39;</span>
     
 <div class="viewcode-block" id="PatientMedicationSchedule.create_by_patient_and_indication_type">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.create_by_patient_and_indication_type">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.create_by_patient_and_indication_type">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_by_patient_and_indication_type</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">patient</span><span class="p">,</span> <span class="n">indication_type</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a schedule and adds a medication based on a random indication of a given type.&quot;&quot;&quot;</span>
@@ -123,7 +144,7 @@
 
     
 <div class="viewcode-block" id="PatientMedicationSchedule.create_by_patient_and_indication">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.create_by_patient_and_indication">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.create_by_patient_and_indication">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_by_patient_and_indication</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">patient</span><span class="p">,</span> <span class="n">medication_indication</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a schedule and adds a medication based on a specific indication.&quot;&quot;&quot;</span>
@@ -145,7 +166,7 @@
 
     
 <div class="viewcode-block" id="PatientMedicationSchedule.create_patient_medication_from_medication_schedule">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.create_patient_medication_from_medication_schedule">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.create_patient_medication_from_medication_schedule">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_patient_medication_from_medication_schedule</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span>
             <span class="n">medication_schedule</span><span class="p">:</span> <span class="s2">&quot;MedicationSchedule&quot;</span><span class="p">,</span>
@@ -183,7 +204,7 @@
     
     
 <div class="viewcode-block" id="PatientMedicationSchedule.get_patient_medication">
-<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.PatientMedicationSchedule.get_patient_medication">[docs]</a>
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.patient.PatientMedicationSchedule.get_patient_medication">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_patient_medication</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns all PatientMedication instances associated with this schedule.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">medication</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>

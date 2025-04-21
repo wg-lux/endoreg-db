@@ -42,6 +42,27 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../models.html#other">Other</a></li>
 </ul>
 
         </div>
@@ -76,9 +97,13 @@
     <span class="kn">from</span><span class="w"> </span><span class="nn">.patient</span><span class="w"> </span><span class="kn">import</span> <span class="n">PatientDisease</span>
 
 
+<div class="viewcode-block" id="DiseaseManager">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DiseaseManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Manager for Disease with natural key support.&quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="DiseaseManager.get_by_natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseManager.get_by_natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve a Disease instance by its natural key (name).</span>
@@ -89,11 +114,13 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The Disease instance corresponding to the provided natural key.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="Disease">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.Disease">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.Disease">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Disease</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a specific disease or medical condition.</span>
@@ -113,7 +140,7 @@
         <span class="n">patient_diseases</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;PatientDisease&quot;</span><span class="p">]</span>
 
 <div class="viewcode-block" id="Disease.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.Disease.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.Disease.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the natural key (name) as a tuple.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
@@ -124,7 +151,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Disease.get_classifications">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.Disease.get_classifications">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.Disease.get_classifications">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_classifications</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;DiseaseClassification&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves all classification systems associated with this disease.</span>
@@ -140,9 +167,13 @@
 
 
 
+<div class="viewcode-block" id="DiseaseClassificationManager">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassificationManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DiseaseClassificationManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Manager for DiseaseClassification with natural key support.&quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="DiseaseClassificationManager.get_by_natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassificationManager.get_by_natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve a DiseaseClassification instance by its natural key (name).</span>
@@ -153,11 +184,13 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The DiseaseClassification instance corresponding to the given natural key.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="DiseaseClassification">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.DiseaseClassification">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassification">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DiseaseClassification</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).</span>
@@ -177,7 +210,7 @@
         <span class="n">disease_classification_choices</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;DiseaseClassificationChoice&quot;</span><span class="p">]</span>
 
 <div class="viewcode-block" id="DiseaseClassification.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.DiseaseClassification.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassification.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the natural key (name) as a tuple.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
@@ -188,7 +221,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
 
 <div class="viewcode-block" id="DiseaseClassification.get_choices">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.DiseaseClassification.get_choices">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassification.get_choices">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_choices</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;DiseaseClassificationChoice&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieves all choices within this classification system.</span>
@@ -204,9 +237,13 @@
 
 
 
+<div class="viewcode-block" id="DiseaseClassificationChoiceManager">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassificationChoiceManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DiseaseClassificationChoiceManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Manager for DiseaseClassificationChoice with natural key support.&quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="DiseaseClassificationChoiceManager.get_by_natural_key">
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassificationChoiceManager.get_by_natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve a DiseaseClassificationChoice instance by its natural key (name).</span>
@@ -219,11 +256,13 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The DiseaseClassificationChoice instance corresponding to the provided natural key.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="DiseaseClassificationChoice">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.DiseaseClassificationChoice">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassificationChoice">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DiseaseClassificationChoice</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Represents a specific choice within a disease classification system (e.g., Forrest IIa).</span>
@@ -245,7 +284,7 @@
         <span class="n">patient_diseases</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;PatientDisease&quot;</span><span class="p">]</span>
 
 <div class="viewcode-block" id="DiseaseClassificationChoice.natural_key">
-<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.DiseaseClassificationChoice.natural_key">[docs]</a>
+<a class="viewcode-back" href="../../../../models.html#endoreg_db.models.medical.disease.DiseaseClassificationChoice.natural_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the natural key (name) as a tuple.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
