@@ -1,6 +1,5 @@
 from django.db import models
 from django.db.models import Q, CheckConstraint, F
-import numpy as np
 from typing import TYPE_CHECKING, Union, Optional
 from tqdm import tqdm
 import logging
@@ -55,6 +54,8 @@ class LabelVideoSegment(models.Model):
         related_name="video_segments",
         blank=True,
     )
+
+    is_validated = models.BooleanField(default=False, help_text="Indicates if the label video segment has been validated.")
 
     if TYPE_CHECKING:
         video_file: "VideoFile"
@@ -208,7 +209,7 @@ class LabelVideoSegment(models.Model):
         if the segment originated from a prediction. Uses bulk_create for efficiency.
         """
         if not self.prediction_meta:
-            logger.info(f"Skipping annotation generation for segment {self.id}: Requires linked VideoPredictionMeta.")
+            logger.info("Skipping annotation generation for segment %s: Requires linked VideoPredictionMeta.", self.id)
             return
 
         from .annotation import ImageClassificationAnnotation
@@ -222,12 +223,12 @@ class LabelVideoSegment(models.Model):
         label = self.label
 
         if not model_meta or not label:
-            logger.warning(f"Missing model_meta or label for segment {self.id}. Skipping annotation generation.")
+            logger.warning("Missing model_meta or label for segment %s. Skipping annotation generation.", self.id)
             return
 
         frames_queryset = self.get_frames().only('id')
         if not isinstance(frames_queryset, models.QuerySet):
-            logger.error(f"Could not get frame queryset for segment {self.id}. Skipping.")
+            logger.error("Could not get frame queryset for segment %s. Skipping.", self.id)
             return
 
         existing_annotation_frame_ids = set(
@@ -254,8 +255,8 @@ class LabelVideoSegment(models.Model):
             )
 
         if annotations_to_create:
-            logger.info(f"Bulk creating {len(annotations_to_create)} annotations for segment {self.id}...")
+            logger.info("Bulk creating %d annotations for segment %s...", len(annotations_to_create), self.id)
             ImageClassificationAnnotation.objects.bulk_create(annotations_to_create, ignore_conflicts=True)
             logger.info("Bulk creation complete.")
         else:
-            logger.info(f"No new annotations needed for segment {self.id}.")
+            logger.info("No new annotations needed for segment %s.", self.id)

@@ -3,6 +3,7 @@ import subprocess
 import os
 from pathlib import Path
 from icecream import ic
+from ...utils.ffmpeg_wrapper import transcode_video as ffmpeg_transcode_video
 
 
 def get_transcoded_file_path(source_file_path: Path, suffix: str = "mp4"):
@@ -58,7 +59,7 @@ def transcode_videofile_if_required(filepath: Path):
     transcoded_file_path = get_transcoded_file_path(filepath, suffix=".mp4")
     if check_require_transcode(filepath, transcoded_file_path):
         transcoded_path = transcode_videofile(
-            filepath, transcoded_path=transcoded_file_path
+            filepath, transcoded_file_path
         )
         assert transcoded_file_path == transcoded_path
         return transcoded_path
@@ -66,46 +67,6 @@ def transcode_videofile_if_required(filepath: Path):
         return filepath
 
 
-def transcode_videofile(filepath: Path, transcoded_path: Path):
-    """
-    Transcodes a video to a compatible MP4 format using ffmpeg.
-    If the transcoded file exists, it is returned.
-
-    Parameters
-    ----------
-    mov_file : str
-        The full path to the video file.
-
-    Returns
-    -------
-    transcoded_path : str
-        The full path to the transcoded video file.
-    """
-    ic("Transcoding video")
-    ic(f"Input path: {filepath}")
-
-    # if filepath suffix is .mp4 or .MP4 we dont need to transcode and can copy the file
-    if filepath.suffix.lower() in [".mp4"]:
-        shutil.copyfile(filepath, transcoded_path)
-        return transcoded_path
-
-    ic(f"Transcoded path: {transcoded_path}")
-    if os.path.exists(transcoded_path):
-        return transcoded_path
-
-    # Run ffmpeg to transcode the video using H264 and AAC
-    # TODO Document settings, check if we need to change them
-    command = [
-        "ffmpeg",
-        "-i",
-        filepath.as_posix(),
-        "-c:v",
-        "libx264",
-        "-preset",
-        "fast",
-        "-c:a",
-        "aac",
-        transcoded_path,
-    ]
-    subprocess.run(command, check=True)
-    return transcoded_path
+def transcode_videofile(input_path: Path, output_path: Path, codec: str = "libx264", crf: int = 23, **kwargs):
+    """Transcodes a video file."""
+    return ffmpeg_transcode_video(input_path, output_path, codec, crf, **kwargs)

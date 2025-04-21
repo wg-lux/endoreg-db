@@ -1,6 +1,4 @@
 from django.db import models
-import subprocess
-import json
 import logging
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -13,6 +11,9 @@ if not hasattr(settings, "ENDOREG_CENTER_ID"):
     ENDOREG_CENTER_ID = 9999
 else:
     ENDOREG_CENTER_ID = settings.ENDOREG_CENTER_ID
+
+# Import the new utility function
+from ...utils.ffmpeg_wrapper import get_stream_info
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class VideoMeta(models.Model):
         self.initialize_ffmpeg_meta(video_path)
 
     def get_endo_roi(self):
-        from endoreg_db.models import EndoscopyProcessor
+        from ..medical.hardware import EndoscopyProcessor
 
         processor: EndoscopyProcessor = self.processor
         endo_roi = processor.get_roi_endoscope_image()
@@ -124,7 +125,7 @@ class VideoMeta(models.Model):
         if not self.ffmpeg_meta:
             logger.warning("FFMpegMeta not linked for VideoMeta PK %s. Cannot get FPS.", self.pk)
             return None
-        return self.ffmpeg_meta.frame_rate
+        return self.ffmpeg_meta.fps
 
     @property
     def duration(self) -> Optional[float]:
@@ -141,101 +142,82 @@ class VideoMeta(models.Model):
     @property
     def frame_count(self) -> Optional[int]:
         """Calculates frame count if possible."""
-        if self.ffmpeg_meta and self.ffmpeg_meta.duration is not None and self.ffmpeg_meta.frame_rate is not None and self.ffmpeg_meta.frame_rate > 0:
-            return int(self.ffmpeg_meta.duration * self.ffmpeg_meta.frame_rate)
+        if self.ffmpeg_meta and self.ffmpeg_meta.duration is not None and self.ffmpeg_meta.fps is not None and self.ffmpeg_meta.fps > 0:
+            return int(self.ffmpeg_meta.duration * self.ffmpeg_meta.fps)
         return None
 
 
 class FFMpegMeta(models.Model):
-    duration = models.FloatField(blank=True, null=True)
-    width = models.IntegerField(blank=True, null=True)
-    height = models.IntegerField(blank=True, null=True)
-    frame_rate = models.FloatField(blank=True, null=True)
-    video_codec = models.CharField(max_length=50, blank=True, null=True)
-    audio_codec = models.CharField(max_length=50, blank=True, null=True)
-    audio_channels = models.IntegerField(blank=True, null=True)
-    audio_sample_rate = models.IntegerField(blank=True, null=True)
+    width = models.IntegerField(null=True, blank=True)
+    height = models.IntegerField(null=True, blank=True)
+    duration = models.FloatField(null=True, blank=True)  # Duration in seconds
+    frame_rate_num = models.IntegerField(null=True, blank=True)  # Numerator for frame rate
+    frame_rate_den = models.IntegerField(null=True, blank=True)  # Denominator for frame rate
+    codec_name = models.CharField(max_length=50, null=True, blank=True)
+    pixel_format = models.CharField(max_length=50, null=True, blank=True)
+    bit_rate = models.BigIntegerField(null=True, blank=True)  # Bit rate in bits per second
+    raw_probe_data = models.JSONField(null=True, blank=True)  # Store the full JSON output for debugging or future use
+
+    @property
+    def fps(self) -> Optional[float]:
+        if self.frame_rate_num is not None and self.frame_rate_den is not None and self.frame_rate_den != 0:
+            return self.frame_rate_num / self.frame_rate_den
+        return None
 
     @classmethod
     def create_from_file(cls, file_path: Path):
-        assert isinstance(file_path, Path), "file_path must be a Path object"
-        assert file_path.exists(), "file_path does not exist"
-        cmd = [
-            "ffprobe",
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_streams",
-            str(file_path),
-        ]
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8')
-            probe = json.loads(proc.stdout)
+        """
+        Creates an FFMpegMeta instance by running ffprobe on the given file.
+        """
+        logger.info("Running ffprobe on %s", file_path)
+        probe_data = get_stream_info(file_path)  # Use the new utility
 
-            video_stream = next(
-                (stream for stream in probe["streams"] if stream["codec_type"] == "video"),
-                None,
-            )
-            audio_streams = [
-                stream for stream in probe["streams"] if stream["codec_type"] == "audio"
-            ]
+        if not probe_data or "streams" not in probe_data:
+            logger.error("Failed to get valid stream info from ffprobe for %s", file_path)
+            return None
 
-            if not video_stream:
-                return None
+        video_stream = next((s for s in probe_data["streams"] if s.get("codec_type") == "video"), None)
 
-            duration_str = video_stream.get("duration")
-            duration = float(duration_str) if duration_str is not None else None
+        if not video_stream:
+            logger.warning("No video stream found in ffprobe output for %s", file_path)
+            return None
 
-            width_str = video_stream.get("width")
-            width = int(width_str) if width_str is not None else None
+        # Extract data safely using .get()
+        width = video_stream.get("width")
+        height = video_stream.get("height")
+        duration_str = video_stream.get("duration")
+        duration = float(duration_str) if duration_str else None
 
-            height_str = video_stream.get("height")
-            height = int(height_str) if height_str is not None else None
-
-            frame_rate_str = video_stream.get("avg_frame_rate", "0/1")
+        # Frame rate can be tricky, often represented as "num/den"
+        frame_rate_str = video_stream.get("r_frame_rate")
+        frame_rate_num, frame_rate_den = None, None
+        if frame_rate_str and "/" in frame_rate_str:
             try:
-                num, den = map(int, frame_rate_str.split('/'))
-                frame_rate = float(num / den) if den != 0 else None
-            except (ValueError, ZeroDivisionError):
-                frame_rate = None
+                num_str, den_str = frame_rate_str.split('/')
+                frame_rate_num = int(num_str)
+                frame_rate_den = int(den_str)
+            except ValueError:
+                logger.warning("Could not parse frame rate '%s' for %s", frame_rate_str, file_path)
 
-            video_codec = video_stream.get("codec_name")
+        codec_name = video_stream.get("codec_name")
+        pixel_format = video_stream.get("pix_fmt")
+        bit_rate_str = video_stream.get("bit_rate")
+        bit_rate = int(bit_rate_str) if bit_rate_str else None
 
-            metadata = {
-                "duration": duration,
-                "width": width,
-                "height": height,
-                "frame_rate": frame_rate,
-                "video_codec": video_codec,
-            }
-
-            if audio_streams:
-                first_audio_stream = audio_streams[0]
-                audio_codec = first_audio_stream.get("codec_name")
-                audio_channels_str = first_audio_stream.get("channels")
-                audio_channels = int(audio_channels_str) if audio_channels_str is not None else None
-                audio_sample_rate_str = first_audio_stream.get("sample_rate")
-                audio_sample_rate = int(audio_sample_rate_str) if audio_sample_rate_str is not None else None
-
-                metadata.update(
-                    {
-                        "audio_codec": audio_codec,
-                        "audio_channels": audio_channels,
-                        "audio_sample_rate": audio_sample_rate,
-                    }
-                )
-
-            instance = cls.objects.create(**metadata)
-            logger.info("Created FFMpegMeta PK %s from %s", instance.pk, file_path.name)
+        try:
+            instance = cls.objects.create(
+                width=width,
+                height=height,
+                duration=duration,
+                frame_rate_num=frame_rate_num,
+                frame_rate_den=frame_rate_den,
+                codec_name=codec_name,
+                pixel_format=pixel_format,
+                bit_rate=bit_rate,
+                raw_probe_data=probe_data,  # Store the raw data
+            )
+            logger.info("Successfully created FFMpegMeta for %s (ID: %d)", file_path, instance.pk)
             return instance
-
-        except subprocess.CalledProcessError as e:
-            logger.error("ffprobe command failed for %s: %s\n%s", file_path, e, e.stderr)
-            return None
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse ffprobe JSON output for %s: %s", file_path, e)
-            return None
         except Exception as e:
             logger.error("Error creating FFMpegMeta from %s: %s", file_path, e, exc_info=True)
             return None
@@ -243,14 +225,13 @@ class FFMpegMeta(models.Model):
     def __str__(self):
         result_html = ""
 
-        result_html += f"Duration: {self.duration}\n"
         result_html += f"Width: {self.width}\n"
         result_html += f"Height: {self.height}\n"
-        result_html += f"Frame Rate: {self.frame_rate}\n"
-        result_html += f"Video Codec: {self.video_codec}\n"
-        result_html += f"Audio Codec: {self.audio_codec}\n"
-        result_html += f"Audio Channels: {self.audio_channels}\n"
-        result_html += f"Audio Sample Rate: {self.audio_sample_rate}\n"
+        result_html += f"Duration: {self.duration}\n"
+        result_html += f"Frame Rate: {self.fps}\n"
+        result_html += f"Codec Name: {self.codec_name}\n"
+        result_html += f"Pixel Format: {self.pixel_format}\n"
+        result_html += f"Bit Rate: {self.bit_rate}\n"
 
         return result_html
 
@@ -273,3 +254,7 @@ class VideoImportMeta(models.Model):
         result_html += f"Patient data removed: {self.patient_data_removed}\n"
         result_html += f"Outside removed: {self.outside_removed}\n"
         return result_html
+
+
+class SensitiveMeta(models.Model):
+    is_validated = models.BooleanField(default=False, help_text="Indicates if the sensitive metadata has been validated.")

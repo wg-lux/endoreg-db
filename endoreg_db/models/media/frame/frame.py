@@ -1,6 +1,8 @@
-from typing import TYPE_CHECKING, Union, Optional
+from typing import TYPE_CHECKING, Union, Optional, Dict, Tuple, List
 from django.db import models
-from django.db.models import CheckConstraint
+from pathlib import Path
+import cv2
+import numpy as np
 from ...utils import FRAME_DIR, FILE_STORAGE, data_paths
 if TYPE_CHECKING:
     from ..video.video_file import VideoFile
@@ -9,97 +11,80 @@ if TYPE_CHECKING:
 
 # Unified Frame model
 class Frame(models.Model):
-    """
-    Represents a single frame extracted from a video's raw file.
-
-    A frame must be associated with exactly one `VideoFile`.
-    """
-    frame_number = models.IntegerField()
-    suffix = models.CharField(max_length=255) # e.g., '.jpg', '.png'
-    extracted = models.BooleanField(default=False) # Indicates if the image file exists
-
-    # Single ForeignKey to the unified VideoFile model
-    video_file = models.ForeignKey(
+    video = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="frames",
-        null=False,
         blank=False,
+        null=False,
     )
-
-    def _frame_upload_path(instance, filename: str) -> str:
-        """
-        Group frames under `<FRAME_DIR>/<video_file.uuid>/<filename>`.
-        Uses the UUID of the associated VideoFile.
-        Path is relative to STORAGE_DIR.
-        """
-        if not instance.video_file_id:
-            raise ValueError("Cannot determine upload path: Frame must be associated with a VideoFile.")
-
-        relative_frame_dir = data_paths["frame"].relative_to(data_paths["storage"])
-        upload_path = f"{relative_frame_dir}/{instance.video_file.uuid}/{filename}"
-        return upload_path
-
-    image = models.ImageField(
-        upload_to=_frame_upload_path,
-        storage=FILE_STORAGE,
-        blank=True,
-        null=True,
-    )
-
-    # Reverse relation defined in ImageClassificationAnnotation
-    # image_classification_annotations: defined by related_name in ImageClassificationAnnotation
-
-    if TYPE_CHECKING:
-        video_file: "VideoFile"
-        image_classification_annotations: "models.QuerySet[ImageClassificationAnnotation]"
+    frame_number = models.PositiveIntegerField()
+    relative_path = models.CharField(max_length=512)
+    timestamp = models.FloatField(null=True, blank=True)
+    is_extracted = models.BooleanField(default=False)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["video_file", "frame_number"],
-                name="unique_frame_per_video_file"
-            ),
-        ]
-        indexes = [
-            models.Index(fields=["video_file", "frame_number"]),
-            models.Index(fields=["frame_number"]),
-        ]
+        unique_together = ('video', 'frame_number')
+        ordering = ['video', 'frame_number']
 
-    def get_video(self) -> "VideoFile":
-        """Returns the associated VideoFile instance."""
-        if self.video_file:
-            return self.video_file
-        else:
-            raise ValueError("Frame is not associated with a VideoFile.")
+    @property
+    def file_path(self) -> Path:
+        """Returns the absolute path to the frame file."""
+        base_dir = self.video.get_frame_dir_path()
+        return base_dir / self.relative_path
 
-    def get_classification_annotations(self):
-        """Get all image classification annotations for this frame."""
-        return self.image_classification_annotations.all()
+    def get_image(self) -> Optional[np.ndarray]:
+        """Reads and returns the frame image using OpenCV."""
+        if not self.file_path.exists():
+            return None
+        try:
+            image = cv2.imread(str(self.file_path))
+            if image is None:
+                pass
+            return image
+        except Exception as e:
+            return None
 
-    def get_classification_annotations_by_label(self, label: "Label"):
-        """Get all image classification annotations for this frame with the given label."""
-        return self.image_classification_annotations.filter(label=label)
+    def anonymize(
+        self,
+        output_path: Path,
+        endo_roi: Optional[List[int]] = None,
+        censor_color: Tuple[int, int, int] = (0, 0, 0),
+        all_black: bool = False,
+    ) -> bool:
+        """
+        Anonymizes the frame image and saves it to output_path.
+        - Applies ROI masking if endo_roi is provided.
+        - Blacks out the entire frame if all_black is True.
+        Returns True on success, False on failure.
+        """
+        image = self.get_image()
+        if image is None:
+            return False
 
-    def get_classification_annotations_by_value(self, value: bool):
-        """Get all image classification annotations for this frame with the given value."""
-        return self.image_classification_annotations.filter(value=value)
+        try:
+            if all_black:
+                anonymized_image = np.zeros_like(image)
+            elif endo_roi and len(endo_roi) == 4:
+                mask = np.zeros(image.shape[:2], dtype=np.uint8)
+                x, y, w, h = endo_roi
+                x1, y1 = max(0, x), max(0, y)
+                x2, y2 = min(image.shape[1], x + w), min(image.shape[0], y + h)
+                mask[y1:y2, x1:x2] = 255
+                anonymized_image = cv2.bitwise_and(image, image, mask=mask)
+            else:
+                anonymized_image = image.copy()
 
-    def get_classification_annotations_by_label_and_value(
-        self, label: "Label", value: bool
-    ):
-        """Get all image classification annotations for this frame with the given label and value."""
-        return self.image_classification_annotations.filter(label=label, value=value)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            success = cv2.imwrite(str(output_path), anonymized_image)
+            if not success:
+                return False
+            return True
+        except Exception as e:
+            return False
 
     def __str__(self):
-        try:
-            video_obj = self.get_video()
-            active_path = video_obj.active_file_path
-            video_identifier = active_path.name if active_path else f"UUID {video_obj.uuid}"
-        except ValueError:
-            video_identifier = "Unknown VideoFile"
-        except Exception as e:
-            logger.warning("Error getting video identifier for Frame %s: %s", self.pk, e)
-            video_identifier = f"VideoFile ID {self.video_file_id or 'None'}"
+        return f"Frame {self.frame_number} of Video {self.video.uuid}"
 
-        return f"{video_identifier} - Frame {self.frame_number}"
+    def get_classification_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
+        return self.image_classification_annotations.all()

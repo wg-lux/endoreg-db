@@ -8,8 +8,8 @@ from ...utils import TEST_RUN as GLOBAL_TEST_RUN, TEST_RUN_FRAME_NUMBER as GLOBA
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
-    from ...metadata import ModelMeta, VideoPredictionMeta, SensitiveMeta
-    from ...administration.hardware import EndoscopyProcessor
+    from ...medical.hardware import EndoscopyProcessor
+    from ...metadata import ModelMeta
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +218,7 @@ def _predict_video_pipeline(
 
     # Get or create VideoPredictionMeta
     try:
-        video_prediction_meta, created = VideoPredictionMeta.objects.get_or_create(
+        _video_prediction_meta, created = VideoPredictionMeta.objects.get_or_create(
             video_file=video, model_meta=model_meta
         )
         if created:
@@ -258,13 +258,13 @@ def _predict_video_pipeline(
         # Get frame paths using the helper method
         paths = video.get_frame_paths() # Use Frame helper
         if not paths:
-             raise FileNotFoundError(f"No frame paths returned by get_frame_paths for {frame_dir}")
+            raise FileNotFoundError(f"No frame paths returned by get_frame_paths for {frame_dir}")
         # Ensure paths are sorted correctly if needed (get_frame_paths should ideally return sorted)
         # paths = sorted(paths, key=lambda p: int(p.stem.split('_')[-1])) # Example sort
     except FileNotFoundError as e:
-         logger.error("No frame files found in %s. Prediction aborted. Error: %s", frame_dir, e)
-         ic(f"No frame files found in {frame_dir}, prediction aborted.")
-         return None
+        logger.error("No frame files found in %s. Prediction aborted. Error: %s", frame_dir, e)
+        ic(f"No frame files found in {frame_dir}, prediction aborted.")
+        return None
     except Exception as e:
         logger.error(
             "Error listing or getting frame files from %s: %s", frame_dir, e, exc_info=True
@@ -325,8 +325,8 @@ def _predict_video_pipeline(
             logger.warning("Could not move model to GPU: %s. Using CPU.", cuda_err)
             ic(f"Could not move model to GPU: {cuda_err}. Using CPU.")
         except Exception as cuda_err: # Catch other potential errors
-             logger.warning("Error attempting to move model to GPU: %s. Using CPU.", cuda_err)
-             ic(f"Error moving model to GPU: {cuda_err}. Using CPU.")
+            logger.warning("Error attempting to move model to GPU: %s. Using CPU.", cuda_err)
+            ic(f"Error moving model to GPU: {cuda_err}. Using CPU.")
 
 
         _ = ai_model_instance.eval() # Set to evaluation mode

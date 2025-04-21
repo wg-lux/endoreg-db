@@ -3,14 +3,13 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Tuple, Dict, Optional
 from django.db import transaction
-from django.core.files.base import ContentFile
 import cv2
-from icecream import ic
 
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
-from ....utils.video import assemble_video_from_frames # Assuming this exists or create it
+from ....utils.ffmpeg_wrapper import assemble_video_from_frames
 from ...utils import STORAGE_DIR # Assuming this is the base storage dir
+from .video_file_segments import _get_outside_frames
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -26,7 +25,7 @@ def _create_anonymized_frame_files(
     endo_roi: Dict[str, int],
     frames: "QuerySet[Frame]",
     outside_frame_numbers: set,
-    censor_color: Tuple[int, int, int] = (0, 0, 0), # Black
+    censor_color: Tuple[int, int, int] = (0, 0, 0),
 ) -> List[Path]:
     """
     Creates anonymized versions of frames, censoring outside the ROI or blacking out 'outside' frames.
@@ -43,66 +42,15 @@ def _create_anonymized_frame_files(
         List of paths to the generated anonymized frame files.
     """
     generated_paths = []
-    total_frames = frames.count()
-    processed_count = 0
-    log_interval = max(1, total_frames // 10) # Log progress every 10%
-
-    x, y, w, h = endo_roi['x'], endo_roi['y'], endo_roi['width'], endo_roi['height']
-    img_height, img_width = video.height, video.width # Get dimensions from video
-
-    if not img_height or not img_width:
-        logger.error("Video dimensions (height/width) not available for %s. Cannot create anonymized frames.", video.uuid)
-        raise ValueError(f"Video dimensions missing for {video.uuid}")
-
-    for frame_obj in frames.iterator(): # Use iterator for memory efficiency
-        processed_count += 1
-        if processed_count % log_interval == 0:
-            logger.debug("Anonymizing frame %d/%d for video %s", processed_count, total_frames, video.uuid)
-
+    for frame_obj in frames.iterator():
         try:
-            original_path = Path(frame_obj.image.path)
-            if not original_path.exists():
-                logger.warning("Original frame file missing: %s. Skipping.", original_path)
-                continue
-
-            target_path = anonymized_frame_dir / original_path.name
-
-            # Check if frame is marked as 'outside'
-            if frame_obj.frame_number in outside_frame_numbers:
-                # Create a completely black frame
-                black_frame = cv2.imread(str(original_path)) # Read to get dimensions if needed
-                if black_frame is None:
-                     logger.warning("Could not read frame %s to create black frame. Skipping.", original_path)
-                     continue
-                black_frame[:] = censor_color # Fill with censor color
-                cv2.imwrite(str(target_path), black_frame)
-            else:
-                # Censor outside the ROI
-                frame_img = cv2.imread(str(original_path))
-                if frame_img is None:
-                     logger.warning("Could not read frame %s for censoring. Skipping.", original_path)
-                     continue
-
-                # Create masks for areas to censor
-                mask = cv2.rectangle(frame_img.copy(), (x, y), (x + w, y + h), (255, 255, 255), -1)
-                mask_inv = cv2.bitwise_not(mask)
-
-                # Apply censoring
-                censored_img = cv2.bitwise_and(frame_img, mask) # Keep ROI
-                blackout_area = cv2.bitwise_and(frame_img, mask_inv) # Get outside area
-                blackout_area[:] = censor_color # Make outside area black
-                final_img = cv2.add(censored_img, blackout_area) # Combine
-
-                cv2.imwrite(str(target_path), final_img)
-
+            target_path = anonymized_frame_dir / f"frame_{frame_obj.frame_number:07d}.jpg"
+            all_black = frame_obj.frame_number in outside_frame_numbers
+            frame_obj.anonymize(target_path=target_path, endo_roi=endo_roi, all_black=all_black, censor_color=censor_color)
             generated_paths.append(target_path)
-
         except Exception as e:
-            logger.error("Error processing frame %d (%s) for anonymization: %s",
-                         frame_obj.frame_number, getattr(frame_obj.image, 'path', 'N/A'), e, exc_info=True)
-            # Decide whether to continue or raise based on severity
+            logger.error("Error anonymizing frame %d: %s", frame_obj.frame_number, e, exc_info=True)
 
-    logger.info("Finished generating %d anonymized frames for video %s.", len(generated_paths), video.uuid)
     return generated_paths
 
 
@@ -164,8 +112,8 @@ def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outsid
             # Read the frame to get dimensions, then overwrite with censor color
             img = cv2.imread(str(frame_path))
             if img is None:
-                 logger.warning("Could not read frame %s for censoring. Skipping.", frame_path)
-                 continue
+                logger.warning("Could not read frame %s for censoring. Skipping.", frame_path)
+                continue
 
             img[:] = censor_color # Fill with censor color
             success = cv2.imwrite(str(frame_path), img)
@@ -200,16 +148,16 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
 
     endo_roi = video.get_endo_roi() # Use Meta helper
     if not validate_endo_roi(endo_roi_dict=endo_roi):
-         raise ValueError(f"Endoscope ROI is not valid for video {video.uuid}")
+        raise ValueError(f"Endoscope ROI is not valid for video {video.uuid}")
 
     state = video.get_or_create_state() # Use State helper
     if not state.frames_extracted:
-         logger.info("Raw frames not extracted for %s, extracting now.", video.uuid)
-         video.extract_frames(overwrite=False) # Use Frame helper
+        logger.info("Raw frames not extracted for %s, extracting now.", video.uuid)
+        video.extract_frames(overwrite=False) # Use Frame helper
 
     all_frames = video.get_frames() # Use Frame helper
     if not all_frames.exists():
-         raise FileNotFoundError(f"No frame objects found for video {video.uuid} after extraction attempt.")
+        raise FileNotFoundError(f"No frame objects found for video {video.uuid} after extraction attempt.")
 
     outside_frames = _get_outside_frames(video) # Use Segment helper
     outside_frame_numbers = {frame.frame_number for frame in outside_frames}
@@ -234,6 +182,15 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
     if not video.has_raw:
         raise ValueError("Raw file is missing, cannot anonymize.")
 
+    # Check if SensitiveMeta is validated
+    if not video.sensitive_meta or not video.sensitive_meta.is_validated:
+        raise ValueError(f"Sensitive metadata for video {video.uuid} is not validated. Cannot anonymize.")
+
+    # Check if all "outside" LabelVideoSegments are validated
+    outside_segments = video.get_outside_segments()
+    if not all(segment.is_validated for segment in outside_segments):
+        raise ValueError(f"Not all 'outside' label segments for video {video.uuid} are validated. Cannot anonymize.")
+
     logger.info("Starting anonymization process for video %s", video.uuid)
     original_raw_file_path = video.get_raw_file_path() # Use helper
     original_raw_frame_dir = video.get_frame_dir_path() # Use IO helper
@@ -243,7 +200,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
     try:
         temp_anonym_frame_dir, generated_frame_paths = _make_temporary_anonymized_frames(video)
         if not generated_frame_paths:
-             raise RuntimeError("Failed to generate temporary anonymized frames.")
+            raise RuntimeError("Failed to generate temporary anonymized frames.")
 
         anonymized_video_path = video._get_target_anonymized_video_path() # Use IO helper
         anonymized_video_path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,15 +220,15 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
         )
 
         if not anonymized_video_path.exists():
-             raise RuntimeError(f"Processed video file not found after assembly: {anonymized_video_path}")
+            raise RuntimeError(f"Processed video file not found after assembly: {anonymized_video_path}")
 
         # Calculate hash of the new processed file
         new_processed_hash = get_video_hash(anonymized_video_path)
         # Check if this hash already exists for *another* video's processed file
         if type(video).objects.filter(processed_video_hash=new_processed_hash).exclude(pk=video.pk).exists():
-             # Clean up the newly created file before raising error
-             anonymized_video_path.unlink(missing_ok=True)
-             raise ValueError(f"Another VideoFile already exists with processed hash {new_processed_hash}")
+            # Clean up the newly created file before raising error
+            anonymized_video_path.unlink(missing_ok=True)
+            raise ValueError(f"Another VideoFile already exists with processed hash {new_processed_hash}")
 
         logger.info("Updating VideoFile instance %s with processed file info.", video.uuid)
         # Store path relative to STORAGE_DIR
@@ -306,7 +263,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
 
         # Schedule cleanup of original assets after transaction commits
         if delete_original_raw:
-             transaction.on_commit(lambda: _cleanup_raw_assets(video, original_raw_file_path, original_raw_frame_dir))
+            transaction.on_commit(lambda: _cleanup_raw_assets(video, original_raw_file_path, original_raw_frame_dir))
 
         return anonymized_video_path
 
@@ -333,22 +290,21 @@ def _cleanup_raw_assets(video: "VideoFile", raw_file_path: Optional[Path], raw_f
             logger.info("Deleting original raw video file: %s", raw_file_path)
             raw_file_path.unlink()
         elif raw_file_path:
-             logger.warning("Original raw video file %s not found for post-commit deletion.", raw_file_path)
+            logger.warning("Original raw video file %s not found for post-commit deletion.", raw_file_path)
 
         if raw_frame_dir and raw_frame_dir.exists():
-             logger.info("Deleting original raw frame directory: %s", raw_frame_dir)
-             shutil.rmtree(raw_frame_dir, ignore_errors=True)
-             # Also delete Frame objects from DB if they weren't deleted earlier
-             try:
-                 count, _ = video.frames.all().delete()
-                 if count > 0:
-                     logger.info("Deleted %d residual Frame DB objects during raw asset cleanup.", count)
-             except Exception as db_del_e:
-                 logger.error("Error deleting residual Frame DB objects for %s: %s", video.uuid, db_del_e)
+            logger.info("Deleting original raw frame directory: %s", raw_frame_dir)
+            shutil.rmtree(raw_frame_dir, ignore_errors=True)
+            # Also delete Frame objects from DB if they weren't deleted earlier
+            try:
+                count, _ = video.frames.all().delete()
+                if count > 0:
+                    logger.info("Deleted %d residual Frame DB objects during raw asset cleanup.", count)
+            except Exception as db_del_e:
+                logger.error("Error deleting residual Frame DB objects for %s: %s", video.uuid, db_del_e)
 
         elif raw_frame_dir:
-             logger.warning("Original raw frame directory %s not found for post-commit deletion.", raw_frame_dir)
+            logger.warning("Original raw frame directory %s not found for post-commit deletion.", raw_frame_dir)
 
     except Exception as e:
         logger.error("Error during post-commit cleanup of raw assets for video %s: %s", video.uuid, e, exc_info=True)
-

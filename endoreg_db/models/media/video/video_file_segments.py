@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, List, Dict, Tuple
 from icecream import ic
+from pathlib import Path
+from django.db.models import Q # Import Q for complex queries
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -123,41 +125,43 @@ def _sequences_to_label_video_segments(
 
 def _get_outside_segments(video: "VideoFile", outside_label_name: str = "outside") -> "QuerySet[LabelVideoSegment]":
     """Gets LabelVideoSegments marked with the 'outside' label."""
-    from endoreg_db.models import Label, LabelVideoSegment # Local import
-
-    logger.debug("Fetching segments with label '%s' for video %s", outside_label_name, video.uuid)
-    try:
-        outside_label = Label.objects.get(name=outside_label_name)
-    except Label.DoesNotExist:
-        logger.error("Label '%s' not found in database.", outside_label_name)
-        raise
+    from ...label import Label, LabelVideoSegment # Local import
 
     try:
-        # Access related manager directly
+        outside_label = Label.objects.get(name__iexact=outside_label_name)
         return video.label_video_segments.filter(label=outside_label)
-    except AttributeError:
-        logger.error("Could not access segments for video %s. 'label_video_segments' related manager not found.", video.uuid)
-        ic("Error: 'label_video_segments' related manager not found.")
-        # Fallback query if related manager fails (less ideal)
-        return LabelVideoSegment.objects.filter(video_file=video, label=outside_label)
+    except Label.DoesNotExist:
+        logger.warning("Label '%s' not found in the database.", outside_label_name)
+        return LabelVideoSegment.objects.none()
+    except Exception as e:
+        logger.error("Error getting outside segments for video %s: %s", video.uuid, e, exc_info=True)
+        return LabelVideoSegment.objects.none()
 
-def _get_outside_frames(video: "VideoFile", outside_label_name: str = "outside") -> List["Frame"]:
-    """Gets Frame objects that fall within 'outside' segments."""
-    from pathlib import Path # Local import
-    logger.debug("Fetching frames within '%s' segments for video %s", outside_label_name, video.uuid)
-    outside_segments = _get_outside_segments(video, outside_label_name=outside_label_name)
-    frames = []
+def _get_outside_frames(video: "VideoFile", outside_label_name: str = "outside") -> "QuerySet[Frame]":
+    """
+    Gets a QuerySet of all unique Frame objects that fall within any segment
+    labeled with the specified 'outside_label_name'.
+    """
+    from ..frame import Frame # Local import
+
+    outside_segments = _get_outside_segments(video, outside_label_name)
+    if not outside_segments.exists():
+        return Frame.objects.none()
+
+    # Build a Q object to filter frames based on all outside segments
+    q_objects = Q()
     for segment in outside_segments:
-        try:
-            # Assuming segment.get_frames() returns a QuerySet or list of Frame objects
-            frames.extend(list(segment.get_frames()))
-        except Exception as e:
-            logger.error("Error getting frames for segment %s (Label: %s, Range: %d-%d): %s",
-                         segment.pk, outside_label_name, segment.start_frame_number, segment.end_frame_number, e, exc_info=True)
-            ic(f"Error getting frames for segment {segment.pk}: {e}")
+        q_objects |= Q(frame_number__gte=segment.start_frame_number, frame_number__lt=segment.end_frame_number) # Use lt for end frame
 
-    logger.info("Found %d frames within '%s' segments for video %s", len(frames), outside_label_name, video.uuid)
-    return frames
+    if not q_objects:
+        return Frame.objects.none()
+
+    # Filter the video's frames using the combined Q object
+    try:
+        return video.frames.filter(q_objects).distinct().order_by('frame_number')
+    except Exception as e:
+        logger.error("Error filtering outside frames for video %s: %s", video.uuid, e, exc_info=True)
+        return Frame.objects.none()
 
 def _get_outside_frame_paths(video: "VideoFile", outside_label_name: str = "outside") -> List["Path"]:
     """Gets the file paths of frames that fall within 'outside' segments."""

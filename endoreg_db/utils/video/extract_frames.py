@@ -5,13 +5,14 @@ from icecream import ic
 import subprocess
 from django.db import transaction
 from tqdm import tqdm
-from typing import TYPE_CHECKING, Union, List
+from typing import TYPE_CHECKING, Union, List, Optional
 
 if TYPE_CHECKING:
     from endoreg_db.models import RawVideoFile, Video
 
 from django.core.files import File
 import io
+from ...utils.ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
 
 
 def prepare_bulk_frames(frame_paths: List[Path]):
@@ -27,62 +28,9 @@ def prepare_bulk_frames(frame_paths: List[Path]):
         yield frame_number, file_obj
 
 
-def extract_frames(
-    video: Union["RawVideoFile", "Video"],
-    quality: int = 2,
-    overwrite: bool = False,
-    ext="jpg",
-    verbose=False,
-) -> List[Path]:
-    """
-    Extract frames from the video file and save them to the frame_dir.
-    For this, ffmpeg must be available in in the current environment.
-    """
-    frame_dir = Path(video.frame_dir)
-    ic(f"Extracting frames to {frame_dir}")
-    if not frame_dir.exists():
-        frame_dir.mkdir(parents=True, exist_ok=True)
-
-    if not overwrite and len(list(frame_dir.glob(f"*.{ext}"))) > 0:
-        video.state_frames_extracted = True  # Mark frames as extracted
-        extracted_paths = sorted(frame_dir.glob(f"*.{ext}"))
-        return extracted_paths
-
-    video_path = Path(video.file.path).as_posix()
-
-    frame_path_string = frame_dir.as_posix()
-    command = [
-        "ffmpeg",
-        "-i",
-        video_path,  #
-        "-q:v",
-        str(quality),
-        os.path.join(frame_path_string, f"frame_%07d.{ext}"),
-    ]
-
-    # Ensure FFmpeg is available
-    if not shutil.which("ffmpeg"):
-        raise EnvironmentError(
-            "FFmpeg could not be found. Ensure it is installed and in your PATH."
-        )
-
-    # Extract frames from the video file
-    # Execute the command
-    process = subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    stdout_data, stderr_data = process.communicate()
-
-    if process.returncode != 0:
-        raise Exception(f"Error extracting frames: {stderr_data}")
-
-    if verbose and stdout_data:
-        print(stdout_data)
-
-    # After extracting frames with ffmpeg, parse frame filenames and batch-create
-    extracted_paths = sorted(frame_dir.glob(f"*.{ext}"))
-
-    return extracted_paths
+def extract_frames(video_path: Path, output_dir: Path, quality: int, ext: str = "jpg", fps: Optional[float] = None) -> List[Path]:
+    """Extracts frames from a video file."""
+    return ffmpeg_extract_frames(video_path, output_dir, quality, ext, fps)
 
 
 def initialize_frame_objects(

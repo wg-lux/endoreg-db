@@ -1,9 +1,6 @@
 from ..utils import (
     random_day_by_month_year,
-    transcode_videofile,
-    transcode_videofile_if_required,
     get_uuid_filename,
-    
     random_day_by_year,
     get_examiner_hash,
     ensure_aware_datetime,
@@ -22,15 +19,18 @@ from django.core.files.storage import FileSystemStorage
 import io
 import os
 from icecream import ic
-import subprocess
-from tqdm import tqdmw
+from tqdm import tqdm
 import numpy as np
 import cv2
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List
 from pathlib import Path
 from django.db import models
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile, Frame
+    from ..models.media import VideoFile, Frame
+
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 STORAGE_DIR = data_paths["storage"]
 FILE_STORAGE = FileSystemStorage(location = STORAGE_DIR)
@@ -146,41 +146,6 @@ def _create_anonymized_frame_files(
 
     return generated_frame_paths
 
-def _assemble_anonymized_video(
-    generated_frame_paths: List[Path],
-    anonymized_video_path: Path,
-    fps: int,
-) -> Path:
-    # Use ffmpeg and the frame paths to create a video
-
-    height, width = cv2.imread(filename=generated_frame_paths[0].as_posix()).shape[:2]
-    ic("Assembling anonymized video")
-    ic(f"Frame width: {width}, height: {height}")
-    ic(f"FPS: {fps}")
-
-    command = [
-        "ffmpeg",
-        "-y",
-        "-pattern_type",
-        "glob",
-        "-f",
-        "image2",
-        "-framerate",
-        str(fps),
-        "-i",
-        f"{generated_frame_paths[0].parent.as_posix()}/frame_[0-9]*.jpg",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-vf",
-        f"scale={width}:{height}",
-        anonymized_video_path.as_posix(),
-    ]
-
-    subprocess.run(command, check=True)
-    ic(f"Anonymized video saved at {anonymized_video_path}")
-    return anonymized_video_path
 
 def _censor_outside_frames(
     video: "VideoFile",
@@ -260,8 +225,5 @@ __all__ = [
     "WEIGHTS_DIR",
     "prepare_bulk_frames",
     "_create_anonymized_frame_files",
-    "_assemble_anonymized_video",
-    "transcode_videofile",
-    "transcode_videofile_if_required",
     "get_uuid_filename",
 ]

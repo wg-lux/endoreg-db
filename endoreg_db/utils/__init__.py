@@ -43,8 +43,13 @@ from .pydantic_models import DbConfig
 # validate_endo_roi
 from .validate_endo_roi import validate_endo_roi
 
-# video
-from .video import transcode_videofile, transcode_videofile_if_required
+# ffmpeg_wrapper
+from .ffmpeg_wrapper import (
+    assemble_video_from_frames,  # Updated name
+    get_stream_info,
+    transcode_video,
+    transcode_videofile_if_required,
+)
 
 
 # --- Exports ---
@@ -72,8 +77,10 @@ __all__ = [
     "random_day_by_month_year",
     "random_day_by_year",
     "rename_file_uuid",
-    "transcode_videofile",
-    "transcode_videofile_if_required",
     "validate_endo_roi",
+    "assemble_video_from_frames",  # Updated name
+    "get_stream_info",
+    "transcode_video",
+    "transcode_videofile_if_required",
 ]
 

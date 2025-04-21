@@ -1,7 +1,7 @@
 import logging
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+from icecream import ic
 
 from ...utils import data_paths, ANONYM_VIDEO_DIR # Import necessary paths
 

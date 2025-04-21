@@ -4,8 +4,6 @@ from icecream import ic
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
-    from ...metadata import VideoMeta, SensitiveMeta
-    from ...state import VideoState
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +20,6 @@ def _save_video_file(video: "VideoFile", *args, **kwargs):
         # Assuming _set_frame_dir is imported or available in the VideoFile class context
         video.set_frame_dir() # Call the method on the instance
 
-    raw_video_path = video.raw_file.path if video.has_raw else None
     raw_video_path_obj = video.get_raw_file_path() # Use helper if defined
 
     # Initialize VideoMeta if missing and possible
