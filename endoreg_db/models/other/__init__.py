@@ -9,6 +9,11 @@ from .distribution import (
     MultipleCategoricalValueDistribution,
     DateValueDistribution,
 )
+from .emission import EmissionFactor
+
+from .gender import Gender
+from .information_source import InformationSource
+from .unit import Unit
 
 __all__ = [
     'Material',
@@ -20,4 +25,8 @@ __all__ = [
     'SingleCategoricalValueDistribution',
     'MultipleCategoricalValueDistribution',
     'DateValueDistribution',
+    "Gender",
+    "InformationSource",
+    "Unit",
+    "EmissionFactor",
 ]

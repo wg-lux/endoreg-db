@@ -1,71 +1,88 @@
 """Module for utility classes and functions."""
 
+# --- Imports from submodules ---
+
+# dataloader
 from .dataloader import load_model_data_from_yaml
-from .parse_and_generate_yaml import collect_center_names
-from .validate_endo_roi import validate_endo_roi
-from .pydantic_models import DbConfig
-from .dates import random_day_by_month_year, random_day_by_year, ensure_aware_datetime
+
+# dates
+from .dates import ensure_aware_datetime, random_day_by_month_year, random_day_by_year
+
+# env
+from .env import DEBUG, DJANGO_SETTINGS_MODULE, get_env_var
+
+# file_operations
+from .file_operations import copy_with_progress, get_uuid_filename, rename_file_uuid
+
+# hashs
 from .hashs import (
-    get_hash_string,
-    get_pdf_hash,
+    DJANGO_NAME_SALT,
     get_examiner_hash,
-    get_video_hash,
+    get_hash_string,
     get_patient_examination_hash,
-    DJANGO_NAME_SALT
+    get_pdf_hash,
+    get_video_hash,
 )
+
+# names
 from .names import (
-    create_mock_patient_name,
     create_mock_examiner_name,
+    create_mock_patient_name,
     guess_name_gender,
 )
 
+# parse_and_generate_yaml
+from .parse_and_generate_yaml import collect_center_names
+
+# paths
 from .paths import data_paths
 
-from .env import (
-    get_env_var,
-    DEBUG,
-    DJANGO_SETTINGS_MODULE
+# pydantic_models
+from .pydantic_models import DbConfig
+
+# validate_endo_roi
+from .validate_endo_roi import validate_endo_roi
+
+# ffmpeg_wrapper
+from .ffmpeg_wrapper import (
+    assemble_video_from_frames,  # Updated name
+    get_stream_info,
+    transcode_video,
+    transcode_videofile_if_required,
+    extract_frames,
 )
 
-__all__ = [
-    "load_model_data_from_yaml",
-    "collect_center_names",
-    "validate_endo_roi",
-    "get_examiner_hash",
-    "DbConfig",
-    "random_day_by_month_year",
-    "random_day_by_year",
-    "ensure_aware_datetime",
-    "get_hash_string",
-    "create_mock_examiner_name",
-    "create_mock_patient_name",
-    "guess_name_gender",
-    "get_pdf_hash",
-    "get_video_hash",
-    "get_patient_examination_hash",
-    "DJANGO_NAME_SALT",
-    "data_paths",
-    "get_env_var",
-    "DEBUG",
-    "DJANGO_SETTINGS_MODULE"
-]
+
+# --- Exports ---
 
 __all__ = [
-    "load_model_data_from_yaml",
     "collect_center_names",
-    "validate_endo_roi",
-    "get_examiner_hash",
-    "DbConfig",
-    "random_day_by_month_year",
-    "random_day_by_year",
-    "ensure_aware_datetime",
-    "get_hash_string",
+    "copy_with_progress",
     "create_mock_examiner_name",
     "create_mock_patient_name",
-    "guess_name_gender",
-    "get_pdf_hash",
-    "get_video_hash",
-    "get_patient_examination_hash",
+    "data_paths",
+    "DbConfig",
+    "DEBUG",
     "DJANGO_NAME_SALT",
-    "data_paths"
+    "DJANGO_SETTINGS_MODULE",
+    "ensure_aware_datetime",
+    "get_env_var",
+    "get_examiner_hash",
+    "get_hash_string",
+    "get_patient_examination_hash",
+    "get_pdf_hash",
+    "get_uuid_filename",
+    "get_video_hash",
+    "guess_name_gender",
+    "load_model_data_from_yaml",
+    "random_day_by_month_year",
+    "random_day_by_year",
+    "rename_file_uuid",
+    "validate_endo_roi",
+    "assemble_video_from_frames",  # Updated name
+    "get_stream_info",
+    "transcode_video",
+    "transcode_videofile_if_required",  # Added
+    "extract_frames",  # Added
 ]
+

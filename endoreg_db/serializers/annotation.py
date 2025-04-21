@@ -1,11 +1,13 @@
 from rest_framework import serializers
-from endoreg_db.models import  BinaryClassificationAnnotationTask, ImageClassificationAnnotation
+from endoreg_db.models import  (
+    ImageClassificationAnnotation,
+    VideoSegmentationAnnotation
+)
 
 
-
-class BinaryClassificationAnnotationTaskSerializer(serializers.ModelSerializer):
+class VideoSegmentationAnnotationSerializer(serializers.ModelSerializer):
     class Meta:
-        model = BinaryClassificationAnnotationTask
+        model = VideoSegmentationAnnotation
         fields = '__all__'
 
 class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):

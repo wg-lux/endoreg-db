@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import FileResponse, Http404
-from ..models import RawVideoFile, Label
+from ..models import VideoFile, Label
 from ..serializers.video_segmentation import VideoFileSerializer,VideoListSerializer,LabelSerializer
 import mimetypes
 import os
@@ -32,7 +32,7 @@ class VideoView(APIView):
         Used to populate the video selection dropdown in Vue.js.
         """
         
-        videos = RawVideoFile.objects.all()
+        videos = VideoFile.objects.all()
         labels = Label.objects.all()  # Fetch all labels
 
         if not videos.exists():
@@ -53,7 +53,7 @@ class VideoView(APIView):
         Otherwise, streams the video file.
         """
         try:
-            video_entry = RawVideoFile.objects.get(id=video_id)
+            video_entry = VideoFile.objects.get(id=video_id)
             serializer = VideoFileSerializer(video_entry, context={'request': request})
 
             accept_header = request.headers.get('Accept', '')
@@ -63,7 +63,7 @@ class VideoView(APIView):
 
             return self.serve_video_file(video_entry)
 
-        except RawVideoFile.DoesNotExist:
+        except VideoFile.DoesNotExist:
             return Response({"error": "Video not found in the database."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -94,8 +94,6 @@ class VideoView(APIView):
 
 
 
-from ..serializers.video_segmentation import VideoFileSerializer
-
 class VideoLabelView(APIView):
     """
     API to fetch time segments (start & end times in seconds) for a specific label.
@@ -108,7 +106,7 @@ class VideoLabelView(APIView):
         - Frame-wise predictions within those segments.
         """
         try:
-            video_entry = RawVideoFile.objects.get(id=video_id)
+            video_entry = VideoFile.objects.get(id=video_id)
             
             serializer = VideoFileSerializer(video_entry, context={'request': request})
             label_data = serializer.get_label_time_segments(video_entry)
@@ -123,7 +121,7 @@ class VideoLabelView(APIView):
                 "frame_predictions": label_data[label_name]["frame_predictions"]
             }, status=status.HTTP_200_OK)
 
-        except RawVideoFile.DoesNotExist:
+        except VideoFile.DoesNotExist:
             return Response({"error": "Video not found"}, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as e:

@@ -1,81 +1,72 @@
-# Utility
-from .unit import Unit
-from .information_source import InformationSource
-from .emission import EmissionFactor
-
-# Center
-from .center import (
+####### Administration ########
+from .administration import (
+    AiModel,
+    ActiveModel,
+    ModelType,
+    Case,
+    CaseTemplate,
+    CaseTemplateRule,
+    CaseTemplateRuleType,
+    CaseTemplateRuleValue,
+    CaseTemplateRuleValueType,
+    CaseTemplateType,
     Center,
     CenterProduct,
     CenterResource,
     CenterWaste,
-)
-
-# Persons
-from .persons import (
-    Gender,
     Person,
     Patient,
-    PatientForm,
-    PatientEvent,
-    PatientDisease,
-    PatientLabSample,
-    PatientLabSampleType,
-    PatientLabValue,
-    PatientMedication,
-    PatientMedicationSchedule,
-    PatientExaminationIndication,
     Examiner,
-    ExaminerSerializer,
     PortalUserInfo,
-    Profession,
     FirstName,
     LastName,
+    Profession,
+    Product,
+    ProductMaterial,
+    ProductGroup,
+    ReferenceProduct,
+    ProductWeight,
 )
 
-# Network
-from .network import (
-    NetworkDevice,
-    NetworkDeviceType,
-    AglService,
+####### Label ########
+from .label import (
+    Label,
+    LabelSet,
+    LabelType,
+    VideoSegmentationLabel,
+    VideoSegmentationLabelSet,
+    LabelVideoSegment,
+    ImageClassificationAnnotation,
+    VideoSegmentationAnnotation,
 )
 
-# Logging
-from .logging import (
-    AbstractLogEntry,
-    NetworkDeviceLogEntry,
-    LogType,
-    AglServiceLogEntry,
+####### Media ########
+from .media import (
+    VideoFile,
+    Frame,
+    RawPdfFile,
+    DocumentType,
+    AnonymExaminationReport,
+    ReportReaderConfig,
+    ReportReaderFlag,
 )
 
-# Patient
-from .patient import (
-    PatientExamination,
-    PatientFinding,
-    PatientFindingLocation,
-    PatientFindingMorphology,
-    PatientFindingIntervention,
-)
-
-# Organ
-from .organ import Organ
-
-# LX
-from .lx import (
-    LxClientType,
-    LxClientTag,
-    LxClient,
-    LxIdentity,
-    LxIdentityType,
-    LxPermission,
-    LxUser,
-)
-
-# Contraindication
-from .contraindication import Contraindication
-
-# Finding
-from .finding import (
+######## Medical ########
+from .medical import (
+    Disease,
+    DiseaseClassification,
+    DiseaseClassificationChoice,
+    Event,
+    EventClassification,
+    EventClassificationChoice,
+    Contraindication,
+    Examination,
+    ExaminationType,
+    ExaminationIndication,
+    ExaminationIndicationClassificationChoice,
+    ExaminationIndicationClassification,
+    ExaminationTime,
+    ExaminationTimeType,
     Finding,
     FindingType,
     FindingLocationClassification,
@@ -85,110 +76,45 @@ from .finding import (
     FindingMorphologyClassification,
     FindingIntervention,
     FindingInterventionType,
-)
-
-# Case template
-from .case_template import (
-    CaseTemplate,
-    CaseTemplateType,
-    CaseTemplateRule,
-    CaseTemplateRuleType,
-    CaseTemplateRuleValue,
-    CaseTemplateRuleValueType,
-)
-
-from .risk import (
+    PatientDisease,
+    PatientEvent,
+    PatientExaminationIndication,
+    PatientExamination,
+    PatientFinding,
+    PatientFindingLocation,
+    PatientFindingMorphology,
+    PatientFindingIntervention,
+    PatientLabSample,
+    PatientLabSampleType,
+    PatientLabValue,
+    PatientMedication,
+    PatientMedicationSchedule,
+    Organ,
     Risk,
     RiskType,
-)
-
-from .requirement import (
-    Requirement,
-    RequirementSet,
-    RequirementSetType,
-    RequirementOperator,
-    RequirementType,
-)
-
-# Rules
-from .rules import (
-    Rule,
-    RuleType,
-    Ruleset,
-    RuleApplicator,
-)
-
-# Disease
-from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
-
-# Event
-from .event import Event, EventClassification, EventClassificationChoice
-
-# Laboratory
-from .laboratory import LabValue
-
-# Medication
-from .medication import (
     Medication,
     MedicationSchedule,
     MedicationIntakeTime,
-    MedicationIndication,
     MedicationIndicationType,
+    MedicationIndication,
+    Endoscope,
+    EndoscopeType,
+    EndoscopyProcessor,
+    LabValue,
 )
 
-# Examination
-from .examination import (
-    Examination,
-    ExaminationType,
-    ExaminationTime,
-    ExaminationTimeType,
-    ExaminationIndication,
-    ExaminationIndicationClassification,
-    ExaminationIndicationClassificationChoice,
-)
-
-# Report Reader
-from .report_reader import (
-    ReportReaderConfig,
-    ReportReaderFlag,
-)
-
-# Data file
-from .data_file import (
-    Frame,
-    ReportFile,
-    Video,
-    LabelVideoSegment,
-    LabelRawVideoSegment,
+####### Metadata ########
+from .metadata import (
     SensitiveMeta,
     PdfMeta,
     PdfType,
     VideoMeta,
-    RawFrame,
     FFMpegMeta,
     VideoImportMeta,
-    RawPdfFile,
-    RawVideoFile,
+    ModelMeta,
+    VideoPredictionMeta,
 )
 
-# Label
-from .label import Label, LabelType, LabelSet
-
-# Annotation
-from .annotation import (
-    ImageClassificationAnnotation,
-    BinaryClassificationAnnotationTask,
-    AnonymousImageAnnotation,
-    DroppedName,
-    AnonymizedImageLabel,
-    AnonymizedFile,
-    UploadedFile,
-    VideoSegmentationLabel,
-    VideoSegmentationAnnotation,
-    VideoSegmentationLabelSet,
-)
-
-# Other
 from .other import (
     Material,
     Resource,
@@ -199,101 +125,113 @@ from .other import (
     SingleCategoricalValueDistribution,
     MultipleCategoricalValueDistribution,
     DateValueDistribution,
+    Gender,
+    InformationSource,
+    Unit,
+    EmissionFactor,
 )
 
-# Product
-from .product import (
-    Product,
-    ProductMaterial,
-    ProductGroup,
-    ReferenceProduct,
-    ProductWeight,
+from .requirement import (
+    Requirement,
+    RequirementType,
+    RequirementOperator,
+    RequirementSet,
+    RequirementSetType,
+)
+from .rule import (
+    RuleType,
+    Rule,
+    Ruleset,
+    RuleAttributeDType,
+    RuleApplicator,
 )
 
-# AI models
-from .ai_model import (
-    ModelMeta,
-    ModelType,
-    ActiveModel,
-    AiModel,
+from .state import (
+    SensitiveMetaState,
+    VideoState,
+    LabelVideoSegmentState,
 )
-
-# Quiz
-from .quiz import (
-    QuizAnswer,
-    QuizAnswerType,
-    QuizQuestion,
-    QuizQuestionType,
-)
-
-# Prediction
-from .prediction import (
-    ImageClassificationPrediction,
-    VideoPredictionMeta,
-    RawVideoPredictionMeta,
-)
-
-# Hardware
-from .hardware import (
-    EndoscopyProcessor,
-    Endoscope,
-    EndoscopeType,
-)
-
-# Questionnaires
-from .questionnaires import TtoQuestionnaire
 
 __all__ = [
-    "ReportReaderConfig",
-    "ReportReaderFlag",
-    "Unit",
-    "InformationSource",
-    "EmissionFactor",
+
+    ####### Administration ########
+        # AI
+    "AiModel",
+    "ActiveModel",
+    "ModelType",
+
+    # Case
+    "Case",
+    "CaseTemplate",
+    "CaseTemplateRule",
+    "CaseTemplateRuleType",
+    "CaseTemplateRuleValue",
+    "CaseTemplateRuleValueType",
+    "CaseTemplateType",
+
+    # Center
     "Center",
     "CenterProduct",
     "CenterResource",
     "CenterWaste",
-    "RawVideoPredictionMeta",
-    "Gender",
+
+    # Person
     "Person",
     "Patient",
-    "PatientForm",
-    "PatientEvent",
-    "PatientDisease",
-    "PatientLabSample",
-    "PatientLabSampleType",
-    "PatientLabValue",
-    "PatientMedication",
-    "PatientMedicationSchedule",
-    "PatientExaminationIndication",
     "Examiner",
-    "ExaminerSerializer",
     "PortalUserInfo",
-    "RawFrame",
-    "Profession",
     "FirstName",
     "LastName",
-    "NetworkDevice",
-    "NetworkDeviceType",
-    "AglService",
-    "AbstractLogEntry",
-    "NetworkDeviceLogEntry",
-    "LogType",
-    "AglServiceLogEntry",
-    "PatientExamination",
-    "PatientFinding",
-    "PatientFindingLocation",
-    "PatientFindingMorphology",
-    "PatientFindingIntervention",
-    "Organ",
-    "LxClientType",
-    "LxClientTag",
-    "LxClient",
-    "LxIdentity",
-    "LxIdentityType",
-    "LxPermission",
-    "LxUser",
+    "Profession",
+
+    # Product
+    'Product',
+    'ProductMaterial',
+    'ProductGroup',
+    'ReferenceProduct',
+    'ProductWeight',
+    
+    ####### Label ########
+    "Label",
+    "LabelSet",
+    "LabelType",
+    "VideoSegmentationLabel",
+    "VideoSegmentationLabelSet",
+    "LabelVideoSegment",
+    "ImageClassificationAnnotation",
+    "VideoSegmentationAnnotation",
+
+
+    ####### Media ########
+    "VideoFile",
+    "Frame",
+    "RawPdfFile",
+    "DocumentType",
+    "AnonymExaminationReport",
+    'ReportReaderConfig',
+    'ReportReaderFlag',
+
+
+    ######## Medical ########
+    # Disease
+    "Disease",
+    "DiseaseClassification",
+    "DiseaseClassificationChoice",
+    # Event
+    "Event",
+    "EventClassification",
+    "EventClassificationChoice",
+    # Contraindication
     "Contraindication",
+    # Examination
+    "Examination",
+    "ExaminationType",
+    "ExaminationIndication",
+    "ExaminationIndicationClassificationChoice",
+    "ExaminationIndicationClassification",
+    "ExaminationTime",
+    "ExaminationTimeType",
+    # Finding
     "Finding",
     "FindingType",
     "FindingLocationClassification",
@@ -303,94 +241,87 @@ __all__ = [
     "FindingMorphologyClassification",
     "FindingIntervention",
     "FindingInterventionType",
-    "CaseTemplate",
-    "CaseTemplateType",
-    "CaseTemplateRule",
-    "CaseTemplateRuleType",
-    "CaseTemplateRuleValue",
-    "CaseTemplateRuleValueType",
-    "Rule",
-    "RuleType",
-    "Ruleset",
-    "RuleApplicator",
-    "Disease",
-    "DiseaseClassification",
-    "DiseaseClassificationChoice",
-    "Event",
-    "EventClassification",
-    "EventClassificationChoice",
-    "LabValue",
+    # Patient
+    ## Disease
+    "PatientDisease",
+    ## Event
+    "PatientEvent",
+    ## Examination
+    "PatientExaminationIndication",
+    "PatientExamination",
+    ## Finding
+    "PatientFinding",
+    "PatientFindingLocation",
+    "PatientFindingMorphology",
+    "PatientFindingIntervention",
+    ## Laboratory
+    "PatientLabSample",
+    "PatientLabSampleType",
+    "PatientLabValue",
+    ## Medication
+    "PatientMedication",
+    "PatientMedicationSchedule",
+    # Organ
+    "Organ",
+    # Risk
+    "Risk",
+    "RiskType",
+    # Medication
     "Medication",
     "MedicationSchedule",
     "MedicationIntakeTime",
-    "MedicationIndication",
     "MedicationIndicationType",
-    "Examination",
-    "ExaminationType",
-    "ExaminationTime",
-    "ExaminationTimeType",
-    "ExaminationIndication",
-    "ExaminationIndicationClassification",
-    "ExaminationIndicationClassificationChoice",
-    "Label",
-    "LabelType",
-    "LabelSet",
-    "LabelRawVideoSegment",
-    "ImageClassificationAnnotation",
-    "BinaryClassificationAnnotationTask",
-    "AnonymousImageAnnotation",
-    "DroppedName",
-    "AnonymizedImageLabel",
-    "AnonymizedFile",
-    "UploadedFile",
-    "VideoSegmentationLabel",
-    "VideoSegmentationAnnotation",
-    "Material",
-    "Resource",
-    "TransportRoute",
-    "Waste",
-    "BaseValueDistribution",
-    "NumericValueDistribution",
-    "SingleCategoricalValueDistribution",
-    "MultipleCategoricalValueDistribution",
-    "DateValueDistribution",
-    "Product",
-    "ProductMaterial",
-    "ProductGroup",
-    "ReferenceProduct",
-    "ProductWeight",
-    "ModelMeta",
-    "ModelType",
-    "ActiveModel",
-    "AiModel",
-    "QuizAnswer",
-    "QuizAnswerType",
-    "QuizQuestion",
-    "QuizQuestionType",
-    "ImageClassificationPrediction",
-    "VideoPredictionMeta",
-    "EndoscopyProcessor",
+    "MedicationIndication",
+
+    # Hardware
     "Endoscope",
     "EndoscopeType",
-    "TtoQuestionnaire",
-    "Frame",
-    "ReportFile",
-    "Video",
-    "LabelVideoSegment",
+    "EndoscopyProcessor",
+
+    # Laboratory
+    "LabValue",
+
+    ####### Metadata ########
     "SensitiveMeta",
     "PdfMeta",
     "PdfType",
     "VideoMeta",
     "FFMpegMeta",
     "VideoImportMeta",
-    "RawPdfFile",
-    "RawVideoFile",
-    "VideoSegmentationLabelSet",
+    "ModelMeta",
+    "VideoPredictionMeta",
+
+    ####### Other #######
+    'Material',
+    'Resource',
+    'TransportRoute',
+    'Waste',
+    'BaseValueDistribution',
+    'NumericValueDistribution',
+    'SingleCategoricalValueDistribution',
+    'MultipleCategoricalValueDistribution',
+    'DateValueDistribution',
+    "Gender",
+    "InformationSource",
+    "Unit",
+    "EmissionFactor",
+
+    ###### Requirement ######
+    "Requirement",
+    "RequirementType",
+    "RequirementOperator",
     "RequirementSet",
     "RequirementSetType",
-    "Requirement",
-    "RequirementOperator",
-    "RequirementType",
-    "Risk",
-    "RiskType",
+
+    ######## Rule #######
+    "RuleType",
+    "Rule",
+    "Ruleset",
+    "RuleAttributeDType",
+    "RuleApplicator",
+
+    ####### State ########
+    "SensitiveMetaState",
+    "VideoState",
+    "LabelVideoSegmentState",
 ]

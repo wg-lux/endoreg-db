@@ -2,6 +2,6 @@
   fields:
     name: "image_multilabel_classification_colonoscopy_default"
     description: "Image multilabel classification model"
-    model_type: "image"
+    model_type: "multilabel_classification"
     model_subtype: "multilabel"
     video_segmentation_labelset: "colonoscopy_video_segmentation_raw"

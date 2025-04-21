@@ -1,8 +1,9 @@
+from urllib import response
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from ..models import RawVideoFile
-from ..serializers.Frames_NICE_and_PARIS_classifications import ForNiceClassificationSerializer
+from ..models import VideoFile
+# from ..serializers.Frames_NICE_and_PARIS_classifications import ForNiceClassificationSerializer
 import logging
 
 
@@ -13,7 +14,7 @@ class ForNiceClassificationView(APIView):
         print(" [DEBUG] NICE Classification View hit")
         
         try:
-            videos = RawVideoFile.objects.all()
+            videos = VideoFile.objects.all()
             print(f"[DEBUG] Total videos found in RawVideoFile: {videos.count()}")
             for v in videos:
                 print(f"[DEBUG] Video ID: {v.id}, Frame Dir: {getattr(v, 'frame_dir', None)}, "
@@ -46,8 +47,9 @@ class ForNiceClassificationView(APIView):
             #response_data = serializer.data
 
             print("serializers ::: -- START")
-            serializer = ForNiceClassificationSerializer()
-            response_data = serializer.to_representation(filtered_videos)
+            # serializer = ForNiceClassificationSerializer()
+            # response_data = serializer.to_representation(filtered_videos)
+            response_data = ""
             print("serializers response data::: --", response_data)
 
           
@@ -65,14 +67,14 @@ class ForNiceClassificationView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-from ..serializers.Frames_NICE_and_PARIS_classifications import ForParisClassificationSerializer
+# from ..serializers.Frames_NICE_and_PARIS_classifications import ForParisClassificationSerializer
 
 class ForParisClassificationView(APIView):
     def get(self, request):
         print(" [DEBUG] PARIS Classification View hit")
 
         try:
-            videos = RawVideoFile.objects.all()
+            videos = VideoFile.objects.all()
             filtered_videos = [
                 video for video in videos
                 if getattr(video, "readable_predictions", None)
@@ -82,8 +84,8 @@ class ForParisClassificationView(APIView):
             if not filtered_videos:
                 return Response({"error": "No valid videos found."}, status=status.HTTP_404_NOT_FOUND)
 
-            serializer = ForParisClassificationSerializer()
-            response_data = serializer.to_representation(filtered_videos)
+            # serializer = ForParisClassificationSerializer()
+            response_data = "" # serializer.to_representation(filtered_videos)
 
             if not response_data:
                 return Response({"error": "No valid PARIS segments found."}, status=status.HTTP_404_NOT_FOUND)

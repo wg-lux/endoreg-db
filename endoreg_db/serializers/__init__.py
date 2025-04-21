@@ -6,5 +6,5 @@ from .frame import *
 from .hardware import *
 from .label import *
 from .patient import *
-from .report_file import *
+from .documents import *
 from .video import *
