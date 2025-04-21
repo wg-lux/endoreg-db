@@ -89,7 +89,9 @@ from .medical import (
     PatientLabValue,
     PatientMedication,
     PatientMedicationSchedule,
+    Organ,
     Risk,
+    RiskType,
     Medication,
     MedicationSchedule,
     MedicationIntakeTime,
@@ -259,8 +261,11 @@ __all__ = [
     ## Medication
     "PatientMedication",
     "PatientMedicationSchedule",
+    # Organ
+    "Organ",
     # Risk
     "Risk",
+    "RiskType",
     # Medication
     "Medication",
     "MedicationSchedule",

@@ -42,6 +42,7 @@ from .patient import (
 
 from .risk import (
     Risk,
+    RiskType,
 )
 
 from .medication import (
@@ -62,6 +63,11 @@ from .hardware import (
 from .laboratory import (
     LabValue,
 )
+
+from .organ import (
+    Organ,
+)
+
 
 __all__ = [
     # Disease
@@ -118,8 +124,12 @@ __all__ = [
     "PatientMedication",
     "PatientMedicationSchedule",
 
+    # Organ
+    "Organ",
+
     # Risk
     "Risk",
+    "RiskType",
 
     # Medication
     "Medication",
