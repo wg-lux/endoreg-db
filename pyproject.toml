@@ -41,6 +41,7 @@ dependencies = [
     "pillow>=11.0.0",
     "pydantic>=2.10.6",
     "pytesseract>=0.3.13",
+    "pytest>=8.3.5",
     "python-ffmpeg>=2.0.12",
     "pytorch-lightning>=2.4.0",
     "pyyaml>=6.0.2",

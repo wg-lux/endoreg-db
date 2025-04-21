@@ -47,6 +47,7 @@ from .media import (
     RawPdfFile,
     DocumentType,
     AnonymExaminationReport,
+    AnonymHistologyReport,
     ReportReaderConfig,
     ReportReaderFlag,
 )
@@ -208,6 +209,7 @@ __all__ = [
     "RawPdfFile",
     "DocumentType",
     "AnonymExaminationReport",
+    "AnonymHistologyReport",
     'ReportReaderConfig',
     'ReportReaderFlag',
 

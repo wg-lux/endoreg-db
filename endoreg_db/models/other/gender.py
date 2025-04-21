@@ -1,4 +1,8 @@
 from django.db import models
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..administration import Patient
 
 class GenderManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -13,6 +17,9 @@ class Gender(models.Model):
     name_en = models.CharField(max_length=255, null=True)
     abbreviation = models.CharField(max_length=255, null=True)
     description = models.TextField(blank=True, null=True)
+
+    if TYPE_CHECKING:
+        patients: models.QuerySet["Patient"]
 
     def natural_key(self):
         return (self.name,)

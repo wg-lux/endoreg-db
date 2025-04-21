@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 from icecream import ic
 
+import pytest 
+pytestmark = pytest.mark.django_db
+
 ic(f"LOADING SETTINGS: {__file__}")
 
 DEBUG=True

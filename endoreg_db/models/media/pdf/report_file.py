@@ -1,6 +1,17 @@
 from ...utils import FILE_STORAGE, DOCUMENT_DIR
 from django.db import models
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from ...administration import (
+        Center,
+        Patient,
+        Examiner,
+    )
+    from ...medical import (
+        PatientExamination,
+    )
+    from ...metadata import SensitiveMeta
 
 class DocumentTypeManager(models.Manager):
     """
@@ -59,6 +70,10 @@ class AbstractDocument(models.Model):
         null=True,
     )
 
+    if TYPE_CHECKING:
+        center: "Center"
+        type: "DocumentType"
+
     class Meta:
         abstract = True
 
@@ -91,6 +106,14 @@ class AbstractExaminationReport(AbstractDocument):
         null=True,
         blank=True
     )
+
+    if TYPE_CHECKING:
+        center: "Center"
+        type: "DocumentType"
+        patient: "Patient"
+        patient_examination: "PatientExamination"
+        sensitive_meta: "SensitiveMeta"
+
 
     class Meta:
         abstract = True
@@ -132,3 +155,12 @@ class AnonymExaminationReport(AbstractExaminationReport):
         # if examination_time_str:
         #     # TODO: get django TimeField compatible time from string (e.g. "12:00")
         #     self.time = time.fromisoformat(examination_time_str)
+
+class AnonymHistologyReport(AbstractExaminationReport):
+    """
+    Represents a histology report.
+    """
+
+
+    def get_or_create_examiner(self, examiner_first_name, examiner_last_name):
+        raise NotImplementedError("Subclasses must implement this method.")

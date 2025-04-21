@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from ....other import Gender
     from ....medical.patient import PatientExamination
     from ....administration import Center
-    from ....media import RawPdfFile, AnonymExaminationReport
+    from ....media import RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
 
 
 class Patient(Person):
@@ -48,6 +48,8 @@ class Patient(Person):
         gender: "Gender"
         center: "Center"
         patient_examinations: models.QuerySet["PatientExamination"]
+        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
+        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"

@@ -1,16 +1,14 @@
 from django.db import models
 from typing import TYPE_CHECKING
 
-from endoreg_db.models.administration.person.names.first_name import FirstName
-from endoreg_db.models.administration.person.names.last_name import LastName
-from endoreg_db.models.medical.hardware.endoscope import Endoscope
-
 if TYPE_CHECKING:
-    from ...medical.hardware import Endoscope, EndoscopyProcessor
-    from ..person import FirstName, LastName
-    from .center_product import CenterProduct
-    from .center_resource import CenterResource
-    from .center_waste import CenterWaste
+    from ...medical import Endoscope, EndoscopyProcessor
+    from ...administration import (
+        FirstName, LastName,
+        CenterProduct,
+        CenterWaste, CenterResource
+    )
+    from ...media import AnonymExaminationReport, AnonymHistologyReport
 
 class CenterManager(models.Manager):
     def get_by_natural_key(self, name) -> "Center":
@@ -39,7 +37,10 @@ class Center(models.Model):
         endoscopes: models.QuerySet["Endoscope"]
         first_names: models.QuerySet["FirstName"]
         last_names: models.QuerySet["LastName"]
+        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
+        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
         objects: CenterManager
+        
 
     @classmethod
     def get_by_name(cls, name):
@@ -60,4 +61,4 @@ class Center(models.Model):
     def get_endoscopes(self):
         return self.endoscopes.all()
 
-    
+

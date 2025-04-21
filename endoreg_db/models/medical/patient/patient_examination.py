@@ -1,15 +1,14 @@
 from django.db import models
 from typing import TYPE_CHECKING, List, Optional
-from endoreg_db.models.medical.examination.examination_indication import ExaminationIndicationClassificationChoice
-from endoreg_db.models.medical.patient.patient_examination_indication import PatientExaminationIndication
-from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+
 if TYPE_CHECKING: 
     from ...administration.person.patient import Patient
     from ..finding import Finding
     from .patient_finding import PatientFinding
     from ..examination import Examination
-    from ...media import VideoFile, RawPdfFile
+    from ...media import VideoFile, RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
     from .patient_examination_indication import PatientExaminationIndication
+    from ..examination import ExaminationIndicationClassificationChoice
 
 
 
@@ -38,6 +37,8 @@ class PatientExamination(models.Model):
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]
+        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
+        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
 
     # report_files
     class Meta:
