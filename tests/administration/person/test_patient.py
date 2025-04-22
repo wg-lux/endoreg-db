@@ -4,6 +4,7 @@ from endoreg_db.models import (
     ExaminationIndication,
     PatientExaminationIndication,
     Center, # Import Center
+    PatientLabSample,
 )
 from datetime import date
 from logging import getLogger
@@ -16,10 +17,13 @@ logger = getLogger(__name__)
 logger.debug("Starting test for Patient model")
 
 from ...helpers.data_loader import (
+    load_unit_data,
+    load_distribution_data,
     load_center_data,
     load_examination_data,
     load_examination_indication_data,
-    load_gender_data
+    load_gender_data,
+    load_lab_value_data
 )
 
 from ...helpers.default_objects import (
@@ -78,10 +82,7 @@ class PatientModelWithExaminationTest(TestCase):
             indication=examination_indication,
         )
 
-        self.sample_pdf = get_default_egd_pdf()
-        self.sample_examination_3 = self.patient.create_examination_by_pdf(
-            self.sample_pdf
-        )
+        
 
     def test_examination_creation(self):
         """Test if the examination is created correctly."""
@@ -104,17 +105,19 @@ class PatientModelWithExaminationTest(TestCase):
     def test_examination_by_pdf_creation(self):
         """Test if the examination by pdf is created correctly."""
 
-        self.assertIsInstance(self.sample_examination_3, PatientExamination)
+        # create a pdf file
+        sample_pdf = get_default_egd_pdf()
+        sample_examination_3 = self.patient.create_examination_by_pdf(
+            sample_pdf
+        )
+
+        self.assertIsInstance(sample_examination_3, PatientExamination)
 
         # make sure the pdf file exists
-        files = self.sample_examination_3.raw_pdf_files.all()
+        files = sample_examination_3.raw_pdf_files.all()
         self.assertEqual(len(files), 1)
         file_exists = Path(files[0].file.path).exists()
         self.assertEqual(file_exists, True)
-
-        # self.assertIsInstance(self.patient_examination_2, PatientExamination)
-        # self.assertEqual(self.patient_examination_2.examination, self.sample_examination_object)
-        # self.assertEqual(self.patient_examination_2.patient, self.patient)
 
     def test_get_random_age(self):
         """Test if the get_random_age method returns a valid age."""
@@ -178,7 +181,21 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertEqual(patient_2, patient)
         self.assertEqual(created_2, False)
         
+    def test_create_lab_sample(self):
+        """Test if the create_lab_sample method creates a lab sample with a random name and dob."""
+        load_unit_data()
+        load_distribution_data()
+        load_lab_value_data()
+
+        # create a lab sample
+        lab_sample = self.patient.create_lab_sample(
+            sample_type="generic",
+        )
+        self.assertIsInstance(lab_sample, PatientLabSample)
+        self.assertEqual(lab_sample.sample_type.name, "generic")
+        self.assertEqual(lab_sample.patient, self.patient)
+    
     # After each test, we need to make sure that we delete the RawPdfObject
-    def tearDown(self):
-        self.sample_pdf.delete()
+    # def tearDown(self):
+    #     self.sample_pdf.delete()
 

@@ -8,6 +8,7 @@ from datetime import datetime
 from icecream import ic
 from typing import TYPE_CHECKING
 from logging import getLogger
+from django.utils import timezone  # Add this import
 
 logger = getLogger(__name__)
 
@@ -342,14 +343,17 @@ class Patient(Person):
         :return: The age of the patient.
         """
         # calculate correct age based on current date including day and month
-        current_date = datetime.now()
+        current_date = timezone.now().date()  # Use timezone.now() here too for consistency
         dob = self.dob
-        age = (
-            current_date.year
-            - dob.year
-            - ((current_date.month, current_date.day) < (dob.month, dob.day))
-        )
-        return age
+        # Ensure dob is not None before calculation
+        if dob:
+            age = (
+                current_date.year
+                - dob.year
+                - ((current_date.month, current_date.day) < (dob.month, dob.day))
+            )
+            return age
+        return None  # Or handle the case where dob is None appropriately
 
     def create_lab_sample(self, sample_type="generic", date=None, save=True):
         """
@@ -357,19 +361,23 @@ class Patient(Person):
 
         :param sample_type: The sample type. Should be either string of the sample types
             name or the sample type object. If not set, the default sample type ("generic") is used.
-        :param date: The date of the lab sample.
+        :param date: The date of the lab sample. Must be timezone-aware if provided.
         :return: The created lab sample.
         """
         from ....medical import PatientLabSample, PatientLabSampleType
 
         if date is None:
-            date = datetime.now()
+            date = timezone.now()  # Use timezone.now() instead of datetime.now()
+        # Ensure the provided date is timezone-aware if it's not None
+        elif timezone.is_naive(date):
+            logger.warning(f"Received naive datetime {date} for PatientLabSample. Making it timezone-aware using current timezone.")
+            date = timezone.make_aware(date, timezone.get_current_timezone())
 
         if isinstance(sample_type, str):
             sample_type = PatientLabSampleType.objects.get(name=sample_type)
             assert sample_type is not None, (
                 f"Sample type with name '{sample_type}' not found."
-            )  #
+            )
         elif not isinstance(sample_type, PatientLabSampleType):
             raise ValueError(
                 "Sample type must be either a string or a PatientLabSampleType object."
@@ -379,21 +387,4 @@ class Patient(Person):
             patient=self, sample_type=sample_type, date=date
         )
 
-        if save:
-            patient_lab_sample.save()
-
         return patient_lab_sample
-
-
-# class PatientForm(forms.ModelForm):
-#     class Meta:
-#         model = Patient
-#         fields = "__all__"
-#         widgets = {
-#             "dob": DateInput(attrs={"type": "date"}),
-#         }
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         for field in self.fields.values():
-#             field.widget.attrs["class"] = "form-control"
