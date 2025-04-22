@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ....administration import Center
     from ....media import RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
     from .... import media
+    from endoreg_db.models import ExaminationIndication
 
 class Patient(Person):
     """
@@ -101,47 +102,21 @@ class Patient(Person):
 
         return patient, created
 
-    def export_patient_examinations(self):
-        """
-        Get all associated PatientExaminations, ReportFiles, and Videos for the patient.
-        """
-        patient_examinations = self.patient_examinations.all()
-        report_files, videos = [], []
-        for patient_examination in patient_examinations:
-            rr = patient_examination.reportfile_set.all()
-            vv = patient_examination.videos.all()
-
-            report_files.extend(rr)
-            videos.extend(vv)
-
-        return patient_examinations, report_files, videos
-
+   
     def get_dob(self) -> datetime.date:
         dob: datetime.date = self.dob
         return dob
 
-    def get_unmatched_report_files(
-        self,
-    ):  # field: self.report_files; filter: report_file.patient_examination = None
-        """Returns all report files for this patient that are not matched to a patient examination."""
-
-        return self.reportfile_set.filter(patient_examination=None)
-
-    def get_unmatched_video_files(
-        self,
-    ):  # field: self.videos; filter: video.patient_examination = None
-        """Returns all video files for this patient that are not matched to a patient examination."""
-        return self.videos.filter(patient_examination=None)
-
     def get_patient_examinations(self):  # field: self.patient_examinations
         """Returns all patient examinations for this patient ordered by date (most recent is first)."""
-        return self.patient_examinations.order_by("-date")
+        return self.patient_examinations.order_by("-date_start")
 
     def create_examination(
         self,
         examination_name_str: str = None,
         date_start: datetime = None,
         date_end: datetime = None,
+        save: bool = True,
     ):
         """Creates a patient examination for this patient."""
 
@@ -161,12 +136,13 @@ class Patient(Person):
                 patient=self, date_start=date_start, date_end=date_end
             )
 
-        patient_examination.save()
+        if save:
+            patient_examination.save()
 
         return patient_examination
 
     def create_examination_by_indication(
-        self, indication, date_start: datetime = None, date_end: datetime = None
+        self, indication:"ExaminationIndication", date_start: datetime = None, date_end: datetime = None
     ):
         from ....medical import (
             ExaminationIndication,
@@ -174,8 +150,6 @@ class Patient(Person):
             PatientExaminationIndication,
             PatientExamination,
         )
-
-        assert isinstance(indication, ExaminationIndication)
 
         examination = indication.get_examination()
 

@@ -31,6 +31,11 @@ class PatientExaminationIndication(models.Model):
         pe = self.patient_examination
         return pe
     
+    def get_patient(self):
+        pe = self.get_patient_examination()
+        patient = pe.patient
+        return patient
+    
     def get_choices(self):
 
         examination_indication = self.examination_indication
