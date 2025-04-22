@@ -23,5 +23,5 @@ class CenterModelTest(TestCase):
         center:Center = Center.objects.get(name="university_hospital_wuerzburg")
         fn = [str(_.name).lower() for _ in center.first_names.all()]
         ln = [str(_.name).lower() for _ in center.last_names.all()]
-        assert "thomas" in fn
-        assert "lux" in ln
+        self.assertIn("thomas", fn, "Expected 'thomas' in center first names")  
+        self.assertIn("lux", ln, "Expected 'lux' in center last names")

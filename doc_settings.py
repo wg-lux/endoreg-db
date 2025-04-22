@@ -18,12 +18,12 @@ INSTALLED_APPS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 BASE_DIR = Path(__file__).parent
-print(f"endoreg_db.tests.test_settings.py - BASE_DIR: {BASE_DIR}")
+print(f"doc_settings.py - BASE_DIR: {BASE_DIR}")
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'docs_db.sqlite3',
+        'NAME': str(BASE_DIR / 'docs_db.sqlite3'),
     },
 }
 
