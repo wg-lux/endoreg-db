@@ -1,10 +1,6 @@
-from django.conf import settings
-import os
 from django.core.management.base import BaseCommand
 from ...models import (
-    ModelMeta,
     ModelType,
-    LabelSet,
     VideoSegmentationLabel,
     VideoSegmentationLabelSet,
     AiModel,
@@ -15,7 +11,6 @@ from ...data import (
     VIDEO_SEGMENTATION_LABEL_DATA_DIR,
     VIDEO_SEGMENTATION_LABELSET_DATA_DIR,
     AI_MODEL_DATA_DIR,
-    AI_MODEL_META_DATA_DIR,
 )
 
 

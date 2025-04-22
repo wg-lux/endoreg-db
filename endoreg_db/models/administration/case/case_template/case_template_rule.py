@@ -193,6 +193,7 @@ class CaseTemplateRule(models.Model):
 
     def chained_rules_has_self_reference(self):
         """
+        :noindex:
         Check if any directly or indirectly chained rules reference this rule, creating a non-terminating loop.
         Return a list containing a tuple (first_rule, self_referencing_rule) for each self-reference.
         first_rule is the most upward rule in the chain that references the rule.

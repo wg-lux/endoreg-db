@@ -1,8 +1,19 @@
-import os
 from pathlib import Path
-from icecream import ic
+import logging
+from endoreg_db.utils.paths import STORAGE_DIR
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("data/tests.log"),
+        # logging.StreamHandler()
+    ]
+)
 
-ic(f"LOADING SETTINGS: {__file__}")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+logger.info(f"LOADING SETTINGS: {__file__}")
 
 DEBUG=True
 SECRET_KEY = "fake-key"
@@ -17,7 +28,7 @@ INSTALLED_APPS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 BASE_DIR = Path(__file__).parent.parent
-print(f"endoreg_db.tests.test_settings.py - BASE_DIR: {BASE_DIR}")
+logger.info(f"BASE_DIR: {BASE_DIR}")
 
 DATABASES = {
     'default': {
@@ -27,3 +38,13 @@ DATABASES = {
 }
 
 TIME_ZONE = "Europe/Berlin"
+
+# settings.py
+
+
+MEDIA_ROOT = STORAGE_DIR
+MEDIA_URL = '/media/' # Adjust if needed
+
+# Ensure your DEFAULT_FILE_STORAGE uses MEDIA_ROOT correctly
+# If using default FileSystemStorage, it should work automatically.
+# DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'

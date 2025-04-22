@@ -1,19 +1,21 @@
 from ..person import Person
-from django import forms
-from django.forms import DateInput
 from django.db import models
 from faker import Faker
 import random
 from datetime import datetime
-from icecream import ic
 from typing import TYPE_CHECKING
+from logging import getLogger
+from django.utils import timezone  # Add this import
+
+logger = getLogger(__name__)
 
 if TYPE_CHECKING:
     from ....other import Gender
     from ....medical.patient import PatientExamination
     from ....administration import Center
-    from ....media import RawPdfFile, AnonymExaminationReport
-
+    from ....media import AnonymExaminationReport, AnonymHistologyReport
+    from .... import media
+    from endoreg_db.models import ExaminationIndication
 
 class Patient(Person):
     """
@@ -48,6 +50,8 @@ class Patient(Person):
         gender: "Gender"
         center: "Center"
         patient_examinations: models.QuerySet["PatientExamination"]
+        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
+        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
@@ -57,18 +61,19 @@ class Patient(Person):
         cls,
         patient_hash: str,
         center: "Center" = None,
-        gender: "Gender" = None,
+        gender: "Gender | str" = None,  # Allow string type hint
         birth_month: int = None,
         birth_year: int = None,
     ):
         from endoreg_db.utils import random_day_by_year, create_mock_patient_name
+        from ....other import Gender  # Import Gender model
 
         created = False
 
         existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
         if existing_patient:
-            ic(f"Patient with hash {patient_hash} already exists")
-            ic(f"Returning existing patient: {existing_patient}")
+            logger.info(f"Patient with hash {patient_hash} already exists")
+            logger.info(f"Returning existing patient: {existing_patient}")
             return existing_patient, created
 
         # If no patient with the given hash exists, create a new pseudo patient
@@ -79,17 +84,26 @@ class Patient(Person):
         )
         assert birth_year, "Birth year must be provided to create a new pseudo patient"
 
+        # Ensure gender is a Gender object
+        if isinstance(gender, str):
+            gender_obj = Gender.objects.get(name=gender)
+        elif isinstance(gender, Gender):
+            gender_obj = gender
+        else:
+            raise ValueError("Gender must be a string name or a Gender object.")
+
         pseudo_dob = random_day_by_year(birth_year)
-        gender_name = gender.name
+        gender_name = gender_obj.name
         first_name, last_name = create_mock_patient_name(gender_name)
 
-        ic(f"Creating pseudo patient with hash {patient_hash}")
-        ic(f"Generated name: {first_name} {last_name}")
+        logger.info(f"Creating pseudo patient with hash {patient_hash}")
+        logger.info(f"Generated name: {first_name} {last_name}")
 
         patient = cls.objects.create(
             first_name=first_name,
             last_name=last_name,
             dob=pseudo_dob,
+            gender=gender_obj,  # Use the fetched/validated Gender object
             patient_hash=patient_hash,
             is_real_person=False,
         )
@@ -99,47 +113,20 @@ class Patient(Person):
 
         return patient, created
 
-    def export_patient_examinations(self):
-        """
-        Get all associated PatientExaminations, ReportFiles, and Videos for the patient.
-        """
-        patient_examinations = self.patient_examinations.all()
-        report_files, videos = [], []
-        for patient_examination in patient_examinations:
-            rr = patient_examination.reportfile_set.all()
-            vv = patient_examination.videos.all()
-
-            report_files.extend(rr)
-            videos.extend(vv)
-
-        return patient_examinations, report_files, videos
-
     def get_dob(self) -> datetime.date:
         dob: datetime.date = self.dob
         return dob
 
-    def get_unmatched_report_files(
-        self,
-    ):  # field: self.report_files; filter: report_file.patient_examination = None
-        """Returns all report files for this patient that are not matched to a patient examination."""
-
-        return self.reportfile_set.filter(patient_examination=None)
-
-    def get_unmatched_video_files(
-        self,
-    ):  # field: self.videos; filter: video.patient_examination = None
-        """Returns all video files for this patient that are not matched to a patient examination."""
-        return self.videos.filter(patient_examination=None)
-
     def get_patient_examinations(self):  # field: self.patient_examinations
         """Returns all patient examinations for this patient ordered by date (most recent is first)."""
-        return self.patient_examinations.order_by("-date")
+        return self.patient_examinations.order_by("-date_start")
 
     def create_examination(
         self,
         examination_name_str: str = None,
         date_start: datetime = None,
         date_end: datetime = None,
+        save: bool = True,
     ):
         """Creates a patient examination for this patient."""
 
@@ -159,25 +146,20 @@ class Patient(Person):
                 patient=self, date_start=date_start, date_end=date_end
             )
 
-        patient_examination.save()
+        if save:
+            patient_examination.save()
 
         return patient_examination
 
     def create_examination_by_indication(
-        self, indication, date_start: datetime = None, date_end: datetime = None
+        self, indication: "ExaminationIndication", date_start: datetime = None, date_end: datetime = None
     ):
         from ....medical import (
-            ExaminationIndication,
-            Examination,
             PatientExaminationIndication,
             PatientExamination,
         )
 
-        assert isinstance(indication, ExaminationIndication)
-
         examination = indication.get_examination()
-
-        assert isinstance(examination, Examination)
 
         patient_examination = PatientExamination.objects.create(
             patient=self,
@@ -217,8 +199,11 @@ class Patient(Person):
 
         return patient_event
 
-    def create_examination_by_pdf(self, pdf: "RawPdfFile"):
-        """Creates a patient examination for this patient based on the given report file."""
+    def create_examination_by_pdf(self, pdf: "media.RawPdfFile"):
+        """
+        Creates a patient examination for this patient based on the given report file.
+        This function is helpful for adding documents to an already known and existing patient. 
+        """
         from ....medical import PatientExamination
         patient_examination = PatientExamination(patient=self)
         patient_examination.save()
@@ -242,14 +227,7 @@ class Patient(Person):
         gender_names = ["male", "female"]
         probabilities = [p_male, p_female]
 
-        # Debug: print the names and probabilities
-        # print(f"Gender names: {gender_names}")
-        # print(f"Probabilities: {probabilities}")
-
-        # Select a gender based on the given probabilities
         selected_gender = random.choices(gender_names, probabilities)[0]
-        # Debug: print the selected gender
-        # print(f"Selected gender: {selected_gender}")
 
         # Fetch the corresponding Gender object from the database
         gender_obj = Gender.objects.get(name=selected_gender)
@@ -315,7 +293,7 @@ class Patient(Person):
         """
         Create a generic patient with random attributes.
 
-        :param center: The center of the patient.
+        :param center: The center name or Center object of the patient.
         :return: The created patient.
         """
         from ....administration import Center
@@ -326,15 +304,22 @@ class Patient(Person):
         age = Patient.get_random_age()
         dob = Patient.get_dob_from_age(age)
 
-        center = Center.objects.get(name=center)
+        # Fetch the center object if a name is provided
+        if isinstance(center, str):
+            center_obj = Center.objects.get(name=center)
+        elif isinstance(center, Center):
+            center_obj = center
+        else:
+            raise ValueError("Center must be a string name or a Center object.")
 
         patient = Patient.objects.create(
             first_name=first_name,
             last_name=last_name,
             dob=dob,
             gender=gender,
+            center=center_obj, # Assign the center object
         )
-        patient.save()
+        # No need to call save() again after create()
         return patient
 
     def age(self):
@@ -344,14 +329,17 @@ class Patient(Person):
         :return: The age of the patient.
         """
         # calculate correct age based on current date including day and month
-        current_date = datetime.now()
+        current_date = timezone.now().date()  # Use timezone.now() here too for consistency
         dob = self.dob
-        age = (
-            current_date.year
-            - dob.year
-            - ((current_date.month, current_date.day) < (dob.month, dob.day))
-        )
-        return age
+        # Ensure dob is not None before calculation
+        if dob:
+            age = (
+                current_date.year
+                - dob.year
+                - ((current_date.month, current_date.day) < (dob.month, dob.day))
+            )
+            return age
+        return None  # Or handle the case where dob is None appropriately
 
     def create_lab_sample(self, sample_type="generic", date=None, save=True):
         """
@@ -359,19 +347,23 @@ class Patient(Person):
 
         :param sample_type: The sample type. Should be either string of the sample types
             name or the sample type object. If not set, the default sample type ("generic") is used.
-        :param date: The date of the lab sample.
+        :param date: The date of the lab sample. Must be timezone-aware if provided.
         :return: The created lab sample.
         """
         from ....medical import PatientLabSample, PatientLabSampleType
 
         if date is None:
-            date = datetime.now()
+            date = timezone.now()  # Use timezone.now() instead of datetime.now()
+        # Ensure the provided date is timezone-aware if it's not None
+        elif timezone.is_naive(date):
+            logger.warning(f"Received naive datetime {date} for PatientLabSample. Making it timezone-aware using current timezone.")
+            date = timezone.make_aware(date, timezone.get_current_timezone())
 
         if isinstance(sample_type, str):
             sample_type = PatientLabSampleType.objects.get(name=sample_type)
             assert sample_type is not None, (
                 f"Sample type with name '{sample_type}' not found."
-            )  #
+            )
         elif not isinstance(sample_type, PatientLabSampleType):
             raise ValueError(
                 "Sample type must be either a string or a PatientLabSampleType object."
@@ -381,21 +373,4 @@ class Patient(Person):
             patient=self, sample_type=sample_type, date=date
         )
 
-        if save:
-            patient_lab_sample.save()
-
         return patient_lab_sample
-
-
-# class PatientForm(forms.ModelForm):
-#     class Meta:
-#         model = Patient
-#         fields = "__all__"
-#         widgets = {
-#             "dob": DateInput(attrs={"type": "date"}),
-#         }
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         for field in self.fields.values():
-#             field.widget.attrs["class"] = "form-control"

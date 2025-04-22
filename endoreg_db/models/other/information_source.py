@@ -46,6 +46,20 @@ class InformationSource(models.Model):
     url = models.URLField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     date = models.DateField(blank=True, null=True)
+    date_created = models.DateField(auto_now_add=True)
+    date_modified = models.DateField(auto_now=True)
+    abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
+
+    class Meta:
+        verbose_name = "Information Source"
+        verbose_name_plural = "Information Sources"
+
+        # add name and abbreviation as index
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["abbreviation"]),
+        ] 
+
 
     def natural_key(self):
         """
@@ -63,3 +77,4 @@ class InformationSource(models.Model):
         This method returns the instance's name attribute converted explicitly to a string.
         """
         return str(self.name)
+    

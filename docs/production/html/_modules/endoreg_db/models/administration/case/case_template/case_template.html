@@ -1,0 +1,268 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.administration.case.case_template.case_template &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../models.html#other">Other</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.administration.case.case_template.case_template</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.administration.case.case_template.case_template</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplateManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="CaseTemplate">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CaseTemplate</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents a case template.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        name (str): The unique name of the case template.</span>
+<span class="sd">        template_type (ForeignKey): The type of the case template.</span>
+<span class="sd">        description (str): A description of the case template.</span>
+<span class="sd">        rules: The primary rules associated with the case template.</span>
+<span class="sd">        secondary_rules: Secondary rules associated with the case template.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">template_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="s2">&quot;CaseTemplateType&quot;</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span> <span class="n">related_name</span><span class="o">=</span><span class="s2">&quot;case_templates&quot;</span><span class="p">)</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">rules</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ManyToManyField</span><span class="p">(</span>
+        <span class="s2">&quot;CaseTemplateRule&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">secondary_rules</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ManyToManyField</span><span class="p">(</span>
+        <span class="s2">&quot;CaseTemplateRule&quot;</span><span class="p">,</span>
+        <span class="n">related_name</span><span class="o">=</span><span class="s2">&quot;secondary_rules&quot;</span>
+    <span class="p">)</span>
+
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">CaseTemplateManager</span><span class="p">()</span>
+
+<div class="viewcode-block" id="CaseTemplate.natural_key">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.natural_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the natural key for the case template.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            tuple: The natural key consisting of the name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        String representation of the case template.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: The name of the case template.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="CaseTemplate.get_rules">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_rules">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves all primary rules associated with the case template.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A queryset of primary rules.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rules</span><span class="o">.</span><span class="n">all</span><span class="p">()</span></div>
+
+        
+    
+<div class="viewcode-block" id="CaseTemplate.get_secondary_rules">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_secondary_rules">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_secondary_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves all secondary rules associated with the case template.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            QuerySet: A queryset of secondary rules.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rules</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">secondary_rules</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">rules</span></div>
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assert_max_one_create_patient_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensures that there is at most one rule with rule_type &quot;create-object&quot; and target_model &quot;Patient&quot;.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If more than one rule of the specified type exists.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">create_patient_rules</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rules</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">rule_type__name</span><span class="o">=</span><span class="s2">&quot;create-object&quot;</span><span class="p">,</span> <span class="n">target_model__name</span><span class="o">=</span><span class="s2">&quot;Patient&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">create_patient_rules</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;There can be at most one rule with the rule_type__name &#39;create-object&#39; and target_model__name &#39;Patient&#39;.&quot;</span>
+            <span class="p">)</span>
+        
+    <span class="c1"># custom save method which runs the _assert_max_one_create_patient_rule method and others</span>
+<div class="viewcode-block" id="CaseTemplate.save">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># self._assert_max_one_create_patient_rule() #TODO Fails on first save since many to many can only be used if object has an id</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CaseTemplate.get_create_patient_rule">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_create_patient_rule">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_create_patient_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the &quot;create-patient&quot; rule.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            CaseTemplateRule: The rule that creates a patient.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If multiple such rules exist.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.case_template_rule</span><span class="w"> </span><span class="kn">import</span> <span class="n">CaseTemplateRule</span>
+        <span class="n">create_patient_rules</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rules</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">rule_type__name</span><span class="o">=</span><span class="s2">&quot;create-object&quot;</span><span class="p">,</span> <span class="n">target_model</span><span class="o">=</span><span class="s2">&quot;Patient&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">create_patient_rules</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;There can be at most one rule with the rule_type__name &#39;create-object&#39; and target_model__name &#39;Patient&#39;.&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">create_patient_rules</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">create_patient_rules</span> <span class="o">=</span> <span class="n">CaseTemplateRule</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_default_create_patient_rule</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">create_patient_rules</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+
+    
+<div class="viewcode-block" id="CaseTemplate.get_create_patient_medication_schedule_rule">
+<a class="viewcode-back" href="../../../../../../models.html#endoreg_db.models.administration.case.CaseTemplate.get_create_patient_medication_schedule_rule">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_create_patient_medication_schedule_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves the &quot;create-patient_medication_schedule&quot; rule.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            CaseTemplateRule: The rule for creating a patient medication schedule.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If multiple such rules exist.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.case_template_rule</span><span class="w"> </span><span class="kn">import</span> <span class="n">CaseTemplateRule</span>
+        <span class="n">create_patient_medication_schedule_rules</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rules</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">rule_type__name</span><span class="o">=</span><span class="s2">&quot;create-object&quot;</span><span class="p">,</span> <span class="n">target_model</span><span class="o">=</span><span class="s2">&quot;PatientMedicationSchedule&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">create_patient_medication_schedule_rules</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;There can be at most one rule with the rule_type__name &#39;create-object&#39; and target_model__name &#39;PatientMedicationSchedule&#39;.&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">create_patient_medication_schedule_rules</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">warnings</span><span class="w"> </span><span class="kn">import</span> <span class="n">warn</span>
+            <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;No create patient medication schedule rule found. Using default create patient medication schedule rule.&quot;</span><span class="p">)</span>
+            <span class="n">create_patient_medication_schedule_rules</span> <span class="o">=</span> <span class="n">CaseTemplateRule</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_default_create_patient_medication_schedule_rule</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">create_patient_medication_schedule_rules</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

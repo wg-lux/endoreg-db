@@ -1,0 +1,234 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.medical.finding.finding_morphology_classification &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.medical.finding.finding_morphology_classification</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.medical.finding.finding_morphology_classification</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">django.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">FindingMorphologyClassificationTypeManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassificationType">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassificationType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FindingMorphologyClassificationType</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_de</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_en</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">FindingMorphologyClassificationTypeManager</span><span class="p">()</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassificationType.natural_key">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassificationType.natural_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassificationType.get_required_classifications_for_finding">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassificationType.get_required_classifications_for_finding">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_required_classifications_for_finding</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">finding</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns all required morphology classification types for a given finding.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">required_classification_types</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">_</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">finding</span><span class="o">.</span><span class="n">required_morphology_classification_types</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="n">required_classification_types</span></div>
+</div>
+
+    
+<span class="k">class</span><span class="w"> </span><span class="nc">FindingMorphologyClassificationManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassification">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassification">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FindingMorphologyClassification</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_de</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_en</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">classification_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="n">FindingMorphologyClassificationType</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">)</span>
+    
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">FindingMorphologyClassificationManager</span><span class="p">()</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassification.natural_key">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassification.natural_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassification.get_choices">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassification.get_choices">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_choices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">choices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">FindingMorphologyClassificationChoice</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">_</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">choices</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="k">return</span> <span class="n">choices</span></div>
+</div>
+
+    
+<span class="k">class</span><span class="w"> </span><span class="nc">FindingMorphologyClassificationChoiceManager</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Manager</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_by_natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassificationChoice">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassificationChoice">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FindingMorphologyClassificationChoice</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_de</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name_en</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">classification</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span>
+        <span class="n">FindingMorphologyClassification</span><span class="p">,</span> 
+        <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">,</span>
+        <span class="n">related_name</span><span class="o">=</span><span class="s1">&#39;choices&#39;</span>
+    <span class="p">)</span>
+    
+    <span class="n">subcategories</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="nb">dict</span>
+    <span class="p">)</span>
+
+    <span class="n">numerical_descriptors</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">JSONField</span><span class="p">(</span>
+        <span class="n">default</span> <span class="o">=</span> <span class="nb">dict</span>
+    <span class="p">)</span>
+
+    <span class="n">objects</span> <span class="o">=</span> <span class="n">FindingMorphologyClassificationChoiceManager</span><span class="p">()</span>
+    
+<div class="viewcode-block" id="FindingMorphologyClassificationChoice.natural_key">
+<a class="viewcode-back" href="../../../../../models.html#endoreg_db.models.medical.finding.FindingMorphologyClassificationChoice.natural_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">natural_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,)</span></div>
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">classification</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">return</span> <span class="n">_str</span></div>
+
+
+    
+        
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

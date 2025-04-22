@@ -38,8 +38,8 @@ VIDEO_DIR = data_paths["video"]
 ANONYM_VIDEO_DIR = data_paths["video_export"]
 FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
-PDF_DIR = data_paths["raw_report"]
-DOCUMENT_DIR = data_paths["report"]
+PDF_DIR = data_paths["raw_pdf"]
+DOCUMENT_DIR = data_paths["pdf"]
 
 TEST_RUN = os.environ.get("TEST_RUN", "False")
 TEST_RUN = TEST_RUN.lower() == "true"
@@ -142,8 +142,7 @@ def _create_anonymized_frame_files(
             generated_frame_paths.append(target_frame_path)
         except Exception as e:
             logger.error("Error processing frame %s (Number: %d) for anonymization: %s", frame.pk, getattr(frame, 'frame_number', -1), e, exc_info=True)
-            ic(f"Error processing frame {getattr(frame, 'frame_number', -1)}: {e}")
-
+            
     return generated_frame_paths
 
 
@@ -153,11 +152,9 @@ def _censor_outside_frames(
     outside_frame_paths = video.get_outside_frame_paths()
 
     if not outside_frame_paths:
-        ic("No outside frames found to censor")
         logger.info("No outside frames found to censor for video %s", video.uuid)
 
     else:
-        ic(f"Found {len(outside_frame_paths)} outside frames to censor")
         logger.info("Censoring %d outside frames for video %s", len(outside_frame_paths), video.uuid)
 
         censored_count = 0

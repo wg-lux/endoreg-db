@@ -1,0 +1,183 @@
+import random
+from venv import logger
+
+from endoreg_db.models import (
+    Center, 
+    Gender, 
+    Patient,
+    Examination,
+    ExaminationIndication,
+    RawPdfFile
+)
+from logging import getLogger
+from datetime import date
+import shutil
+from pathlib import Path
+from django.conf import settings # Import settings
+from django.core.files.storage import default_storage # Import default storage
+
+from endoreg_db.utils import (
+    create_mock_examiner_name,
+    create_mock_patient_name,
+)
+
+logger = getLogger(__name__)
+
+
+DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
+DEFAULT_ENDOSCOPE_NAME = "test_endoscope"
+
+DEFAULT_EGD_PATH = Path("tests/assets/lux-gastro-report.pdf")
+DEFAULT_GENDERS = ["male","female","unknown"]
+DEFAULT_EXAMINATIONS = ["colonoscopy"]
+DEFAULT_INDICATIONS = [
+    "colonoscopy",
+    "colonoscopy_screening",
+    "colonoscopy_lesion_removal_small",
+    "colonoscopy_lesion_removal_emr",
+    "colonoscopy_lesion_removal_large",
+    "colonoscopy_diagnostic_acute_symptomatic",
+]
+
+DEFAULT_GENDER = "unknown"
+
+def get_default_gender() -> Gender:
+    return Gender.objects.get(name=DEFAULT_GENDER)
+
+def get_random_gender() -> Gender:
+    """
+    Get a random Gender object
+    """
+    gender_name = random.choice(DEFAULT_GENDERS)
+    return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
+
+def get_default_center() -> Center:
+    """
+    Create a default Center instance for testing.
+    """
+    center = Center.objects.get(
+        name=DEFAULT_CENTER_NAME,
+    )
+    assert isinstance(center, Center), f"Center with name {DEFAULT_CENTER_NAME} not found."
+    return center
+
+def generate_patient(**kwargs) -> Patient:
+    """
+    Generate a patient with random attributes.
+    This function creates a Patient instance with random attributes such as first name, last name, date of birth, and center.
+    The attributes are generated using the Faker library and can be overridden by providing keyword arguments.
+
+    Parameters:
+        **kwargs: Optional keyword arguments to override default values.
+
+    
+    """
+    # Set default values
+    gender = kwargs.get("gender", get_random_gender())
+    if not isinstance(gender, Gender):
+        assert isinstance(gender, str)
+        gender = Gender.objects.get(name=gender)
+    first_name, last_name = create_mock_patient_name(gender = gender.name)
+    first_name = kwargs.get("first_name", first_name)
+    last_name = kwargs.get("last_name", last_name)
+    birth_date = kwargs.get("birth_date", "1970-01-01")
+    dob = date.fromisoformat(birth_date)
+    center = kwargs.get("center", None)
+    if center is None:
+        center = get_default_center()
+    else:
+        center = Center.objects.get(name=center)
+
+    patient = Patient(
+        first_name=first_name,
+        last_name=last_name,
+        dob=dob,
+        center = center,
+        gender = gender,
+    )
+
+    return patient
+    
+def get_random_default_examination():
+    """
+    Get a random examination type from the list of default examinations.
+    Returns:
+        str: A random examination type.
+    """
+    examination_name = random.choice(DEFAULT_EXAMINATIONS)
+
+    examination = Examination.objects.get(name=examination_name)
+    return examination
+
+def get_random_default_examination_indication():
+    """
+    Get a random examination indication from the list of default indications.
+    Returns:
+        str: A random examination indication.
+    """
+    examination_indication = random.choice(DEFAULT_INDICATIONS)
+    all_examination_indications = ExaminationIndication.objects.all()
+    try:
+        examination_indication = ExaminationIndication.objects.get(name=examination_indication)
+        
+    except Exception as e:
+        logger.info(f"examination_indication: {examination_indication}")
+        logger.info(f"all_examination_indications: {all_examination_indications}")
+        raise e
+    return examination_indication
+
+def get_default_egd_pdf():
+    """
+    Get a default EGD PDF file for testing.
+    This function creates a temporary copy of the default PDF file, uses it to create and save
+    a RawPdfFile instance using the refactored create_from_file method,
+    and ensures that the temporary file is deleted.
+
+    Returns:
+        RawPdfFile: The created RawPdfFile instance.
+    """
+    egd_path = DEFAULT_EGD_PATH
+    center = get_default_center()
+    center_name = center.name
+
+    # Create a temporary file path within the test's media root if possible,
+    # otherwise use the source directory. Using MEDIA_ROOT is safer.
+    # Ensure MEDIA_ROOT is configured correctly in test settings.
+    temp_dir = Path(settings.MEDIA_ROOT) / "temp_test_files"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_file_path = temp_dir / f"temp_{egd_path.name}"
+
+    shutil.copy(egd_path, temp_file_path)
+
+    pdf_file = None
+    try:
+        # Create the PDF record using the temporary file.
+        # delete_source=True will ensure temp_file_path is deleted by create_from_file
+        pdf_file = RawPdfFile.create_from_file(
+            file_path=temp_file_path,
+            center_name=center_name,
+            save=True, # save=True is default and handled internally now
+            delete_source=True,
+        )
+
+        assert pdf_file is not None, "Failed to create PDF file object"
+        # Use storage API to check existence
+        assert default_storage.exists(pdf_file.file.path), f"PDF file does not exist in storage at {pdf_file.file.path}"
+        # Check that the source temp file was deleted
+        assert not temp_file_path.exists(), f"Temporary source file {temp_file_path} still exists after creation"
+
+    except Exception as e:
+         # Clean up temp file in case of error before deletion could occur
+         if temp_file_path.exists():
+             temp_file_path.unlink()
+         raise e # Re-raise the exception
+
+    # pdf_file.file.path might fail if storage doesn't support direct paths (like S3)
+    # Prefer using storage API for checks. Logging path if available.
+    try:
+        logger.info(f"PDF file created: {pdf_file.file.name}, Path: {pdf_file.file.path}")
+    except NotImplementedError:
+        logger.info(f"PDF file created: {pdf_file.file.name}, Path: (Not available from storage)")
+
+
+    return pdf_file

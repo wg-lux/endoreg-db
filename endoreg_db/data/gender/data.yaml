@@ -17,7 +17,7 @@
     abbreviation: "f"
 - model: endoreg_db.gender
   fields:
-    name: "mostly_femaly"
+    name: "mostly_female"
     name_de: "überwiegend weiblich"
     name_en: "mostly female"
     abbreviation: "mf"

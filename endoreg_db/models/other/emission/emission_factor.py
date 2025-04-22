@@ -1,12 +1,9 @@
 from django.db import models
 from typing import TYPE_CHECKING, List
 
-from endoreg_db.models.administration.product import reference_product
-
 if TYPE_CHECKING:
-    from ...administration.product import ReferenceProduct
+    from ...administration import ReferenceProduct
     from ..unit import Unit
-    from ...administration.product import ReferenceProduct
 
 class EmissionFactorManager(models.Manager):
     """

@@ -1,8 +1,6 @@
 from django.db import models
 from typing import TYPE_CHECKING, Dict
 
-from regex import E
-
 # Corrected imports for type hints
 if TYPE_CHECKING:
     from ..finding import (

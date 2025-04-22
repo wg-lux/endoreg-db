@@ -1,0 +1,252 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.media.video.video_file_io &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.media.video.video_file_io</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.media.video.video_file_io</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">icecream</span><span class="w"> </span><span class="kn">import</span> <span class="n">ic</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">...utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">data_paths</span><span class="p">,</span> <span class="n">ANONYM_VIDEO_DIR</span> <span class="c1"># Import necessary paths</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.video_file</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFile</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_raw_file_path</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns the absolute Path object for the raw file, if it exists.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">raw_file</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">video</span><span class="o">.</span><span class="n">raw_file</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not get path for raw file of VideoFile </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_processed_file_path</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns the absolute Path object for the processed file, if it exists.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">is_processed</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">processed_file</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">video</span><span class="o">.</span><span class="n">processed_file</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not get path for processed file of VideoFile </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_delete_with_file</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Deletes the VideoFile record and its associated physical files (raw, processed, frames).&quot;&quot;&quot;</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Attempting to delete VideoFile record </span><span class="si">%s</span><span class="s2"> (UUID: </span><span class="si">%s</span><span class="s2">) and associated files.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleting VideoFile </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2"> and files.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 1. Delete Frames (using the frame helper function via instance method)</span>
+    <span class="n">frame_delete_msg</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">delete_frames</span><span class="p">()</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">frame_delete_msg</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="n">frame_delete_msg</span><span class="p">)</span>
+
+    <span class="c1"># 2. Delete Raw File</span>
+    <span class="n">raw_file_path</span> <span class="o">=</span> <span class="n">_get_raw_file_path</span><span class="p">(</span><span class="n">video</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">raw_file_path</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">raw_file_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">raw_file_path</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Deleted raw video file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">raw_file_path</span><span class="p">)</span>
+                <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted raw video file: </span><span class="si">{</span><span class="n">raw_file_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Raw video file not found at </span><span class="si">%s</span><span class="s2">, skipping deletion.&quot;</span><span class="p">,</span> <span class="n">raw_file_path</span><span class="p">)</span>
+                <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Raw video file not found: </span><span class="si">{</span><span class="n">raw_file_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error deleting raw video file </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">raw_file_path</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error deleting raw video file </span><span class="si">{</span><span class="n">raw_file_path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 3. Delete Processed File</span>
+    <span class="n">processed_file_path</span> <span class="o">=</span> <span class="n">_get_processed_file_path</span><span class="p">(</span><span class="n">video</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">processed_file_path</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">processed_file_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="n">processed_file_path</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Deleted processed video file: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">processed_file_path</span><span class="p">)</span>
+                <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deleted processed video file: </span><span class="si">{</span><span class="n">processed_file_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Processed video file not found at </span><span class="si">%s</span><span class="s2">, skipping deletion.&quot;</span><span class="p">,</span> <span class="n">processed_file_path</span><span class="p">)</span>
+                <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processed video file not found: </span><span class="si">{</span><span class="n">processed_file_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error deleting processed video file </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">processed_file_path</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error deleting processed video file </span><span class="si">{</span><span class="n">processed_file_path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 4. Delete Database Record</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Use &#39;super(type(video), video)&#39; to call the parent&#39;s delete method</span>
+        <span class="nb">super</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">video</span><span class="p">),</span> <span class="n">video</span><span class="p">)</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Deleted VideoFile database record PK </span><span class="si">%s</span><span class="s2"> (UUID: </span><span class="si">%s</span><span class="s2">).&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Deleted DB record.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Successfully deleted VideoFile </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2"> and associated files.&quot;</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error deleting VideoFile database record PK </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error deleting DB record </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="c1"># Re-raise the exception</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_base_frame_dir</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Gets the base directory path for storing extracted frames.&quot;&quot;&quot;</span>
+    <span class="c1"># Assuming data_paths[&#39;frame&#39;] is the root directory for all frame storage</span>
+    <span class="k">return</span> <span class="n">data_paths</span><span class="p">[</span><span class="s2">&quot;frame&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="nb">str</span><span class="p">(</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_set_frame_dir</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="n">force_update</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sets the frame_dir field based on the video&#39;s UUID.&quot;&quot;&quot;</span>
+    <span class="n">target_dir</span> <span class="o">=</span> <span class="n">_get_base_frame_dir</span><span class="p">(</span><span class="n">video</span><span class="p">)</span>
+    <span class="n">target_path_str</span> <span class="o">=</span> <span class="n">target_dir</span><span class="o">.</span><span class="n">as_posix</span><span class="p">()</span> <span class="c1"># Store as POSIX path string</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">frame_dir</span> <span class="ow">or</span> <span class="n">video</span><span class="o">.</span><span class="n">frame_dir</span> <span class="o">!=</span> <span class="n">target_path_str</span> <span class="ow">or</span> <span class="n">force_update</span><span class="p">:</span>
+        <span class="n">video</span><span class="o">.</span><span class="n">frame_dir</span> <span class="o">=</span> <span class="n">target_path_str</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Set frame_dir for video </span><span class="si">%s</span><span class="s2"> to </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">frame_dir</span><span class="p">)</span>
+        <span class="c1"># Avoid saving if called from within the save method itself</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">video</span><span class="p">,</span> <span class="s1">&#39;_saving&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+             <span class="n">video</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;frame_dir&#39;</span><span class="p">])</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_frame_dir_path</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns the Path object for the frame directory, if set.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">video</span><span class="o">.</span><span class="n">frame_dir</span><span class="p">)</span> <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">frame_dir</span> <span class="k">else</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_temp_anonymized_frame_dir</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Gets the path for the temporary directory used during anonymization frame creation.&quot;&quot;&quot;</span>
+    <span class="n">base_frame_dir</span> <span class="o">=</span> <span class="n">_get_base_frame_dir</span><span class="p">(</span><span class="n">video</span><span class="p">)</span>
+    <span class="c1"># Place temp dir alongside the final frame dir but with a prefix/suffix</span>
+    <span class="n">anon_dir</span> <span class="o">=</span> <span class="n">base_frame_dir</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;anonymizing_</span><span class="si">{</span><span class="n">base_frame_dir</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">return</span> <span class="n">anon_dir</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_target_anonymized_video_path</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Determines the target path for the anonymized/processed video file.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">raw_file</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+         <span class="c1"># If raw is gone, maybe base it on UUID? Requires careful thought.</span>
+         <span class="c1"># For now, assume raw is needed to determine the original filename base.</span>
+         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot determine target anonymized path without a raw file reference.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Use the filename part of the raw file&#39;s relative path</span>
+    <span class="n">raw_path_relative</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">video</span><span class="o">.</span><span class="n">raw_file</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    <span class="c1"># Place it in the ANONYM_VIDEO_DIR using the same filename</span>
+    <span class="k">return</span> <span class="n">ANONYM_VIDEO_DIR</span> <span class="o">/</span> <span class="n">raw_path_relative</span><span class="o">.</span><span class="n">name</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

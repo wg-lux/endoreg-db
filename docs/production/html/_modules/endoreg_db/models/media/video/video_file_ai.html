@@ -1,0 +1,596 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.media.video.video_file_ai &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.media.video.video_file_ai</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.media.video.video_file_ai</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span><span class="p">,</span> <span class="n">Counter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">icecream</span><span class="w"> </span><span class="kn">import</span> <span class="n">ic</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">...utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">TEST_RUN</span> <span class="k">as</span> <span class="n">GLOBAL_TEST_RUN</span><span class="p">,</span> <span class="n">TEST_RUN_FRAME_NUMBER</span> <span class="k">as</span> <span class="n">GLOBAL_N_TEST_FRAMES</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.video_file</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFile</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...medical.hardware</span><span class="w"> </span><span class="kn">import</span> <span class="n">EndoscopyProcessor</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelMeta</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_text_from_video_frames</span><span class="p">(</span>
+    <span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="n">frame_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span><span class="p">,</span> <span class="n">cap</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Extracts text from a sample of video frames using OCR based on processor ROIs.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        video: The VideoFile instance.</span>
+<span class="sd">        frame_fraction: The fraction of total frames to process.</span>
+<span class="sd">        cap: The maximum number of frames to process.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A dictionary mapping ROI names to the most frequent text found,</span>
+<span class="sd">        or None if prerequisites are not met.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">endoreg_db.utils.ocr</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">extract_text_from_rois</span><span class="p">,</span>
+    <span class="p">)</span>  <span class="c1"># Local import for dependency isolation</span>
+
+    <span class="n">state</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_or_create_state</span><span class="p">()</span> <span class="c1"># Use State helper</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="o">.</span><span class="n">frames_extracted</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">&quot;Frames not extracted (state check) for video </span><span class="si">%s</span><span class="s2">. Cannot extract text.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Frames not extracted (state check) for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Use uuid</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Raw file missing for video </span><span class="si">%s</span><span class="s2">. Cannot extract text.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Raw file missing for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">, cannot extract text.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">processor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">&quot;EndoscopyProcessor&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">processor</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">processor</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Processor not set for video </span><span class="si">%s</span><span class="s2">. Cannot extract text.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processor not set for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Use uuid</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">frame_paths</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_frame_paths</span><span class="p">()</span> <span class="c1"># Use Frame helper</span>
+    <span class="n">n_frames</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">frame_paths</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n_frames</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;No frame paths found for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No frame paths found for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Use uuid</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># Determine number of frames to process</span>
+    <span class="n">n_frames_to_process</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">frame_fraction</span> <span class="o">*</span> <span class="n">n_frames</span><span class="p">))</span>
+    <span class="n">n_frames_to_process</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">n_frames_to_process</span><span class="p">,</span> <span class="n">cap</span><span class="p">,</span> <span class="n">n_frames</span><span class="p">)</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;Processing </span><span class="si">%d</span><span class="s2"> frames (out of </span><span class="si">%d</span><span class="s2">) for text extraction from video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+        <span class="n">n_frames_to_process</span><span class="p">,</span>
+        <span class="n">n_frames</span><span class="p">,</span>
+        <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing </span><span class="si">{</span><span class="n">n_frames_to_process</span><span class="si">}</span><span class="s2"> frames from </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Use uuid</span>
+
+    <span class="c1"># Select evenly spaced frames</span>
+    <span class="n">step</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_frames</span> <span class="o">//</span> <span class="n">n_frames_to_process</span><span class="p">)</span>
+    <span class="n">selected_frame_paths</span> <span class="o">=</span> <span class="n">frame_paths</span><span class="p">[::</span><span class="n">step</span><span class="p">][:</span><span class="n">n_frames_to_process</span><span class="p">]</span>
+
+    <span class="c1"># Extract text from ROIs for selected frames</span>
+    <span class="n">rois_texts</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">frame_path</span> <span class="ow">in</span> <span class="n">selected_frame_paths</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">extracted_texts</span> <span class="o">=</span> <span class="n">extract_text_from_rois</span><span class="p">(</span><span class="n">frame_path</span><span class="p">,</span> <span class="n">processor</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">roi</span><span class="p">,</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">extracted_texts</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">text</span><span class="p">:</span>  <span class="c1"># Only append non-empty text</span>
+                    <span class="n">rois_texts</span><span class="p">[</span><span class="n">roi</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="s2">&quot;Error extracting text from frame </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">frame_path</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error extracting text from frame </span><span class="si">{</span><span class="n">frame_path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Determine the most frequent text for each ROI</span>
+    <span class="n">most_frequent_texts</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">roi</span><span class="p">,</span> <span class="n">texts</span> <span class="ow">in</span> <span class="n">rois_texts</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">texts</span><span class="p">:</span>
+            <span class="n">most_frequent_texts</span><span class="p">[</span><span class="n">roi</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">continue</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">counter</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
+            <span class="n">most_common</span> <span class="o">=</span> <span class="n">counter</span><span class="o">.</span><span class="n">most_common</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">most_common</span><span class="p">:</span>
+                <span class="n">most_frequent_texts</span><span class="p">[</span><span class="n">roi</span><span class="p">]</span> <span class="o">=</span> <span class="n">most_common</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">most_frequent_texts</span><span class="p">[</span><span class="n">roi</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="s2">&quot;Error finding most common text for ROI </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">roi</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error finding most common text for ROI </span><span class="si">{</span><span class="n">roi</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">most_frequent_texts</span><span class="p">[</span><span class="n">roi</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Extracted text for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">most_frequent_texts</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Extracted text: </span><span class="si">{</span><span class="n">most_frequent_texts</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">most_frequent_texts</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_predict_video_pipeline</span><span class="p">(</span>
+    <span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span>
+    <span class="n">model_meta</span><span class="p">:</span> <span class="s2">&quot;ModelMeta&quot;</span><span class="p">,</span>
+    <span class="n">dataset_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;inference_dataset&quot;</span><span class="p">,</span>
+    <span class="n">smooth_window_size_s</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">binarize_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">test_run</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">n_test_frames</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Executes the video prediction pipeline using an AI model.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        video: The VideoFile instance.</span>
+<span class="sd">        model_meta: The ModelMeta instance defining the model to use.</span>
+<span class="sd">        dataset_name: The name of the dataset class to use.</span>
+<span class="sd">        smooth_window_size_s: Smoothing window size in seconds.</span>
+<span class="sd">        binarize_threshold: Threshold for converting smoothed predictions to binary.</span>
+<span class="sd">        test_run: If True, run prediction on a small subset of frames.</span>
+<span class="sd">        n_test_frames: Number of frames to use if test_run is True.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A dictionary containing the predicted sequences for each label,</span>
+<span class="sd">        or None if prediction failed or prerequisites were not met.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Import heavy dependencies locally</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...administration.ai</span><span class="w"> </span><span class="kn">import</span> <span class="n">AiModel</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoPredictionMeta</span>
+    <span class="c1"># TODO: Refactor these imports if endo_ai becomes a separate package</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">endo_ai.predictor.inference_dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">InferenceDataset</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">endo_ai.predictor.model_loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">MultiLabelClassificationNet</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">endo_ai.predictor.predict</span><span class="w"> </span><span class="kn">import</span> <span class="n">Classifier</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">endo_ai.predictor.postprocess</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+            <span class="n">concat_pred_dicts</span><span class="p">,</span>
+            <span class="n">make_smooth_preds</span><span class="p">,</span>
+            <span class="n">find_true_pred_sequences</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to import endo_ai components: </span><span class="si">%s</span><span class="s2">. Prediction unavailable.&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to import endo_ai components: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">. Prediction unavailable.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">test_run</span> <span class="ow">and</span> <span class="n">GLOBAL_TEST_RUN</span><span class="p">:</span>
+        <span class="n">test_run</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">n_test_frames</span> <span class="o">=</span> <span class="n">GLOBAL_N_TEST_FRAMES</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Using global TEST_RUN settings for prediction pipeline.&quot;</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Using global TEST_RUN settings for prediction pipeline.&quot;</span><span class="p">)</span>
+
+    <span class="n">state</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_or_create_state</span><span class="p">()</span> <span class="c1"># Use State helper</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="o">.</span><span class="n">frames_extracted</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Frames not extracted (state check) for video </span><span class="si">%s</span><span class="s2">. Prediction aborted.&quot;</span><span class="p">,</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Frames not extracted (state check) for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">, prediction aborted.&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">is_processed</span><span class="p">:</span> <span class="c1"># Prediction might run on processed if raw is gone</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;No suitable video file (raw or processed) found for video </span><span class="si">%s</span><span class="s2">. Prediction aborted.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No suitable video file for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">, prediction aborted.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># Decide which frames to use (prefer raw if available)</span>
+    <span class="n">frame_dir</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_frame_dir_path</span><span class="p">()</span> <span class="c1"># Use IO helper</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">frame_dir</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">frame_dir</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">frame_dir</span><span class="o">.</span><span class="n">iterdir</span><span class="p">()):</span>
+        <span class="c1"># TODO: Add logic to extract frames from processed_file if raw frames are missing?</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Frame directory </span><span class="si">%s</span><span class="s2"> is empty or does not exist (and no fallback implemented). Prediction aborted.&quot;</span><span class="p">,</span>
+            <span class="n">frame_dir</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Frame directory </span><span class="si">{</span><span class="n">frame_dir</span><span class="si">}</span><span class="s2"> is empty or does not exist. Prediction aborted.&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AiModel</span><span class="p">]</span> <span class="o">=</span> <span class="n">model_meta</span><span class="o">.</span><span class="n">model</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">model</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Model not found in ModelMeta </span><span class="si">%s</span><span class="s2">. Prediction aborted.&quot;</span><span class="p">,</span> <span class="n">model_meta</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model not found in ModelMeta </span><span class="si">{</span><span class="n">model_meta</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">, prediction aborted.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># Ensure weights file exists</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">weights_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">model_meta</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">weights_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="s2">&quot;Model weights file </span><span class="si">%s</span><span class="s2"> not found. Prediction aborted.&quot;</span><span class="p">,</span> <span class="n">weights_path</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model weights file </span><span class="si">{</span><span class="n">weights_path</span><span class="si">}</span><span class="s2"> not found, prediction aborted.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error accessing model weights path for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">model_meta</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error accessing model weights path for </span><span class="si">{</span><span class="n">model_meta</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+    <span class="c1"># Get or create VideoPredictionMeta</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">_video_prediction_meta</span><span class="p">,</span> <span class="n">created</span> <span class="o">=</span> <span class="n">VideoPredictionMeta</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_or_create</span><span class="p">(</span>
+            <span class="n">video_file</span><span class="o">=</span><span class="n">video</span><span class="p">,</span> <span class="n">model_meta</span><span class="o">=</span><span class="n">model_meta</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">created</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Created new VideoPredictionMeta for video </span><span class="si">%s</span><span class="s2">, model </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+                <span class="n">model_meta</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Created new VideoPredictionMeta&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s2">&quot;Found existing VideoPredictionMeta for video </span><span class="si">%s</span><span class="s2">, model </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+                <span class="n">model_meta</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Found existing VideoPredictionMeta&quot;</span><span class="p">)</span>
+        <span class="c1"># video_prediction_meta.save() # Save is handled by get_or_create</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Failed to get or create VideoPredictionMeta: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to get/create VideoPredictionMeta: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># --- Dataset Preparation ---</span>
+    <span class="n">datasets</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;inference_dataset&quot;</span><span class="p">:</span> <span class="n">InferenceDataset</span><span class="p">,</span>
+        <span class="c1"># Add other dataset types here if needed</span>
+    <span class="p">}</span>
+    <span class="n">dataset_model_class</span> <span class="o">=</span> <span class="n">datasets</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dataset_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">dataset_model_class</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Dataset class &#39;</span><span class="si">%s</span><span class="s2">&#39; not found. Prediction aborted.&quot;</span><span class="p">,</span> <span class="n">dataset_name</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataset class &#39;</span><span class="si">{</span><span class="n">dataset_name</span><span class="si">}</span><span class="s2">&#39; not found, prediction aborted.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Get frame paths using the helper method</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_frame_paths</span><span class="p">()</span> <span class="c1"># Use Frame helper</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">paths</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No frame paths returned by get_frame_paths for </span><span class="si">{</span><span class="n">frame_dir</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Ensure paths are sorted correctly if needed (get_frame_paths should ideally return sorted)</span>
+        <span class="c1"># paths = sorted(paths, key=lambda p: int(p.stem.split(&#39;_&#39;)[-1])) # Example sort</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;No frame files found in </span><span class="si">%s</span><span class="s2">. Prediction aborted. Error: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">frame_dir</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No frame files found in </span><span class="si">{</span><span class="n">frame_dir</span><span class="si">}</span><span class="s2">, prediction aborted.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Error listing or getting frame files from </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">frame_dir</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error listing/getting frames from </span><span class="si">{</span><span class="n">frame_dir</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Found </span><span class="si">%d</span><span class="s2"> frame files in </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">),</span> <span class="n">frame_dir</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span><span class="si">}</span><span class="s2"> images in </span><span class="si">{</span><span class="n">frame_dir</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">crop_template</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_crop_template</span><span class="p">()</span> <span class="c1"># Use Meta helper</span>
+    <span class="n">string_paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">as_posix</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">]</span>
+    <span class="n">crops</span> <span class="o">=</span> <span class="p">[</span><span class="n">crop_template</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="c1"># Assuming same crop for all frames</span>
+
+    <span class="k">if</span> <span class="n">test_run</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;TEST RUN: Using first </span><span class="si">%d</span><span class="s2"> frames.&quot;</span><span class="p">,</span> <span class="n">n_test_frames</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Running in test mode, using only the first </span><span class="si">{</span><span class="n">n_test_frames</span><span class="si">}</span><span class="s2"> frames&quot;</span><span class="p">)</span>
+        <span class="n">string_paths</span> <span class="o">=</span> <span class="n">string_paths</span><span class="p">[:</span><span class="n">n_test_frames</span><span class="p">]</span>
+        <span class="n">crops</span> <span class="o">=</span> <span class="n">crops</span><span class="p">[:</span><span class="n">n_test_frames</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">string_paths</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="s2">&quot;Not enough frames (</span><span class="si">%d</span><span class="s2">) for test run (required </span><span class="si">%d</span><span class="s2">). Prediction aborted.&quot;</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">),</span>
+                <span class="n">n_test_frames</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Not enough frames (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span><span class="si">}</span><span class="s2">) for test run (</span><span class="si">{</span><span class="n">n_test_frames</span><span class="si">}</span><span class="s2">). Prediction aborted.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ds_config</span> <span class="o">=</span> <span class="n">model_meta</span><span class="o">.</span><span class="n">get_inference_dataset_config</span><span class="p">()</span>
+        <span class="n">ds</span> <span class="o">=</span> <span class="n">dataset_model_class</span><span class="p">(</span><span class="n">string_paths</span><span class="p">,</span> <span class="n">crops</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">ds_config</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Created dataset &#39;</span><span class="si">%s</span><span class="s2">&#39; with </span><span class="si">%d</span><span class="s2"> items.&quot;</span><span class="p">,</span> <span class="n">dataset_name</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ds</span><span class="p">))</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataset length: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">ds</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ds</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">sample</span> <span class="o">=</span> <span class="n">ds</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c1"># Get a sample for debugging shape</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Sample shape: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">sample</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Shape:&quot;</span><span class="p">,</span> <span class="n">sample</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Failed to create dataset &#39;</span><span class="si">%s</span><span class="s2">&#39;: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">dataset_name</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to create dataset &#39;</span><span class="si">{</span><span class="n">dataset_name</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># --- Model Loading ---</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">ai_model_instance</span> <span class="o">=</span> <span class="n">MultiLabelClassificationNet</span><span class="o">.</span><span class="n">load_from_checkpoint</span><span class="p">(</span>
+            <span class="n">checkpoint_path</span><span class="o">=</span><span class="n">weights_path</span><span class="o">.</span><span class="n">as_posix</span><span class="p">(),</span> <span class="c1"># Ensure path is string</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Attempt to move to GPU</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="n">ai_model_instance</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Moved model to GPU.&quot;</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Moved model to GPU.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">cuda_err</span><span class="p">:</span> <span class="c1"># Catch specific runtime error for CUDA</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not move model to GPU: </span><span class="si">%s</span><span class="s2">. Using CPU.&quot;</span><span class="p">,</span> <span class="n">cuda_err</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not move model to GPU: </span><span class="si">{</span><span class="n">cuda_err</span><span class="si">}</span><span class="s2">. Using CPU.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">cuda_err</span><span class="p">:</span> <span class="c1"># Catch other potential errors</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Error attempting to move model to GPU: </span><span class="si">%s</span><span class="s2">. Using CPU.&quot;</span><span class="p">,</span> <span class="n">cuda_err</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error moving model to GPU: </span><span class="si">{</span><span class="n">cuda_err</span><span class="si">}</span><span class="s2">. Using CPU.&quot;</span><span class="p">)</span>
+
+
+        <span class="n">_</span> <span class="o">=</span> <span class="n">ai_model_instance</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span> <span class="c1"># Set to evaluation mode</span>
+        <span class="n">classifier</span> <span class="o">=</span> <span class="n">Classifier</span><span class="p">(</span><span class="n">ai_model_instance</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># Assuming Classifier exists</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;AI model loaded successfully from </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">weights_path</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;AI model loaded.&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="s2">&quot;Failed to load AI model from </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">weights_path</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to load AI model from </span><span class="si">{</span><span class="n">weights_path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># --- Inference ---</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting inference on </span><span class="si">%d</span><span class="s2"> frames...&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">string_paths</span><span class="p">))</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Starting inference&quot;</span><span class="p">)</span>
+        <span class="c1"># Assuming classifier.pipe takes paths and crops</span>
+        <span class="n">predictions</span> <span class="o">=</span> <span class="n">classifier</span><span class="o">.</span><span class="n">pipe</span><span class="p">(</span><span class="n">string_paths</span><span class="p">,</span> <span class="n">crops</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Inference completed.&quot;</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Inference completed.&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Inference failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Inference failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># --- Post-processing ---</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Post-processing predictions...&quot;</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Creating Prediction Dict&quot;</span><span class="p">)</span>
+        <span class="c1"># Assuming classifier.readable exists</span>
+        <span class="n">readable_predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">classifier</span><span class="o">.</span><span class="n">readable</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">]</span>
+
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Creating Merged Predictions&quot;</span><span class="p">)</span>
+        <span class="c1"># Assuming concat_pred_dicts exists</span>
+        <span class="n">merged_predictions</span> <span class="o">=</span> <span class="n">concat_pred_dicts</span><span class="p">(</span><span class="n">readable_predictions</span><span class="p">)</span>
+
+        <span class="n">fps</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_fps</span><span class="p">()</span> <span class="c1"># Use Meta helper</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fps</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;Video FPS is unknown for </span><span class="si">%s</span><span class="s2">. Smoothing/sequence calculations might be inaccurate. Using default 30 FPS.&quot;</span><span class="p">,</span>
+                <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Warning: Video FPS is unknown. Using default 30 FPS.&quot;</span><span class="p">)</span>
+            <span class="n">fps</span> <span class="o">=</span> <span class="mi">30</span> <span class="c1"># Default FPS if unknown</span>
+
+        <span class="n">ic</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Creating Smooth Merged Predictions; FPS: </span><span class="si">{</span><span class="n">fps</span><span class="si">}</span><span class="s2">, Smooth Window Size: </span><span class="si">{</span><span class="n">smooth_window_size_s</span><span class="si">}</span><span class="s2">s&quot;</span>
+        <span class="p">)</span>
+        <span class="n">smooth_merged_predictions</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">merged_predictions</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="c1"># Assuming make_smooth_preds exists</span>
+            <span class="n">smooth_merged_predictions</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">make_smooth_preds</span><span class="p">(</span>
+                <span class="n">prediction_array</span><span class="o">=</span><span class="n">merged_predictions</span><span class="p">[</span><span class="n">key</span><span class="p">],</span>
+                <span class="n">window_size_s</span><span class="o">=</span><span class="n">smooth_window_size_s</span><span class="p">,</span>
+                <span class="n">fps</span><span class="o">=</span><span class="n">fps</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">ic</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Creating Binary Smooth Merged Predictions; Binarize Threshold: </span><span class="si">{</span><span class="n">binarize_threshold</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="n">binary_smooth_merged_predictions</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">smooth_merged_predictions</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">binary_smooth_merged_predictions</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">smooth_merged_predictions</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">binarize_threshold</span>
+            <span class="p">)</span>
+
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Creating Sequences&quot;</span><span class="p">)</span>
+        <span class="n">sequences</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">prediction_array</span> <span class="ow">in</span> <span class="n">binary_smooth_merged_predictions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c1"># Assuming find_true_pred_sequences exists</span>
+            <span class="n">sequences</span><span class="p">[</span><span class="n">label</span><span class="p">]</span> <span class="o">=</span> <span class="n">find_true_pred_sequences</span><span class="p">(</span><span class="n">prediction_array</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Post-processing completed. Found sequences for labels: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">sequences</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span>
+        <span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Finished post-processing.&quot;</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sequences found for labels: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">sequences</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">sequences</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Post-processing failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Post-processing failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_predict_video_entry</span><span class="p">(</span>
+    <span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span>
+    <span class="n">model_meta_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">model_meta_version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">dataset_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;inference_dataset&quot;</span><span class="p">,</span>
+    <span class="n">smooth_window_size_s</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">binarize_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">test_run</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">GLOBAL_TEST_RUN</span><span class="p">,</span>
+    <span class="n">n_test_frames</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">GLOBAL_N_TEST_FRAMES</span><span class="p">,</span>
+    <span class="n">save_results</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Entry point called from VideoFile.predict_video. Imports and calls the main prediction logic.&quot;&quot;&quot;</span>
+    <span class="c1"># This function now primarily handles getting ModelMeta and calling the pipeline.</span>
+    <span class="c1"># The saving logic is moved to predict_video.py&#39;s _predict_video function.</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModelMeta</span> <span class="c1"># Local import</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">model_meta</span> <span class="o">=</span> <span class="n">ModelMeta</span><span class="o">.</span><span class="n">get_by_name</span><span class="p">(</span><span class="n">model_meta_name</span><span class="p">,</span> <span class="n">model_meta_version</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Using ModelMeta: </span><span class="si">%s</span><span class="s2"> (Version: </span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="n">model_meta</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">model_meta</span><span class="o">.</span><span class="n">version</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">ModelMeta</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;ModelMeta &#39;</span><span class="si">%s</span><span class="s2">&#39; (Version: </span><span class="si">%s</span><span class="s2">) not found.&quot;</span><span class="p">,</span> <span class="n">model_meta_name</span><span class="p">,</span> <span class="n">model_meta_version</span><span class="p">)</span>
+        <span class="k">raise</span>
+
+    <span class="c1"># Call the main pipeline function</span>
+    <span class="n">predicted_sequences</span> <span class="o">=</span> <span class="n">_predict_video_pipeline</span><span class="p">(</span>
+        <span class="n">video</span><span class="o">=</span><span class="n">video</span><span class="p">,</span>
+        <span class="n">model_meta</span><span class="o">=</span><span class="n">model_meta</span><span class="p">,</span>
+        <span class="n">dataset_name</span><span class="o">=</span><span class="n">dataset_name</span><span class="p">,</span>
+        <span class="n">smooth_window_size_s</span><span class="o">=</span><span class="n">smooth_window_size_s</span><span class="p">,</span>
+        <span class="n">binarize_threshold</span><span class="o">=</span><span class="n">binarize_threshold</span><span class="p">,</span>
+        <span class="n">test_run</span><span class="o">=</span><span class="n">test_run</span><span class="p">,</span>
+        <span class="n">n_test_frames</span><span class="o">=</span><span class="n">n_test_frames</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Return the sequences and model_meta for the calling function to handle saving</span>
+    <span class="k">return</span> <span class="n">predicted_sequences</span><span class="p">,</span> <span class="n">model_meta</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_text_information</span><span class="p">(</span>
+    <span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="n">frame_fraction</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span><span class="p">,</span> <span class="n">cap</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Facade function to call the text extraction logic.&quot;&quot;&quot;</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Attempting text extraction for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Attempting text extraction for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Use uuid</span>
+
+    <span class="n">extracted_data</span> <span class="o">=</span> <span class="n">_extract_text_from_video_frames</span><span class="p">(</span>
+        <span class="n">video</span><span class="o">=</span><span class="n">video</span><span class="p">,</span> <span class="n">frame_fraction</span><span class="o">=</span><span class="n">frame_fraction</span><span class="p">,</span> <span class="n">cap</span><span class="o">=</span><span class="n">cap</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">extracted_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Text extraction successful for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Text extraction successful.&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Text extraction returned no data for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Text extraction returned no data.&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">extracted_data</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

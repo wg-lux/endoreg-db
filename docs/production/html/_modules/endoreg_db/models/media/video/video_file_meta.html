@@ -1,0 +1,490 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>endoreg_db.models.media.video.video_file_meta &mdash; EndoReg-DB  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            EndoReg-DB
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html">Models Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.ai">AI Models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.case">Case</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.center">Center</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.administration.person">Person</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-0">Product</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.label">Label</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.video">Video</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.media.frame">Frame</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#report">Report</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.disease">Disease</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.event">Event</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.patient">Patient</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.finding">Finding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.risk">Risk</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.hardware">Hardware</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.laboratory">Laboratory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.medical.organ">Organ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#module-endoreg_db.models.metadata">Metadata</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#requirement">Requirement</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#state">State</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../models.html#other">Other</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">EndoReg-DB</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">endoreg_db.models.media.video.video_file_meta</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for endoreg_db.models.media.video.video_file_meta</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">cv2</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">icecream</span><span class="w"> </span><span class="kn">import</span> <span class="n">ic</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.video_file</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoFile</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoMeta</span><span class="p">,</span> <span class="n">SensitiveMeta</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_update_text_metadata</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="n">ocr_frame_fraction</span><span class="o">=</span><span class="mf">0.001</span><span class="p">,</span> <span class="n">cap</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">15</span><span class="p">,</span> <span class="n">save_instance</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extracts text via OCR and updates/creates SensitiveMeta.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">SensitiveMeta</span> <span class="c1"># Local import</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Updating text metadata via OCR for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Updating text metadata for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="c1"># Use uuid</span>
+
+    <span class="c1"># Call the AI helper function for extraction</span>
+    <span class="n">extracted_data_dict</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">extract_text_information</span><span class="p">(</span>
+        <span class="n">frame_fraction</span><span class="o">=</span><span class="n">ocr_frame_fraction</span><span class="p">,</span> <span class="n">cap</span><span class="o">=</span><span class="n">cap</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">extracted_data_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;No text extracted for video </span><span class="si">%s</span><span class="s2">; skipping SensitiveMeta update.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;No text extracted; skipping metadata update.&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="c1"># Add center name if available</span>
+    <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">center</span><span class="p">:</span>
+        <span class="n">extracted_data_dict</span><span class="p">[</span><span class="s2">&quot;center_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">center</span><span class="o">.</span><span class="n">name</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Center not set for video </span><span class="si">%s</span><span class="s2"> during text metadata update.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Data extracted for SensitiveMeta update: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">extracted_data_dict</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Data for SensitiveMeta update:&quot;</span><span class="p">,</span> <span class="n">extracted_data_dict</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">sm</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span>
+        <span class="k">if</span> <span class="n">sm</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Updating existing SensitiveMeta (PK: </span><span class="si">%s</span><span class="s2">) for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">sm</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Updating existing SensitiveMeta </span><span class="si">{</span><span class="n">sm</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">sm</span><span class="o">.</span><span class="n">update_from_dict</span><span class="p">(</span><span class="n">extracted_data_dict</span><span class="p">)</span> <span class="c1"># Assuming this method exists</span>
+            <span class="n">sm</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Creating new SensitiveMeta for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Creating new SensitiveMeta&quot;</span><span class="p">)</span>
+            <span class="c1"># Assuming create_from_dict exists and returns a saved instance or requires saving</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span> <span class="o">=</span> <span class="n">SensitiveMeta</span><span class="o">.</span><span class="n">create_from_dict</span><span class="p">(</span><span class="n">extracted_data_dict</span><span class="p">)</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span><span class="o">.</span><span class="n">save</span><span class="p">()</span> <span class="c1"># Ensure it&#39;s saved</span>
+
+        <span class="c1"># Update state</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_or_create_state</span><span class="p">()</span> <span class="c1"># Use State helper</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">sensitive_data_retrieved</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sensitive_data_retrieved&quot;</span><span class="p">])</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Successfully updated/created SensitiveMeta and set state for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+        <span class="c1"># Save the VideoFile instance itself if requested and if sensitive_meta was linked</span>
+        <span class="k">if</span> <span class="n">save_instance</span><span class="p">:</span>
+            <span class="n">update_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;sensitive_meta&quot;</span><span class="p">]</span>
+            <span class="c1"># Check if derived fields also need updating</span>
+            <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">patient</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span><span class="o">.</span><span class="n">pseudo_patient</span><span class="p">:</span> <span class="n">update_fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;patient&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">examination</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span><span class="o">.</span><span class="n">pseudo_examination</span><span class="p">:</span> <span class="n">update_fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;examination&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">date</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">sensitive_meta</span><span class="o">.</span><span class="n">date</span><span class="p">:</span> <span class="n">update_fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;date&quot;</span><span class="p">)</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="n">update_fields</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Saved video </span><span class="si">%s</span><span class="s2"> after metadata update.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to update/create SensitiveMeta or state for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to update/create SensitiveMeta or state: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Attempt to mark state as failed</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_or_create_state</span><span class="p">()</span> <span class="c1"># Use State helper</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">sensitive_data_retrieved</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">state</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sensitive_data_retrieved&quot;</span><span class="p">])</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">state_e</span><span class="p">:</span>
+             <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to update state after SensitiveMeta error: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">state_e</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_update_video_meta</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="n">save_instance</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Updates or creates the technical VideoMeta from the raw video file.&quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">VideoMeta</span> <span class="c1"># Local import</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Updating technical VideoMeta for video </span><span class="si">%s</span><span class="s2"> (from raw file).&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Updating VideoMeta for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2"> from raw file&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Raw video file path not available for </span><span class="si">%s</span><span class="s2">. Cannot update VideoMeta.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Raw video file missing, cannot update VideoMeta.&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="n">raw_video_path</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_raw_file_path</span><span class="p">()</span> <span class="c1"># Use helper</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">raw_video_path</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">raw_video_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Raw video file path </span><span class="si">%s</span><span class="s2"> does not exist or is None. Cannot update VideoMeta.&quot;</span><span class="p">,</span> <span class="n">raw_video_path</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Raw video file path </span><span class="si">{</span><span class="n">raw_video_path</span><span class="si">}</span><span class="s2"> missing or None, cannot update VideoMeta.&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">vm</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span>
+        <span class="k">if</span> <span class="n">vm</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Updating existing VideoMeta (PK: </span><span class="si">%s</span><span class="s2">) for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">vm</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Updating existing VideoMeta </span><span class="si">{</span><span class="n">vm</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">vm</span><span class="o">.</span><span class="n">update_meta</span><span class="p">(</span><span class="n">raw_video_path</span><span class="p">)</span> <span class="c1"># Assuming this method exists</span>
+            <span class="n">vm</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">center</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">processor</span><span class="p">:</span>
+                 <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Cannot create VideoMeta for </span><span class="si">%s</span><span class="s2">: Center or Processor is missing.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+                 <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cannot create VideoMeta for </span><span class="si">{</span><span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="si">}</span><span class="s2">: Center or Processor missing.&quot;</span><span class="p">)</span>
+                 <span class="k">return</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Creating new VideoMeta for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Creating new VideoMeta&quot;</span><span class="p">)</span>
+            <span class="c1"># Assuming create_from_file exists and returns a saved instance or requires saving</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span> <span class="o">=</span> <span class="n">VideoMeta</span><span class="o">.</span><span class="n">create_from_file</span><span class="p">(</span>
+                <span class="n">video_path</span><span class="o">=</span><span class="n">raw_video_path</span><span class="p">,</span>
+                <span class="n">center</span><span class="o">=</span><span class="n">video</span><span class="o">.</span><span class="n">center</span><span class="p">,</span>
+                <span class="n">processor</span><span class="o">=</span><span class="n">video</span><span class="o">.</span><span class="n">processor</span><span class="p">,</span>
+                <span class="n">save_instance</span><span class="o">=</span><span class="kc">True</span> <span class="c1"># Let create_from_file handle saving</span>
+            <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Created and linked VideoMeta (PK: </span><span class="si">%s</span><span class="s2">) for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+        <span class="c1"># Save the VideoFile instance itself if requested and if video_meta was linked/updated</span>
+        <span class="k">if</span> <span class="n">save_instance</span><span class="p">:</span>
+            <span class="n">update_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;video_meta&quot;</span><span class="p">]</span>
+            <span class="c1"># Check if derived fields also need updating</span>
+            <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="p">:</span>
+                <span class="n">meta_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;fps&quot;</span><span class="p">,</span> <span class="s2">&quot;duration&quot;</span><span class="p">,</span> <span class="s2">&quot;frame_count&quot;</span><span class="p">,</span> <span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">]</span>
+                <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">meta_fields</span><span class="p">:</span>
+                     <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">video</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                         <span class="c1"># No need to set attribute here, save method handles it</span>
+                         <span class="n">update_fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">update_fields</span><span class="p">)))</span> <span class="c1"># Use set to avoid duplicates</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Saved video </span><span class="si">%s</span><span class="s2"> after VideoMeta update.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to update/create VideoMeta for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to update/create VideoMeta: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_fps</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Gets the FPS, trying instance, VideoMeta, and finally direct file access.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;FPS not set on instance </span><span class="si">%s</span><span class="s2">, checking VideoMeta.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+    <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;FPS not set on instance, checking VideoMeta.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;VideoMeta not linked for </span><span class="si">%s</span><span class="s2">, attempting update.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;VideoMeta not linked, attempting update.&quot;</span><span class="p">)</span>
+        <span class="n">_update_video_meta</span><span class="p">(</span><span class="n">video</span><span class="p">,</span> <span class="n">save_instance</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># Call the helper function</span>
+
+    <span class="c1"># Check again after potential update</span>
+    <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span>
+    <span class="k">elif</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="o">.</span><span class="n">fps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Retrieved FPS </span><span class="si">%.2f</span><span class="s2"> from VideoMeta for </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="o">.</span><span class="n">fps</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">video</span><span class="o">.</span><span class="n">fps</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="o">.</span><span class="n">fps</span>
+        <span class="c1"># Avoid saving if called from within the save method itself</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">video</span><span class="p">,</span> <span class="s1">&#39;_saving&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;fps&quot;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not determine FPS from VideoMeta for video </span><span class="si">%s</span><span class="s2">. Trying direct raw file access.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span><span class="p">:</span>
+                <span class="n">video_path</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">get_raw_file_path</span><span class="p">()</span> <span class="c1"># Use helper</span>
+                <span class="k">if</span> <span class="n">video_path</span> <span class="ow">and</span> <span class="n">video_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                    <span class="n">video_cap</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">VideoCapture</span><span class="p">(</span><span class="n">video_path</span><span class="o">.</span><span class="n">as_posix</span><span class="p">())</span>
+                    <span class="k">if</span> <span class="n">video_cap</span><span class="o">.</span><span class="n">isOpened</span><span class="p">():</span>
+                        <span class="n">fps</span> <span class="o">=</span> <span class="n">video_cap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cv2</span><span class="o">.</span><span class="n">CAP_PROP_FPS</span><span class="p">)</span>
+                        <span class="n">video_cap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">fps</span> <span class="ow">and</span> <span class="n">fps</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">video</span><span class="o">.</span><span class="n">fps</span> <span class="o">=</span> <span class="n">fps</span>
+                            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Determined FPS </span><span class="si">%.2f</span><span class="s2"> directly from file for </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+                            <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">video</span><span class="p">,</span> <span class="s1">&#39;_saving&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                                <span class="n">video</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;fps&quot;</span><span class="p">])</span>
+                            <span class="k">return</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not open video file </span><span class="si">%s</span><span class="s2"> with OpenCV for FPS check.&quot;</span><span class="p">,</span> <span class="n">video_path</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">video_path</span><span class="p">:</span>
+                     <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Raw file path </span><span class="si">%s</span><span class="s2"> does not exist for direct FPS check.&quot;</span><span class="p">,</span> <span class="n">video_path</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                     <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Raw file path is None for direct FPS check.&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                 <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Raw file not available for direct FPS check.&quot;</span><span class="p">)</span>
+
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error getting FPS directly from file </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">raw_file</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span> <span class="k">else</span> <span class="s1">&#39;N/A&#39;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Could not determine FPS for video </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Could not determine FPS.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_endo_roi</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Gets the endoscope region of interest (ROI) dictionary from the linked VideoMeta.</span>
+
+<span class="sd">    The ROI dictionary typically contains &#39;x&#39;, &#39;y&#39;, &#39;width&#39;, &#39;height&#39;.</span>
+<span class="sd">    Returns None if VideoMeta is not linked or ROI is not properly defined.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;VideoMeta not linked for video </span><span class="si">%s</span><span class="s2">. Cannot get endo ROI.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;VideoMeta not linked, cannot get endo ROI.&quot;</span><span class="p">)</span>
+        <span class="c1"># Optionally try to update VideoMeta here?</span>
+        <span class="c1"># _update_video_meta(video, save_instance=True)</span>
+        <span class="c1"># if not video.video_meta: return None # Return if still not available</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Assuming VideoMeta has a method get_endo_roi()</span>
+        <span class="n">endo_roi</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">video_meta</span><span class="o">.</span><span class="n">get_endo_roi</span><span class="p">()</span>
+        <span class="c1"># Basic validation</span>
+        <span class="k">if</span> <span class="n">endo_roi</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">k</span> <span class="ow">in</span> <span class="n">endo_roi</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;x&quot;</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">,</span> <span class="s2">&quot;width&quot;</span><span class="p">,</span> <span class="s2">&quot;height&quot;</span><span class="p">])</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">endo_roi</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Retrieved endo ROI for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">endo_roi</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">endo_roi</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Endo ROI not fully defined or invalid in VideoMeta for video </span><span class="si">%s</span><span class="s2">. ROI: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">endo_roi</span><span class="p">)</span>
+            <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Endo ROI not fully defined or invalid in VideoMeta: </span><span class="si">{</span><span class="n">endo_roi</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;VideoMeta object for video </span><span class="si">%s</span><span class="s2"> does not have a &#39;get_endo_roi&#39; method.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;VideoMeta object missing &#39;get_endo_roi&#39; method.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error getting endo ROI from VideoMeta for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error getting endo ROI from VideoMeta: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_crop_template</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates a crop template [y1, y2, x1, x2] from the endo ROI.&quot;&quot;&quot;</span>
+    <span class="n">endo_roi</span> <span class="o">=</span> <span class="n">_get_endo_roi</span><span class="p">(</span><span class="n">video</span><span class="p">)</span> <span class="c1"># Use the helper function</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">endo_roi</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Cannot generate crop template for video </span><span class="si">%s</span><span class="s2">: Endo ROI not available.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="s2">&quot;Cannot generate crop template: Endo ROI not available.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">x</span> <span class="o">=</span> <span class="n">endo_roi</span><span class="p">[</span><span class="s2">&quot;x&quot;</span><span class="p">]</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">endo_roi</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span>
+    <span class="n">width</span> <span class="o">=</span> <span class="n">endo_roi</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span>
+    <span class="n">height</span> <span class="o">=</span> <span class="n">endo_roi</span><span class="p">[</span><span class="s2">&quot;height&quot;</span><span class="p">]</span>
+
+    <span class="c1"># Validate dimensions</span>
+    <span class="k">if</span> <span class="kc">None</span> <span class="ow">in</span> <span class="p">[</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">height</span><span class="p">]</span> <span class="ow">or</span> <span class="n">width</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">height</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Invalid ROI dimensions for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">endo_roi</span><span class="p">)</span>
+        <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid ROI dimensions: </span><span class="si">{</span><span class="n">endo_roi</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># Ensure crop boundaries are within image dimensions if available</span>
+    <span class="n">img_h</span><span class="p">,</span> <span class="n">img_w</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">height</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">width</span>
+    <span class="k">if</span> <span class="n">img_h</span> <span class="ow">and</span> <span class="n">img_w</span><span class="p">:</span>
+        <span class="n">y1</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="n">y2</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">img_h</span><span class="p">,</span> <span class="n">y</span> <span class="o">+</span> <span class="n">height</span><span class="p">)</span>
+        <span class="n">x1</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+        <span class="n">x2</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">img_w</span><span class="p">,</span> <span class="n">x</span> <span class="o">+</span> <span class="n">width</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">y1</span> <span class="o">&gt;=</span> <span class="n">y2</span> <span class="ow">or</span> <span class="n">x1</span> <span class="o">&gt;=</span> <span class="n">x2</span><span class="p">:</span>
+             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Calculated crop template has zero or negative size for video </span><span class="si">%s</span><span class="s2">. ROI: </span><span class="si">%s</span><span class="s2">, Img: </span><span class="si">%d</span><span class="s2">x</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">endo_roi</span><span class="p">,</span> <span class="n">img_w</span><span class="p">,</span> <span class="n">img_h</span><span class="p">)</span>
+             <span class="n">ic</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid crop template size. ROI: </span><span class="si">{</span><span class="n">endo_roi</span><span class="si">}</span><span class="s2">, Img: </span><span class="si">{</span><span class="n">img_w</span><span class="si">}</span><span class="s2">x</span><span class="si">{</span><span class="n">img_h</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+             <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">crop_template</span> <span class="o">=</span> <span class="p">[</span><span class="n">y1</span><span class="p">,</span> <span class="n">y2</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+         <span class="c1"># Proceed without boundary check if image dimensions unknown</span>
+         <span class="n">crop_template</span> <span class="o">=</span> <span class="p">[</span><span class="n">y</span><span class="p">,</span> <span class="n">y</span> <span class="o">+</span> <span class="n">height</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">x</span> <span class="o">+</span> <span class="n">width</span><span class="p">]</span>
+
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Generated crop template for video </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">crop_template</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">crop_template</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_initialize_video_specs</span><span class="p">(</span><span class="n">video</span><span class="p">:</span> <span class="s2">&quot;VideoFile&quot;</span><span class="p">,</span> <span class="n">use_raw</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Initializes basic video specs (fps, w, h, count, duration) directly from the video file.&quot;&quot;&quot;</span>
+    <span class="n">target_file</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">raw_file</span> <span class="k">if</span> <span class="n">use_raw</span> <span class="ow">and</span> <span class="n">video</span><span class="o">.</span><span class="n">has_raw</span> <span class="k">else</span> <span class="n">video</span><span class="o">.</span><span class="n">active_file</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">target_file</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">target_file</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;No suitable video file found for spec initialization for </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Initializing video specs directly from file </span><span class="si">%s</span><span class="s2"> for </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">target_file</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">video</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">video_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">target_file</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">video_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+             <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Video file not found at </span><span class="si">%s</span><span class="s2"> for spec initialization.&quot;</span><span class="p">,</span> <span class="n">video_path</span><span class="p">)</span>
+             <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">video_cap</span> <span class="o">=</span> <span class="n">cv2</span><span class="o">.</span><span class="n">VideoCapture</span><span class="p">(</span><span class="n">video_path</span><span class="o">.</span><span class="n">as_posix</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">video_cap</span><span class="o">.</span><span class="n">isOpened</span><span class="p">():</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Could not open video file </span><span class="si">%s</span><span class="s2"> with OpenCV for spec initialization.&quot;</span><span class="p">,</span> <span class="n">video_path</span><span class="p">)</span>
+            <span class="n">video_cap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span> <span class="c1"># Ensure release even if not opened</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">updated</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">fields_to_update</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Get current values before checking</span>
+        <span class="n">current_fps</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">fps</span>
+        <span class="n">current_width</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">width</span>
+        <span class="n">current_height</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">height</span>
+        <span class="n">current_frame_count</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">frame_count</span>
+        <span class="n">current_duration</span> <span class="o">=</span> <span class="n">video</span><span class="o">.</span><span class="n">duration</span>
+
+        <span class="c1"># --- Get values from OpenCV ---</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">file_fps</span> <span class="o">=</span> <span class="n">video_cap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cv2</span><span class="o">.</span><span class="n">CAP_PROP_FPS</span><span class="p">)</span>
+            <span class="n">file_width</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">video_cap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cv2</span><span class="o">.</span><span class="n">CAP_PROP_FRAME_WIDTH</span><span class="p">))</span>
+            <span class="n">file_height</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">video_cap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cv2</span><span class="o">.</span><span class="n">CAP_PROP_FRAME_HEIGHT</span><span class="p">))</span>
+            <span class="n">file_frame_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">video_cap</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cv2</span><span class="o">.</span><span class="n">CAP_PROP_FRAME_COUNT</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">cv_err</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error getting properties from OpenCV for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">video_path</span><span class="p">,</span> <span class="n">cv_err</span><span class="p">)</span>
+            <span class="n">video_cap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">video_cap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span> <span class="c1"># Ensure release after getting props</span>
+
+        <span class="c1"># --- Update FPS ---</span>
+        <span class="k">if</span> <span class="n">current_fps</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">file_fps</span> <span class="ow">and</span> <span class="n">file_fps</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">fps</span> <span class="o">=</span> <span class="n">file_fps</span>
+            <span class="n">fields_to_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;fps&quot;</span><span class="p">)</span>
+            <span class="n">updated</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">current_fps</span> <span class="o">=</span> <span class="n">file_fps</span> <span class="c1"># Update local var for duration calc</span>
+
+        <span class="c1"># --- Update Width ---</span>
+        <span class="k">if</span> <span class="n">current_width</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">file_width</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">width</span> <span class="o">=</span> <span class="n">file_width</span>
+            <span class="n">fields_to_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;width&quot;</span><span class="p">)</span>
+            <span class="n">updated</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="c1"># --- Update Height ---</span>
+        <span class="k">if</span> <span class="n">current_height</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">file_height</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">height</span> <span class="o">=</span> <span class="n">file_height</span>
+            <span class="n">fields_to_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;height&quot;</span><span class="p">)</span>
+            <span class="n">updated</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="c1"># --- Update Frame Count and Duration ---</span>
+        <span class="c1"># Only update if frame count is valid and FPS is known</span>
+        <span class="k">if</span> <span class="n">file_frame_count</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">current_fps</span> <span class="ow">and</span> <span class="n">current_fps</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">current_frame_count</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">video</span><span class="o">.</span><span class="n">frame_count</span> <span class="o">=</span> <span class="n">file_frame_count</span>
+                <span class="n">fields_to_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;frame_count&quot;</span><span class="p">)</span>
+                <span class="n">updated</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="n">current_duration</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">video</span><span class="o">.</span><span class="n">duration</span> <span class="o">=</span> <span class="n">file_frame_count</span> <span class="o">/</span> <span class="n">current_fps</span>
+                <span class="n">fields_to_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;duration&quot;</span><span class="p">)</span>
+                <span class="n">updated</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">elif</span> <span class="n">file_frame_count</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Invalid frame count (</span><span class="si">%d</span><span class="s2">) obtained from </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">file_frame_count</span><span class="p">,</span> <span class="n">video_path</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">current_fps</span> <span class="ow">or</span> <span class="n">current_fps</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+             <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Cannot calculate duration for </span><span class="si">%s</span><span class="s2"> as FPS is unknown or invalid (</span><span class="si">%.2f</span><span class="s2">).&quot;</span><span class="p">,</span> <span class="n">video_path</span><span class="p">,</span> <span class="n">current_fps</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+
+
+        <span class="c1"># --- Save if updated ---</span>
+        <span class="k">if</span> <span class="n">updated</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Updated video specs from file </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">target_file</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">fields_to_update</span><span class="p">))</span>
+            <span class="n">video</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">update_fields</span><span class="o">=</span><span class="n">fields_to_update</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;No video specs needed updating from file </span><span class="si">%s</span><span class="s2">.&quot;</span><span class="p">,</span> <span class="n">target_file</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Error initializing video specs from file </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">target_file</span><span class="p">,</span> <span class="s1">&#39;path&#39;</span><span class="p">,</span> <span class="s1">&#39;N/A&#39;</span><span class="p">),</span> <span class="n">e</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># Ensure capture is released in case of unexpected error</span>
+        <span class="k">if</span> <span class="s1">&#39;video_cap&#39;</span> <span class="ow">in</span> <span class="nb">locals</span><span class="p">()</span> <span class="ow">and</span> <span class="n">video_cap</span><span class="o">.</span><span class="n">isOpened</span><span class="p">():</span>
+            <span class="n">video_cap</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">False</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 1980, AG-Lux.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

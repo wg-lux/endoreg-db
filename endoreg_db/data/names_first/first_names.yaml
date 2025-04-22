@@ -49,3 +49,6 @@
 - model: endoreg_db.first_name
   fields:
     name: Theodor
+- model: endoreg_db.first_name
+  fields:
+    name: Thomas
