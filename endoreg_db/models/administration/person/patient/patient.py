@@ -1,11 +1,8 @@
 from ..person import Person
-from django import forms
-from django.forms import DateInput
 from django.db import models
 from faker import Faker
 import random
 from datetime import datetime
-from icecream import ic
 from typing import TYPE_CHECKING
 from logging import getLogger
 from django.utils import timezone  # Add this import
@@ -16,7 +13,7 @@ if TYPE_CHECKING:
     from ....other import Gender
     from ....medical.patient import PatientExamination
     from ....administration import Center
-    from ....media import RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
+    from ....media import AnonymExaminationReport, AnonymHistologyReport
     from .... import media
     from endoreg_db.models import ExaminationIndication
 
@@ -158,15 +155,11 @@ class Patient(Person):
         self, indication: "ExaminationIndication", date_start: datetime = None, date_end: datetime = None
     ):
         from ....medical import (
-            ExaminationIndication,
-            Examination,
             PatientExaminationIndication,
             PatientExamination,
         )
 
         examination = indication.get_examination()
-
-        assert isinstance(examination, Examination)
 
         patient_examination = PatientExamination.objects.create(
             patient=self,
@@ -234,14 +227,7 @@ class Patient(Person):
         gender_names = ["male", "female"]
         probabilities = [p_male, p_female]
 
-        # Debug: print the names and probabilities
-        # print(f"Gender names: {gender_names}")
-        # print(f"Probabilities: {probabilities}")
-
-        # Select a gender based on the given probabilities
         selected_gender = random.choices(gender_names, probabilities)[0]
-        # Debug: print the selected gender
-        # print(f"Selected gender: {selected_gender}")
 
         # Fetch the corresponding Gender object from the database
         gender_obj = Gender.objects.get(name=selected_gender)
