@@ -11,13 +11,13 @@ from ...helpers.data_loader import (
 )
 
 from ...helpers.default_objects import (
-    default_center,
+    get_default_center,
 )
 
 class ExaminerModelTest(TestCase):
     def setUp(self):
         load_center_data()
-        self.center = default_center()
+        self.center = get_default_center()
         
         # Create a FirstName and LastName instance for testing
         self.first_name = FirstName.objects.create(name="John")

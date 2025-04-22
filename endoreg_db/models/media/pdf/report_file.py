@@ -1,4 +1,4 @@
-from ...utils import FILE_STORAGE, DOCUMENT_DIR
+from ...utils import FILE_STORAGE, DOCUMENT_DIR, STORAGE_DIR
 from django.db import models
 from typing import TYPE_CHECKING
 
@@ -50,7 +50,7 @@ class AbstractDocument(models.Model):
     date = models.DateField(blank=True, null=True)
     time = models.TimeField(blank=True, null=True)
     file = models.FileField(
-        upload_to=DOCUMENT_DIR,
+        upload_to=DOCUMENT_DIR.relative_to(STORAGE_DIR),
         storage=FILE_STORAGE,
         blank=True,
         null=True,

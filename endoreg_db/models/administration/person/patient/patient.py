@@ -7,6 +7,9 @@ import random
 from datetime import datetime
 from icecream import ic
 from typing import TYPE_CHECKING
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 if TYPE_CHECKING:
     from ....other import Gender
@@ -60,18 +63,19 @@ class Patient(Person):
         cls,
         patient_hash: str,
         center: "Center" = None,
-        gender: "Gender" = None,
+        gender: "Gender | str" = None,  # Allow string type hint
         birth_month: int = None,
         birth_year: int = None,
     ):
         from endoreg_db.utils import random_day_by_year, create_mock_patient_name
+        from ....other import Gender  # Import Gender model
 
         created = False
 
         existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
         if existing_patient:
-            ic(f"Patient with hash {patient_hash} already exists")
-            ic(f"Returning existing patient: {existing_patient}")
+            logger.info(f"Patient with hash {patient_hash} already exists")
+            logger.info(f"Returning existing patient: {existing_patient}")
             return existing_patient, created
 
         # If no patient with the given hash exists, create a new pseudo patient
@@ -82,17 +86,26 @@ class Patient(Person):
         )
         assert birth_year, "Birth year must be provided to create a new pseudo patient"
 
+        # Ensure gender is a Gender object
+        if isinstance(gender, str):
+            gender_obj = Gender.objects.get(name=gender)
+        elif isinstance(gender, Gender):
+            gender_obj = gender
+        else:
+            raise ValueError("Gender must be a string name or a Gender object.")
+
         pseudo_dob = random_day_by_year(birth_year)
-        gender_name = gender.name
+        gender_name = gender_obj.name
         first_name, last_name = create_mock_patient_name(gender_name)
 
-        ic(f"Creating pseudo patient with hash {patient_hash}")
-        ic(f"Generated name: {first_name} {last_name}")
+        logger.info(f"Creating pseudo patient with hash {patient_hash}")
+        logger.info(f"Generated name: {first_name} {last_name}")
 
         patient = cls.objects.create(
             first_name=first_name,
             last_name=last_name,
             dob=pseudo_dob,
+            gender=gender_obj,  # Use the fetched/validated Gender object
             patient_hash=patient_hash,
             is_real_person=False,
         )
@@ -102,7 +115,6 @@ class Patient(Person):
 
         return patient, created
 
-   
     def get_dob(self) -> datetime.date:
         dob: datetime.date = self.dob
         return dob
@@ -142,7 +154,7 @@ class Patient(Person):
         return patient_examination
 
     def create_examination_by_indication(
-        self, indication:"ExaminationIndication", date_start: datetime = None, date_end: datetime = None
+        self, indication: "ExaminationIndication", date_start: datetime = None, date_end: datetime = None
     ):
         from ....medical import (
             ExaminationIndication,
@@ -194,7 +206,10 @@ class Patient(Person):
         return patient_event
 
     def create_examination_by_pdf(self, pdf: "media.RawPdfFile"):
-        """Creates a patient examination for this patient based on the given report file."""
+        """
+        Creates a patient examination for this patient based on the given report file.
+        This function is helpful for adding documents to an already known and existing patient. 
+        """
         from ....medical import PatientExamination
         patient_examination = PatientExamination(patient=self)
         patient_examination.save()
@@ -291,7 +306,7 @@ class Patient(Person):
         """
         Create a generic patient with random attributes.
 
-        :param center: The center of the patient.
+        :param center: The center name or Center object of the patient.
         :return: The created patient.
         """
         from ....administration import Center
@@ -302,15 +317,22 @@ class Patient(Person):
         age = Patient.get_random_age()
         dob = Patient.get_dob_from_age(age)
 
-        center = Center.objects.get(name=center)
+        # Fetch the center object if a name is provided
+        if isinstance(center, str):
+            center_obj = Center.objects.get(name=center)
+        elif isinstance(center, Center):
+            center_obj = center
+        else:
+            raise ValueError("Center must be a string name or a Center object.")
 
         patient = Patient.objects.create(
             first_name=first_name,
             last_name=last_name,
             dob=dob,
             gender=gender,
+            center=center_obj, # Assign the center object
         )
-        patient.save()
+        # No need to call save() again after create()
         return patient
 
     def age(self):
