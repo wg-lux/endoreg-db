@@ -1,7 +1,7 @@
 from pathlib import Path
 from rest_framework import serializers
 from django.conf import settings
-from ..models import VideoFile, SensitiveMeta
+from ...models import VideoFile, SensitiveMeta
 import cv2
 
 

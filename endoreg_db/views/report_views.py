@@ -35,7 +35,7 @@ from ..models import FindingLocationClassification, FindingLocationClassificatio
 from django.shortcuts import render
 from rest_framework import viewsets
 from ..models import Patient
-from ..serializers import PatientSerializer
+from ..serializers._old.patient import PatientSerializer
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 class PatientViewSet(viewsets.ModelViewSet):
