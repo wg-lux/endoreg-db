@@ -3,7 +3,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from ..models import VideoFile
-# from ..serializers.Frames_NICE_and_PARIS_classifications import ForNiceClassificationSerializer
+#from ..serializers.Frames_NICE_and_PARIS_classifications import ForNiceClassificationSerializer
+from ..serializers._old.Frames_NICE_and_PARIS_classifications import ForNiceClassificationSerializer
+
 import logging
 
 
