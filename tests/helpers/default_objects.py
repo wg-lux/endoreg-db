@@ -21,7 +21,7 @@ from endoreg_db.utils import (
     create_mock_patient_name,
 )
 
-logger = getLogger(__name__)
+logger = getLogger("default_objects")
 
 
 DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"

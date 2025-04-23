@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import logging
 from endoreg_db.utils.paths import STORAGE_DIR
+
 logging.basicConfig(
     level=logging.WARNING,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -11,15 +12,18 @@ logging.basicConfig(
     ]
 )
 
-logger = logging.getLogger(name=__name__)
-logger.setLevel(logging.DEBUG)
+PATH_LOGGER = logging.getLogger("paths")
+RAW_PDF_LOGGER = logging.getLogger("raw_pdf")
+PATIENT_LOGGER = logging.getLogger("patient")
+DEFAULT_OBJECT_LOGGER = logging.getLogger("default_objects")
 
-logger.info(f"LOADING SETTINGS: {__file__}")
+PATH_LOGGER.setLevel(logging.WARNING)
+RAW_PDF_LOGGER.setLevel(logging.WARNING)
+PATIENT_LOGGER.setLevel(logging.INFO)
+DEFAULT_OBJECT_LOGGER.setLevel(logging.WARNING)
 
-RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "False") == "True"
-os.environ["RUN_VIDEO_TESTS"] = str(RUN_VIDEO_TESTS)
-
-
+ASSET_DIR = Path(__file__).parent / "assets"
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 
 DEBUG=True
 SECRET_KEY = "fake-key"
@@ -34,7 +38,7 @@ INSTALLED_APPS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 BASE_DIR = Path(__file__).parent.parent
-logger.info(f"BASE_DIR: {BASE_DIR}")
+# logger.info(f"BASE_DIR: {BASE_DIR}")
 
 DATABASES = {
     'default': {

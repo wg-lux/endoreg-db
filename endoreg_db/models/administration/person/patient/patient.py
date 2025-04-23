@@ -4,10 +4,10 @@ from faker import Faker
 import random
 from datetime import datetime
 from typing import TYPE_CHECKING
-from logging import getLogger
+import logging
 from django.utils import timezone  # Add this import
 
-logger = getLogger(__name__)
+logger = logging.getLogger("patient")
 
 if TYPE_CHECKING:
     from ....other import Gender
