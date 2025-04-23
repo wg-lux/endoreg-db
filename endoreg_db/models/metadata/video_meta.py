@@ -13,7 +13,7 @@ else:
     ENDOREG_CENTER_ID = settings.ENDOREG_CENTER_ID
 
 # Import the new utility function
-from ...utils.ffmpeg_wrapper import get_stream_info
+from ...utils.video.ffmpeg_wrapper import get_stream_info
 
 logger = logging.getLogger(__name__)
 

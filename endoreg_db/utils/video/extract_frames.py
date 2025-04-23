@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 from django.core.files import File
 import io
-from ...utils.ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
+from .ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
 
 
 def prepare_bulk_frames(frame_paths: List[Path]):

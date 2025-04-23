@@ -7,7 +7,7 @@ import cv2
 
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
-from ....utils.ffmpeg_wrapper import assemble_video_from_frames
+from ....utils.video.ffmpeg_wrapper import assemble_video_from_frames
 from ...utils import STORAGE_DIR # Assuming this is the base storage dir
 from .video_file_segments import _get_outside_frames
 

@@ -3,6 +3,7 @@
 # --- Imports from submodules ---
 
 # dataloader
+from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames, get_stream_info, transcode_video, transcode_videofile_if_required
 from .dataloader import load_model_data_from_yaml
 
 # dates
@@ -44,12 +45,11 @@ from .pydantic_models import DbConfig
 from .validate_endo_roi import validate_endo_roi
 
 # ffmpeg_wrapper
-from .ffmpeg_wrapper import (
-    assemble_video_from_frames,  # Updated name
-    get_stream_info,
-    transcode_video,
-    transcode_videofile_if_required,
+from .video.ffmpeg_wrapper import (
     extract_frames,
+)
+from .video import (
+    split_video
 )
 
 

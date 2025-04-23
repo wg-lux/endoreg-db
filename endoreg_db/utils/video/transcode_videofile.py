@@ -3,7 +3,7 @@ import subprocess
 import os
 from pathlib import Path
 from icecream import ic
-from ...utils.ffmpeg_wrapper import transcode_video as ffmpeg_transcode_video
+from .ffmpeg_wrapper import transcode_video as ffmpeg_transcode_video
 
 
 def get_transcoded_file_path(source_file_path: Path, suffix: str = "mp4"):

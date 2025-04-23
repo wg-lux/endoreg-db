@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import logging
 from endoreg_db.utils.paths import STORAGE_DIR
 logging.basicConfig(
@@ -14,6 +15,11 @@ logger = logging.getLogger(name=__name__)
 logger.setLevel(logging.DEBUG)
 
 logger.info(f"LOADING SETTINGS: {__file__}")
+
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "False") == "True"
+os.environ["RUN_VIDEO_TESTS"] = str(RUN_VIDEO_TESTS)
+
+
 
 DEBUG=True
 SECRET_KEY = "fake-key"
