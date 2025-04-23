@@ -5,10 +5,12 @@
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
 
+from django.conf.locale import da
 from django.db import models
 from django.core.files.storage import FileSystemStorage
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+from torch.serialization import STORAGE
 from endoreg_db.utils.file_operations import get_uuid_filename
 from icecream import ic
 
@@ -30,7 +32,7 @@ logger = logging.getLogger("pdf_import")
 
 class RawPdfFile(AbstractPdfFile):
     file = models.FileField(
-        upload_to=f"{data_paths['raw_report']}/",
+        upload_to="raw_reports/",
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         storage=FileSystemStorage(location=data_paths["storage"]),
     )
@@ -77,18 +79,20 @@ class RawPdfFile(AbstractPdfFile):
 
         logger.info(f"Creating RawPdfFile object from file: {file_path}")
         ic(f"Creating RawPdfFile object from file: {file_path}")
-
+        ic(f"File path: {file_path}")
         new_file_name, uuid = get_uuid_filename(file_path)
 
         pdf_hash = get_pdf_hash(file_path)
         ic(pdf_hash)
+        ic(f"New file name: {new_file_name}")
+        ic(f"Prefix: {data_paths['raw_report']}")
         new_file_path = data_paths["raw_report"] / new_file_name
         # check if pdf file already exists
 
         if cls.objects.filter(pdf_hash=pdf_hash).exists():
             existing_pdf_file = cls.objects.filter(pdf_hash=pdf_hash).get()
             logger.warning(f"RawPdfFile with hash {pdf_hash} already exists")
-            ic(f"RawPdfFile with hash {pdf_hash} already exists")
+            ic(f"RawPdfFile with hash {pdf_hash} already exists. Creating new file at {file_path}")
 
             existing_pdf_file.verify_existing_file(fallback_file=file_path)
 
@@ -145,8 +149,9 @@ class RawPdfFile(AbstractPdfFile):
             logger.warning(f"File not found: {self.file.path}")
             logger.warning(f"Using fallback file: {fallback_file}")
             ic(f"File not found: {self.file.path}")
-            ic(f"Copy fallback file: {fallback_file} to existing filepath")
-
+            ic(f"Copy fallback file: {fallback_file} to existing filepath {self.file.path}")
+            dst = Path(self.file.path)
+            dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(fallback_file, self.file.path)
 
             self.save()

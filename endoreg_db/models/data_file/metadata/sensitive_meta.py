@@ -229,9 +229,13 @@ class SensitiveMeta(models.Model):
 
         # Update attributes
         for k, v in selected_data.items():
+            # Convert 'Unknown' (string) to a Gender instance
+            if k == "patient_gender" and isinstance(v, str) and v.lower() == "unknown":
+                from endoreg_db.models import Gender
+                v = Gender.objects.get_or_create(name="Unknown")[0]
             # Avoid overwriting examiner names if they were just set
             if k not in ["examiner_first_name", "examiner_last_name"] or not (examiner_first_name and examiner_last_name):
-                 setattr(self, k, v)
+                setattr(self, k, v)
 
         # Call save - this will now handle DOB, hashes, pseudo patient/exam, AND examiner linking
         self.save()
