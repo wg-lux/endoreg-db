@@ -18,7 +18,6 @@ from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 import io
 import os
-from icecream import ic
 from tqdm import tqdm
 import numpy as np
 import cv2

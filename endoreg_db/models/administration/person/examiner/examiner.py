@@ -14,6 +14,7 @@ class Examiner(Person):
 
     if TYPE_CHECKING:
         center: "administration.Center"
+        portal_user_info: "administration.PortalUserInfo"
 
     def __str__(self):
         return self.first_name + " " + self.last_name

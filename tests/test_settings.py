@@ -10,8 +10,8 @@ logging.basicConfig(
     ]
 )
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(name=__name__)
+logger.setLevel(logging.DEBUG)
 
 logger.info(f"LOADING SETTINGS: {__file__}")
 

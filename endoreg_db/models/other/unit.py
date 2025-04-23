@@ -17,7 +17,7 @@ class Unit(models.Model):
     abbreviation = models.CharField(max_length=25, blank=True, null=True) # e.g. "cm", "mm", "in"
 
     if TYPE_CHECKING:
-        product_materials: models.QuerySet["ProductMaterial"]
+        unit_product_materials: models.QuerySet["ProductMaterial"]
 
     def __str__(self):
         if self.abbreviation:

@@ -42,4 +42,19 @@ class Label(models.Model):
 
     def __str__(self):
         return str(self.name)
+    
+    @classmethod
+    def get_outside_label(cls):
+        """
+        Returns the label instance for 'outside'.
+        """
+        return cls.objects.get(name="outside")
+    
+    @classmethod
+    def get_low_quality_label(cls):
+        """
+        Returns the label instance for 'low quality'.
+        """
+        return cls.objects.get(name="low_quality")
+
 

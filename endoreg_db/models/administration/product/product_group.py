@@ -2,8 +2,10 @@ from django.db import models
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .product import Product
-    from .reference_product import ReferenceProduct
+    from endoreg_db.models import (
+        Product,
+        ReferenceProduct,
+    )
 
 class ProductGroupManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -17,7 +19,7 @@ class ProductGroup(models.Model):
     name_en = models.CharField(max_length=255, null=True)
     
     if TYPE_CHECKING:
-        reference_products: models.QuerySet["ReferenceProduct"]
+        reference_product: "ReferenceProduct"
         products: models.QuerySet["Product"]
 
     def natural_key(self):
@@ -32,18 +34,8 @@ class ProductGroup(models.Model):
         if products:
             return products
         else:
-            # If no products are found, return an empty queryset
-            # This is to avoid returning None, which is not a queryset
-            # and would cause issues in the calling code.
             return Product.objects.none()
         
     def get_reference_product(self) -> "None | ReferenceProduct":
-        reference_products = self.reference_products.all()
-        if reference_products:
-            if len(reference_products) > 1:
-                raise ValueError("There are multiple reference products for this product group.")
-            elif len(reference_products) == 1:
-                return reference_products[0]
-        else:
-            return None
+        return self.reference_product 
 

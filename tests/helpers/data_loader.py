@@ -75,4 +75,6 @@ def load_ai_model_label_data():
 def load_ai_model_data():    
     call_command("load_ai_model_data", )
 
-
+def load_green_endoscopy_wuerzburg_data():
+    """Load Green Endoscopy Wuerzburg Data"""
+    call_command("load_green_endoscopy_wuerzburg_data", )
