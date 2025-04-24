@@ -2,13 +2,21 @@ import logging
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Tuple, Dict, Optional
+import uuid
 from django.db import transaction
 import cv2
+from tqdm import tqdm
+from django.conf import settings
+
+# import timezone for django
+from django.utils import timezone
+
 
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 from ....utils.video.ffmpeg_wrapper import assemble_video_from_frames
-from ...utils import STORAGE_DIR # Assuming this is the base storage dir
+
+from ...utils import STORAGE_DIR, anonymize_frame # Assuming this is the base storage dir
 from .video_file_segments import _get_outside_frames
 
 if TYPE_CHECKING:
@@ -23,12 +31,12 @@ def _create_anonymized_frame_files(
     video: "VideoFile",
     anonymized_frame_dir: Path,
     endo_roi: Dict[str, int],
-    frames: "QuerySet[Frame]",
+    frames: "QuerySet[Frame]", # Expecting QuerySet from get_frames()
     outside_frame_numbers: set,
     censor_color: Tuple[int, int, int] = (0, 0, 0),
 ) -> List[Path]:
     """
-    Creates anonymized versions of frames, censoring outside the ROI or blacking out 'outside' frames.
+    Creates anonymized versions of frames, censoring outside the ROI or using censor_color for 'outside' frames.
 
     Args:
         video: The VideoFile instance.
@@ -40,67 +48,60 @@ def _create_anonymized_frame_files(
 
     Returns:
         List of paths to the generated anonymized frame files.
+
+    Raises:
+        RuntimeError: If anonymization fails for any frame.
     """
+    # from endoreg_db.models import Frame # Ensure Frame is imported if TYPE_CHECKING isn't enough
+
     generated_paths = []
-    for frame_obj in frames.iterator():
+    frame_iterator = frames.iterator()
+    total_frames = frames.count() # Get count before iterating if using iterator
+    progress_bar = tqdm(frame_iterator, total=total_frames, desc=f"Anonymizing frames for {video.uuid}")
+
+    for frame_obj in progress_bar:
         try:
+            frame_number = frame_obj.frame_number
             target_path = anonymized_frame_dir / f"frame_{frame_obj.frame_number:07d}.jpg"
-            all_black = frame_obj.frame_number in outside_frame_numbers
-            frame_obj.anonymize(target_path=target_path, endo_roi=endo_roi, all_black=all_black, censor_color=censor_color)
+            make_all_black = frame_obj.frame_number in outside_frame_numbers
+
+            # --- FIX: Use frame_obj.file_path ---
+            try:
+                # Use the file_path property from the Frame model
+                source_path = frame_obj.file_path # Get path directly from Frame object
+                if not isinstance(source_path, Path):
+                    raise TypeError(f"Frame.file_path did not return a Path object for frame {frame_obj.frame_number}")
+            except (AttributeError, TypeError, Exception) as path_err:
+                logger.error("Could not determine source path for Frame %d (PK: %s) using frame_obj.file_path: %s", frame_obj.frame_number, frame_obj.pk, path_err)
+                raise RuntimeError(f"Failed to get source path for frame {frame_obj.frame_number}") from path_err
+            # --- End Fix ---
+
+            if not source_path.exists():
+                logger.error("Source frame file does not exist: %s", source_path)
+                # Add more context: Was the frame marked as extracted in DB?
+                logger.error("Frame DB object details: PK=%s, frame_number=%d, is_extracted=%s, relative_path=%s",
+                             frame_obj.pk, frame_obj.frame_number, getattr(frame_obj, 'is_extracted', 'N/A'), getattr(frame_obj, 'relative_path', 'N/A'))
+                raise FileNotFoundError(f"Source frame file missing for frame {frame_obj.frame_number}: {source_path}")
+
+            # Call the utility function directly
+            anonymize_frame(
+                raw_frame_path=source_path,
+                target_frame_path=target_path,
+                endo_roi=endo_roi,
+                all_black=make_all_black,
+                censor_color=censor_color
+            )
+
             generated_paths.append(target_path)
-        except Exception as e:
-            logger.error("Error anonymizing frame %d: %s", frame_obj.frame_number, e, exc_info=True)
+        except (FileNotFoundError, IOError, ValueError, AttributeError, TypeError, Exception) as e: # Added TypeError
+            logger.error("Error anonymizing frame %d (PK: %s): %s", frame_obj.frame_number, frame_obj.pk, e, exc_info=True)
+            raise RuntimeError(f"Failed to anonymize frame {frame_obj.frame_number}") from e
+
+    if len(generated_paths) != total_frames:
+        logger.error("Mismatch in generated frames count. Expected %d, got %d.", total_frames, len(generated_paths))
+        raise RuntimeError("Anonymized frame generation resulted in incorrect number of files.")
 
     return generated_paths
-
-
-def _assemble_anonymized_video(
-    generated_frame_paths: List[Path],
-    anonymized_video_path: Path,
-    fps: float,
-):
-    """Assembles a video from a list of frame paths using the ffmpeg_wrapper utility."""
-    if not generated_frame_paths:
-        raise ValueError("No frame paths provided to assemble video.")
-
-    logger.info("Assembling video from %d frames to %s at %.2f FPS.",
-                len(generated_frame_paths), anonymized_video_path, fps)
-
-    # Ensure paths are sorted correctly by frame number
-    try:
-        # Assuming frame filenames are like 'frame_0000001.jpg' etc.
-        sorted_paths = sorted(generated_frame_paths, key=lambda p: int(p.stem.split('_')[-1]))
-    except (IndexError, ValueError):
-        logger.warning("Could not sort frame paths numerically based on standard naming, using provided order.")
-        sorted_paths = generated_frame_paths # Fallback to original order
-
-    # Determine dimensions from the first frame
-    width, height = None, None
-    try:
-        first_frame = cv2.imread(str(sorted_paths[0]))
-        if first_frame is None:
-            raise IOError(f"Could not read first frame: {sorted_paths[0]}")
-        height, width, _ = first_frame.shape
-        logger.info("Determined video dimensions from first frame: %dx%d", width, height)
-    except Exception as e:
-        logger.error("Error reading first frame to determine dimensions: %s", e, exc_info=True)
-        raise ValueError("Could not determine video dimensions from frames.") from e
-
-
-    # Call the utility function from ffmpeg_wrapper (which uses cv2.VideoWriter)
-    assembled_path = assemble_video_from_frames(
-        frame_paths=sorted_paths, # Pass the list of Path objects
-        output_path=anonymized_video_path, # Pass the Path object
-        fps=fps,
-        width=width, # Pass determined width
-        height=height # Pass determined height
-    )
-
-    if assembled_path is None or not assembled_path.exists():
-         raise RuntimeError(f"Video assembly failed for {anonymized_video_path}")
-
-    logger.info("Video assembly completed: %s", anonymized_video_path)
-
 
 
 def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outside", censor_color: Tuple[int, int, int] = (0, 0, 0)) -> bool:
@@ -123,7 +124,7 @@ def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outsid
     error_count = 0
     for frame_obj in outside_frames:
         try:
-            frame_path = Path(frame_obj.image.path)
+            frame_path = Path(frame_obj.relative_path)
             if not frame_path.exists():
                 logger.warning("Frame file %s not found for censoring. Skipping.", frame_path)
                 continue
@@ -147,7 +148,7 @@ def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outsid
 
         except Exception as e:
             logger.error("Error censoring frame %d (%s): %s",
-                         frame_obj.frame_number, getattr(frame_obj.image, 'path', 'N/A'), e, exc_info=True)
+                         frame_obj.frame_number, getattr(frame_obj, 'relative_path', 'N/A'), e, exc_info=True)
             error_count += 1
 
     logger.info("Finished censoring for video %s. Censored: %d, Errors: %d", video.uuid, censored_count, error_count)
@@ -161,7 +162,7 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
     if not video.has_raw:
         raise ValueError("Cannot create temporary anonymized frames: Raw file is missing.")
 
-    temp_anonym_frame_dir = video._get_temp_anonymized_frame_dir() # Use IO helper
+    temp_anonym_frame_dir = video.get_temp_anonymized_frame_dir() # Use IO helper
     temp_anonym_frame_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Creating temporary anonymized frames in %s", temp_anonym_frame_dir)
 
@@ -202,11 +203,11 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
         raise ValueError("Raw file is missing, cannot anonymize.")
 
     # Check if SensitiveMeta is validated
-    if not video.sensitive_meta or not video.sensitive_meta.is_validated:
+    if not video.sensitive_meta or not video.sensitive_meta.is_verified:
         raise ValueError(f"Sensitive metadata for video {video.uuid} is not validated. Cannot anonymize.")
 
     # Check if all "outside" LabelVideoSegments are validated
-    outside_segments = video.get_outside_segments()
+    outside_segments = video.get_outside_segments(only_validated=True)
     if not all(segment.is_validated for segment in outside_segments):
         raise ValueError(f"Not all 'outside' label segments for video {video.uuid} are validated. Cannot anonymize.")
 
@@ -221,7 +222,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
         if not generated_frame_paths:
             raise RuntimeError("Failed to generate temporary anonymized frames.")
 
-        anonymized_video_path = video._get_target_anonymized_video_path() # Use IO helper
+        anonymized_video_path = video.get_target_anonymized_video_path() # Use IO helper
         anonymized_video_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Ensure target path doesn't exist before assembly
@@ -232,9 +233,9 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
             raise ValueError(f"FPS could not be determined for {video}, cannot assemble video.")
 
         logger.info("Assembling anonymized video at %s", anonymized_video_path)
-        _assemble_anonymized_video(
-            generated_frame_paths=generated_frame_paths,
-            anonymized_video_path=anonymized_video_path,
+        assemble_video_from_frames(
+            frame_paths=generated_frame_paths,
+            output_path=anonymized_video_path,
             fps=fps,
         )
 
@@ -243,67 +244,77 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
 
         # Calculate hash of the new processed file
         new_processed_hash = get_video_hash(anonymized_video_path)
-        # Check if this hash already exists for *another* video's processed file
+        # Check for hash collision
         if type(video).objects.filter(processed_video_hash=new_processed_hash).exclude(pk=video.pk).exists():
-            # Clean up the newly created file before raising error
-            anonymized_video_path.unlink(missing_ok=True)
-            raise ValueError(f"Another VideoFile already exists with processed hash {new_processed_hash}")
+            raise ValueError(f"Processed video hash {new_processed_hash} already exists for another video.")
 
-        logger.info("Updating VideoFile instance %s with processed file info.", video.uuid)
-        # Store path relative to STORAGE_DIR
-        relative_path = anonymized_video_path.relative_to(STORAGE_DIR).as_posix()
-        video.processed_file.name = relative_path
+       # Update video instance fields
         video.processed_video_hash = new_processed_hash
+        # Store relative path for FileField
+        video.processed_file.name = video.get_target_anonymized_video_path().relative_to(settings.MEDIA_ROOT).as_posix()
 
-        state = video.get_or_create_state() # Use State helper
-        state.anonymized = True
-        state.frames_extracted = False # Raw frames are no longer relevant/available if deleted
+        update_fields = [
+            "processed_video_hash",
+            "processed_file", # Use the actual FileField name
+            "frame_dir",
+        ]
 
-        update_fields = ['processed_file', 'processed_video_hash', 'state']
-
+        # Cleanup original raw assets if requested
         if delete_original_raw:
-            logger.info("Flagging raw file and frames for deletion for video %s.", video.uuid)
-            # Delete the file field content, but don't save the model yet
-            video.raw_file.delete(save=False)
-            # Mark the field itself as null in the update list
-            video.raw_file = None # Important to set field to None
-            update_fields.append('raw_file')
-            # Also clear frame_dir if raw frames are being deleted
-            video.frame_dir = None
-            update_fields.append('frame_dir')
+            # Get paths *before* clearing fields
+            original_raw_file_path_to_delete = video.get_raw_file_path()
+            original_raw_frame_dir_to_delete = video.get_frame_dir_path()
+
+            # Clear fields on the instance
+            video.raw_file.name = None # Clear FileField correctly
+            # original hash should remain for reference
+
+            # Add fields to update list
+            update_fields.extend(["raw_file", "video_hash"]) # Use correct field names
+
+            # Schedule physical file deletion after commit
+            transaction.on_commit(lambda: _cleanup_raw_assets(
+                video_uuid=video.uuid, # Pass UUID instead of instance
+                raw_file_path=original_raw_file_path_to_delete,
+                raw_frame_dir=original_raw_frame_dir_to_delete
+            ))
 
 
-        # Save the VideoFile instance with updated fields
+        # Save the updated fields
         video.save(update_fields=update_fields)
-        # Save the state changes
-        state.save() # State is saved separately
 
-        logger.info("Successfully processed video %s. New processed path: %s", video.uuid, anonymized_video_path)
+        state = video.get_or_create_state()  # REMOVE the extra 'video' argument
+        state.anonymized = True
+        state.save(update_fields=['anonymized'])
+        logger.info("Set state.anonymized to True for video %s", video.uuid)
 
-        # Schedule cleanup of original assets after transaction commits
-        if delete_original_raw:
-            transaction.on_commit(lambda: _cleanup_raw_assets(video, original_raw_file_path, original_raw_frame_dir))
 
-        return anonymized_video_path
+        logger.info("Successfully anonymized video %s. Processed hash: %s", video.uuid, new_processed_hash)
+        _anonymization_successful = True # Local variable, not saved
+        return anonymized_video_path # Return the path on success
+
 
     except Exception as e:
         logger.error("Anonymization failed for video %s: %s", video.uuid, e, exc_info=True)
-        # Clean up the potentially created processed video file if an error occurred
+        # Clean up potentially created processed file if error occurred after creation
         if anonymized_video_path and anonymized_video_path.exists():
             logger.warning("Cleaning up potentially orphaned processed file due to error: %s", anonymized_video_path)
             anonymized_video_path.unlink(missing_ok=True)
-        # Re-raise the exception to ensure transaction rollback
+        # Re-raise the error wrapped in a RuntimeError
         raise RuntimeError(f"Anonymization failed for {video.uuid}") from e
+
     finally:
-        # Always clean up the temporary frame directory
+        # Clean up temporary anonymized frames directory regardless of success/failure
         if temp_anonym_frame_dir and temp_anonym_frame_dir.exists():
-            logger.debug("Cleaning up temporary anonymized frame directory: %s", temp_anonym_frame_dir)
-            shutil.rmtree(temp_anonym_frame_dir, ignore_errors=True)
+            logger.info("Cleaning up temporary anonymized frame directory: %s", temp_anonym_frame_dir)
+            shutil.rmtree(temp_anonym_frame_dir)
 
-
-def _cleanup_raw_assets(video: "VideoFile", raw_file_path: Optional[Path], raw_frame_dir: Optional[Path]):
+def _cleanup_raw_assets(video_uuid: uuid.UUID, raw_file_path: Optional[Path]=None, raw_frame_dir: Optional[Path]=None):
     """Deletes the original raw video file and its extracted frames directory."""
-    logger.info("Performing post-commit cleanup of raw assets for video %s.", video.uuid)
+    from endoreg_db.models import VideoFile
+    logger.info("Performing post-commit cleanup of raw assets for video %s.", video_uuid)
+    video_file = VideoFile.objects.filter(uuid=video_uuid).first()
+    video_file.state.frames_extracted = False # Reset the state
     try:
         if raw_file_path and raw_file_path.exists():
             logger.info("Deleting original raw video file: %s", raw_file_path)
@@ -314,16 +325,14 @@ def _cleanup_raw_assets(video: "VideoFile", raw_file_path: Optional[Path], raw_f
         if raw_frame_dir and raw_frame_dir.exists():
             logger.info("Deleting original raw frame directory: %s", raw_frame_dir)
             shutil.rmtree(raw_frame_dir, ignore_errors=True)
-            # Also delete Frame objects from DB if they weren't deleted earlier
-            try:
-                count, _ = video.frames.all().delete()
-                if count > 0:
-                    logger.info("Deleted %d residual Frame DB objects during raw asset cleanup.", count)
-            except Exception as db_del_e:
-                logger.error("Error deleting residual Frame DB objects for %s: %s", video.uuid, db_del_e)
 
+           
         elif raw_frame_dir:
             logger.warning("Original raw frame directory %s not found for post-commit deletion.", raw_frame_dir)
 
+
+
+        video_file.state.save(update_fields=['frames_extracted'])
+
     except Exception as e:
-        logger.error("Error during post-commit cleanup of raw assets for video %s: %s", video.uuid, e, exc_info=True)
+        logger.error("Error during post-commit cleanup of raw assets for video %s: %s", video_uuid, e, exc_info=True)

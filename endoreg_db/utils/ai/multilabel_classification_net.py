@@ -44,7 +44,7 @@ def calculate_metrics(pred, target, threshold=0.5):
 class MultiLabelClassificationNet(LightningModule):
     def __init__(
         self,
-        labels=["ASD"],
+        labels=None,
         lr=6e-3,
         weight_decay=0.001,
         pos_weight=2,
@@ -76,13 +76,18 @@ class MultiLabelClassificationNet(LightningModule):
             pos_weight=torch.Tensor([self.pos_weight] * len(self.labels))
         )
 
-    def forward(self, x):
-        """Forward pass"""
+    @classmethod
+    def load_from_checkpoint(cls, checkpoint_path, *args, **kwargs):
+        instance = super(MultiLabelClassificationNet, cls).load_from_checkpoint(
+            checkpoint_path, *args, **kwargs
+        )
+        return instance
+
+    def forward(self, x):  # pylint: disable=arguments-differ
         x = self.model(x)
         return x
 
-    def training_step(self, batch, batch_idx):
-        """Training step"""
+    def training_step(self, batch, _batch_idx):  # pylint: disable=arguments-differ
         x, y = batch
         y_pred = self(x)
         loss = self.criterion(y_pred, y)
@@ -94,8 +99,7 @@ class MultiLabelClassificationNet(LightningModule):
 
         return {"loss": loss, "preds": preds, "targets": y}
 
-    def validation_step(self, batch, batch_idx):
-        """Validation step"""
+    def validation_step(self, batch, _batch_idx):  # pylint: disable=arguments-differ
         x, y = batch
         y_pred = self(x)
         loss = self.criterion(y_pred, y)
@@ -107,8 +111,8 @@ class MultiLabelClassificationNet(LightningModule):
 
         return {"loss": loss, "preds": preds, "targets": y}
 
-    def validation_epoch_end(self, outputs):
-        """Validation epoch end"""
+    def validation_epoch_end(self, _outputs):
+        """Called at the end of validation to aggregate outputs"""
         self.val_preds = np.concatenate([_ for _ in self.val_preds])
         self.val_targets = np.concatenate([_ for _ in self.val_targets])
 

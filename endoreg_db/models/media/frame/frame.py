@@ -4,8 +4,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 if TYPE_CHECKING:
-    from ...label.label import Label
-    from ...label.annotation import ImageClassificationAnnotation
+    from endoreg_db.models import Label, ImageClassificationAnnotation, VideoFile
 
 # Unified Frame model
 class Frame(models.Model):
@@ -24,6 +23,7 @@ class Frame(models.Model):
     if TYPE_CHECKING:
         image_classification_annotations: models.QuerySet["ImageClassificationAnnotation"]
         labels: models.QuerySet["Label"]
+        video: "VideoFile"
     class Meta:
         unique_together = ('video', 'frame_number')
         ordering = ['video', 'frame_number']

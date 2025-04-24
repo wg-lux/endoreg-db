@@ -106,27 +106,12 @@ class SensitiveMeta(models.Model):
         return logic.create_sensitive_meta_from_dict(cls, data)
 
     # --- Methods related to pseudo-entities are now primarily handled within save logic ---
-    # Keep simple getters if needed, but creation logic is centralized.
 
     def get_pseudo_examiner(self) -> "Examiner | None":
         """Returns the linked pseudo examiner, if one exists."""
         if self.pk:
             return self.examiners.first()
         return None # Cannot determine before saving and linking
-
-    # Removed create_pseudo_examiner - logic is now in sensitive_meta_logic.create_pseudo_examiner_logic
-
-    def get_pseudo_patient(self) -> "Patient | None":
-        """Returns the linked pseudo patient, if one exists."""
-        return self.pseudo_patient # Access the FK directly
-
-    # Removed create_pseudo_patient - logic is now in sensitive_meta_logic.get_or_create_pseudo_patient_logic
-
-    def get_pseudo_patient_examination(self) -> "PatientExamination | None":
-        """Returns the linked pseudo patient examination, if one exists."""
-        return self.pseudo_examination # Access the FK directly
-
-    # Removed get_or_create_pseudo_patient_examination - logic is now in sensitive_meta_logic.get_or_create_pseudo_patient_examination_logic
 
     # --- Update method delegates to logic ---
     def update_from_dict(self, data: Dict[str, Any]):
@@ -152,15 +137,8 @@ class SensitiveMeta(models.Model):
 
         state_verified = "Unknown"
         if self.pk:
-            try:
                 # Access state verification through the related state object
-                state_verified = str(self.state.is_verified) if hasattr(self, 'state') and self.state else "No State"
-            except SensitiveMetaState.DoesNotExist:
-                 state_verified = "No State"
-            except AttributeError:
-                 # Handle case where 'state' related name isn't set up or instance not saved
-                 state_obj = SensitiveMetaState.objects.filter(origin_id=self.pk).first()
-                 state_verified = str(state_obj.is_verified) if state_obj else "No State"
+                state_verified = str(self.is_verified)
         else:
             state_verified = "[Not saved yet]"
 
@@ -174,6 +152,14 @@ class SensitiveMeta(models.Model):
             f"ExamHash={str(self.examination_hash)[-8:] if self.examination_hash else 'None'}" # Show last 8 chars
         )
 
+    @property
+    def is_verified(self):
+        """
+        Checks if the instance is verified based on the related state object.
+        """
+        if hasattr(self, 'state'):
+            return self.state.is_verified
+        return False
 
     def __repr__(self):
         return self.__str__()

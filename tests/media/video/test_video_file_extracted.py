@@ -1,14 +1,22 @@
 import random
+
+from tests.media import video
+from .mock_video_anonym_annotation import mock_video_anonym_annotation
+from .test_pipe_2 import _test_pipe_2
+from .test_pipe_1 import _test_pipe_1
+
 from .helper import get_random_video_path_by_examination_alias
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from logging import getLogger
-from ._video_create_from_file import _test_video_create_from_file
 import unittest
 import shutil
 
 from endoreg_db.models import (
     VideoFile,
-    Frame  # Import Frame model
+    Frame,
+    ModelMeta,
+    AiModel,
+    VideoState # Import VideoState # Import SensitiveMeta, # Import ,
 )
 import logging
 from django.conf import settings
@@ -23,6 +31,8 @@ logger.setLevel(logging.WARNING)
 from ...helpers.default_objects import (
     get_default_center,
     get_default_processor,
+    get_latest_segmentation_model
+    # get_default_model,
 )
 
 from ...helpers.data_loader import (
@@ -35,63 +45,15 @@ from ...helpers.data_loader import (
     load_endoscope_data,
     load_ai_model_label_data,
     load_ai_model_data,
+    load_default_ai_model
 )
 
-# Check for ffmpeg executable once
 FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
 if not FFMPEG_AVAILABLE:
     logger.warning("ffmpeg command not found. Frame extraction tests will be skipped.")
 
 
-def _test_extract_text_meta(test:"VideoFileModelExtractedTest"):
-    """
-    Test if the video file can be initialized with the correct specifications.
-    """
-    video_file = test.video_file
-    if not RUN_VIDEO_TESTS:
-        logger.warning("Skipping test_initialize_video_specs because RUN_VIDEO_TESTS is False.")
-        return
-
-    video_file.refresh_from_db()
-
-    # Check if the video file has been initialized
-    video_file.update_text_metadata()
-
-def _test_frame_paths(test:"VideoFileModelExtractedTest"):
-    """
-    test the VideoFile Objects methods get_frame_path and get_frame_paths
-    """
-    video_file = test.video_file
-    if not RUN_VIDEO_TESTS:
-        logger.warning("Skipping test_initialize_video_specs because RUN_VIDEO_TESTS is False.")
-        return
-
-    video_file.refresh_from_db()
-
-    # Check if the 5 random frame paths correct
-    frame_count = video_file.frame_count
-    frame_paths = video_file.get_frame_paths()
-    test.assertEqual(len(frame_paths), frame_count, "Number of frame paths should match the number of frames.")
-    # check 5 random frame paths
-    selected_frame_paths = random.sample(frame_paths, 5)
-    for i, frame_path in enumerate(selected_frame_paths):
-        test.assertTrue(frame_path.exists(), f"Frame path {frame_path} should exist.")
-    
-    # get 5 random integers between 0 and frame_count
-    random_frame_indices = random.sample(range(frame_count), 5)
-    for i in random_frame_indices:
-        frame_path = video_file.get_frame_path(i)
-        test.assertTrue(frame_path.exists(), f"Frame path {frame_path} should exist.")
-    
-    # Check if first and last frame exist
-    first_frame_path = video_file.get_frame_path(0) # Get path for frame 0
-    last_frame_path = video_file.get_frame_path(frame_count - 1) # Get path for last frame
-    test.assertTrue(first_frame_path.exists(), f"First frame file {first_frame_path} should exist.")
-    test.assertTrue(last_frame_path.exists(), f"Last frame file {last_frame_path} should exist.")
-
-    
-
-class VideoFileModelExtractedTest(TestCase):
+class VideoFileModelExtractedTest(TransactionTestCase):
     def setUp(self):
         load_gender_data()
         load_disease_data()
@@ -102,6 +64,24 @@ class VideoFileModelExtractedTest(TestCase):
         load_endoscope_data()
         load_ai_model_label_data()
         load_ai_model_data()
+        load_default_ai_model()
+
+        # Assume get_latest_segmentation_model returns an AiModel instance
+        ai_model_instance: AiModel = get_latest_segmentation_model()
+
+        # Fetch the associated ModelMeta instance
+        try:
+            # Assuming ModelMeta has a foreign key 'model' to AiModel
+            self.ai_model_meta = ModelMeta.objects.get(model=ai_model_instance)
+        except ModelMeta.DoesNotExist as exc:
+            raise AssertionError(f"No ModelMeta found for the latest segmentation AiModel: {ai_model_instance}") from exc
+        except ModelMeta.MultipleObjectsReturned:
+            # If multiple exist, perhaps get the latest one based on version or date?
+            # For now, assume a single ModelMeta per AiModel or handle ambiguity.
+            self.ai_model_meta = ModelMeta.objects.filter(model=ai_model_instance).latest('version')  # Example: get latest version
+            logger.warning(f"Multiple ModelMeta found for AiModel {ai_model_instance}. Using the latest version: {self.ai_model_meta.version}")
+            # Alternatively, raise AssertionError if this case is unexpected.
+            # raise AssertionError(f"Multiple ModelMeta found for AiModel: {ai_model_instance}")
 
         # Provide examination_alias for a more specific search
         self.non_anonym_video_path = get_random_video_path_by_examination_alias(
@@ -116,42 +96,19 @@ class VideoFileModelExtractedTest(TestCase):
                 delete_source=False,
                 processor_name = self.endo_processor.name, # Pass processor name
             )
-        
-        _initialized = self.video_file.initialize_video_specs(use_raw = True)
-        self.frame_paths = self.video_file.extract_frames()
 
     @unittest.skipUnless(FFMPEG_AVAILABLE, "FFmpeg command not found, skipping frame extraction test.")
-    def test_frames_extracted(self):
+    def test_pipeline(self):
         """
-        Test if the frames can be extracted from the video file.
-        Requires FFmpeg to be installed and in PATH.
+        Test the pipeline of the video file.
+        This includes:
+        - Pre-validation processing (pipe_1)
+        - Simulating human validation processing (test_after_pipe_1)
+        - Post-validation processing (pipe_2)
         """
-        video_file = self.video_file
-        video_file.refresh_from_db() # Reload to get latest state
-        frame_paths = self.frame_paths
-
-        self.assertIsNotNone(frame_paths, "extract_frames should return a list, not None.")
-        self.assertGreater(len(frame_paths), 0, "Expected to extract at least one frame.")
-        # Check if the number of extracted frames matches the expected count
-        self.assertEqual(len(frame_paths), video_file.frame_count, "Number of extracted frames should match video's frame count.")
-
-        # Check state
-        self.assertTrue(video_file.state.frames_extracted, "VideoState.frames_extracted should be True after extraction.")
-        self.assertTrue(video_file.state.frames_initialized, "VideoState.frames_initialized should be True after initialization.")
-
-        # Check Frame objects in DB using direct query
-        frame_count_db = Frame.objects.filter(video=video_file).count()
-        self.assertEqual(frame_count_db, video_file.frame_count, "Number of Frame objects in DB should match frame count.")
-
-        # Check if frame files exist (check first and last)
-        first_frame_path = video_file.get_frame_path(0) # Get path for frame 0
-        last_frame_path = video_file.get_frame_path(video_file.frame_count - 1) # Get path for last frame
-        self.assertTrue(first_frame_path.exists(), f"First frame file {first_frame_path} should exist.")
-        self.assertTrue(last_frame_path.exists(), f"Last frame file {last_frame_path} should exist.")
-
-        _test_extract_text_meta(self)
-        _test_frame_paths(self)
-
+        _test_pipe_1(self)
+        mock_video_anonym_annotation(self)
+        _test_pipe_2(self)
 
     def tearDown(self):
 

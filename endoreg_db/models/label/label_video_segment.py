@@ -3,10 +3,12 @@ from django.db.models import Q, CheckConstraint, F
 from typing import TYPE_CHECKING, Union, Optional
 from tqdm import tqdm
 import logging
+from django.core.exceptions import ObjectDoesNotExist
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from endoreg_db.models import LabelVideoSegmentState
     from ..media.video.video_file import VideoFile
     from ..media.frame import Frame
     from ..label.label import Label
@@ -55,8 +57,6 @@ class LabelVideoSegment(models.Model):
         blank=True,
     )
 
-    is_validated = models.BooleanField(default=False, help_text="Indicates if the label video segment has been validated.")
-
     if TYPE_CHECKING:
         video_file: "VideoFile"
         label: Optional["Label"]
@@ -64,6 +64,7 @@ class LabelVideoSegment(models.Model):
         prediction_meta: Optional["VideoPredictionMeta"]
         patient_findings: models.QuerySet["PatientFinding"]
         model_meta: Optional["ModelMeta"]
+        state:"LabelVideoSegmentState"
 
     class Meta:
         constraints = [
@@ -76,6 +77,46 @@ class LabelVideoSegment(models.Model):
             models.Index(fields=['video_file', 'label', 'start_frame_number']),
             models.Index(fields=['prediction_meta', 'label']),
         ]
+
+    @property
+    def is_validated(self) -> bool:
+        """Checks validation status via the related state object."""
+        try:
+            # Access the related state object using the related_name 'state'
+            # defined in LabelVideoSegmentState.origin
+            return self.state.is_validated
+        except ObjectDoesNotExist:
+            # Handle case where the state object hasn't been created yet
+            # (e.g., before the first save or if creation failed)
+            logger.warning("LabelVideoSegmentState not found for LabelVideoSegment %s.", self.pk)
+            return False
+        except AttributeError:
+            # Handle case where 'state' attribute doesn't exist (shouldn't happen with correct setup)
+            logger.error("AttributeError accessing 'state' for LabelVideoSegment %s.", self.pk)
+            return False
+
+    def save(self, *args, **kwargs):
+        """Overrides save to ensure the related state object exists."""
+        # Call the original save method first
+        from endoreg_db.models import LabelVideoSegmentState
+        super().save(*args, **kwargs)
+
+        # Ensure state exists after saving
+        if self.pk: # Only proceed if the instance has been saved and has a PK
+            try:
+                # Check if the state exists using the related manager
+                _ = self.state
+            except ObjectDoesNotExist:
+                # If it doesn't exist, create it
+                logger.info("Creating LabelVideoSegmentState for LabelVideoSegment %s.", self.pk)
+                LabelVideoSegmentState.objects.create(origin=self)
+            except AttributeError:
+                 # Fallback check if 'state' related_name is missing or incorrect
+                 if not LabelVideoSegmentState.objects.filter(origin=self).exists():
+                      logger.info("Creating LabelVideoSegmentState (fallback check) for LabelVideoSegment %s.", self.pk)
+                      LabelVideoSegmentState.objects.create(origin=self)
+
+
 
     @classmethod
     def create_from_video(

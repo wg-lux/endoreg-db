@@ -2,12 +2,10 @@ from .helper import get_random_video_path_by_examination_alias
 from django.test import TestCase
 from logging import getLogger
 from ._video_create_from_file import _test_video_create_from_file
-import unittest
 import shutil
 
 from endoreg_db.models import (
-    VideoFile,
-    Frame  # Import Frame model
+    VideoFile  # Import Frame model
 )
 import logging
 from django.conf import settings
@@ -113,9 +111,6 @@ class VideoFileModelTest(TestCase):
                     video_to_delete.delete_with_file()
                     logger.info(f"Successfully cleaned up video file (UUID: {video_file.uuid})")
                 except VideoFile.DoesNotExist:
-                     logger.warning(f"VideoFile with pk {video_file.pk} not found for cleanup.")
+                    logger.warning(f"VideoFile with pk {video_file.pk} not found for cleanup.")
                 except Exception as e:
                     logger.error(f"Error during cleanup of video file (UUID: {video_file.uuid}): {e}", exc_info=True)
-
-
-    

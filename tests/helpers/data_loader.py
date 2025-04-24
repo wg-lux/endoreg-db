@@ -2,7 +2,18 @@
 Data Loader Helpers and others
 """
 from django.core.management import call_command
+from pathlib import Path
+ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
+def load_default_ai_model(): 
+    """Load Default AI Model"""
+    model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.ckpt"
+    # Pass arguments individually to call_command
+    call_command(
+        "create_multilabel_model_meta",
+        "--model_path",
+        model_path
+    )
 
 def load_information_source():
     """Load Information Source Data"""

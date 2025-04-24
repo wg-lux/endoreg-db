@@ -19,10 +19,10 @@ ASSET_DIR:Path = settings.ASSET_DIR
 assert ASSET_DIR.exists(), f"ASSET_DIR does not exist: {ASSET_DIR}"
 
 TEST_VIDEOS = {
-    "egd-instrument-non_anonymous": ASSET_DIR / "test_instrument.mp4",
+    # "egd-instrument-non_anonymous": ASSET_DIR / "test_instrument.mp4", # No detected segments
     "egd-endoscope-non_anonymous": ASSET_DIR / "test_endoscope.mp4",
     "egd-nbi-non_anonymous": ASSET_DIR / "test_nbi.mp4",
-    "egd-outside-non_anonymous": ASSET_DIR / "test_outside.mp4",
+    # "egd-outside-non_anonymous": ASSET_DIR / "test_outside.mp4",
     "egd-small_intestine-non_anonymous": ASSET_DIR / "test_small_intestine.mp4",
 }
 

@@ -29,7 +29,7 @@ DATABASES = {
 TIME_ZONE = "Europe/Berlin"
 
 LOG_FILE = 'data/tests.log'
-LOG_LEVEL = "WARNING"
+LOG_LEVEL = "INFO"
 
 # reset logs:
 if os.path.exists(LOG_FILE):

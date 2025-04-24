@@ -9,6 +9,9 @@ from endoreg_db.models import (
     ExaminationIndication,
     RawPdfFile,
     EndoscopyProcessor,
+    ModelMeta,
+    AiModel,
+    ModelMeta,
 )
 from logging import getLogger
 from datetime import date
@@ -41,7 +44,21 @@ DEFAULT_INDICATIONS = [
     "colonoscopy_diagnostic_acute_symptomatic",
 ]
 
+DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
+
 DEFAULT_GENDER = "unknown"
+
+def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
+    """
+    Get the latest segmentation model from the database.
+    This function retrieves the latest ModelMeta object from the database.
+    Returns:
+        ModelMeta: The latest segmentation model.
+    """
+    ai_model = AiModel.objects.get(name=model_name)
+    latest_meta = ai_model
+    return latest_meta
+    
 
 def get_default_gender() -> Gender:
     return Gender.objects.get(name=DEFAULT_GENDER)

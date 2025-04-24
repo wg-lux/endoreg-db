@@ -132,12 +132,10 @@ def _predict_video_pipeline(
     # Import heavy dependencies locally
     from ...administration.ai import AiModel
     from ...metadata import VideoPredictionMeta
-    # TODO: Refactor these imports if endo_ai becomes a separate package
     try:
-        from endo_ai.predictor.inference_dataset import InferenceDataset
-        from endo_ai.predictor.model_loader import MultiLabelClassificationNet
-        from endo_ai.predictor.predict import Classifier
-        from endo_ai.predictor.postprocess import (
+        from ....utils.ai import InferenceDataset, MultiLabelClassificationNet, Classifier
+
+        from ....utils.ai.postprocess import (
             concat_pred_dicts,
             make_smooth_preds,
             find_true_pred_sequences,

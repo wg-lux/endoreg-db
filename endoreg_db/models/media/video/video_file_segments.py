@@ -74,7 +74,7 @@ def _convert_sequences_to_db_segments(
             }
             try:
                 # Assuming custom_create handles creation and saving or returns unsaved instance
-                segment = LabelVideoSegment.custom_create(**init_dict)
+                segment = LabelVideoSegment.objects.create(**init_dict)
                 # If custom_create doesn't save, uncomment below:
                 # segment.save()
                 created_count += 1

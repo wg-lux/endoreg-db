@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Dict, List
 import cv2
-from icecream import ic
 # --- Import SensitiveMeta class ---
 from ...metadata import SensitiveMeta
 # --- End Import ---
@@ -11,7 +10,6 @@ from django.db import transaction
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
-    from ...metadata import VideoMeta
 
 logger = logging.getLogger(__name__)
 
@@ -194,11 +192,11 @@ def _get_fps(video: "VideoFile") -> Optional[float]:
                     else:
                         logger.warning("Could not open video file %s with OpenCV for FPS check.", video_path)
                 elif video_path:
-                     logger.warning("Raw file path %s does not exist for direct FPS check.", video_path)
+                    logger.warning("Raw file path %s does not exist for direct FPS check.", video_path)
                 else:
-                     logger.warning("Raw file path is None for direct FPS check.")
+                    logger.warning("Raw file path is None for direct FPS check.")
             else:
-                 logger.warning("Raw file not available for direct FPS check.")
+                logger.warning("Raw file not available for direct FPS check.")
 
         except Exception as e:
             logger.error("Error getting FPS directly from file %s: %s", video.raw_file.name if video.has_raw else 'N/A', e)
@@ -266,12 +264,12 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
         x1 = max(0, x)
         x2 = min(img_w, x + width)
         if y1 >= y2 or x1 >= x2:
-             logger.warning("Calculated crop template has zero or negative size for video %s. ROI: %s, Img: %dx%d", video.uuid, endo_roi, img_w, img_h)
-             return None
+            logger.warning("Calculated crop template has zero or negative size for video %s. ROI: %s, Img: %dx%d", video.uuid, endo_roi, img_w, img_h)
+            return None
         crop_template = [y1, y2, x1, x2]
     else:
-         # Proceed without boundary check if image dimensions unknown
-         crop_template = [y, y + height, x, x + width]
+        # Proceed without boundary check if image dimensions unknown
+        crop_template = [y, y + height, x, x + width]
 
 
     logger.debug("Generated crop template for video %s: %s", video.uuid, crop_template)
@@ -289,8 +287,8 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
     try:
         video_path = Path(target_file.path)
         if not video_path.exists():
-             logger.error("Video file not found at %s for spec initialization.", video_path)
-             return False
+            logger.error("Video file not found at %s for spec initialization.", video_path)
+            return False
 
         video_cap = cv2.VideoCapture(video_path.as_posix())
         if not video_cap.isOpened():
