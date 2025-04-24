@@ -472,8 +472,6 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
 
 
 
-
-
     '''def get_matching_sequences(self, video_id):
         segments = self.get_polyp_segments(video_id)
         return [{'polyp': seg} for seg in segments]'''
