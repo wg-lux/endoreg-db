@@ -1,4 +1,5 @@
 from django.db import models
+from .information_source_type import InformationSourceType
 
 
 def get_prediction_information_source():
@@ -49,6 +50,16 @@ class InformationSource(models.Model):
     date_created = models.DateField(auto_now_add=True)
     date_modified = models.DateField(auto_now=True)
     abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
+
+    # Link to InformationSourceType
+    information_source_type = models.ForeignKey(
+        InformationSourceType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='information_sources',
+        help_text="The type of this information source (e.g., guideline, chapter, recommendation)"
+    )
 
     class Meta:
         verbose_name = "Information Source"
