@@ -2,6 +2,23 @@ import os
 from pathlib import Path
 from icecream import ic
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
+
 DEBUG = True
 SECRET_KEY = "fake-key"
 INSTALLED_APPS = [
@@ -25,3 +42,4 @@ DATABASES = {
 }
 
 TIME_ZONE = "Europe/Berlin"
+LOGGING['loggers']['django.request']['level'] = 'DEBUG'

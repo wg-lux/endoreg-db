@@ -60,6 +60,9 @@ from .patient import (
 # Organ
 from .organ import Organ
 
+# Instrument
+from .instrument import Instrument
+
 # LX
 from .lx import (
     LxClientType,

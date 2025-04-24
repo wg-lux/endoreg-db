@@ -24,3 +24,12 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabelVideoSegment
         fields = "__all__"
+
+class VideoListSerializer(serializers.ModelSerializer):
+    """Serializer for listing videos with nested video meta."""
+    videoMeta = VideoMetaSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Video
+        fields = "__all__"
+        depth = 1  # Adjust depth as needed for nested representation
