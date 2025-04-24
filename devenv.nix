@@ -18,6 +18,7 @@ in
     cudaPackages.cuda_nvcc
     stdenv.cc.cc
     tesseract
+    ffmpeg_6-headless
   ];
 
   env = {
@@ -40,6 +41,12 @@ in
     hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
     runtests.package = pkgs.zsh;
     runtests.exec = "${pkgs.uv}/bin/uv run python runtests.py";
+    runtests-media.exec = "${pkgs.uv}/bin/uv run python runtests.py 'media'";
+    runtests-dataloader.exec = "${pkgs.uv}/bin/uv run python runtests.py 'dataloader'";
+    runtests-other.exec = "${pkgs.uv}/bin/uv run python runtests.py 'other'";
+    runtests-helpers.exec = "${pkgs.uv}/bin/uv run python runtests.py 'helpers'";
+    runtests-administration.exec = "${pkgs.uv}/bin/uv run python runtests.py 'administration'";
+    runtests-medical.exec = "${pkgs.uv}/bin/uv run python runtests.py 'medical'";
     pyshell.exec = "${pkgs.uv}/bin/uv run python manage.py shell";
   };
 
@@ -52,7 +59,7 @@ in
 
   enterShell = ''
     . .devenv/state/venv/bin/activate
-    runtests
+    runtests-dataloader
     hello
   '';
 

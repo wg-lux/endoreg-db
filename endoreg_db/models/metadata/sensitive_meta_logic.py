@@ -1,4 +1,3 @@
-# filepath: /home/admin/dev/endo-ai/endoreg-db/endoreg_db/models/metadata/sensitive_meta_logic.py
 import logging
 import os
 import random
@@ -245,6 +244,15 @@ def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, 
     field_names = {f.name for f in cls._meta.get_fields() if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)}
     selected_data = {k: v for k, v in data.items() if k in field_names}
 
+    # --- Convert patient_dob if it's a date object ---
+    dob = selected_data.get("patient_dob")
+    if isinstance(dob, date) and not isinstance(dob, datetime):
+        # Convert date to datetime at the start of the day and make it timezone-aware
+        aware_dob = timezone.make_aware(datetime.combine(dob, datetime.min.time()))
+        selected_data["patient_dob"] = aware_dob
+        logger.debug("Converted patient_dob from date to aware datetime: %s", aware_dob)
+    # --- End Conversion ---
+
     # Handle Center
     center_name = data.get("center_name")
     if not center_name:
@@ -313,10 +321,19 @@ def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, A
         if k not in ["examiner_first_name", "examiner_last_name"] or \
            (k == "examiner_first_name" and examiner_first_name is None) or \
            (k == "examiner_last_name" and examiner_last_name is None):
+
+            # --- Convert patient_dob if it's a date object ---
+            value_to_set = v
+            if k == "patient_dob" and isinstance(v, date) and not isinstance(v, datetime):
+                aware_dob = timezone.make_aware(datetime.combine(v, datetime.min.time()))
+                value_to_set = aware_dob
+                logger.debug("Converted patient_dob from date to aware datetime during update: %s", aware_dob)
+            # --- End Conversion ---
+
             # Check if patient name is changing
-            if k in ["patient_first_name", "patient_last_name"] and getattr(instance, k) != v:
+            if k in ["patient_first_name", "patient_last_name"] and getattr(instance, k) != value_to_set:
                 patient_name_changed = True
-            setattr(instance, k, v)
+            setattr(instance, k, value_to_set) # Use value_to_set
 
     # Update name DB if patient names changed
     if patient_name_changed:
@@ -326,3 +343,17 @@ def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, A
     instance.save()
 
     return instance
+
+def update_or_create_sensitive_meta_from_dict(
+    cls: Type["SensitiveMeta"],
+    data: Dict[str, Any],
+    instance: Optional["SensitiveMeta"] = None
+) -> "SensitiveMeta":
+    """Logic to update or create a SensitiveMeta instance from a dictionary."""
+    # Check if the instance already exists based on unique fields
+    if instance:
+        # Update the existing instance
+        return update_sensitive_meta_from_dict(instance, data), False
+    else:
+        # Create a new instance
+        return create_sensitive_meta_from_dict(cls, data), True

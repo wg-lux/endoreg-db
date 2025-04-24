@@ -3,115 +3,128 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Dict, List
 import cv2
 from icecream import ic
+# --- Import SensitiveMeta class ---
+from ...metadata import SensitiveMeta
+# --- End Import ---
+from ...metadata.sensitive_meta_logic import update_or_create_sensitive_meta_from_dict
+from django.db import transaction
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
-    from ...metadata import VideoMeta, SensitiveMeta
+    from ...metadata import VideoMeta
 
 logger = logging.getLogger(__name__)
 
-def _update_text_metadata(video: "VideoFile", ocr_frame_fraction=0.001, cap: int = 15, save_instance: bool = True):
-    """Extracts text via OCR and updates/creates SensitiveMeta."""
-    from ...metadata import SensitiveMeta # Local import
+def _update_text_metadata(
+    video: "VideoFile",
+    ocr_frame_fraction: float = 0.01,
+    cap: int = 10,
+    overwrite: bool = False,
+) -> Optional["SensitiveMeta"]:
+    """
+    Extracts text from a fraction of video frames, updates or creates SensitiveMeta,
+    and potentially updates the VideoFile's date field.
+    """
+    logger.debug(f"Updating text metadata for {video.uuid}")
+    state = video.get_or_create_state()
 
-    logger.info("Updating text metadata via OCR for video %s.", video.uuid)
-    ic(f"Updating text metadata for {video.uuid}") # Use uuid
+    if state.sensitive_data_retrieved and not overwrite:
+        logger.warning("Text already extracted for video %s and overwrite=False. Skipping.", video.uuid)
+        return video.sensitive_meta # Return existing meta if available
 
-    # Call the AI helper function for extraction
-    extracted_data_dict = video.extract_text_information(
+    # Extract text using the AI helper function
+    extracted_data_dict = video.extract_text_from_frames(
         frame_fraction=ocr_frame_fraction, cap=cap
     )
 
-    if extracted_data_dict is None:
+    if not extracted_data_dict:
         logger.warning("No text extracted for video %s; skipping SensitiveMeta update.", video.uuid)
-        ic("No text extracted; skipping metadata update.")
-        return
+        # Mark state as extracted even if no data found, to avoid re-running unless overwrite=True
+        state.sensitive_data_retrieved = True
+        state.save(update_fields=['sensitive_data_retrieved'])
+        return video.sensitive_meta # Return existing meta if available
 
-    # Add center name if available
-    if video.center:
-        extracted_data_dict["center_name"] = video.center.name
-    else:
-        logger.warning("Center not set for video %s during text metadata update.", video.uuid)
-
-    logger.debug("Data extracted for SensitiveMeta update: %s", extracted_data_dict)
-    ic("Data for SensitiveMeta update:", extracted_data_dict)
+    # Add center info if not already present in extracted data
+    if 'center_name' not in extracted_data_dict and video.center:
+        extracted_data_dict['center_name'] = video.center.name
+    logger.debug("Data for SensitiveMeta update: %s", extracted_data_dict)
 
     try:
-        sm = video.sensitive_meta
-        if sm:
-            logger.info("Updating existing SensitiveMeta (PK: %s) for video %s.", sm.pk, video.uuid)
-            ic(f"Updating existing SensitiveMeta {sm.pk}")
-            sm.update_from_dict(extracted_data_dict) # Assuming this method exists
-            sm.save()
+        # --- Adjust the call here ---
+        # Pass the Class, the data dict, and the current instance (or None)
+        sensitive_meta, created = update_or_create_sensitive_meta_from_dict(
+            SensitiveMeta, # Pass the class
+            extracted_data_dict,
+            instance=video.sensitive_meta # Pass current instance via keyword
+        )
+        # --- End Adjust the call ---
+
+        if created:
+            logger.debug("Creating new SensitiveMeta")
+            video.sensitive_meta = sensitive_meta
+            # video.save(update_fields=['sensitive_meta']) # Save happens below with other fields
         else:
-            logger.info("Creating new SensitiveMeta for video %s.", video.uuid)
-            ic("Creating new SensitiveMeta")
-            # Assuming create_from_dict exists and returns a saved instance or requires saving
-            video.sensitive_meta = SensitiveMeta.create_from_dict(extracted_data_dict)
-            video.sensitive_meta.save() # Ensure it's saved
+            logger.debug("Updating existing SensitiveMeta")
+            # No need to reassign if updated in place, but save needed
 
         # Update state
-        state = video.get_or_create_state() # Use State helper
         state.sensitive_data_retrieved = True
-        state.save(update_fields=["sensitive_data_retrieved"])
-        logger.info("Successfully updated/created SensitiveMeta and set state for video %s.", video.uuid)
 
-        # Save the VideoFile instance itself if requested and if sensitive_meta was linked
-        if save_instance:
-            update_fields = ["sensitive_meta"]
-            # Check if derived fields also need updating
-            if video.sensitive_meta:
-                if not video.patient and video.sensitive_meta.pseudo_patient: update_fields.append("patient")
-                if not video.examination and video.sensitive_meta.pseudo_examination: update_fields.append("examination")
-                if not video.date and video.sensitive_meta.date: update_fields.append("date")
+        # Update VideoFile fields if necessary
+        update_fields = ['sensitive_meta'] # Always update relation if created/changed
+        if not video.date and sensitive_meta and extracted_data_dict.get('date'):
+             # Check if date was successfully extracted and parsed into the dict
+             # The update_or_create logic should handle putting the date onto sensitive_meta if applicable
+             # Let's assume the date should be set on the VideoFile itself if not already set
+            extracted_date = extracted_data_dict.get('date')
+            if extracted_date: # Ensure date is not None or empty
+                video.date = extracted_date
+                update_fields.append("date")
+
+        # Save VideoFile and State atomically
+        with transaction.atomic():
             video.save(update_fields=update_fields)
-            logger.info("Saved video %s after metadata update.", video.uuid)
+            state.save(update_fields=['sensitive_data_retrieved'])
+
+        logger.debug("Successfully updated/created SensitiveMeta and state for video %s.", video.uuid)
+        return sensitive_meta
 
     except Exception as e:
         logger.error("Failed to update/create SensitiveMeta or state for video %s: %s", video.uuid, e, exc_info=True)
-        ic(f"Failed to update/create SensitiveMeta or state: {e}")
-        # Attempt to mark state as failed
-        try:
-            state = video.get_or_create_state() # Use State helper
-            state.sensitive_data_retrieved = False
-            state.save(update_fields=["sensitive_data_retrieved"])
-        except Exception as state_e:
-             logger.error("Failed to update state after SensitiveMeta error: %s", state_e)
+        # Optionally reset state? Depends on desired retry behavior.
+        state.sensitive_data_retrieved = False
+        state.save(update_fields=['sensitive_data_retrieved'])
+        return None # Indicate failure
 
 
 def _update_video_meta(video: "VideoFile", save_instance: bool = True):
     """Updates or creates the technical VideoMeta from the raw video file."""
     from ...metadata import VideoMeta # Local import
 
-    logger.info("Updating technical VideoMeta for video %s (from raw file).", video.uuid)
-    ic(f"Updating VideoMeta for {video.uuid} from raw file")
+    logger.debug("Updating technical VideoMeta for video %s (from raw file).", video.uuid)
 
     if not video.has_raw:
         logger.error("Raw video file path not available for %s. Cannot update VideoMeta.", video.uuid)
-        ic("Raw video file missing, cannot update VideoMeta.")
         return
 
     raw_video_path = video.get_raw_file_path() # Use helper
     if not raw_video_path or not raw_video_path.exists():
         logger.error("Raw video file path %s does not exist or is None. Cannot update VideoMeta.", raw_video_path)
-        ic(f"Raw video file path {raw_video_path} missing or None, cannot update VideoMeta.")
         return
 
     try:
         vm = video.video_meta
         if vm:
             logger.info("Updating existing VideoMeta (PK: %s) for video %s.", vm.pk, video.uuid)
-            ic(f"Updating existing VideoMeta {vm.pk}")
             vm.update_meta(raw_video_path) # Assuming this method exists
             vm.save()
         else:
             if not video.center or not video.processor:
-                 logger.error("Cannot create VideoMeta for %s: Center or Processor is missing.", video.uuid)
-                 ic(f"Cannot create VideoMeta for {video.uuid}: Center or Processor missing.")
-                 return
+                logger.error("Cannot create VideoMeta for %s: Center or Processor is missing.", video.uuid)
+
+                return
 
             logger.info("Creating new VideoMeta for video %s.", video.uuid)
-            ic("Creating new VideoMeta")
             # Assuming create_from_file exists and returns a saved instance or requires saving
             video.video_meta = VideoMeta.create_from_file(
                 video_path=raw_video_path,
@@ -128,15 +141,15 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
             if video.video_meta:
                 meta_fields = ["fps", "duration", "frame_count", "width", "height"]
                 for field in meta_fields:
-                     if getattr(video, field) is None and getattr(video.video_meta, field, None) is not None:
-                         # No need to set attribute here, save method handles it
-                         update_fields.append(field)
+                    if getattr(video, field) is None and getattr(video.video_meta, field, None) is not None:
+                        # No need to set attribute here, save method handles it
+                        update_fields.append(field)
             video.save(update_fields=list(set(update_fields))) # Use set to avoid duplicates
             logger.info("Saved video %s after VideoMeta update.", video.uuid)
 
     except Exception as e:
         logger.error("Failed to update/create VideoMeta for video %s: %s", video.uuid, e, exc_info=True)
-        ic(f"Failed to update/create VideoMeta: {e}")
+
 
 
 def _get_fps(video: "VideoFile") -> Optional[float]:
@@ -145,11 +158,11 @@ def _get_fps(video: "VideoFile") -> Optional[float]:
         return video.fps
 
     logger.debug("FPS not set on instance %s, checking VideoMeta.", video.uuid)
-    ic("FPS not set on instance, checking VideoMeta.")
+
 
     if not video.video_meta:
         logger.info("VideoMeta not linked for %s, attempting update.", video.uuid)
-        ic("VideoMeta not linked, attempting update.")
+
         _update_video_meta(video, save_instance=True) # Call the helper function
 
     # Check again after potential update
@@ -191,7 +204,7 @@ def _get_fps(video: "VideoFile") -> Optional[float]:
             logger.error("Error getting FPS directly from file %s: %s", video.raw_file.name if video.has_raw else 'N/A', e)
 
         logger.warning("Could not determine FPS for video %s.", video.uuid)
-        ic("Could not determine FPS.")
+
         return None
 
 
@@ -204,7 +217,6 @@ def _get_endo_roi(video: "VideoFile") -> Optional[Dict[str, int]]:
     """
     if not video.video_meta:
         logger.warning("VideoMeta not linked for video %s. Cannot get endo ROI.", video.uuid)
-        ic("VideoMeta not linked, cannot get endo ROI.")
         # Optionally try to update VideoMeta here?
         # _update_video_meta(video, save_instance=True)
         # if not video.video_meta: return None # Return if still not available
@@ -220,15 +232,12 @@ def _get_endo_roi(video: "VideoFile") -> Optional[Dict[str, int]]:
             return endo_roi
         else:
             logger.warning("Endo ROI not fully defined or invalid in VideoMeta for video %s. ROI: %s", video.uuid, endo_roi)
-            ic(f"Endo ROI not fully defined or invalid in VideoMeta: {endo_roi}")
             return None
     except AttributeError:
         logger.error("VideoMeta object for video %s does not have a 'get_endo_roi' method.", video.uuid)
-        ic("VideoMeta object missing 'get_endo_roi' method.")
         return None
     except Exception as e:
         logger.error("Error getting endo ROI from VideoMeta for video %s: %s", video.uuid, e, exc_info=True)
-        ic(f"Error getting endo ROI from VideoMeta: {e}")
         return None
 
 
@@ -237,7 +246,6 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
     endo_roi = _get_endo_roi(video) # Use the helper function
     if not endo_roi:
         logger.warning("Cannot generate crop template for video %s: Endo ROI not available.", video.uuid)
-        ic("Cannot generate crop template: Endo ROI not available.")
         return None
 
     x = endo_roi["x"]
@@ -248,7 +256,6 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
     # Validate dimensions
     if None in [x, y, width, height] or width <= 0 or height <= 0:
         logger.warning("Invalid ROI dimensions for video %s: %s", video.uuid, endo_roi)
-        ic(f"Invalid ROI dimensions: {endo_roi}")
         return None
 
     # Ensure crop boundaries are within image dimensions if available
@@ -260,7 +267,6 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
         x2 = min(img_w, x + width)
         if y1 >= y2 or x1 >= x2:
              logger.warning("Calculated crop template has zero or negative size for video %s. ROI: %s, Img: %dx%d", video.uuid, endo_roi, img_w, img_h)
-             ic(f"Invalid crop template size. ROI: {endo_roi}, Img: {img_w}x{img_h}")
              return None
         crop_template = [y1, y2, x1, x2]
     else:
@@ -346,9 +352,9 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
                 fields_to_update.append("duration")
                 updated = True
         elif file_frame_count <= 0:
-             logger.warning("Invalid frame count (%d) obtained from %s.", file_frame_count, video_path)
+            logger.warning("Invalid frame count (%d) obtained from %s.", file_frame_count, video_path)
         elif not current_fps or current_fps <= 0:
-             logger.warning("Cannot calculate duration for %s as FPS is unknown or invalid (%.2f).", video_path, current_fps or 0)
+            logger.warning("Cannot calculate duration for %s as FPS is unknown or invalid (%.2f).", video_path, current_fps or 0)
 
 
         # --- Save if updated ---

@@ -8,7 +8,7 @@ from ...utils import data_paths, ANONYM_VIDEO_DIR # Import necessary paths
 if TYPE_CHECKING:
     from .video_file import VideoFile
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("video_file")
 
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     """Returns the absolute Path object for the raw file, if it exists."""
@@ -34,13 +34,9 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
 
 def _delete_with_file(video: "VideoFile", *args, **kwargs):
     """Deletes the VideoFile record and its associated physical files (raw, processed, frames)."""
-    logger.warning("Attempting to delete VideoFile record %s (UUID: %s) and associated files.", video.pk, video.uuid)
-    ic(f"Deleting VideoFile {video.uuid} and files.")
-
     # 1. Delete Frames (using the frame helper function via instance method)
     frame_delete_msg = video.delete_frames()
     logger.info(frame_delete_msg)
-    ic(frame_delete_msg)
 
     # 2. Delete Raw File
     raw_file_path = _get_raw_file_path(video)
@@ -49,14 +45,12 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
             if raw_file_path.exists():
                 raw_file_path.unlink()
                 logger.info("Deleted raw video file: %s", raw_file_path)
-                ic(f"Deleted raw video file: {raw_file_path}")
             else:
                 logger.warning("Raw video file not found at %s, skipping deletion.", raw_file_path)
-                ic(f"Raw video file not found: {raw_file_path}")
+                
         except Exception as e:
             logger.error("Error deleting raw video file %s: %s", raw_file_path, e, exc_info=True)
-            ic(f"Error deleting raw video file {raw_file_path}: {e}")
-
+            
     # 3. Delete Processed File
     processed_file_path = _get_processed_file_path(video)
     if processed_file_path:
@@ -64,24 +58,20 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
             if processed_file_path.exists():
                 processed_file_path.unlink()
                 logger.info("Deleted processed video file: %s", processed_file_path)
-                ic(f"Deleted processed video file: {processed_file_path}")
             else:
                 logger.warning("Processed video file not found at %s, skipping deletion.", processed_file_path)
-                ic(f"Processed video file not found: {processed_file_path}")
         except Exception as e:
             logger.error("Error deleting processed video file %s: %s", processed_file_path, e, exc_info=True)
-            ic(f"Error deleting processed video file {processed_file_path}: {e}")
-
+            
     # 4. Delete Database Record
     try:
         # Use 'super(type(video), video)' to call the parent's delete method
         super(type(video), video).delete(*args, **kwargs)
         logger.info("Deleted VideoFile database record PK %s (UUID: %s).", video.pk, video.uuid)
-        ic("Deleted DB record.")
+        
         return f"Successfully deleted VideoFile {video.uuid} and associated files."
     except Exception as e:
         logger.error("Error deleting VideoFile database record PK %s: %s", video.pk, e, exc_info=True)
-        ic(f"Error deleting DB record {video.pk}: {e}")
         raise # Re-raise the exception
 
 
@@ -106,8 +96,10 @@ def _set_frame_dir(video: "VideoFile", force_update: bool = False):
 
 def _get_frame_dir_path(video: "VideoFile") -> Optional[Path]:
     """Returns the Path object for the frame directory, if set."""
-    return Path(video.frame_dir) if video.frame_dir else None
-
+    if not video.frame_dir:
+        _set_frame_dir(video)
+    
+    return Path(video.frame_dir) 
 
 def _get_temp_anonymized_frame_dir(video: "VideoFile") -> Path:
     """Gets the path for the temporary directory used during anonymization frame creation."""

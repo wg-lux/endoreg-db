@@ -34,6 +34,7 @@ logger = getLogger(__name__)
 STORAGE_DIR = data_paths["storage"]
 FILE_STORAGE = FileSystemStorage(location = STORAGE_DIR)
 VIDEO_DIR = data_paths["video"]
+TMP_VIDEO_DIR = VIDEO_DIR / "tmp"
 ANONYM_VIDEO_DIR = data_paths["video_export"]
 FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]

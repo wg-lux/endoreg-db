@@ -44,7 +44,6 @@ def _convert_sequences_to_db_segments(
                 label_name,
                 video.uuid,
             )
-            ic(f"Label '{label_name}' not found, skipping.")
             skipped_count += len(sequence_list)
             continue
 
@@ -62,7 +61,6 @@ def _convert_sequences_to_db_segments(
                     label_name,
                     video.uuid,
                 )
-                ic(f"Invalid sequence {sequence} for label {label_name}, skipping.")
                 error_count += 1
                 continue
 
@@ -89,7 +87,6 @@ def _convert_sequences_to_db_segments(
                     e,
                     exc_info=True,
                 )
-                ic(f"Error creating segment for {sequence}, label {label_name}: {e}")
                 error_count += 1
 
     logger.info(
@@ -99,9 +96,6 @@ def _convert_sequences_to_db_segments(
         skipped_count,
         error_count,
     )
-    ic(
-        f"Sequence conversion done - Created: {created_count}, Skipped: {skipped_count}, Errors: {error_count}"
-    )
 
 
 def _sequences_to_label_video_segments(
@@ -110,11 +104,9 @@ def _sequences_to_label_video_segments(
 ):
     """Converts stored sequences on the video object to LabelVideoSegments."""
     if not video.sequences:
-        ic(f"No sequences found to convert for video {video}.")
         return
 
     if not video_prediction_meta:
-        ic(f"No VideoPredictionMeta found for video {video.uuid}. Cannot convert sequences.")
         return
 
     _convert_sequences_to_db_segments(

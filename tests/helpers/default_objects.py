@@ -7,7 +7,8 @@ from endoreg_db.models import (
     Patient,
     Examination,
     ExaminationIndication,
-    RawPdfFile
+    RawPdfFile,
+    EndoscopyProcessor,
 )
 from logging import getLogger
 from datetime import date
@@ -26,6 +27,7 @@ logger = getLogger("default_objects")
 
 DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
 DEFAULT_ENDOSCOPE_NAME = "test_endoscope"
+DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
 
 DEFAULT_EGD_PATH = Path("tests/assets/lux-gastro-report.pdf")
 DEFAULT_GENDERS = ["male","female","unknown"]
@@ -50,6 +52,17 @@ def get_random_gender() -> Gender:
     """
     gender_name = random.choice(DEFAULT_GENDERS)
     return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
+
+def get_default_processor() -> EndoscopyProcessor:
+    """
+    Get a default EndoscopyProcessor object.
+    This function retrieves the first EndoscopyProcessor object from the database.
+    Returns:
+        EndoscopyProcessor: The default EndoscopyProcessor object.
+    """
+    processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
+    assert isinstance(processor, EndoscopyProcessor), "No EndoscopyProcessor found in the database."
+    return processor
 
 def get_default_center() -> Center:
     """

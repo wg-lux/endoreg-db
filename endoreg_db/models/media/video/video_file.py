@@ -68,8 +68,18 @@ from ...label import LabelVideoSegment, Label
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ..frame import Frame
-    from ...administration import Center
+    from endoreg_db.models import (
+        Center,
+        Frame,
+        SensitiveMeta,
+        EndoscopyProcessor,
+        VideoMeta,
+        PatientExamination,
+        Patient,
+        VideoState,
+        ModelMeta,
+        VideoImportMeta,
+    )
 
 class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
@@ -147,6 +157,23 @@ class VideoFile(models.Model):
     if TYPE_CHECKING:
         label_video_segments: "models.QuerySet[LabelVideoSegment]"
         frames: "models.QuerySet[Frame]"
+        center: "Center"
+        processor: "EndoscopyProcessor"
+        video_meta: "VideoMeta"
+        examination: "PatientExamination"
+        patient: "Patient"
+        sensitive_meta: "SensitiveMeta"
+        state: "VideoState"
+        ai_model_meta: "ModelMeta"
+        import_meta: "VideoImportMeta"
+
+
+    @classmethod
+    def check_hash_exists(cls, video_hash: str) -> bool:
+        """
+        Checks if a VideoFile with the given raw video hash already exists.
+        """
+        return cls.objects.filter(video_hash=video_hash).exists()
 
     @property
     def is_processed(self) -> bool:
@@ -181,9 +208,15 @@ class VideoFile(models.Model):
             return None
 
     def get_or_create_state(self) -> "VideoState":
+        """
+        Gets the related VideoState instance, creating one if it doesn't exist.
+        Does not save the VideoFile instance itself.
+        """
         if self.state is None:
+            # Create the state but don't save the VideoFile here.
+            # The main save() method will handle saving the foreign key.
             self.state = VideoState.objects.create()
-            self.save(update_fields=['state'])
+            # No self.save() call here
         return self.state
 
     update_video_meta = _update_video_meta
@@ -233,8 +266,12 @@ class VideoFile(models.Model):
             return self.label_video_segments.none()
 
     @classmethod
-    def create_from_file(cls, file_path: Union[str, Path], center: Optional["Center"] = None, **kwargs) -> Optional["VideoFile"]:
-        return _create_from_file(cls, file_path, center, **kwargs)
+    def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
+        # Ensure file_path is a Path object
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        # Pass center_name and other kwargs to the helper function
+        return _create_from_file(cls, file_path, center_name=center_name, **kwargs)
 
     def __str__(self):
         active_path = self.active_file_path
@@ -243,5 +280,7 @@ class VideoFile(models.Model):
         return f"VideoFile ({state}): {file_name} (UUID: {self.uuid})"
 
     def save(self, *args, **kwargs):
+        # Ensure state exists or is created before the main save operation
         self.get_or_create_state()
+        # Now call the original save method
         super().save(*args, **kwargs)

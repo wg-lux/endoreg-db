@@ -1,26 +1,6 @@
 from pathlib import Path
 import os
-import logging
 from endoreg_db.utils.paths import STORAGE_DIR
-
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("data/tests.log"),
-        # logging.StreamHandler()
-    ]
-)
-
-PATH_LOGGER = logging.getLogger("paths")
-RAW_PDF_LOGGER = logging.getLogger("raw_pdf")
-PATIENT_LOGGER = logging.getLogger("patient")
-DEFAULT_OBJECT_LOGGER = logging.getLogger("default_objects")
-
-PATH_LOGGER.setLevel(logging.WARNING)
-RAW_PDF_LOGGER.setLevel(logging.WARNING)
-PATIENT_LOGGER.setLevel(logging.INFO)
-DEFAULT_OBJECT_LOGGER.setLevel(logging.WARNING)
 
 ASSET_DIR = Path(__file__).parent / "assets"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
@@ -38,7 +18,6 @@ INSTALLED_APPS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 BASE_DIR = Path(__file__).parent.parent
-# logger.info(f"BASE_DIR: {BASE_DIR}")
 
 DATABASES = {
     'default': {
@@ -49,12 +28,73 @@ DATABASES = {
 
 TIME_ZONE = "Europe/Berlin"
 
-# settings.py
+LOG_FILE = 'data/tests.log'
+LOG_LEVEL = "WARNING"
 
+# reset logs:
+if os.path.exists(LOG_FILE):
+    os.remove(LOG_FILE)
+
+# Django LOGGING setting
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False, # Keep Django's default loggers
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': LOG_LEVEL, # Set handler level
+            'class': 'logging.FileHandler',
+            'filename': LOG_FILE, # Ensure this path is writable
+            'formatter': 'standard',
+        },
+        # Optional: Add a console handler if you want console output too
+        'console': {
+            'level': LOG_LEVEL, # Set console handler level
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'loggers': {
+        # Root logger configuration
+        '': {
+            'handlers': ['file', "console"], # Use the file handler (add 'console' if defined)
+            'level': LOG_LEVEL, # Set root logger level
+            'propagate': True,
+        },
+        # Specific logger configurations (optional, inherit from root if not specified)
+        'paths': {
+            'handlers': ['file'],
+            'level': LOG_LEVEL,
+            'propagate': False, # Don't pass to root if handled here
+        },
+        'raw_pdf': {
+            'handlers': ['file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'patient': {
+            'handlers': ['file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'default_objects': {
+            'handlers': ['file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'video_file': {
+            'handlers': ['file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Loggers using __name__ will inherit from the root logger ('')
+        # 'endoreg_db.models.media.video.create_from_file': { ... } # Example if needed
+    },
+}
 
 MEDIA_ROOT = STORAGE_DIR
 MEDIA_URL = '/media/' # Adjust if needed
-
-# Ensure your DEFAULT_FILE_STORAGE uses MEDIA_ROOT correctly
-# If using default FileSystemStorage, it should work automatically.
-# DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'

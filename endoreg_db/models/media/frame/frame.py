@@ -1,11 +1,9 @@
-from typing import TYPE_CHECKING, Union, Optional, Dict, Tuple, List
+from typing import TYPE_CHECKING, Optional, Tuple, List
 from django.db import models
 from pathlib import Path
 import cv2
 import numpy as np
-from ...utils import FRAME_DIR, FILE_STORAGE, data_paths
 if TYPE_CHECKING:
-    from ..video.video_file import VideoFile
     from ...label.label import Label
     from ...label.annotation import ImageClassificationAnnotation
 
@@ -23,6 +21,9 @@ class Frame(models.Model):
     timestamp = models.FloatField(null=True, blank=True)
     is_extracted = models.BooleanField(default=False)
 
+    if TYPE_CHECKING:
+        image_classification_annotations: models.QuerySet["ImageClassificationAnnotation"]
+        labels: models.QuerySet["Label"]
     class Meta:
         unique_together = ('video', 'frame_number')
         ordering = ['video', 'frame_number']

@@ -1,12 +1,16 @@
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
+from django.conf import settings
 from icecream import ic
+from tqdm import tqdm
+from django.db import transaction
 
-# Assuming utils.video contains extract_frames and initialize_frame_objects
-from ....utils.video import extract_frames as util_extract_frames
-from ....utils.video import initialize_frame_objects as util_initialize_frame_objects
+from ....utils.video.ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
+from .video_file_io import _get_frame_dir_path
+
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -89,142 +93,7 @@ def _get_frame_range(video: "VideoFile", start_frame_number: int, end_frame_numb
         logger.error("Error getting frame range (%d-%d) for video %s: %s", start_frame_number, end_frame_number, video.uuid, e, exc_info=True)
         return frame_model.objects.none() # Return empty queryset on error
 
-
-def _extract_frames(
-    video: "VideoFile",
-    quality: int = 2,
-    overwrite: bool = False,
-    ext="jpg",
-    verbose=False,
-) -> List[Path]:
-    """Extracts frames from the raw video file."""
-    if not video.has_raw:
-        logger.error("Raw video file not available for %s. Cannot extract frames.", video.uuid)
-        raise FileNotFoundError(f"Raw video file not available for {video.uuid}")
-
-    raw_file_path = video.get_raw_file_path() # Use helper
-    if not raw_file_path or not raw_file_path.exists():
-         logger.error("Raw video file not found at %s. Cannot extract frames.", raw_file_path)
-         raise FileNotFoundError(f"Raw video file not found at {raw_file_path}")
-
-    frame_dir_path = video.get_frame_dir_path() # Use IO helper
-    if not frame_dir_path:
-        logger.error("Frame directory path is not set for video %s. Cannot extract frames.", video.uuid)
-        raise ValueError(f"Frame directory not set for {video.uuid}")
-
-    logger.info("Starting frame extraction for video %s to %s", video.uuid, frame_dir_path)
-    ic(f"Starting frame extraction for {video.raw_file.name} to {frame_dir_path}")
-
-    try:
-        # Call the utility function
-        extracted_paths = util_extract_frames(
-            video=video, # Pass the VideoFile instance itself
-            quality=quality,
-            overwrite=overwrite,
-            ext=ext,
-            verbose=verbose,
-        )
-        logger.info("Successfully extracted %d frames for video %s.", len(extracted_paths), video.uuid)
-        ic(f"Extracted {len(extracted_paths)} frames.")
-
-        # Update state and initialize Frame objects
-        video.set_frames_extracted(True) # Use State helper via instance method
-        _initialize_frames(video, extracted_paths) # Call local helper
-
-        return extracted_paths
-
-    except Exception as e:
-        logger.error("Frame extraction failed for video %s: %s", video.uuid, e, exc_info=True)
-        ic(f"Frame extraction failed: {e}")
-        video.set_frames_extracted(False) # Use State helper via instance method
-        raise
-
-
-def _initialize_frames(video: "VideoFile", paths: List[Path]):
-    """Initializes Frame database objects based on extracted frame file paths."""
-    if not paths:
-        logger.warning("No frame paths provided for initialization for video %s.", video.uuid)
-        ic("No frame paths provided for initialization.")
-        return
-
-    logger.info("Initializing %d Frame objects for video %s.", len(paths), video.uuid)
-    ic(f"Initializing {len(paths)} Frame objects.")
-    try:
-        # Call the utility function
-        util_initialize_frame_objects(video, paths)
-        logger.info("Successfully initialized Frame objects for video %s.", video.uuid)
-        ic("Frame objects initialized.")
-    except Exception as e:
-        logger.error("Failed to initialize Frame objects for video %s: %s", video.uuid, e, exc_info=True)
-        ic(f"Failed to initialize Frame objects: {e}")
-        # Optionally, set frames_extracted state back to False?
-        # video.set_frames_extracted(False)
-
-
-def _delete_frames(video: "VideoFile") -> str:
-    """Deletes extracted frame files and associated Frame database objects."""
-    deleted_messages = []
-    error_messages = []
-
-    # 1. Delete frame directory
-    frame_dir = video.get_frame_dir_path() # Use IO helper
-    if frame_dir and frame_dir.exists():
-        try:
-            shutil.rmtree(frame_dir)
-            msg = f"Deleted frame directory: {frame_dir}"
-            logger.info(msg)
-            deleted_messages.append(msg)
-        except Exception as e:
-            msg = f"Error deleting frame directory {frame_dir}: {e}"
-            logger.error(msg, exc_info=True)
-            error_messages.append(msg)
-    elif frame_dir:
-        msg = f"Frame directory not found, skipping deletion: {frame_dir}"
-        logger.debug(msg)
-    else:
-        msg = f"Frame directory path not set for video {video.uuid}, cannot delete standard frames."
-        logger.warning(msg)
-
-    # 2. Delete temporary anonymized frame directory (if exists)
-    temp_anonym_frame_dir = video._get_temp_anonymized_frame_dir() # Use IO helper
-    if temp_anonym_frame_dir.exists():
-        try:
-            shutil.rmtree(temp_anonym_frame_dir)
-            msg = f"Deleted temporary anonymized frame directory: {temp_anonym_frame_dir}"
-            logger.info(msg)
-            deleted_messages.append(msg)
-        except Exception as e:
-            msg = f"Error deleting temporary anonymized frame directory {temp_anonym_frame_dir}: {e}"
-            logger.error(msg, exc_info=True)
-            error_messages.append(msg)
-
-    # 3. Delete Frame objects from database
-    try:
-        # Access related manager directly
-        count, _ = video.frames.all().delete()
-        if count > 0:
-            msg = f"Deleted {count} Frame objects from database for video {video.uuid}."
-            logger.info(msg)
-            deleted_messages.append(msg)
-    except AttributeError:
-         logger.error("Could not delete Frame objects for video %s. 'frames' related manager not found.", video.uuid)
-         error_messages.append("Could not delete Frame objects due to missing related manager.")
-    except Exception as e:
-         msg = f"Error deleting Frame objects from database for video {video.uuid}: {e}"
-         logger.error(msg, exc_info=True)
-         error_messages.append(msg)
-
-    # 4. Update state if successful
-    final_message = "; ".join(deleted_messages)
-    if not error_messages:
-        video.set_frames_extracted(False) # Use State helper via instance method
-        logger.info("Reset state.frames_extracted to False for video %s.", video.uuid)
-    else:
-        final_message += "; Errors occurred: " + "; ".join(error_messages)
-
-    ic(final_message)
-    return final_message
-
+# --- Frame Creation/Deletion ---
 
 def _get_frame_path(video: "VideoFile", frame_number: int) -> Optional[Path]:
     """Constructs the expected path for a given frame number."""
@@ -241,75 +110,360 @@ def _get_frame_path(video: "VideoFile", frame_number: int) -> Optional[Path]:
     frame_filename = f"frame_{filename_index:07d}.jpg"
     path = target_dir / frame_filename
 
-    # Optionally check if the path exists?
-    # if not path.exists():
-    #     logger.warning("Constructed frame path does not exist: %s", path)
-    #     return None
-
     return path
 
 
 def _get_frame_paths(video: "VideoFile") -> List[Path]:
-    """Gets a list of existing frame file paths from the database Frame objects."""
-    paths = []
-    try:
-        # Get Frame objects ordered by number
-        extracted_frames = _get_frames(video).filter(extracted=True) # Use local helper
-        for frame in extracted_frames:
-            try:
-                # Access path via image FileField
-                path = Path(frame.image.path)
-                if path.exists():
-                    paths.append(path)
-                else:
-                    logger.warning("Frame object PK %s (Number: %d) points to non-existent file: %s",
-                                   frame.pk, frame.frame_number, path)
-                    ic(f"Warning: Frame {frame.frame_number} file missing: {path}")
-            except Exception as e:
-                logger.warning("Could not get path for Frame PK %s (Number: %d): %s", frame.pk, frame.frame_number, e)
-                ic(f"Could not get path for frame {frame.frame_number}: {e}")
-    except Exception as e:
-         logger.error("Could not get frame paths for video %s: %s", video.uuid, e, exc_info=True)
-         ic(f"Error getting frame paths: {e}")
+    """
+    Retrieves the file paths of all extracted frames associated with the video.
 
-    logger.debug("Retrieved %d existing frame paths for video %s.", len(paths), video.uuid)
-    # Ensure paths are sorted if order matters and isn't guaranteed by the query
-    # paths.sort(key=lambda p: int(p.stem.split('_')[-1])) # Example sort
-    return paths
+    Args:
+        video: The VideoFile instance.
+
+    Returns:
+        A list of Path objects representing the frame file paths, sorted by frame number.
+        Returns an empty list if frames are not extracted or an error occurs.
+    """
+    if not video.state or not video.state.frames_extracted:
+        logger.warning("Frames not extracted for video %s. Cannot get frame paths.", video.uuid)
+        return []
+
+    # Get the base storage path (MEDIA_ROOT)
+    try:
+        storage_base_path = Path(settings.MEDIA_ROOT)
+        if not storage_base_path.is_absolute():
+            storage_base_path = (settings.BASE_DIR / storage_base_path).resolve()
+    except AttributeError:
+        logger.error("Could not determine storage base path (settings.MEDIA_ROOT). Cannot construct absolute frame paths.")
+        return []
+
+    try:
+        # Filter frames that are marked as extracted
+        extracted_frames = _get_frames(video).filter(is_extracted=True) # Use local helper
+        # Order by frame number to ensure correct sequence
+        extracted_frames = extracted_frames.order_by('frame_number')
+        # Construct absolute paths by joining MEDIA_ROOT and the relative path
+        frame_paths = [storage_base_path / frame.relative_path for frame in extracted_frames]
+        return frame_paths
+    except Exception as e:
+        logger.error("Could not get frame paths for video %s: %s", video.uuid, e, exc_info=True)
+        return []
 
 
 def _create_frame_object(
     video: "VideoFile", frame_number: int, image_file=None, extracted: bool = False
 ) -> "Frame":
     """Instantiates a Frame object (does not save it)."""
-    frame_model = video.get_frame_model()
-    logger.debug("Instantiating Frame object number %d for video %s.", frame_number, video.uuid)
-    return frame_model(
-        video_file=video,
+    from endoreg_db.models import Frame
+    
+    return Frame(
+        video=video, # Changed from video_file
         frame_number=frame_number,
-        image=image_file, # Should be a File object or path relative to storage
-        extracted=extracted,
+        relative_path=image_file, # Changed from image
+        is_extracted=extracted, # Changed from extracted
+        # Add other default fields if necessary
     )
 
 
 def _bulk_create_frames(video: "VideoFile", frames_to_create: List["Frame"]):
     """Bulk creates Frame objects in the database."""
+    from endoreg_db.models import Frame
     if not frames_to_create:
-        logger.info("No frames provided for bulk creation for video %s.", video.uuid)
-        return []
-
-    frame_model = video.get_frame_model()
-    logger.info("Bulk creating %d Frame objects for video %s.", len(frames_to_create), video.uuid)
-    ic(f"Bulk creating {len(frames_to_create)} frames.")
+        return
     try:
-        # Assuming ignore_conflicts=True might be useful if re-running initialization
-        created_frames = frame_model.objects.bulk_create(frames_to_create, ignore_conflicts=True)
-        logger.info("Successfully bulk created/ignored %d frames for video %s.", len(frames_to_create), video.uuid)
-        ic(f"Bulk created/ignored {len(frames_to_create)} frames.")
-        # Note: bulk_create doesn't return PKs on all backends, and doesn't call save()
-        # Need to query again if PKs are needed immediately.
-        return created_frames # Or query again: frame_model.objects.filter(video_file=video)
+        Frame.objects.bulk_create(frames_to_create)
+        logger.debug("Bulk created %d Frame objects for video %s.", len(frames_to_create), video.uuid)
     except Exception as e:
-        logger.error("Bulk creation of frames failed for video %s: %s", video.uuid, e, exc_info=True)
-        ic(f"Bulk creation failed: {e}")
+        logger.error("Error during bulk creation of frames for video %s: %s", video.uuid, e, exc_info=True)
         raise
+
+def _extract_frames(
+    video: "VideoFile",
+    quality: int = 2,
+    overwrite: bool = False,
+    ext="jpg",
+    verbose=False, # verbose is unused currently
+) -> List[Path]:
+    """Extracts frames from the raw video file using ffmpeg and initializes Frame objects."""
+    if not video.has_raw:
+        logger.error("Raw video file not available for %s. Cannot extract frames.", video.uuid)
+        raise FileNotFoundError(f"Raw video file not available for {video.uuid}")
+
+    raw_file_path = video.get_raw_file_path() # Use IO helper
+    if not raw_file_path or not raw_file_path.exists():
+         logger.error("Raw video file not found at %s. Cannot extract frames.", raw_file_path)
+         raise FileNotFoundError(f"Raw video file not found at {raw_file_path}")
+
+    frame_dir_path = video.get_frame_dir_path() # Use IO helper
+    if not frame_dir_path:
+        logger.error("Frame directory path is not set for video %s. Cannot extract frames.", video.uuid)
+        raise ValueError(f"Frame directory not set for {video.uuid}")
+
+    # Check if frames already exist and handle overwrite logic
+    state = video.get_or_create_state()
+    if state.frames_extracted and not overwrite:
+        logger.warning("Frames already extracted for video %s and overwrite=False. Skipping extraction.", video.uuid)
+        # Return existing paths if needed, or an empty list/None
+        return video.get_frame_paths() # Return existing paths
+
+    if state.frames_extracted and overwrite:
+        logger.warning("Frames already extracted for video %s but overwrite=True. Deleting existing frames first.", video.uuid)
+        video.delete_frames() # Delete existing frames and DB entries
+
+    # Ensure frame directory exists
+    frame_dir_path.mkdir(parents=True, exist_ok=True)
+    logger.info("Starting frame extraction for video %s to %s", video.uuid, frame_dir_path)
+
+    extracted_paths: List[Path] = []
+    try:
+        # Call the ffmpeg_wrapper utility function directly
+        extracted_paths = ffmpeg_extract_frames(
+            video_path=raw_file_path, # Pass the path to the utility
+            output_dir=frame_dir_path, # Pass the output dir
+            quality=quality,
+            ext=ext,
+            # fps=video.fps # Optionally pass fps if needed for specific extraction rate
+        )
+
+        if not extracted_paths:
+             # ffmpeg_extract_frames might return empty on error, check logs
+             logger.error("Frame extraction using ffmpeg failed or produced no files for video %s.", video.uuid)
+             raise RuntimeError(f"Frame extraction failed for {video.uuid}")
+
+        logger.info("Successfully extracted %d frames using ffmpeg for video %s.", len(extracted_paths), video.uuid)
+
+        # Update state and initialize Frame objects
+        state.frames_extracted = True
+        state.save(update_fields=['frames_extracted'])
+
+        # Initialize Frame DB Objects using the logic moved from the utility
+        _initialize_frames(video, extracted_paths) # Call local helper
+
+        return extracted_paths
+
+    except Exception as e:
+        logger.error("Frame extraction or initialization failed for video %s: %s", video.uuid, e, exc_info=True)
+        # Update state on failure
+        try:
+            # Ensure state reflects failure
+            state.frames_extracted = False
+            state.frames_initialized = False # Also mark initialization as failed
+            state.save(update_fields=['frames_extracted', 'frames_initialized'])
+        except Exception as state_e:
+            logger.error("Failed to update state after frame extraction error for video %s: %s", video.uuid, state_e, exc_info=True)
+        # Clean up potentially created frame files if extraction failed mid-way
+        if frame_dir_path.exists():
+             logger.warning("Cleaning up frame directory %s due to extraction error.", frame_dir_path)
+             shutil.rmtree(frame_dir_path, ignore_errors=True)
+        raise # Re-raise the original exception
+
+
+
+def _initialize_frames(video: "VideoFile", extracted_paths: List[Path]):
+    """
+    Initializes Frame database objects based on extracted frame file paths.
+    (Logic moved from utils.video.extract_frames.initialize_frame_objects)
+    """
+    state = video.get_or_create_state()
+    # Check state before proceeding
+    if state.frames_initialized:
+        ic(f"Frames already initialized for video {video.uuid}, skipping.")
+        logger.warning("Frames already initialized for video %s, skipping initialization.", video.uuid)
+        return
+
+    if not extracted_paths:
+        ic(f"No extracted paths provided for video {video.uuid}, cannot initialize frames.")
+        logger.warning("No extracted paths provided for video %s, cannot initialize frames.", video.uuid)
+        # Mark as not initialized if called with no paths? Or just return?
+        # Let's assume if _extract_frames succeeded, paths should exist.
+        # If called independently, this might need error handling.
+        return
+
+    logger.info("Initializing %d Frame objects for video %s.", len(extracted_paths), video.uuid)
+
+    try:
+        video.frame_count = len(extracted_paths)
+        frames_to_create = []
+        # Consider making batch size configurable via settings or env var
+        batch_size = int(os.environ.get("DJANGO_FRAME_INIT_BATCHSIZE", "500"))
+
+        # Prepare frame data (relative paths for storage)
+        frame_dir = video.get_frame_dir_path() # Should be the parent of extracted_paths
+        if not frame_dir:
+             raise ValueError(f"Frame directory not set for video {video.uuid}")
+
+        # Get storage root (MEDIA_ROOT typically)
+        # Be careful with storage backend details. Assuming default FileSystemStorage here.
+        # If using S3 etc., getting the relative path might need storage-specific methods.
+        try:
+            # Accessing storage location directly might be fragile.
+            # Consider storing relative paths directly if possible during extraction,
+            # or construct them based on MEDIA_ROOT setting.
+            storage_base_path = Path(settings.MEDIA_ROOT) # Use Django settings
+            # Ensure storage_base_path is absolute
+            if not storage_base_path.is_absolute():
+                 # Handle relative MEDIA_ROOT if necessary, e.g., relative to BASE_DIR
+                 storage_base_path = (settings.BASE_DIR / storage_base_path).resolve()
+
+        except AttributeError:
+             logger.error("Could not determine storage base path (settings.MEDIA_ROOT). Cannot calculate relative paths.")
+             raise ValueError("Storage base path configuration error.")
+
+
+        for i, path in tqdm(enumerate(extracted_paths, start=0), desc=f"Initializing Frames {video.uuid}", total=len(extracted_paths)):
+            try:
+                # Extract frame number from filename (e.g., frame_0000001.jpg -> 1)
+                # Adjust parsing based on actual filename format from ffmpeg_extract_frames
+                frame_number = int(path.stem.split('_')[-1]) -1 # Assuming ffmpeg starts at 1
+            except (ValueError, IndexError):
+                 logger.error(f"Could not parse frame number from filename: {path.name}. Skipping frame.")
+                 continue # Skip this frame
+
+            try:
+                # Calculate path relative to MEDIA_ROOT for storage in FileField
+                relative_path = path.relative_to(storage_base_path).as_posix()
+            except ValueError:
+                 logger.error(f"Extracted path {path} is not inside the storage base {storage_base_path}. Cannot determine relative path.")
+                 # Decide how to handle: skip, error out, or store absolute? Storing absolute is usually bad.
+                 logger.warning(f"Skipping frame {frame_number} due to path issue.")
+                 continue
+
+
+            # Create Frame instance (without saving yet) using the local helper
+            frame_obj_instance = _create_frame_object(
+                video, frame_number=frame_number, image_file=relative_path, extracted=True
+            )
+            frames_to_create.append(frame_obj_instance)
+
+            # Bulk create in batches
+            # Check index i+1 because enumerate starts at 0
+            if (i + 1) % batch_size == 0:
+                with transaction.atomic():
+                    _bulk_create_frames(video, frames_to_create) # Use local helper
+                frames_to_create.clear()
+
+        # Create any remaining frames
+        if frames_to_create:
+            with transaction.atomic():
+                _bulk_create_frames(video, frames_to_create) # Use local helper
+
+        # Update state and save VideoFile (to save frame_count)
+        state.frames_initialized = True
+        state.save(update_fields=['frames_initialized'])
+        video.save(update_fields=['frame_count']) # Save frame_count on VideoFile
+
+        logger.info("Successfully initialized Frame objects and updated frame count for video %s.", video.uuid)
+
+    except Exception as e:
+        logger.error("Failed to initialize Frame objects for video %s: %s", video.uuid, e, exc_info=True)
+        # Update state on failure
+        try:
+            state.frames_initialized = False
+            # Reset frame count? Maybe not, extraction might have finished but init failed.
+            # video.frame_count = None
+            state.save(update_fields=['frames_initialized'])
+            # video.save(update_fields=['frame_count'])
+        except Exception as state_e:
+            logger.error("Failed to update state after frame initialization error for video: %s", state_e, exc_info=True)
+        # Re-raise the original exception after attempting state update
+        raise e
+
+def _delete_frames(video: "VideoFile") -> str:
+    """Deletes extracted frame files and associated Frame database objects."""
+    from endoreg_db.models import Frame
+    deleted_messages = []
+    error_messages = []
+    state_updated = False
+
+    # 1. Delete frame directory
+    frame_dir = _get_frame_dir_path(video) # Use IO helper - Keep using _get_frame_dir_path here for deletion
+    if frame_dir and frame_dir.exists():
+        try:
+            shutil.rmtree(frame_dir)
+            msg = f"Deleted frame directory: {frame_dir}"
+            logger.info(msg)
+            deleted_messages.append(msg)
+        except Exception as e:
+            msg = f"Error deleting frame directory {frame_dir}: {e}"
+            logger.error(msg, exc_info=True)
+            error_messages.append(msg)
+    elif frame_dir:
+        msg = f"Frame directory not found, skipping deletion: {frame_dir}"
+        logger.debug(msg)
+        # If dir doesn't exist, frames likely aren't there. Still proceed to DB cleanup.
+    else:
+        msg = f"Frame directory path not set for video {video.uuid}, cannot delete standard frames."
+        logger.warning(msg)
+        # Cannot delete files, but still try to delete DB entries.
+
+    # 2. Delete temporary anonymized frame directory (if exists) - Good practice to include here
+    try:
+        temp_anonym_frame_dir = video.get_temp_anonymized_frame_dir() # Use IO helper
+        if temp_anonym_frame_dir and temp_anonym_frame_dir.exists():
+            shutil.rmtree(temp_anonym_frame_dir)
+            msg = f"Deleted temporary anonymized frame directory: {temp_anonym_frame_dir}"
+            logger.info(msg)
+            deleted_messages.append(msg)
+    except Exception as e:
+        msg = f"Error deleting temporary anonymized frame directory {temp_anonym_frame_dir}: {e}"
+        logger.error(msg, exc_info=True)
+        error_messages.append(msg)
+
+    # 3. Delete Frame objects from database
+    try:
+        # Access related manager directly or use the Frame model
+        # frame_model = video.get_frame_model() # No need to get model dynamically
+        # Use the Frame model directly to filter and delete
+        count, _ = Frame.objects.filter(video=video).delete() # Use 'video' field
+        # Alternative using related manager if available and correctly set up:
+        # count, _ = video.frames.all().delete() # Assumes related_name='frames' works
+        if count > 0:
+            msg = f"Deleted {count} Frame objects from database for video {video.uuid}."
+            logger.info(msg)
+            deleted_messages.append(msg)
+    except AttributeError:
+        # This error might occur if the related manager 'frames' isn't properly set up or accessed
+        logger.error("Could not delete Frame objects for video %s using related manager. Trying direct model filter.", video.uuid)
+        # Fallback to direct model filter if related manager fails
+        try:
+            count, _ = Frame.objects.filter(video=video).delete()
+            if count > 0:
+                msg = f"Deleted {count} Frame objects from database for video {video.uuid} (using direct filter)."
+                logger.info(msg)
+                deleted_messages.append(msg)
+        except Exception as e_fallback:
+            msg = f"Error deleting Frame objects from database for video {video.uuid} (fallback attempt): {e_fallback}"
+            logger.error(msg, exc_info=True)
+            error_messages.append(msg)
+
+    except Exception as e:
+         msg = f"Error deleting Frame objects from database for video {video.uuid}: {e}"
+         logger.error(msg, exc_info=True)
+         error_messages.append(msg)
+
+    # 4. Update state and frame count if deletion seemed successful (no errors)
+    final_message = "; ".join(deleted_messages)
+    if not error_messages:
+        try:
+            state = video.get_or_create_state()
+            state.frames_extracted = False
+            state.frames_initialized = False # Also reset initialized state
+            state.save(update_fields=['frames_extracted', 'frames_initialized'])
+            logger.info("Reset frame state flags to False for video %s.", video.uuid)
+            # Reset frame count on VideoFile model
+            video.frame_count = None
+            video.save(update_fields=['frame_count'])
+            logger.info("Reset frame count to None for video %s.", video.uuid)
+            state_updated = True
+        except Exception as state_e:
+            msg = f"Failed to update state/frame count after deleting frames for video %s: {state_e}"
+            logger.error(msg, exc_info=True)
+            error_messages.append(msg) # Add state update error to messages
+
+    # Construct final message
+    if error_messages:
+        final_message += "; Errors occurred: " + "; ".join(error_messages)
+    elif state_updated:
+         final_message += "; State and frame count updated successfully."
+
+    return final_message

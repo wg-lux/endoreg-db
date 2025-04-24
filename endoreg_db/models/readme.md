@@ -2,6 +2,8 @@
 ## Testing
 Run individual test submodules like this:
 `python runtests.py "media/video"`
+Use devenv defined scripts for easier access modular testing:
+- `runtests-media`
 
 Split Videos using video Splitter script:
 `python endoreg-db/scripts/video_splitter.py --input ./endoreg-db/data/raw_videos/lux-gastro-video.mp4 --interval 15`

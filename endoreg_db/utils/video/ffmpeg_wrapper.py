@@ -224,75 +224,72 @@ def transcode_videofile_if_required(
         return input_path # Return original path if no copy needed
 
 def extract_frames(
-    input_path: Path,
+    video_path: Path,
     output_dir: Path,
-    quality: int = 2, # FFmpeg quality scale (2=best for JPEG)
+    quality: int,
     ext: str = "jpg",
-    fps: Optional[float] = None # Optional: Extract at a specific frame rate
+    fps: Optional[float] = None
 ) -> List[Path]:
     """
     Extracts frames from a video file using FFmpeg.
-    Returns a list of paths to the extracted frames.
+
+    Args:
+        video_path: Path to the input video file.
+        output_dir: Directory to save the extracted frames.
+        quality: Quality factor for JPEG extraction (1-31, lower is better).
+        ext: Output frame image extension (e.g., 'jpg', 'png').
+        fps: Optional frames per second to extract. If None, extracts all frames.
+
+    Returns:
+        A list of Path objects for the extracted frames.
     """
-    if not input_path.exists():
-        logger.error("Input file not found for frame extraction: %s", input_path)
-        return []
+    # Check if ffmpeg command exists
+    ffmpeg_executable = shutil.which("ffmpeg")
+    if not ffmpeg_executable:
+        error_msg = "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_pattern = output_dir / f"frame_%06d.{ext}" # e.g., frame_000001.jpg
+    output_pattern = output_dir / f"frame_%07d.{ext}"
 
-    command = [
-        "ffmpeg",
-        "-i", str(input_path),
-        "-qscale:v", str(quality), # Quality scale for video
+    cmd = [
+        ffmpeg_executable, # Use the found executable path
+        "-i", str(video_path),
+        "-qscale:v", str(quality), # Video quality scale
     ]
 
     if fps is not None:
-        command.extend(["-vf", f"fps={fps}"]) # Add fps filter if specified
+        cmd.extend(["-vf", f"fps={fps}"])
 
-    command.append(str(output_pattern))
+    cmd.append(str(output_pattern))
 
-    logger.info("Starting frame extraction: %s -> %s", input_path.name, output_dir)
-    logger.debug("FFmpeg command: %s", " ".join(command))
-
-    extracted_paths = []
+    logger.info("Running FFmpeg command: %s", " ".join(cmd))
     try:
-        # Run ffmpeg and wait for completion
-        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
-        stderr_output = ""
-        if process.stderr:
-            # You might want to parse stderr for progress if needed, but it's complex.
-            # For now, just capture it for error reporting.
-            for line in process.stderr:
-                stderr_output += line
-                # logger.debug(f"ffmpeg: {line.strip()}") # Optional detailed logging
-
-        process.wait()
-
-        if process.returncode == 0:
-            logger.info("Frame extraction finished successfully for %s.", input_path.name)
-            # List the files created by ffmpeg
-            extracted_paths = sorted(list(output_dir.glob(f"frame_*.{ext}")))
-            logger.info("Found %d extracted frames.", len(extracted_paths))
-        else:
-            logger.error("FFmpeg frame extraction failed for %s with return code %d.", input_path.name, process.returncode)
-            logger.error("FFmpeg stderr:\n%s", stderr_output)
-            # Clean up potentially created frames if extraction failed partially
-            for f in output_dir.glob(f"frame_*.{ext}"):
-                try:
-                    f.unlink()
-                except OSError as e:
-                    logger.error("Failed to delete partial frame %s: %s", f, e)
-            return [] # Return empty list on failure
-
+        # Use subprocess.run for better error handling
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        logger.debug("FFmpeg stdout:\n%s", result.stdout)
+        logger.debug("FFmpeg stderr:\n%s", result.stderr)
+        logger.info("FFmpeg frame extraction completed successfully.")
     except FileNotFoundError:
-        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+         # This might be redundant now but kept for safety
+         error_msg = f"ffmpeg command not found at '{ffmpeg_executable}'. Ensure FFmpeg is installed and in the system's PATH."
+         logger.error(error_msg)
+         raise FileNotFoundError(error_msg)
+    except subprocess.CalledProcessError as e:
+        logger.error("FFmpeg command failed with exit code %d.", e.returncode)
+        logger.error("FFmpeg stderr:\n%s", e.stderr)
+        logger.error("FFmpeg stdout:\n%s", e.stdout)
+        # Return empty list on error as frames were likely not created correctly
         return []
     except Exception as e:
-        logger.error("Error during frame extraction of %s: %s", input_path.name, e, exc_info=True)
+        logger.error("An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True)
         return []
 
-    return extracted_paths
+
+    # Collect paths of extracted frames
+    extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
+    return extracted_files
 
 
 __all__ = [

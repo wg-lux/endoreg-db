@@ -59,29 +59,48 @@ def _assemble_anonymized_video(
     anonymized_video_path: Path,
     fps: float,
 ):
-    """Assembles a video from a list of frame paths."""
+    """Assembles a video from a list of frame paths using the ffmpeg_wrapper utility."""
     if not generated_frame_paths:
         raise ValueError("No frame paths provided to assemble video.")
 
     logger.info("Assembling video from %d frames to %s at %.2f FPS.",
                 len(generated_frame_paths), anonymized_video_path, fps)
 
-    # Ensure paths are sorted correctly by frame number if not already guaranteed
-    # Example sorting key based on 'frame_0000001.jpg' format
+    # Ensure paths are sorted correctly by frame number
     try:
+        # Assuming frame filenames are like 'frame_0000001.jpg' etc.
         sorted_paths = sorted(generated_frame_paths, key=lambda p: int(p.stem.split('_')[-1]))
     except (IndexError, ValueError):
-        logger.warning("Could not sort frame paths numerically, using provided order.")
-        sorted_paths = generated_frame_paths
+        logger.warning("Could not sort frame paths numerically based on standard naming, using provided order.")
+        sorted_paths = generated_frame_paths # Fallback to original order
 
-    # Use a utility function (assumed to exist or needs to be created)
-    # This function handles OpenCV VideoWriter setup and frame writing loop
-    assemble_video_from_frames(
-        frame_paths=[p.as_posix() for p in sorted_paths],
-        output_path=anonymized_video_path.as_posix(),
-        fps=fps
+    # Determine dimensions from the first frame
+    width, height = None, None
+    try:
+        first_frame = cv2.imread(str(sorted_paths[0]))
+        if first_frame is None:
+            raise IOError(f"Could not read first frame: {sorted_paths[0]}")
+        height, width, _ = first_frame.shape
+        logger.info("Determined video dimensions from first frame: %dx%d", width, height)
+    except Exception as e:
+        logger.error("Error reading first frame to determine dimensions: %s", e, exc_info=True)
+        raise ValueError("Could not determine video dimensions from frames.") from e
+
+
+    # Call the utility function from ffmpeg_wrapper (which uses cv2.VideoWriter)
+    assembled_path = assemble_video_from_frames(
+        frame_paths=sorted_paths, # Pass the list of Path objects
+        output_path=anonymized_video_path, # Pass the Path object
+        fps=fps,
+        width=width, # Pass determined width
+        height=height # Pass determined height
     )
+
+    if assembled_path is None or not assembled_path.exists():
+         raise RuntimeError(f"Video assembly failed for {anonymized_video_path}")
+
     logger.info("Video assembly completed: %s", anonymized_video_path)
+
 
 
 def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outside", censor_color: Tuple[int, int, int] = (0, 0, 0)) -> bool:

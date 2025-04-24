@@ -34,7 +34,6 @@ def _save_video_file(video: "VideoFile", *args, **kwargs):
                 save_instance=True
             )
             logger.info("Created and linked VideoMeta (PK: %s) for video %s.", video.video_meta.pk, video.uuid)
-            ic(f"Created VideoMeta {video.video_meta.pk}")
             # Ensure 'video_meta' is added to update_fields if it's being used
             update_fields = kwargs.get('update_fields', [])
             if 'video_meta' not in update_fields:
@@ -42,7 +41,6 @@ def _save_video_file(video: "VideoFile", *args, **kwargs):
             kwargs['update_fields'] = update_fields
         except Exception as e:
             logger.error("Failed to create VideoMeta for video %s: %s", video.uuid, e, exc_info=True)
-            ic(f"Failed to create VideoMeta: {e}")
     elif video.video_meta and raw_video_path_obj and raw_video_path_obj.exists():
         # Potentially update existing VideoMeta if needed, or just pass
         pass
