@@ -13,8 +13,8 @@ def sum_emissions(product_materials:List["ProductMaterial"]):
             reference_unit = product_material.unit
         else:
             assert reference_unit == product_material.unit, "ProductMaterial units do not match"
-        emission, emission_unit = product_material.get_emission()
+        em_value, emission_unit = product_material.get_emission()
         assert reference_unit == emission_unit, "ProductMaterial units do not match"
-        emission += emission
+        emission += em_value
 
     return emission, reference_unit
