@@ -73,6 +73,20 @@ class AiModel(models.Model):
         video_segmentation_labelset: "VideoSegmentationLabelSet"
         metadata_versions: models.QuerySet["ModelMeta"]
 
+    def get_version(self, version: int) -> "ModelMeta":
+        """
+        Get the model_metadata object from metadata_versions with the given version number.
+        """
+        if self.active_meta is not None and self.active_meta.version == version:
+            return self.active_meta
+
+        # Get the model metadata with the given version
+        model_meta = self.metadata_versions.filter(version=version).first()
+        if model_meta is not None:
+            return model_meta
+
+        raise ValueError(f"No model metadata found for version {version}.")
+
     def get_latest_version(self) -> "ModelMeta":
         """
         Get the model_metadata object from metadata_versions with the highest version number.

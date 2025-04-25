@@ -81,8 +81,8 @@ def assemble_video_from_frames( # Renamed from assemble_video
                 continue
             # Ensure frame dimensions match - resize if necessary (or log error)
             if frame.shape[1] != width or frame.shape[0] != height:
-                 logger.warning(f"Frame {frame_path} has dimensions {frame.shape[1]}x{frame.shape[0]}, expected {width}x{height}. Resizing.")
-                 frame = cv2.resize(frame, (width, height))
+                logger.warning(f"Frame {frame_path} has dimensions {frame.shape[1]}x{frame.shape[0]}, expected {width}x{height}. Resizing.")
+                frame = cv2.resize(frame, (width, height))
             video_writer.write(frame)
     finally:
         video_writer.release()
@@ -166,7 +166,7 @@ def transcode_videofile_if_required(
     input_path: Path,
     output_path: Path,
     required_codec: str = "h264",
-    required_pixel_format: str = "yuv420p",
+    required_pixel_format: str = "yuvj420p", # "juv420p"
     **transcode_options # Pass other options to transcode_video
 ) -> Optional[Path]:
     """
@@ -203,7 +203,7 @@ def transcode_videofile_if_required(
         transcode_options.setdefault('extra_args', [])
         # Add pix_fmt argument if not already handled by codec preset
         if '-pix_fmt' not in transcode_options['extra_args']:
-             transcode_options['extra_args'].extend(['-pix_fmt', required_pixel_format])
+            transcode_options['extra_args'].extend(['-pix_fmt', required_pixel_format])
 
         return transcode_video(input_path, output_path, **transcode_options)
     else:
@@ -212,15 +212,15 @@ def transcode_videofile_if_required(
         # For simplicity, let's assume the caller handles the file location.
         # If the output_path is different, we might need to copy.
         if input_path != output_path:
-             # Example: copy file if output path is different
-             try:
-                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                 shutil.copy2(input_path, output_path)
-                 logger.info("Copied %s to %s as it met requirements.", input_path.name, output_path.name)
-                 return output_path
-             except Exception as e:
-                 logger.error("Failed to copy %s to %s: %s", input_path.name, output_path.name, e)
-                 return None
+            # Example: copy file if output path is different
+            try:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(input_path, output_path)
+                logger.info("Copied %s to %s as it met requirements.", input_path.name, output_path.name)
+                return output_path
+            except Exception as e:
+                logger.error("Failed to copy %s to %s: %s", input_path.name, output_path.name, e)
+                return None
         return input_path # Return original path if no copy needed
 
 def extract_frames(
@@ -271,11 +271,11 @@ def extract_frames(
         logger.debug("FFmpeg stdout:\n%s", result.stdout)
         logger.debug("FFmpeg stderr:\n%s", result.stderr)
         logger.info("FFmpeg frame extraction completed successfully.")
-    except FileNotFoundError:
-         # This might be redundant now but kept for safety
-         error_msg = f"ffmpeg command not found at '{ffmpeg_executable}'. Ensure FFmpeg is installed and in the system's PATH."
-         logger.error(error_msg)
-         raise FileNotFoundError(error_msg)
+    except FileNotFoundError as exc:
+        # This might be redundant now but kept for safety
+        error_msg = f"ffmpeg command not found at '{ffmpeg_executable}'. Ensure FFmpeg is installed and in the system's PATH."
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg) from exc
     except subprocess.CalledProcessError as e:
         logger.error("FFmpeg command failed with exit code %d.", e.returncode)
         logger.error("FFmpeg stderr:\n%s", e.stderr)
@@ -291,12 +291,110 @@ def extract_frames(
     extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
     return extracted_files
 
+def extract_frame_range(
+    video_path: Path,
+    output_dir: Path,
+    start_frame: int,
+    end_frame: int, # Exclusive end frame number
+    quality: int,
+    ext: str = "jpg",
+) -> List[Path]:
+    """
+    Extracts frames within a specific range [start_frame, end_frame) using FFmpeg.
+
+    Args:
+        video_path: Path to the input video file.
+        output_dir: Directory to save the extracted frames.
+        start_frame: The first frame number to extract (inclusive, 0-based).
+        end_frame: The frame number to stop before (exclusive, 0-based).
+        quality: Quality factor for JPEG extraction (1-31, lower is better).
+        ext: Output frame image extension (e.g., 'jpg', 'png').
+
+    Returns:
+        A list of Path objects for the extracted frames.
+    Raises:
+        FileNotFoundError: If ffmpeg executable is not found.
+        ValueError: If start_frame >= end_frame.
+        RuntimeError: If the ffmpeg command fails.
+    """
+    if start_frame >= end_frame:
+        logger.warning("extract_frame_range called with start_frame (%d) >= end_frame (%d). No frames to extract.", start_frame, end_frame)
+        return []
+
+    ffmpeg_executable = shutil.which("ffmpeg")
+    if not ffmpeg_executable:
+        error_msg = "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Use a consistent naming convention, matching extract_frames
+    output_pattern = output_dir / f"frame_%07d.{ext}"
+
+    # Use select filter for precise frame range extraction
+    # 'select' uses 0-based indexing 'n'
+    # We want frames where start_frame <= n < end_frame
+    select_filter = f"select='between(n,{start_frame},{end_frame-1})'"
+
+    cmd = [
+        ffmpeg_executable,
+        "-i", str(video_path),
+        "-vf", select_filter,
+        "-vsync", "vfr", # Variable frame rate sync to handle selected frames
+        "-qscale:v", str(quality),
+        "-copyts", # Attempt to copy timestamps if needed, might not be accurate with select
+        str(output_pattern),
+    ]
+
+    logger.info("Running FFmpeg command for frame range extraction: %s", " ".join(cmd))
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        logger.debug("FFmpeg stdout:\n%s", result.stdout)
+        logger.debug("FFmpeg stderr:\n%s", result.stderr)
+        logger.info("FFmpeg frame range extraction completed successfully.")
+    except FileNotFoundError as exc:
+        error_msg = f"ffmpeg command not found at '{ffmpeg_executable}'. Ensure FFmpeg is installed and in the system's PATH."
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg) from exc
+    except subprocess.CalledProcessError as e:
+        logger.error("FFmpeg command failed with exit code %d.", e.returncode)
+        logger.error("FFmpeg stderr:\n%s", e.stderr)
+        logger.error("FFmpeg stdout:\n%s", e.stdout)
+        # Clean up potentially partially created files in the target directory within the expected range
+        logger.warning("Attempting cleanup of potentially incomplete frames in %s", output_dir)
+        for i in range(start_frame, end_frame):
+            potential_file = output_dir / f"frame_{i:07d}.{ext}"
+            if potential_file.exists():
+                try:
+                    potential_file.unlink()
+                except OSError as unlink_err:
+                    logger.error("Failed to delete potential frame %s during cleanup: %s", potential_file, unlink_err)
+        raise RuntimeError(f"FFmpeg frame range extraction failed for {video_path}") from e
+    except Exception as e:
+        logger.error("An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True)
+        raise RuntimeError(f"Unexpected error during FFmpeg frame range extraction for {video_path}") from e
+
+    # Collect paths of extracted frames matching the pattern and expected range
+    # FFmpeg might create files outside the exact range depending on version/flags,
+    # so filter explicitly.
+    extracted_files = []
+    for i in range(start_frame, end_frame):
+        frame_file = output_dir / f"frame_{i:07d}.{ext}"
+        if frame_file.exists():
+            extracted_files.append(frame_file)
+        else:
+            # This might happen if ffmpeg fails silently for some frames or if the video ends early.
+            logger.warning("Expected frame file %s not found after extraction.", frame_file)
+
+
+    logger.info("Found %d extracted frame files in range [%d, %d) for video %s.", len(extracted_files), start_frame, end_frame, video_path.name)
+    return extracted_files
 
 __all__ = [
     "get_stream_info",
     "assemble_video_from_frames", # Updated name
     "transcode_video",
     "transcode_videofile_if_required",
-    "extract_frames"
-
+    "extract_frames",
+    "extract_frame_range", # Add new function to __all__
 ]

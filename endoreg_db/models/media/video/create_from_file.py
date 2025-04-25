@@ -30,6 +30,7 @@ def _create_from_file(
     Creates a VideoFile instance from a given video file path.
 
     Handles transcoding (if necessary), hashing, file storage, and database record creation.
+    Raises exceptions on failure.
     """
     # Ensure related models are imported for runtime use if needed within the function
 
@@ -53,7 +54,7 @@ def _create_from_file(
             output_path=temp_transcoded_output_path # Provide a target path
         )
         if transcoded_file_path is None:
-             raise ValueError(f"Transcoding check/process failed for {file_path}")
+             raise RuntimeError(f"Transcoding check/process failed for {file_path}")
 
         logger.debug("Using file for hashing: %s", transcoded_file_path)
 
@@ -105,28 +106,28 @@ def _create_from_file(
         # 6. Verify hash after move/copy (optional but recommended)
         final_hash = get_video_hash(final_storage_path)
         if final_hash != video_hash:
-            logger.error("Hash mismatch after file operation! Expected %s, got %s for %s", video_hash, final_hash, final_storage_path)
+            logger.error("Hash mismatch after file operation for %s! Expected %s, got %s", final_storage_path, video_hash, final_hash)
             final_storage_path.unlink(missing_ok=True)  # Clean up corrupted file
-            raise ValueError("Hash mismatch after file operation.")
-        logger.debug("Hash verified after file operation.")
+            raise RuntimeError(f"Hash mismatch after file operation for {final_storage_path}")
+        logger.debug("Hash verified for %s after file operation.", final_storage_path)
 
         # 7. Get related Center and Processor objects
         try:
             center = Center.objects.get(name=center_name)
             processor = EndoscopyProcessor.objects.get(name=processor_name) if processor_name else None
-            logger.debug("Found Center: %s, Processor: %s", center.name, processor.name if processor else "None")
-        except Center.DoesNotExist:
-            logger.error("Center '%s' not found.", center_name)
+            logger.debug("Found Center: %s, Processor: %s for new video %s", center.name, processor.name if processor else "None", uuid_val)
+        except Center.DoesNotExist as e:
+            logger.error("Center '%s' not found for video %s.", center_name, uuid_val)
             # Clean up the stored file before raising
             if final_storage_path and final_storage_path.exists():
                  final_storage_path.unlink(missing_ok=True)
-            raise
-        except EndoscopyProcessor.DoesNotExist:
-            logger.error("Processor '%s' not found.", processor_name)
+            raise ValueError(f"Center '{center_name}' not found.") from e
+        except EndoscopyProcessor.DoesNotExist as e:
+            logger.error("Processor '%s' not found for video %s.", processor_name, uuid_val)
              # Clean up the stored file before raising
             if final_storage_path and final_storage_path.exists():
                  final_storage_path.unlink(missing_ok=True)
-            raise
+            raise ValueError(f"Processor '{processor_name}' not found.") from e
 
         # 8. Create the VideoFile instance
         logger.info("Creating new VideoFile instance with UUID: %s", uuid_val)
@@ -148,12 +149,12 @@ def _create_from_file(
         if save:
             logger.info("Saving new VideoFile instance (UUID: %s)", uuid_val)
             video.save()
-            logger.info("Successfully created and saved VideoFile PK %s", video.pk)
+            logger.info("Successfully created and saved VideoFile PK %s (UUID: %s)", video.pk, video.uuid)
 
         return video
 
     except Exception as e:
-        logger.error("Failed to create VideoFile from %s: %s", file_path, e, exc_info=True)
+        logger.error("Failed to create VideoFile from %s: (%s) %s", file_path, type(e).__name__, e, exc_info=True)
         # Clean up potentially created file in final storage
         if final_storage_path and final_storage_path.exists():
             logger.warning("Cleaning up potentially orphaned file: %s", final_storage_path)
@@ -162,4 +163,4 @@ def _create_from_file(
         if transcoded_file_path and transcoded_file_path != file_path and transcoded_file_path.exists():
              logger.warning("Cleaning up potentially orphaned transcoded file: %s", transcoded_file_path)
              transcoded_file_path.unlink(missing_ok=True)
-        raise 
+        raise

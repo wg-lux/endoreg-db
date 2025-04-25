@@ -116,71 +116,20 @@ def anonymize_frame(
         raise IOError(f"Failed to write anonymized frame to {target_frame_path}")
 
 
-
-def _censor_outside_frames(
-    video: "VideoFile",
-):
-    outside_frame_paths = video.get_outside_frame_paths()
-
-    if not outside_frame_paths:
-        logger.info("No outside frames found to censor for video %s", video.uuid)
-
-    else:
-        logger.info("Censoring %d outside frames for video %s", len(outside_frame_paths), video.uuid)
-
-        censored_count = 0
-        error_count = 0
-        for frame_path in tqdm(iterable=outside_frame_paths, desc=f"Censoring frames for {video.uuid}"):
-            try:
-                frame = cv2.imread(frame_path.as_posix())
-                if frame is None:
-                    logger.warning("Could not read frame for censoring: %s", frame_path)
-                    error_count += 1
-                    continue
-                frame.fill(0)
-                if not cv2.imwrite(filename=frame_path.as_posix(), img=frame):
-                    logger.error("Failed to write censored frame: %s", frame_path)
-                    error_count += 1
-                else:
-                    censored_count += 1
-            except Exception as e:
-                logger.error("Error censoring frame %s: %s", frame_path, e, exc_info=True)
-                error_count += 1
-
-        logger.info("Finished censoring for video %s. Censored: %d, Errors: %d", video.uuid, censored_count, error_count)
-        if error_count > 0:
-            return False
-
-    return True
-
-
-_all__ = [
+__all__ = [
     "DJANGO_NAME_SALT",
-    "random_day_by_month_year",
-    "random_day_by_year",
-    "get_examiner_hash",
-    "ensure_aware_datetime",
-    "get_hash_string",
-    "get_pdf_hash",
-    "get_video_hash",
-    "create_mock_examiner_name",
-    "create_mock_patient_name",
     "data_paths",
-    "get_patient_examination_hash",
-    "DJANGO_NAME_SALT",
-    "guess_name_gender",
     "FILE_STORAGE",
     "VIDEO_DIR",
-    "TMP_VIDEO_DIR", # Added TMP_VIDEO_DIR if needed
+    "TMP_VIDEO_DIR",
     "ANONYM_VIDEO_DIR",
     "FRAME_DIR",
     "WEIGHTS_DIR",
-    "PDF_DIR", # Added PDF_DIR
-    "DOCUMENT_DIR", # Added DOCUMENT_DIR
+    "PDF_DIR",
+    "DOCUMENT_DIR",
     "prepare_bulk_frames",
-    "anonymize_frame", # Keep the utility
-    "get_uuid_filename",
-    "find_segments_in_prediction_array", # Added missing function
-    "TEST_RUN", # Added missing variable
-    "TEST_RUN_FRAME_NUMBER", # Added missing variable
+    "anonymize_frame",
+    "find_segments_in_prediction_array",
+    "TEST_RUN",
+    "TEST_RUN_FRAME_NUMBER",
 ]

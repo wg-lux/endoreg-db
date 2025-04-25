@@ -1,3 +1,17 @@
+"""
+Contains helper functions related to the state management of VideoFile objects.
+The actual VideoState model is defined in endoreg_db.models.state.video.
+"""
+# This file can contain helper functions that operate on VideoFile and its state
+# For example:
+# def check_if_ready_for_anonymization(video_file: "VideoFile") -> bool:
+#     state = video_file.get_or_create_state()
+#     # ... logic checking state flags ...
+#     return True/False
+
+# Currently, state logic is primarily handled within the VideoFile model itself
+# or the specific process modules (e.g., anonymization checks its pre-conditions).
+
 import logging
 from typing import TYPE_CHECKING
 

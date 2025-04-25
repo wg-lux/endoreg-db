@@ -13,8 +13,7 @@ def _test_pipe_2(test:"VideoFileModelExtractedTest"):
     # Store raw file path before it's deleted
     video_file = test.video_file
     original_raw_file_path = video_file.get_raw_file_path()
-    original_frame_dir_path = video_file.get_frame_dir_path() # May be None if already deleted in pipe_1
-
+    
     success = video_file.pipe_2()
     test.assertTrue(success, "Pipe 2 failed: Post-Validation Processing failed.")
 
@@ -37,7 +36,7 @@ def _test_pipe_2(test:"VideoFileModelExtractedTest"):
     test.assertFalse(video_file.has_raw, "VideoFile should not have raw file after pipe_2")
     test.assertFalse(bool(video_file.raw_file.name), "raw_file field name should be empty")
     if original_raw_file_path:
-            test.assertFalse(original_raw_file_path.exists(), f"Original raw video file {original_raw_file_path} should be deleted")
+        test.assertFalse(original_raw_file_path.exists(), f"Original raw video file {original_raw_file_path} should be deleted")
 
     # Check Metadata/State Updates
     test.assertIsNone(video_file.sensitive_meta, "SensitiveMeta should be deleted (set to None) after pipe_2")

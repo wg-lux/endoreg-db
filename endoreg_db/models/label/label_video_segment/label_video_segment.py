@@ -4,20 +4,23 @@ from typing import TYPE_CHECKING, Union, Optional
 from tqdm import tqdm
 import logging
 from django.core.exceptions import ObjectDoesNotExist
+from ._create_from_video import _create_from_video
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from endoreg_db.models import LabelVideoSegmentState
-    from ..media.video.video_file import VideoFile
-    from ..media.frame import Frame
-    from ..label.label import Label
-    from ..other.information_source import InformationSource
-    from ..metadata.model_meta import ModelMeta
-    from ..metadata.video_prediction_meta import VideoPredictionMeta
-    from ..medical.patient.patient_finding import PatientFinding
-    from .annotation import ImageClassificationAnnotation
-
+    from endoreg_db.models import (
+        LabelVideoSegmentState,
+        VideoFile,
+        Frame,
+        Label,
+        InformationSource,
+        ModelMeta,
+        VideoPredictionMeta,
+        PatientFinding,
+        ImageClassificationAnnotation,
+    )
+   
 class LabelVideoSegment(models.Model):
     """
     Represents a labeled segment within a video, defined by start and end frame numbers.
@@ -69,7 +72,7 @@ class LabelVideoSegment(models.Model):
     class Meta:
         constraints = [
             CheckConstraint(
-                check=Q(start_frame_number__lt=F("end_frame_number")),
+                condition=Q(start_frame_number__lt=F("end_frame_number")),
                 name="segment_start_lt_end"
             ),
         ]
@@ -95,31 +98,49 @@ class LabelVideoSegment(models.Model):
             logger.error("AttributeError accessing 'state' for LabelVideoSegment %s.", self.pk)
             return False
 
+    def extract_frame_files(self, overwrite: bool = False, **kwargs) -> bool:
+        """
+        Extracts frame files for the segment using the associated VideoFile.
+        Passes additional keyword arguments to extract_frame_range.
+        """
+        from endoreg_db.models import VideoFile
+        if not isinstance(self.video_file, VideoFile):
+            raise ValueError("Cannot extract frame files: No associated VideoFile.")
+        return self.video_file.extract_frame_range(
+            start_frame=self.start_frame_number,
+            end_frame=self.end_frame_number,
+            overwrite=overwrite,
+            **kwargs
+        )
+    
+    def delete_frame_files(self) -> None:
+        """
+        Deletes frame files for the segment using the associated VideoFile.
+        """
+        from endoreg_db.models import VideoFile
+        if not isinstance(self.video_file, VideoFile):
+            raise ValueError("Cannot delete frame files: No associated VideoFile.")
+        self.video_file.delete_frame_range(
+            start_frame=self.start_frame_number,
+            end_frame=self.end_frame_number
+        )
+
     def save(self, *args, **kwargs):
         """Overrides save to ensure the related state object exists."""
-        # Call the original save method first
         from endoreg_db.models import LabelVideoSegmentState
-        from django.db import transaction
+        # Call the original save method first
         super().save(*args, **kwargs)
 
-        # Ensure state exists after saving
+        # Ensure state exists after saving, without nested transactions
         if self.pk:  # Only proceed if the instance has been saved and has a PK
             try:
                 # Check if the state exists using the related manager
                 _ = self.state
             except ObjectDoesNotExist:
-                # If it doesn't exist, create it atomically using get_or_create
+                # If it doesn't exist, create it using get_or_create.
+                # This will run within the current transaction context.
                 logger.info("Creating LabelVideoSegmentState for LabelVideoSegment %s.", self.pk)
-                with transaction.atomic():
-                    LabelVideoSegmentState.objects.get_or_create(origin=self)
-            except AttributeError:
-                # Fallback check if 'state' related_name is missing or incorrect
-                if not LabelVideoSegmentState.objects.filter(origin=self).exists():
-                    logger.info("Creating LabelVideoSegmentState (fallback check) for LabelVideoSegment %s.", self.pk)
-                    with transaction.atomic():
-                        LabelVideoSegmentState.objects.get_or_create(origin=self)
-
-
+                LabelVideoSegmentState.objects.get_or_create(origin=self)
 
     @classmethod
     def create_from_video(
@@ -133,20 +154,14 @@ class LabelVideoSegment(models.Model):
         """
         Create a LabelVideoSegment instance from a VideoFile.
         """
-        from ..media.video.video_file import VideoFile
-
-        if not isinstance(source, VideoFile):
-            raise ValueError("Source must be a VideoFile instance.")
-
-        segment = cls(
-            start_frame_number=start_frame_number,
-            end_frame_number=end_frame_number,
-            source=source,
-            label=label,
-            video_file=source,
-            prediction_meta=prediction_meta,
+        return _create_from_video(
+            cls,
+            source,
+            prediction_meta,
+            label,
+            start_frame_number,
+            end_frame_number
         )
-        return segment
 
     def get_video(self) -> "VideoFile":
         """Returns the associated VideoFile instance."""
@@ -154,6 +169,17 @@ class LabelVideoSegment(models.Model):
             return self.video_file
         else:
             raise ValueError("LabelVideoSegment is not associated with a VideoFile.")
+
+    def extract_frames(self, quality: int = 2, overwrite: bool = False, ext="jpg", verbose=False) -> bool:
+        """
+        Extracts frames from the raw video file using ffmpeg.
+        Updates Frame objects' is_extracted flag and relevant VideoState fields atomically.
+        Assumes Frame objects may already exist (created by _initialize_frames).
+        """
+        from endoreg_db.models import VideoFile
+        if not isinstance(self.video_file, VideoFile):
+            raise ValueError("Cannot extract frames: No associated VideoFile.")
+        return self.video_file.extract_frames(quality=quality, overwrite=overwrite, ext=ext, verbose=verbose)
 
     def __str__(self):
         try:
@@ -184,6 +210,7 @@ class LabelVideoSegment(models.Model):
         """
         Returns frames associated with the segment from the linked VideoFile.
         """
+        from endoreg_db.models.media.frame import Frame
         try:
             video_obj = self.get_video()
             return video_obj.frames.filter(
@@ -192,16 +219,16 @@ class LabelVideoSegment(models.Model):
             ).order_by('frame_number')
         except ValueError:
             logger.error("Cannot get frames for segment %s: No associated VideoFile.", self.pk)
-            return models.QuerySet().none()
+            return Frame.objects.none()
         except AttributeError:
             logger.error("Cannot get frames for segment %s: 'frames' related manager not found on VideoFile.", self.pk)
-            return models.QuerySet().none()
+            return Frame.objects.none()
 
     def get_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
         """
         Returns ImageClassificationAnnotations associated with the frames in this segment.
         """
-        from .annotation import ImageClassificationAnnotation
+        from endoreg_db.models import ImageClassificationAnnotation
 
         try:
             video_obj = self.get_video()
@@ -229,7 +256,7 @@ class LabelVideoSegment(models.Model):
         Get up to n frames within the segment that do not have an ImageClassificationAnnotation
         for this segment's label.
         """
-        from .annotation import ImageClassificationAnnotation
+        from endoreg_db.models import ImageClassificationAnnotation
 
         frames_qs = self.get_frames()
         if not isinstance(frames_qs, models.QuerySet) or not frames_qs.exists():
@@ -256,8 +283,7 @@ class LabelVideoSegment(models.Model):
             logger.info("Skipping annotation generation for segment %s: Requires linked VideoPredictionMeta.", self.id)
             return
 
-        from .annotation import ImageClassificationAnnotation
-        from ..other.information_source import InformationSource
+        from endoreg_db.models import ImageClassificationAnnotation, InformationSource
 
         information_source = self.source
         if not information_source:

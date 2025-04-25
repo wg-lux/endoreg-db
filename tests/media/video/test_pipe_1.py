@@ -1,4 +1,4 @@
-from endoreg_db.models import LabelVideoSegment, VideoPredictionMeta
+from endoreg_db.models import VideoPredictionMeta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,15 +40,11 @@ def _test_pipe_1(test:"VideoFileModelExtractedTest"):
     ).exists()
     test.assertTrue(prediction_meta_exists, "VideoPredictionMeta should exist after pipe_1")
 
-    # Check Label Video Segments
-    lvs_exists = LabelVideoSegment.objects.filter(video_file=video_file).exists()
-    # test.assertTrue(lvs_exists, "LabelVideoSegments should exist after pipe_1")
 
     # Check State flags
-    test.assertTrue(state.sensitive_data_retrieved, "State.sensitive_data_retrieved should be True")
+    test.assertTrue(state.text_meta_extracted, "State.sensitive_data_retrieved should be True")
     test.assertTrue(state.initial_prediction_completed, "State.initial_prediction_completed should be True")
     test.assertTrue(state.lvs_created,  "State.lvs_created should be True")
     # Frames should be deleted because delete_frames_after=True
     test.assertFalse(state.frames_extracted, "State.frames_extracted should be False after pipe_1 (delete_frames_after=True)")
-    test.assertFalse(state.frames_initialized, "State.frames_initialized should be False after pipe_1 (delete_frames_after=True)")
-
+    test.assertTrue(state.frames_initialized, "State.frames_initialized should be True after pipe_1 (delete_frames_after=True)")

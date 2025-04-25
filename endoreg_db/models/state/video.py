@@ -1,6 +1,13 @@
+"""
+Defines state tracking models related to video processing.
+"""
 from django.db import models
 from .abstract import AbstractState
 from typing import TYPE_CHECKING, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from ..media import VideoFile
 
@@ -45,34 +52,55 @@ class AbstractVideoState(AbstractState):
     class Meta:
         abstract = True
 
-class VideoState(AbstractVideoState):
-    """State for video data."""
-    class Meta:
-        verbose_name = "Video State"
-        verbose_name_plural = "Video States"
+class VideoState(models.Model):
+    """
+    Tracks the processing state of a VideoFile instance.
+    Uses BooleanFields for clear, distinct states.
+    """
+    # Frame related states
+    frames_extracted = models.BooleanField(default=False, help_text="True if raw frames have been extracted to files.")
+    frames_initialized = models.BooleanField(default=False, help_text="True if Frame DB objects have been created.")
+    frame_count = models.PositiveIntegerField(null=True, blank=True, help_text="Number of frames extracted/initialized.")
 
-    def __str__(self) -> str:
-        """
-        String representation of the VideoState instance.
+    # Metadata related states
+    video_meta_extracted = models.BooleanField(default=False, help_text="True if VideoMeta (technical specs) has been extracted.")
+    text_meta_extracted = models.BooleanField(default=False, help_text="True if text metadata (OCR) has been extracted.")
 
-        Returns:
-            str: String representation of the VideoState.
-        """
+    # AI / Annotation related states
+    initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
+    lvs_created = models.BooleanField(default=False, help_text="True if LabelVideoSegments have been created from predictions.")
+    frame_annotations_generated = models.BooleanField(default=False, help_text="True if frame-level annotations have been generated from segments.")
+
+    # Anonymization state
+    anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
+
+    # Timestamps
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        # Find the related VideoFile's UUID if possible
+        video_uuid = "Unknown"
         try:
-            # Accessing video_file might fail if it's not set or during deletion
-            video_repr = f"VideoState for {self.video_file}" if getattr(self, 'video_file', None) else "VideoState (No Video Linked)"
+            # Access the related VideoFile via the reverse relation 'video_file'
+            if hasattr(self, 'video_file') and self.video_file:
+                video_uuid = self.video_file.uuid
         except Exception:
-             video_repr = "VideoState (Error accessing video)"
+            pass # Ignore errors if relation doesn't exist or causes issues
 
-        str_repr = f"{video_repr}\n"
-        str_repr += f"  Frames Extracted: {self.frames_extracted}\n"
-        str_repr += f"  Frames Initialized: {self.frames_initialized}\n"
-        str_repr += f"  Frame Count: {self.frame_count}\n"
-        str_repr += f"  Sensitive Data Retrieved: {self.sensitive_data_retrieved}\n"
-        str_repr += f"  Initial Prediction Completed: {self.initial_prediction_completed}\n"
-        str_repr += f"  LVS Created: {self.lvs_created}\n"
-        str_repr += f"  Anonymized: {self.anonymized}\n"
-        # str_repr += f"  LVS Annotated: {self.lvs_annotated}\n" # Optional
-        return str_repr
+        states = [
+            f"FramesExtracted={self.frames_extracted}",
+            f"FramesInit={self.frames_initialized}",
+            f"VideoMetaExtracted={self.video_meta_extracted}",
+            f"TextMetaExtracted={self.text_meta_extracted}",
+            f"PredictionDone={self.initial_prediction_completed}",
+            f"LvsCreated={self.lvs_created}",
+            f"Anonymized={self.anonymized}",
+        ]
+        return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
+
+    class Meta:
+        verbose_name = "Video Processing State"
+        verbose_name_plural = "Video Processing States"
 
 
