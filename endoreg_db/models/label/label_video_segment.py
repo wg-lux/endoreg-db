@@ -99,22 +99,25 @@ class LabelVideoSegment(models.Model):
         """Overrides save to ensure the related state object exists."""
         # Call the original save method first
         from endoreg_db.models import LabelVideoSegmentState
+        from django.db import transaction
         super().save(*args, **kwargs)
 
         # Ensure state exists after saving
-        if self.pk: # Only proceed if the instance has been saved and has a PK
+        if self.pk:  # Only proceed if the instance has been saved and has a PK
             try:
                 # Check if the state exists using the related manager
                 _ = self.state
             except ObjectDoesNotExist:
-                # If it doesn't exist, create it
+                # If it doesn't exist, create it atomically using get_or_create
                 logger.info("Creating LabelVideoSegmentState for LabelVideoSegment %s.", self.pk)
-                LabelVideoSegmentState.objects.create(origin=self)
+                with transaction.atomic():
+                    LabelVideoSegmentState.objects.get_or_create(origin=self)
             except AttributeError:
-                 # Fallback check if 'state' related_name is missing or incorrect
-                 if not LabelVideoSegmentState.objects.filter(origin=self).exists():
-                      logger.info("Creating LabelVideoSegmentState (fallback check) for LabelVideoSegment %s.", self.pk)
-                      LabelVideoSegmentState.objects.create(origin=self)
+                # Fallback check if 'state' related_name is missing or incorrect
+                if not LabelVideoSegmentState.objects.filter(origin=self).exists():
+                    logger.info("Creating LabelVideoSegmentState (fallback check) for LabelVideoSegment %s.", self.pk)
+                    with transaction.atomic():
+                        LabelVideoSegmentState.objects.get_or_create(origin=self)
 
 
 

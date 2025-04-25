@@ -21,79 +21,89 @@ def _update_text_metadata(
 ) -> Optional["SensitiveMeta"]:
     """
     Extracts text from a fraction of video frames, updates or creates SensitiveMeta,
-    and potentially updates the VideoFile's date field.
+    and potentially updates the VideoFile's date field. Requires frames to be extracted.
+
+    State Transitions:
+        - Pre-condition: Requires state.frames_extracted=True.
+        - Post-condition: Sets state.sensitive_data_retrieved=True (even if no text found).
     """
     logger.debug(f"Updating text metadata for {video.uuid}")
     state = video.get_or_create_state()
 
+    # --- Pre-condition Checks ---
+    if not state.frames_extracted:
+        logger.error("Cannot update text metadata for video %s: Frames not extracted.", video.uuid)
+        return None # Indicate failure
+
     if state.sensitive_data_retrieved and not overwrite:
         logger.warning("Text already extracted for video %s and overwrite=False. Skipping.", video.uuid)
         return video.sensitive_meta # Return existing meta if available
+    # --- End Pre-condition Checks ---
+
 
     # Extract text using the AI helper function
+    # This function itself checks frames_extracted state again, which is slightly redundant but safe.
     extracted_data_dict = video.extract_text_from_frames(
         frame_fraction=ocr_frame_fraction, cap=cap
     )
 
-    if not extracted_data_dict:
-        logger.warning("No text extracted for video %s; skipping SensitiveMeta update.", video.uuid)
-        # Mark state as extracted even if no data found, to avoid re-running unless overwrite=True
-        state.sensitive_data_retrieved = True
-        state.save(update_fields=['sensitive_data_retrieved'])
-        return video.sensitive_meta # Return existing meta if available
-
-    # Add center info if not already present in extracted data
-    if 'center_name' not in extracted_data_dict and video.center:
-        extracted_data_dict['center_name'] = video.center.name
-    logger.debug("Data for SensitiveMeta update: %s", extracted_data_dict)
-
+    # --- Atomic Update Block ---
     try:
-        # --- Adjust the call here ---
-        # Pass the Class, the data dict, and the current instance (or None)
-        sensitive_meta, created = update_or_create_sensitive_meta_from_dict(
-            SensitiveMeta, # Pass the class
-            extracted_data_dict,
-            instance=video.sensitive_meta # Pass current instance via keyword
-        )
-        # --- End Adjust the call ---
-
-        if created:
-            logger.debug("Creating new SensitiveMeta")
-            video.sensitive_meta = sensitive_meta
-            # video.save(update_fields=['sensitive_meta']) # Save happens below with other fields
-        else:
-            logger.debug("Updating existing SensitiveMeta")
-            # No need to reassign if updated in place, but save needed
-
-        # Update state
-        state.sensitive_data_retrieved = True
-
-        # Update VideoFile fields if necessary
-        update_fields = ['sensitive_meta'] # Always update relation if created/changed
-        if not video.date and sensitive_meta and extracted_data_dict.get('date'):
-             # Check if date was successfully extracted and parsed into the dict
-             # The update_or_create logic should handle putting the date onto sensitive_meta if applicable
-             # Let's assume the date should be set on the VideoFile itself if not already set
-            extracted_date = extracted_data_dict.get('date')
-            if extracted_date: # Ensure date is not None or empty
-                video.date = extracted_date
-                update_fields.append("date")
-
-        # Save VideoFile and State atomically
         with transaction.atomic():
-            video.save(update_fields=update_fields)
-            state.save(update_fields=['sensitive_data_retrieved'])
+            # Refresh state in case it changed
+            state.refresh_from_db()
+            sensitive_meta_instance = video.sensitive_meta # Get current instance
 
-        logger.debug("Successfully updated/created SensitiveMeta and state for video %s.", video.uuid)
-        return sensitive_meta
+            if not extracted_data_dict:
+                logger.warning("No text extracted for video %s; skipping SensitiveMeta update.", video.uuid)
+                # Mark state as retrieved even if no data found, to avoid re-running unless overwrite=True
+                if not state.sensitive_data_retrieved:
+                    state.sensitive_data_retrieved = True
+                    state.save(update_fields=['sensitive_data_retrieved'])
+                return sensitive_meta_instance # Return existing meta if available
+
+            # Add center info if not already present in extracted data
+            if 'center_name' not in extracted_data_dict and video.center:
+                extracted_data_dict['center_name'] = video.center.name
+            logger.debug("Data for SensitiveMeta update: %s", extracted_data_dict)
+
+
+            # Pass the Class, the data dict, and the current instance (or None)
+            sensitive_meta, created = update_or_create_sensitive_meta_from_dict(
+                SensitiveMeta, # Pass the class
+                extracted_data_dict,
+                instance=sensitive_meta_instance # Pass current instance via keyword
+            )
+
+            # Update VideoFile fields if necessary
+            update_fields_video = []
+            if created or sensitive_meta != sensitive_meta_instance: # Check if relation needs update
+                video.sensitive_meta = sensitive_meta
+                update_fields_video.append('sensitive_meta')
+
+            if not video.date and sensitive_meta and extracted_data_dict.get('date'):
+                extracted_date = extracted_data_dict.get('date')
+                if extracted_date: # Ensure date is not None or empty
+                    video.date = extracted_date
+                    update_fields_video.append("date")
+
+            # Save VideoFile if fields changed
+            if update_fields_video:
+                video.save(update_fields=update_fields_video)
+
+            # Update state
+            if not state.sensitive_data_retrieved:
+                state.sensitive_data_retrieved = True
+                state.save(update_fields=['sensitive_data_retrieved'])
+
+            logger.debug("Successfully updated/created SensitiveMeta and state for video %s.", video.uuid)
+            return sensitive_meta
 
     except Exception as e:
         logger.error("Failed to update/create SensitiveMeta or state for video %s: %s", video.uuid, e, exc_info=True)
-        # Optionally reset state? Depends on desired retry behavior.
-        state.sensitive_data_retrieved = False
-        state.save(update_fields=['sensitive_data_retrieved'])
+        # State is not reset here on failure, transaction rollback handles consistency.
         return None # Indicate failure
-
+    # --- End Atomic Update Block ---
 
 def _update_video_meta(video: "VideoFile", save_instance: bool = True):
     """Updates or creates the technical VideoMeta from the raw video file."""
@@ -278,14 +288,25 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
 
 def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
     """Initializes basic video specs (fps, w, h, count, duration) directly from the video file."""
-    target_file = video.raw_file if use_raw and video.has_raw else video.active_file
-    if not target_file or not target_file.name:
+    video_path: Optional[Path] = None
+    target_file_name: Optional[str] = None
+
+    if use_raw and video.has_raw:
+        video_path = video.get_raw_file_path() # Use IO helper
+        target_file_name = video.raw_file.name
+    elif video.active_file: # Fallback to active file if raw not requested or available
+        video_path = video.active_file_path # Use property relying on IO helpers
+        target_file_name = video.active_file.name
+    else:
         logger.error("No suitable video file found for spec initialization for %s.", video.uuid)
         return False
 
-    logger.info("Initializing video specs directly from file %s for %s", target_file.name, video.uuid)
+    if not video_path:
+        logger.error("Could not determine video file path for spec initialization for %s.", video.uuid)
+        return False
+
+    logger.info("Initializing video specs directly from file %s (%s) for %s", target_file_name, video_path, video.uuid)
     try:
-        video_path = Path(target_file.path)
         if not video_path.exists():
             logger.error("Video file not found at %s for spec initialization.", video_path)
             return False
@@ -357,15 +378,15 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
 
         # --- Save if updated ---
         if updated:
-            logger.info("Updated video specs from file %s: %s", target_file.name, ", ".join(fields_to_update))
+            logger.info("Updated video specs from file %s: %s", target_file_name, ", ".join(fields_to_update))
             video.save(update_fields=fields_to_update)
             return True
         else:
-            logger.info("No video specs needed updating from file %s.", target_file.name)
+            logger.info("No video specs needed updating from file %s.", target_file_name)
             return True
 
     except Exception as e:
-        logger.error("Error initializing video specs from file %s: %s", getattr(target_file, 'path', 'N/A'), e, exc_info=True)
+        logger.error("Error initializing video specs from file %s: %s", video_path, e, exc_info=True)
         # Ensure capture is released in case of unexpected error
         if 'video_cap' in locals() and video_cap.isOpened():
             video_cap.release()

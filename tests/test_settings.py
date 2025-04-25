@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.logger_conf import get_logging_config # Import the function
 
 ASSET_DIR = Path(__file__).parent / "assets"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
@@ -28,73 +29,26 @@ DATABASES = {
 
 TIME_ZONE = "Europe/Berlin"
 
-LOG_FILE = 'data/tests.log'
-LOG_LEVEL = "INFO"
-
-# reset logs:
-if os.path.exists(LOG_FILE):
-    os.remove(LOG_FILE)
-
-# Django LOGGING setting
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False, # Keep Django's default loggers
-    'formatters': {
-        'standard': {
-            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        },
-    },
-    'handlers': {
-        'file': {
-            'level': LOG_LEVEL, # Set handler level
-            'class': 'logging.FileHandler',
-            'filename': LOG_FILE, # Ensure this path is writable
-            'formatter': 'standard',
-        },
-        # Optional: Add a console handler if you want console output too
-        'console': {
-            'level': LOG_LEVEL, # Set console handler level
-            'class': 'logging.StreamHandler',
-            'formatter': 'standard',
-        },
-    },
-    'loggers': {
-        # Root logger configuration
-        '': {
-            'handlers': ['file', "console"], # Use the file handler (add 'console' if defined)
-            'level': LOG_LEVEL, # Set root logger level
-            'propagate': True,
-        },
-        # Specific logger configurations (optional, inherit from root if not specified)
-        'paths': {
-            'handlers': ['file'],
-            'level': LOG_LEVEL,
-            'propagate': False, # Don't pass to root if handled here
-        },
-        'raw_pdf': {
-            'handlers': ['file'],
-            'level': LOG_LEVEL,
-            'propagate': False,
-        },
-        'patient': {
-            'handlers': ['file'],
-            'level': LOG_LEVEL,
-            'propagate': False,
-        },
-        'default_objects': {
-            'handlers': ['file'],
-            'level': LOG_LEVEL,
-            'propagate': False,
-        },
-        'video_file': {
-            'handlers': ['file'],
-            'level': LOG_LEVEL,
-            'propagate': False,
-        },
-        # Loggers using __name__ will inherit from the root logger ('')
-        # 'endoreg_db.models.media.video.create_from_file': { ... } # Example if needed
-    },
-}
-
 MEDIA_ROOT = STORAGE_DIR
 MEDIA_URL = '/media/' # Adjust if needed
+
+# --- Define logger names needed for tests ---
+TEST_LOGGER_NAMES = [
+    "tests", # General test logger
+    "paths",
+    "raw_pdf",
+    "patient",
+    "default_objects",
+    # "video_file", # Removed generic logger
+    "ffmpeg_wrapper",
+    # Add specific loggers based on __name__
+    "endoreg_db.models.media.video.video_file",
+    "endoreg_db.models.media.video.video_file_anonymize",
+    "endoreg_db.models.media.video.pipe_1",
+    "endoreg_db.models.media.video.pipe_2",
+    "endoreg_db.models.metadata.sensitive_meta"
+    # Add any other specific loggers used in your tests or app code
+]
+
+# --- Use the imported function to generate LOGGING ---
+LOGGING = get_logging_config(TEST_LOGGER_NAMES, log_level="INFO") # Or set level via env var

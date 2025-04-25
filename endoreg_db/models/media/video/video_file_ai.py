@@ -18,26 +18,24 @@ def _extract_text_from_video_frames(
 ) -> Optional[Dict[str, str]]:
     """
     Extracts text from a sample of video frames using OCR based on processor ROIs.
+    Requires frames to be extracted.
 
-    Args:
-        video: The VideoFile instance.
-        frame_fraction: The fraction of total frames to process.
-        cap: The maximum number of frames to process.
-
-    Returns:
-        A dictionary mapping ROI names to the most frequent text found,
-        or None if prerequisites are not met.
+    State Transitions:
+        - Pre-condition: Requires state.frames_extracted=True.
+        - Post-condition: No state changes.
     """
     from endoreg_db.utils.ocr import (
         extract_text_from_rois,
     )  # Local import for dependency isolation
 
     state = video.get_or_create_state() # Use State helper
+    # --- Pre-condition Check ---
     if not state.frames_extracted:
-        logger.warning(
+        logger.error( # Changed from warning to error as it's a prerequisite
             "Frames not extracted (state check) for video %s. Cannot extract text.", video.uuid
         )
         return None
+    # --- End Pre-condition Check ---
 
     if not video.has_raw:
         logger.error("Raw file missing for video %s. Cannot extract text.", video.uuid)
@@ -115,19 +113,11 @@ def _predict_video_pipeline(
 ) -> Optional[Dict[str, List[Tuple[int, int]]]]:
     """
     Executes the video prediction pipeline using an AI model.
+    Requires frames to be extracted.
 
-    Args:
-        video: The VideoFile instance.
-        model_meta: The ModelMeta instance defining the model to use.
-        dataset_name: The name of the dataset class to use.
-        smooth_window_size_s: Smoothing window size in seconds.
-        binarize_threshold: Threshold for converting smoothed predictions to binary.
-        test_run: If True, run prediction on a small subset of frames.
-        n_test_frames: Number of frames to use if test_run is True.
-
-    Returns:
-        A dictionary containing the predicted sequences for each label,
-        or None if prediction failed or prerequisites were not met.
+    State Transitions:
+        - Pre-condition: Requires state.frames_extracted=True.
+        - Post-condition: No state changes directly. (Calling pipeline sets flags).
     """
     # Import heavy dependencies locally
     from ...administration.ai import AiModel
@@ -151,12 +141,14 @@ def _predict_video_pipeline(
         logger.info("Using global TEST_RUN settings for prediction pipeline.")
 
     state = video.get_or_create_state() # Use State helper
+    # --- Pre-condition Check ---
     if not state.frames_extracted:
         logger.error(
             "Frames not extracted (state check) for video %s. Prediction aborted.",
             video.uuid,
         )
         return None
+    # --- End Pre-condition Check ---
 
     if not video.has_raw and not video.is_processed: # Prediction might run on processed if raw is gone
         logger.error("No suitable video file (raw or processed) found for video %s. Prediction aborted.", video.uuid)

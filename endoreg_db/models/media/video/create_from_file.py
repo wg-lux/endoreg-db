@@ -32,9 +32,9 @@ def _create_from_file(
     Handles transcoding (if necessary), hashing, file storage, and database record creation.
     """
     # Ensure related models are imported for runtime use if needed within the function
-   
-    from ...administration import Center
-    from ...medical import EndoscopyProcessor   
+
+    from endoreg_db.models.administration.center.center import Center
+    from endoreg_db.models.medical.hardware import EndoscopyProcessor
     original_file_name = file_path.name
     original_suffix = file_path.suffix
     final_storage_path = None # Initialize

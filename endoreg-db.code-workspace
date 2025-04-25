@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"python.testing.pytestEnabled": true,
+		"python.defaultInterpreterPath": ".devenv/state/venv/bin/python",
+		"python.analysis.extraPaths": [ "./endoreg_db/tests/" ],
+		"python.testing.pytestArgs": [
+		  "."
+		],
+		"python.testing.unittestEnabled": false,
+	}
+}

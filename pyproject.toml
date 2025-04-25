@@ -56,11 +56,21 @@ dependencies = [
     "torchvision>=0.22.0",
     "tqdm>=4.67.0",
     "urllib3>=2.2.3",
+    "pytest-django>=4.11.1",
+    "pytest-cov>=6.1.1",
 ]
 
 [project.urls]
 Homepage = "https://info.coloreg.de"
 Repository = "https://github.com/wg-lux/endoreg-db"
+
+[project.optional-dependencies]
+dev = [
+    # Add development tools here, e.g.:
+    # "pytest",
+    # "ruff",
+    # "black",
+]
 
 [build-system]
 requires = ["hatchling"]

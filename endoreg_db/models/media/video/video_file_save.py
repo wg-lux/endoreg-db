@@ -11,6 +11,10 @@ def _save_video_file(video: "VideoFile", *args, **kwargs):
     """Handles the saving logic for a VideoFile instance."""
     video._saving = True  # Set flag to prevent recursive saves within this method
 
+    # Ensure state exists or is created before the main save operation
+    # This ensures the relation can be saved correctly by super().save()
+    video.get_or_create_state()
+
     if not video.processor and video.center:
         logger.warning("Processor not set for video %s (Center: %s). Metadata/processing might be incomplete.",
                        video.uuid, video.center.name)
@@ -90,10 +94,10 @@ def _save_video_file(video: "VideoFile", *args, **kwargs):
         super(type(video), video).save(*args, **kwargs)
         logger.debug("Successfully saved VideoFile instance PK %s (UUID: %s)", video.pk, video.uuid)
 
-        # Ensure state exists after saving
-        if not video.state:
-            # Assuming _get_or_create_state is imported or available
-            video.get_or_create_state() # Call the method on the instance
+        # State should already exist due to the call at the beginning
+        # if not video.state:
+        #     # Assuming _get_or_create_state is imported or available
+        #     video.get_or_create_state() # Call the method on the instance
 
     except Exception as e:
         logger.error("Error during super().save() for VideoFile PK %s: %s", video.pk, e, exc_info=True)

@@ -2,6 +2,7 @@ from django.db import models
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
 from typing import TYPE_CHECKING, Dict, Any, Type
+import logging # Add logging import
 
 # Import logic functions
 from . import sensitive_meta_logic as logic
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from ..medical import PatientExamination
     # from ..state import SensitiveMetaState # Already imported above
 
+logger = logging.getLogger(__name__) # Add logger instance
 
 # SECRET_SALT moved to logic
 
@@ -157,9 +159,54 @@ class SensitiveMeta(models.Model):
         """
         Checks if the instance is verified based on the related state object.
         """
-        if hasattr(self, 'state'):
+        # Use try-except for robustness, especially if state might not exist yet
+        try:
+            # Access the related state object directly via the 'state' attribute
+            # This assumes the related_name on SensitiveMetaState.origin is 'state'
             return self.state.is_verified
-        return False
+        except SensitiveMetaState.DoesNotExist:
+            # If the state object doesn't exist, it's not verified
+            return False
+        except AttributeError:
+            # If the 'state' attribute doesn't exist (e.g., before first save), it's not verified
+            return False
+
+    def get_or_create_state(self) -> "SensitiveMetaState":
+        """
+        Gets the related SensitiveMetaState instance, creating one if it doesn't exist.
+        Does not save the SensitiveMeta instance itself.
+        """
+        try:
+            # Try accessing the state via the related name 'state'
+            # This assumes the OneToOneField on SensitiveMetaState pointing to SensitiveMeta
+            # has related_name='state'
+            if self.state:
+                return self.state
+        except SensitiveMetaState.DoesNotExist:
+            # If it doesn't exist, create it
+            logger.info("Creating new SensitiveMetaState for SensitiveMeta %s", self.pk)
+            # Create the state, linking it back to this instance
+            # The 'origin' field on SensitiveMetaState points back to this SensitiveMeta instance
+            new_state = SensitiveMetaState.objects.create(origin=self)
+            # Assign the newly created state to the instance's 'state' attribute
+            # This avoids needing to query again immediately
+            self.state = new_state
+            return new_state
+        except AttributeError:
+             # Fallback if related_name is not 'state' or instance not saved yet (no PK)
+             if self.pk:
+                 state, created = SensitiveMetaState.objects.get_or_create(origin=self)
+                 if created:
+                     logger.info("Created new SensitiveMetaState for SensitiveMeta %s (via get_or_create)", self.pk)
+                 # Link the state back to the instance in memory
+                 self.state = state
+                 return state
+             else:
+                 # Cannot create state if the main instance has no PK
+                 raise ValueError("Cannot get or create state for an unsaved SensitiveMeta instance.")
+
+        # If self.state existed initially, return it
+        return self.state
 
     def __repr__(self):
         return self.__str__()

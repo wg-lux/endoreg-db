@@ -107,13 +107,19 @@ def _create_anonymized_frame_files(
 def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outside", censor_color: Tuple[int, int, int] = (0, 0, 0)) -> bool:
     """
     Overwrites frame files marked as 'outside' with a censored version (e.g., black).
-    This modifies the original raw frames directly. Use with caution.
+    This modifies the original raw frames directly. Use with caution. Requires frames to be extracted.
+
+    State Transitions:
+        - Pre-condition: Requires state.frames_extracted=True.
+        - Post-condition: No state changes.
     """
     logger.warning("Starting direct censoring of 'outside' frames for video %s. This modifies raw frame files.", video.uuid)
     state = video.get_or_create_state()
+    # --- Pre-condition Check ---
     if not state.frames_extracted:
         logger.error("Frames not extracted for video %s. Cannot censor.", video.uuid)
         return False
+    # --- End Pre-condition Check ---
 
     outside_frames = _get_outside_frames(video, outside_label_name)
     if not outside_frames:
@@ -124,7 +130,13 @@ def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outsid
     error_count = 0
     for frame_obj in outside_frames:
         try:
-            frame_path = Path(frame_obj.relative_path)
+            # Assume Frame model has a property 'file_path' that correctly uses _get_frame_path
+            frame_path = frame_obj.file_path
+            if not frame_path:
+                logger.warning("Could not get file path for frame %d. Skipping censoring.", frame_obj.frame_number)
+                error_count += 1
+                continue
+
             if not frame_path.exists():
                 logger.warning("Frame file %s not found for censoring. Skipping.", frame_path)
                 continue
@@ -156,7 +168,14 @@ def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outsid
 
 
 def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Path]]:
-    """Creates temporary anonymized frames in a separate directory."""
+    """
+    Creates temporary anonymized frames in a separate directory.
+    Requires raw file and extracted frames.
+
+    State Transitions:
+        - Pre-condition: Requires state.frames_extracted=True (or triggers extraction).
+        - Post-condition: No state changes directly by this function.
+    """
     if video.is_processed:
         raise ValueError("Cannot create temporary anonymized frames from a video that is already processed.")
     if not video.has_raw:
@@ -171,9 +190,17 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
         raise ValueError(f"Endoscope ROI is not valid for video {video.uuid}")
 
     state = video.get_or_create_state() # Use State helper
+    # --- Pre-condition Check (or Action) ---
     if not state.frames_extracted:
         logger.info("Raw frames not extracted for %s, extracting now.", video.uuid)
-        video.extract_frames(overwrite=False) # Use Frame helper
+        # extract_frames handles its own state updates and returns bool
+        if not video.extract_frames(overwrite=False):
+             raise RuntimeError(f"Frame extraction failed for video {video.uuid}, cannot create anonymized frames.")
+        # Refresh state after potential extraction
+        state.refresh_from_db()
+        if not state.frames_extracted: # Double check
+             raise RuntimeError(f"Frame extraction did not update state for video {video.uuid}, cannot create anonymized frames.")
+    # --- End Pre-condition Check ---
 
     all_frames = video.get_frames() # Use Frame helper
     if not all_frames.exists():
@@ -195,21 +222,47 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
 
 
 @transaction.atomic
-def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
-    """Anonymizes the video by censoring frames and creating a new processed video file."""
-    if video.is_processed:
-        raise ValueError("Video is already processed.")
-    if not video.has_raw:
-        raise ValueError("Raw file is missing, cannot anonymize.")
+def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool: # Changed return type
+    """
+    Anonymizes the video by censoring frames and creating a new processed video file.
+    Requires raw file, extracted frames, validated sensitive meta, and validated 'outside' segments.
 
+    Args:
+        video (VideoFile): The video file instance.
+        delete_original_raw (bool): Whether to delete the original raw file and frames after success.
+
+    Returns:
+        bool: True if anonymization was successful, False otherwise.
+
+    State Transitions:
+        - Pre-condition: Requires state.frames_extracted=True, sensitive_meta validated, outside segments validated.
+        - Post-condition (on success): Sets state.anonymized=True. If delete_original_raw=True, schedules cleanup which sets state.frames_extracted=False.
+        - Post-condition (on failure): No state changes (transaction rollback).
+    """
+    state = video.get_or_create_state()
+
+    # --- Pre-condition Checks ---
+    if state.anonymized: # Check state flag instead of is_processed property
+        logger.warning("Video %s is already marked as anonymized in state. Skipping.", video.uuid)
+        return True # Indicate success (already done)
+    if not video.has_raw:
+        logger.error("Raw file is missing for video %s, cannot anonymize.", video.uuid)
+        return False
+    if not state.frames_extracted:
+         logger.error("Frames not extracted for video %s, cannot anonymize.", video.uuid)
+         return False
     # Check if SensitiveMeta is validated
     if not video.sensitive_meta or not video.sensitive_meta.is_verified:
-        raise ValueError(f"Sensitive metadata for video {video.uuid} is not validated. Cannot anonymize.")
-
+        logger.error(f"Sensitive metadata for video {video.uuid} is not validated. Cannot anonymize.")
+        return False
     # Check if all "outside" LabelVideoSegments are validated
-    outside_segments = video.get_outside_segments(only_validated=True)
-    if not all(segment.is_validated for segment in outside_segments):
-        raise ValueError(f"Not all 'outside' label segments for video {video.uuid} are validated. Cannot anonymize.")
+    # Use the method defined on the model
+    outside_segments = video.get_outside_segments(only_validated=False) # Get all outside segments first
+    unvalidated_outside = outside_segments.filter(state__is_validated=False)
+    if unvalidated_outside.exists():
+        logger.error(f"Not all 'outside' label segments for video {video.uuid} are validated. Cannot anonymize. Unvalidated count: {unvalidated_outside.count()}")
+        return False
+    # --- End Pre-condition Checks ---
 
     logger.info("Starting anonymization process for video %s", video.uuid)
     original_raw_file_path = video.get_raw_file_path() # Use helper
@@ -218,6 +271,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
     temp_anonym_frame_dir = None
     anonymized_video_path = None
     try:
+        # _make_temporary_anonymized_frames already checks/ensures frames_extracted state
         temp_anonym_frame_dir, generated_frame_paths = _make_temporary_anonymized_frames(video)
         if not generated_frame_paths:
             raise RuntimeError("Failed to generate temporary anonymized frames.")
@@ -248,7 +302,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
         if type(video).objects.filter(processed_video_hash=new_processed_hash).exclude(pk=video.pk).exists():
             raise ValueError(f"Processed video hash {new_processed_hash} already exists for another video.")
 
-       # Update video instance fields
+        # Update video instance fields
         video.processed_video_hash = new_processed_hash
         # Store relative path for FileField
         video.processed_file.name = video.get_target_anonymized_video_path().relative_to(settings.MEDIA_ROOT).as_posix()
@@ -279,20 +333,18 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
                 raw_frame_dir=original_raw_frame_dir_to_delete
             ))
 
-
         # Save the updated fields
         video.save(update_fields=update_fields)
 
-        state = video.get_or_create_state()  # REMOVE the extra 'video' argument
+        # --- Update State and Save ---
+        # This happens within the atomic block, ensuring consistency
         state.anonymized = True
         state.save(update_fields=['anonymized'])
         logger.info("Set state.anonymized to True for video %s", video.uuid)
-
+        # --- End Update State and Save ---
 
         logger.info("Successfully anonymized video %s. Processed hash: %s", video.uuid, new_processed_hash)
-        _anonymization_successful = True # Local variable, not saved
-        return anonymized_video_path # Return the path on success
-
+        return True # Return True on success
 
     except Exception as e:
         logger.error("Anonymization failed for video %s: %s", video.uuid, e, exc_info=True)
@@ -300,8 +352,8 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
         if anonymized_video_path and anonymized_video_path.exists():
             logger.warning("Cleaning up potentially orphaned processed file due to error: %s", anonymized_video_path)
             anonymized_video_path.unlink(missing_ok=True)
-        # Re-raise the error wrapped in a RuntimeError
-        raise RuntimeError(f"Anonymization failed for {video.uuid}") from e
+        # Transaction rollback handles DB state consistency
+        return False # Indicate failure
 
     finally:
         # Clean up temporary anonymized frames directory regardless of success/failure
@@ -309,13 +361,29 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> Path:
             logger.info("Cleaning up temporary anonymized frame directory: %s", temp_anonym_frame_dir)
             shutil.rmtree(temp_anonym_frame_dir)
 
+
 def _cleanup_raw_assets(video_uuid: uuid.UUID, raw_file_path: Optional[Path]=None, raw_frame_dir: Optional[Path]=None):
-    """Deletes the original raw video file and its extracted frames directory."""
-    from endoreg_db.models import VideoFile
+    """
+    Deletes the original raw video file and its extracted frames directory.
+    Called via transaction.on_commit after successful anonymization.
+
+    State Transitions:
+        - Sets state.frames_extracted=False.
+    """
+    from endoreg_db.models import VideoFile, VideoState
     logger.info("Performing post-commit cleanup of raw assets for video %s.", video_uuid)
-    video_file = VideoFile.objects.filter(uuid=video_uuid).first()
-    video_file.state.frames_extracted = False # Reset the state
     try:
+        # Use select_related to fetch state efficiently
+        video_file = VideoFile.objects.select_related('state').filter(uuid=video_uuid).first()
+        if not video_file:
+            logger.error("VideoFile %s not found during post-commit cleanup.", video_uuid)
+            return
+        if not video_file.state:
+             # This shouldn't happen if state is created reliably
+             logger.error("VideoState not found for VideoFile %s during post-commit cleanup.", video_uuid)
+             video_file.state = VideoState.objects.create(video_file=video_file) # Create if missing
+
+        # Delete files
         if raw_file_path and raw_file_path.exists():
             logger.info("Deleting original raw video file: %s", raw_file_path)
             raw_file_path.unlink()
@@ -325,14 +393,16 @@ def _cleanup_raw_assets(video_uuid: uuid.UUID, raw_file_path: Optional[Path]=Non
         if raw_frame_dir and raw_frame_dir.exists():
             logger.info("Deleting original raw frame directory: %s", raw_frame_dir)
             shutil.rmtree(raw_frame_dir, ignore_errors=True)
-
-           
         elif raw_frame_dir:
             logger.warning("Original raw frame directory %s not found for post-commit deletion.", raw_frame_dir)
 
-
-
-        video_file.state.save(update_fields=['frames_extracted'])
+        # Update state: Set frames_extracted to False as raw frames are gone
+        if video_file.state.frames_extracted:
+            video_file.state.frames_extracted = False
+            # Only save frames_extracted
+            video_file.state.save(update_fields=['frames_extracted'])
+            logger.info("Set state.frames_extracted=False for video %s after raw asset cleanup.", video_uuid)
 
     except Exception as e:
+        # Log error but don't raise, as this is post-commit cleanup
         logger.error("Error during post-commit cleanup of raw assets for video %s: %s", video_uuid, e, exc_info=True)

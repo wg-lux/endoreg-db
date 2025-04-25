@@ -1,7 +1,6 @@
 """Concrete model for video files, handling both raw and processed states."""
 
 import logging
-from os import pipe
 from pathlib import Path
 import uuid
 from typing import TYPE_CHECKING, Optional, Union
@@ -63,7 +62,7 @@ from ...label import LabelVideoSegment, Label
 
 
 # Configure logging
-logger = logging.getLogger("video_file")
+logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 if TYPE_CHECKING:
     from endoreg_db.models import (

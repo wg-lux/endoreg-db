@@ -1,8 +1,6 @@
 from django.db import models
 from typing import TYPE_CHECKING
 
-from endoreg_db.models.administration.person.user.portal_user_information import PortalUserInfo
-
 if TYPE_CHECKING:
     from endoreg_db.models import PortalUserInfo
 

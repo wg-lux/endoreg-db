@@ -19,9 +19,10 @@ crop_template = [0, 1080, 550, 1920 - 20]  # [top, bottom, left, right]
 
 class Command(BaseCommand):
     help = """
-        Imports a .mov file to the database.
-        1. Get center by center name from db (default: university_hospital_wuerzburg)
-        2. get processor by name (default: olympus_cv_1500)
+        Creates a new ModelMeta object for a multilabel classification model.
+        1. Validates the existence of the specified LabelSet and AiModel
+        2. Checks that the model file exists on disk
+        3. Creates or updates a ModelMeta entry with the specified parameters
     """
 
     def add_arguments(self, parser):

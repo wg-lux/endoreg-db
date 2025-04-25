@@ -7,7 +7,7 @@ import cv2
 from tqdm import tqdm
 import shutil
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ffmpeg_wrapper")
 
 def get_stream_info(file_path: Path) -> Optional[Dict]:
     """
