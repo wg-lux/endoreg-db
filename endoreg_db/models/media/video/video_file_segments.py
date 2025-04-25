@@ -33,7 +33,7 @@ def _convert_sequences_to_db_segments(
             continue
 
         try:
-            label, _ = Label.objects.get_or_create(name=label_name)
+            label = Label.objects.get(name=label_name)  # require pre-existing label
         except Exception as e:
             logger.error("Could not get or create Label '%s': %s", label_name, e, exc_info=True)
             error_count += len(sequence_list)  # Count all potential segments for this label as errors
@@ -134,11 +134,13 @@ def _get_outside_frames(video: "VideoFile", outside_label_name: str = "outside")
     if not outside_segments.exists():
         return Frame.objects.none()
 
-    q_objects = Q()
+    q_objects: Q | None = None
     for segment in outside_segments:
-        q_objects |= Q(frame_number__gte=segment.start_frame_number, frame_number__lt=segment.end_frame_number)
+        clause = Q(frame_number__gte=segment.start_frame_number,
+                   frame_number__lt=segment.end_frame_number)
+        q_objects = clause if q_objects is None else q_objects | clause
 
-    if not q_objects:
+    if q_objects is None:
         return Frame.objects.none()
 
     try:

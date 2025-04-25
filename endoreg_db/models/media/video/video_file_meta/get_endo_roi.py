@@ -21,7 +21,11 @@ def _get_endo_roi(video: "VideoFile") -> Optional[Dict[str, int]]:
         # Assuming VideoMeta has a method get_endo_roi()
         endo_roi = video.video_meta.get_endo_roi()
         # Basic validation
-        if endo_roi and all(k in endo_roi for k in ["x", "y", "width", "height"]) and all(isinstance(v, int) for v in endo_roi.values()):
+        if (
+            isinstance(endo_roi, dict)
+            and all(k in endo_roi for k in ("x", "y", "width", "height"))
+            and all(isinstance(v, int) and not isinstance(v, bool) for v in endo_roi.values())
+        ):
             logger.debug("Retrieved endo ROI for video %s: %s", video.uuid, endo_roi)
             return endo_roi
         else:

@@ -45,6 +45,7 @@ def _delete_frames(video: "VideoFile") -> str:
         logger.warning(msg)
 
 
+    temp_anonym_frame_dir = None
     try:
         temp_anonym_frame_dir = _get_temp_anonymized_frame_dir(video)
         if temp_anonym_frame_dir and temp_anonym_frame_dir.exists():

@@ -31,7 +31,7 @@ def _mark_frames_extracted_status(video: "VideoFile", extracted_frame_numbers: S
         # Update Frame objects based on frame_number
         # Convert set to list for potentially better compatibility with some DB backends
         updated_count = Frame.objects.filter(
-            video_file=video,
+            video=video,
             frame_number__in=list(extracted_frame_numbers)
         ).update(is_extracted=status)
 

@@ -20,6 +20,17 @@ def _create_from_video(
     if not isinstance(source, VideoFile):
         raise ValueError("Source must be a VideoFile instance.")
 
+    if start_frame_number < 0 or end_frame_number < 0:
+        raise ValueError(
+            f"Frame numbers must be non-negative: start={start_frame_number}, end={end_frame_number}"
+        )
+
+    if start_frame_number > end_frame_number:
+        raise ValueError(
+            f"Start frame number ({start_frame_number}) must be less than or equal to "
+            f"end frame number ({end_frame_number})"
+        )
+
     segment = cls(
         start_frame_number=start_frame_number,
         end_frame_number=end_frame_number,

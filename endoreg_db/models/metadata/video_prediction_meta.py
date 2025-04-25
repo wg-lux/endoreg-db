@@ -132,7 +132,7 @@ class VideoPredictionMeta(models.Model):
 
         for i, label in enumerate(label_list):
             predictions = base_pred_qs.filter(label=label).order_by("frame__frame_number").values_list(
-                "frame__frame_number", "confidence"
+                "frame__frame_number", "float_value"
             )
 
             confidences = np.full(num_frames, 0.5)

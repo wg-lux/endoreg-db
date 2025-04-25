@@ -37,10 +37,18 @@ def _get_fps(video: "VideoFile") -> Optional[float]:
                 video_path = video.get_raw_file_path() # Use helper
                 if video_path and video_path.exists():
                     video_cap = cv2.VideoCapture(video_path.as_posix())
-                    if video_cap.isOpened():
-                        fps = video_cap.get(cv2.CAP_PROP_FPS)
+                    try:
+                        if video_cap.isOpened():
+                            fps = video_cap.get(cv2.CAP_PROP_FPS)
+                        else:
+                            logger.warning(
+                                "Could not open video file %s with OpenCV for FPS check.",
+                                video_path
+                            )
+                            fps = None
+                    finally:
                         video_cap.release()
-                        if fps and fps > 0:
+                    if fps and fps > 0:
                             video.fps = fps
                             logger.info("Determined FPS %.2f directly from file for %s.", video.fps, video.uuid)
                             if not getattr(video, '_saving', False):

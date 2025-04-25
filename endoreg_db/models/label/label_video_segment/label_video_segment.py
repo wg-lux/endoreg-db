@@ -131,16 +131,10 @@ class LabelVideoSegment(models.Model):
         super().save(*args, **kwargs)
 
         # Ensure state exists after saving, without nested transactions
-        if self.pk:  # Only proceed if the instance has been saved and has a PK
-            try:
-                # Check if the state exists using the related manager
-                _ = self.state
-            except ObjectDoesNotExist:
-                # If it doesn't exist, create it using get_or_create.
-                # This will run within the current transaction context.
-                logger.info("Creating LabelVideoSegmentState for LabelVideoSegment %s.", self.pk)
-                LabelVideoSegmentState.objects.get_or_create(origin=self)
-
+        if self.pk:
+            # `defaults={}` ensures we do not re-fetch the just-saved object.
+            LabelVideoSegmentState.objects.get_or_create(origin=self, defaults={})
+    
     @classmethod
     def create_from_video(
         cls,

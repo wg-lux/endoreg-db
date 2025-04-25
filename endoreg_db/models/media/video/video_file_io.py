@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
-from icecream import ic
+from django.db import transaction
 
 from ...utils import data_paths, ANONYM_VIDEO_DIR # Import necessary paths
 
@@ -32,6 +32,7 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
         logger.warning("Could not get path for processed file of VideoFile %s: %s", video.uuid, e)
         return None
 
+@transaction.atomic
 def _delete_with_file(video: "VideoFile", *args, **kwargs):
     """Deletes the VideoFile record and its associated physical files (raw, processed, frames)."""
     # 1. Delete Frames (using the frame helper function via instance method)

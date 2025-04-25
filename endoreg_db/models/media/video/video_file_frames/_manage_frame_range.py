@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import TYPE_CHECKING
+from django.db import transaction
 
 # Assuming ffmpeg_wrapper has or will have this function
 from endoreg_db.utils.video.ffmpeg_wrapper import extract_frame_range as ffmpeg_extract_frame_range
@@ -47,6 +48,9 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):
                 len(paths_to_delete), video.uuid, start_frame, end_frame, deleted_count)
 
 
+
+
+@transaction.atomic
 def _extract_frame_range(
     video: "VideoFile",
     start_frame: int,
