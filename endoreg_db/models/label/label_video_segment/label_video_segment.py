@@ -85,22 +85,21 @@ class LabelVideoSegment(models.Model):
     def is_validated(self) -> bool:
         """Checks validation status via the related state object."""
         try:
-            # Access the related state object using the related_name 'state'
-            # defined in LabelVideoSegmentState.origin
+            # Access the related state object directly.
+            # Assumes the OneToOneField relationship ensures its existence after save.
             return self.state.is_validated
         except ObjectDoesNotExist:
-            # Handle case where the state object hasn't been created yet
-            # (e.g., before the first save or if creation failed)
+            # This might happen if the state wasn't created yet, though the save method tries to prevent this.
             logger.warning("LabelVideoSegmentState not found for LabelVideoSegment %s.", self.pk)
             return False
         except AttributeError:
-            # Handle case where 'state' attribute doesn't exist (shouldn't happen with correct setup)
-            logger.error("AttributeError accessing 'state' for LabelVideoSegment %s.", self.pk)
+            # Should not happen if self.state exists and has the is_validated attribute.
+            logger.error("AttributeError accessing 'state.is_validated' for LabelVideoSegment %s.", self.pk)
             return False
 
-    def extract_frame_files(self, overwrite: bool = False, **kwargs) -> bool:
+    def extract_segment_frame_files(self, overwrite: bool = False, **kwargs) -> bool:
         """
-        Extracts frame files for the segment using the associated VideoFile.
+        Extracts frame files specifically for this segment using the associated VideoFile.
         Passes additional keyword arguments to extract_frame_range.
         """
         from endoreg_db.models import VideoFile
@@ -115,7 +114,7 @@ class LabelVideoSegment(models.Model):
     
     def delete_frame_files(self) -> None:
         """
-        Deletes frame files for the segment using the associated VideoFile.
+        Deletes frame files specifically for this segment using the associated VideoFile.
         """
         from endoreg_db.models import VideoFile
         if not isinstance(self.video_file, VideoFile):
@@ -165,21 +164,15 @@ class LabelVideoSegment(models.Model):
 
     def get_video(self) -> "VideoFile":
         """Returns the associated VideoFile instance."""
-        if self.video_file:
+        try:
+            # Accessing the field directly is sufficient.
+            # Django handles the retrieval or raises an appropriate exception if not set/found.
+            _ = self.video_file.pk  # Access pk to ensure it's loaded
             return self.video_file
-        else:
-            raise ValueError("LabelVideoSegment is not associated with a VideoFile.")
-
-    def extract_frames(self, quality: int = 2, overwrite: bool = False, ext="jpg", verbose=False) -> bool:
-        """
-        Extracts frames from the raw video file using ffmpeg.
-        Updates Frame objects' is_extracted flag and relevant VideoState fields atomically.
-        Assumes Frame objects may already exist (created by _initialize_frames).
-        """
-        from endoreg_db.models import VideoFile
-        if not isinstance(self.video_file, VideoFile):
-            raise ValueError("Cannot extract frames: No associated VideoFile.")
-        return self.video_file.extract_frames(quality=quality, overwrite=overwrite, ext=ext, verbose=verbose)
+        except ObjectDoesNotExist:
+            # This might occur if the related VideoFile was deleted unexpectedly.
+            logger.error("Associated VideoFile not found for LabelVideoSegment %s.", self.pk)
+            raise ValueError(f"LabelVideoSegment {self.pk} is not associated with a valid VideoFile.")
 
     def __str__(self):
         try:
@@ -192,8 +185,10 @@ class LabelVideoSegment(models.Model):
                 f"{video_identifier} Label - {label_name} - "
                 f"{self.start_frame_number} - {self.end_frame_number}"
             )
-        except ValueError:
-            str_repr = f"Segment {self.pk} (Error: No VideoFile)"
+        except ObjectDoesNotExist:  # More specific exception
+            str_repr = f"Segment {self.pk} (Error: Associated VideoFile missing)"
+        except ValueError as e:  # Catch specific error from get_video
+            str_repr = f"Segment {self.pk} (Error: {e})"
         except Exception as e:
             logger.warning("Error generating string representation for LabelVideoSegment %s: %s", self.pk, e)
             str_repr = f"Segment {self.pk} (Error: {e})"
@@ -233,7 +228,7 @@ class LabelVideoSegment(models.Model):
         try:
             video_obj = self.get_video()
             return ImageClassificationAnnotation.objects.filter(
-                frame__video_file=video_obj,
+                frame__video=video_obj,  # Changed frame__video_file to frame__video
                 frame__frame_number__gte=self.start_frame_number,
                 frame__frame_number__lt=self.end_frame_number,
                 label=self.label
@@ -244,12 +239,16 @@ class LabelVideoSegment(models.Model):
 
     def get_segment_len_in_s(self) -> float:
         """Calculates the segment length in seconds."""
-        video_obj = self.get_video()
-        fps = video_obj.get_fps()
-        if fps is None or fps <= 0:
-            print(f"Warning: Could not determine valid FPS for {video_obj}. Cannot calculate segment length in seconds.")
+        try:
+            video_obj = self.get_video()
+            fps = video_obj.get_fps()
+            if fps is None or fps <= 0:
+                logger.warning("Could not determine valid FPS for %s. Cannot calculate segment length in seconds.", video_obj)
+                return 0.0
+            return (self.end_frame_number - self.start_frame_number) / fps
+        except ValueError as e:  # Catch error from get_video
+            logger.error("Cannot calculate segment length for segment %s: %s", self.pk, e)
             return 0.0
-        return (self.end_frame_number - self.start_frame_number) / fps
 
     def get_frames_without_annotation(self, n_frames: int) -> Union[list["Frame"], list]:
         """

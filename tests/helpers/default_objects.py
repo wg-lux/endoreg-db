@@ -8,6 +8,7 @@ from endoreg_db.models import (
     RawPdfFile,
     EndoscopyProcessor,
     ModelMeta,
+    InformationSource,
     AiModel,
 )
 from logging import getLogger
@@ -43,6 +44,13 @@ DEFAULT_INDICATIONS = [
 DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 
 DEFAULT_GENDER = "unknown"
+
+def get_information_source_prediction():
+    from .data_loader import load_information_source
+    load_information_source()
+    source = InformationSource.objects.get(name="prediction")
+    assert isinstance(source, InformationSource), "No InformationSource found in the database."
+    return source
 
 def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
     """

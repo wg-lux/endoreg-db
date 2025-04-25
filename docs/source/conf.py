@@ -2,10 +2,22 @@ import sys
 import os
 import django
 
+# Add the project root directory (containing 'endoreg_db' and 'tests') to the path
+project_root = os.path.abspath('../../')
+print(f"--- Adding to sys.path: {project_root}") # DEBUG LINE
+sys.path.insert(0, project_root)
+# print(f"--- Current sys.path: {sys.path}") # Optional: print the whole path
+
 DJANGO_SETTINGS_MODULE = "doc_settings"
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", DJANGO_SETTINGS_MODULE)
 
-django.setup()
+print("--- Running django.setup()...") # DEBUG LINE
+try:
+    django.setup()
+    print("--- django.setup() finished successfully.") # DEBUG LINE
+except Exception as e:
+    print(f"--- django.setup() FAILED: {e}") # DEBUG LINE
+
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -20,7 +32,6 @@ author = 'AG-Lux'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-sys.path.insert(0, os.path.abspath('...')) # Adjust if your docs dir is elsewhere
 
 extensions = [
     'sphinx.ext.autodoc',  # Core extension for pulling docstrings

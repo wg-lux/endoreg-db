@@ -16,3 +16,5 @@ documentation for details.
    :caption: Contents:
 
    models
+   .. tests
+
