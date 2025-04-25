@@ -20,7 +20,8 @@ from ..helpers.data_loader import (
     load_requirement_data,
     load_information_source,
     load_unit_data,
-    load_risk_data
+    load_risk_data,
+    load_base_db_data,
 )
 
 class TestDataLoader(TestCase):
@@ -29,6 +30,15 @@ class TestDataLoader(TestCase):
     Each test method runs in its own transaction, ensuring isolation.
     The database state is automatically reset after each test by Django's TestCase.
     """
+    def test_load_base_db_data(self):
+        """
+        Test if the load_base_db_data command runs without errors.
+        This command loads all base data into the database.
+        """
+        try:
+            load_base_db_data()
+        except Exception as e:
+            self.fail(f"load_base_db_data command failed: {e}")
 
     def test_load_information_source_data(self):
         """

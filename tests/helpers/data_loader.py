@@ -15,6 +15,10 @@ def load_default_ai_model():
         model_path
     )
 
+def load_base_db_data():
+    """Load Base DB Data"""
+    call_command("load_base_db_data", )
+
 def load_information_source():
     """Load Information Source Data"""
     call_command("load_information_source", )
