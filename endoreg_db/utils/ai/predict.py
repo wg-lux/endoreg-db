@@ -85,8 +85,11 @@ class Classifier:
         with torch.inference_mode():
             if self.verbose:
                 ic("Starting inference")
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.model.to(device).eval()
             for batch in tqdm(dl):
-                prediction = self.model(batch.cuda())
+                batch = batch.to(device, non_blocking=True)
+                prediction = self.model(batch)
                 prediction = (
                     self.config["activation"](prediction).cpu().tolist()
                 )  # .numpy().tolist()

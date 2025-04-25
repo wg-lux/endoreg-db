@@ -1,11 +1,14 @@
 from pathlib import Path
 import os
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import BASE_DIR, STORAGE_DIR
 from endoreg_db.logger_conf import get_logging_config # Import the function
+
+# set the environment variable "STORAGE_DIR" to data/tests/storage
+print("STORAGE_DIR", STORAGE_DIR)
 
 ASSET_DIR = Path(__file__).parent / "assets"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
-
+LOG_DIR = Path("data/test-logs")
 DEBUG=True
 SECRET_KEY = "fake-key"
 INSTALLED_APPS = [
@@ -17,8 +20,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-BASE_DIR = Path(__file__).parent.parent
 
 DATABASES = {
     'default': {
@@ -46,9 +47,11 @@ TEST_LOGGER_NAMES = [
     "endoreg_db.models.media.video.video_file_anonymize",
     "endoreg_db.models.media.video.pipe_1",
     "endoreg_db.models.media.video.pipe_2",
+    "endoreg_db.utils.pipelines.process_video_dir"
     "endoreg_db.models.metadata.sensitive_meta"
     # Add any other specific loggers used in your tests or app code
 ]
 
 # --- Use the imported function to generate LOGGING ---
-LOGGING = get_logging_config(TEST_LOGGER_NAMES, log_level="INFO") # Or set level via env var
+LOGGING = get_logging_config(TEST_LOGGER_NAMES, file_log_level="INFO",
+                             console_log_level = "WARNING", log_dir = LOG_DIR) # Or set level via env var

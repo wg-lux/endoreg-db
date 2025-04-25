@@ -55,7 +55,7 @@ def _pipe_2_step_delete_sensitive_meta(video_file: "VideoFile"):
         logger.info("Pipe 2 Step: No sensitive meta object found to delete for video %s.", video_file.uuid)
 
 # --- Main Pipeline 2 Function ---
-def _pipe_2(video_file:"VideoFile") -> bool:
+def _pipe_2(video_file:"VideoFile", delete_sensitive_meta:bool = True) -> bool:
     """
     Process the given video file through pipeline 2 operations: frame extraction (if needed),
     anonymization, and sensitive meta deletion, all within an atomic transaction.
@@ -69,7 +69,10 @@ def _pipe_2(video_file:"VideoFile") -> bool:
             state = _pipe_2_step_ensure_state(video_file)
             _pipe_2_step_extract_frames(video_file, state)
             _pipe_2_step_anonymize(video_file)
-            _pipe_2_step_delete_sensitive_meta(video_file)
+            if delete_sensitive_meta:
+                _pipe_2_step_delete_sensitive_meta(video_file)
+            else:
+                logger.info("Pipe 2 Step: Skipping deletion of sensitive meta for video %s.", video_file.uuid)
             # --- End Step Functions ---
 
             logger.info(f"Pipe 2 completed successfully for video {video_file.uuid}")

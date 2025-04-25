@@ -6,8 +6,7 @@ It provides a unified dictionary 'data_paths' for accessing all path objects.
 """
 
 from logging import getLogger
-logger = getLogger("paths")
-logger.setLevel("WARNING")
+logger = getLogger(__name__)
 
 import os
 from pathlib import Path
@@ -21,6 +20,7 @@ debug = os.getenv("DEBUG", "false").lower() == "true"
 # Define BASE_DIR as the parent directory of the directory containing this file (endoreg_db/utils -> endoreg_db)
 # This makes it independent of where scripts are run from.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 
 PREFIX_RAW = "raw_"
 STORAGE_DIR_NAME = "data"
@@ -38,7 +38,12 @@ RAW_VIDEO_DIR_NAME = f"{PREFIX_RAW}videos"
 RAW_FRAME_DIR_NAME = f"{PREFIX_RAW}frames"
 RAW_PDF_DIR_NAME = f"{PREFIX_RAW}pdfs" # Changed from reports
 
-STORAGE_DIR = BASE_DIR / STORAGE_DIR_NAME
+_STORAGE_DIR = BASE_DIR / STORAGE_DIR_NAME
+
+STORAGE_DIR = os.environ.get("STORAGE_DIR", default = None)
+assert STORAGE_DIR is not None
+STORAGE_DIR = Path(STORAGE_DIR).resolve()
+
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 VIDEO_DIR = STORAGE_DIR / VIDEO_DIR_NAME
@@ -84,6 +89,9 @@ data_paths:Dict[str,Path] = {
     "raw_frame_export": EXPORT_DIR / RAW_FRAME_DIR_NAME,
     "raw_pdf_export": EXPORT_DIR / RAW_PDF_DIR_NAME, # Changed
 }
+
+logger.info(f"Storage directory: {STORAGE_DIR.resolve()}")
+logger.info(f"Export directory: {EXPORT_DIR.resolve()}")
 
 for key, path in data_paths.items():
     path.mkdir(parents=True, exist_ok=True)

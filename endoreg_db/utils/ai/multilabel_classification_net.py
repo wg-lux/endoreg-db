@@ -149,7 +149,7 @@ class MultiLabelClassificationNet(LightningModule):
             self.parameters(), self.lr, momentum=0.5, weight_decay=self.weight_decay
         )
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=20, verbose=True
+            optimizer, T_0=20,
         )
 
         return {
