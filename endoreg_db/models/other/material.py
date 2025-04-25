@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 class MaterialManager(models.Manager):
     def get_by_natural_key(self, name):
-        return str(self.get(name=name))
+        return self.get(name=name)
 
 class Material(models.Model):
     objects = MaterialManager()
@@ -20,7 +20,7 @@ class Material(models.Model):
 
     if TYPE_CHECKING:
         emission_factor: "EmissionFactor"
-        product_materials: models.QuerySet["ProductMaterial"]
+        material_product_materials: models.QuerySet["ProductMaterial"]
 
     def natural_key(self):
         return (self.name,)

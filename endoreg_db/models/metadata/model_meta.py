@@ -1,17 +1,14 @@
-# filepath: /home/admin/dev/endo-ai/endoreg-db/endoreg_db/models/metadata/model_meta.py
 """
 Defines the ModelMeta model and its manager for storing metadata related to AI models,
 including versioning, configuration, and associated weights files.
 Logic is primarily handled in model_meta_logic.py.
 """
 
-from pathlib import Path
-from typing import Optional, TYPE_CHECKING, List, Tuple, Dict, Any, Type
+from typing import Optional, TYPE_CHECKING, Tuple, Dict, Any, Type
 # Removed shutil import, now in logic
 
 from django.db import models
 from django.core.validators import FileExtensionValidator
-from django.conf import settings
 # Removed torch import, now in logic
 # from torch import nn
 
@@ -54,6 +51,7 @@ class ModelMeta(models.Model):
         on_delete=models.CASCADE,
         related_name="metadata_versions",
         help_text="The base AI model architecture this metadata belongs to.",
+
     )
 
     # --- Model Configuration ---
@@ -131,7 +129,7 @@ class ModelMeta(models.Model):
         Creates or updates a ModelMeta instance using external logic.
         """
         # Delegate to logic function, passing the class (cls)
-        return logic.create_model_meta_from_file(
+        return logic.create_from_file_logic(
             cls, meta_name, model_name, labelset_name, weights_file,
             requested_version, bump_if_exists, **kwargs
         )
@@ -164,11 +162,14 @@ class ModelMeta(models.Model):
         """
         Returns the natural key for serialization.
         """
-        # ... existing code ...
+        # Assuming natural key is based on name and version, linked to model name
+        return (self.name, self.version, self.model.natural_key())
 
     def __str__(self) -> str:
         """String representation of the ModelMeta instance."""
-        # ... existing code ...
+        # Ensure a string is always returned
+        model_name = self.model.name if self.model else "UnknownModel"
+        return f"ModelMeta: {self.name} (v{self.version}) for {model_name}"
 
     def get_config_dict(self) -> Dict[str, Any]:
         """
@@ -195,3 +196,4 @@ class ModelMeta(models.Model):
         """Alias for get_by_name_version(meta_name, model_name, version=None) using external logic."""
         # Delegate directly to the specific logic function
         return logic.get_model_meta_by_name_version_logic(cls, meta_name, model_name, version=None)
+    

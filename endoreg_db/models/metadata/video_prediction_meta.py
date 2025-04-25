@@ -1,6 +1,5 @@
-from typing import Union, TYPE_CHECKING, Optional, List, Tuple
+from typing import TYPE_CHECKING, Optional, List, Tuple
 from django.db import models
-from django.db.models import Q, CheckConstraint
 import logging
 
 from endoreg_db.models.label import LabelSet
@@ -20,8 +19,7 @@ DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from endoreg_db.models import ModelMeta, InformationSource, Label
-    from ..prediction.image_classification import ImageClassificationPrediction
+    from endoreg_db.models import ModelMeta, Label
     from ..media.video.video_file import VideoFile
 
 
@@ -110,7 +108,7 @@ class VideoPredictionMeta(models.Model):
         Fetches all predictions for the associated video, labelset, and model meta,
         applies smoothing, and saves the resulting binary prediction array.
         """
-        from ..prediction.image_classification import ImageClassificationPrediction
+        from ..label import ImageClassificationAnnotation
 
         video_obj = self.get_video()
         model_meta = self.model_meta
@@ -127,14 +125,14 @@ class VideoPredictionMeta(models.Model):
 
         prediction_array = np.zeros((num_frames, len(label_list)))
 
-        base_pred_qs = ImageClassificationPrediction.objects.filter(
+        base_pred_qs = ImageClassificationAnnotation.objects.filter(
             model_meta=model_meta,
             frame__video_file=video_obj
         )
 
         for i, label in enumerate(label_list):
             predictions = base_pred_qs.filter(label=label).order_by("frame__frame_number").values_list(
-                "frame__frame_number", "confidence"
+                "frame__frame_number", "float_value"
             )
 
             confidences = np.full(num_frames, 0.5)

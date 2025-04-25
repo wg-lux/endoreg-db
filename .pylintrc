@@ -2,10 +2,18 @@
 disable=
     E1101,
     W0611,
+    W0621, ; Redefining name from outer scope
+    W0718, ; too broad exception
+    W0212, ; accessing protected member
+    W0404, ; reimported
+    W1203, ; logging-fstring-interpolation
+    C0201, ; Consider iterating dictionary
+    C0206, ; consider using dict items
     C0114, ; Missing module docstring
     C0115, ; Missing class docstring
     C0116, ; Missing function or method docstring
     C0301, ; Line too long
+    C0303, ; Trailing whitespace
     C0411,
     C0412,
     C0413, 

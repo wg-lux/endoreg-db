@@ -7,7 +7,6 @@ from endoreg_db.models import (
     Product,
     ProductGroup,
     ReferenceProduct,
-    ProductGroup,
     TransportRoute,
     CenterWaste,
     CenterResource,

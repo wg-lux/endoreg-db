@@ -20,6 +20,17 @@ class SensitiveMetaState(AbstractState):
         from endoreg_db.models import SensitiveMeta
 
         origin: "SensitiveMeta"
+
+    @property
+    def is_verified(self) -> bool:
+        """
+        Check if the state is verified.
+
+        Returns:
+            bool: True if the state is verified, False otherwise.
+        """
+        return self.dob_verified and self.names_verified
+
     class Meta:
         verbose_name = "Sensitive Meta State"
         verbose_name_plural = "Sensitive Meta States"

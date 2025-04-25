@@ -2,9 +2,6 @@ import os
 import yaml
 from django.core.exceptions import ObjectDoesNotExist
 
-from icecream import ic
-
-
 def load_model_data_from_yaml(command, model_name, metadata, verbose):
     """
     Load model data from YAML files.

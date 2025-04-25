@@ -42,4 +42,26 @@ class Label(models.Model):
 
     def __str__(self):
         return str(self.name)
+    
+    @classmethod
+    def get_outside_label(cls):
+        """
+        Returns the label instance for 'outside'.
+        """
+        try:
+            return cls.objects.get(name="outside")
+        except Exception as exc:
+            raise ValueError("'outside' label does not exist in the database") from exc
+
+    @classmethod
+    def get_low_quality_label(cls):
+        """
+        Returns the label instance for 'low quality'.
+        """
+        try:
+            return cls.objects.get(name="low_quality")
+        except Exception as exc:
+            raise ValueError("'low_quality' label does not exist in the database") from exc
+        
+
 

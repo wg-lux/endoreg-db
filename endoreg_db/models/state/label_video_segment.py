@@ -7,6 +7,8 @@ class LabelVideoSegmentState(AbstractState):
     prediction = models.BooleanField(default=False)
     annotation = models.BooleanField(default=False)
     frames_extracted = models.BooleanField(default=False)
+    is_validated = models.BooleanField(default=False)
+
     origin = models.OneToOneField(
         "LabelVideoSegment",
         on_delete=models.CASCADE,

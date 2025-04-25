@@ -6,7 +6,8 @@ It provides a unified dictionary 'data_paths' for accessing all path objects.
 """
 
 from logging import getLogger
-logger = getLogger(__name__)
+logger = getLogger("paths")
+logger.setLevel("WARNING")
 
 import os
 from pathlib import Path
@@ -15,7 +16,6 @@ import dotenv
 
 dotenv.load_dotenv()
 
-from icecream import ic
 debug = os.getenv("DEBUG", "false").lower() == "true"
 
 # Define BASE_DIR as the parent directory of the directory containing this file (endoreg_db/utils -> endoreg_db)

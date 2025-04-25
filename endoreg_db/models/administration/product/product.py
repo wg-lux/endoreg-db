@@ -1,5 +1,8 @@
 from django.db import models
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
+
+from endoreg_db.utils.product.sum_emissions import sum_emissions
+from endoreg_db.utils.product.sum_weights import sum_weights
 
 if TYPE_CHECKING:
     from ...other.transport_route import TransportRoute
@@ -12,34 +15,6 @@ class ProductManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
     
-def sum_weights(product_materials: List["ProductMaterial"]):
-    # sum up the weights
-    weight = 0
-    reference_unit = None
-    for product_material in product_materials:
-        if not reference_unit:
-            reference_unit = product_material.unit
-        else:
-            assert reference_unit == product_material.unit, "ProductMaterial units do not match"
-        weight += product_material.quantity
-
-    return weight, reference_unit
-
-def sum_emissions(product_materials:List["ProductMaterial"]):
-    # sum up the emissions
-    emission = 0
-    reference_unit = None
-    for product_material in product_materials:
-        if not reference_unit:
-            reference_unit = product_material.unit
-        else:
-            assert reference_unit == product_material.unit, "ProductMaterial units do not match"
-        emission, emission_unit = product_material.get_emission()
-        assert reference_unit == emission_unit, "ProductMaterial units do not match"
-        emission += emission
-
-    return emission, reference_unit
-
 class Product(models.Model):
     objects = ProductManager()
 
@@ -59,7 +34,7 @@ class Product(models.Model):
         transport_route: "TransportRoute"
         product_group: "ProductGroup"
         reference_products: models.QuerySet["ReferenceProduct"]
-        product_materials: models.QuerySet["ProductMaterial"]
+        product_product_materials: models.QuerySet["ProductMaterial"]
 
 
     def natural_key(self):
@@ -79,50 +54,46 @@ class Product(models.Model):
         
         return result
     
+    def _calculate_material_metric(self, component: str, calculation_func):
+        """Helper method to calculate weight or emission for materials of a specific component."""
+        from .product_material import ProductMaterial # Import locally to avoid circular dependency issues at module level
+        materials = ProductMaterial.objects.filter(product=self, component=component)
+        return calculation_func(materials)
+
     def get_product_weight(self):
-        # check if there is a product material weight
+        """Get the product weight, prioritizing material definitions."""
         from .product_material import ProductMaterial
-        product_materials = ProductMaterial.objects.filter(product=self, component="product")
-        if product_materials:
+        # Check if there are specific material definitions for the product component
+        if ProductMaterial.objects.filter(product=self, component="product").exists():
             return self.get_product_material_weight()
         
-        # check if there is a product weight
-        #TODO
+        # Fallback: check if there is a direct product weight defined (Not implemented yet)
+        # TODO: Implement logic for ProductWeight lookup
+        return None # Or appropriate default/error
 
     def get_package_weight(self):
-        # check if there is a package material weight
+        """Get the package weight, prioritizing material definitions."""
         from .product_material import ProductMaterial
-        product_materials = ProductMaterial.objects.filter(product=self, component="package")
-        if product_materials:
+        # Check if there are specific material definitions for the package component
+        if ProductMaterial.objects.filter(product=self, component="package").exists():
             return self.get_package_material_weight()
         
-        # check if there is a package weight
-        #TODO
+        # Fallback: check if there is a direct package weight defined (Not implemented yet)
+        # TODO: Implement logic for PackageWeight lookup (if different from ProductWeight)
+        return None # Or appropriate default/error
 
     def get_product_material_weight(self):
-        # get all materials with component == "product"
-        from .product_material import ProductMaterial
-        product_materials = ProductMaterial.objects.filter(product=self, component="product")
-
-        return sum_weights(product_materials)
+        """Calculate the total weight based on defined product materials."""
+        return self._calculate_material_metric("product", sum_weights)
     
     def get_package_material_weight(self):
-        # get all materials with component == "package"
-        from .product_material import ProductMaterial
-        product_materials = ProductMaterial.objects.filter(product=self, component="package")
-
-        return sum_weights(product_materials)
+        """Calculate the total weight based on defined package materials."""
+        return self._calculate_material_metric("package", sum_weights)
 
     def get_product_material_emission(self):
-        # get all materials with component == "product"
-        from .product_material import ProductMaterial
-        product_materials = ProductMaterial.objects.filter(product=self, component="product")
-
-        return sum_emissions(product_materials)
+        """Calculate the total emissions based on defined product materials."""
+        return self._calculate_material_metric("product", sum_emissions)
 
     def get_package_material_emission(self):
-        # get all materials with component == "package"
-        from .product_material import ProductMaterial
-        product_materials = ProductMaterial.objects.filter(product=self, component="package")
-
-        return sum_emissions(product_materials)
+        """Calculate the total emissions based on defined package materials."""
+        return self._calculate_material_metric("package", sum_emissions)
