@@ -1,6 +1,6 @@
 from django.db import models
 from django.db.models import Q, CheckConstraint, F
-from typing import TYPE_CHECKING, Union, Optional
+from typing import TYPE_CHECKING, Union, Optional, Tuple
 from tqdm import tqdm
 import logging
 from django.core.exceptions import ObjectDoesNotExist
@@ -133,8 +133,22 @@ class LabelVideoSegment(models.Model):
         # Ensure state exists after saving, without nested transactions
         if self.pk:
             # `defaults={}` ensures we do not re-fetch the just-saved object.
-            LabelVideoSegmentState.objects.get_or_create(origin=self, defaults={})
-    
+            # This logic is now encapsulated in get_or_create_state
+            self.get_or_create_state()
+
+    def get_or_create_state(self) -> Tuple["LabelVideoSegmentState", bool]:
+        """
+        Retrieves or creates the associated LabelVideoSegmentState object.
+
+        Returns:
+            Tuple[LabelVideoSegmentState, bool]: A tuple containing the state
+                                                 object and a boolean indicating
+                                                 if it was created.
+        """
+        from endoreg_db.models import LabelVideoSegmentState
+        state, created = LabelVideoSegmentState.objects.get_or_create(origin=self)
+        return state, created
+
     @classmethod
     def create_from_video(
         cls,

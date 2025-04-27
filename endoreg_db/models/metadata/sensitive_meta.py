@@ -193,17 +193,17 @@ class SensitiveMeta(models.Model):
             self.state = new_state
             return new_state
         except AttributeError:
-             # Fallback if related_name is not 'state' or instance not saved yet (no PK)
-             if self.pk:
-                 state, created = SensitiveMetaState.objects.get_or_create(origin=self)
-                 if created:
-                     logger.info("Created new SensitiveMetaState for SensitiveMeta %s (via get_or_create)", self.pk)
-                 # Link the state back to the instance in memory
-                 self.state = state
-                 return state
-             else:
-                 # Cannot create state if the main instance has no PK
-                 raise ValueError("Cannot get or create state for an unsaved SensitiveMeta instance.")
+            # Fallback if related_name is not 'state' or instance not saved yet (no PK)
+            if self.pk:
+                state, created = SensitiveMetaState.objects.get_or_create(origin=self)
+                if created:
+                    logger.info("Created new SensitiveMetaState for SensitiveMeta %s (via get_or_create)", self.pk)
+                # Link the state back to the instance in memory
+                self.state = state
+                return state
+            else:
+                # Cannot create state if the main instance has no PK
+                raise ValueError("Cannot get or create state for an unsaved SensitiveMeta instance.")
 
         # If self.state existed initially, return it
         return self.state
@@ -253,7 +253,7 @@ class SensitiveMeta(models.Model):
             except AttributeError:
                  # Fallback check if 'state' related_name is missing
                  if not SensitiveMetaState.objects.filter(origin=self).exists():
-                      SensitiveMetaState.objects.create(origin=self)
+                    SensitiveMetaState.objects.create(origin=self)
 
         # 4. Handle ManyToMany linking (examiners) *after* the instance has a PK.
         if examiner_to_link and self.pk and not self.examiners.filter(pk=examiner_to_link.pk).exists():
