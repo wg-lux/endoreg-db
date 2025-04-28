@@ -1,4 +1,5 @@
 from pathlib import Path
+from django.conf.global_settings import STATIC_URL
 from icecream import ic
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.logger_conf import get_logging_config
@@ -52,3 +53,13 @@ TEST_LOGGER_NAMES = [
 # --- Use the imported function to generate LOGGING ---
 LOGGING = get_logging_config(TEST_LOGGER_NAMES, file_log_level="INFO",
                              console_log_level = "WARNING") # Or set level via env var
+
+STATIC_URL = "static/"
+
+ROOT_URLCONF = "endoreg_db.urls"
+CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5174", "http://127.0.0.1:8000"]
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = [
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5174/api/patients",
+]
