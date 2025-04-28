@@ -1,0 +1,25 @@
+- model: endoreg_db.LabelSet
+  fields:
+    name: "endoscopy_paris_classification"
+    version: 1
+    labels:
+      [
+        "paris_1s",
+        "paris_1p",
+        "paris_2a",
+        "paris_2b",
+        "paris_2c",
+        "paris_3",
+      ]
+
+- model: endoreg_db.LabelSet
+  fields:
+    name: "endoscopy_nice_classification"
+    version: 1
+    labels:
+      [
+        "nice_1",
+        "nice_2a",
+        "nice_2b",
+        "nice_3",
+      ]

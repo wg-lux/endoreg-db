@@ -9,9 +9,6 @@ from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 
-from .video_file_frames._get_frame_number import _get_frame_number
-from .video_file_frames._get_frames import _get_frames
-from .video_file_frames._get_frame import _get_frame
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
@@ -34,16 +31,13 @@ from .video_file_frames import (
     _delete_frames,
     _get_frame_path,
     _get_frame_paths,
+    _get_frame_number,
+    _get_frames,
+    _get_frame,
     _get_frame_range,
     _create_frame_object,
     _bulk_create_frames,
 )
-# --- Add import for new frame range functions ---
-from .video_file_frames._manage_frame_range import (
-    _extract_frame_range,
-    _delete_frame_range,
-)
-# --- End Add ---
 from .video_file_io import (
     _delete_with_file,
     _get_base_frame_dir,
@@ -55,8 +49,8 @@ from .video_file_io import (
     _get_processed_file_path,
 )
 from .video_file_ai import (
+    _predict_video_pipeline,
     _extract_text_from_video_frames,
-    _predict_video_entry,
 )
 
 from .pipe_1 import _pipe_1, _test_after_pipe_1
@@ -194,10 +188,6 @@ class VideoFile(models.Model):
     get_frame_range = _get_frame_range
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
-    # --- Add method assignments for frame range ---
-    extract_frame_range = _extract_frame_range
-    delete_frame_range = _delete_frame_range
-    # --- End Add ---
 
     delete_with_file = _delete_with_file
     get_base_frame_dir = _get_base_frame_dir
@@ -212,7 +202,7 @@ class VideoFile(models.Model):
     _create_anonymized_frame_files = _create_anonymized_frame_files
     _cleanup_raw_assets = _cleanup_raw_assets
 
-    predict_video = _predict_video_entry
+    predict_video = _predict_video_pipeline
     extract_text_from_frames = _extract_text_from_video_frames
 
 
@@ -258,44 +248,6 @@ class VideoFile(models.Model):
 
 
 
-    @classmethod
-    def create_from_file_initialized(
-        cls,
-        file_path: Union[str, Path],
-        center_name: str,
-        processor_name: str,
-        **kwargs,
-    ) -> "VideoFile":
-        """
-        Creates a VideoFile instance from a file, initializing it with the given center and processor names.
-        This method also creates a VideoState instance and updates the video metadata.
-        Initializes Frame database objects based on expected frame count.
-
-
-        """
-        video_file = cls.create_from_file(
-            file_path,
-            center_name,
-            processor_name=processor_name,
-            **kwargs,
-        )
-        video_file.update_video_meta()
-        video_file.initialize_video_specs() # Sets frame_count etc.
-
-
-        # This call initializes Frame objects with is_extracted=False
-        video_file.initialize_frames()
-        _state = video_file.get_or_create_state()
-        video_file.refresh_from_db()
-
-        assert video_file is not None, "VideoFile instance should not be None"
-        # --- Add assertion for state ---
-        assert video_file.state is not None, "VideoFile state should not be None after initialization"
-        assert video_file.state.frames_initialized is True, "VideoFile state should be frames_initialized=True"
-        assert video_file.state.frame_count == video_file.frame_count, "VideoFile state frame_count should match video frame_count"
-        # --- End Add ---
-
-        return video_file
 
     @classmethod
     def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
@@ -357,10 +309,3 @@ class VideoFile(models.Model):
             logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
             return self.label_video_segments.none()
 
-    def get_expected_frame_paths(self):
-        frame_count = self.frame_count
-        if frame_count is None:
-            logger.error("Frame count is not set for video %s", self.uuid)
-            raise ValueError("Frame count is not set for this video file.")
-        
-        return [self.get_frame_path(frame_number) for frame_number in range(frame_count)]

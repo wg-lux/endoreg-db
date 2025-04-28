@@ -2,85 +2,99 @@ import logging
 from typing import TYPE_CHECKING
 from django.db import transaction
 
-# --- Import necessary models for type hints and operations ---
-from ...state import VideoState
-# --- End Imports ---
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # Changed from "video_file"
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoState
 
-
-# --- Helper Step Functions for Pipe 2 ---
-
-def _pipe_2_step_ensure_state(video_file: "VideoFile") -> "VideoState":
-    """Ensures the VideoState object exists."""
-    logger.debug("Pipe 2 Step: Ensuring state exists for video %s...", video_file.uuid)
-    state = video_file.get_or_create_state()
-    logger.debug("Pipe 2 Step: State ensured for video %s.", video_file.uuid)
-    return state
-
-def _pipe_2_step_extract_frames(video_file: "VideoFile", state: "VideoState"):
-    """Extracts frames if not already extracted."""
-    if not state.frames_extracted:
-        logger.info("Pipe 2 Step: Frames not extracted for video %s, extracting now...", video_file.uuid)
-        video_file.extract_frames(overwrite=False) # Raises exceptions on failure
-        logger.info("Pipe 2 Step: Frame extraction complete for video %s.", video_file.uuid)
-    else:
-        logger.info("Pipe 2 Step: Frames already extracted for video %s.", video_file.uuid)
-
-def _pipe_2_step_anonymize(video_file: "VideoFile"):
-    """Creates the anonymized video file."""
-    logger.info("Pipe 2 Step: Creating anonymized video for %s...", video_file.uuid)
-    video_file.anonymize(delete_original_raw=True) # Raises exceptions on failure
-    logger.info("Pipe 2 Step: Anonymization complete for video %s.", video_file.uuid)
-
-def _pipe_2_step_delete_sensitive_meta(video_file: "VideoFile"):
-    """Deletes the associated SensitiveMeta object."""
-    if video_file.sensitive_meta:
-        logger.info("Pipe 2 Step: Deleting sensitive meta object for video %s...", video_file.uuid)
-        try:
-            sm_pk = video_file.sensitive_meta.pk
-            video_file.sensitive_meta.delete()
-            video_file.sensitive_meta = None # Important after SET_NULL
-            video_file.save(update_fields=['sensitive_meta']) # Persist the null relation
-            logger.info("Pipe 2 Step: Deleted sensitive meta object (PK: %s) for video %s.", sm_pk, video_file.uuid)
-        except Exception as e:
-            logger.error("Pipe 2 Step: Failed to delete sensitive meta object for video %s: %s", video_file.uuid, e, exc_info=True)
-            # Raise exception to trigger transaction rollback
-            raise RuntimeError(f"Failed to delete sensitive meta for video {video_file.uuid}") from e
-    else:
-        logger.info("Pipe 2 Step: No sensitive meta object found to delete for video %s.", video_file.uuid)
-
-# --- Main Pipeline 2 Function ---
-def _pipe_2(video_file:"VideoFile", delete_sensitive_meta:bool = True) -> bool:
+def _pipe_2(video_file:"VideoFile") -> bool:
     """
-    Process the given video file through pipeline 2 operations: frame extraction (if needed),
-    anonymization, and sensitive meta deletion, all within an atomic transaction.
-    Orchestrates calls to step-based helper functions.
-    Returns True on success, False on failure (logs error).
+    Process the given video file through pipeline 2 operations which include frame extraction,
+    anonymization of the video, and deletion of sensitive meta data, all within an atomic transaction.
+
+    Parameters:
+        video_file (VideoFile): An instance of VideoFile representing the video to process.
+
+    Returns:
+        bool: True if all operations complete successfully; otherwise, False.
+
+    Workflow Details:
+        1. Frame Extraction:
+           - Checks if frames have already been extracted for the video.
+           - If not, triggers the frame extraction process. If extraction fails or the state is not
+             correctly updated, the process is halted and False is returned.
+        2. Video Anonymization:
+           - Initiates anonymization, which includes cleaning up database fields and scheduling file cleanup.
+           - After anonymization, verifies that the video's state reflects the changes. Failure to confirm
+             the anonymized state results in the function returning False.
+        3. Sensitive Meta Deletion:
+           - If the video has an associated sensitive meta object, it is deleted and the relationship is
+             cleared in the database.
+           - Any exception during deletion results in the entire transaction rolling back and the function
+             returning False.
+
+    If any unexpected exception occurs during the process, the transaction is rolled back and the function
+    returns False, ensuring data consistency.
     """
     logger.info("Starting Pipe 2 for video %s", video_file.uuid)
     try:
         with transaction.atomic():
-            # --- Call Step Functions ---
-            state = _pipe_2_step_ensure_state(video_file)
-            _pipe_2_step_extract_frames(video_file, state)
-            _pipe_2_step_anonymize(video_file)
-            if delete_sensitive_meta:
-                _pipe_2_step_delete_sensitive_meta(video_file)
+            # 1. Extract Frames (if not already extracted)
+            state: "VideoState" = video_file.get_or_create_state() # Use state helper
+            if not state.frames_extracted:
+                logger.info("Pipe 2: Frames not extracted, extracting now...")
+                if not video_file.extract_frames(overwrite=False): # Check return value
+                     logger.error("Pipe 2 failed: Frame extraction method returned False.")
+                     return False
+                state.refresh_from_db() # Refresh state after extraction
+                if not state.frames_extracted: # Double check state after refresh
+                    logger.error("Pipe 2 failed: Frame extraction did not update state successfully.")
+                    return False
+                logger.info("Pipe 2: Frame extraction complete.")
             else:
-                logger.info("Pipe 2 Step: Skipping deletion of sensitive meta for video %s.", video_file.uuid)
-            # --- End Step Functions ---
+                logger.info("Pipe 2: Frames already extracted.")
+
+            # 2. Create Anonymized Video File
+            logger.info("Pipe 2: Creating anonymized video...")
+            # anonymize() handles clearing DB fields, setting state.anonymized,
+            # and scheduling physical file cleanup via on_commit
+            anonymize_success = video_file.anonymize(delete_original_raw=True)
+            if not anonymize_success:
+                    # Error should be logged within anonymize() if it returns False
+                    logger.error("Pipe 2 failed: Anonymization process failed (returned False).")
+                    return False
+            logger.info("Pipe 2: Anonymization complete.")
+            # Verify state immediately after successful anonymize call
+            state.refresh_from_db()
+            if not state.anonymized:
+                logger.error("Pipe 2 Error: State.anonymized is False even after successful anonymize() call.")
+                # This indicates a problem within anonymize() not setting the state
+                return False
+
+            # 3. Delete Sensitive Meta Object
+            if video_file.sensitive_meta:
+                logger.info("Pipe 2: Deleting sensitive meta object...")
+                try:
+                    sm_pk = video_file.sensitive_meta.pk
+                    video_file.sensitive_meta.delete()
+                    video_file.sensitive_meta = None # Important after SET_NULL
+                    video_file.save(update_fields=['sensitive_meta']) # Persist the null relation
+                    logger.info("Pipe 2: Deleted sensitive meta object (PK: %s).", sm_pk)
+                except Exception as e:
+                    logger.error("Pipe 2: Failed to delete sensitive meta object: %s", e, exc_info=True)
+                    # Decide if this is a critical failure
+                    return False # Rollback transaction
+            else:
+                logger.info("Pipe 2: No sensitive meta object found to delete.")
+
 
             logger.info(f"Pipe 2 completed successfully for video {video_file.uuid}")
             # Transaction commits here if no exception occurred
             return True
 
-    except (FileNotFoundError, ValueError, RuntimeError, Exception) as e:
-        # Catch specific exceptions raised by steps, plus general Exception
-        logger.error(f"Pipe 2 failed for video {video_file.uuid}: {e}", exc_info=True)
+    except Exception as e:
         # Transaction automatically rolls back on exception
+        logger.error(f"Pipe 2 failed for video {video_file.uuid} with unhandled exception: {e}", exc_info=True)
         return False

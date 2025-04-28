@@ -82,6 +82,7 @@ def load_medication_data():
     call_command("load_medication_data", )
 
 def load_requirement_data():
+
     call_command("load_requirement_data", )
 
 def load_ai_model_label_data():
@@ -93,3 +94,35 @@ def load_ai_model_data():
 def load_green_endoscopy_wuerzburg_data():
     """Load Green Endoscopy Wuerzburg Data"""
     call_command("load_green_endoscopy_wuerzburg_data", )
+
+def load_data():
+    """Load all data in correct order"""
+    
+    load_information_source()
+    load_risk_data()
+    load_center_data()
+    load_endoscope_data()
+    load_distribution_data()
+
+    load_gender_data()
+    load_report_reader_flag_data()
+    load_pdf_type_data()
+    load_unit_data()
+    load_disease_data()
+    load_event_data()
+    load_organ_data()
+    load_contraindication_data()
+    load_examination_data()
+    load_lab_value_data()
+    load_finding_data()
+    load_examination_indication_data()
+    load_medication_data()
+    load_requirement_data()
+
+    load_ai_model_label_data()
+    load_ai_model_data()
+
+    load_green_endoscopy_wuerzburg_data()
+
+    
+    
