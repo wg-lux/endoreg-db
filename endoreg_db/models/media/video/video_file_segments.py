@@ -6,7 +6,7 @@ from django.db.models import Q  # Import Q for complex queries
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
-    from ...label import LabelVideoSegment, Label
+    from ...label import LabelVideoSegment
     from ...metadata import VideoPredictionMeta
     from ..frame import Frame
     from django.db.models import QuerySet
@@ -19,7 +19,8 @@ def _convert_sequences_to_db_segments(
     video_prediction_meta: "VideoPredictionMeta",
 ):
     """
-    Converts predicted sequences into LabelVideoSegment database objects.
+    Converts predicted sequences into LabelVideoSegment database objects
+    and ensures their corresponding state objects are created.
     """
     from ...label import Label, LabelVideoSegment  # Local import for models
 
@@ -27,21 +28,26 @@ def _convert_sequences_to_db_segments(
     created_count = 0
     skipped_count = 0
     error_count = 0
+    state_created_count = 0
+    state_error_count = 0
+
+    processed_labels = set()
 
     for label_name, sequence_list in sequences.items():
         if not sequence_list:
             continue
 
+        processed_labels.add(label_name)
+
         try:
             label = Label.objects.get(name=label_name)  # require pre-existing label
         except Exception as e:
             logger.error("Could not get or create Label '%s': %s", label_name, e, exc_info=True)
-            error_count += len(sequence_list)  # Count all potential segments for this label as errors
+            error_count += len(sequence_list)
             continue
 
         segments_to_create = []
         for start_frame, end_frame in sequence_list:
-            # Basic validation
             if start_frame > end_frame or start_frame < 0:
                 logger.warning("Skipping invalid sequence for label '%s': start=%d, end=%d", label_name, start_frame, end_frame)
                 skipped_count += 1
@@ -66,9 +72,27 @@ def _convert_sequences_to_db_segments(
                 logger.error("Error bulk creating segments for label '%s': %s", label_name, e, exc_info=True)
                 error_count += len(segments_to_create)
 
+    newly_created_segments = LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=video_prediction_meta,
+        label__name__in=processed_labels
+    )
+
+    logger.info("Attempting to create state objects for %d potentially new segments (Video: %s, PredictionMeta: %s)",
+                newly_created_segments.count(), video.uuid, video_prediction_meta.pk)
+
+    for segment in newly_created_segments:
+        try:
+            _state, created = segment.get_or_create_state()
+            if created:
+                state_created_count += 1
+        except Exception as e:
+            logger.error("Failed to get or create state for segment %s (Video: %s): %s", segment.pk, video.uuid, e, exc_info=True)
+            state_error_count += 1
+
     logger.info(
-        "LabelVideoSegment conversion finished for video %s. Created: %d, Skipped: %d, Errors: %d",
-        video.uuid, created_count, skipped_count, error_count
+        "LabelVideoSegment conversion finished for video %s. Segments Created: %d, Skipped: %d, Errors: %d. States Created: %d, State Errors: %d",
+        video.uuid, created_count, skipped_count, error_count, state_created_count, state_error_count
     )
 
 

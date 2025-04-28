@@ -166,12 +166,13 @@ def transcode_videofile_if_required(
     input_path: Path,
     output_path: Path,
     required_codec: str = "h264",
-    required_pixel_format: str = "yuvj420p", # "juv420p"
+    required_pixel_format: str = "yuv420p", # Changed default from yuvj420p
     **transcode_options # Pass other options to transcode_video
 ) -> Optional[Path]:
     """
     Checks if a video needs transcoding based on codec and pixel format,
     and transcodes it using transcode_video if necessary.
+    Uses yuv420p with full color range (pc/jpeg) as the target format.
     Returns the path to the compliant video (original or transcoded).
     """
     stream_info = get_stream_info(input_path)
@@ -187,27 +188,64 @@ def transcode_videofile_if_required(
 
     codec_name = video_stream.get("codec_name")
     pixel_format = video_stream.get("pix_fmt")
+    # Check color range as well, default is usually 'tv' (limited)
+    color_range = video_stream.get("color_range", "tv") # Default to tv if not specified
 
     needs_transcoding = False
+    transcode_reason = []
     if codec_name != required_codec:
-        logger.info("Codec mismatch (%s != %s) for %s. Transcoding required.", codec_name, required_codec, input_path.name)
+        reason = f"Codec mismatch ({codec_name} != {required_codec})"
+        logger.info("%s for %s. Transcoding required.", reason, input_path.name)
+        transcode_reason.append(reason)
         needs_transcoding = True
-    if pixel_format != required_pixel_format:
-        logger.info("Pixel format mismatch (%s != %s) for %s. Transcoding required.", pixel_format, required_pixel_format, input_path.name)
+    # Check both pixel format and color range for yuv420p
+    if pixel_format != required_pixel_format or (pixel_format == "yuv420p" and color_range != "pc"):
+        reason = f"Pixel format/color range mismatch (pix_fmt: {pixel_format}, color_range: {color_range} != {required_pixel_format} with color_range=pc)"
+        logger.info("%s for %s. Transcoding required.", reason, input_path.name)
+        transcode_reason.append(reason)
         needs_transcoding = True
 
     if needs_transcoding:
-        logger.info("Transcoding %s to %s...", input_path.name, output_path.name)
+        logger.info("Transcoding %s to %s due to: %s", input_path.name, output_path.name, "; ".join(transcode_reason))
         # Ensure codec and pixel format are set in options if not already present
         transcode_options.setdefault('codec', 'libx264' if required_codec == 'h264' else required_codec)
         transcode_options.setdefault('extra_args', [])
-        # Add pix_fmt argument if not already handled by codec preset
-        if '-pix_fmt' not in transcode_options['extra_args']:
-            transcode_options['extra_args'].extend(['-pix_fmt', required_pixel_format])
+
+        # Ensure pixel format and color range are correctly set in extra_args
+        extra_args = transcode_options['extra_args']
+        if '-pix_fmt' not in extra_args:
+            extra_args.extend(['-pix_fmt', required_pixel_format])
+        else:
+            # If pix_fmt is already set, ensure it's the required one
+            try:
+                pix_fmt_index = extra_args.index('-pix_fmt')
+                if extra_args[pix_fmt_index + 1] != required_pixel_format:
+                    logger.warning("Overriding existing -pix_fmt '%s' with '%s'", extra_args[pix_fmt_index + 1], required_pixel_format)
+                    extra_args[pix_fmt_index + 1] = required_pixel_format
+            except (ValueError, IndexError):
+                 # Should not happen if '-pix_fmt' is in extra_args, but handle defensively
+                 logger.error("Error processing existing -pix_fmt argument. Appending required format.")
+                 extra_args.extend(['-pix_fmt', required_pixel_format])
+
+
+        if '-color_range' not in extra_args:
+             # Add color range 'pc' (which corresponds to 2 or 'jpeg') for yuv420p
+            extra_args.extend(['-color_range', 'pc'])
+        else:
+            # If color_range is already set, ensure it's 'pc'
+             try:
+                color_range_index = extra_args.index('-color_range')
+                if extra_args[color_range_index + 1] != 'pc':
+                    logger.warning("Overriding existing -color_range '%s' with 'pc'", extra_args[color_range_index + 1])
+                    extra_args[color_range_index + 1] = 'pc'
+             except (ValueError, IndexError):
+                 logger.error("Error processing existing -color_range argument. Appending 'pc'.")
+                 extra_args.extend(['-color_range', 'pc'])
+
 
         return transcode_video(input_path, output_path, **transcode_options)
     else:
-        logger.info("Video %s already meets requirements. No transcoding needed.", input_path.name)
+        logger.info("Video %s already meets requirements (%s, %s, color_range=pc). No transcoding needed.", input_path.name, required_codec, required_pixel_format)
         # If no transcoding is needed, should we copy/link or just return the original path?
         # For simplicity, let's assume the caller handles the file location.
         # If the output_path is different, we might need to copy.
