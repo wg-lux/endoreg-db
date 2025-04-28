@@ -429,19 +429,11 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                                 label_id=label_id,
                                 start_frame_number=start_frame,
                                 end_frame_number=end_frame,
+                                prediction_meta_id=prediction_meta_id,
                             )
                         )
                         print(
                             f" Adding new segment: Start {start_frame} → End {end_frame}"
-                        )
-                        new_entries.append(
-                            LabelRawVideoSegment(
-                                video_id=video_id,
-                                label_id=label_id,
-                                start_frame_number=start_frame,
-                                end_frame_number=end_frame,
-                                prediction_meta_id=prediction_meta_id,  # Assign correct prediction_meta_id
-                            )
                         )
 
             # Delete segments that are no longer present in the frontend data
