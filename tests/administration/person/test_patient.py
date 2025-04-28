@@ -174,6 +174,7 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertIsNotNone(patient.dob)
         self.assertEqual(patient.patient_hash, patient_hash)
         self.assertEqual(created, True)
+        self.assertEqual(patient.is_real_person, False)
 
         # make sure the patient is not created a second time
         patient_2, created_2 = Patient.get_or_create_pseudo_patient_by_hash(patient_hash)

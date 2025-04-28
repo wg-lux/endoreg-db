@@ -9,6 +9,9 @@ from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 
+from .video_file_frames._get_frame_number import _get_frame_number
+from .video_file_frames._get_frames import _get_frames
+from .video_file_frames._get_frame import _get_frame
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
@@ -31,13 +34,16 @@ from .video_file_frames import (
     _delete_frames,
     _get_frame_path,
     _get_frame_paths,
-    _get_frame_number,
-    _get_frames,
-    _get_frame,
     _get_frame_range,
     _create_frame_object,
     _bulk_create_frames,
 )
+# --- Add import for new frame range functions ---
+from .video_file_frames._manage_frame_range import (
+    _extract_frame_range,
+    _delete_frame_range,
+)
+# --- End Add ---
 from .video_file_io import (
     _delete_with_file,
     _get_base_frame_dir,
@@ -49,27 +55,34 @@ from .video_file_io import (
     _get_processed_file_path,
 )
 from .video_file_ai import (
-    _predict_video_pipeline,
     _extract_text_from_video_frames,
+    _predict_video_entry,
 )
-# --- End Import model-specific function modules ---
 
-# --- Utility Imports ---
-# --- End Utility Imports ---
+from .pipe_1 import _pipe_1, _test_after_pipe_1
+from .pipe_2 import _pipe_2
 
-# --- Model & Other Imports ---
 from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, FILE_STORAGE, STORAGE_DIR
 from ...state import VideoState
 from ...label import LabelVideoSegment, Label
-# --- End Model & Other Imports ---
 
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 if TYPE_CHECKING:
-    from ..frame import Frame
-    from ...administration import Center
+    from endoreg_db.models import (
+        Center,
+        Frame,
+        SensitiveMeta,
+        EndoscopyProcessor,
+        VideoMeta,
+        PatientExamination,
+        Patient,
+        VideoState,
+        ModelMeta,
+        VideoImportMeta,
+    )
 
 class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
@@ -147,6 +160,68 @@ class VideoFile(models.Model):
     if TYPE_CHECKING:
         label_video_segments: "models.QuerySet[LabelVideoSegment]"
         frames: "models.QuerySet[Frame]"
+        center: "Center"
+        processor: "EndoscopyProcessor"
+        video_meta: "VideoMeta"
+        examination: "PatientExamination"
+        patient: "Patient"
+        sensitive_meta: "SensitiveMeta"
+        state: "VideoState"
+        ai_model_meta: "ModelMeta"
+        import_meta: "VideoImportMeta"
+
+
+    # Pipeline Functions
+    pipe_1 = _pipe_1
+    test_after_pipe_1 = _test_after_pipe_1
+    pipe_2 = _pipe_2
+
+    update_video_meta = _update_video_meta
+    initialize_video_specs = _initialize_video_specs
+    get_fps = _get_fps
+    get_endo_roi = _get_endo_roi
+    get_crop_template = _get_crop_template
+    update_text_metadata = _update_text_metadata
+
+    extract_frames = _extract_frames
+    initialize_frames = _initialize_frames
+    delete_frames = _delete_frames
+    get_frame_path = _get_frame_path
+    get_frame_paths = _get_frame_paths
+    get_frame_number = _get_frame_number
+    get_frames = _get_frames
+    get_frame = _get_frame
+    get_frame_range = _get_frame_range
+    create_frame_object = _create_frame_object
+    bulk_create_frames = _bulk_create_frames
+    # --- Add method assignments for frame range ---
+    extract_frame_range = _extract_frame_range
+    delete_frame_range = _delete_frame_range
+    # --- End Add ---
+
+    delete_with_file = _delete_with_file
+    get_base_frame_dir = _get_base_frame_dir
+    set_frame_dir = _set_frame_dir
+    get_frame_dir_path = _get_frame_dir_path
+    get_temp_anonymized_frame_dir = _get_temp_anonymized_frame_dir
+    get_target_anonymized_video_path = _get_target_anonymized_video_path
+    get_raw_file_path = _get_raw_file_path
+    get_processed_file_path = _get_processed_file_path
+
+    anonymize = _anonymize
+    _create_anonymized_frame_files = _create_anonymized_frame_files
+    _cleanup_raw_assets = _cleanup_raw_assets
+
+    predict_video = _predict_video_entry
+    extract_text_from_frames = _extract_text_from_video_frames
+
+
+    @classmethod
+    def check_hash_exists(cls, video_hash: str) -> bool:
+        """
+        Checks if a VideoFile with the given raw video hash already exists.
+        """
+        return cls.objects.filter(video_hash=video_hash).exists()
 
     @property
     def is_processed(self) -> bool:
@@ -180,61 +255,55 @@ class VideoFile(models.Model):
             logger.warning("Could not get path for active file of VideoFile %s: %s", self.uuid, e, exc_info=True)
             return None
 
-    def get_or_create_state(self) -> "VideoState":
-        if self.state is None:
-            self.state = VideoState.objects.create()
-            self.save(update_fields=['state'])
-        return self.state
 
-    update_video_meta = _update_video_meta
-    initialize_video_specs = _initialize_video_specs
-    get_fps = _get_fps
-    get_endo_roi = _get_endo_roi
-    get_crop_template = _get_crop_template
-    update_text_metadata = _update_text_metadata
 
-    extract_frames = _extract_frames
-    initialize_frames = _initialize_frames
-    delete_frames = _delete_frames
-    get_frame_path = _get_frame_path
-    get_frame_paths = _get_frame_paths
-    get_frame_number = _get_frame_number
-    get_frames = _get_frames
-    get_frame = _get_frame
-    get_frame_range = _get_frame_range
-    create_frame_object = _create_frame_object
-    bulk_create_frames = _bulk_create_frames
-
-    delete_with_file = _delete_with_file
-    get_base_frame_dir = _get_base_frame_dir
-    set_frame_dir = _set_frame_dir
-    get_frame_dir_path = _get_frame_dir_path
-    get_temp_anonymized_frame_dir = _get_temp_anonymized_frame_dir
-    get_target_anonymized_video_path = _get_target_anonymized_video_path
-    get_raw_file_path = _get_raw_file_path
-    get_processed_file_path = _get_processed_file_path
-
-    anonymize = _anonymize
-    _create_anonymized_frame_files = _create_anonymized_frame_files
-    _cleanup_raw_assets = _cleanup_raw_assets
-
-    predict_video = _predict_video_pipeline
-    extract_text_from_frames = _extract_text_from_video_frames
-
-    def get_outside_segments(self) -> models.QuerySet["LabelVideoSegment"]:
-        try:
-            outside_label = Label.objects.get(name__iexact="outside")
-            return self.label_video_segments.filter(label=outside_label)
-        except Label.DoesNotExist:
-            logger.warning("Outside label not found in the database.")
-            return self.label_video_segments.none()
-        except Exception as e:
-            logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
-            return self.label_video_segments.none()
 
     @classmethod
-    def create_from_file(cls, file_path: Union[str, Path], center: Optional["Center"] = None, **kwargs) -> Optional["VideoFile"]:
-        return _create_from_file(cls, file_path, center, **kwargs)
+    def create_from_file_initialized(
+        cls,
+        file_path: Union[str, Path],
+        center_name: str,
+        processor_name: str,
+        **kwargs,
+    ) -> "VideoFile":
+        """
+        Creates a VideoFile instance from a file, initializing it with the given center and processor names.
+        This method also creates a VideoState instance and updates the video metadata.
+        Initializes Frame database objects based on expected frame count.
+
+
+        """
+        video_file = cls.create_from_file(
+            file_path,
+            center_name,
+            processor_name=processor_name,
+            **kwargs,
+        )
+        video_file.update_video_meta()
+        video_file.initialize_video_specs() # Sets frame_count etc.
+
+
+        # This call initializes Frame objects with is_extracted=False
+        video_file.initialize_frames()
+        _state = video_file.get_or_create_state()
+        video_file.refresh_from_db()
+
+        assert video_file is not None, "VideoFile instance should not be None"
+        # --- Add assertion for state ---
+        assert video_file.state is not None, "VideoFile state should not be None after initialization"
+        assert video_file.state.frames_initialized is True, "VideoFile state should be frames_initialized=True"
+        assert video_file.state.frame_count == video_file.frame_count, "VideoFile state frame_count should match video frame_count"
+        # --- End Add ---
+
+        return video_file
+
+    @classmethod
+    def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
+        # Ensure file_path is a Path object
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        # Pass center_name and other kwargs to the helper function
+        return _create_from_file(cls, file_path, center_name=center_name, **kwargs)
 
     def __str__(self):
         active_path = self.active_file_path
@@ -243,5 +312,55 @@ class VideoFile(models.Model):
         return f"VideoFile ({state}): {file_name} (UUID: {self.uuid})"
 
     def save(self, *args, **kwargs):
+        # Ensure state exists or is created before the main save operation
         self.get_or_create_state()
+        # Now call the original save method
         super().save(*args, **kwargs)
+
+    def get_or_create_state(self) -> "VideoState":
+        """
+        Gets the related VideoState instance, creating one if it doesn't exist.
+        Does not save the VideoFile instance itself.
+        """
+        if self.state is None:
+            # Create the state but don't save the VideoFile here.
+            # The main save() method will handle saving the foreign key.
+            self.state = VideoState.objects.create()
+            # No self.save() call here
+        return self.state
+    
+
+    def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
+        """
+        Gets LabelVideoSegments marked with the 'outside' label.
+
+        Args:
+            only_validated: If True, filters for segments where the related state's
+            is_validated field is True.
+
+        Returns:
+            A QuerySet of LabelVideoSegment instances.
+        """
+        try:
+            outside_label = Label.objects.get(name__iexact="outside")
+            segments = self.label_video_segments.filter(label=outside_label)
+
+            if only_validated:
+                # Filter based on the is_validated field in the related state object
+                segments = segments.filter(state__is_validated=True)
+
+            return segments
+        except Label.DoesNotExist:
+            logger.warning("Outside label not found in the database.")
+            return self.label_video_segments.none()
+        except Exception as e:
+            logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
+            return self.label_video_segments.none()
+
+    def get_expected_frame_paths(self):
+        frame_count = self.frame_count
+        if frame_count is None:
+            logger.error("Frame count is not set for video %s", self.uuid)
+            raise ValueError("Frame count is not set for this video file.")
+        
+        return [self.get_frame_path(frame_number) for frame_number in range(frame_count)]

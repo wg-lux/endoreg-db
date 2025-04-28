@@ -10,7 +10,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.core.files import File  # Import Django File
 from endoreg_db.utils.file_operations import get_uuid_filename
-from icecream import ic
 from typing import TYPE_CHECKING
 # Use the specific paths from the centralized paths module
 from ...utils import FILE_STORAGE, PDF_DIR, STORAGE_DIR
@@ -30,10 +29,9 @@ from ...metadata import SensitiveMeta
 # setup logging to pdf_import.log
 import logging
 
-import shutil
 from pathlib import Path
 
-logger = logging.getLogger("pdf_import")
+logger = logging.getLogger("raw_pdf")
 
 class RawPdfFile(models.Model):
     # Fields from AbstractPdfFile

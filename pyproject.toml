@@ -43,20 +43,34 @@ dependencies = [
     "pytesseract>=0.3.13",
     "pytest>=8.3.5",
     "python-ffmpeg>=2.0.12",
-    "pytorch-lightning>=2.4.0",
+    "pytorch-lightning>=2.5.1",
     "pyyaml>=6.0.2",
+    "regex>=2024.11.6",
     "scikit-learn>=1.5.2",
     "scipy>=1.14.1",
     "sphinx-rtd-theme>=3.0.2",
     "sphinx>=8.2.3",
     "tesseract>=0.1.3",
+    "torch>=2.7.0",
+    "torchaudio>=2.7.0",
+    "torchvision>=0.22.0",
     "tqdm>=4.67.0",
     "urllib3>=2.2.3",
+    "pytest-django>=4.11.1",
+    "pytest-cov>=6.1.1",
 ]
 
 [project.urls]
 Homepage = "https://info.coloreg.de"
 Repository = "https://github.com/wg-lux/endoreg-db"
+
+[project.optional-dependencies]
+dev = [
+    # Add development tools here, e.g.:
+    # "pytest",
+    # "ruff",
+    # "black",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -67,3 +81,4 @@ packages = ["endoreg_db"]
 
 [tool.uv.sources]
 endoreg-db = { path = "endoreg-db" }
+

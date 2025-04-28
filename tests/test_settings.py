@@ -1,19 +1,10 @@
 from pathlib import Path
-import logging
+import os
 from endoreg_db.utils.paths import STORAGE_DIR
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("data/tests.log"),
-        # logging.StreamHandler()
-    ]
-)
+from endoreg_db.logger_conf import get_logging_config # Import the function
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-logger.info(f"LOADING SETTINGS: {__file__}")
+ASSET_DIR = Path(__file__).parent / "assets"
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 
 DEBUG=True
 SECRET_KEY = "fake-key"
@@ -28,7 +19,6 @@ INSTALLED_APPS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 BASE_DIR = Path(__file__).parent.parent
-logger.info(f"BASE_DIR: {BASE_DIR}")
 
 DATABASES = {
     'default': {
@@ -39,12 +29,26 @@ DATABASES = {
 
 TIME_ZONE = "Europe/Berlin"
 
-# settings.py
-
-
 MEDIA_ROOT = STORAGE_DIR
 MEDIA_URL = '/media/' # Adjust if needed
 
-# Ensure your DEFAULT_FILE_STORAGE uses MEDIA_ROOT correctly
-# If using default FileSystemStorage, it should work automatically.
-# DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+# --- Define logger names needed for tests ---
+TEST_LOGGER_NAMES = [
+    "tests", # General test logger
+    "paths",
+    "raw_pdf",
+    "patient",
+    "default_objects",
+    # "video_file", # Removed generic logger
+    "ffmpeg_wrapper",
+    # Add specific loggers based on __name__
+    "endoreg_db.models.media.video.video_file",
+    "endoreg_db.models.media.video.video_file_anonymize",
+    "endoreg_db.models.media.video.pipe_1",
+    "endoreg_db.models.media.video.pipe_2",
+    "endoreg_db.models.metadata.sensitive_meta"
+    # Add any other specific loggers used in your tests or app code
+]
+
+# --- Use the imported function to generate LOGGING ---
+LOGGING = get_logging_config(TEST_LOGGER_NAMES, log_level="INFO") # Or set level via env var

@@ -1,13 +1,15 @@
 import random
-from venv import logger
-
 from endoreg_db.models import (
     Center, 
     Gender, 
     Patient,
     Examination,
     ExaminationIndication,
-    RawPdfFile
+    RawPdfFile,
+    EndoscopyProcessor,
+    ModelMeta,
+    InformationSource,
+    AiModel,
 )
 from logging import getLogger
 from datetime import date
@@ -17,15 +19,15 @@ from django.conf import settings # Import settings
 from django.core.files.storage import default_storage # Import default storage
 
 from endoreg_db.utils import (
-    create_mock_examiner_name,
     create_mock_patient_name,
 )
 
-logger = getLogger(__name__)
+logger = getLogger("default_objects")
 
 
 DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
 DEFAULT_ENDOSCOPE_NAME = "test_endoscope"
+DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
 
 DEFAULT_EGD_PATH = Path("tests/assets/lux-gastro-report.pdf")
 DEFAULT_GENDERS = ["male","female","unknown"]
@@ -39,7 +41,36 @@ DEFAULT_INDICATIONS = [
     "colonoscopy_diagnostic_acute_symptomatic",
 ]
 
+DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
+
 DEFAULT_GENDER = "unknown"
+
+def get_information_source_prediction():
+    from .data_loader import load_information_source
+    load_information_source()
+    source = InformationSource.objects.get(name="prediction")
+    assert isinstance(source, InformationSource), "No InformationSource found in the database."
+    return source
+
+def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
+    """
+    Get the latest segmentation model from the database.
+    This function retrieves the latest ModelMeta object from the database.
+    Returns:
+        ModelMeta: The latest segmentation model.
+    """
+    from .data_loader import (
+        load_center_data,
+        load_ai_model_label_data,
+        load_ai_model_data,
+    )
+    load_center_data()
+    load_ai_model_label_data()
+    load_ai_model_data()
+    ai_model = AiModel.objects.get(name=model_name)
+    latest_meta = ai_model.get_latest_version()
+    return latest_meta
+    
 
 def get_default_gender() -> Gender:
     return Gender.objects.get(name=DEFAULT_GENDER)
@@ -50,6 +81,17 @@ def get_random_gender() -> Gender:
     """
     gender_name = random.choice(DEFAULT_GENDERS)
     return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
+
+def get_default_processor() -> EndoscopyProcessor:
+    """
+    Get a default EndoscopyProcessor object.
+    This function retrieves the first EndoscopyProcessor object from the database.
+    Returns:
+        EndoscopyProcessor: The default EndoscopyProcessor object.
+    """
+    processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
+    assert isinstance(processor, EndoscopyProcessor), "No EndoscopyProcessor found in the database."
+    return processor
 
 def get_default_center() -> Center:
     """
@@ -167,10 +209,10 @@ def get_default_egd_pdf():
         assert not temp_file_path.exists(), f"Temporary source file {temp_file_path} still exists after creation"
 
     except Exception as e:
-         # Clean up temp file in case of error before deletion could occur
-         if temp_file_path.exists():
-             temp_file_path.unlink()
-         raise e # Re-raise the exception
+        # Clean up temp file in case of error before deletion could occur
+        if temp_file_path.exists():
+            temp_file_path.unlink()
+        raise e # Re-raise the exception
 
     # pdf_file.file.path might fail if storage doesn't support direct paths (like S3)
     # Prefer using storage API for checks. Logging path if available.
@@ -181,3 +223,37 @@ def get_default_egd_pdf():
 
 
     return pdf_file
+
+def get_default_video_file():
+    from ..media.video.helper import get_random_video_path_by_examination_alias
+    from endoreg_db.models import VideoFile
+    from .data_loader import (
+        load_disease_data,
+        load_event_data,
+        load_information_source,
+        load_examination_data,
+        load_center_data,
+        load_endoscope_data,
+        load_ai_model_label_data,
+        load_ai_model_data,
+    )
+    load_disease_data()
+    load_event_data()
+    load_information_source()
+    load_examination_data()
+    load_center_data()
+    load_endoscope_data()
+    load_ai_model_label_data()
+    load_ai_model_data()
+    video_path = get_random_video_path_by_examination_alias(
+        examination_alias='egd', is_anonymous=False
+    )
+
+    video_file = VideoFile.create_from_file_initialized(
+        file_path=video_path,
+        center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
+        delete_source=False,  # Keep the original asset for other tests
+        processor_name = DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
+    )
+
+    return video_file

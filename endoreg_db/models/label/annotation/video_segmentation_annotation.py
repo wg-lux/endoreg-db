@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 from django.db import models
 from django.db.models import Q, CheckConstraint, F
 
@@ -60,7 +60,7 @@ class VideoSegmentationAnnotation(models.Model):
     class Meta:
         constraints = [
             CheckConstraint(
-                check=Q(start_time__lt=F("stop_time")),
+                condition=Q(start_time__lt=F("stop_time")),
                 name="start_time_less_than_stop_time",
             ),
         ]
