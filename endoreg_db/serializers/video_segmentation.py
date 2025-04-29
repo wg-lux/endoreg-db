@@ -1,6 +1,10 @@
 from pathlib import Path
 from rest_framework import serializers
+<<<<<<< HEAD
 from ..models import VideoFile, Label, LabelVideoSegment
+=======
+from ..models import VideoFile, Label, LabelVideoSegment, VideoPredictionMeta
+>>>>>>> 0a44949 (serializers full)
 import cv2
 from django.db import transaction
 
@@ -25,7 +29,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
     # Video dropdown field for frontend selection (currently shows video ID, but can be changed later)
     video_selection_field = serializers.SerializerMethodField()
     # classification_data = serializers.SerializerMethodField() #data from database (smooth prediction values but currently hardcoded one)
-    # The Meta class tells Django what data to include when serializing a RawVideoFile object.
+    # The Meta class tells Django what data to include when serializing a VideoFile object.
     sequences = serializers.SerializerMethodField()
     label_names = serializers.SerializerMethodField()
     # Convert selected label frames into time segments (seconds)
@@ -61,7 +65,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_video_url(
         self, obj
-    ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
+    ):  # when we serialize a VideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
         Returns the API endpoint where the frontend can fetch the video.
         """
@@ -141,7 +145,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_sequences(self, obj:"Video"):
         """
-        Extracts the sequences field from the RawVideoFile model.
+        Extracts the sequences field from the VideoFile model.
         Example Output:
         {
             "outside": [[1, 32], [123, 200]],
@@ -201,7 +205,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 if len(frame_range) != 2:
                     continue  # Skip invalid frame ranges
 
-                start_frame, end_frame = frame_range  # Raw frame indices from DB
+                start_frame, end_frame = frame_range  #  frame indices from DB
                 start_time = start_frame / fps  # Convert frame index to seconds
                 end_time = end_frame / fps  # Convert frame index to seconds
 
@@ -229,8 +233,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 # Append the converted time segment
                 label_times.append(
                     {
-                        "segment_start": start_frame,  # Raw start frame (not divided by FPS)
-                        "segment_end": end_frame,  # Raw end frame (not divided by FPS)
+                        "segment_start": start_frame,  #  start frame (not divided by FPS)
+                        "segment_end": end_frame,  #  end frame (not divided by FPS)
                         "start_time": round(
                             start_time, 2
                         ),  # Converted start time in seconds
@@ -275,7 +279,7 @@ class LabelSerializer(serializers.ModelSerializer):
 
 class LabelSegmentSerializer(serializers.ModelSerializer):
     """
-    Serializer for retrieving label segments from `endoreg_db_labelrawvideosegment`.
+    Serializer for retrieving label segments from `endoreg_db_labelvideosegment`.
     """
 
     class Meta:
@@ -352,7 +356,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         new_segments = self.validated_data["segments"]
 
         # Fetch the correct `prediction_meta_id` based on `video_id`
-        prediction_meta_entry = RawVideoPredictionMeta.objects.filter(
+        prediction_meta_entry = VideoPredictionMeta.objects.filter(
             video_id=video_id
         ).first()
         if not prediction_meta_entry:
@@ -409,7 +413,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                     continue
                 else:
                     # Check if a segment exists with the same start_frame but different end_frame
-                    existing_segment = LabelRawVideoSegment.objects.filter(
+                    existing_segment = LabelVideoSegment.objects.filter(
                         video_id=video_id,
                         label_id=label_id,
                         start_frame_number=start_frame,
@@ -422,16 +426,24 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                             existing_segment.save()
                             updated_segments.append(existing_segment)
                         new_entries.append(
-                            LabelRawVideoSegment(
+                            LabelVideoSegment(
+                                video_id=video_id,
+                                label_id=label_id,
+                                start_frame_number=start_frame,
+                                end_frame_number=end_frame,
+                            )
+                        )
+                        print(
+                            f" Adding new segment: Start {start_frame} → End {end_frame}"
+                        )
+                        new_entries.append(
+                            LabelVideoSegment(
                                 video_id=video_id,
                                 label_id=label_id,
                                 start_frame_number=start_frame,
                                 end_frame_number=end_frame,
                                 prediction_meta_id=prediction_meta_id,  # Assign correct prediction_meta_id
                             )
-                        )
-                        print(
-                            f" Adding new segment: Start {start_frame} → End {end_frame}"
                         )
 
             # Delete segments that are no longer present in the frontend data
@@ -445,7 +457,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
             # Insert new segments in bulk for efficiency
             if new_entries:
-                LabelRawVideoSegment.objects.bulk_create(new_entries)
+                LabelVideoSegment.objects.bulk_create(new_entries)
 
         # Return the updated, new, and deleted segment information
         print(
