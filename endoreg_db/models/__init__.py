@@ -128,6 +128,7 @@ from .other import (
     DateValueDistribution,
     Gender,
     InformationSource,
+    InformationSourceType,
     Unit,
     EmissionFactor,
 )
@@ -305,6 +306,7 @@ __all__ = [
     'DateValueDistribution',
     "Gender",
     "InformationSource",
+    "InformationSourceType",
     "Unit",
     "EmissionFactor",
 

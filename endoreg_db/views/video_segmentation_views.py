@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.http import FileResponse, Http404
 from ..models import VideoFile, Label
-from ..serializers.video_segmentation import VideoFileSerializer,VideoListSerializer,LabelSerializer
+from ..serializers._old.video_segmentation import VideoFileSerializer,VideoListSerializer,LabelSerializer
 import mimetypes
 import os
 
@@ -128,7 +128,7 @@ class VideoLabelView(APIView):
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-from ..serializers.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
+from ..serializers._old.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
 
 class UpdateLabelSegmentsView(APIView):
     """

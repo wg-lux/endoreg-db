@@ -6,7 +6,7 @@ from django.views.decorators.http import require_GET
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import viewsets
 from ..models import Patient
-from ..serializers import PatientSerializer
+from ..serializers._old.patient import PatientSerializer
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from endoreg_db.models import (
     FindingLocationClassification,

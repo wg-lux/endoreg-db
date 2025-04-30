@@ -1,7 +1,7 @@
 from pathlib import Path
 from rest_framework import serializers
 from django.conf import settings
-from ..models import RawPdfFile
+from ...models import RawPdfFile
 
 class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
     """

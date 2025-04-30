@@ -29,7 +29,7 @@ class KeycloakVideoView(APIView):
         Returns a message including the Keycloak username.
         """
         username = getattr(request.user, 'preferred_username', 'Unknown')
-        return Response({"message": f"🎥 Hello, {username}. You are viewing protected videos!"})
+        return Response({"message": f" Hello, {username}. You are viewing protected videos!"})
 
 
 def keycloak_login(request):
