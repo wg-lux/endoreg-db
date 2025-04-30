@@ -87,12 +87,70 @@ This infrastructure was originally designed for clinical research studies and is
    - After running them, you can view the results as demonstrated in the image below:
    
    ![Test Results](Images/testscreenshort.png)
-5. To load the database data run 
+
+5. Run 
+   ```python
+   python manage.py migrate
+   
+   ``` 
+   - It applies database migrations and make tables.
+   - It updates your database schema to match the current state of your Django models.
+
+6. To load the database data run 
    ```
    python manage.py load_base_db_data
 
    ```
+   ![Data](Images/loadbasedata0.png)
+   ![Data](Images/loadbasedata1.png)
+   ![Data](Images/loadbasedata2.png)
+   ![Data](Images/loadbasedata3.png)
+   ![Data](Images/loadbasedata4.png)
+   ![Data](Images/loadbasedata4b.png)
+   ![Data](Images/loadbasedata5.png)
+
+7. Accessing the Django Shell
+   - To fetch or interact with data in the terminal, run the following command to run the Django shell:
+
+   ```bash
+      python manage.py shell
+   ```
+   - Using the Django shell, you can:
+      - Import database models
+      - Fetch data from the database
+      - Access related data through model relationships (e.g., foreign keys, one-to-many, many-to-many)
+      - Example is shown below
+
+   #### EXAMPLE # 1
+   ![Shell](Images/shell2.png)
+   - Explanation:
+      This script fetches a patient by ID and prints their related examination(s) using Django ORM. It retrieves the examination name linked to the patient from the PatientExamination table.
+      
+   #### EXAMPLE # 2
+   ![Shell](Images/shell0.png)
+   - Explanation:
+      In the Django shell, a specific ExaminationIndication named "colonoscopy_screening" was fetched, and its related FindingIntervention records were accessed using the reverse relation expected_interventions. The first intervention (colon_lesion_polypectomy_cold_snare) was then queried to confirm it is also linked to multiple indications, demonstrating a many-to-many relationship between indications and interventions.
    
+   #### EXAMPLE # 3
+   ![Shell](Images/shell1.png)
+   - Explanation:
+      All required labels (polyp, instrument, digital_chromo_endoscopy, etc.) are confirmed to exist. The first available video (VideoFile) was loaded, with a valid frame_dir. Using the label "polyp", 8 labeled polyp segments were found in that video, with specific start and end frame numbers.
+
+   #### EXAMPLE # 4
+   ##### Image a
+
+   ![Shell](Images/shell3.png)
+
+   ##### Image b - All classifications with their choices together
+
+   ![Shell](Images/shell3b.png)
+
+   - Explanation: Using the Django shell to fetch all morphology classifications (e.g., NICE, Paris) and their related choices  from the database.
+
+
+
+
+
 ---
 
 
