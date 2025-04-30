@@ -57,21 +57,45 @@ This infrastructure was originally designed for clinical research studies and is
    cd endoreg-db
    ```
 
-2. Set up your Python environment:
-   _TODO_: Explain Devenv / point to other docs
+2. Set up your Python environment
+   We need to have a `devenv.nix` file.  
+   This Nix `devenv.nix` configuration sets up a Python development environment for a Django-based project using `uv` for dependency management. It defines project directories, environment variables, runtime packages, and several development tasks and scripts.
+
+   **Some available Test Shortcuts**
+
+   - `runtests`: Runs all tests — `uv run python runtests.py`
+   - `runtests-dataloader`: Runs dataloader tests — `uv run python runtests.py 'dataloader'`
+   - `runtests-other`: Runs other miscellaneous tests — `uv run python runtests.py 'other'`
+   - `runtests-helpers`: Runs helper module tests — `uv run python runtests.py 'helpers'`
+   - `runtests-administration`: Runs admin module tests — `uv run python runtests.py 'administration'`
+   - `runtests-medical`: Runs medical module tests — `uv run python runtests.py 'medical'`
+
+3. Then run 
 
    ```bash
    direnv allow
    ```
 
-3. Run tests:
+4. Run tests:
    Call Devenv Script to run tests
 
    ```bash
    runtests
    ```
+   Tests Overview
+   - These tests ensure the functionality of different models and scenarios.
+   - After running them, you can view the results as demonstrated in the image below:
+   
+   ![Test Results](Images/testscreenshort.png)
+5. To load the database data run 
+   ```
+   python manage.py load_base_db_data
 
+   ```
+   
 ---
+
+
 
 ## 📁 Repository Structure
 
