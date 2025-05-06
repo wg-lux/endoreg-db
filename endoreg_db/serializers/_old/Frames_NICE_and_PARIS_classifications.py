@@ -1,19 +1,20 @@
+from endoreg_db.utils.extract_specific_frames import extract_selected_frames
 from rest_framework import serializers
 #from endoreg_db.models import Label, LabelRawVideoSegment, RawVideoFile
 from endoreg_db.models import Label, LabelVideoSegment
 from collections import defaultdict
 import numpy as np
 from itertools import combinations
-
+from pathlib import Path
 # === CONFIGURABLE PARAMETERS - ForNiceClassificationSerializer ===
 POLYP_LABEL_NAME = "polyp"
 CHROMO_LABEL_NAMES = ["digital_chromo_endoscopy", "nbi"]
-FPS = 50  # Frames per second- should fetch dynamically from rawvideofile table
+FPS = 50  # Frames per second- should fetch dynamically from videofile table
 # Sequence-level filtering
-MIN_SEQUENCE_GAP_SECONDS = 0.1 # Enforce diversity between sequences
+MIN_SEQUENCE_GAP_SECONDS = 0.5 # Enforce diversity between sequences
 MIN_SEQUENCE_GAP_FRAMES = FPS * MIN_SEQUENCE_GAP_SECONDS  # Convert to frame count
 # Minimum length of a segment in seconds
-MIN_SEGMENT_LENGTH_SECONDS = 0.1
+MIN_SEGMENT_LENGTH_SECONDS = 0.5
 MIN_SEGMENT_LENGTH_FRAMES = FPS * MIN_SEGMENT_LENGTH_SECONDS
 
 # Frame-level selection within a sequence
@@ -208,6 +209,33 @@ class BaseClassificationSerializer(serializers.Serializer):
                 last_selected_frame = frame["frame_number"]
 
         return selected_frames
+    
+    def extract_and_save_selected_frames(self, video, frame_numbers, classification_type: str):
+        """
+        Extract specific frames from the original video file and save them
+        into a structured folder path based on the classification type.
+
+        Args:
+            video (VideoFile): Video object with `original_file_name` and `frame_dir`.
+            frame_numbers (List[int]): List of frame numbers to extract.
+            classification_type (str): Either "nice" or "paris".
+        """
+        # Resolve the path to the original video
+        original_path = Path(video.original_file_name)
+        if not original_path.is_absolute():
+            base_video_dir = Path("/home/admin/Schreibtisch/production_test/endoreg-db/data/coloreg_first_test_batch")            
+            original_path = base_video_dir / original_path
+
+        # Define output directory based on classification and video ID
+        output_path = Path(video.frame_dir) / classification_type / f"video_{video.id}"
+
+        # Extract frames using the shared utility
+        extract_selected_frames(
+            video_path=original_path,
+            frame_numbers=frame_numbers,
+            output_dir=output_path,
+            fps=FPS
+        )
 
     
     '''    # # If any error occurs in this function, use the commented one below(fallback:select_frames_for_sequence).
@@ -419,9 +447,10 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
     def to_representation(self, videos):
         """
         Processes a list of videos:
-        - Applies NICE rules to find segments
+        - Applies NICE/PARIS rules to find segments
         - Applies sequence diversity logic
         - Selects frames per segment
+        - Extracts all frames for a video in a single call
         - Returns structured output with messages per video
         """
         results = []
@@ -432,7 +461,7 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
                 print("video-id is", video_id)
 
                 matching_segments = self.get_matching_sequences(video_id)
-                print("matching_segments are",matching_segments)
+                print("matching_segments are", matching_segments)
                 if not matching_segments:
                     results.append({
                         "video_id": video_id,
@@ -448,22 +477,36 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
                     })
                     continue
 
+                # Collect all frame numbers to extract only once per video
+                all_frames = []
+                segment_results = []
+
                 for segment in diverse_segments:
                     frames = self.select_frames_for_sequence(segment)
+
                     if not frames:
-                        results.append({
+                        segment_results.append({
                             "video_id": video_id,
                             "segment_start": segment['polyp'].start_frame_number,
                             "segment_end": segment['polyp'].end_frame_number,
                             "message": "No valid frames passed filtering rules (low_quality, outside, snare)."
                         })
                     else:
-                        results.append({
+                        segment_results.append({
                             "video_id": video_id,
                             "segment_start": segment['polyp'].start_frame_number,
                             "segment_end": segment['polyp'].end_frame_number,
                             "frames": frames
                         })
+                        all_frames.extend(frames)
+
+                # Extract once per video
+                if all_frames:
+                    unique_frame_numbers = sorted({f["frame_number"] for f in all_frames})
+                    classification_type = "nice" if isinstance(self, ForNiceClassificationSerializer) else "paris"
+                    self.extract_and_save_selected_frames(video, unique_frame_numbers, classification_type)
+
+                results.extend(segment_results)
 
             except Exception as e:
                 results.append({
@@ -477,7 +520,8 @@ class ForNiceClassificationSerializer(BaseClassificationSerializer):
             }]
 
         return {
-            "message": "NICE classification data generated.",
+            "message": "NICE classification data generated." if isinstance(self, ForNiceClassificationSerializer)
+            else "PARIS classification data generated.",
             "data": results
         }
 
@@ -585,15 +629,16 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
         """
         Processes videos for PARIS classification.
         Filters segments, selects diverse sequences, and picks valid frames.
+        Extracts all selected frames once per video.
         Returns detailed per-video feedback or results.
         """
         results = []
-        
+
         for video in videos:
             try:
                 video_id = video.id
-
                 matching_segments = self.get_matching_sequences(video_id)
+
                 if not matching_segments:
                     results.append({
                         "video_id": video_id,
@@ -609,22 +654,33 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
                     })
                     continue
 
+                all_frames = []
+                segment_results = []
+
                 for segment in diverse_segments:
                     frames = self.select_frames_for_sequence(segment)
+
                     if not frames:
-                        results.append({
+                        segment_results.append({
                             "video_id": video_id,
                             "segment_start": segment['polyp'].start_frame_number,
                             "segment_end": segment['polyp'].end_frame_number,
                             "message": "No valid frames selected due to prediction rules (e.g., quality, outside, snare)."
                         })
                     else:
-                        results.append({
+                        segment_results.append({
                             "video_id": video_id,
                             "segment_start": segment['polyp'].start_frame_number,
                             "segment_end": segment['polyp'].end_frame_number,
                             "frames": frames
                         })
+                        all_frames.extend(frames)
+
+                if all_frames:
+                    unique_frame_numbers = sorted({f["frame_number"] for f in all_frames})
+                    self.extract_and_save_selected_frames(video, unique_frame_numbers, classification_type="paris")
+
+                results.extend(segment_results)
 
             except Exception as e:
                 results.append({
@@ -637,10 +693,9 @@ class ForParisClassificationSerializer(BaseClassificationSerializer):
                 "message": "No valid classification results could be generated for any video."
             }]
 
-        #return results
         return {
             "message": "PARIS classification data generated.",
-            "data": results  # where results is your list of segments
+            "data": results
         }
 
 
