@@ -189,7 +189,7 @@ class BaseClassificationSerializer(serializers.Serializer):
         segment_frames = [
             {
                 "frame_number": idx,
-                "frame_path": f"{frame_dir}/frame_{str(idx).zfill(7)}.jpg"
+                "frame_path": f"{frame_dir}/frame_{str(idx).zfill(7)}.png"
             }
             for idx in range(start_frame, end_frame + 1)
         ]
