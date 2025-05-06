@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from ..models import VideoFile, Label, LabelVideoSegment, VideoPredictionMeta
+from ...models import VideoFile, Label, LabelVideoSegment, VideoPredictionMeta
 import cv2
 from django.db import transaction
 
@@ -118,7 +118,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         Constructs the absolute file path dynamically.
         - Uses the actual storage directory (`/home/admin/test-data/`)
         """
-        from ..models.utils import STORAGE_DIR
+        from ...models.utils import STORAGE_DIR
         if not obj.active_file:
             return {"error": "No video file associated with this entry"}
 
@@ -181,9 +181,18 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         print("here is fps::::::::::::::::::.-----------::::::", fps)
         sequences = self.get_sequences(obj)  # Fetch sequence data
-        readable_predictions = "FIXME"
-        # readable_predictions = obj.readable_predictions  # Predictions from DB
+        # readable_predictions = "FIXME"
+        #readable_predictions = obj.readable_predictions  # Predictions from DB
+        #readable_predictions = getattr(obj, "readable_predictions", [])
 
+         # Check predictions
+        readable_predictions = getattr(obj, "readable_predictions", None)
+        prediction_error = None
+
+        if not isinstance(readable_predictions, list):
+            prediction_error = "readable_predictions missing or invalid format. Expected a list."
+            readable_predictions = []
+        
         if not isinstance(readable_predictions, list):
             return {"error": "Invalid prediction data format. Expected a list."}
 
@@ -351,7 +360,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
         # Fetch the correct `prediction_meta_id` based on `video_id`
         prediction_meta_entry = VideoPredictionMeta.objects.filter(
-            video_id=video_id
+            video_file_id=video_id
         ).first()
         if not prediction_meta_entry:
             raise serializers.ValidationError(
@@ -363,7 +372,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         )  # Get the correct prediction_meta_id
 
         existing_segments = LabelVideoSegment.objects.filter(
-            video_id=video_id, label_id=label_id
+            video_file_id=video_id, label_id=label_id
         )
 
         # Convert existing segments into a dictionary for quick lookup
@@ -398,7 +407,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                 else:
                     # Check if a segment exists with the same start_frame but different end_frame
                     existing_segment = LabelVideoSegment.objects.filter(
-                        video_id=video_id,
+                        video_file_id=video_id,
                         label_id=label_id,
                         start_frame_number=start_frame,
                     ).first()
@@ -413,18 +422,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                         # If no existing segment matches, create a new one
                         new_entries.append(
                             LabelVideoSegment(
-                                video_id=video_id,
-                                label_id=label_id,
-                                start_frame_number=start_frame,
-                                end_frame_number=end_frame,
-                            )
-                        )
-                        print(
-                            f" Adding new segment: Start {start_frame} → End {end_frame}"
-                        )
-                        new_entries.append(
-                            LabelVideoSegment(
-                                video_id=video_id,
+                                video_file_id=video_id,
                                 label_id=label_id,
                                 start_frame_number=start_frame,
                                 end_frame_number=end_frame,

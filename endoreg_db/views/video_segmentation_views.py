@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.http import FileResponse, Http404
 from ..models import VideoFile, Label
-from ..serializers.video_segmentation import VideoFileSerializer,VideoListSerializer,LabelSerializer
+from ..serializers._old.video_segmentation import VideoFileSerializer,VideoListSerializer,LabelSerializer
 import mimetypes
 import os
 
@@ -71,9 +71,12 @@ class VideoView(APIView):
     def serve_video_file(self, video_entry):
         """
         Serves the video file dynamically.
+
         """
+        print("-----",video_entry.processed_file.path)
         try:
-            full_video_path = video_entry.file.path  # Get the correct file path
+            full_video_path = video_entry.processed_file.path  # Get the correct file path
+
 
             if not os.path.exists(full_video_path):
                 raise Http404("Video file not found.")
@@ -128,7 +131,7 @@ class VideoLabelView(APIView):
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-from ..serializers.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
+from ..serializers._old.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
 
 class UpdateLabelSegmentsView(APIView):
     """
