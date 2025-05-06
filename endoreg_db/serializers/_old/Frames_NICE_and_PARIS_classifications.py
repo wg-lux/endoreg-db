@@ -6,6 +6,7 @@ from collections import defaultdict
 import numpy as np
 from itertools import combinations
 from pathlib import Path
+from django.conf import settings
 # === CONFIGURABLE PARAMETERS - ForNiceClassificationSerializer ===
 POLYP_LABEL_NAME = "polyp"
 CHROMO_LABEL_NAMES = ["digital_chromo_endoscopy", "nbi"]
@@ -223,7 +224,7 @@ class BaseClassificationSerializer(serializers.Serializer):
         # Resolve the path to the original video
         original_path = Path(video.original_file_name)
         if not original_path.is_absolute():
-            base_video_dir = Path("/home/admin/Schreibtisch/production_test/endoreg-db/data/coloreg_first_test_batch")            
+            base_video_dir = settings.BASE_DIR.parent.parent / "production_test" / "endoreg-db" / "data" / "coloreg_first_test_batch"            
             original_path = base_video_dir / original_path
 
         # Define output directory based on classification and video ID
