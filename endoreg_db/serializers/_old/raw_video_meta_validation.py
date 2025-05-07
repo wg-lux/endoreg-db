@@ -1,7 +1,7 @@
 from pathlib import Path
 from rest_framework import serializers
 from django.conf import settings
-from ..models import VideoFile, SensitiveMeta
+from ...models import VideoFile, SensitiveMeta
 import cv2
 
 
@@ -51,8 +51,8 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
         Generates the full URL where Vue.js can fetch and stream the video.
         """
         request = self.context.get('request')
-        if request and obj.file:
-            print("---------------------------:",obj.file)
+        if request and obj.processed_file:
+            print("---------------------------:",obj.processed_file)
             return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Generates full URL
         return None  # Return None instead of an error dictionary
     
@@ -60,10 +60,10 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
         """
         Returns only the relative file path, without `/media/`.
         """
-        if not obj.file:
+        if not obj.processed_file:
             return None  # No file associated
 
-        video_relative_path = str(obj.file.name).strip()
+        video_relative_path = str(obj.processed_file.name).strip()
         return video_relative_path if video_relative_path else None  # Avoids errors if the file path is empty
 
     def get_full_video_path(self, obj):
@@ -71,10 +71,10 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
         Constructs the full absolute file path using `settings.MEDIA_ROOT` 
         and the `file` field from the database.
         """
-        if not obj.file:
+        if not obj.processed_file:
             return None  # No file associated
 
-        video_relative_path = str(obj.file.name).strip()
+        video_relative_path = str(obj.processed_file.name).strip()
         full_path = Path(settings.MEDIA_ROOT) / video_relative_path
 
         return str(full_path) if full_path.exists() else None  # Return path or None if not found
@@ -91,7 +91,7 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
             return obj.duration  # If duration exists in the database, return it immediately.
 
         # Step 2: Get the actual video file path
-        video_path = obj.file.path if obj.file else None  # Extracts the file path if it exists
+        video_path = obj.processed_file.path if obj.processed_file else None  # Extracts the file path if it exists
 
         # Step 3: Validate if the file exists
         if not video_path or not Path(video_path).exists():

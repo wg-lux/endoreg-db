@@ -4,8 +4,8 @@ from rest_framework import status
 from django.http import FileResponse, Http404
 import mimetypes
 import os
-from ..serializers.raw_video_meta_validation import VideoFileForMetaSerializer,SensitiveMetaUpdateSerializer
-from ..models import SensitiveMeta
+from ..serializers._old.raw_video_meta_validation import VideoFileForMetaSerializer,SensitiveMetaUpdateSerializer
+from endoreg_db.models import SensitiveMeta
 
 
 class VideoFileForMetaView(APIView):
