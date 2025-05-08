@@ -83,3 +83,10 @@ packages = ["endoreg_db"]
 [tool.uv.sources]
 endoreg-db = { path = "endoreg-db" }
 
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "lx_annotate.settings"
+python_files = ["test_*.py", "*_test.py", "tests/python/*.py"]
+addopts = [
+  "--import-mode=importlib",
+  "-ra",
+]

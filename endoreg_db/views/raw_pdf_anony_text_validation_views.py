@@ -4,7 +4,7 @@ from rest_framework import status
 from django.http import FileResponse, Http404
 import os, mimetypes
 from ..models import RawPdfFile
-from ..serializers.raw_pdf_anony_text_validation import RawPdfAnonyTextSerializer
+from ..serializers.pdf_anony_text_validation import RawPdfAnonyTextSerializer
 
 class RawPdfAnonyTextView(APIView):
     """
