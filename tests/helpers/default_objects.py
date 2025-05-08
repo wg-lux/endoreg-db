@@ -75,6 +75,9 @@ def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME
 def get_default_gender() -> Gender:
     return Gender.objects.get(name=DEFAULT_GENDER)
 
+def get_gender_m_or_f() -> Gender:
+    return Gender.objects.get(name=DEFAULT_GENDER)
+
 def get_random_gender() -> Gender:
     """
     Get a random Gender object

@@ -45,8 +45,11 @@ class BaseClassificationSerializer(serializers.Serializer):
     Base class for NICE and PARIS serializers.
     Handles label lookup, chromo/instrument segment filtering, and shared utilities.
     """
+    #TODO add create method
+    #TODO add update method
     LABEL_NAME = "polyp"  # default (can be overridden)
-    #INSTRUMENT_LABEL_NAME = "instrument"
+    INSTRUMENT_LABEL_NAME = "instrument" #TODO @Hamzaukw we should define frequently used labels in a utils file
+    
 
     def get_label_id_by_name(self, label_name):
         """

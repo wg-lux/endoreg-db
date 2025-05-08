@@ -6,12 +6,19 @@ import shutil
 from endoreg_db.models import (
     Requirement, 
     FindingIntervention,
+    ExaminationIndication
 )
 import logging
 from django.conf import settings
 
 from ..helpers.data_loader import (
     load_data
+)
+
+from ..helpers.default_objects import (
+    get_default_center, 
+    get_gender_m_or_f,
+    generate_patient
 )
 
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
@@ -33,6 +40,9 @@ class RuleTest(TestCase):
 
         self.req_name_bleeding_high = "endoscopy_intervention_bleeding_risk_high"
         self.req_name_bleeding_low = "endoscopy_intervention_bleeding_risk_low"
+
+        self.patient = generate_patient()
+        self.patient.save()
 
     def test_requirement_creation(self):
         requirement = Requirement.objects.first()
@@ -59,6 +69,25 @@ class RuleTest(TestCase):
         sample_intervention = finding_interventions.first()
         self.assertIsInstance(sample_intervention, FindingIntervention)
 
+
+    def test_high_bleed_risk_examination(self):
         # Create sample patient examination 
+        sample_indication = ExaminationIndication.objects.get(
+            name = "colonoscopy_lesion_removal_large"
+        )
+        patient_examination, patient_examination_indication = self.patient.create_examination_by_indication(
+            indication = sample_indication
+        )
+
+        finding_interventions = patient_examination_indication.examination_indication.expected_interventions.all()
+
+        
+        requirement = Requirement.objects.get(name=self.req_name_bleeding_high)
+        
+
+        # Check if the requirement is fulfilled
+        self.assertTrue(
+            requirement.evaluate(patient_examination=patient_examination)
+        )
 
 

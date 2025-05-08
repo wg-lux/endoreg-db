@@ -27,6 +27,7 @@ def _pipe_1(
     """
     Pipeline 1: Extract frames, text, predict, create segments, optionally delete frames.
     """
+    success = False # Initialize success flag
     from .video_file_segments import _convert_sequences_to_db_segments # Added import
     from ...metadata import ModelMeta, VideoPredictionMeta
     from endoreg_db.models import AiModel, LabelVideoSegment
@@ -37,21 +38,19 @@ def _pipe_1(
     logger.info(f"Starting Pipe 1 for video {video_file.uuid}")
     try:
         with transaction.atomic():
-            # 1. Extract Frames
+            # 1. Heavy I/O operations outside the transaction block
             logger.info("Pipe 1: Extracting frames...")
             video_file.extract_frames(overwrite=False)  # Avoid overwriting if already extracted
-            state = video_file.get_or_create_state()
-            if not state.frames_extracted:
-                logger.error("Pipe 1 failed: Frame extraction did not complete successfully.")
-                return False
-            logger.info("Pipe 1: Frame extraction complete.")
 
-            # 2. Extract Text Data
             logger.info("Pipe 1: Extracting text metadata...")
             video_file.update_text_metadata(
                 ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
             )
-            logger.info("Pipe 1: Text metadata extraction complete.")
+
+            state = video_file.get_or_create_state()
+            if not state.frames_extracted:
+                logger.error("Pipe 1 failed: Frame extraction did not complete successfully.")
+                return False
 
             # 3. Perform Initial Prediction
             logger.info(f"Pipe 1: Performing prediction with model '{model_name}'...")
@@ -116,6 +115,7 @@ def _pipe_1(
                 raise
 
         logger.info(f"Pipe 1 completed successfully for video {video_file.uuid}")
+        success = True # Set success flag
         return True
 
     except Exception as e:
@@ -123,7 +123,7 @@ def _pipe_1(
         return False
     finally:
         # 5. Optionally delete frames
-        if delete_frames_after:
+        if delete_frames_after and success: # Check success flag
             logger.info("Pipe 1: Deleting frames after processing...")
             try:
                 video_file.delete_frames()
