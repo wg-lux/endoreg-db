@@ -15,8 +15,14 @@ class ProcessVideoDirTest(TestCase):
         video_file_path = get_random_video_path_by_examination_alias("egd")
         self.video_dir = video_file_path.parent
         load_base_db_data()
-        load_default_ai_model()
         
+        load_default_ai_model() 
+        # when running manually we can import a model like this:
+        #     call_command(
+        #     "create_multilabel_model_meta",
+        #     "--model_path",
+        #     model_path
+        # )
 
     def test_process_video_dir(self):
         """

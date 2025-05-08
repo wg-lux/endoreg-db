@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from ..models import VideoFile
+from ..models import VideoFile, Label, LabelVideoSegment
 import cv2
 from django.db import transaction
 
@@ -255,7 +255,7 @@ class VideoListSerializer(serializers.ModelSerializer):
     """
 
     class Meta:
-        model = RawVideoFile
+        model = VideoFile
         fields = ["id", "original_file_name"]  # Only fetch required fields
 
 
@@ -279,7 +279,7 @@ class LabelSegmentSerializer(serializers.ModelSerializer):
     """
 
     class Meta:
-        model = LabelRawVideoSegment
+        model = LabelVideoSegment
         fields = [
             "id",
             "video_id",
@@ -364,7 +364,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             prediction_meta_entry.id
         )  # Get the correct prediction_meta_id
 
-        existing_segments = LabelRawVideoSegment.objects.filter(
+        existing_segments = LabelVideoSegment.objects.filter(
             video_id=video_id, label_id=label_id
         )
 
