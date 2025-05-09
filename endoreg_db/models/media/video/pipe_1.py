@@ -68,13 +68,17 @@ def _pipe_1(
                     f"Pipe 1 failed: ModelMeta version {model_meta_version} for model '{model_name}' not found."
                 )
                 return False
-            sequences: Optional[Dict[str, List[Tuple[int, int]]]] = video_file.predict_video(
-                model_meta=model_meta,
-                smooth_window_size_s=smooth_window_size_s,
-                binarize_threshold=binarize_threshold,
-                test_run=test_run,
-                n_test_frames=n_test_frames,
-            )
+            try:
+                sequences: Optional[Dict[str, List[Tuple[int, int]]]] = video_file.predict_video(
+                    model_meta=model_meta,
+                    smooth_window_size_s=smooth_window_size_s,
+                    binarize_threshold=binarize_threshold,
+                    test_run=test_run,
+                    n_test_frames=n_test_frames,
+                )
+            except Exception as e:
+                logger.error(f"Pipe 1 failed during prediction: {e}", exc_info=True)
+                return False
 
             if sequences is None:
                 logger.error("Pipe 1 failed: Prediction pipeline returned None.")
@@ -140,6 +144,7 @@ def _test_after_pipe_1(video_file:"VideoFile", start_frame: int = 0, end_frame: 
     Creates 'outside' segments and marks sensitive meta as verified.
     """
     from ...label import LabelVideoSegment, Label
+    from ...state import LabelVideoSegmentState # Added import
     
     logger.info(f"Starting _test_after_pipe_1 for video {video_file.uuid}")
     try:
@@ -148,13 +153,19 @@ def _test_after_pipe_1(video_file:"VideoFile", start_frame: int = 0, end_frame: 
             outside_label = Label.objects.get(name__iexact="outside")
             logger.info(f"Creating 'outside' annotation segment [{start_frame}-{end_frame}]")
             # Create a segment - assuming custom_create handles saving
-            LabelVideoSegment.objects.create(
+            outside_segment = LabelVideoSegment.objects.create( # Assign to variable
                 video_file=video_file,
                 label=outside_label,
                 start_frame_number=start_frame,
                 end_frame_number=end_frame,
                 prediction_meta=None, 
             )
+            # Ensure the segment has a state and mark it as validated
+            segment_state, created = outside_segment.get_or_create_state() # Unpack the tuple
+            segment_state.is_validated = True
+            segment_state.save()
+            logger.info(f"Marked 'outside' segment {outside_segment.pk} as validated. Created: {created}")
+
         except Label.DoesNotExist:
             logger.error("_test_after_pipe_1 failed: 'outside' Label not found.")
             return False

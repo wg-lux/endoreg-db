@@ -100,12 +100,12 @@ class LabelVideoSegment(models.Model):
     def extract_segment_frame_files(self, overwrite: bool = False, **kwargs) -> bool:
         """
         Extracts frame files specifically for this segment using the associated VideoFile.
-        Passes additional keyword arguments to extract_frame_range.
+        Passes additional keyword arguments to extract_frames.
         """
         from endoreg_db.models import VideoFile
         if not isinstance(self.video_file, VideoFile):
             raise ValueError("Cannot extract frame files: No associated VideoFile.")
-        return self.video_file.extract_frame_range(
+        return self.video_file.extract_specific_frame_range(
             start_frame=self.start_frame_number,
             end_frame=self.end_frame_number,
             overwrite=overwrite,
@@ -119,7 +119,7 @@ class LabelVideoSegment(models.Model):
         from endoreg_db.models import VideoFile
         if not isinstance(self.video_file, VideoFile):
             raise ValueError("Cannot delete frame files: No associated VideoFile.")
-        self.video_file.delete_frame_range(
+        self.video_file.delete_specific_frame_range(
             start_frame=self.start_frame_number,
             end_frame=self.end_frame_number
         )

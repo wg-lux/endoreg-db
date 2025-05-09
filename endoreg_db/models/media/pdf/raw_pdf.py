@@ -311,17 +311,28 @@ class RawPdfFile(models.Model):
 
         report_meta["center_name"] = self.center.name
         if not self.sensitive_meta:
+            # Pass the original report_meta with date objects to SensitiveMeta logic
             sensitive_meta = SensitiveMeta.create_from_dict(report_meta)
             self.sensitive_meta = sensitive_meta
-
         else:
             sensitive_meta = self.sensitive_meta
+            # Pass the original report_meta with date objects to SensitiveMeta logic
             sensitive_meta.update_from_dict(report_meta)
 
-        self.raw_meta = report_meta
+        # For storing in raw_meta (JSONField), dates need to be strings.
+        # Create a serializable version of report_meta for raw_meta.
+        import copy
+        from datetime import date, datetime
 
-        sensitive_meta.save()
-        self.save()
+        serializable_report_meta = copy.deepcopy(report_meta)
+        for key, value in serializable_report_meta.items():
+            if isinstance(value, (datetime, date)):
+                serializable_report_meta[key] = value.isoformat()
+        
+        self.raw_meta = serializable_report_meta # Assign the version with string dates
+
+        sensitive_meta.save() # Save SensitiveMeta first
+        self.save() # Then save RawPdfFile
 
         return text, anonymized_text, report_meta
 

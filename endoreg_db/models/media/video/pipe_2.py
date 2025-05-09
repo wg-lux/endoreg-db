@@ -53,27 +53,36 @@ def _pipe_2(video_file:"VideoFile") -> bool:
                     return False
 
                 with transaction.atomic():
-                    state.refresh_from_db()  # Confirm state update within a new txn
-                    if not state.frames_extracted:
+                    video_file.refresh_from_db() # Refresh the VideoFile instance
+                    # Access the state directly from the refreshed video_file instance
+                    if not video_file.state or not video_file.state.frames_extracted:
                         logger.error("Pipe 2 failed: Frame extraction did not update state successfully.")
                         return False
                     logger.info("Pipe 2: Frame extraction complete.")
             else:
                 logger.info("Pipe 2: Frames already extracted.")
 
-            # 2. Create Anonymized Video File Outside the Main Transaction
-            logger.info("Pipe 2: Creating anonymized video outside transaction...")
-            anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy work outside txn
-            if not anonymize_success:
-                logger.error("Pipe 2 failed: Anonymization process failed (returned False).")
-                return False
-
+            # 2. Create Anonymized Video File
             with transaction.atomic():
-                state.refresh_from_db()  # Verify update of anonymized state in a quick txn
-                if not state.anonymized:
-                    logger.error("Pipe 2 Error: State.anonymized is False even after anonymize() call.")
+                state: "VideoState" = video_file.get_or_create_state() # Quick lookup
+                anonymization_needed = not state.anonymized
+
+            if anonymization_needed:
+                logger.info("Pipe 2: Video not anonymized. Anonymizing outside transaction...")
+                anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy I/O work outside txn
+                if not anonymize_success:
+                    logger.error("Pipe 2 failed: Anonymization process failed (returned False).")
                     return False
-                logger.info("Pipe 2: Anonymization complete.")
+
+                with transaction.atomic():
+                    video_file.refresh_from_db() # Refresh the VideoFile instance
+                    # Access the state directly from the refreshed video_file instance
+                    if not video_file.state or not video_file.state.anonymized:
+                        logger.error("Pipe 2 Error: State.anonymized is False even after anonymize() call.")
+                        return False
+                    logger.info("Pipe 2: Anonymization complete.")
+            else:
+                logger.info("Pipe 2: Video already anonymized.")
 
             # 3. Delete Sensitive Meta Object
             if video_file.sensitive_meta:

@@ -1,4 +1,3 @@
-
 from django.test import TestCase
 from logging import getLogger
 import shutil
@@ -23,6 +22,7 @@ from ...helpers.default_objects import get_default_egd_pdf
 from ...helpers.data_loader import (
     load_disease_data,
     load_event_data,
+    load_gender_data,
     load_information_source,
     load_examination_data,
     load_center_data,
@@ -39,6 +39,7 @@ if not FFMPEG_AVAILABLE:
 
 class RawPdfFileModelTest(TestCase):
     def setUp(self):  
+        load_gender_data()
         load_disease_data()
         load_event_data()
         load_information_source()
@@ -46,8 +47,10 @@ class RawPdfFileModelTest(TestCase):
         load_center_data()
         load_endoscope_data()
 
-        self.raw_pdf_file = get_default_egd_pdf()
-        self.raw_pdf_file.save()
+        # Create and process the RawPdfFile, which includes creating SensitiveMeta
+        created_pdf_file = get_default_egd_pdf()
+        # Re-fetch the instance from the database to ensure all relations are current
+        self.raw_pdf_file = RawPdfFile.objects.get(pk=created_pdf_file.pk)
 
     def test_raw_pdf_file_creation(self):
         self.assertIsInstance(self.raw_pdf_file, RawPdfFile)

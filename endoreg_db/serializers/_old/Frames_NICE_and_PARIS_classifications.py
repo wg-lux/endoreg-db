@@ -325,7 +325,8 @@ class BaseClassificationSerializer(serializers.Serializer):
 
 
     # fallback:select_frames_for_sequence
-    '''def select_frames_for_sequence(self, sequence):
+    '''
+    def select_frames_for_sequence(self, sequence):
         print("----------------------in selected_frames fro sequnces funtion ----------------------------------------")
         polyp_sequence = sequence['polyp']
         video = polyp_sequence.video
