@@ -42,6 +42,8 @@ class Patient(Person):
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
+    
+    objects = models.Manager()  # Default manager
 
     if TYPE_CHECKING:
         first_name: str
