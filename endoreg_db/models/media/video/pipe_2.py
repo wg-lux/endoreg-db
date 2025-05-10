@@ -12,79 +12,67 @@ if TYPE_CHECKING:
 def _pipe_2(video_file:"VideoFile") -> bool:
     """
     Process the given video file through pipeline 2 operations which include frame extraction,
-    anonymization of the video, and deletion of sensitive meta data, all within an atomic transaction.
+    anonymization of the video, and deletion of sensitive meta data.
+    Heavy I/O operations are performed outside the main atomic transaction for DB updates.
 
     Parameters:
         video_file (VideoFile): An instance of VideoFile representing the video to process.
 
     Returns:
         bool: True if all operations complete successfully; otherwise, False.
-
-    Workflow Details:
-        1. Frame Extraction:
-           - Checks if frames have already been extracted for the video.
-           - If not, triggers the frame extraction process. If extraction fails or the state is not
-             correctly updated, the process is halted and False is returned.
-        2. Video Anonymization:
-           - Initiates anonymization, which includes cleaning up database fields and scheduling file cleanup.
-           - After anonymization, verifies that the video's state reflects the changes. Failure to confirm
-             the anonymized state results in the function returning False.
-        3. Sensitive Meta Deletion:
-           - If the video has an associated sensitive meta object, it is deleted and the relationship is
-             cleared in the database.
-           - Any exception during deletion results in the entire transaction rolling back and the function
-             returning False.
-
-    If any unexpected exception occurs during the process, the transaction is rolled back and the function
-    returns False, ensuring data consistency.
     """
     logger.info("Starting Pipe 2 for video %s", video_file.uuid)
     try:
+        # --- Part 1: Frame Extraction ---
+        # Determine if frames are needed (short transaction for state read)
         with transaction.atomic():
-            # 1. Extract Frames Outside the Main Transaction
+            state: "VideoState" = video_file.get_or_create_state()
+            frames_needed = not state.frames_extracted
+
+        if frames_needed:
+            logger.info("Pipe 2: Frames not extracted. Extracting outside main DB transaction...")
+            if not video_file.extract_frames(overwrite=False):  # Heavy I/O work
+                logger.error("Pipe 2 failed: Frame extraction method returned False.")
+                return False
+
+            # Verify extraction and update state (short transaction)
             with transaction.atomic():
-                state: "VideoState" = video_file.get_or_create_state()  # Quick lookup within a short txn
-                frames_needed = not state.frames_extracted
-
-            if frames_needed:
-                logger.info("Pipe 2: Frames not extracted. Extracting outside transaction...")
-                if not video_file.extract_frames(overwrite=False):  # Heavy I/O work outside txn
-                    logger.error("Pipe 2 failed: Frame extraction method returned False.")
+                video_file.refresh_from_db()
+                if not video_file.state or not video_file.state.frames_extracted:
+                    logger.error("Pipe 2 failed: Frame extraction did not update state successfully.")
                     return False
+                logger.info("Pipe 2: Frame extraction complete.")
+        else:
+            logger.info("Pipe 2: Frames already extracted.")
 
-                with transaction.atomic():
-                    video_file.refresh_from_db() # Refresh the VideoFile instance
-                    # Access the state directly from the refreshed video_file instance
-                    if not video_file.state or not video_file.state.frames_extracted:
-                        logger.error("Pipe 2 failed: Frame extraction did not update state successfully.")
-                        return False
-                    logger.info("Pipe 2: Frame extraction complete.")
-            else:
-                logger.info("Pipe 2: Frames already extracted.")
+        # --- Part 2: Video Anonymization ---
+        # Determine if anonymization is needed (short transaction for state read)
+        with transaction.atomic():
+            state: "VideoState" = video_file.get_or_create_state()
+            anonymization_needed = not state.anonymized
 
-            # 2. Create Anonymized Video File
+        if anonymization_needed:
+            logger.info("Pipe 2: Video not anonymized. Anonymizing outside main DB transaction...")
+            anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy I/O work
+            if not anonymize_success:
+                logger.error("Pipe 2 failed: Anonymization process failed (returned False).")
+                return False
+
+            # Verify anonymization and update state (short transaction)
             with transaction.atomic():
-                state: "VideoState" = video_file.get_or_create_state() # Quick lookup
-                anonymization_needed = not state.anonymized
-
-            if anonymization_needed:
-                logger.info("Pipe 2: Video not anonymized. Anonymizing outside transaction...")
-                anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy I/O work outside txn
-                if not anonymize_success:
-                    logger.error("Pipe 2 failed: Anonymization process failed (returned False).")
+                video_file.refresh_from_db()
+                if not video_file.state or not video_file.state.anonymized:
+                    logger.error("Pipe 2 Error: State.anonymized is False even after anonymize() call.")
                     return False
+                logger.info("Pipe 2: Anonymization complete.")
+        else:
+            logger.info("Pipe 2: Video already anonymized.")
 
-                with transaction.atomic():
-                    video_file.refresh_from_db() # Refresh the VideoFile instance
-                    # Access the state directly from the refreshed video_file instance
-                    if not video_file.state or not video_file.state.anonymized:
-                        logger.error("Pipe 2 Error: State.anonymized is False even after anonymize() call.")
-                        return False
-                    logger.info("Pipe 2: Anonymization complete.")
-            else:
-                logger.info("Pipe 2: Video already anonymized.")
+        # --- Part 3: Final DB operations (now in its own atomic transaction) ---
+        with transaction.atomic():
+            video_file.refresh_from_db() # Ensure we have the latest video_file state for these ops
 
-            # 3. Delete Sensitive Meta Object
+            # Delete Sensitive Meta Object
             if video_file.sensitive_meta:
                 logger.info("Pipe 2: Deleting sensitive meta object...")
                 try:
@@ -95,17 +83,15 @@ def _pipe_2(video_file:"VideoFile") -> bool:
                     logger.info("Pipe 2: Deleted sensitive meta object (PK: %s).", sm_pk)
                 except Exception as e:
                     logger.error("Pipe 2: Failed to delete sensitive meta object: %s", e, exc_info=True)
-                    # Decide if this is a critical failure
-                    return False # Rollback transaction
+                    raise  # Reraise to ensure this transaction rolls back
             else:
                 logger.info("Pipe 2: No sensitive meta object found to delete.")
 
-
             logger.info(f"Pipe 2 completed successfully for video {video_file.uuid}")
-            # Transaction commits here if no exception occurred
             return True
 
     except Exception as e:
-        # Transaction automatically rolls back on exception
+        # This will catch exceptions from I/O operations if they raise,
+        # or from the final transaction block, or any other unhandled error.
         logger.error(f"Pipe 2 failed for video {video_file.uuid} with unhandled exception: {e}", exc_info=True)
         return False

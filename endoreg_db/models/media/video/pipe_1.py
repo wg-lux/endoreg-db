@@ -37,16 +37,15 @@ def _pipe_1(
 
     logger.info(f"Starting Pipe 1 for video {video_file.uuid}")
     try:
+        # 1. Heavy I/O operations outside the transaction block
+        logger.info("Pipe 1: Extracting frames...")
+        video_file.extract_frames(overwrite=False)  # Avoid overwriting if already extracted
+
+        logger.info("Pipe 1: Extracting text metadata...")
+        video_file.update_text_metadata(
+            ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
+        )
         with transaction.atomic():
-            # 1. Heavy I/O operations outside the transaction block
-            logger.info("Pipe 1: Extracting frames...")
-            video_file.extract_frames(overwrite=False)  # Avoid overwriting if already extracted
-
-            logger.info("Pipe 1: Extracting text metadata...")
-            video_file.update_text_metadata(
-                ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
-            )
-
             state = video_file.get_or_create_state()
             if not state.frames_extracted:
                 logger.error("Pipe 1 failed: Frame extraction did not complete successfully.")
@@ -144,7 +143,6 @@ def _test_after_pipe_1(video_file:"VideoFile", start_frame: int = 0, end_frame: 
     Creates 'outside' segments and marks sensitive meta as verified.
     """
     from ...label import LabelVideoSegment, Label
-    from ...state import LabelVideoSegmentState # Added import
     
     logger.info(f"Starting _test_after_pipe_1 for video {video_file.uuid}")
     try:
