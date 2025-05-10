@@ -51,7 +51,6 @@ class AbstractDocument(models.Model):
     time = models.TimeField(blank=True, null=True)
     file = models.FileField(
         upload_to=DOCUMENT_DIR.relative_to(STORAGE_DIR),
-        storage=FILE_STORAGE,
         blank=True,
         null=True,
     )

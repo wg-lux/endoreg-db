@@ -12,7 +12,7 @@ from django.core.files import File  # Import Django File
 from endoreg_db.utils.file_operations import get_uuid_filename
 from typing import TYPE_CHECKING
 # Use the specific paths from the centralized paths module
-from ...utils import FILE_STORAGE, PDF_DIR, STORAGE_DIR
+from ...utils import PDF_DIR, STORAGE_DIR
 from endoreg_db.utils.hashs import get_pdf_hash
 
 if TYPE_CHECKING:
@@ -67,9 +67,8 @@ class RawPdfFile(models.Model):
     # Fields specific to RawPdfFile (keeping existing related_names)
     file = models.FileField(
         # Use the relative path from the specific PDF_DIR
-        upload_to=PDF_DIR.relative_to(STORAGE_DIR),
+        upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-        storage=FILE_STORAGE,
     )
     patient = models.ForeignKey(
         "Patient",

@@ -59,7 +59,7 @@ from .video_file_ai import (
 from .pipe_1 import _pipe_1, _test_after_pipe_1
 from .pipe_2 import _pipe_2
 
-from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, FILE_STORAGE, STORAGE_DIR
+from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, STORAGE_DIR
 from ...state import VideoState
 from ...label import LabelVideoSegment, Label
 
@@ -85,16 +85,14 @@ class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
     raw_file = models.FileField(
-        upload_to=VIDEO_DIR.relative_to(STORAGE_DIR),
+        upload_to=VIDEO_DIR.name,  # Use .name for relative path
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        storage=FILE_STORAGE,
         null=True,
         blank=True,
     )
     processed_file = models.FileField(
-        upload_to=ANONYM_VIDEO_DIR.relative_to(STORAGE_DIR),
+        upload_to=ANONYM_VIDEO_DIR.name,  # Use .name for relative path
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        storage=FILE_STORAGE,
         null=True,
         blank=True,
     )
