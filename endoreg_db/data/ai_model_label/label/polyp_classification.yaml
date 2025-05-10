@@ -1,0 +1,52 @@
+# Paris
+- model: endoreg_db.Label
+  fields:
+    name: "paris_1s"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "paris_1p"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "paris_2a"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "paris_2b"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "paris_2c"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "paris_3"
+    label_type: "classification"
+
+# NICE Classification
+- model: endoreg_db.Label
+  fields:
+    name: "nice_1"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "nice_2a"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "nice_2b"
+    label_type: "classification"
+
+- model: endoreg_db.Label
+  fields:
+    name: "nice_3"
+    label_type: "classification"
+    

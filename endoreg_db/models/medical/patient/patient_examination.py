@@ -10,8 +10,6 @@ if TYPE_CHECKING:
     from .patient_examination_indication import PatientExaminationIndication
     from ..examination import ExaminationIndicationClassificationChoice
 
-
-
 class PatientExamination(models.Model):
     patient = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="patient_examinations"

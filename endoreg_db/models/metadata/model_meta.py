@@ -64,14 +64,9 @@ class ModelMeta(models.Model):
     activation = models.CharField(
         max_length=50, default="sigmoid", help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none')."
     )
-    # weights = models.FileField(
-    from django.core.files.storage import FileSystemStorage
-    # from ..utils import WEIGHTS_DIR, STORAGE_DIR # Already imported
-
     weights = models.FileField(
-        upload_to=WEIGHTS_DIR.relative_to(STORAGE_DIR).as_posix(),  # Ensure posix path for consistency
+        upload_to=WEIGHTS_DIR.name,  # Use .name for relative path
         validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
-        storage=FileSystemStorage(location=STORAGE_DIR),
         null=True,
         blank=True,
         help_text="Path to the model weights file (.ckpt), relative to MEDIA_ROOT.",
@@ -196,4 +191,3 @@ class ModelMeta(models.Model):
         """Alias for get_by_name_version(meta_name, model_name, version=None) using external logic."""
         # Delegate directly to the specific logic function
         return logic.get_model_meta_by_name_version_logic(cls, meta_name, model_name, version=None)
-    

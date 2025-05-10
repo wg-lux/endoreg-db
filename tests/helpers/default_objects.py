@@ -75,6 +75,9 @@ def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME
 def get_default_gender() -> Gender:
     return Gender.objects.get(name=DEFAULT_GENDER)
 
+def get_gender_m_or_f() -> Gender:
+    return Gender.objects.get(name=DEFAULT_GENDER)
+
 def get_random_gender() -> Gender:
     """
     Get a random Gender object
@@ -173,10 +176,10 @@ def get_default_egd_pdf():
     Get a default EGD PDF file for testing.
     This function creates a temporary copy of the default PDF file, uses it to create and save
     a RawPdfFile instance using the refactored create_from_file method,
-    and ensures that the temporary file is deleted.
+    processes it to create SensitiveMeta, and ensures that the temporary file is deleted.
 
     Returns:
-        RawPdfFile: The created RawPdfFile instance.
+        RawPdfFile: The created and processed RawPdfFile instance.
     """
     egd_path = DEFAULT_EGD_PATH
     center = get_default_center()
@@ -207,6 +210,24 @@ def get_default_egd_pdf():
         assert default_storage.exists(pdf_file.file.path), f"PDF file does not exist in storage at {pdf_file.file.path}"
         # Check that the source temp file was deleted
         assert not temp_file_path.exists(), f"Temporary source file {temp_file_path} still exists after creation"
+
+        # Prepare a minimal report_meta for SensitiveMeta creation
+        default_report_meta = {
+            "patient_first_name": "DefaultFirstName",
+            "patient_last_name": "DefaultLastName",
+            "patient_dob": date(1980, 1, 1), # Pass date object directly
+            "examination_date": date(2024, 1, 1), # Pass date object directly
+            # center_name will be added by process_file using pdf_file.center.name
+        }
+
+        # Call process_file to create SensitiveMeta and extract other info
+        pdf_file.process_file(
+            text="Default PDF text content.",
+            anonymized_text="Default anonymized PDF text content.",
+            report_meta=default_report_meta,
+            verbose=False
+        )
+        # process_file calls sensitive_meta.save() and self.save() (for RawPdfFile)
 
     except Exception as e:
         # Clean up temp file in case of error before deletion could occur

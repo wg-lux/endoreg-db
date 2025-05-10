@@ -1,8 +1,8 @@
 from pathlib import Path
 from rest_framework import serializers
 from django.conf import settings
-from ..models import RawPdfFile, SensitiveMeta
-
+#from ...models import RawPdfFile, SensitiveMeta
+from endoreg_db.models import RawPdfFile, SensitiveMeta
 
 class PDFFileForMetaSerializer(serializers.ModelSerializer):
     """
@@ -94,7 +94,7 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
 
 from rest_framework import serializers
-from ..models import SensitiveMeta
+#from ..models import SensitiveMeta
 
 class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     """

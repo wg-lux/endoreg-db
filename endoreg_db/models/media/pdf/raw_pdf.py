@@ -12,7 +12,7 @@ from django.core.files import File  # Import Django File
 from endoreg_db.utils.file_operations import get_uuid_filename
 from typing import TYPE_CHECKING
 # Use the specific paths from the centralized paths module
-from ...utils import FILE_STORAGE, PDF_DIR, STORAGE_DIR
+from ...utils import PDF_DIR, STORAGE_DIR
 from endoreg_db.utils.hashs import get_pdf_hash
 
 if TYPE_CHECKING:
@@ -67,9 +67,8 @@ class RawPdfFile(models.Model):
     # Fields specific to RawPdfFile (keeping existing related_names)
     file = models.FileField(
         # Use the relative path from the specific PDF_DIR
-        upload_to=PDF_DIR.relative_to(STORAGE_DIR),
+        upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-        storage=FILE_STORAGE,
     )
     patient = models.ForeignKey(
         "Patient",
@@ -311,17 +310,28 @@ class RawPdfFile(models.Model):
 
         report_meta["center_name"] = self.center.name
         if not self.sensitive_meta:
+            # Pass the original report_meta with date objects to SensitiveMeta logic
             sensitive_meta = SensitiveMeta.create_from_dict(report_meta)
             self.sensitive_meta = sensitive_meta
-
         else:
             sensitive_meta = self.sensitive_meta
+            # Pass the original report_meta with date objects to SensitiveMeta logic
             sensitive_meta.update_from_dict(report_meta)
 
-        self.raw_meta = report_meta
+        # For storing in raw_meta (JSONField), dates need to be strings.
+        # Create a serializable version of report_meta for raw_meta.
+        import copy
+        from datetime import date, datetime
 
-        sensitive_meta.save()
-        self.save()
+        serializable_report_meta = copy.deepcopy(report_meta)
+        for key, value in serializable_report_meta.items():
+            if isinstance(value, (datetime, date)):
+                serializable_report_meta[key] = value.isoformat()
+        
+        self.raw_meta = serializable_report_meta # Assign the version with string dates
+
+        sensitive_meta.save() # Save SensitiveMeta first
+        self.save() # Then save RawPdfFile
 
         return text, anonymized_text, report_meta
 

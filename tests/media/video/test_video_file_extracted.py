@@ -7,6 +7,7 @@ from django.test import TransactionTestCase
 from logging import getLogger
 import unittest
 import shutil
+from endoreg_db.models import VideoFile
 
 from endoreg_db.models import (
     ModelMeta # Import VideoState # Import SensitiveMeta, # Import ,
@@ -45,6 +46,7 @@ if not FFMPEG_AVAILABLE:
 
 
 class VideoFileModelExtractedTest(TransactionTestCase):
+    video: "VideoFile"
     def setUp(self):
         load_gender_data()
         load_disease_data()

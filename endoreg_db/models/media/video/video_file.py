@@ -9,9 +9,6 @@ from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 
-from .video_file_frames._get_frame_number import _get_frame_number
-from .video_file_frames._get_frames import _get_frames
-from .video_file_frames._get_frame import _get_frame
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
@@ -34,16 +31,16 @@ from .video_file_frames import (
     _delete_frames,
     _get_frame_path,
     _get_frame_paths,
+    _get_frame_number,
+    _get_frames,
+    _get_frame,
     _get_frame_range,
     _create_frame_object,
     _bulk_create_frames,
 )
-# --- Add import for new frame range functions ---
-from .video_file_frames._manage_frame_range import (
-    _extract_frame_range,
-    _delete_frame_range,
-)
-# --- End Add ---
+# Update import aliases for clarity and to use as helpers
+from .video_file_frames._manage_frame_range import _extract_frame_range as _extract_frame_range_helper
+from .video_file_frames._manage_frame_range import _delete_frame_range as _delete_frame_range_helper
 from .video_file_io import (
     _delete_with_file,
     _get_base_frame_dir,
@@ -55,14 +52,14 @@ from .video_file_io import (
     _get_processed_file_path,
 )
 from .video_file_ai import (
+    _predict_video_pipeline,
     _extract_text_from_video_frames,
-    _predict_video_entry,
 )
 
 from .pipe_1 import _pipe_1, _test_after_pipe_1
 from .pipe_2 import _pipe_2
 
-from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, FILE_STORAGE, STORAGE_DIR
+from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, STORAGE_DIR
 from ...state import VideoState
 from ...label import LabelVideoSegment, Label
 
@@ -88,16 +85,14 @@ class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
     raw_file = models.FileField(
-        upload_to=VIDEO_DIR.relative_to(STORAGE_DIR),
+        upload_to=VIDEO_DIR.name,  # Use .name for relative path
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        storage=FILE_STORAGE,
         null=True,
         blank=True,
     )
     processed_file = models.FileField(
-        upload_to=ANONYM_VIDEO_DIR.relative_to(STORAGE_DIR),
+        upload_to=ANONYM_VIDEO_DIR.name,  # Use .name for relative path
         validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        storage=FILE_STORAGE,
         null=True,
         blank=True,
     )
@@ -176,6 +171,7 @@ class VideoFile(models.Model):
     test_after_pipe_1 = _test_after_pipe_1
     pipe_2 = _pipe_2
 
+    # Metadata Funtions
     update_video_meta = _update_video_meta
     initialize_video_specs = _initialize_video_specs
     get_fps = _get_fps
@@ -194,10 +190,42 @@ class VideoFile(models.Model):
     get_frame_range = _get_frame_range
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
-    # --- Add method assignments for frame range ---
-    extract_frame_range = _extract_frame_range
-    delete_frame_range = _delete_frame_range
-    # --- End Add ---
+
+    # Define new methods that call the helper functions
+    def extract_specific_frame_range(self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs) -> bool:
+        """
+        Extracts frames for a specific range [start_frame, end_frame).
+        kwargs can include 'quality', 'ext', 'verbose'.
+        """
+        quality = kwargs.get('quality', 2)
+        ext = kwargs.get('ext', "jpg")
+        verbose = kwargs.get('verbose', False)
+
+        # Log if unexpected kwargs are passed, beyond those used by the helper
+        expected_helper_kwargs = {'quality', 'ext', 'verbose'}
+        unexpected_kwargs = {k: v for k, v in kwargs.items() if k not in expected_helper_kwargs}
+        if unexpected_kwargs:
+            logger.warning(f"Unexpected keyword arguments for extract_specific_frame_range, will be ignored by helper: {unexpected_kwargs}")
+
+        return _extract_frame_range_helper(
+            video=self,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            quality=quality,
+            overwrite=overwrite,
+            ext=ext,
+            verbose=verbose
+        )
+
+    def delete_specific_frame_range(self, start_frame: int, end_frame: int) -> None:
+        """
+        Deletes frame files for a specific range [start_frame, end_frame).
+        """
+        _delete_frame_range_helper(
+            video=self,
+            start_frame=start_frame,
+            end_frame=end_frame
+        )
 
     delete_with_file = _delete_with_file
     get_base_frame_dir = _get_base_frame_dir
@@ -212,7 +240,7 @@ class VideoFile(models.Model):
     _create_anonymized_frame_files = _create_anonymized_frame_files
     _cleanup_raw_assets = _cleanup_raw_assets
 
-    predict_video = _predict_video_entry
+    predict_video = _predict_video_pipeline
     extract_text_from_frames = _extract_text_from_video_frames
 
 
@@ -258,44 +286,6 @@ class VideoFile(models.Model):
 
 
 
-    @classmethod
-    def create_from_file_initialized(
-        cls,
-        file_path: Union[str, Path],
-        center_name: str,
-        processor_name: str,
-        **kwargs,
-    ) -> "VideoFile":
-        """
-        Creates a VideoFile instance from a file, initializing it with the given center and processor names.
-        This method also creates a VideoState instance and updates the video metadata.
-        Initializes Frame database objects based on expected frame count.
-
-
-        """
-        video_file = cls.create_from_file(
-            file_path,
-            center_name,
-            processor_name=processor_name,
-            **kwargs,
-        )
-        video_file.update_video_meta()
-        video_file.initialize_video_specs() # Sets frame_count etc.
-
-
-        # This call initializes Frame objects with is_extracted=False
-        video_file.initialize_frames()
-        _state = video_file.get_or_create_state()
-        video_file.refresh_from_db()
-
-        assert video_file is not None, "VideoFile instance should not be None"
-        # --- Add assertion for state ---
-        assert video_file.state is not None, "VideoFile state should not be None after initialization"
-        assert video_file.state.frames_initialized is True, "VideoFile state should be frames_initialized=True"
-        assert video_file.state.frame_count == video_file.frame_count, "VideoFile state frame_count should match video frame_count"
-        # --- End Add ---
-
-        return video_file
 
     @classmethod
     def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
@@ -304,6 +294,56 @@ class VideoFile(models.Model):
             file_path = Path(file_path)
         # Pass center_name and other kwargs to the helper function
         return _create_from_file(cls, file_path, center_name=center_name, **kwargs)
+
+    @classmethod
+    def create_from_file_initialized(
+        cls,
+        file_path: Union[str, Path],
+        center_name:str,
+        processor_name: Optional[str] = None,
+        delete_source:bool = False, 
+    ):
+        """
+        Creates a VideoFile instance from a given video file path.
+        Handles transcoding (if necessary), hashing, file storage, and database record creation.
+        Raises exceptions on failure.
+        """
+        # Ensure file_path is a Path object
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+
+        # Call the helper function to create the VideoFile instance
+        video_file = _create_from_file(
+            cls_model=VideoFile,
+            file_path=file_path,
+            center_name=center_name,
+            processor_name=processor_name,
+            delete_source=delete_source,
+        )
+
+        video_file = video_file.initialize()
+        return video_file
+    
+    def initialize(self):
+        """
+        Initializes the VideoFile instance by setting up its properties and state.
+        This method should be called after the VideoFile instance is created.
+        """
+
+        self.update_video_meta()
+        # Initialize video specs
+        self.initialize_video_specs(use_raw=True)
+
+        # Set the frame directory
+        self.set_frame_dir()
+
+        # Create a new state if it doesn't exist
+        self.get_or_create_state()
+
+        # Initialize frames based on the video specs
+        self.initialize_frames()
+
+        return self
 
     def __str__(self):
         active_path = self.active_file_path
@@ -323,10 +363,7 @@ class VideoFile(models.Model):
         Does not save the VideoFile instance itself.
         """
         if self.state is None:
-            # Create the state but don't save the VideoFile here.
-            # The main save() method will handle saving the foreign key.
             self.state = VideoState.objects.create()
-            # No self.save() call here
         return self.state
     
 
@@ -357,10 +394,3 @@ class VideoFile(models.Model):
             logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
             return self.label_video_segments.none()
 
-    def get_expected_frame_paths(self):
-        frame_count = self.frame_count
-        if frame_count is None:
-            logger.error("Frame count is not set for video %s", self.uuid)
-            raise ValueError("Frame count is not set for this video file.")
-        
-        return [self.get_frame_path(frame_number) for frame_number in range(frame_count)]

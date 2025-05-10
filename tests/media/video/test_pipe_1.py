@@ -2,6 +2,7 @@ from endoreg_db.models import VideoPredictionMeta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from endoreg_db.models import VideoFile, VideoState
     from .test_video_file_extracted import VideoFileModelExtractedTest
 
 def _test_pipe_1(test:"VideoFileModelExtractedTest"):
@@ -13,7 +14,7 @@ def _test_pipe_1(test:"VideoFileModelExtractedTest"):
     - Post-validation processing (pipe_2)
     """
 
-    video_file = test.video_file
+    video_file:"VideoFile" = test.video_file
 
     success = video_file.pipe_1(
         model_name = test.ai_model_meta.model.name,

@@ -1,12 +1,13 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 from django.http import FileResponse, Http404
 import mimetypes
 import os
 from ..models import RawPdfFile
-from ..serializers.raw_pdf_meta_validation import PDFFileForMetaSerializer
-
+from ..serializers._old.raw_pdf_meta_validation import PDFFileForMetaSerializer
+from ..serializers._old.raw_pdf_meta_validation import SensitiveMetaUpdateSerializer
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from ..models import SensitiveMeta
 
 class PDFFileForMetaView(APIView):
     """
@@ -73,11 +74,7 @@ class PDFFileForMetaView(APIView):
         except Exception as e:
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from ..models import SensitiveMeta
-from ..serializers.raw_pdf_meta_validation import SensitiveMetaUpdateSerializer
+
 
 class UpdateSensitiveMetaView(APIView):
     """
