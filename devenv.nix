@@ -35,6 +35,8 @@ let
     tesseract
     zsh # If you prefer zsh as the shell
     uvPackage # Add uvPackage to runtime packages if needed elsewhere, or just for devenv internal use
+    libglvnd # Add libglvnd for libGL.so.1
+
   ];
 
 in 
@@ -73,6 +75,13 @@ in
       }
       EOF
       echo "Exported Nix variables to .devenv-vars.json"
+    '';
+    
+    env-setup.exec = ''
+    export LD_LIBRARY_PATH="${
+      with pkgs;
+      lib.makeLibraryPath buildInputs
+    }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
     '';
 
     hello.package = pkgs.zsh;

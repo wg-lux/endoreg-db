@@ -23,23 +23,19 @@ router.register(r'patients', PatientViewSet)
 
 
 urlpatterns = [
+    path('', include(router.urls)),
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
-
-    path('api/', include(router.urls)),
-    path('api/conf/', csrf_token_view, name='csrf_token'),
-
-
-
+    path('conf/', csrf_token_view, name='csrf_token'),
 
 #--------------------------------------START : VIDEO SEGMENTATION END POINTS--------------------------------------
 
-       # The dropdown contains video names and their corresponding IDs, which are retrieved from the database(RawVideoFile). Additionally, this route(api/videos) also fetches labels along with their names and IDs from the label table.
+       # The dropdown contains video names and their corresponding IDs, which are retrieved from the database(RawVideoFile). Additionally, this route(videos) also fetches labels along with their names and IDs from the label table.
        # We will modify this implementation later as per our requirements.
         #Based on the selected video ID, relevant data will be fetched from the database, and the video, along with its associated details, 
-        # will be displayed on the frontend using route(api/video/<int:video_id>/).
-        # once label is selected from the dropdown,using its name, details can be fetched from rawvideofile using route("api/video/<int:video_id>/label/<str:label_name>/) 
+        # will be displayed on the frontend using route(video/<int:video_id>/).
+        # once label is selected from the dropdown,using its name, details can be fetched from rawvideofile using route("video/<int:video_id>/label/<str:label_name>/) 
         #If editing is required, a form will be available for each label. This form dynamically updates when the selected label changes. It will display all segments associated with the selected label, each with a delete option. Below these segments, there may be a button for adding more segments.
         #If any values in the form are modified, the updated data will be saved in the dafrom .views import VideoView, keycloak_login, keycloak_callbacktabase table.
     
@@ -49,29 +45,29 @@ urlpatterns = [
     # Fetch all videos for the dropdown
     # Fetch all available videos (for the video selection dropdown in frontend)
     # Usage in frontend: Call this API to get a list of available videos.
-    # Example request: GET /api/videos/
+    # Example request: GET /videos/
     # Response: Returns a JSON list of videos (id, file path, video_url, sequences, label_names).
     # it also fetch the label from teh label table
 
-    # for kaycloak:-
-    # /api/videos/ , protected API
+    # for keycloak:-
+    # /videos/ , protected API
     # /login/ , sends user to Keycloak login page
     # /login/callback/ , where Keycloak sends the user after login
     
-    path('', public_home, name='public_home'),
-    path('api/videos/', VideoView.as_view(), name='video_list'),
+    path('endoreg_db/', public_home, name='public_home'),
+    path('videos/', VideoView.as_view(), name='video_list'),
     path('login/', keycloak_login, name='keycloak_login'),
     path('login/callback/', keycloak_callback, name='keycloak_callback'),
     
     #need to change this route
-    #path('api/prediction/', FetchSingleFramePredictionView.as_view(), name='fetch-single-frame-prediction'),#.as_view() converts the class-based view into a function that Django can use for routing.
+    #path('prediction/', FetchSingleFramePredictionView.as_view(), name='fetch-single-frame-prediction'),#.as_view() converts the class-based view into a function that Django can use for routing.
     
     # Fetch video details + labels based on selected video
     # Usage in frontend: Call this when a user selects a video from the dropdown.
-    # Example request: GET /api/video/1/
+    # Example request: GET /video/1/
     # Response: Returns metadata, file path, video URL, sequences, and available label names.
     # Frontend should use this api for `label_names`, to display label selection (dropdown or tabs).
-    path("api/video/<int:video_id>/", VideoView.as_view(), name="video_handler"),
+    path("video/<int:video_id>/", VideoView.as_view(), name="video_handler"),
     
 
     # Fetch time segments along with frame predictions and filenames for a selected label
@@ -82,7 +78,7 @@ urlpatterns = [
     # - Each segment includes frame-wise predictions and the corresponding frame filenames.
     #
     # **Example request:**
-    #   GET /api/video/1/label/outside/
+    #   GET /video/1/label/outside/
     #
     # **Example response:**
     # {
@@ -115,7 +111,7 @@ urlpatterns = [
     # frame_file_path (full path for easy access)
     #  predictions (frame-wise probability scores for each category)
     #we need label name for this not id as we donot have id in rawvideofile table
-    path("api/video/<int:video_id>/label/<str:label_name>/", VideoLabelView.as_view(), name="video_label_times"),
+    path("video/<int:video_id>/label/<str:label_name>/", VideoLabelView.as_view(), name="video_label_times"),
 
     # Update or create label segments for a specific video and label
     # - Call this API when a user updates the start and end frames of a label segment(adding new , deleting or changing the values).
@@ -126,7 +122,7 @@ urlpatterns = [
     # - This ensures that the database reflects exactly what is sent from the frontend.
     #
     # **Example request (Updating segments for label ID 12 in video ID 1):**
-    #   PUT /api/video/1/label/12/update_segments/
+    #   PUT /video/1/label/12/update_segments/
     #
     # **Request body (JSON):**
     # {
@@ -170,7 +166,7 @@ urlpatterns = [
     # - The **"Delete Segment"** button should remove segments from the list before submitting.
     # - The request should be triggered via an `axios.put` call:
     #
-    path("api/video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
+    path("video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
 
 
 #----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
@@ -181,8 +177,8 @@ urlpatterns = [
     #  - The next available video where `id > last_id` if `last_id` is provided.
     #  - If `Accept: application/json` is set in headers, it returns video metadata as JSON.
     #  - If no videos are available, it returns {"error": "No more videos available."}.
-    #  const url = lastId ? `http://localhost:8000/api/video/meta/?last_id=${lastId}` : "http://localhost:8000/api/video/meta/";
-    path("api/video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
+    #  const url = lastId ? `http://localhost:8000/video/meta/?last_id=${lastId}` : "http://localhost:8000/video/meta/";
+    path("video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
 
 
 
@@ -203,7 +199,7 @@ urlpatterns = [
     # - If validation passes, the patient information is updated in the database.
     # - If there are errors (e.g., missing fields, incorrect date format), 
     #   the API returns structured error messages.
-    path("api/video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
+    path("video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
 
 
         
@@ -213,7 +209,7 @@ urlpatterns = [
     #The first request (without id) fetches the first available PDF metadata.
     #The "Next" button (with id) fetches the next available PDF.
     #If an id is provided, the API returns the actual PDF file instead of JSON.
-    path("api/pdf/sensitivemeta/", PDFFileForMetaView.as_view(), name="pdf_meta"),  
+    path("pdf/sensitivemeta/", PDFFileForMetaView.as_view(), name="pdf_meta"),  
 
 
 
@@ -237,7 +233,7 @@ urlpatterns = [
     # - If errors occur (e.g., invalid ID, empty fields, incorrect date format), 
     #   the API returns structured error messages.
 
-    path("api/pdf/update_sensitivemeta/", UpdateSensitiveMetaView.as_view(), name="update_pdf_meta"),
+    path("pdf/update_sensitivemeta/", UpdateSensitiveMetaView.as_view(), name="update_pdf_meta"),
 
 
 
@@ -249,17 +245,17 @@ urlpatterns = [
     # - If `last_id` is given, fetches the next available PDF.
     # - The frontend calls this endpoint on **page load** and when clicking the **next button**.
     # Example frontend usage:
-    #     const url = lastId ? `http://localhost:8000/api/pdf/anony_text/?last_id=${lastId}` 
-    #                        : "http://localhost:8000/api/pdf/anony_text/";
-    path("api/pdf/anony_text/", RawPdfAnonyTextView.as_view(), name="pdf_anony_text"),  
+    #     const url = lastId ? `http://localhost:8000/pdf/anony_text/?last_id=${lastId}` 
+    #                        : "http://localhost:8000/pdf/anony_text/";
+    path("pdf/anony_text/", RawPdfAnonyTextView.as_view(), name="pdf_anony_text"),  
 
     #  API Endpoint for Updating the `anonymized_text` Field in `RawPdfFile`
     # - This endpoint is called when the user edits the anonymized text and clicks **Save**.
     # - Updates only the `anonymized_text` field for the specified PDF `id`.
     # - The frontend sends a **PATCH request** to this endpoint with the updated text.
     # Example frontend usage:
-    #     axios.patch("http://localhost:8000/api/pdf/update_anony_text/", { id: 1, anonymized_text: "Updated text" });
-    path("api/pdf/update_anony_text/", UpdateAnonymizedTextView.as_view(), name="update_pdf_anony_text"),
+    #     axios.patch("http://localhost:8000/pdf/update_anony_text/", { id: 1, anonymized_text: "Updated text" });
+    path("pdf/update_anony_text/", UpdateAnonymizedTextView.as_view(), name="update_pdf_anony_text"),
 
 
 
@@ -290,7 +286,7 @@ urlpatterns = [
     #   - FPS, MIN_SEGMENT_LENGTH_SECONDS, MIN_SEQUENCE_GAP_SECONDS, etc.
     #
     # Example URL:
-    #   GET /api/videos/nice-classification/
+    #   GET /videos/nice-classification/
     #
     #  Example response (per segment):
     # [
@@ -313,8 +309,8 @@ urlpatterns = [
     #  Frontend Usage:
     # - Trigger this from Vue.js when clinician or AI needs to preview high-quality polyp classification frames.
     # - Ideal for NICE classification training dataset generation or QA workflows.
-    path('api/video/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
-    path('api/video/parisclassification/', ForParisClassificationView.as_view(), name="parisclassification"),
+    path('video/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
+    path('video/parisclassification/', ForParisClassificationView.as_view(), name="parisclassification"),
 
     # ---------------------------------------------------------------------------------------
 
@@ -342,7 +338,7 @@ urlpatterns = [
 
     
 #https://biigle.de/manual/tutorials/videos/navigating-timeline#for time line example
-'''from django.conf import settings
+from django.conf import settings
 from django.conf.urls.static import static
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)'''
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
