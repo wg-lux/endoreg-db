@@ -21,6 +21,11 @@ from ..helpers.default_objects import (
     generate_patient
 )
 
+from ..test_settings import (
+    ASSET_DIR,
+    RUN_VIDEO_TESTS
+)
+
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
 assert isinstance(RUN_VIDEO_TESTS, bool), "RUN_VIDEO_TESTS must be a boolean value"
 
