@@ -11,7 +11,6 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
-    "django.contrib.staticfiles",
 ]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

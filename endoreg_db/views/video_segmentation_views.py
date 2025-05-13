@@ -31,16 +31,10 @@ class VideoView(APIView):
         Returns a list of all available videos along with available labels.
         Used to populate the video selection dropdown in Vue.js.
         """
-        
-        videos = VideoFile.objects.all()
-        labels = Label.objects.all()  # Fetch all labels
-
-        if not videos.exists():
-            return Response({"error": "No videos found in the database."}, status=status.HTTP_404_NOT_FOUND)
 
 
-        video_serializer = VideoListSerializer(videos, many=True)
-        label_serializer = LabelSerializer(labels, many=True)  # Serialize labels
+        video_serializer = VideoListSerializer(many=True)
+        label_serializer = LabelSerializer(many=True)  # Serialize labels
 
         return Response({
             "videos": video_serializer.data,  # List of videos
