@@ -34,7 +34,7 @@ from ..models import FindingLocationClassification, FindingLocationClassificatio
         #its many to may relation so
         location_choices = location.choices.all()
         
-    except FindingLocationClassification.DoesNotExist:
+    except ObjectDoesNotExist:
         location_choices = []
 
     # Get previously selected values to retain them after reloading

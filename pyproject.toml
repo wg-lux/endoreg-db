@@ -82,4 +82,3 @@ packages = ["endoreg_db"]
 
 [tool.uv.sources]
 endoreg-db = { path = "endoreg-db" }
-
