@@ -15,6 +15,14 @@ def load_default_ai_model():
         model_path
     )
 
+def load_qualification_data():
+    """Load Qualification Data"""
+    call_command("load_qualification_data", )
+
+def load_shift_data():
+    """Load Shift Data"""
+    call_command("load_shift_data", )
+
 def load_base_db_data():
     """Load Base DB Data"""
     call_command("load_base_db_data", )
