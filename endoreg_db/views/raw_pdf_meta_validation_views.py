@@ -2,8 +2,7 @@ from django.http import FileResponse, Http404
 import mimetypes
 import os
 from ..models import RawPdfFile
-from ..serializers._old.raw_pdf_meta_validation import PDFFileForMetaSerializer
-from ..serializers._old.raw_pdf_meta_validation import SensitiveMetaUpdateSerializer
+from ..serializers._old.raw_pdf_meta_validation import PDFFileForMetaSerializer, SensitiveMetaUpdateSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status

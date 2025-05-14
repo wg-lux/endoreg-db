@@ -118,7 +118,7 @@ class VideoFileForMetaView(APIView):
     await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 const updatePatientInfo = async () => {
     const updatedData = {
-        sensitive_meta_id: 2,
+        sensitive_meta_id: 6,
         patient_first_name: "Placeholder",
         patient_last_name: "Placeholder",
         patient_dob: "1994-06-15",

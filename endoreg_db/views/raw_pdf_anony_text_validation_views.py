@@ -31,6 +31,12 @@ class RawPdfAnonyTextView(APIView):
             return self.fetch_pdf_metadata(last_id)
 
     def fetch_pdf_metadata(self, last_id):
+
+        try:
+            if last_id:
+                last_id = int(last_id)
+        except ValueError:
+          return Response({"error": "Invalid last_id."}, status=status.HTTP_400_BAD_REQUEST)
         """
         Fetches the next available PDF metadata, including `anonymized_text`.
         """
