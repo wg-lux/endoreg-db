@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional, Union
 from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
+from django.db.models import F
 
 
 # --- Import model-specific function modules ---
@@ -148,7 +149,6 @@ class VideoFile(models.Model):
     sequences = models.JSONField(default=dict, blank=True, help_text="AI prediction sequences based on raw frames.")
     date = models.DateField(blank=True, null=True)
     meta = models.JSONField(blank=True, null=True)
-
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
 
@@ -393,4 +393,22 @@ class VideoFile(models.Model):
         except Exception as e:
             logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
             return self.label_video_segments.none()
+    
+    def get_all_videos(self) -> models.QuerySet["VideoFile"]:
+        """
+        Returns all VideoFile records in the database.
+        """
+        return VideoFile.objects.all()
+        
+    def count_unmodified_others(self) -> int:
+        """
+        Return the number of other VideoFile records where
+        date_modified == date_created (i.e. never modified).
+        """
+        return (
+            VideoFile.objects
+            .filter(date_modified=F('date_created'))  # compare the two fields in SQL
+            .exclude(pk=self.pk)                      # exclude this instance
+            .count()                                  # run a fast COUNT(*) on the filtered set
+        )
 

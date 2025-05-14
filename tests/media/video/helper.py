@@ -15,6 +15,7 @@ from endoreg_db.utils.video.names import (
 
 from django.conf import settings
 
+
 ASSET_DIR:Path = settings.ASSET_DIR
 assert ASSET_DIR.exists(), f"ASSET_DIR does not exist: {ASSET_DIR}"
 
