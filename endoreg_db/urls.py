@@ -17,6 +17,15 @@ from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFi
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
+from .views.examination_views import ExaminationViewSet
+from .views.examination_views import (
+    ExaminationViewSet,
+    get_morphology_classification_choices_for_exam,
+    get_location_classification_choices_for_exam,
+    get_interventions_for_exam,
+    get_instruments_for_exam,
+)
+
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
@@ -27,6 +36,27 @@ urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
+    path('examinations/', ExaminationViewSet.as_view({'get': 'list'}), name='examination-list'),
+    path(
+        'examination/<int:exam_id>/morphology-classification-choices/',
+        get_morphology_classification_choices_for_exam,
+        name='get_morphology_classification_choices_for_exam'
+    ),
+    path(
+        'examination/<int:exam_id>/location-classification-choices/',
+        get_location_classification_choices_for_exam,
+        name='get_location_classification_choices_for_exam'
+    ),
+    path(
+        'examination/<int:exam_id>/interventions/',
+        get_interventions_for_exam,
+        name='get_interventions_for_exam'
+    ),
+    path(
+        'examination/<int:exam_id>/instruments/',
+        get_instruments_for_exam,
+        name='get_instruments_for_exam'
+    ),
     path('conf/', csrf_token_view, name='csrf_token'),
 
 #--------------------------------------START : VIDEO SEGMENTATION END POINTS--------------------------------------
