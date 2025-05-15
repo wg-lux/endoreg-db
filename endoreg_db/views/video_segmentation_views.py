@@ -34,11 +34,11 @@ class VideoView(APIView):
 
 
         video_serializer = VideoListSerializer(many=True)
-        label_serializer = LabelSerializer(many=True)  # Serialize labels
+        label_serializer = LabelSerializer(many=True)
 
         return Response({
-            "videos": video_serializer.data,  # List of videos
-            "labels": label_serializer.data  # List of labels
+            "videos": video_serializer.data, 
+            "labels": label_serializer.data  
         }, status=status.HTTP_200_OK)
 
     def get_video_details(self, request, video_id):
@@ -79,7 +79,13 @@ class VideoView(APIView):
             response = FileResponse(open(full_video_path, "rb"), content_type=mime_type or "video/mp4")
 
             # Enable video streaming and CORS
-            response["Access-Control-Allow-Origin"] = "*"  # Allow frontend access
+            # Wichtig: Wenn Access-Control-Allow-Credentials true ist,
+            # darf Access-Control-Allow-Origin nicht "*" sein.
+            # Ersetzen Sie dies durch Ihre tatsächliche Frontend-Origin.
+            # Für die Entwicklung könnte dies z.B. http://localhost:3000 sein.
+            # In Produktion sollte dies aus den Einstellungen geladen werden.
+            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:3000') # Beispiel für Entwicklung
+            response["Access-Control-Allow-Origin"] = frontend_origin
             response["Access-Control-Allow-Credentials"] = "true"
             response["Accept-Ranges"] = "bytes"  # Enable seeking in video player
             response["Content-Disposition"] = f'inline; filename="{os.path.basename(full_video_path)}"'  # Instructs the browser to play the video instead of downloading it.

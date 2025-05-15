@@ -36,7 +36,8 @@ let
     zsh # If you prefer zsh as the shell
     uvPackage # Add uvPackage to runtime packages if needed elsewhere, or just for devenv internal use
     libglvnd # Add libglvnd for libGL.so.1
-
+    glib
+    zlib
   ];
 
 in 
