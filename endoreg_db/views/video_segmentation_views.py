@@ -78,13 +78,8 @@ class VideoView(APIView):
             mime_type, _ = mimetypes.guess_type(full_video_path)  # Determine the content type (e.g., video/mp4, video/avi)
             response = FileResponse(open(full_video_path, "rb"), content_type=mime_type or "video/mp4")
 
-            # Enable video streaming and CORS
-            # Wichtig: Wenn Access-Control-Allow-Credentials true ist,
-            # darf Access-Control-Allow-Origin nicht "*" sein.
-            # Ersetzen Sie dies durch Ihre tatsächliche Frontend-Origin.
-            # Für die Entwicklung könnte dies z.B. http://localhost:3000 sein.
-            # In Produktion sollte dies aus den Einstellungen geladen werden.
-            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:3000') # Beispiel für Entwicklung
+            # This should be set to the actual origin of the frontend application
+            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000') # Example for local development
             response["Access-Control-Allow-Origin"] = frontend_origin
             response["Access-Control-Allow-Credentials"] = "true"
             response["Accept-Ranges"] = "bytes"  # Enable seeking in video player
