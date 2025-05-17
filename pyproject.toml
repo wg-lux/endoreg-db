@@ -59,6 +59,7 @@ dependencies = [
     "pytest-django>=4.11.1",
     "pytest-cov>=6.1.1",
     "pytest-env>=1.1.5",
+    "lx-anonymizer"
 ]
 
 [project.urls]
@@ -82,3 +83,4 @@ packages = ["endoreg_db"]
 
 [tool.uv.sources]
 endoreg-db = { path = "endoreg-db" }
+lx-anonymizer = { path = "lx-anonymizer" }
