@@ -1,0 +1,36 @@
+
+- model: endoreg_db.qualification
+  fields:
+    name: "endoscopy_supervised"
+    name_de: "Endoskopie (Beaufsichtigt)"
+    name_en: "Endoscopy (Supervised)"
+    qualification_types:
+      - "endoscopy"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "endoscopy_base"
+    name_de: "Endoskopie (Basis)"
+    name_en: "Endoscopy (Base)"
+    qualification_types:
+      - "endoscopy"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "endoscopy_eus"
+    name_de: "Endoskopie (EUS)"
+    name_en: "Endoscopy (EUS)"
+    qualification_types:
+      - "endoscopy"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "endoscopy_ercp"
+    name_de: "Endoskopie (ERCP)"
+    name_en: "Endoscopy (ERCP)"
+    qualification_types:
+      - "endoscopy"
+      - "shift_requirement"

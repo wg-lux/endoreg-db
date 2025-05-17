@@ -1,0 +1,35 @@
+- model: endoreg_db.qualification
+  fields:
+    name: "outpatient_informed_consent"
+    name_de: "Sprechstunde - Aufklärung"
+    name_en: "Outpatient Clinic - Informed Consent"
+    qualification_types:
+      - "outpatient_clinic"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "outpatient_ibd"
+    name_de: "Sprechstunde - CED"
+    name_en: "Outpatient Clinic - IBD"
+    qualification_types:
+      - "outpatient_clinic"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "outpatient_net"
+    name_de: "Sprechstunde - NET"
+    name_en: "Outpatient Clinic - NET"
+    qualification_types:
+      - "outpatient_clinic"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "outpatient_rare_diseases"
+    name_de: "Sprechstunde - Seltene Erkrankungen"
+    name_en: "Outpatient Clinic - Rare Diseases"
+    qualification_types:
+      - "outpatient_clinic"
+      - "shift_requirement"
+

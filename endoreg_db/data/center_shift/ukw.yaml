@@ -1,0 +1,9 @@
+- model: endoreg_db.center_shift
+  fields:
+    name: "ukw_endoscopy"
+    name_de: "Endoskopie (Koloskopie Raum)"
+    name_en: "Endoscopy (Colonoscopy Room)"
+    description: "This shift represents the UKW's colonoscopy room."
+    shift: "endoscopy_base"
+    center: "university_hospital_wuerzburg"
+    

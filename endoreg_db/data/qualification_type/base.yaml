@@ -1,0 +1,29 @@
+- model: endoreg_db.qualification_type
+  fields:
+    name: "ward_rounds"
+    name_de: "Visitendienst"
+    name_en: "Ward Rounds"
+
+- model: endoreg_db.qualification_type
+  fields:
+    name: "outpatient_clinic"
+    name_de: "Sprechstunde"
+    name_en: "Outpatient Clinic"
+
+- model: endoreg_db.qualification_type
+  fields:
+    name: "shift_requirement"
+    name_de: "Schichtdienst"
+    name_en: "Shift Requirement"
+
+- model: endoreg_db.qualification_type
+  fields:
+    name: "endoscopy"
+    name_de: "Endoskopie"
+    name_en: "Endoscopy"
+
+- model: endoreg_db.qualification_type
+  fields:
+    name: "sonography"
+    name_de: "Sonographie"
+    name_en: "Sonography"

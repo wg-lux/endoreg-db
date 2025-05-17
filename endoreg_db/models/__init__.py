@@ -14,6 +14,7 @@ from .administration import (
     CenterProduct,
     CenterResource,
     CenterWaste,
+    CenterShift,
     Person,
     Patient,
     Examiner,
@@ -26,6 +27,14 @@ from .administration import (
     ProductGroup,
     ReferenceProduct,
     ProductWeight,
+    Qualification,
+    QualificationType,
+    Shift,
+    ShiftType,
+    ScheduledDays,
+    Employee,
+    EmployeeType,
+    EmployeeQualification,
 )
 
 ####### Label ########
@@ -175,6 +184,7 @@ __all__ = [
     "CenterProduct",
     "CenterResource",
     "CenterWaste",
+    "CenterShift",
 
     # Person
     "Person",
@@ -184,6 +194,9 @@ __all__ = [
     "FirstName",
     "LastName",
     "Profession",
+    "Employee",
+    "EmployeeType",
+    "EmployeeQualification",
 
     # Product
     'Product',
@@ -191,6 +204,15 @@ __all__ = [
     'ProductGroup',
     'ReferenceProduct',
     'ProductWeight',
+
+    # Qualification
+    "Qualification",
+    "QualificationType",
+
+    # Shift
+    "Shift",
+    "ShiftType",
+    "ScheduledDays",
     
     ####### Label ########
     "Label",
