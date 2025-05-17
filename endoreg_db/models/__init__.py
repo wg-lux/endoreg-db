@@ -4,12 +4,12 @@ from .administration import (
     ActiveModel,
     ModelType,
     Case,
-    # CaseTemplate,
-    # CaseTemplateRule,
-    # CaseTemplateRuleType,
-    # CaseTemplateRuleValue,
-    # CaseTemplateRuleValueType,
-    # CaseTemplateType,
+    CaseTemplate,
+    CaseTemplateRule,
+    CaseTemplateRuleType,
+    CaseTemplateRuleValue,
+    CaseTemplateRuleValueType,
+    CaseTemplateType,
     Center,
     CenterProduct,
     CenterResource,
@@ -148,13 +148,13 @@ from .requirement import (
     RequirementSet,
     RequirementSetType,
 )
-# from .rule import (
-#     RuleType,
-#     Rule,
-#     Ruleset,
-#     RuleAttributeDType,
-#     RuleApplicator,
-# )
+from .rule import (
+    RuleType,
+    Rule,
+    Ruleset,
+    RuleAttributeDType,
+    RuleApplicator,
+)
 
 from .state import (
     SensitiveMetaState,
@@ -172,12 +172,12 @@ __all__ = [
 
     # Case
     "Case",
-    # "CaseTemplate",
-    # "CaseTemplateRule",
-    # "CaseTemplateRuleType",
-    # "CaseTemplateRuleValue",
-    # "CaseTemplateRuleValueType",
-    # "CaseTemplateType",
+    "CaseTemplate",
+    "CaseTemplateRule",
+    "CaseTemplateRuleType",
+    "CaseTemplateRuleValue",
+    "CaseTemplateRuleValueType",
+    "CaseTemplateType",
 
     # Center
     "Center",
@@ -338,11 +338,11 @@ __all__ = [
     "RequirementSetType",
 
     ######## Rule #######
-    # "RuleType",
-    # "Rule",
-    # "Ruleset",
-    # "RuleAttributeDType",
-    # "RuleApplicator",
+    "RuleType",
+    "Rule",
+    "Ruleset",
+    "RuleAttributeDType",
+    "RuleApplicator",
 
     ####### State ########
     "SensitiveMetaState",

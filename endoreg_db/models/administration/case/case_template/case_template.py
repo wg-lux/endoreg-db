@@ -1,8 +1,4 @@
 from django.db import models
-from typing import TYPE_CHECKING # Add TYPE_CHECKING import
-
-if TYPE_CHECKING: # Add TYPE_CHECKING block
-    from .case_template_rule import CaseTemplateRule
 
 class CaseTemplateManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -23,20 +19,16 @@ class CaseTemplate(models.Model):
     template_type = models.ForeignKey("CaseTemplateType", on_delete=models.CASCADE, related_name="case_templates")
     description = models.TextField(blank=True, null=True)
 
-    rules: models.ManyToManyField = models.ManyToManyField( # Add type hint
+    rules = models.ManyToManyField(
         "CaseTemplateRule",
     )
 
-    secondary_rules: models.ManyToManyField = models.ManyToManyField( # Add type hint
+    secondary_rules = models.ManyToManyField(
         "CaseTemplateRule",
         related_name="secondary_rules"
     )
 
     objects = CaseTemplateManager()
-
-    if TYPE_CHECKING: # Add TYPE_CHECKING block for field type hints
-        rules: models.QuerySet["CaseTemplateRule"]
-        secondary_rules: models.QuerySet["CaseTemplateRule"]
 
     def natural_key(self):
         """

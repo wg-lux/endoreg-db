@@ -59,11 +59,7 @@ dependencies = [
     "pytest-django>=4.11.1",
     "pytest-cov>=6.1.1",
     "pytest-env>=1.1.5",
-    "lx-anonymizer",
-    "django-stubs>=5.2.0",
-    "mypy>=1.15.0",
-    "types-tqdm>=4.67.0.20250516",
-    "stubs>=1.0.0",
+    "lx-anonymizer"
 ]
 
 [project.urls]
@@ -88,39 +84,3 @@ packages = ["endoreg_db"]
 [tool.uv.sources]
 endoreg-db = { path = "endoreg-db" }
 lx-anonymizer = { path = "lx-anonymizer" }
-
-[tool.mypy]
-plugins = ["mypy_django_plugin.main"]
-mypy_path = "lx-anonymizer"
-exclude = [
-    "lx-anonymizer/hello.py"
-]
-
-[[tool.mypy.overrides]]
-module = [
-    "pytesseract",
-    "gender_guesser.*",
-    "pymupdf",
-    "dateparser",
-    "scipy.*",
-    "sklearn.*",
-    "icecream",
-    "torchvision",
-    "pandas",
-    "cv2",
-    "django_setup", # For scripts/models_table.py
-    "lx_anonymizer.lx_anonymizer.lx_anonymizer.llm_phi4", # Needs review for correct import path
-    "endoreg_db.case_generator.utils",
-    "endoreg_db.case_generator.lab_sample_factory",
-    "endoreg_db.models.examination.examination", # For endoreg_db/forms/examination_form.py
-    "django_celery_beat.models", # For endoreg_db/management/commands/reset_celery_schedule.py
-    # For lx-anonymizer/tests/
-    "lx_anonymizer.lx_anonymizer.determine_gender",
-    "lx_anonymizer.lx_anonymizer.report_reader",
-    "lx_anonymizer.lx_anonymizer.spacy_extractor",
-    "lx_anonymizer.lx_anonymizer.text_anonymizer"
-]
-ignore_missing_imports = true
-
-[tool.django-stubs]
-django_settings_module = "dev.dev_settings"

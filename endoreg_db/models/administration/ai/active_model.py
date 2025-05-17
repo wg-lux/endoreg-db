@@ -27,6 +27,8 @@ class ActiveModel(models.Model):
     """
 
     name = models.CharField(max_length=255, unique=True)
+    
+    model_meta = models.ForeignKey('ModelMeta', on_delete=models.SET_NULL, blank=True, null=True)
 
     if TYPE_CHECKING:
         model_meta: "ModelMeta"

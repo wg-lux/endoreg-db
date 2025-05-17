@@ -1,7 +1,7 @@
 from django.db import models
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
-from typing import TYPE_CHECKING, Dict, Any, Type, Optional # Added Optional
+from typing import TYPE_CHECKING, Dict, Any, Type
 import logging # Add logging import
 
 # Import logic functions
@@ -11,12 +11,14 @@ from ..state import SensitiveMetaState # Needed for post-save state check
 
 if TYPE_CHECKING:
     from ..administration import (
-        # Center, # Removed unused import
+        Center,
         Examiner,
-        # Patient, # Removed unused import
+        Patient,
+        FirstName, # Keep for type hinting if needed
+        LastName   # Keep for type hinting if needed
     )
-    # from ..other import Gender # Removed unused import
-    # from ..medical import PatientExamination # Removed unused import
+    from ..other import Gender
+    from ..medical import PatientExamination
     # from ..state import SensitiveMetaState # Already imported above
 
 logger = logging.getLogger(__name__) # Add logger instance
@@ -36,9 +38,6 @@ class SensitiveMeta(models.Model):
         null=True,
         help_text="FK to the pseudo-anonymized Patient record."
     )
-    # Type hint for the _id field
-    pseudo_patient_id: Optional[int]
-
     patient_first_name = models.CharField(max_length=255, blank=True, null=True)
     patient_last_name = models.CharField(max_length=255, blank=True, null=True)
     patient_dob = models.DateTimeField(
@@ -53,16 +52,13 @@ class SensitiveMeta(models.Model):
         null=True,
         help_text="FK to the pseudo-anonymized PatientExamination record."
     )
-    # Type hint for the _id field
-    pseudo_examination_id: Optional[int]
-
     patient_gender = models.ForeignKey(
         "Gender",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
     )
-    examiners: models.ManyToManyField = models.ManyToManyField( # Added type hint
+    examiners = models.ManyToManyField(
         "Examiner",
         blank=True,
         help_text="Pseudo-anonymized examiner(s) associated with the examination."
@@ -86,6 +82,14 @@ class SensitiveMeta(models.Model):
     endoscope_sn = models.CharField(max_length=255, blank=True, null=True)
 
     # Removed state_verified property, assuming state is handled via the related SensitiveMetaState model
+
+    if TYPE_CHECKING:
+        examiners: models.QuerySet["Examiner"]
+        pseudo_patient: "Patient"
+        patient_gender: "Gender"
+        pseudo_examination: "PatientExamination"
+        state: "SensitiveMetaState" # Assuming related_name='state' is defined on SensitiveMetaState.origin
+        center: "Center"
 
     @staticmethod
     def _generate_random_dob():
@@ -135,8 +139,8 @@ class SensitiveMeta(models.Model):
 
         state_verified = "Unknown"
         if self.pk:
-            # Access state verification through the related state object
-            state_verified = str(self.is_verified)
+                # Access state verification through the related state object
+                state_verified = str(self.is_verified)
         else:
             state_verified = "[Not saved yet]"
 
@@ -188,7 +192,7 @@ class SensitiveMeta(models.Model):
             # This avoids needing to query again immediately
             self.state = new_state
             return new_state
-        except AttributeError as e: # Added 'as e'
+        except AttributeError:
             # Fallback if related_name is not 'state' or instance not saved yet (no PK)
             if self.pk:
                 state, created = SensitiveMetaState.objects.get_or_create(origin=self)
@@ -199,7 +203,7 @@ class SensitiveMeta(models.Model):
                 return state
             else:
                 # Cannot create state if the main instance has no PK
-                raise ValueError("Cannot get or create state for an unsaved SensitiveMeta instance.") from e # Re-raise from e
+                raise ValueError("Cannot get or create state for an unsaved SensitiveMeta instance.")
 
         # If self.state existed initially, return it
         return self.state
@@ -248,7 +252,7 @@ class SensitiveMeta(models.Model):
                 SensitiveMetaState.objects.create(origin=self)
             except AttributeError:
                  # Fallback check if 'state' related_name is missing
-                if not SensitiveMetaState.objects.filter(origin=self).exists():
+                 if not SensitiveMetaState.objects.filter(origin=self).exists():
                     SensitiveMetaState.objects.create(origin=self)
 
         # 4. Handle ManyToMany linking (examiners) *after* the instance has a PK.

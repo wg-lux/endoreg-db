@@ -29,7 +29,7 @@ class Case(models.Model):
         help_text="The patient associated with this case.",
         db_index=True
     )
-    patient_examinations: models.ManyToManyField = models.ManyToManyField( # Add type hint
+    patient_examinations = models.ManyToManyField(
         'PatientExamination',
         related_name='cases',
         help_text="The examinations included in this case."
@@ -75,8 +75,8 @@ class Case(models.Model):
     )
 
     if TYPE_CHECKING:
-        patient: "Patient" # Remove redefinition, keep type hint
-        # patient_examinations: models.QuerySet["PatientExamination"] # Remove redefinition, keep type hint in field
+        patient: "Patient"
+        patient_examinations: models.QuerySet["PatientExamination"]
 
     class Meta:
         ordering = ['-start_date', 'patient']

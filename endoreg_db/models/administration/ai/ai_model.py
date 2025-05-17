@@ -20,7 +20,7 @@ class AiModelManager(models.Manager):
         """
         Return the model with the given name.
         """
-        return self.get(name=name) # No change needed here, already returns "AiModel"
+        return self.get(name=name)
 
 
 class AiModel(models.Model):
@@ -44,7 +44,28 @@ class AiModel(models.Model):
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    model_type = models.ForeignKey(
+        "ModelType",
+        on_delete=models.CASCADE,
+        related_name="ai_models",
+        blank=True,
+        null=True,
+    )
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
+    video_segmentation_labelset = models.ForeignKey(
+        "VideoSegmentationLabelSet",
+        on_delete=models.CASCADE,
+        related_name="ai_models",
+        blank=True,
+        null=True,
+    )
+    active_meta = models.ForeignKey(
+        "ModelMeta",
+        on_delete=models.SET_NULL,
+        related_name="active_model",
+        blank=True,
+        null=True,
+    )
 
     if TYPE_CHECKING:
         model_type: "ModelType"

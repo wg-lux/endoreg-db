@@ -4,7 +4,6 @@ import json
 import shutil
 import random
 from collections import defaultdict
-from typing import Any, Dict, List # Ensure this is present and used
 
 # Define the directory paths
 base_dir = "/run/media/setup-user/8f1cd448-7aef-4eb8-9acb-d05869ea1923"
@@ -21,10 +20,10 @@ os.makedirs(output_json_dir, exist_ok=True)
 os.makedirs(output_image_dir, exist_ok=True)
 
 # Initialize dictionaries to track examples and counts
-key_stats: Dict[str, Dict[Any, int]] = defaultdict(lambda: defaultdict(int))
-examples: Dict[str, List[Dict[Any, Any]]] = defaultdict(list)
+key_stats = defaultdict(lambda: defaultdict(int))
+examples = defaultdict(list)
 
-def normalize_value(value: Any) -> Any:
+def normalize_value(value):
     """
     Converts complex data types into a hashable string representation.
     """
@@ -32,7 +31,7 @@ def normalize_value(value: Any) -> Any:
         return str(value)
     return value
 
-def explore_json_file(json_file: str) -> bool:
+def explore_json_file(json_file):
     """
     Reads a JSON file and updates key_stats and examples for specific keys.
     Also copies the corresponding image if the "path" key exists.
@@ -100,19 +99,8 @@ explore_directory(jsons_dir)
 with open(os.path.join(output_json_dir, "key_stats.json"), "w", encoding="utf-8") as stats_file:
     json.dump({k: dict(v) for k, v in key_stats.items()}, stats_file, indent=4)
 
-# Process examples for JSON dump
-processed_examples_for_json: Dict[str, List[Any]] = {}
-for k, v_list in examples.items(): # examples is Dict[str, List[Dict[Any, Any]]]
-    ids_list: List[Any] = []
-    # v_list is List[Dict[Any, Any]]
-    # item_dict is Dict[Any, Any]
-    for item_dict in v_list:
-        if isinstance(item_dict, dict) and "_id" in item_dict:
-            ids_list.append(item_dict["_id"]) # item_dict["_id"] is Any
-    processed_examples_for_json[k] = ids_list
-
 with open(os.path.join(output_json_dir, "examples.json"), "w", encoding="utf-8") as examples_file:
-    json.dump(processed_examples_for_json, examples_file, indent=4)
+    json.dump({k: [e["_id"] for e in v] for k, v in examples.items()}, examples_file, indent=4)
 
 # Display summary
 print("Exploration complete!")
