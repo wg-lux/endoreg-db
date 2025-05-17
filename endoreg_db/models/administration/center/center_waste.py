@@ -20,10 +20,7 @@ class CenterWaste(models.Model):
     emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:
-        center: "Center"
-        waste: "Waste"
-        unit: "Unit"
-        emission_factor: "EmissionFactor"
+        pass
     
     def __str__(self) -> str:
         result = f"{self.quantity} {self.unit}"

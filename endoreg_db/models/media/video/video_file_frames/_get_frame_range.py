@@ -25,7 +25,7 @@ def _get_frame_range(video: "VideoFile", start_frame_number: int, end_frame_numb
         logger.error("Could not access frame range for video %s via related manager.", video.uuid)
         # Fallback query
         return Frame.objects.filter(
-            video_file=video,
+            video=video,
             frame_number__gte=start_frame_number,
             frame_number__lte=end_frame_number,
         ).order_by("frame_number")

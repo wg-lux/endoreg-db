@@ -1,8 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, Optional
 # --- Fix Imports ---
-from ....metadata import SensitiveMeta
-from ....metadata.sensitive_meta_logic import update_or_create_sensitive_meta_from_dict
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta # Corrected import path
+from endoreg_db.models.metadata.sensitive_meta_logic import update_or_create_sensitive_meta_from_dict # Corrected import path
 # --- End Fix ---
 from django.db import transaction
 
@@ -48,8 +48,8 @@ def _update_text_metadata(
             frame_fraction=ocr_frame_fraction, cap=cap
         )
     except Exception as text_extract_e:
-         logger.error("Failed during text extraction step for video %s: %s", video.uuid, text_extract_e, exc_info=True)
-         raise RuntimeError(f"Text extraction failed for video {video.uuid}") from text_extract_e
+        logger.error("Failed during text extraction step for video %s: %s", video.uuid, text_extract_e, exc_info=True)
+        raise RuntimeError(f"Text extraction failed for video {video.uuid}") from text_extract_e
 
     # --- Atomic Update Block ---
     try:

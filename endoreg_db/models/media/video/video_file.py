@@ -60,7 +60,7 @@ from .video_file_ai import (
 from .pipe_1 import _pipe_1, _test_after_pipe_1
 from .pipe_2 import _pipe_2
 
-from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, STORAGE_DIR
+from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR
 from ...state import VideoState
 from ...label import LabelVideoSegment, Label
 
@@ -156,14 +156,14 @@ class VideoFile(models.Model):
         label_video_segments: "models.QuerySet[LabelVideoSegment]"
         frames: "models.QuerySet[Frame]"
         center: "Center"
-        processor: "EndoscopyProcessor"
-        video_meta: "VideoMeta"
-        examination: "PatientExamination"
-        patient: "Patient"
-        sensitive_meta: "SensitiveMeta"
-        state: "VideoState"
-        ai_model_meta: "ModelMeta"
-        import_meta: "VideoImportMeta"
+        processor: Optional["EndoscopyProcessor"]
+        video_meta: Optional["VideoMeta"]
+        examination: Optional["PatientExamination"]
+        patient: Optional["Patient"]
+        sensitive_meta: Optional["SensitiveMeta"]
+        state: Optional["VideoState"]
+        ai_model_meta: Optional["ModelMeta"]
+        import_meta: Optional["VideoImportMeta"]
 
 
     # Pipeline Functions
@@ -263,11 +263,11 @@ class VideoFile(models.Model):
     def active_file(self) -> Optional[File]:
         if self.is_processed:
             return self.processed_file
-        elif self.has_raw:
+        if self.has_raw:
             return self.raw_file
-        else:
-            logger.warning("VideoFile %s has neither processed nor raw file set.", self.uuid)
-            return None
+        # This code is reached only if the above conditions weren't met
+        logger.warning("VideoFile %s has neither processed nor raw file set.", self.uuid)
+        return None
 
     @property
     def active_file_path(self) -> Optional[Path]:
@@ -275,17 +275,13 @@ class VideoFile(models.Model):
         try:
             if active == self.processed_file:
                 return _get_processed_file_path(self)
-            elif active == self.raw_file:
+            if active == self.raw_file:
                 return _get_raw_file_path(self)
-            else:
-                return None
+            # This code is reached if active was neither processed_file nor raw_file
+            return None
         except Exception as e:
             logger.warning("Could not get path for active file of VideoFile %s: %s", self.uuid, e, exc_info=True)
             return None
-
-
-
-
 
     @classmethod
     def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
@@ -411,4 +407,3 @@ class VideoFile(models.Model):
             .exclude(pk=self.pk)                      # exclude this instance
             .count()                                  # run a fast COUNT(*) on the filtered set
         )
-

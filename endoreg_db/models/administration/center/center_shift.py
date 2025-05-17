@@ -34,7 +34,7 @@ class CenterShift(models.Model):
 
     start_time = models.TimeField()
     end_time = models.TimeField()
-    scheduled_days = models.ManyToManyField(
+    scheduled_days: models.ManyToManyField = models.ManyToManyField( # Add type hint
         "ScheduledDays",
         related_name="center_shifts",
     )
@@ -47,9 +47,7 @@ class CenterShift(models.Model):
     )
 
     if TYPE_CHECKING:
-        center: "Center"
-        shift: "Shift"
-        scheduled_days: models.QuerySet["ScheduledDays"]
+        pass # Keep an empty TYPE_CHECKING block if no other type hints are needed.
 
     def __str__(self):
         return f"{self.center} - {self.shift}"

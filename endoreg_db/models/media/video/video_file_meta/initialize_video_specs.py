@@ -35,6 +35,7 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
         raise FileNotFoundError(f"Could not determine video file path for spec initialization for {video.uuid}.")
 
     logger.info("Initializing video specs directly from file %s (%s) for %s", target_file_name, video_path, video.uuid)
+    video_cap = None  # Initialize video_cap to None
     try:
         if not video_path.exists():
             # Raise exception
@@ -131,12 +132,11 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
         else:
             logger.info("No video specs needed updating for %s from file %s.", video.uuid, target_file_name)
             return True
-
-    except Exception as e:
+    except FileNotFoundError as e:
         # Log and re-raise exception
         logger.error("Error initializing video specs for %s from file %s: %s", video.uuid, video_path, e, exc_info=True)
         # Ensure capture is released in case of unexpected error
-        if 'video_cap' in locals() and video_cap.isOpened():
+        if video_cap is not None and video_cap.isOpened():
             video_cap.release()
         # Re-raise as RuntimeError
         raise RuntimeError(f"Failed to initialize video specs for {video.uuid} from {video_path}") from e

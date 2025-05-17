@@ -26,11 +26,7 @@ class CenterResource(models.Model):
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
     
     if TYPE_CHECKING:
-        center: "Center"
-        resource: "Resource"
-        transport_emission_factor: "EmissionFactor"
-        use_emission_factor: "EmissionFactor"
-        unit: "Unit"
+        pass
 
     def __str__(self):
         result_string = ""

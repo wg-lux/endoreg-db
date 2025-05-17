@@ -21,7 +21,7 @@ def _get_frames(video: "VideoFile") -> "QuerySet[Frame]":
     except AttributeError:
         logger.error("Could not access frames for video %s. 'frames' related manager not found.", video.uuid)
         # Fallback query
-        return Frame.objects.filter(video_file=video).order_by("frame_number")
+        return Frame.objects.filter(video=video).order_by("frame_number")
     except Exception as e:
         logger.error("Error getting frames for video %s: %s", video.uuid, e, exc_info=True)
         return Frame.objects.none() # Return empty queryset on error

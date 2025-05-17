@@ -19,7 +19,7 @@ def _get_frame(video: "VideoFile", frame_number: int) -> "Frame":
     except AttributeError:
         logger.error("Could not access frame %d for video %s via related manager.", frame_number, video.uuid)
         # Fallback query
-        return Frame.objects.get(video_file=video, frame_number=frame_number)
+        return Frame.objects.get(video=video, frame_number=frame_number)
     except Frame.DoesNotExist:
         logger.error("Frame %d not found for video %s.", frame_number, video.uuid)
         raise # Re-raise DoesNotExist

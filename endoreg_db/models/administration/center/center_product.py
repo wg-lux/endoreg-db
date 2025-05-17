@@ -28,8 +28,7 @@ class CenterProduct(models.Model):
     )
 
     if TYPE_CHECKING:
-        product: "Product"
-        center: "Center"
+        pass
 
     class Meta:
         ordering = ['center', '-date_used', 'product']

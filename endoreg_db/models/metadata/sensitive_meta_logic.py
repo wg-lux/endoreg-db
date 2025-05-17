@@ -3,7 +3,7 @@ import os
 import random
 from hashlib import sha256
 from datetime import datetime, timedelta, date
-from typing import TYPE_CHECKING, Dict, Any, Optional, Type
+from typing import TYPE_CHECKING, Dict, Any, Optional, Type, Tuple # Added Tuple
 
 from django.utils import timezone
 from django.db import transaction
@@ -14,9 +14,9 @@ from endoreg_db.utils import guess_name_gender
 
 # Import models needed for logic, use local imports inside functions if needed to break cycles
 from ..administration import Center, Examiner, Patient, FirstName, LastName
-from ..other import Gender
+from ..other import Gender # Keep Gender import
 from ..medical import PatientExamination
-from ..state import SensitiveMetaState
+# from ..state import SensitiveMetaState # Removed unused import
 
 
 if TYPE_CHECKING:
@@ -71,8 +71,8 @@ def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -
         raise ValueError("Center is required to calculate patient hash.")
 
     hash_str = get_patient_hash(
-        first_name=first_name,
-        last_name=last_name,
+        first_name=first_name or DEFAULT_UNKNOWN_NAME, # Ensure string
+        last_name=last_name or DEFAULT_UNKNOWN_NAME,   # Ensure string
         dob=dob,
         center=center.name, # Use center name
         salt=salt,
@@ -97,8 +97,8 @@ def calculate_examination_hash(instance: "SensitiveMeta", salt: str = SECRET_SAL
 
 
     hash_str = get_patient_examination_hash(
-        first_name=first_name,
-        last_name=last_name,
+        first_name=first_name or DEFAULT_UNKNOWN_NAME, # Ensure string
+        last_name=last_name or DEFAULT_UNKNOWN_NAME,   # Ensure string
         dob=dob,
         examination_date=examination_date,
         center=center.name, # Use center name
@@ -118,9 +118,9 @@ def create_pseudo_examiner_logic(instance: "SensitiveMeta") -> "Examiner":
         # Ensure default center exists or handle appropriately
         try:
             default_center = Center.objects.get_by_natural_key("endoreg_db_demo")
-        except Center.DoesNotExist:
+        except Center.DoesNotExist as e: # Changed exc to e to match usage
             logger.error("Default center 'endoreg_db_demo' not found. Cannot create default examiner.")
-            raise ValueError("Default center 'endoreg_db_demo' not found.")
+            raise ValueError("Default center 'endoreg_db_demo' not found.") from e # Use e
 
         examiner, _created = Examiner.custom_get_or_create(
             first_name="Unknown", last_name="Unknown", center=default_center
@@ -137,7 +137,7 @@ def get_or_create_pseudo_patient_logic(instance: "SensitiveMeta") -> "Patient":
     """Gets or creates the pseudo patient based on instance data."""
     # Ensure necessary fields are set
     if not instance.patient_hash:
-         instance.patient_hash = calculate_patient_hash(instance)
+        instance.patient_hash = calculate_patient_hash(instance) # Corrected indentation
     if not instance.center:
         raise ValueError("Center must be set before creating pseudo patient.")
     if not instance.patient_gender:
@@ -163,14 +163,14 @@ def get_or_create_pseudo_patient_examination_logic(instance: "SensitiveMeta") ->
     """Gets or creates the pseudo patient examination based on instance data."""
     # Ensure necessary fields are set
     if not instance.patient_hash:
-         instance.patient_hash = calculate_patient_hash(instance)
+        instance.patient_hash = calculate_patient_hash(instance) # Corrected indentation
     if not instance.examination_hash:
-         instance.examination_hash = calculate_examination_hash(instance)
+        instance.examination_hash = calculate_examination_hash(instance) # Corrected indentation
 
     # Ensure the pseudo patient exists first, as PatientExamination might depend on it
-    if not instance.pseudo_patient_id:
+    if not instance.pseudo_patient_id: # This check can remain as it implies pseudo_patient is not set
         pseudo_patient = get_or_create_pseudo_patient_logic(instance)
-        instance.pseudo_patient_id = pseudo_patient.pk # Assign FK directly
+        instance.pseudo_patient = pseudo_patient # Assign model instance directly
 
     patient_examination, _created = PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
         patient_hash=instance.patient_hash,
@@ -205,12 +205,17 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 
     # 3. Ensure Gender exists (should be set before calling save, e.g., during creation/update)
     if not instance.patient_gender:
-         # Attempt to guess if names are available
-         first_name = instance.patient_first_name or DEFAULT_UNKNOWN_NAME
-         gender = guess_name_gender(first_name)
-         if not gender:
-             raise ValueError("Patient gender could not be determined and must be set before saving.")
-         instance.patient_gender = gender
+        # Attempt to guess if names are available
+        first_name = instance.patient_first_name or DEFAULT_UNKNOWN_NAME
+        gender_str = guess_name_gender(first_name)
+        if not gender_str:
+            raise ValueError("Patient gender could not be determined and must be set before saving.")
+        try:
+            gender_obj = Gender.objects.get(name__iexact=gender_str)
+            instance.patient_gender = gender_obj
+        except Gender.DoesNotExist as e: # Changed exc to e
+            logger.error(f"Guessed gender '{gender_str}' does not exist as a Gender record.")
+            raise ValueError(f"Patient gender '{gender_str}' is not a valid Gender. Please ensure it exists in the Gender table.") from e # Use e
 
 
     # 4. Calculate Hashes (depends on DOB, Exam Date, Center, Names)
@@ -220,12 +225,12 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
     # 5. Get or Create Pseudo Patient (depends on hash, center, gender, dob)
     # Assign directly to the FK field to avoid premature saving issues
     pseudo_patient = get_or_create_pseudo_patient_logic(instance)
-    instance.pseudo_patient_id = pseudo_patient.pk
+    instance.pseudo_patient = pseudo_patient # Assign model instance directly
 
     # 6. Get or Create Pseudo Examination (depends on hashes)
     # Assign directly to the FK field
     pseudo_examination = get_or_create_pseudo_patient_examination_logic(instance)
-    instance.pseudo_examination_id = pseudo_examination.pk
+    instance.pseudo_examination = pseudo_examination # Assign model instance directly
 
     # 7. Get or Create Pseudo Examiner (depends on names, center)
     # This needs to happen *after* the main instance has a PK for M2M linking.
@@ -270,12 +275,17 @@ def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, 
     selected_data["patient_last_name"] = last_name
 
     if "patient_gender" not in selected_data or not selected_data["patient_gender"]:
-        gender = guess_name_gender(first_name)
-        if not gender:
-             # Handle cases where gender cannot be guessed (e.g., raise error or use a default)
-             logger.warning(f"Could not guess gender for name '{first_name}'. Attempting to save without gender.")
-             # raise ValueError(f"Could not guess gender for name '{first_name}'. Please provide 'patient_gender'.")
-        selected_data["patient_gender"] = gender # Can be None if guess failed
+        gender_str = guess_name_gender(first_name)
+        if not gender_str:
+            logger.warning(f"Could not guess gender for name \'{first_name}\'. Attempting to save without gender.")
+            selected_data["patient_gender"] = None # Set to None if not guessable
+        else:
+            try:
+                gender_obj = Gender.objects.get(name__iexact=gender_str) # Fetch Gender object
+                selected_data["patient_gender"] = gender_obj
+            except Gender.DoesNotExist:
+                logger.warning(f"Guessed gender \'{gender_str}\' for name \'{first_name}\' does not exist as a Gender record. Setting gender to None.")
+                selected_data["patient_gender"] = None # Set to None if not found
 
     # Update name DB
     update_name_db(first_name, last_name)
@@ -302,7 +312,7 @@ def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, A
         try:
             center = Center.objects.get_by_natural_key(center_name)
             instance.center = center # Update center directly
-        except Center.DoesNotExist as exc:
+        except Center.DoesNotExist: # Removed 'as exc' as it's not used
             logger.warning(f"Center '{center_name}' not found during update. Keeping existing center.")
             selected_data.pop('center', None) # Remove from dict if not found
 
@@ -348,7 +358,7 @@ def update_or_create_sensitive_meta_from_dict(
     cls: Type["SensitiveMeta"],
     data: Dict[str, Any],
     instance: Optional["SensitiveMeta"] = None
-) -> "SensitiveMeta":
+) -> Tuple["SensitiveMeta", bool]: # Corrected return type
     """Logic to update or create a SensitiveMeta instance from a dictionary."""
     # Check if the instance already exists based on unique fields
     if instance:

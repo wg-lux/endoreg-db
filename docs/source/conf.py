@@ -1,6 +1,7 @@
 import sys
 import os
 import django
+from typing import List # Add List import
 
 # Add the project root directory (containing 'endoreg_db' and 'tests') to the path
 project_root = os.path.abspath('../../')
@@ -27,7 +28,7 @@ except Exception as e:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'EndoReg-DB'
-copyright = '2025, AG-Lux'
+project_copyright = '2025, AG-Lux' # Renamed from copyright
 author = 'AG-Lux'
 
 # -- General configuration ---------------------------------------------------
@@ -57,7 +58,7 @@ intersphinx_mapping = {
 }
 
 templates_path = ['_templates']
-exclude_patterns = []
+exclude_patterns: List[str] = [] # Add type hint
 
 
 

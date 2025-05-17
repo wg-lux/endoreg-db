@@ -8,12 +8,12 @@ from .ai import (
 # Case
 from .case import (
     Case,
-    CaseTemplate,
-    CaseTemplateRule,
-    CaseTemplateRuleType,
-    CaseTemplateRuleValue,
-    CaseTemplateRuleValueType,
-    CaseTemplateType,
+#     CaseTemplate,
+#     CaseTemplateRule,
+#     CaseTemplateRuleType,
+#     CaseTemplateRuleValue,
+#     CaseTemplateRuleValueType,
+#     CaseTemplateType,
 )
 
 # Center
@@ -71,12 +71,12 @@ __all__ = [
 
     # Case
     "Case",
-    "CaseTemplate",
-    "CaseTemplateRule",
-    "CaseTemplateRuleType",
-    "CaseTemplateRuleValue",
-    "CaseTemplateRuleValueType",
-    "CaseTemplateType",
+    # "CaseTemplate",
+    # "CaseTemplateRule",
+    # "CaseTemplateRuleType",
+    # "CaseTemplateRuleValue",
+    # "CaseTemplateRuleValueType",
+    # "CaseTemplateType",
 
     # Center
     "Center",
