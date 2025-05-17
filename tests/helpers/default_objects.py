@@ -258,6 +258,7 @@ def get_default_video_file():
         load_ai_model_label_data,
         load_ai_model_data,
     )
+    
     load_disease_data()
     load_event_data()
     load_information_source()
@@ -276,5 +277,10 @@ def get_default_video_file():
         delete_source=False,  # Keep the original asset for other tests
         processor_name = DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
     )
+
+    # Ensure video metadata is loaded, including frame_count and frames are initialized
+    if video_file:
+        video_file.initialize() # This calls initialize_video_specs, set_frame_dir, get_or_create_state, and initialize_frames
+        video_file.save() # Save the updated metadata and initialized frames
 
     return video_file
