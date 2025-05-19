@@ -1,0 +1,136 @@
+"""
+Data Loader Helpers and others
+"""
+from django.core.management import call_command
+from pathlib import Path
+ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+def load_default_ai_model(): 
+    """Load Default AI Model"""
+    model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.ckpt"
+    # Pass arguments individually to call_command
+    call_command(
+        "create_multilabel_model_meta",
+        "--model_path",
+        model_path
+    )
+
+def load_qualification_data():
+    """Load Qualification Data"""
+    call_command("load_qualification_data", )
+
+def load_shift_data():
+    """Load Shift Data"""
+    call_command("load_shift_data", )
+
+def load_base_db_data():
+    """Load Base DB Data"""
+    call_command("load_base_db_data", )
+
+def load_information_source():
+    """Load Information Source Data"""
+    call_command("load_information_source", )
+
+def load_risk_data():
+    """Load Risk Data"""
+    call_command("load_risk_data", )
+
+def load_center_data():
+    """Load Center Data"""
+    call_command("load_center_data", )
+
+def load_endoscope_data():
+    """Load Endoscope Data"""
+    call_command("load_endoscope_data", )
+
+def load_distribution_data():
+    """Load Distribution Data"""
+    call_command("load_distribution_data", )
+
+def load_gender_data():
+    """Load Gender Data"""
+    call_command("load_gender_data", )
+
+def load_report_reader_flag_data():
+    """Load Report Reader Flag Data"""
+    call_command("load_report_reader_flag_data", )
+    
+def load_pdf_type_data():
+    """Load PDF Type Data"""
+    call_command("load_pdf_type_data", )
+    
+def load_unit_data():
+    call_command("load_unit_data", )
+    
+def load_disease_data():
+    call_command("load_disease_data", )
+    
+def load_event_data():
+    call_command("load_event_data", )
+    
+def load_organ_data():
+    call_command("load_organ_data", )
+    
+def load_contraindication_data():
+    call_command("load_contraindication_data", )
+    
+def load_examination_data():
+    call_command("load_examination_data", )
+    
+def load_lab_value_data():
+    call_command("load_lab_value_data", )
+    
+def load_finding_data():
+    call_command("load_finding_data", )
+    
+def load_examination_indication_data():
+    call_command("load_examination_indication_data", )
+    
+def load_medication_data():
+    call_command("load_medication_data", )
+
+def load_requirement_data():
+
+    call_command("load_requirement_data", )
+
+def load_ai_model_label_data():
+    call_command("load_ai_model_label_data", )
+
+def load_ai_model_data():    
+    call_command("load_ai_model_data", )
+
+def load_green_endoscopy_wuerzburg_data():
+    """Load Green Endoscopy Wuerzburg Data"""
+    call_command("load_green_endoscopy_wuerzburg_data", )
+
+def load_data():
+    """Load all data in correct order"""
+    
+    load_information_source()
+    load_risk_data()
+    load_center_data()
+    load_endoscope_data()
+    load_distribution_data()
+
+    load_gender_data()
+    load_report_reader_flag_data()
+    load_pdf_type_data()
+    load_unit_data()
+    load_disease_data()
+    load_event_data()
+    load_organ_data()
+    load_contraindication_data()
+    load_examination_data()
+    load_lab_value_data()
+    load_finding_data()
+    load_examination_indication_data()
+    load_medication_data()
+    load_requirement_data()
+
+    load_ai_model_label_data()
+    load_ai_model_data()
+
+    load_green_endoscopy_wuerzburg_data()
+
+    
+    
