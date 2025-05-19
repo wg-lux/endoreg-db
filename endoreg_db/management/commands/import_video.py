@@ -6,18 +6,19 @@ Management command to import a video file into the database.
 This command is designed to be run from the command line and takes various arguments
 to specify the video file, center name, and other options.
 """
+from curses.ascii import FF
 from itertools import count
 from multiprocessing import process
 from django.core.management import BaseCommand
-from io import StringIO
+from django.db import connection
 from django.core.management import BaseCommand
 from pathlib import Path
 from endoreg_db.models import VideoFile, ModelMeta
 from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
-import logging
-from django.db import connection
+from endoreg_db.management.commands import validate_video
 
+import logging
 from ...helpers.default_objects import (
     get_latest_segmentation_model
 )
@@ -190,7 +191,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--processor_name",
             type=str,
-            default="endoscope_processor",
+            default="olympus_cv_1500",
             help="Name of the processor to associate with video",
         )
 
@@ -288,7 +289,18 @@ class Command(BaseCommand):
         if self.FFMPEG_AVAILABLE:
             self.stdout.write(self.style.SUCCESS(f"FFMPEG is available"))
 
-    @handle.skipUnless(FFMPEG_AVAILABLE)
+        if self.FFMPEG_AVAILABLE:
+            VideoFile.create_from_file(
+                file_path=video_file,
+                center_name=center_name,
+                delete_source=delete_source,
+                save_video_file=save_video_file,
+                frame_dir_root=frame_dir_root,
+                video_dir_root=video_dir_root,
+                processor_name=processor_name,
+                model_path=model_path,
+                segmentation=segmentation,
+            )
     
     
     
@@ -298,7 +310,7 @@ class Command(BaseCommand):
         """
         Ask the operator to select one processor from a QuerySet
         belonging to a single centre.  Never called if the QS has
-        length 0 or 1 – handle that beforehand.
+        length 0 or 1.
         """
         # turn the QS into a concrete list so we can index it later
         processors = list(processors_qs)           # -> [EndoscopyProcessor, …]
