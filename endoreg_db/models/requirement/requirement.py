@@ -1,7 +1,10 @@
 from django.db import models
 from typing import TYPE_CHECKING, Optional
 
+from numpy import require
 from pydantic import BaseModel
+
+from tests import requirement
 
 QuerySet = models.QuerySet
 
@@ -318,7 +321,29 @@ class Requirement(models.Model):
         )
         return models_dict
     
+    @property
+    def operator_type_tuples(self):
+        """
+        Returns a list of tuples containing operators and requirement types.
+
+        This property constructs a list of tuples, each pairing an operator with its corresponding
+        requirement type. It utilizes the get_operator_type_tuples function to achieve this.
+        """
+        from .requirement_evaluation import get_operator_type_tuples
+
+        return get_operator_type_tuples(self)
+    
     def evaluate(self, **kwargs):
+        operator_type_tuples = self.operator_type_tuples
+
+        
+        for operator_type_tuple in operator_type_tuples:
+            operator = operator_type_tuple.operator
+            requirement_type = operator_type_tuple.requirement_type
+            operator_function = operator.get_function()
+            
+        
+        
         #TODO refactor after prototyping
         # from .requirement_evaluation.requirement_type_parser import get_input_data
 

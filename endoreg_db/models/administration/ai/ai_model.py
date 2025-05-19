@@ -1,14 +1,18 @@
 """
 Django model for AI models.
 """
+from importlib import metadata
 from django.db import models
 from icecream import ic
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
     from .model_type import ModelType
-    from ...metadata import ModelMeta #FIXME Validate import
+    from ...metadata import ModelMeta 
     from ...label import VideoSegmentationLabelSet
+    # Forward reference AiModel for use in type hints within the class itself
+    from typing import ForwardRef
+    AiModelRef = ForwardRef("'AiModel'")
 
      
 class AiModelManager(models.Manager):
@@ -16,7 +20,7 @@ class AiModelManager(models.Manager):
     Manager for AI models with custom query methods.
     """
 
-    def get_by_natural_key(self, name: str) -> "AiModel":
+    def get_by_natural_key(self, name: str):
         """
         Return the model with the given name.
         """
@@ -44,7 +48,7 @@ class AiModel(models.Model):
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    model_type = models.ForeignKey(
+    model_type:Optional[models.ForeignKey[Union["ModelType", None]]] = models.ForeignKey(
         "ModelType",
         on_delete=models.CASCADE,
         related_name="ai_models",
@@ -52,26 +56,24 @@ class AiModel(models.Model):
         null=True,
     )
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
-    video_segmentation_labelset = models.ForeignKey(
+    video_segmentation_labelset:Optional[models.ForeignKey[Union["VideoSegmentationLabelSet", None]]] = models.ForeignKey(
         "VideoSegmentationLabelSet",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    active_meta = models.ForeignKey(
+    active_meta:Optional[models.ForeignKey[Union["ModelMeta", None]]] = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
-        related_name="active_model",
+        related_name="active_model", 
         blank=True,
         null=True,
     )
 
     if TYPE_CHECKING:
-        model_type: "ModelType"
-        active_meta: "ModelMeta"
-        video_segmentation_labelset: "VideoSegmentationLabelSet"
         metadata_versions: models.QuerySet["ModelMeta"]
+
 
     def get_version(self, version: int) -> "ModelMeta":
         """
@@ -106,7 +108,7 @@ class AiModel(models.Model):
         """
         Set the active model.
         """
-        from ...metadata import ModelMeta #FIXME Validate import
+        from ...metadata import ModelMeta
 
         model = cls.objects.get(name=model_name)
         assert model is not None, "Model not found"

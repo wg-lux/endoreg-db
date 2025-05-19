@@ -56,3 +56,18 @@ class RequirementOperator(models.Model):
             str: The name attribute of the operator.
         """
         return str(self.name)
+    
+    def get_function(self):
+        """
+        Retrieve the function associated with the requirement operator.
+        
+        This method looks up the operator name in the supported operators mapping
+        and returns the corresponding operator function used for evaluating requirements.
+        If the operator name is not recognized, the behavior is undefined.
+        
+        Returns:
+            function: The operator function associated with the operator name.
+        """
+        from endoreg_db.models.requirement.requirement_evaluation import get_operator_function
+
+        return get_operator_function(self.name)

@@ -1,6 +1,7 @@
 import sys
 import os
 import django
+from typing import List
 
 # Add the project root directory (containing 'endoreg_db' and 'tests') to the path
 project_root = os.path.abspath('../../')
@@ -57,7 +58,7 @@ intersphinx_mapping = {
 }
 
 templates_path = ['_templates']
-exclude_patterns = []
+exclude_patterns:List[str] = []
 
 
 

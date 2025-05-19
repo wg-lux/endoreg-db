@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ...medical import Endoscope, EndoscopyProcessor
     from ...administration import (
-        FirstName, LastName,
         CenterProduct,
         CenterWaste, CenterResource
     )
@@ -30,16 +29,15 @@ class Center(models.Model):
     last_names = models.ManyToManyField("LastName", related_name="centers")
 
     if TYPE_CHECKING:
+    #     first_names: RelatedManager["FirstName"]
+    #     last_names: RelatedManager["LastName"]
         center_products: models.QuerySet["CenterProduct"]
         center_resources: models.QuerySet["CenterResource"]
         center_wastes: models.QuerySet["CenterWaste"]
         endoscopy_processors: models.QuerySet["EndoscopyProcessor"]
         endoscopes: models.QuerySet["Endoscope"]
-        first_names: models.QuerySet["FirstName"]
-        last_names: models.QuerySet["LastName"]
         anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
         anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
-        objects: CenterManager
         
 
     @classmethod
@@ -60,5 +58,3 @@ class Center(models.Model):
 
     def get_endoscopes(self):
         return self.endoscopes.all()
-
-

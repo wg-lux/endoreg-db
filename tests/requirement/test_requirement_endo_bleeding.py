@@ -5,11 +5,15 @@ import shutil
 
 from endoreg_db.models import (
     Requirement, 
+    RequirementOperator,
+    RequirementType,
     FindingIntervention,
-    ExaminationIndication
+    ExaminationIndication,
+    PatientExamination
 )
 import logging
 from django.conf import settings
+
 
 from ..helpers.data_loader import (
     load_data
@@ -39,7 +43,7 @@ if not FFMPEG_AVAILABLE:
     logger.warning("ffmpeg command not found. Frame extraction tests will be skipped.")
 
 
-class RuleTest(TestCase):
+class RequirementTest(TestCase):
     def setUp(self):  
         load_data()
 
@@ -48,6 +52,12 @@ class RuleTest(TestCase):
 
         self.patient = generate_patient()
         self.patient.save()
+
+        self.operator_models_match_any = RequirementOperator.objects.get(name="models_match_any")
+        self.assertIsInstance(self.operator_models_match_any, RequirementOperator)
+
+        self.requirement_type_patient_examination = RequirementType.objects.get(name="patient_examination")
+        self.assertIsInstance(self.requirement_type_patient_examination, RequirementType)
 
     def test_requirement_creation(self):
         requirement = Requirement.objects.first()
@@ -80,19 +90,45 @@ class RuleTest(TestCase):
         sample_indication = ExaminationIndication.objects.get(
             name = "colonoscopy_lesion_removal_large"
         )
+        sample_intervention = sample_indication.expected_interventions.get(name ="colon_lesion_esd")
+
         patient_examination, patient_examination_indication = self.patient.create_examination_by_indication(
             indication = sample_indication
         )
+        self.assertIsInstance(patient_examination, PatientExamination)
 
         finding_interventions = patient_examination_indication.examination_indication.expected_interventions.all()
-
+        # make sure we have at least one intervention
+        self.assertGreater(len(finding_interventions), 0)
         
         requirement = Requirement.objects.get(name=self.req_name_bleeding_high)
-        
+        self.assertIsInstance(requirement, Requirement)
 
-        # Check if the requirement is fulfilled
-        self.assertTrue(
-            requirement.evaluate(patient_examination=patient_examination)
+        # assert sample_indication in requirement.finding_interventions
+        self.assertIn(
+            sample_intervention, 
+            requirement.finding_interventions.all()
+        )
+        
+        # assert "patient_examination" in requirement.requirement_types
+        self.assertIn(
+            self.requirement_type_patient_examination, 
+            requirement.requirement_types.all()
         )
 
+        # assert operator_models_match_any in requirement.operators
+        self.assertIn(
+            self.operator_models_match_any, 
+            requirement.operators.all()
+        )
 
+        operator_type_tuples = requirement.operator_type_tuples
+        from endoreg_db.models.requirement.requirement_evaluation import (
+            OperatorTypeTuple
+        )
+        self.assertIsInstance(operator_type_tuples, list)
+        self.assertIsInstance(operator_type_tuples[0], OperatorTypeTuple)
+        self.assertEqual(
+            operator_type_tuples[0].operator, 
+            self.operator_models_match_any
+        )
