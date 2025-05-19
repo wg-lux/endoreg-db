@@ -19,6 +19,8 @@ from endoreg_db.models.medical.hardware import EndoscopyProcessor
 from endoreg_db.management.commands import validate_video
 
 import logging
+
+from tests.media import video
 from ...helpers.default_objects import (
     get_latest_segmentation_model
 )
@@ -37,59 +39,6 @@ from endoreg_db.helpers.data_loader import (
     load_ai_model_data,
     load_default_ai_model
 )
-# 1st Examples from the codebase
-#     def test_pipeline(self):
-        # """
-        # Test the pipeline of the video file.
-        # This includes:
-        # - Pre-validation processing (pipe_1)
-        # - Simulating human validation processing (test_after_pipe_1)
-        # - Post-validation processing (pipe_2)
-        # """
-        # _test_pipe_1(self)
-        # mock_video_anonym_annotation(self)
-        # _test_pipe_2(self),
-
-# endoreg-db/tests/media/video/test_pipe_1.py
-# tests/media/video/test_pipe_2.py
-# tests/media/video/test_video_file_extracted.py
-
-
-# 2nd Example
-
-# def get_default_video_file():
-#     from ..media.video.helper import get_random_video_path_by_examination_alias
-#     from endoreg_db.models import VideoFile
-#     from .data_loader import (
-#         load_disease_data,
-#         load_event_data,
-#         load_information_source,
-#         load_examination_data,
-#         load_center_data,
-#         load_endoscope_data,
-#         load_ai_model_label_data,
-#         load_ai_model_data,
-#     )
-#     load_disease_data()
-#     load_event_data()
-#     load_information_source()
-#     load_examination_data()
-#     load_center_data()
-#     load_endoscope_data()
-#     load_ai_model_label_data()
-#     load_ai_model_data()
-#     video_path = get_random_video_path_by_examination_alias(
-#         examination_alias='egd', is_anonymous=False
-#     )
-
-#     video_file = VideoFile.create_from_file(
-#         file_path=video_path,
-#         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
-#         delete_source=False,  # Keep the original asset for other tests
-#         processor_name = DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
-#     )
-
-#     return video_file
 
 IMPORT_MODELS = [
     VideoFile.__name__,
@@ -272,7 +221,6 @@ class Command(BaseCommand):
                 return
 
             elif proc_count == 1:
-                # 2️⃣ exactly one → use it
                 processor = processors_qs.first()
             else:
                 processor = self._choose_processor_interactively(processors_qs)
@@ -282,12 +230,25 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"Processor not found: {processor_name}"))
             return
 
-        # Assert Video File Exists
         if not Path(video_file).exists():
             assert self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
             return AssertionError(f"Video file not found: {video_file}")
         if self.FFMPEG_AVAILABLE:
             self.stdout.write(self.style.SUCCESS(f"FFMPEG is available"))
+            
+        VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
+        
+        # Assert Video File is Anonymized
+        if not validate_video(video_file):
+            self.stdout.write(self.style.ERROR(f"Video file is not anonymized: {video_file}"))
+            return AssertionError(f"Video file is not anonymized: {video_file}")
+
+        while anonym=False:
+            try:
+                anonym = validate_video(video_file)
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"Error validating video file: {e}"))
+                return
 
         if self.FFMPEG_AVAILABLE:
             VideoFile.create_from_file(
