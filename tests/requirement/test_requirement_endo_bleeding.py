@@ -1,8 +1,5 @@
-
-from math import e
 from django.test import TestCase
 from logging import getLogger
-import shutil
 
 from endoreg_db.models import (
     Requirement, 
@@ -12,6 +9,7 @@ from endoreg_db.models import (
     ExaminationIndication,
     PatientExamination
 )
+
 from endoreg_db.utils.links.requirement_link import RequirementLinks
         
 import logging
@@ -54,9 +52,6 @@ class RequirementTest(TestCase):
         logger.info(f"First Requirement in db: {requirement.name}") 
 
     def test_requirement_data_model_dict(self):
-        from endoreg_db.models import (
-            PatientExamination
-        )
         
         requirement = Requirement.objects.get(name=self.req_name_bleeding_high)
         self.assertIsInstance(requirement, Requirement)
@@ -87,6 +82,7 @@ class RequirementTest(TestCase):
         expected_intervention_names = [
             "colon_lesion_polypectomy_hot_snare",
             "ercp_sphincterotomy",
+            "colon_lesion_eftr",
         ]
 
         sample_intervention = finding_interventions.first()

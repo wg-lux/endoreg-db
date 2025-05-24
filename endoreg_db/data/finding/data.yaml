@@ -20,6 +20,7 @@
         "colon_lesion_biopsy",
         "colon_lesion_emr",
         "colon_lesion_esd",
+        "colon_lesion_eftr",
         "colon_lesion_clip",
       ]
 
