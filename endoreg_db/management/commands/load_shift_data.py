@@ -1,4 +1,3 @@
-
 from django.core.management.base import BaseCommand
 from ...models import Shift, ShiftType
 from ...utils import load_model_data_from_yaml
@@ -33,6 +32,9 @@ class Command(BaseCommand):
     into the Shift and ShiftType model"""
 
     def add_arguments(self, parser):
+        """
+        Adds the --verbose command-line option to enable detailed output during execution.
+        """
         parser.add_argument(
             '--verbose',
             action='store_true',
@@ -40,6 +42,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Loads YAML data files into models defined in IMPORT_MODELS using provided metadata.
+        
+        Iterates over each model specified in IMPORT_MODELS, retrieves its import metadata,
+        and calls the data loading utility to populate the database from YAML files. Supports
+        optional verbose output if enabled via command-line options.
+        """
         verbose = options['verbose']
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

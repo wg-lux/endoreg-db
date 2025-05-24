@@ -19,6 +19,11 @@ class ExaminationViewSet(ReadOnlyModelViewSet):
 
 @api_view(["GET"])
 def get_morphology_classification_choices_for_exam(request, exam_id):
+        """
+        Retrieves morphology classification choices available for a given examination.
+        
+        Returns a list of distinct morphology classification choices linked to the required and optional morphology classification types of the findings associated with the specified examination.
+        """
         exam = get_object_or_404(Examination, id=exam_id)
         findings = exam.get_available_findings()
 
@@ -38,6 +43,11 @@ def get_morphology_classification_choices_for_exam(request, exam_id):
     
 @api_view(["GET"])
 def get_location_classification_choices_for_exam(request, exam_id):
+    """
+    Retrieves available location classification choices for a given examination.
+    
+    Returns a list of distinct location classification choices associated with the findings of the specified examination as dictionaries containing their IDs and names.
+    """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
 
@@ -52,6 +62,11 @@ def get_location_classification_choices_for_exam(request, exam_id):
 
 @api_view(["GET"])
 def get_interventions_for_exam(request, exam_id):
+    """
+    Retrieves interventions associated with the findings of a specific examination.
+    
+    Returns a JSON response containing a list of intervention IDs and names linked to the findings available for the given examination.
+    """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
     interventions = FindingIntervention.objects.filter(findings__in=findings).distinct()
@@ -62,4 +77,9 @@ def get_interventions_for_exam(request, exam_id):
 @api_view(["GET"])
 def get_instruments_for_exam(request, exam_id):
     # Placeholder if you plan to link instruments to exams
+    """
+    Returns an empty list of instruments for the specified examination.
+    
+    This is a placeholder endpoint for future implementation of instrument retrieval linked to an examination.
+    """
     return Response([])

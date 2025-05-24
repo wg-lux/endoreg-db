@@ -48,7 +48,9 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
 
     def get_video_url(self, obj):
         """
-        Generates the full URL where Vue.js can fetch and stream the video.
+        Returns the absolute URL for streaming the video file, or None if unavailable.
+        
+        If the request context and video file are present, constructs the full URL for the video resource using the object's ID. Returns None if either is missing.
         """
         request = self.context.get('request')
         if request and obj.file:
@@ -58,7 +60,10 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
     
     def get_file(self, obj):
         """
-        Returns only the relative file path, without `/media/`.
+        Returns the relative file path of the video without the `/media/` prefix.
+        
+        Returns:
+            The relative file path as a string, or None if no file is associated or the path is empty.
         """
         if not obj.file:
             return None  # No file associated

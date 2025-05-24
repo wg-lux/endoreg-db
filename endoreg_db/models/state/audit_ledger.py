@@ -49,6 +49,12 @@ class AuditLedger(models.Model):
 
     # ------------------------------------------------------
     def save(self, *args, **kw):
+        """
+        Saves a new immutable audit record, computing and linking cryptographic hashes.
+        
+        Raises:
+            RuntimeError: If an attempt is made to modify an existing audit record.
+        """
         if self._state.adding:                         # only on INSERT
             self.prev_hash = self._last_hash()
             self.hash      = self._compute_hash()
@@ -58,10 +64,24 @@ class AuditLedger(models.Model):
 
     # ------------------------------------------------------
     def _last_hash(self) -> str:
+        """
+        Retrieves the hash of the most recent audit record.
+        
+        Returns:
+            The SHA-256 hash of the latest `AuditLedger` entry by timestamp, or a string of 64 zeros if no records exist.
+        """
         last = AuditLedger.objects.order_by('-ts').first()
         return last.hash if last else '0' * 64
 
     def _compute_hash(self) -> str:
+        """
+        Computes the SHA-256 hash of the current audit record's data.
+        
+        The hash is generated from a JSON-serialized payload containing the timestamp, user ID, object type and primary key, action, associated data, and the previous record's hash. This ensures the integrity and immutability of the audit trail.
+        
+        Returns:
+            The hexadecimal SHA-256 hash string representing the current audit record.
+        """
         payload = {
             'ts':   self.ts.isoformat(),
             'uid':  str(self.user_id),
@@ -73,6 +93,15 @@ class AuditLedger(models.Model):
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     
     def log_validation(user, instance, action: str, extra=None):
+        """
+        Creates an audit record for a validation action performed by a user on a specific model instance.
+        
+        Args:
+            user: The user performing the action.
+            instance: The model instance being validated.
+            action: The action performed (e.g., 'validated').
+            extra: Optional additional data to include in the audit record.
+        """
         AuditLedger.objects.create(
             user=user,
             object_type=instance.__class__.__name__,
@@ -82,6 +111,16 @@ class AuditLedger(models.Model):
         )
 
     def _distinct(object_type: str, action: str):
+        """
+        Returns the number of distinct objects of a given type that have a specific audit action recorded.
+        
+        Args:
+            object_type: The type of object to filter by (e.g., 'VideoFile').
+            action: The audit action to filter by (e.g., 'validated').
+        
+        Returns:
+            The count of unique object primary keys matching the specified type and action.
+        """
         return (
             AuditLedger.objects
             .filter(object_type=object_type, action=action)
@@ -91,6 +130,13 @@ class AuditLedger(models.Model):
         )
 
     def collect_counters():
+        """
+        Aggregates and returns summary statistics for audit actions and object types.
+        
+        Returns:
+            dict: A dictionary containing counts of distinct cases, videos, annotations,
+            anonymizations, images, and breakdowns of video statuses based on audit records.
+        """
         return {
             "totalCases":           AuditLedger._distinct("VideoFile", "created"),
             "totalVideos":          AuditLedger._distinct("VideoFile", "created"),

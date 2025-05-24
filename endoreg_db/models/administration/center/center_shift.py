@@ -10,6 +10,15 @@ if TYPE_CHECKING:
 
 class CenterShiftManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieves a CenterShift instance by its unique name.
+        
+        Args:
+            name: The unique identifier of the CenterShift.
+        
+        Returns:
+            The CenterShift instance with the specified name.
+        """
         return self.get(name=name)
 
 class CenterShift(models.Model):
@@ -52,15 +61,25 @@ class CenterShift(models.Model):
         scheduled_days: models.QuerySet["ScheduledDays"]
 
     def __str__(self):
+        """
+        Returns a string representation of the center shift, combining the center and shift.
+        """
         return f"{self.center} - {self.shift}"
     
     def initialize_scheduled_days(self):
         # shift_types
+        """
+        Initializes scheduled days for the center shift.
+        
+        This method is a placeholder and does not perform any actions.
+        """
         pass
     
     def get_scheduled_days(self, infer = True):
         """
-        Returns the scheduled days for the center shift.
+        Retrieves the scheduled days associated with this center shift.
+        
+        If no scheduled days are found and `infer` is False, raises a ValueError. Otherwise, returns the queryset of scheduled days, which may be empty.
         """
         sd = self.scheduled_days.all()
         if not sd.exists():

@@ -70,12 +70,10 @@ class ExaminationIndication(models.Model):
     @property
     def links(self) -> "RequirementLinks":
         """
-        Returns a RequirementLinks instance containing the links related to this indication.
-        
-        This property aggregates the related requirements and classifications into a RequirementLinks object.
+        Aggregates related requirements, classifications, examination, and interventions into a RequirementLinks object.
         
         Returns:
-            RequirementLinks: An instance containing the links related to this indication.
+            A RequirementLinks instance representing all entities linked to this examination indication.
         """
         from endoreg_db.utils.links.requirement_link import RequirementLinks
         return RequirementLinks(
@@ -86,10 +84,7 @@ class ExaminationIndication(models.Model):
 
     def natural_key(self) -> tuple:
         """
-        Returns the natural key for the indication.
-
-        Returns:
-            tuple: The natural key consisting of the name.
+        Returns a tuple containing the unique name of the indication as its natural key.
         """
         return (self.name,)
 
@@ -119,10 +114,7 @@ class ExaminationIndication(models.Model):
 
     def get_examination(self) -> "Examination":
         """
-        Retrieves the associated examination.
-
-        Returns:
-            Examination: The associated examination.
+        Returns the examination associated with this indication.
         """
         return self.examination
     

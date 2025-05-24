@@ -24,6 +24,11 @@ FFMPEG_AVAILABLE = is_ffmpeg_available() # ADDED
 class LegacyImageDataTest(TransactionTestCase):
     img_dicts: List[dict]
     def setUp(self):
+        """
+        Prepares test data by loading AI model data and parsing legacy image dictionaries.
+        
+        Loads AI model label and model data, then reads and parses a JSON Lines file containing legacy image dictionaries into the `img_dicts` attribute for use in tests.
+        """
         load_ai_model_label_data()
         load_ai_model_data()
 
@@ -34,6 +39,9 @@ class LegacyImageDataTest(TransactionTestCase):
 
     def test_load_legacy_data(self):
         """
+        Verifies that legacy image dictionaries are loaded from the JSONL file.
+        
+        Asserts that the list of image dictionaries is not empty, ensuring test data is present.
         """
         assert len(self.img_dicts) > 0, "No image dictionaries found in the JSONL file."
 

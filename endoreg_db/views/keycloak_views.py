@@ -59,6 +59,11 @@ def keycloak_login(request):
 def keycloak_callback(request):
 
     #User lands here after login (Keycloak redirects here with code).
+    """
+    Handles the OAuth2 callback from Keycloak, exchanging the authorization code for tokens.
+    
+    Receives the authorization code from Keycloak, exchanges it for access and refresh tokens, stores them in the user's session, and redirects to the protected videos page. Returns an error response if the code is missing, the token exchange fails, or an exception occurs.
+    """
     code = request.GET.get("code")
     if not code:
         return HttpResponse(" No authorization code provided.", status=400)

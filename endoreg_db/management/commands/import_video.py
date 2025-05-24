@@ -58,6 +58,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         
+        """
+        Adds command-line arguments for the video import management command.
+        
+        Defines options for specifying the video file path, associated center and processor names, directory roots for frames and videos, deletion and saving behavior, model path, segmentation usage, and verbosity.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -133,6 +138,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):  
         
+        """
+        Handles the import of a video file into the database, associating it with a specified medical center and endoscopy processor, and optionally applying AI-based segmentation.
+        
+        Checks for required dependencies (such as FFMPEG), loads reference data, validates the existence of the specified center and processor, and processes the video file. If segmentation is enabled, retrieves the latest segmentation model metadata. If multiple processors are linked to the center, prompts the user to select one interactively. Creates a new `VideoFile` database entry with the provided options, and can optionally delete the source file or save the video to a specified directory.
+        """
         try: # ADDED
             check_ffmpeg_availability() # ADDED
             self.stdout.write(self.style.SUCCESS("FFMPEG is available")) # ADDED
@@ -259,9 +269,15 @@ class Command(BaseCommand):
         self, processors_qs
     ) -> EndoscopyProcessor:
         """
-        Ask the operator to select one processor from a QuerySet
-        belonging to a single centre.  Never called if the QS has
-        length 0 or 1.
+        Prompts the user to select an endoscopy processor from a list when multiple are available.
+        
+        Displays all processors associated with a center and repeatedly prompts the user to choose one by number. Aborts if the user interrupts input.
+        
+        Args:
+            processors_qs: A queryset of EndoscopyProcessor objects to choose from.
+        
+        Returns:
+            The selected EndoscopyProcessor object.
         """
         # turn the QS into a concrete list so we can index it later
         processors = list(processors_qs)           # -> [EndoscopyProcessor, …]

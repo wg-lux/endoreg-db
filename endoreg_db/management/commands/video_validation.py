@@ -14,7 +14,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Validate video files in the database and update their states accordingly.
+        Validates video files stored in the database and updates their states based on validation results.
+        
+        This method is intended to be executed as a Django management command to ensure the integrity and correct status of video file records.
         """
         
     

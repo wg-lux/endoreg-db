@@ -23,6 +23,9 @@ class Employee(Person):
 
 
     def __str__(self):
+        """
+        Returns a string representation of the Employee, including the class name, full name if available, and employee type if set.
+        """
         str_repr = self.__class__.__name__
         if self.first_name and self.last_name:
             str_repr += f" {self.first_name} {self.last_name}"

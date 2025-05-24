@@ -63,7 +63,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the API endpoint where the frontend can fetch the video.
+        Returns the absolute API endpoint URL for accessing the video file.
+        
+        If the video ID is invalid or the request context is missing, returns an error dictionary.
         """
         if not obj.id:
             return {"error": "Invalid video ID"}
@@ -335,16 +337,12 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
     def save(self):
         """
-        Synchronizes label segments with updated frontend data.
+        Synchronizes label segments in the database with the provided frontend data for a specific video and label.
         
-        This method compares the incoming segments with the current database entries for a given video and label.
-        It updates segments with modified end frame numbers, inserts new segments, and deletes existing segments
-        that are not present in the provided data. All operations are performed within a transaction to ensure
-        database consistency. A validation error is raised if no prediction metadata is found for the video.
+        Compares incoming segments to existing database entries, updating segments with changed end frames, creating new segments as needed, and deleting segments that are no longer present. All changes are performed within a transaction to maintain consistency. Raises a validation error if no prediction metadata exists for the video.
         
         Returns:
-            dict: A dictionary containing serialized updated segments, serialized new segments, and the count
-                  of deleted segments.
+            dict: Contains serialized updated segments, newly created segments, and the count of deleted segments.
         """
 
         video_id = self.validated_data["video_id"]

@@ -10,11 +10,24 @@ import shutil
 logger = logging.getLogger("ffmpeg_wrapper")
 
 def is_ffmpeg_available() -> bool:
-    """Checks if FFmpeg is installed and available in the system's PATH."""
+    """
+    Checks whether the FFmpeg executable is available in the system's PATH.
+    
+    Returns:
+        True if FFmpeg is found in the PATH; otherwise, False.
+    """
     return shutil.which("ffmpeg") is not None
 
 def check_ffmpeg_availability():
-    """Checks if FFmpeg is installed and available. Raises FileNotFoundError if not."""
+    """
+    Verifies that FFmpeg is installed and available in the system's PATH.
+    
+    Raises:
+        FileNotFoundError: If FFmpeg is not found.
+        
+    Returns:
+        True if FFmpeg is available.
+    """
     if not is_ffmpeg_available():
         error_msg = "FFmpeg is not available. Please install it and ensure it's in your PATH."
         logger.error(error_msg)
@@ -24,7 +37,9 @@ def check_ffmpeg_availability():
 
 def get_stream_info(file_path: Path) -> Optional[Dict]:
     """
-    Runs ffprobe -show_streams, parses JSON, returns relevant stream data.
+    Retrieves video stream information from a file using ffprobe.
+    
+    Runs ffprobe to extract stream metadata in JSON format from the specified video file. Returns a dictionary with stream information, or None if the file does not exist or if an error occurs during execution or parsing.
     """
     if not file_path.exists():
         logger.error("File not found for ffprobe: %s", file_path)
@@ -351,22 +366,28 @@ def extract_frame_range(
     ext: str = "jpg",
 ) -> List[Path]:
     """
-    Extracts frames within a specific range [start_frame, end_frame) using FFmpeg.
-
+    Extracts a specific range of frames from a video using FFmpeg.
+    
+    Frames from start_frame (inclusive) to end_frame (exclusive) are saved as images
+    in the output directory, following the naming pattern 'frame_%07d.ext'. The
+    function ensures only the requested frames are returned, and cleans up partial
+    results on failure.
+    
     Args:
         video_path: Path to the input video file.
-        output_dir: Directory to save the extracted frames.
-        start_frame: The first frame number to extract (inclusive, 0-based).
-        end_frame: The frame number to stop before (exclusive, 0-based).
-        quality: Quality factor for JPEG extraction (1-31, lower is better).
-        ext: Output frame image extension (e.g., 'jpg', 'png').
-
+        output_dir: Directory where extracted frames will be saved.
+        start_frame: Index of the first frame to extract (inclusive, 0-based).
+        end_frame: Index at which to stop extraction (exclusive, 0-based).
+        quality: JPEG quality factor (1-31, lower is better).
+        ext: File extension for output images (e.g., 'jpg', 'png').
+    
     Returns:
-        A list of Path objects for the extracted frames.
+        List of Paths to the extracted frame image files within the specified range.
+    
     Raises:
-        FileNotFoundError: If ffmpeg executable is not found.
-        ValueError: If start_frame >= end_frame.
-        RuntimeError: If the ffmpeg command fails.
+        FileNotFoundError: If the FFmpeg executable is not found.
+        ValueError: If start_frame is greater than or equal to end_frame.
+        RuntimeError: If FFmpeg fails to extract the requested frames.
     """
     if start_frame >= end_frame:
         logger.warning("extract_frame_range called with start_frame (%d) >= end_frame (%d). No frames to extract.", start_frame, end_frame)
