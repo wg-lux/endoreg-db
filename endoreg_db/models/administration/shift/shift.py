@@ -1,8 +1,6 @@
-from tracemalloc import start
 from django.db import models
 from typing import TYPE_CHECKING
 
-from sympy import Shi
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -23,7 +21,7 @@ class Shift(models.Model):
     name_de = models.CharField(max_length=255)
     name_en = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    
+    is_active = models.BooleanField(default=True)  
 
 
     shift_types = models.ManyToManyField(
