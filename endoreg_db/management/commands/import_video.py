@@ -182,7 +182,7 @@ class Command(BaseCommand):
         assert isinstance(save_video_file, bool), "save_video_file must be a boolean"
         assert isinstance(verbose, bool), "verbose must be a boolean"
         assert isinstance(center_name, str), "center_name must be a string"
-        assert isinstance(video_file, Path), "video_file must be a string"
+        assert isinstance(video_file, Path), "video_file must be a Path"
         assert isinstance(frame_dir_root, str), "frame_dir_root must be a string"
                 # Assert Center exists -> Does not exist methods are deprecated
         try:

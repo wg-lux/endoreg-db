@@ -74,7 +74,7 @@ class RequirementTest(TestCase):
 
         # Check if the match_any method works correctly
         is_match = requirement_links_high.match_any(requirement_links_low)
-        self.assertFalse(is_match, "The match_any method should return True for matching requirements.")
+        self.assertFalse(is_match, "The match_any method should return False for non-matching requirements.")
 
         is_match = requirement_links_high.match_any(requirement_links_high)
         self.assertTrue(is_match, "The match_any method should return True for matching requirements.")

@@ -1,10 +1,9 @@
-
 from django.core.management.base import BaseCommand
 from ...models import Qualification, QualificationType
 from ...utils import load_model_data_from_yaml
 from ...data import QUALIFICATION_DATA_DIR
 
-SOURCE_DIR = QUALIFICATION_DATA_DIR # e.g. settings.DATA_DIR_INTERVENTION
+SOURCE_DIR = QUALIFICATION_DATA_DIR       # qualification data directory
 
 model_0 = QualificationType
 model_1 = Qualification

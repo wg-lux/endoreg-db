@@ -6,10 +6,9 @@ from ..serializers.examination import ExaminationSerializer
 # views/examination_views.py
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework import status
 from endoreg_db.models import (
-    Examination, FindingMorphologyClassificationChoice,
-    FindingMorphologyClassification, Finding,
+    FindingMorphologyClassificationChoice,
+    FindingMorphologyClassification,
     FindingLocationClassificationChoice, FindingIntervention #, Instrument
 )
 from django.shortcuts import get_object_or_404
@@ -22,16 +21,18 @@ class ExaminationViewSet(ReadOnlyModelViewSet):
 def get_morphology_classification_choices_for_exam(request, exam_id):
         exam = get_object_or_404(Examination, id=exam_id)
         findings = exam.get_available_findings()
-    
+
+        all_classification_types = set()
+        for finding in findings:
+            all_classification_types.update(finding.required_morphology_classification_types.all())
+            all_classification_types.update(finding.optional_morphology_classification_types.all())
+
         choices = FindingMorphologyClassificationChoice.objects.filter(
             classification__in=FindingMorphologyClassification.objects.filter(
-                classification_type__in=[
-                    *[f for finding in findings for f in finding.required_morphology_classification_types.all()],
-                    *[f for finding in findings for f in finding.optional_morphology_classification_types.all()]
-                ]
+                classification_type__in=list(all_classification_types)
             )
         ).distinct()
-    
+
         return Response([{"id": c.id, "name": c.name} for c in choices])
     
     

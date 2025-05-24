@@ -31,10 +31,11 @@ class VideoView(APIView):
         Returns a list of all available videos along with available labels.
         Used to populate the video selection dropdown in Vue.js.
         """
+        videos = VideoFile.objects.all()
+        labels = Label.objects.all()
 
-
-        video_serializer = VideoListSerializer(many=True)
-        label_serializer = LabelSerializer(many=True)
+        video_serializer = VideoListSerializer(videos, many=True)
+        label_serializer = LabelSerializer(labels, many=True)
 
         return Response({
             "videos": video_serializer.data, 
@@ -126,7 +127,7 @@ class VideoLabelView(APIView):
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-from ..serializers._old.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
+from ..serializers._old.video_segmentation import LabelSegmentUpdateSerializer
 
 class UpdateLabelSegmentsView(APIView):
     """

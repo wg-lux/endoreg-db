@@ -33,7 +33,7 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
         Generates the full URL where Vue.js can fetch and display the PDF.
         """
         request = self.context.get('request')
-        return request.build_absolute_uri(f"/api/pdf/anony_text/?id={obj.id}") if request and obj.file else None
+        return request.build_absolute_uri(f"/pdf/anony_text/?id={obj.id}") if request and obj.file else None
 
     def get_file(self, obj):
         """
@@ -57,6 +57,7 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
         """
         if not value.strip():
             raise serializers.ValidationError("Anonymized text cannot be empty.")
+        #FIXME move this to a settings variable @Hamzaukw @maxhild
         if len(value) > 5000:  # Arbitrary limit to prevent excessively long text
             raise serializers.ValidationError("Anonymized text exceeds the maximum length of 5000 characters.")
         return value
@@ -76,8 +77,8 @@ await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 
 const fetchPdfWithAnonymizedText = async (lastId = null) => {
     const url = lastId 
-        ? `http://localhost:8000/api/pdf/anony_text/?last_id=${lastId}` 
-        : "http://localhost:8000/api/pdf/anony_text/";
+        ? `http://localhost:8000/pdf/anony_text/?last_id=${lastId}` 
+        : "http://localhost:8000/pdf/anony_text/";
 
     try {
         const response = await axios.get(url, { headers: { "Accept": "application/json" } });
@@ -96,7 +97,7 @@ await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 
 const updateAnonymizedText = async (pdfId, newText) => {
     try {
-        const response = await axios.patch("http://localhost:8000/api/pdf/update_anony_text/", {
+        const response = await axios.patch("http://localhost:8000/pdf/update_anony_text/", {
             id: pdfId,
             anonymized_text: newText
         }, { headers: { "Content-Type": "application/json" } });
@@ -121,7 +122,7 @@ const updateAnonymizedText = async () => {
     };
 
     try {
-        const response = await axios.patch("http://localhost:8000/api/pdf/update_anony_text/", updatedData, {
+        const response = await axios.patch("http://localhost:8000/pdf/update_anony_text/", updatedData, {
             headers: { "Content-Type": "application/json" }
         });
 

@@ -1,11 +1,10 @@
-from typing import Optional
 from typing import List
 
 from pydantic import BaseModel
 
 from endoreg_db.models import (
     PatientDisease, Disease, DiseaseClassificationChoice,
-    Event, EventClassificationChoice,
+    Event, 
     PatientEvent, Examination, ExaminationIndication, ExaminationIndicationClassificationChoice,
     PatientExamination, PatientExaminationIndication,
     PatientFinding,
@@ -93,6 +92,20 @@ class RequirementLinks(BaseModel):
                 if any(item in other_dict[key] for item in self_dict[key]):
                     return True
     
+    def active(self) -> dict[str, list]:
+        """
+        Returns a dictionary of active links.
+
+        This method filters the linked models to include only those that are not empty.
+        Returns:
+            dict[str, list]: A dictionary containing the linked models with non-empty lists.
+        """
+        active_links_dict = {}
+        for field_name, field_value in self:
+            if isinstance(field_value, list) and field_value:
+                active_links_dict[field_name] = field_value
+        return active_links_dict
+
     def __repr__(self):
         """
         Returns a string representation of the RequirementLinks instance.
@@ -114,6 +127,5 @@ class RequirementLinks(BaseModel):
                f"finding_morphology_classification_choices={len(self.finding_morphology_classification_choices)}, " \
                f"finding_location_classification_choices={len(self.finding_location_classification_choices)}, " \
                f"finding_interventions={len(self.finding_interventions)})"
-    
 
-    
+

@@ -17,7 +17,6 @@ from .views.raw_video_meta_validation_views import VideoFileForMetaView, VideoFi
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
-from .views.examination_views import ExaminationViewSet
 from .views.examination_views import (
     ExaminationViewSet,
     get_morphology_classification_choices_for_exam,

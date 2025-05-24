@@ -1,3 +1,4 @@
+import logging # Added import
 from django.db import models
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,8 @@ NAME_ON_CALL = "on_call"
 NAME_WARD = "ward"
 NAME_OFF_HOURS = "off_hours"
 
+logger = logging.getLogger(__name__) # Added logger
+
 class ShiftTypeManager(models.Manager):
     def get_queryset(self):
         return super().get_queryset().filter(is_active=True)
@@ -20,6 +23,7 @@ class ShiftType(models.Model):
     """
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
 
     objects = ShiftTypeManager()
 
@@ -30,29 +34,61 @@ class ShiftType(models.Model):
         return str(self.name)
 
     @classmethod
-    def get_type_regular(cls) -> "ShiftType":
+    def get_type_regular(cls) -> "ShiftType | None": # Modified return type
         """
         Get the common shift type by name.
+        Returns None if the type does not exist.
         """
-        return cls.objects.get(name=NAME_REGULAR)
+        try:
+            return cls.objects.get(name=NAME_REGULAR)
+        except cls.DoesNotExist:
+            logger.error(
+                f"ShiftType with name '{NAME_REGULAR}' does not exist. "
+                "Base data might be missing."
+            )
+            return None
     
     @classmethod
-    def get_type_on_call(cls) -> "ShiftType":
+    def get_type_on_call(cls) -> "ShiftType | None": # Modified return type
         """
         Get the on-call shift type by name.
+        Returns None if the type does not exist.
         """
-        return cls.objects.get(name=NAME_ON_CALL)
+        try:
+            return cls.objects.get(name=NAME_ON_CALL)
+        except cls.DoesNotExist:
+            logger.error(
+                f"ShiftType with name '{NAME_ON_CALL}' does not exist. "
+                "Base data might be missing."
+            )
+            return None
     
     @classmethod
-    def get_type_ward(cls) -> "ShiftType":
+    def get_type_ward(cls) -> "ShiftType | None": # Modified return type
         """
         Get the ward shift type by name.
+        Returns None if the type does not exist.
         """
-        return cls.objects.get(name=NAME_WARD)
+        try:
+            return cls.objects.get(name=NAME_WARD)
+        except cls.DoesNotExist:
+            logger.error(
+                f"ShiftType with name '{NAME_WARD}' does not exist. "
+                "Base data might be missing."
+            )
+            return None
     
     @classmethod
-    def get_type_off_hours(cls) -> "ShiftType":
+    def get_type_off_hours(cls) -> "ShiftType | None": # Modified return type
         """
         Get the off-hours shift type by name.
+        Returns None if the type does not exist.
         """
-        return cls.objects.get(name=NAME_OFF_HOURS)
+        try:
+            return cls.objects.get(name=NAME_OFF_HOURS)
+        except cls.DoesNotExist:
+            logger.error(
+                f"ShiftType with name '{NAME_OFF_HOURS}' does not exist. "
+                "Base data might be missing."
+            )
+            return None

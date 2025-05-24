@@ -394,11 +394,12 @@ class VideoFile(models.Model):
             logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
             return self.label_video_segments.none()
     
-    def get_all_videos(self) -> models.QuerySet["VideoFile"]:
+    @classmethod
+    def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
         """
         Returns all VideoFile records in the database.
         """
-        return VideoFile.objects.all()
+        return cls.objects.all()
         
     def count_unmodified_others(self) -> int:
         """

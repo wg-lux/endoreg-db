@@ -51,7 +51,7 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         print("---------------------here :",obj.file)
         if request and obj.file:
-            return request.build_absolute_uri(f"/api/pdf/sensitivemeta/?id={obj.id}")  # Constructs full API endpoint
+            return request.build_absolute_uri(f"/pdf/sensitivemeta/?id={obj.id}")  # Constructs full API endpoint
         return None  # Return None if file is missing
 
     def get_file(self, obj):
@@ -92,9 +92,6 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
         return data  # Returns validated data
 
-
-from rest_framework import serializers
-from ..models import SensitiveMeta
 
 class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     """
@@ -149,8 +146,8 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
 await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 const fetchPdfMeta = async (lastId = 1) => {
     const url = lastId 
-        ? `http://localhost:8000/api/pdf/sensitivemeta/?last_id=${lastId}` 
-        : "http://localhost:8000/api/pdf/sensitivemeta/";
+        ? `http://localhost:8000/pdf/sensitivemeta/?last_id=${lastId}` 
+        : "http://localhost:8000/pdf/sensitivemeta/";
 
     try {
         const response = await axios.get(url);
@@ -170,8 +167,8 @@ await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 
 const fetchPdfMeta = async (lastId = 1) => {
     const url = lastId 
-        ? `http://localhost:8000/api/pdf/sensitivemeta/?last_id=${lastId}` 
-        : "http://localhost:8000/api/pdf/sensitivemeta/";
+        ? `http://localhost:8000/pdf/sensitivemeta/?last_id=${lastId}` 
+        : "http://localhost:8000/pdf/sensitivemeta/";
 
     try {
         const response = await axios.get(url, {
@@ -203,7 +200,7 @@ const updatePatientInfo = async () => {
     };
 
     try {
-        const response = await axios.patch("http://localhost:8000/api/pdf/update_sensitivemeta/", updatedData, {
+        const response = await axios.patch("http://localhost:8000/pdf/update_sensitivemeta/", updatedData, {
             headers: { "Content-Type": "application/json" }
         });
 

@@ -18,13 +18,17 @@ class EmployeeQualification(models.Model):
     )
     qualifications = models.ManyToManyField(
         "Qualification",
-        # on_delete=models.CASCADE,
         related_name="employee_qualifications",
     )
 
     if TYPE_CHECKING:
-        employee: Employee
-        qualification: models.QuerySet["Qualification"]
+        employee: models.ForeignKey["Employee"]
+        qualifications: models.QuerySet["Qualification"]
 
     def __str__(self):
-        return f"{self.employee} - {self.qualification}"
+        qualification_list = self.qualifications.all()
+        if qualification_list:
+            # Assuming Qualification model has a decent __str__ representation
+            qual_names = ", ".join(str(q) for q in qualification_list)
+            return f"{self.employee} - Qualifications: {qual_names}"
+        return f"{self.employee} - No qualifications assigned"

@@ -126,7 +126,7 @@ const updatePatientInfo = async () => {
     };
 
     try {
-        const response = await axios.patch("http://localhost:8000/api/video/update_sensitivemeta/", updatedData, {
+        const response = await axios.patch("http://localhost:8000/video/update_sensitivemeta/", updatedData, {
             headers: { "Content-Type": "application/json" }
         });
 

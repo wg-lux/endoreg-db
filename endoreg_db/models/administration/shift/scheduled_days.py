@@ -15,6 +15,23 @@ class ScheduledDays(models.Model):
     """
     Model representing scheduled days for a shift.
     """
+    name = models.CharField(
+        max_length=255,
+        unique=True,
+        help_text="Name of the scheduled days.",
+    )
+    name_de = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Name of the scheduled days in German.",
+    )
+    name_en = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Name of the scheduled days in English.",
+    )
     working_days = models.BooleanField(
         null=True,
         blank=True,
@@ -49,4 +66,4 @@ class ScheduledDays(models.Model):
         center_shifts: models.QuerySet["CenterShift"]
 
     def __str__(self):
-        return f"{self.shift} - {self.start_date} to {self.end_date}"
+        return f"{self.name} - {self.start_date} to {self.end_date}"

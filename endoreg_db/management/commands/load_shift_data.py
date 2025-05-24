@@ -23,14 +23,14 @@ IMPORT_METADATA = {
     model_1.__name__: {
         "dir": SOURCE_DIR, # e.g. "interventions"
         "model": model_1, # e.g. Intervention
-        "foreign_keys": [model_0], # e.g. ["intervention_types"]
-        "foreign_key_models": ["shift_types"] # e.g. [InterventionType]
+        "foreign_keys": ["shift_types"], # e.g. ["intervention_types"]
+        "foreign_key_models": [model_0]   # e.g. [InterventionType]
     }
 }
 
 class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
+    help = """Load all .yaml files in the data/shift directory
+    into the Shift and ShiftType model"""
 
     def add_arguments(self, parser):
         parser.add_argument(

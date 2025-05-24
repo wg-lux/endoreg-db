@@ -22,7 +22,7 @@ def get_requirement_links_patient_examination(
 
     requirement_links = RequirementLinks(
         patient_examinations = [patient_examination],
-        examinations = [patient_examination.examination],
+        examinations = [patient_examination.examination] if patient_examination.examination else [],
         # examination_indications = patient_examination.examination.examination_indications.all(),
         examination_indication_classification_choices = patient_examination.get_indication_choices(),
         
@@ -37,5 +37,5 @@ def get_requirement_links_patient_examination(
     )
 
     return requirement_links
-    
-    
+
+

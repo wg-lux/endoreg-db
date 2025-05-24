@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import shutil
 
-from whitenoise import storage
 
 # --- Constants ---
 DEFAULT_DB_PASSWORD = "changeme_in_production" # Placeholder password

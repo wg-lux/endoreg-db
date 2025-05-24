@@ -72,7 +72,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/api/video/{obj.id}/")
+            return request.build_absolute_uri(f"/video/{obj.id}/")
 
         return {"error": "Video URL not avalaible"}
 
@@ -187,12 +187,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
          # Check predictions
         readable_predictions = getattr(obj, "readable_predictions", None)
-        prediction_error = None
 
-        if not isinstance(readable_predictions, list):
-            prediction_error = "readable_predictions missing or invalid format. Expected a list."
-            readable_predictions = []
-        
         if not isinstance(readable_predictions, list):
             return {"error": "Invalid prediction data format. Expected a list."}
 

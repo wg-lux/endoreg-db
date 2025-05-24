@@ -1,5 +1,5 @@
 from django.db import models
-from typing import TYPE_CHECKING, Any, Dict, Optional, List, Union
+from typing import TYPE_CHECKING, Dict, List, Union
 from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 
@@ -356,14 +356,11 @@ class Requirement(models.Model):
     def evaluate(self, *args, mode:str, **kwargs):
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
+
         if mode == "strict":
             evaluate_result_list_func = all
-
         elif mode == "loose":
             evaluate_result_list_func = any
-        
-        else:
-            raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
 
         requirement_req_links = self.links
 
@@ -374,10 +371,12 @@ class Requirement(models.Model):
 
         for _input in inputs:
             input_type = type(_input)
-            assert input_type in expected_models, f"Expected {expected_models}, got {input_type}"
+            if input_type not in expected_models:
+                raise TypeError(f"Input type {input_type} is not among expected models: {expected_models}")
 
             _input_links: RequirementLinks = _input.links
-            assert isinstance(_input_links, RequirementLinks), f"Expected RequirementLinks, got {type(_input_links)}"
+            if not isinstance(_input_links, RequirementLinks):
+                raise TypeError(f"Expected RequirementLinks, got {type(_input_links)}")
             input_req_links[input_type].append(_input_links)
 
         input_req_links_obj = RequirementLinks(

@@ -16,16 +16,14 @@ class Qualification(models.Model):
     """
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
 
     qualification_types = models.ManyToManyField(
         "QualificationType",
         related_name="qualifications",
     )
-
     if TYPE_CHECKING:
-        qualification_type: models.QuerySet["QualificationType"]
-
-
+        qualification_types: models.QuerySet["QualificationType"]
 
     objects = QualificationManager()
 

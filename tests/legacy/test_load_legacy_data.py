@@ -4,10 +4,7 @@ from typing import List
 # from endoreg_db.models import (
 #)
 import logging
-from django.conf import settings
 import json
-import pytest
-
 from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available # ADDED
 
 logger = getLogger("legacy_data")
