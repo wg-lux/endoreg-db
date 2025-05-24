@@ -28,8 +28,10 @@ class VideoView(APIView):
 
     def get_all_videos(self):
         """
-        Returns a list of all available videos along with available labels.
-        Used to populate the video selection dropdown in Vue.js.
+        Retrieves lists of all available videos and labels.
+        
+        Returns:
+            Response: A JSON response containing serialized lists of videos and labels.
         """
 
 
@@ -43,8 +45,13 @@ class VideoView(APIView):
 
     def get_video_details(self, request, video_id):
         """
-        Returns metadata for a specific video if `Accept: application/json` is set.
-        Otherwise, streams the video file.
+        Retrieves metadata or streams the file for a specific video.
+        
+        If the request's Accept header includes "application/json", returns the video's metadata as JSON.
+        Otherwise, streams the video file to the client.
+        
+        Returns:
+            A Response containing video metadata (JSON) or a streamed video file.
         """
         try:
             video_entry = VideoFile.objects.get(id=video_id)
@@ -64,8 +71,9 @@ class VideoView(APIView):
 
     def serve_video_file(self, video_entry):
         """
-        Serves the video file dynamically.
-
+        Streams the specified video file as an HTTP response with appropriate headers for playback.
+        
+        Returns a `FileResponse` to stream the video file if it exists, setting CORS and content headers for browser playback. Returns a 404 error if the file is not found, or a 500 error for other internal issues.
         """
         print("-----",video_entry.processed_file.path)
         try:

@@ -1,4 +1,3 @@
-
 from django.test import TestCase
 from logging import getLogger
 import shutil
@@ -35,6 +34,12 @@ req_name_bleeding_low = "endoscopy_intervention_bleeding_risk_low"
 
 class RequirementTest(TestCase):
     def setUp(self):  
+        """
+        Prepares test data and objects for each test in the RequirementTest case.
+        
+        Loads initial data, retrieves specific Requirement and ExaminationIndication instances,
+        and creates and saves a patient object for use in subsequent tests.
+        """
         load_data()
 
         self.req_bleeding_high = Requirement.objects.get(name=req_name_bleeding_high)
@@ -51,7 +56,7 @@ class RequirementTest(TestCase):
 
     def test_links_requirement(self):
         """
-        Test the links of the requirements.
+        Verifies that the `links` attribute of a Requirement instance returns a RequirementLinks object and that its `examination_indications` attribute is a list.
         """
         # Check if the requirement has links
         from endoreg_db.utils.links.requirement_link import RequirementLinks
@@ -66,7 +71,9 @@ class RequirementTest(TestCase):
 
     def test_match_any(self):
         """
-        Test the match_any method of the RequirementLinks class.
+        Tests that the RequirementLinks.match_any method correctly identifies matching and non-matching requirement links.
+        
+        Asserts that match_any returns False when comparing links from different requirements, and True when comparing links from the same requirement.
         """
 
         requirement_links_high = self.req_bleeding_high.links

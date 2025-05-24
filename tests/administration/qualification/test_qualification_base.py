@@ -17,5 +17,8 @@ from ...helpers.data_loader import (
 
 class QualificationModelTest(TestCase):
     def setUp(self):
+        """
+        Prepares qualification-related test data before each test method is executed.
+        """
         load_qualification_data()
 

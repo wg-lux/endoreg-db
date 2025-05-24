@@ -8,13 +8,13 @@ if TYPE_CHECKING:
 class RequirementOperatorManager(models.Manager):
     def get_by_natural_key(self, name):
         """
-        Retrieve a RequirementOperator instance by its natural key.
+        Retrieves a RequirementOperator instance by its unique name.
         
         Args:
-            name (str): The unique name representing the natural key.
+            name: The unique name of the RequirementOperator.
         
         Returns:
-            RequirementOperator: The model instance matching the provided name.
+            The RequirementOperator instance matching the given name.
         """
         return self.get(name=name)
 
@@ -24,6 +24,11 @@ def _evaluate_models_match_any(
     inputs: Dict[str, List["RequirementLinks"]],
     **kwargs
 ) -> bool:
+    """
+    Checks if any set of requirement links in the provided inputs matches the given requirement links.
+    
+    Iterates over each model's requirement links in the inputs and returns True if any set matches using the `match_any` method. Returns False if no matches are found.
+    """
     for model_name, req_links in inputs.items():
         is_true = requirement_links.match_any(req_links)
         if is_true:
@@ -55,13 +60,9 @@ class RequirementOperator(models.Model):
     @property
     def operator_evaluation_models(self):
         """
-        Retrieve the operator evaluation models associated with this requirement operator.
+        Returns a dictionary of operator evaluation models for requirement operators.
         
-        This property dynamically imports the operator evaluation models module and returns
-        the dictionary of models for the current operator.
-        
-        Returns:
-            dict: A dictionary of operator evaluation models.
+        This property dynamically imports and provides access to the available operator evaluation models.
         """
         from .requirement_evaluation.operator_evaluation_models import operator_evaluation_models
         return operator_evaluation_models
@@ -69,37 +70,35 @@ class RequirementOperator(models.Model):
     @property
     def data_model_dict(self):
         """
-        Retrieve the data model dictionary associated with this requirement operator.
+        Returns a dictionary of data models relevant to this requirement operator.
         
-        This property dynamically imports the data model dictionary module and returns
-        the dictionary of models for the current operator.
-        
-        Returns:
-            dict: A dictionary of data models.
+        This property dynamically imports and provides access to the data model dictionary
+        used for requirement evaluation.
         """
         from .requirement_evaluation.requirement_type_parser import data_model_dict
         return data_model_dict
 
     def natural_key(self):
         """
-        Return the natural key for the requirement operator.
+        Returns the natural key tuple for this requirement operator.
         
-        This method returns a tuple containing the operator's name, which serves as its
-        natural key for serialization and unique identification within the system.
+        The natural key consists of the operator's unique name, used for serialization and identification.
         """
         return (self.name,)
 
     def __str__(self):
         """
-        Return the string representation of the requirement operator.
-        
-        Returns:
-            str: The name attribute of the operator.
+        Returns the name of the requirement operator as its string representation.
         """
         return str(self.name)
     
     def evaluate(self, requirement:"Requirement", inputs:Dict[str, List["RequirementLinks"]], **kwargs) -> bool:
         
+        """
+        Evaluates the requirement operator against the provided inputs.
+        
+        This method is intended to determine whether the operator's condition is satisfied for the given requirement and input data. The evaluation logic is not yet implemented.
+        """
         from endoreg_db.models.requirement.requirement import RequirementLinks
 
         is_true = False

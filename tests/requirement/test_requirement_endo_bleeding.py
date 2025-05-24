@@ -1,4 +1,3 @@
-
 from math import e
 from django.test import TestCase
 from logging import getLogger
@@ -32,6 +31,12 @@ logger.setLevel(logging.WARNING)
 
 class RequirementTest(TestCase):
     def setUp(self):  
+        """
+        Sets up test data and required objects for each test.
+        
+        Initializes requirement names, creates and saves a patient, and retrieves specific
+        RequirementOperator and RequirementType instances needed for the tests.
+        """
         load_data()
 
         self.req_name_bleeding_high = "endoscopy_intervention_bleeding_risk_high"
@@ -49,11 +54,17 @@ class RequirementTest(TestCase):
         self.assertIsInstance(self.requirement_type_patient_examination, RequirementType)
 
     def test_requirement_creation(self):
+        """
+        Tests that a Requirement object can be retrieved from the database and is of the correct type.
+        """
         requirement = Requirement.objects.first()
         self.assertIsInstance(requirement, Requirement)
         logger.info(f"First Requirement in db: {requirement.name}") 
 
     def test_requirement_data_model_dict(self):
+        """
+        Tests that the `data_model_dict` property of a high bleeding risk requirement includes a mapping from "patient_examination" to the `PatientExamination` model.
+        """
         from endoreg_db.models import (
             PatientExamination
         )
@@ -74,7 +85,9 @@ class RequirementTest(TestCase):
 
     def test_high_bleed_risk_endo_intervention(self):
         """
-        Test if the requirement for high bleeding risk endoscopy intervention is created correctly.
+        Verifies that the high bleeding risk endoscopy requirement includes the expected finding interventions.
+        
+        Asserts that the requirement exists, is correctly named, and is associated with the expected intervention names, ensuring each is present among its linked finding interventions.
         """
         requirement = Requirement.objects.get(name=self.req_name_bleeding_high)
         self.assertIsInstance(requirement, Requirement)
@@ -101,6 +114,11 @@ class RequirementTest(TestCase):
 
     def test_high_bleed_risk_examination(self):
         # Create sample patient examination 
+        """
+        Tests that a high bleeding risk requirement correctly matches the links of a specific examination indication.
+        
+        Retrieves a predefined examination indication and a high bleeding risk requirement, then verifies that their associated `RequirementLinks` objects match using the `match_any` method. Also asserts that the examination indication has at least one linked finding intervention.
+        """
         examination_indication = ExaminationIndication.objects.get(
             name = "colonoscopy_lesion_removal_large"
         )

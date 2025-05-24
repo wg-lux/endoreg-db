@@ -369,14 +369,9 @@ class VideoFile(models.Model):
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
         """
-        Gets LabelVideoSegments marked with the 'outside' label.
-
-        Args:
-            only_validated: If True, filters for segments where the related state's
-            is_validated field is True.
-
-        Returns:
-            A QuerySet of LabelVideoSegment instances.
+        Retrieves video segments labeled as "outside" for this video.
+        
+        If `only_validated` is True, only segments with a validated state are returned. Returns an empty queryset if the "outside" label does not exist or on error.
         """
         try:
             outside_label = Label.objects.get(name__iexact="outside")
@@ -396,14 +391,18 @@ class VideoFile(models.Model):
     
     def get_all_videos(self) -> models.QuerySet["VideoFile"]:
         """
-        Returns all VideoFile records in the database.
+        Returns a queryset of all VideoFile records in the database.
         """
         return VideoFile.objects.all()
         
     def count_unmodified_others(self) -> int:
         """
-        Return the number of other VideoFile records where
-        date_modified == date_created (i.e. never modified).
+        Returns the count of other VideoFile records that have never been modified.
+        
+        A record is considered unmodified if its `date_modified` field is equal to its `date_created` field. The current instance is excluded from the count.
+        
+        Returns:
+            The number of unmodified VideoFile records excluding this instance.
         """
         return (
             VideoFile.objects

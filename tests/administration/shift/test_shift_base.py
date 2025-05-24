@@ -17,5 +17,8 @@ from ...helpers.data_loader import (
 
 class ShiftModelTest(TestCase):
     def setUp(self):
+        """
+        Prepares test data for each test by loading shift-related fixtures.
+        """
         load_shift_data()
 

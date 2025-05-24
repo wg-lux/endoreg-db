@@ -6,7 +6,11 @@ from pathlib import Path
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 def load_default_ai_model(): 
-    """Load Default AI Model"""
+    """
+    Loads the default AI model into the application using a predefined checkpoint file.
+    
+    Invokes the Django management command `create_multilabel_model_meta` with the path to the default model checkpoint located in the assets directory.
+    """
     model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.ckpt"
     # Pass arguments individually to call_command
     call_command(
@@ -16,15 +20,21 @@ def load_default_ai_model():
     )
 
 def load_qualification_data():
-    """Load Qualification Data"""
+    """
+    Loads qualification data into the application using the corresponding management command.
+    """
     call_command("load_qualification_data", )
 
 def load_shift_data():
-    """Load Shift Data"""
+    """
+    Loads shift data into the application using the corresponding Django management command.
+    """
     call_command("load_shift_data", )
 
 def load_base_db_data():
-    """Load Base DB Data"""
+    """
+    Loads the base database data using the corresponding Django management command.
+    """
     call_command("load_base_db_data", )
 
 def load_information_source():

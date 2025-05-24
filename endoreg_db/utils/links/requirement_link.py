@@ -65,24 +65,31 @@ class RequirementLinks(BaseModel):
 
     @property
     def data_model_dict(self):
+        """
+        Returns a dictionary mapping requirement types to their corresponding data models.
+        
+        The dictionary is imported dynamically from the requirement type parser module.
+        """
         from endoreg_db.models.requirement.requirement_evaluation.requirement_type_parser import data_model_dict
         return data_model_dict
 
     @property
     def data_model_dict_reverse(self):
+        """
+        Returns a dictionary mapping model classes to their string identifiers for requirement type parsing.
+        
+        This property dynamically imports and provides the reverse mapping used in requirement evaluation logic.
+        """
         from endoreg_db.models.requirement.requirement_evaluation.requirement_type_parser import data_model_dict_reverse
 
         return data_model_dict_reverse
 
     def match_any(self, other:"RequirementLinks") -> bool:
         """
-        Checks if any of the linked models in this instance match with another instance.
-
-        Args:
-            other (RequirementLinks): The other RequirementLinks instance to compare with.
-
+        Determines if any linked model in this instance is also present in another RequirementLinks instance.
+        
         Returns:
-            bool: True if any linked model matches, False otherwise.
+            True if at least one item in any corresponding attribute list is shared between the two instances; otherwise, False.
         """
         
         other_dict = other.model_dump()
@@ -95,9 +102,9 @@ class RequirementLinks(BaseModel):
     
     def __repr__(self):
         """
-        Returns a string representation of the RequirementLinks instance.
-
-        This method provides a concise summary of the linked models contained within the instance.
+        Returns a summary string showing the counts of items in each linked model list.
+        
+        The string includes the number of elements for each major attribute, providing a concise overview of the RequirementLinks instance's contents.
         """
         return f"RequirementLinks(examinations={len(self.examinations)}, " \
                f"examination_indications={len(self.examination_indications)}, " \

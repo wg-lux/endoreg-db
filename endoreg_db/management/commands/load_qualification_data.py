@@ -1,4 +1,3 @@
-
 from django.core.management.base import BaseCommand
 from ...models import Qualification, QualificationType
 from ...utils import load_model_data_from_yaml
@@ -33,6 +32,9 @@ class Command(BaseCommand):
     into the Intervention and InterventionType model"""
 
     def add_arguments(self, parser):
+        """
+        Adds the --verbose flag to the command-line parser to enable detailed output.
+        """
         parser.add_argument(
             '--verbose',
             action='store_true',
@@ -40,6 +42,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Loads data from YAML files into specified database models.
+        
+        Iterates over each model listed in IMPORT_MODELS and loads its data from YAML files using the associated metadata. Supports verbose output if enabled.
+        """
         verbose = options['verbose']
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

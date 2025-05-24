@@ -56,9 +56,9 @@ class Event(models.Model):
 
     def natural_key(self):
         """
-        Return the natural key for this instance.
+        Returns a tuple representing the natural key for this instance.
         
-        The natural key is defined as a tuple containing the instance's unique name.
+        The natural key consists of the instance's unique name.
         """
         return (self.name,)
 

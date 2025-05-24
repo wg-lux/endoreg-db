@@ -71,6 +71,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         
+        """
+        Defines command-line arguments for the video import management command.
+        
+        Adds options for specifying verbosity, center and processor names, video file path, frame and video directory roots, deletion and saving behavior, model path, and segmentation usage.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -148,6 +153,11 @@ class Command(BaseCommand):
     def handle(self, *args, **options):  
         
         
+        """
+        Handles the import of a video file into the database, associating it with a specified medical center and endoscopy processor.
+        
+        Loads required reference data, validates the existence of the center and processor, checks the video file's presence and anonymization, and optionally applies segmentation models. Supports interactive processor selection if multiple are available. If all validations pass, imports the video file using the provided options.
+        """
         self.stdout.write(f"Current database: {connection.alias}")
         self.stdout.write(self.style.SUCCESS("Starting video import..."))      
 
@@ -266,9 +276,15 @@ class Command(BaseCommand):
         self, processors_qs
     ) -> EndoscopyProcessor:
         """
-        Ask the operator to select one processor from a QuerySet
-        belonging to a single centre.  Never called if the QS has
-        length 0 or 1.
+        Prompts the user to select an endoscopy processor from a list when multiple are available.
+        
+        Displays a numbered list of processors and repeatedly prompts for input until a valid selection is made. Aborts the operation if interrupted by the user.
+        
+        Args:
+            processors_qs: A QuerySet of EndoscopyProcessor objects with length greater than one.
+        
+        Returns:
+            The selected EndoscopyProcessor instance.
         """
         # turn the QS into a concrete list so we can index it later
         processors = list(processors_qs)           # -> [EndoscopyProcessor, …]

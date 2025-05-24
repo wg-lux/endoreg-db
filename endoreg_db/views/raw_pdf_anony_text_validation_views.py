@@ -16,10 +16,11 @@ class RawPdfAnonyTextView(APIView):
 
     def get(self, request):
         """
-        Handles:
-        - First available PDF if `last_id` is NOT provided.
-        - Next available PDF if `last_id` is provided.
-        - Returns the actual PDF file if `id` is provided.
+        Handles GET requests to retrieve PDF metadata or serve the actual PDF file.
+        
+        If the `id` query parameter is provided, returns the corresponding PDF file.
+        If `last_id` is provided, returns metadata for the next available PDF after that ID.
+        If neither is provided, returns metadata for the first available PDF.
         """
 
         pdf_id = request.GET.get("id")
@@ -32,6 +33,12 @@ class RawPdfAnonyTextView(APIView):
 
     def fetch_pdf_metadata(self, last_id):
 
+        """
+        Fetches the next available PDF metadata entry, including its anonymized text.
+        
+        If `last_id` is provided, it must be an integer; otherwise, a 400 Bad Request is returned.
+        Returns a 404 Not Found response if no further PDFs are available.
+        """
         try:
             if last_id:
                 last_id = int(last_id)

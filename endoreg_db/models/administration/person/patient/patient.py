@@ -191,6 +191,20 @@ class Patient(Person):
         date_end: datetime = None,
         description: str = None,
     ):
+        """
+        Creates a PatientEvent for this patient with the specified event name.
+        
+        If no start date is provided, the current datetime is used.
+        
+        Args:
+            event_name_str: The name of the event to associate with the patient.
+            date_start: Optional start datetime for the event.
+            date_end: (Unused) Optional end datetime for the event.
+            description: (Unused) Optional description for the event.
+        
+        Returns:
+            The created PatientEvent instance.
+        """
         from ....medical import Event, PatientEvent
 
         event = Event.objects.get(name=event_name_str)
@@ -208,8 +222,13 @@ class Patient(Person):
 
     def create_examination_by_pdf(self, pdf: "RawPdfFile"):
         """
-        Creates a patient examination for this patient based on the given report file.
-        This function is helpful for adding documents to an already known and existing patient. 
+        Creates a patient examination linked to this patient and associates it with the provided PDF report.
+        
+        Args:
+        	pdf: The RawPdfFile instance to associate with the created examination.
+        
+        Returns:
+        	The created PatientExamination instance.
         """
         from ....medical import PatientExamination
         patient_examination = PatientExamination(patient=self)

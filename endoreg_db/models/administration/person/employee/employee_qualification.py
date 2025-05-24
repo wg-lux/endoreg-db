@@ -27,4 +27,7 @@ class EmployeeQualification(models.Model):
         qualification: models.QuerySet["Qualification"]
 
     def __str__(self):
+        """
+        Returns a string representation of the employee and their qualifications.
+        """
         return f"{self.employee} - {self.qualification}"

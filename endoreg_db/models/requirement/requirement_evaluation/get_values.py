@@ -15,26 +15,15 @@ def get_values_from_kwargs(
     **kwargs,
 ) -> dict:
     """
-    Extracts and validates values for requirement evaluation.
+    Aggregates and validates input values for requirement evaluation.
     
-    This function aggregates values from keyword arguments along with
-    the 'patient' and 'patient_examination' inputs based on the requirement's types.
-    It verifies that all requirement types are supported—currently, only types like
-    'patient_examination' and 'patient' are allowed—and ensures that the corresponding
-    parameters are provided when required. A ValueError is raised if an unsupported
-    requirement type is encountered or if a required parameter is missing.
-    
-    Args:
-        requirement (Requirement): The evaluation criterion containing requirement types.
-        patient (Optional[Patient]): Patient details, required if the requirement includes 'patient'.
-        patient_examination (Optional[PatientExamination]): Examination details, required if the requirement includes 'patient_examination'.
-        **kwargs: Additional keyword arguments for the evaluation.
-    
-    Raises:
-        ValueError: If a requirement type is unsupported or a necessary parameter is missing.
+    Combines provided patient, patient examination, and additional keyword arguments into a dictionary, ensuring that required parameters are present based on the types specified in the requirement. Raises a ValueError if a required parameter is missing.
     
     Returns:
-        dict: A dictionary combining 'patient', 'patient_examination', and additional keyword arguments.
+        A dictionary containing the patient, patient examination, and any additional keyword arguments.
+        
+    Raises:
+        ValueError: If a required parameter for the specified requirement type is missing.
     """
     requirement_types = [_.name for _ in requirement.requirement_types]
     # operators = [_.name for _ in requirement.operators]  # Uncomment when needed

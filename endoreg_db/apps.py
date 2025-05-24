@@ -7,8 +7,9 @@ class EndoregDbConfig(AppConfig):
     
     def ready(self):
         """
-        This method is called when the application is ready.
-        It can be used to perform any startup tasks or register signals.
+        Executes initialization code when the Django application is fully loaded.
+        
+        Imports media-related model modules to ensure their registration or signal setup at startup.
         """
         import endoreg_db.models.media.video
         import endoreg_db.models.media.frame

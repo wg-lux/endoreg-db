@@ -33,7 +33,9 @@ class PatientEvent(models.Model):
     last_update = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        """Returns a string representation including the date and event name."""
+        """
+        Returns a string representation of the patient event with its start date and event name.
+        """
         return str(self.date_start) + ": " + self.event.name
     
     def set_subcategories_from_classification_choice(self):

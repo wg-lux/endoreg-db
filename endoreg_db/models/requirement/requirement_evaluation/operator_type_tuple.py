@@ -6,18 +6,13 @@ if TYPE_CHECKING:
 
 def get_operator_type_tuples(requirement: "Requirement") -> list[OperatorTypeTuple]:
     """
-    Extracts operator and requirement type tuples from the given requirement.
+    Generates all possible (operator, requirement type) tuples for a given requirement.
     
-    This function iterates through the operators and requirement types associated
-    with the provided requirement, creating a list of tuples that pair each operator
-    with its corresponding requirement type. This is useful for evaluating the
-    requirements based on their specific operators and types.
-    
-    Args:
-        requirement (Requirement): The requirement instance containing operators and types.
+    Iterates over every operator and requirement type associated with the requirement,
+    returning a list of OperatorTypeTuple objects representing each possible pairing.
     
     Returns:
-        list[OperatorTypeTuple]: A list of tuples, each containing an operator and its associated requirement type.
+        A list of OperatorTypeTuple instances, each combining an operator and a requirement type from the requirement.
     """
     operator_type_tuples = [
         OperatorTypeTuple(operator=operator, requirement_type=requirement_type)

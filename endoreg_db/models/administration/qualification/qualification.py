@@ -8,6 +8,11 @@ if TYPE_CHECKING:
 
 class QualificationManager(models.Manager):
     def get_queryset(self):
+        """
+        Returns a queryset of active qualifications only.
+        
+        Filters the default queryset to include only records where `is_active` is True.
+        """
         return super().get_queryset().filter(is_active=True)
     
 class Qualification(models.Model):
@@ -30,4 +35,7 @@ class Qualification(models.Model):
     objects = QualificationManager()
 
     def __str__(self):
+        """
+        Returns the string representation of the qualification's name.
+        """
         return str(self.name)

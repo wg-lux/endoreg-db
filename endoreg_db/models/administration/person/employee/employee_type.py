@@ -9,6 +9,11 @@ if TYPE_CHECKING:
 
 class EmployeeTypeManager(models.Manager):
     def get_queryset(self):
+        """
+        Returns a queryset containing only active employee types.
+        
+        Filters the default queryset to include only records where `is_active` is True.
+        """
         return super().get_queryset().filter(is_active=True)
     
 class EmployeeType(models.Model):
@@ -30,4 +35,7 @@ class EmployeeType(models.Model):
     objects = EmployeeTypeManager()
 
     def __str__(self):
+        """
+        Returns the string representation of the employee type's name.
+        """
         return str(self.name)

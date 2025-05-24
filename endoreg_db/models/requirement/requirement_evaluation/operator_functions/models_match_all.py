@@ -6,9 +6,16 @@ if TYPE_CHECKING:
 
 def model_by_name(model_name: str):
     """
-    Returns the model class corresponding to the given model name.
+    Returns the ORM model class corresponding to the specified model name.
     
+    Args:
+        model_name: The string name of the model, accepting both singular and plural forms.
     
+    Returns:
+        The ORM model class associated with the given model name.
+    
+    Raises:
+        ValueError: If the model name is not recognized.
     """
 
     from endoreg_db.models import (
@@ -64,14 +71,9 @@ def model_by_name(model_name: str):
 
 def get_requirement_links_model_lookup():
     """
-    Returns a dictionary that maps requirement types to their corresponding model classes.
+    Returns a mapping of requirement type names to their corresponding ORM model classes.
     
-    This function provides a mapping of requirement types to the respective model classes
-    that are used for evaluation. The mapping is essential for dynamically determining
-    the appropriate model class based on the requirement type during the evaluation process.
-    
-    Returns:
-        dict: A dictionary mapping requirement types to their corresponding model classes.
+    This mapping enables dynamic resolution of model classes based on requirement type names during requirement link evaluation.
     """
     from endoreg_db.models import (
         RequirementType,
@@ -113,12 +115,18 @@ def _match_all_links(
         **kwargs
     ):
     """
-    Match all models for a given requirement.
-    
-    Retrieves the models dictionary from the requirement by calling its get_models_dict() method.
-    Additional keyword arguments are accepted for future extensions. Note that this function
-    currently only extracts the models without performing any matching logic.
-    """
+        Validates and prepares model classes for all active links of a requirement.
+        
+        Checks that the provided source object matches the expected model class for the requirement type, and resolves target model classes for each active link. Raises an error if any required model is missing or unknown.
+        
+        Args:
+            requirement: The requirement instance whose links are to be matched.
+            r_type: The type of the requirement, used to determine the source model class.
+            **kwargs: Must include an instance of the source model keyed by the requirement type name.
+        
+        Raises:
+            ValueError: If a required model is missing or unknown, or if the source object is not provided.
+        """
     links = requirement.links
     active_links = links.active()
 
@@ -148,11 +156,9 @@ def _match_all_links(
 
 def _match_any_links(requirement: "Requirement", **kwargs):
     """
-    Match any models for a given requirement.
+    Attempts to match any linked models for the given requirement.
     
-    Retrieves the models dictionary from the requirement by calling its get_models_dict() method.
-    Additional keyword arguments are accepted for future extensions. Note that this function
-    currently only extracts the models without performing any matching logic.
+    Currently a stub; does not implement matching logic.
     """
     links = requirement.links
 
@@ -161,11 +167,9 @@ def _match_any_links(requirement: "Requirement", **kwargs):
 
 def _match_no_links(requirement: "Requirement", **kwargs):
     """
-    Match no models for a given requirement.
+    Returns no matches for models linked to the given requirement.
     
-    Retrieves the models dictionary from the requirement by calling its get_models_dict() method.
-    Additional keyword arguments are accepted for future extensions. Note that this function
-    currently only extracts the models without performing any matching logic.
+    This function is a placeholder and does not implement any matching logic.
     """
     links = requirement.links
 

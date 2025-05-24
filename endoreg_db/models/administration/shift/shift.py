@@ -13,6 +13,9 @@ if TYPE_CHECKING:
 
 class ShiftManager(models.Manager):
     def get_queryset(self):
+        """
+        Returns a queryset of active objects filtered by is_active=True.
+        """
         return super().get_queryset().filter(is_active=True)
     
 class Shift(models.Model):
@@ -44,4 +47,7 @@ class Shift(models.Model):
     objects = ShiftManager()
 
     def __str__(self):
+        """
+        Returns the name of the shift as its string representation.
+        """
         return str(self.name)

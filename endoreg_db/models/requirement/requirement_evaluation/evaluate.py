@@ -9,19 +9,13 @@ def evaluate_requirement(
     **kwargs,
 ):
     """
-    Evaluates the given requirement against provided parameters.
+    Evaluates whether a requirement is satisfied based on its type and context.
     
-    This function determines if the requirement is met based on its type and
-    the additional evaluation inputs supplied via keyword arguments. Evaluation
-    may depend on context-specific data, such as patient or examination details,
-    as required by the requirement.
-    
-    Args:
-        requirement (Requirement): The requirement to evaluate.
-        **kwargs: Additional parameters that support the evaluation process.
+    The evaluation uses the provided requirement and any relevant context-specific
+    parameters passed as keyword arguments, such as patient or examination data.
     
     Returns:
-        bool: True if the requirement is met, False otherwise.
+        True if the requirement is met; False otherwise.
     """
     # Implement the logic to evaluate the requirement based on its type
     # and the provided keyword arguments.

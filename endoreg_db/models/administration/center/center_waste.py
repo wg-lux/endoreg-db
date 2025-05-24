@@ -20,6 +20,9 @@ class CenterWaste(models.Model):
     emission_factor: models.ForeignKey["EmissionFactor"] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
     
     def __str__(self) -> str:
+        """
+        Returns a human-readable summary of the CenterWaste instance, including quantity, unit, waste type, emission factor, center, and year.
+        """
         result = f"{self.quantity} {self.unit}"
         result += f" -\t{self.waste}, EmissionFactor: {self.emission_factor}\t\t- {self.center} - {self.year}"
 

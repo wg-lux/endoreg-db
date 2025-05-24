@@ -105,18 +105,9 @@ data_model_dict_reverse = {
 
 def get_kwargs_for_operator_type_tuple(operator_type_tuple: OperatorTypeTuple, **kwargs):
     """
-    Extract keyword arguments for a specific operator type tuple.
+    Returns a dictionary of keyword arguments relevant for the given operator and requirement type tuple.
     
-    This function retrieves the relevant keyword arguments based on the provided operator type tuple.
-    It constructs and returns a dictionary of arguments suitable for processing the requirement with
-    its associated operator and requirement type.
-    
-    Args:
-        operator_type_tuple: The operator type tuple used to identify the applicable parameters.
-        **kwargs: Additional keyword arguments that may include values required for evaluation.
-    
-    Returns:
-        A dictionary mapping relevant parameter names to their corresponding values.
+    Currently, this function is a placeholder and returns an empty dictionary. It asserts that the tuple contains valid operator and requirement type instances.
     """
     from endoreg_db.models import RequirementOperator, RequirementType
     operator = operator_type_tuple.operator
@@ -139,15 +130,14 @@ def evaluate_operator_type_tuple(
     operator_type_tuple: OperatorTypeTuple, data: object, **kwargs
 ):
     """
-    Evaluates the requirement type and operator tuple against the provided data.
-
+    Evaluates whether the provided data satisfies the condition defined by the given requirement type and operator.
+    
     Args:
-        operator_type_tuple (OperatorTypeTuple): Tuple containing requirement type and operator.
-        data (object): The data to evaluate.
-        **kwargs: Additional keyword arguments.
-
+        operator_type_tuple: A tuple containing a requirement type and an operator.
+        data: The data object to be evaluated.
+    
     Returns:
-        bool: True if the evaluation is successful, False otherwise.
+        True if the data meets the condition specified by the operator and requirement type; otherwise, False.
     """
     # data = kwargs.get(name, None)
 
