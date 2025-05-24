@@ -35,6 +35,9 @@ let
     tesseract
     zsh # If you prefer zsh as the shell
     uvPackage # Add uvPackage to runtime packages if needed elsewhere, or just for devenv internal use
+    libglvnd # Add libglvnd for libGL.so.1
+    glib
+    zlib
   ];
 
 in 
@@ -74,6 +77,13 @@ in
       EOF
       echo "Exported Nix variables to .devenv-vars.json"
     '';
+    
+    env-setup.exec = ''
+    export LD_LIBRARY_PATH="${
+      with pkgs;
+      lib.makeLibraryPath buildInputs
+    }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+    '';
 
     hello.package = pkgs.zsh;
     hello.exec = "uv run python hello.py";
@@ -110,6 +120,19 @@ in
   };
 
   enterShell = ''
+    # Clone or pull lx-anonymizer
+    LX_ANONYMIZER_DIR="lx-anonymizer"
+    LX_ANONYMIZER_REPO="https://github.com/wg-lux/lx-anonymizer"
+    LX_ANONYMIZER_BRANCH="prototype"
+
+    if [ -d "$LX_ANONYMIZER_DIR" ]; then
+      echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
+      (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git pull origin "$LX_ANONYMIZER_BRANCH")
+    else
+      echo "lx-anonymizer directory does not exist. Cloning repository..."
+      git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
+    fi
+
     export SYNC_CMD="uv sync"
 
     # Ensure dependencies are synced using uv

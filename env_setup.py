@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 
+
 # --- Constants ---
 DEFAULT_DB_PASSWORD = "changeme_in_production" # Placeholder password
 
@@ -59,7 +60,7 @@ else:
 
 
 # --- Manage .env file ---
-template = Path("./conf_template/default.env")
+template = Path("./conf/default.env")
 target = Path(".env") # .env should be in the working_dir (project root)
 
 # Create a new .env file from template if it doesn't exist
@@ -137,6 +138,12 @@ try:
         if "DJANGO_SALT" not in found_keys:
             f.write(f'\nDJANGO_SALT={SALT}') # No quotes
             print("Added DJANGO_SALT to .env")
+        
+        # Add Storage_DIR if missing
+        if "STORAGE_DIR" not in found_keys:
+            storage_dir = nix_vars.get("STORAGE_DIR", str(working_dir / "storage"))
+            f.write(f'\nSTORAGE_DIR={storage_dir}')
+            print("Added STORAGE_DIR to .env")
 
         # Add paths and config from nix_vars if missing
         # Ensure paths are NOT quoted

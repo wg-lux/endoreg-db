@@ -2,20 +2,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.conf import settings
 from urllib.parse import urlencode
 import requests
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 import json
 
 """
-    User hits /api/videos/
+    User hits /videos/
     Middleware checks for token; if missing, redirects to /login/
     /login/ redirects to Keycloak
     User logs in → Keycloak sends them back to /login/callback/
     /login/callback/ exchanges code for token, stores it in session
-    User is redirected to /api/videos/ again
+    User is redirected to /videos/ again
     Middleware now sees token, verifies it, injects user
     DRF view (KeycloakVideoView) is allowed to execute and returns data
 """
@@ -59,6 +59,11 @@ def keycloak_login(request):
 def keycloak_callback(request):
 
     #User lands here after login (Keycloak redirects here with code).
+    """
+    Handles the OAuth2 callback from Keycloak, exchanging the authorization code for tokens.
+    
+    Receives the authorization code from Keycloak, exchanges it for access and refresh tokens, stores them in the user's session, and redirects to the protected videos page. Returns an error response if the code is missing, the token exchange fails, or an exception occurs.
+    """
     code = request.GET.get("code")
     if not code:
         return HttpResponse(" No authorization code provided.", status=400)
@@ -97,7 +102,7 @@ def keycloak_callback(request):
         request.session["refresh_token"] = token_data["refresh_token"]
         print("Refresh Token:", request.session.get("refresh_token"))
 
-        return redirect("/api/videos/")
+        return redirect("/videos/")
 
     except Exception as e:
         return HttpResponse(f" Exception during token exchange: {str(e)}", status=500)

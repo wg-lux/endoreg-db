@@ -1,6 +1,5 @@
 from django.test import TestCase
 from logging import getLogger
-import shutil
 
 from endoreg_db.models import (
     RawPdfFile  # Import Frame model
@@ -8,7 +7,7 @@ from endoreg_db.models import (
 import logging
 from django.conf import settings
 
-from endoreg_db.models.state import sensitive_meta
+from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
 assert isinstance(RUN_VIDEO_TESTS, bool), "RUN_VIDEO_TESTS must be a boolean value"
@@ -27,14 +26,9 @@ from ...helpers.data_loader import (
     load_examination_data,
     load_center_data,
     load_endoscope_data,
-    load_ai_model_label_data,
-    load_ai_model_data,
 )
 
-# Check for ffmpeg executable once
-FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
-if not FFMPEG_AVAILABLE:
-    logger.warning("ffmpeg command not found. Frame extraction tests will be skipped.")
+FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 
 class RawPdfFileModelTest(TestCase):

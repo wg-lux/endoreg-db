@@ -19,3 +19,22 @@
         "water_jet",
         "wound",
       ]
+
+- model: endoreg_db.LabelSet
+  fields:
+    name: "multilabel_classification_colonoscopy_default"
+    version: 2
+    labels:
+      [
+        "appendix",
+        "blood",
+        "ileocaecalvalve",
+        "ileum",
+        "low_quality",
+        "instrument",
+        "digital_chromo_endoscopy",
+        "outside",
+        "polyp",
+        "water_jet",
+        "wound",
+      ]

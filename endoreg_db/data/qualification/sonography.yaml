@@ -1,0 +1,36 @@
+
+- model: endoreg_db.qualification
+  fields:
+    name: "sonography_supervised"
+    name_de: "Sonographie (Beaufsichtigt)"
+    name_en: "Sonography (Supervised)"
+    qualification_types:
+      - "sonography"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "sonography_base"
+    name_de: "Sonographie (Basis)"
+    name_en: "Sonography (Base)"
+    qualification_types:
+      - "sonography"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "sonography_liver_biopsy"
+    name_de: "Sonographie (Leberbiopsie)"
+    name_en: "Sonography (Liver Biopsy)"
+    qualification_types:
+      - "sonography"
+      - "shift_requirement"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "sonography_supervision"
+    name_de: "Sonographie (Supervision)"
+    name_en: "Sonography (Supervision)"
+    qualification_types:
+      - "sonography"
+      - "shift_requirement"

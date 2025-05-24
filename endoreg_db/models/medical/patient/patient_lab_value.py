@@ -21,7 +21,7 @@ class PatientLabValue(models.Model):
     lab_value = models.ForeignKey('LabValue', on_delete=models.CASCADE)
     value = models.FloatField(blank=True, null=True)
     value_str = models.CharField(max_length=255, blank=True, null=True)
-    sample = models.ForeignKey(
+    sample: models.ForeignKey["PatientLabSample"] = models.ForeignKey(
         'PatientLabSample', on_delete=models.CASCADE, 
         blank=True, null=True,
         related_name='values'

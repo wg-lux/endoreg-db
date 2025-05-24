@@ -152,12 +152,17 @@
     contraindications: []
 - model: endoreg_db.finding_intervention
   fields:
-    name: colon_eftr
+    name: colon_lesion_eftr
     description:
       Endoscopic full-thickness resection (EFTR) is a technique used to
       remove lesions in the colon.
     intervention_types:
       - therapeutic
       - invasive
-    required_lab_values: []
-    contraindications: []
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe

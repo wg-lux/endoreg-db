@@ -1,0 +1,21 @@
+- model: endoreg_db.shift
+  fields:
+    name: "endoscopy_base"
+    name_de: "Endoskopie (Basis)"
+    name_en: "Endoscopy (Base)"
+    description: "This shift represents a basic, planned endoscopy shift (EGD, colonoscopy)."
+    required_qualifications: 
+      - "endoscopy_base"
+    shift_types:
+    
+
+- model: endoreg_db.shift
+  fields:
+    name: "endoscopy_training"
+    name_de: "Endoskopie (Training)"
+    name_en: "Endoscopy (Training)"
+    description: "This shift represents a training endoscopy shift which is covered 1:1 with an experienced endoscopist."
+    required_qualifications: 
+      - "endoscopy_supervised"
+
+

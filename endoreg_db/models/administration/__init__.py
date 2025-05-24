@@ -1,5 +1,3 @@
-__all__ = []
-
 # AI
 from .ai import (
     AiModel,
@@ -24,6 +22,7 @@ from .center import (
     CenterProduct,
     CenterResource,
     CenterWaste,
+    CenterShift,
 )
 
 
@@ -39,6 +38,9 @@ from .person import (
     FirstName,
     LastName,
     Profession,
+    Employee,
+    EmployeeType,
+    EmployeeQualification,
 )
 
 # Product
@@ -48,6 +50,17 @@ from .product import (
     ProductGroup,
     ReferenceProduct,
     ProductWeight,
+)
+
+from .qualification import (
+    Qualification,
+    QualificationType,
+)
+
+from .shift import (
+    Shift,
+    ShiftType,
+    ScheduledDays,
 )
 
 __all__ = [
@@ -70,6 +83,7 @@ __all__ = [
     "CenterProduct",
     "CenterResource",
     "CenterWaste",
+    "CenterShift",
 
     # Person
     "Person",
@@ -79,6 +93,9 @@ __all__ = [
     "FirstName",
     "LastName",
     "Profession",
+    "Employee",
+    "EmployeeType",
+    "EmployeeQualification",
 
     # Product
     'Product',
@@ -86,5 +103,14 @@ __all__ = [
     'ProductGroup',
     'ReferenceProduct',
     'ProductWeight',
+
+    # Qualification
+    "Qualification",
+    "QualificationType",
+
+    # Shift
+    "Shift",
+    "ShiftType",
+    "ScheduledDays",
 ]
 

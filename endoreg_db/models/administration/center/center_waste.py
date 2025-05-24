@@ -8,24 +8,22 @@ if TYPE_CHECKING:
     from ...other.emission import EmissionFactor
     
 class CenterWaste(models.Model):
-    center = models.ForeignKey(
+    center: models.ForeignKey["Center"] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_wastes",
     )
     year = models.IntegerField()
-    waste = models.ForeignKey("Waste", on_delete=models.CASCADE)
+    waste: models.ForeignKey["Waste"] = models.ForeignKey("Waste", on_delete=models.CASCADE)
     quantity = models.FloatField()
-    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
-
-    if TYPE_CHECKING:
-        center: "Center"
-        waste: "Waste"
-        unit: "Unit"
-        emission_factor: "EmissionFactor"
+    unit: models.ForeignKey["Unit"] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    emission_factor: models.ForeignKey["EmissionFactor"] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
     
     def __str__(self) -> str:
+        """
+        Returns a formatted string summarizing the waste record, including quantity, unit,
+        waste type, emission factor, center, and year.
+        """
         result = f"{self.quantity} {self.unit}"
         result += f" -\t{self.waste}, EmissionFactor: {self.emission_factor}\t\t- {self.center} - {self.year}"
 

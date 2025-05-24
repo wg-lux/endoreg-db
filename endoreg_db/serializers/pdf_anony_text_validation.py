@@ -30,14 +30,19 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def get_pdf_url(self, obj):
         """
-        Generates the full URL where Vue.js can fetch and display the PDF.
+        Returns the absolute URL for accessing the anonymized text PDF endpoint for the given object.
+        
+        If the request context or file is missing, returns None.
         """
         request = self.context.get('request')
-        return request.build_absolute_uri(f"/api/pdf/anony_text/?id={obj.id}") if request and obj.file else None
+        return request.build_absolute_uri(f"/pdf/anony_text/?id={obj.id}") if request and obj.file else None
 
     def get_file(self, obj):
         """
-        Returns the relative file path stored in the database.
+        Retrieves the relative file path of the PDF from the model instance.
+        
+        Returns:
+            The relative file path as a string, or None if no file is associated.
         """
         return str(obj.file.name).strip() if obj.file else None  
 
@@ -53,10 +58,14 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def validate_anonymized_text(self, value):
         """
-        Ensures the anonymized_text is not empty or too long.
+        Validates that the anonymized text is non-empty and does not exceed 5000 characters.
+        
+        Raises:
+            serializers.ValidationError: If the text is empty or exceeds the length limit.
         """
         if not value.strip():
             raise serializers.ValidationError("Anonymized text cannot be empty.")
+        #FIXME move this to a settings variable @Hamzaukw @maxhild
         if len(value) > 5000:  # Arbitrary limit to prevent excessively long text
             raise serializers.ValidationError("Anonymized text exceeds the maximum length of 5000 characters.")
         return value
@@ -76,8 +85,8 @@ await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 
 const fetchPdfWithAnonymizedText = async (lastId = null) => {
     const url = lastId 
-        ? `http://localhost:8000/api/pdf/anony_text/?last_id=${lastId}` 
-        : "http://localhost:8000/api/pdf/anony_text/";
+        ? `http://localhost:8000/pdf/anony_text/?last_id=${lastId}` 
+        : "http://localhost:8000/pdf/anony_text/";
 
     try {
         const response = await axios.get(url, { headers: { "Accept": "application/json" } });
@@ -96,7 +105,7 @@ await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 
 const updateAnonymizedText = async (pdfId, newText) => {
     try {
-        const response = await axios.patch("http://localhost:8000/api/pdf/update_anony_text/", {
+        const response = await axios.patch("http://localhost:8000/pdf/update_anony_text/", {
             id: pdfId,
             anonymized_text: newText
         }, { headers: { "Content-Type": "application/json" } });
@@ -121,7 +130,7 @@ const updateAnonymizedText = async () => {
     };
 
     try {
-        const response = await axios.patch("http://localhost:8000/api/pdf/update_anony_text/", updatedData, {
+        const response = await axios.patch("http://localhost:8000/pdf/update_anony_text/", updatedData, {
             headers: { "Content-Type": "application/json" }
         });
 

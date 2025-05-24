@@ -118,7 +118,7 @@ class VideoFileForMetaView(APIView):
     await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 const updatePatientInfo = async () => {
     const updatedData = {
-        sensitive_meta_id: 2,
+        sensitive_meta_id: 6,
         patient_first_name: "Placeholder",
         patient_last_name: "Placeholder",
         patient_dob: "1994-06-15",
@@ -126,7 +126,7 @@ const updatePatientInfo = async () => {
     };
 
     try {
-        const response = await axios.patch("http://localhost:8000/api/video/update_sensitivemeta/", updatedData, {
+        const response = await axios.patch("http://localhost:8000/video/update_sensitivemeta/", updatedData, {
             headers: { "Content-Type": "application/json" }
         });
 

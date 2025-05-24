@@ -11,8 +11,14 @@ class PatientDisease(models.Model):
     Links a patient to a disease type, optional classification choices, start/end dates,
     and stores associated subcategory values and numerical descriptors.
     """
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
-    disease = models.ForeignKey("Disease", on_delete=models.CASCADE)
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE,
+        related_name="diseases"
+    )
+    disease = models.ForeignKey(
+        "Disease", on_delete=models.CASCADE,
+        related_name="patient_diseases"
+    )
     classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)

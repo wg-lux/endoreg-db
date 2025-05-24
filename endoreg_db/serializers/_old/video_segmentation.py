@@ -63,7 +63,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the API endpoint where the frontend can fetch the video.
+        Returns the absolute API endpoint URL for accessing the video resource.
+        
+        If the video ID is missing or the request context is unavailable, returns an error dictionary.
         """
         if not obj.id:
             return {"error": "Invalid video ID"}
@@ -72,7 +74,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/api/video/{obj.id}/")
+            return request.build_absolute_uri(f"/video/{obj.id}/")
 
         return {"error": "Video URL not avalaible"}
 
@@ -161,14 +163,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_label_time_segments(self, obj:"VideoFile"):
         """
-        Converts frame sequences of a selected label into time segments in seconds.
-        Also retrieves frame-wise predictions for the given label.
-
-        Includes:
-        - Frame index
-        - Corresponding frame filename (frame_0000001.jpg)
-        - Full frame file path for frontend access
-        - segment_start and segment_end (in frame index format, not divided by FPS)
+        Converts label frame sequences into time-based segments and retrieves frame-wise predictions.
+        
+        For each label in the video, returns a dictionary containing time ranges (with start/end frames and times in seconds) and detailed frame information, including filenames, file paths, and associated predictions. Returns an error dictionary if prediction data is not a list.
         """
 
         fps = (
@@ -187,12 +184,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
          # Check predictions
         readable_predictions = getattr(obj, "readable_predictions", None)
-        prediction_error = None
 
-        if not isinstance(readable_predictions, list):
-            prediction_error = "readable_predictions missing or invalid format. Expected a list."
-            readable_predictions = []
-        
         if not isinstance(readable_predictions, list):
             return {"error": "Invalid prediction data format. Expected a list."}
 

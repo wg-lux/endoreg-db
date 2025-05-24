@@ -1,67 +1,39 @@
 from django.db import models
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Dict, List, Union
+from endoreg_db.utils.links.requirement_link import RequirementLinks
 
-from pydantic import BaseModel
 
 QuerySet = models.QuerySet
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
-        RequirementOperator,
-        RequirementSet,
-        Examination,
-        ExaminationIndication,
-        LabValue,
         Disease,
         DiseaseClassificationChoice,
         Event,
+        EventClassification,
+        EventClassificationChoice,
+        Examination,
+        ExaminationIndication,
         Finding,
-        FindingMorphologyClassificationChoice,
-        FindingLocationClassificationChoice,
         FindingIntervention,
+        FindingLocationClassification,
+        FindingLocationClassificationChoice,
+        FindingMorphologyClassification,
+        FindingMorphologyClassificationChoice,
+        FindingMorphologyClassificationType,
+        LabValue,
+        PatientDisease,
+        PatientEvent,
+        PatientExamination,
+        PatientFinding,
+        PatientFindingIntervention,
+        PatientFindingLocation,
+        PatientFindingMorphology,
+        PatientLabValue,
+        RequirementOperator,
+        RequirementSet
     )
-
-
-class RequirementsModelDict(BaseModel):
-    """
-    A class representing a dictionary of models related to a requirement.
-
-    Attributes:
-        requirement_types (QuerySet[RequirementType]): A queryset of requirement types.
-        operators (QuerySet[RequirementOperator]): A queryset of operators.
-        requirement_sets (QuerySet[RequirementSet]): A queryset of requirement sets.
-        examinations (QuerySet[Examination]): A queryset of examinations.
-        examination_indications (QuerySet[ExaminationIndication]): A queryset of examination indications.
-        lab_values (QuerySet[LabValue]): A queryset of lab values.
-        diseases (QuerySet[Disease]): A queryset of diseases.
-        disease_classification_choices (QuerySet[DiseaseClassificationChoice]): A queryset of disease classification choices.
-        events (QuerySet[Event]): A queryset of events.
-        findings (QuerySet[Finding]): A queryset of findings.
-        finding_morphology_classification_choices (QuerySet[FindingMorphologyClassificationChoice]): A queryset of finding morphology classification choices.
-        finding_location_classification_choices (QuerySet[FindingLocationClassificationChoice]): A queryset of finding location classification choices.
-        finding_interventions (QuerySet[FindingIntervention]): A queryset of finding interventions.
-    """
-
-    model_config = {"arbitrary_types_allowed": True}
-    requirement_types: Optional[QuerySet["RequirementType"]] = None
-    operators: Optional[QuerySet["RequirementOperator"]] = None
-    requirement_sets: Optional[QuerySet["RequirementSet"]] = None
-    examinations: Optional[QuerySet["Examination"]] = None
-    examination_indications: Optional[QuerySet["ExaminationIndication"]] = None
-    lab_values: Optional[QuerySet["LabValue"]] = None
-    diseases: Optional[QuerySet["Disease"]] = None
-    disease_classification_choices: Optional[
-        QuerySet["DiseaseClassificationChoice"]
-    ] = None
-    events: Optional[QuerySet["Event"]] = None
-    findings: Optional[QuerySet["Finding"]] = None
-    finding_morphology_classification_choices: Optional[
-        QuerySet["FindingMorphologyClassificationChoice"]
-    ] = None
-    finding_location_classification_choices: Optional[
-        QuerySet["FindingLocationClassificationChoice"]
-    ] = None
-    finding_interventions: Optional[QuerySet["FindingIntervention"]] = None
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 
 class RequirementTypeManager(models.Manager):
@@ -283,43 +255,151 @@ class Requirement(models.Model):
         return (self.name,)
 
     def __str__(self):
-        """Return the string representation of the requirement's name.
-
-        Returns:
-            str: The name of the requirement.
-        """
+        Returns the name of the requirement as its string representation.
         return str(self.name)
 
-    def get_models_dict(self) -> RequirementsModelDict:
+    @property
+    def expected_models(self) -> List[Union[
+        "Disease",
+        "DiseaseClassificationChoice",
+        "Event",
+        "EventClassification",
+        "EventClassificationChoice",
+        "Examination",
+        "ExaminationIndication",
+        "Finding",
+        "FindingIntervention",
+        "FindingLocationClassification",
+        "FindingLocationClassificationChoice",
+        "FindingMorphologyClassification",
+        "FindingMorphologyClassificationChoice",
+        "FindingMorphologyClassificationType",
+        "LabValue",
+        "PatientDisease",
+        "PatientEvent",
+        "PatientExamination",
+        "PatientFinding",
+        "PatientFindingIntervention",
+        "PatientFindingLocation",
+        "PatientFindingMorphology",
+        "PatientLabValue",
+    ]]:
         """
-        Returns a RequirementsModelDict with querysets of all associated models.
+        Returns a list of model classes expected as input based on the requirement's linked types.
+        
+        The returned list corresponds to the model classes mapped from the names of all associated requirement types.
+        """
+        req_types = self.requirement_types.all()
+        req_type_names = [_.name for _ in req_types]
 
-        This method aggregates related models by invoking .all() on each
-        many-to-many field of the requirement. The resulting RequirementsModelDict
-        includes querysets for requirement types, operators, requirement sets,
-        examinations, examination indications, lab values, diseases, disease
-        classification choices, events, findings, finding morphology classification
-        choices, finding location classification choices, and finding interventions.
+        expected_models = [self.data_model_dict[_] for _ in req_type_names]
+        return expected_models
+
+    @property
+    def links(self) -> "RequirementLinks":
         """
-        models_dict = RequirementsModelDict(
-            requirement_types=self.requirement_types.all(),
-            operators=self.operators.all(),
-            requirement_sets=self.requirement_sets.all(),
-            examinations=self.examinations.all(),
-            examination_indications=self.examination_indications.all(),
-            lab_values=self.lab_values.all(),
-            diseases=self.diseases.all(),
-            disease_classification_choices=self.disease_classification_choices.all(),
-            events=self.events.all(),
-            findings=self.findings.all(),
-            finding_morphology_classification_choices=self.finding_morphology_classification_choices.all(),
-            finding_location_classification_choices=self.finding_location_classification_choices.all(),
-            finding_interventions=self.finding_interventions.all(),
+        Aggregates and returns all related model instances as a RequirementLinks object.
+        
+        The returned RequirementLinks contains lists of all non-null related objects from the requirement's many-to-many fields, providing a structured view of its associations.
+        """
+        models_dict = RequirementLinks(
+            # requirement_types=self.requirement_types.all(),
+            # operators=self.operators.all(),
+            requirement_sets=[_ for _ in self.requirement_sets.all() if _ is not None],
+            examinations=[_ for _ in self.examinations.all() if _ is not None],
+            examination_indications=[_ for _ in self.examination_indications.all() if _ is not None],
+            lab_values=[_ for _ in self.lab_values.all() if _ is not None],
+            diseases=[_ for _ in self.diseases.all() if _ is not None],
+            disease_classification_choices=[_ for _ in self.disease_classification_choices.all() if _ is not None],
+            events=[_ for _ in self.events.all() if _ is not None],
+            findings=[_ for _ in self.findings.all() if _ is not None],
+            finding_morphology_classification_choices=[
+                _ for _ in self.finding_morphology_classification_choices.all() if _ is not None
+            ],
+            finding_location_classification_choices=[
+                _ for _ in self.finding_location_classification_choices.all() if _ is not None
+            ],
+            finding_interventions=[_ for _ in self.finding_interventions.all() if _ is not None],
         )
         return models_dict
     
-    def evaluate(self, **kwargs):
-        #TODO refactor after prototyping
-        # from .requirement_evaluation.requirement_type_parser import get_input_data
+    @property
+    def data_model_dict(self) -> dict:
+        """
+        Provides a mapping from requirement type names to their corresponding model classes.
+        
+        Returns:
+            A dictionary where keys are requirement type names and values are model classes used for requirement evaluation.
+        """
+        from .requirement_evaluation.requirement_type_parser import data_model_dict
+        return data_model_dict
+    
+    @property
+    def active_links(self) -> Dict[str, List]:
+        Returns a dictionary of linked models containing only non-empty entries.
+        
+        The returned dictionary includes only those related model lists that have at least one linked instance.
+        return self.links.active()
+    
+    
+    def evaluate(self, *args, mode:str, **kwargs):
+        """
+        Evaluates the requirement against provided input models using linked operators.
+        
+        Args:
+            *args: Instances of expected model classes to be evaluated.
+            mode: Evaluation mode, either "strict" (all operators must pass) or "loose" (any operator may pass).
+            **kwargs: Additional keyword arguments passed to operator evaluations.
+        
+        Returns:
+            True if the requirement is satisfied according to the specified mode and linked operators; otherwise, False.
+        
+        Raises:
+            ValueError: If an invalid mode is provided.
+            TypeError: If an input is not an instance of an expected model class or its `.links` attribute is not a RequirementLinks instance.
+        """
+        if mode not in ["strict", "loose"]:
+            raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
 
-        return_value = True
+        if mode == "strict":
+            evaluate_result_list_func = all
+        elif mode == "loose":
+            evaluate_result_list_func = any
+
+        requirement_req_links = self.links
+
+        expected_models = self.expected_models
+
+        inputs = [_ for _ in args]
+        input_req_links = {_model:[] for _model in expected_models}
+
+        for _input in inputs:
+            input_type = type(_input)
+            if input_type not in expected_models:
+                raise TypeError(f"Input type {input_type} is not among expected models: {expected_models}")
+
+            _input_links: RequirementLinks = _input.links
+            if not isinstance(_input_links, RequirementLinks):
+                raise TypeError(f"Expected RequirementLinks, got {type(_input_links)}")
+            input_req_links[input_type].append(_input_links)
+
+        input_req_links_obj = RequirementLinks(
+            **input_req_links
+        )
+
+        operators = self.operators.all()
+
+        operator_results = []
+        for operator in operators:
+            #TODO
+            operator_results.append(operator.evaluate(
+                requirement_links=requirement_req_links,
+                input_links=input_req_links_obj,
+                **kwargs
+            ))
+
+        is_valid = evaluate_result_list_func(
+            operator_results
+        )
+
+        return is_valid

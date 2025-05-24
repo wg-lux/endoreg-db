@@ -2,7 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.http import FileResponse, Http404
-import os, mimetypes
+import os
+import mimetypes
 from ..models import RawPdfFile
 from ..serializers._old.raw_pdf_anony_text_validation import RawPdfAnonyTextSerializer
 
@@ -32,8 +33,16 @@ class RawPdfAnonyTextView(APIView):
 
     def fetch_pdf_metadata(self, last_id):
         """
-        Fetches the next available PDF metadata, including `anonymized_text`.
+        Retrieves metadata for the next available PDF file after the specified last ID.
+        
+        If `last_id` is provided, it must be convertible to an integer; otherwise, a 400 Bad Request is returned. If no further PDF is available, returns a 404 Not Found. On success, returns serialized PDF metadata including anonymized text with a 200 OK response.
         """
+        try:
+            if last_id:
+                last_id = int(last_id)
+        except ValueError:
+            return Response({"error": "Invalid last_id."}, status=status.HTTP_400_BAD_REQUEST)
+
         pdf_entry = RawPdfAnonyTextSerializer.get_next_pdf(last_id)
 
         if pdf_entry is None:

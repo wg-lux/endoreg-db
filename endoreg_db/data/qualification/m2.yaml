@@ -1,0 +1,39 @@
+- model: endoreg_db.qualification
+  fields:
+    name: "wr_m41"
+    name_de: "Visitendienst - M41"
+    name_en: "Ward Rounds - M41"
+    qualification_types:
+      - "ward_rounds"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "wr_m42g"
+    name_de: "Visitendienst - M42 (G)"
+    name_en: "Ward Rounds - M42 (G)"
+    qualification_types:
+      - "ward_rounds"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "wr_m42h"
+    name_de: "Visitendienst - M42 (H)"
+    name_en: "Ward Rounds - M42 (H)"
+    qualification_types:
+      - "ward_rounds"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "wr_m43"
+    name_de: "Visitendienst - M43"
+    name_en: "Ward Rounds - M43"
+    qualification_types:
+      - "ward_rounds"
+
+- model: endoreg_db.qualification
+  fields:
+    name: "wr_m52"
+    name_de: "Visitendienst - M52"
+    name_en: "Ward Rounds - M52"
+    qualification_types:
+      - "ward_rounds"

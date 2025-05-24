@@ -1,3 +1,4 @@
+from asyncio import events
 from ..person import Person
 from django.db import models
 from faker import Faker
@@ -10,13 +11,15 @@ from django.utils import timezone  # Add this import
 logger = logging.getLogger("patient")
 
 if TYPE_CHECKING:
-    from ....other import Gender
-    from ....medical.patient import PatientExamination
-    from ....administration import Center
-    from ....media import AnonymExaminationReport, AnonymHistologyReport
-    from .... import media
-    from endoreg_db.models import ExaminationIndication
-
+    from endoreg_db.models import (
+        ExaminationIndication,
+        PatientEvent, PatientDisease,
+        Gender,
+        PatientExamination,
+        Center,
+        AnonymExaminationReport,
+        AnonymHistologyReport, RawPdfFile
+    )
 class Patient(Person):
     """
     A class representing a patient.
@@ -51,6 +54,8 @@ class Patient(Person):
         dob: datetime.date
         gender: "Gender"
         center: "Center"
+        events: models.QuerySet["PatientEvent"]
+        diseases: models.QuerySet["PatientDisease"]
         patient_examinations: models.QuerySet["PatientExamination"]
         anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
         anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
@@ -186,6 +191,11 @@ class Patient(Person):
         date_end: datetime = None,
         description: str = None,
     ):
+        """
+        Creates a patient event with the specified event name and start date.
+        
+        If no start date is provided, the current datetime is used. Returns the created PatientEvent instance.
+        """
         from ....medical import Event, PatientEvent
 
         event = Event.objects.get(name=event_name_str)
@@ -201,10 +211,17 @@ class Patient(Person):
 
         return patient_event
 
-    def create_examination_by_pdf(self, pdf: "media.RawPdfFile"):
+    def create_examination_by_pdf(self, pdf: "RawPdfFile"):
         """
-        Creates a patient examination for this patient based on the given report file.
-        This function is helpful for adding documents to an already known and existing patient. 
+        Creates a patient examination and associates it with the provided PDF report file.
+        
+        The examination is created for this patient, saved, and linked to the given RawPdfFile instance. The PDF's examination field is updated and saved. Returns the created examination instance.
+        
+        Args:
+            pdf: The RawPdfFile to associate with the new examination.
+        
+        Returns:
+            The created PatientExamination instance.
         """
         from ....medical import PatientExamination
         patient_examination = PatientExamination(patient=self)

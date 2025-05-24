@@ -28,29 +28,32 @@ class VideoView(APIView):
 
     def get_all_videos(self):
         """
-        Returns a list of all available videos along with available labels.
-        Used to populate the video selection dropdown in Vue.js.
-        """
+        Retrieves all available videos and labels.
         
+        Returns:
+            Response: A JSON response containing serialized lists of videos and labels with HTTP 200 status.
+        """
         videos = VideoFile.objects.all()
-        labels = Label.objects.all()  # Fetch all labels
-
-        if not videos.exists():
-            return Response({"error": "No videos found in the database."}, status=status.HTTP_404_NOT_FOUND)
-
+        labels = Label.objects.all()
 
         video_serializer = VideoListSerializer(videos, many=True)
-        label_serializer = LabelSerializer(labels, many=True)  # Serialize labels
+        label_serializer = LabelSerializer(labels, many=True)
 
         return Response({
-            "videos": video_serializer.data,  # List of videos
-            "labels": label_serializer.data  # List of labels
+            "videos": video_serializer.data, 
+            "labels": label_serializer.data  
         }, status=status.HTTP_200_OK)
 
     def get_video_details(self, request, video_id):
         """
-        Returns metadata for a specific video if `Accept: application/json` is set.
-        Otherwise, streams the video file.
+        Retrieves metadata or streams the file for a specific video based on the request's Accept header.
+        
+        If the Accept header includes "application/json", returns the video's metadata as JSON.
+        Otherwise, streams the video file to the client.
+        
+        Returns:
+            A Response containing video metadata (JSON) or a streamed video file.
+            Returns HTTP 404 if the video does not exist, or HTTP 500 on other errors.
         """
         try:
             video_entry = VideoFile.objects.get(id=video_id)
@@ -70,8 +73,13 @@ class VideoView(APIView):
 
     def serve_video_file(self, video_entry):
         """
-        Serves the video file dynamically.
-
+        Streams the specified video file as an HTTP response with appropriate headers for browser playback.
+        
+        Raises:
+            Http404: If the video file does not exist.
+        
+        Returns:
+            FileResponse containing the video file with CORS, range, and content disposition headers set for in-browser playback.
         """
         print("-----",video_entry.processed_file.path)
         try:
@@ -84,8 +92,9 @@ class VideoView(APIView):
             mime_type, _ = mimetypes.guess_type(full_video_path)  # Determine the content type (e.g., video/mp4, video/avi)
             response = FileResponse(open(full_video_path, "rb"), content_type=mime_type or "video/mp4")
 
-            # Enable video streaming and CORS
-            response["Access-Control-Allow-Origin"] = "*"  # Allow frontend access
+            # This should be set to the actual origin of the frontend application
+            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000') # Example for local development
+            response["Access-Control-Allow-Origin"] = frontend_origin
             response["Access-Control-Allow-Credentials"] = "true"
             response["Accept-Ranges"] = "bytes"  # Enable seeking in video player
             response["Content-Disposition"] = f'inline; filename="{os.path.basename(full_video_path)}"'  # Instructs the browser to play the video instead of downloading it.
@@ -104,9 +113,9 @@ class VideoLabelView(APIView):
 
     def get(self, request, video_id, label_name):
         """
-        Handles GET request to return:
-        - Time segments for the selected label.
-        - Frame-wise predictions within those segments.
+        Retrieves time segments and frame-wise predictions for a specific label on a video.
+        
+        Returns a JSON response containing the label name, its associated time segments, and frame predictions. Responds with HTTP 404 if the video or label is not found, or HTTP 500 for other errors.
         """
         try:
             video_entry = VideoFile.objects.get(id=video_id)
@@ -131,7 +140,7 @@ class VideoLabelView(APIView):
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-from ..serializers._old.video_segmentation import LabelSegmentUpdateSerializer, LabelSegmentSerializer
+from ..serializers._old.video_segmentation import LabelSegmentUpdateSerializer
 
 class UpdateLabelSegmentsView(APIView):
     """

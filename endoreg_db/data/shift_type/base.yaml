@@ -1,0 +1,35 @@
+- model: endoreg_db.shift_type
+  fields:
+    name: "regular"
+    name_de: "Regulär"
+    name_en: "Regular"
+
+- model: endoreg_db.shift_type
+  fields:
+    name: "supervision"
+    name_de: "Supervision"
+    name_en: "Supervision"
+
+- model: endoreg_db.shift_type
+  fields:
+    name: "off_hours"
+    name_de: "Nicht reguläre Arbeitszeit ('Dienste')"
+    name_en: "Off Hours"
+
+- model: endoreg_db.shift_type
+  fields:
+    name: "on_call"
+    name_de: "Bereitschaftsdienst"
+    name_en: "On Call"
+
+- model: endoreg_db.shift_type
+  fields:
+    name: "ward"
+    name_de: "Station"
+    name_en: "Ward"
+
+- model: endoreg_db.shift_type
+  fields:
+    name: "miscellaneous"
+    name_de: "Sonstiges"
+    name_en: "Miscellaneous"

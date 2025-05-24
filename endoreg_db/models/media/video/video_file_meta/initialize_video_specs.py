@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
     """
-    Initializes basic video specs (fps, w, h, count, duration) directly from the video file.
-    Raises FileNotFoundError or RuntimeError on failure. Returns True on success or if no update needed.
+    Initializes video specifications for a VideoFile object by reading from the video file.
+    
+    Attempts to populate missing values for fps, width, height, frame count, and duration using OpenCV. Selects the raw file if available and requested, otherwise uses the active file. Updates only unset fields if valid values are obtained. Returns True if successful or if no updates are needed. Raises FileNotFoundError if the video file cannot be found, or RuntimeError if the file cannot be opened or properties cannot be read.
     """
     video_path: Optional[Path] = None
     target_file_name: Optional[str] = None
@@ -87,21 +88,40 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
             fields_to_update.append("height")
             updated = True
 
-        # --- Update Frame Count and Duration ---
-        # Only update if frame count is valid and FPS is known
-        if file_frame_count > 0 and current_fps and current_fps > 0:
-            if current_frame_count is None:
-                video.frame_count = file_frame_count
-                fields_to_update.append("frame_count")
-                updated = True
-            if current_duration is None:
-                video.duration = file_frame_count / current_fps
+        # --- Update Frame Count ---
+        if current_frame_count is None and file_frame_count and file_frame_count > 0:
+            video.frame_count = file_frame_count
+            fields_to_update.append("frame_count")
+            updated = True
+        elif file_frame_count is None or file_frame_count <= 0: # Log if not updated due to invalid file_frame_count
+            logger.warning(
+                "Invalid frame count (value: %s) obtained from OpenCV for %s. Video frame_count not updated.",
+                file_frame_count, video_path
+            )
+
+        # --- Update Duration ---
+        if current_duration is None: # Only if duration isn't already set
+            # Use the potentially updated video.frame_count and current_fps (which reflects video.fps or file_fps)
+            final_frame_count_for_duration = video.frame_count
+            final_fps_for_duration = current_fps # This is video.fps after potential update from file_fps
+
+            if (final_frame_count_for_duration and final_frame_count_for_duration > 0 and
+                final_fps_for_duration and final_fps_for_duration > 0):
+                video.duration = final_frame_count_for_duration / final_fps_for_duration
                 fields_to_update.append("duration")
                 updated = True
-        elif file_frame_count <= 0:
-            logger.warning("Invalid frame count (%d) obtained from %s.", file_frame_count, video_path)
-        elif not current_fps or current_fps <= 0:
-            logger.warning("Cannot calculate duration for %s as FPS is unknown or invalid (%.2f).", video_path, current_fps or 0)
+            else:
+                # Log if duration could not be calculated, indicating which component was missing/invalid
+                if not (final_frame_count_for_duration and final_frame_count_for_duration > 0):
+                    logger.warning(
+                        "Duration not calculated for %s: frame count is unavailable or invalid (value: %s).",
+                        video_path, final_frame_count_for_duration
+                    )
+                if not (final_fps_for_duration and final_fps_for_duration > 0):
+                    logger.warning(
+                        "Duration not calculated for %s: FPS is unavailable or invalid (value: %s).",
+                        video_path, final_fps_for_duration
+                    )
 
 
         # --- Save if updated ---

@@ -46,17 +46,23 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
     def get_pdf_url(self, obj):
         """
-        Generates the full URL for Vue.js to fetch and display the PDF.
+        Generates an absolute URL for accessing the PDF associated with the given object.
+        
+        Returns:
+            The full URL as a string if the file exists; otherwise, None.
         """
         request = self.context.get('request')
         print("---------------------here :",obj.file)
         if request and obj.file:
-            return request.build_absolute_uri(f"/api/pdf/sensitivemeta/?id={obj.id}")  # Constructs full API endpoint
+            return request.build_absolute_uri(f"/pdf/sensitivemeta/?id={obj.id}")  # Constructs full API endpoint
         return None  # Return None if file is missing
 
     def get_file(self, obj):
         """
-        Returns the relative file path stored in the database.
+        Retrieves the relative file path of the PDF from the database.
+        
+        Returns:
+            The relative file path as a string, or None if no file is linked.
         """
         if not obj.file:
             return None  # No file linked
@@ -77,7 +83,9 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        Ensures that the PDF file is valid and has required fields.
+        Validates that a PDF file is provided and the referenced sensitive_meta_id exists.
+        
+        Raises a ValidationError with detailed messages if the file is missing or the sensitive_meta_id does not correspond to an existing SensitiveMeta record.
         """
         errors = {}
 
@@ -92,9 +100,6 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
         return data  # Returns validated data
 
-
-from rest_framework import serializers
-from ..models import SensitiveMeta
 
 class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     """
@@ -149,8 +154,8 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
 await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 const fetchPdfMeta = async (lastId = 1) => {
     const url = lastId 
-        ? `http://localhost:8000/api/pdf/sensitivemeta/?last_id=${lastId}` 
-        : "http://localhost:8000/api/pdf/sensitivemeta/";
+        ? `http://localhost:8000/pdf/sensitivemeta/?last_id=${lastId}` 
+        : "http://localhost:8000/pdf/sensitivemeta/";
 
     try {
         const response = await axios.get(url);
@@ -170,8 +175,8 @@ await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 
 const fetchPdfMeta = async (lastId = 1) => {
     const url = lastId 
-        ? `http://localhost:8000/api/pdf/sensitivemeta/?last_id=${lastId}` 
-        : "http://localhost:8000/api/pdf/sensitivemeta/";
+        ? `http://localhost:8000/pdf/sensitivemeta/?last_id=${lastId}` 
+        : "http://localhost:8000/pdf/sensitivemeta/";
 
     try {
         const response = await axios.get(url, {
@@ -203,7 +208,7 @@ const updatePatientInfo = async () => {
     };
 
     try {
-        const response = await axios.patch("http://localhost:8000/api/pdf/update_sensitivemeta/", updatedData, {
+        const response = await axios.patch("http://localhost:8000/pdf/update_sensitivemeta/", updatedData, {
             headers: { "Content-Type": "application/json" }
         });
 

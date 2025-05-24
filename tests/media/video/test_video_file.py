@@ -2,7 +2,8 @@ from .helper import get_random_video_path_by_examination_alias
 from django.test import TestCase
 from logging import getLogger
 from ._video_create_from_file import _test_video_create_from_file
-import shutil
+
+from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import (
     VideoFile  # Import Frame model
@@ -30,10 +31,7 @@ from ...helpers.data_loader import (
     load_ai_model_data,
 )
 
-# Check for ffmpeg executable once
-FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
-if not FFMPEG_AVAILABLE:
-    logger.warning("ffmpeg command not found. Frame extraction tests will be skipped.")
+FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 
 class VideoFileModelTest(TestCase):

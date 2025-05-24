@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from ..models import VideoFile, Label, LabelVideoSegment
+from ..models import VideoFile, Label, LabelVideoSegment, VideoPredictionMeta # Added VideoPredictionMeta
 import cv2
 from django.db import transaction
 
@@ -63,7 +63,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the API endpoint where the frontend can fetch the video.
+        Returns the absolute API endpoint URL for accessing the video file.
+        
+        If the video ID is invalid or the request context is missing, returns an error dictionary.
         """
         if not obj.id:
             return {"error": "Invalid video ID"}
@@ -72,7 +74,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/api/video/{obj.id}/")
+            return request.build_absolute_uri(f"/video/{obj.id}/")
 
         return {"error": "Video URL not avalaible"}
 
@@ -335,25 +337,21 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
     def save(self):
         """
-        Synchronizes label segments with updated frontend data.
+        Synchronizes label segments in the database with the provided frontend data for a specific video and label.
         
-        This method compares the incoming segments with the current database entries for a given video and label.
-        It updates segments with modified end frame numbers, inserts new segments, and deletes existing segments
-        that are not present in the provided data. All operations are performed within a transaction to ensure
-        database consistency. A validation error is raised if no prediction metadata is found for the video.
+        Compares incoming segments to existing database entries, updating segments with changed end frames, creating new segments as needed, and deleting segments that are no longer present. All changes are performed within a transaction to maintain consistency. Raises a validation error if no prediction metadata exists for the video.
         
         Returns:
-            dict: A dictionary containing serialized updated segments, serialized new segments, and the count
-                  of deleted segments.
+            dict: Contains serialized updated segments, newly created segments, and the count of deleted segments.
         """
 
         video_id = self.validated_data["video_id"]
         label_id = self.validated_data["label_id"]
-        new_segments = self.validated_data["segments"]
+        new_segments = self.validated_data["segments"] # Remove new_keys assignment
 
         # Fetch the correct `prediction_meta_id` based on `video_id`
-        prediction_meta_entry = RawVideoPredictionMeta.objects.filter(
-            video_id=video_id
+        prediction_meta_entry = VideoPredictionMeta.objects.filter(
+            video_file_id=video_id # Changed from video_id to video_file_id
         ).first()
         if not prediction_meta_entry:
             raise serializers.ValidationError(
@@ -409,8 +407,8 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                     continue
                 else:
                     # Check if a segment exists with the same start_frame but different end_frame
-                    existing_segment = LabelRawVideoSegment.objects.filter(
-                        video_id=video_id,
+                    existing_segment = LabelVideoSegment.objects.filter(
+                        video_file_id=video_id, # Changed from video_id to video_file_id
                         label_id=label_id,
                         start_frame_number=start_frame,
                     ).first()
@@ -421,12 +419,14 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                             existing_segment.end_frame_number = end_frame
                             existing_segment.save()
                             updated_segments.append(existing_segment)
+                    else: # Added else block to create new segment if not existing
                         new_entries.append(
-                            LabelRawVideoSegment(
-                                video_id=video_id,
+                            LabelVideoSegment(
+                                video_file_id=video_id, # Changed from video_id to video_file_id
                                 label_id=label_id,
                                 start_frame_number=start_frame,
                                 end_frame_number=end_frame,
+                                prediction_meta_id=prediction_meta_id,
                             )
                         )
                         print(
@@ -434,17 +434,19 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                         )
 
             # Delete segments that are no longer present in the frontend data
-            segments_to_delete = existing_segments.exclude(
-                start_frame_number__in=[
-                    float(seg["start_frame_number"]) for seg in new_segments
-                ]
-            )
-            deleted_count = segments_to_delete.count()
-            segments_to_delete.delete()
+            # Segments to delete are those in existing_keys but not in new_keys
+            keys_to_delete = existing_keys - set((float(s['start_frame_number']), float(s['end_frame_number'])) for s in new_segments)
+            segments_to_delete_ids = [existing_segments_dict[key].id for key in keys_to_delete]
+            
+            if segments_to_delete_ids:
+                LabelVideoSegment.objects.filter(id__in=segments_to_delete_ids).delete()
+                deleted_count = len(segments_to_delete_ids)
+            else:
+                deleted_count = 0
 
             # Insert new segments in bulk for efficiency
             if new_entries:
-                LabelRawVideoSegment.objects.bulk_create(new_entries)
+                LabelVideoSegment.objects.bulk_create(new_entries)
 
         # Return the updated, new, and deleted segment information
         print(

@@ -246,6 +246,14 @@ def get_default_egd_pdf():
     return pdf_file
 
 def get_default_video_file():
+    """
+    Creates and initializes a default VideoFile instance for an EGD examination.
+    
+    Loads required datasets, selects a random EGD video, creates a VideoFile object with default center and processor, initializes its metadata and frames, and saves the updated instance.
+    
+    Returns:
+        The created and initialized VideoFile instance.
+    """
     from ..media.video.helper import get_random_video_path_by_examination_alias
     from endoreg_db.models import VideoFile
     from .data_loader import (
@@ -258,6 +266,7 @@ def get_default_video_file():
         load_ai_model_label_data,
         load_ai_model_data,
     )
+    
     load_disease_data()
     load_event_data()
     load_information_source()
@@ -270,11 +279,16 @@ def get_default_video_file():
         examination_alias='egd', is_anonymous=False
     )
 
-    video_file = VideoFile.create_from_file_initialized(
+    video_file = VideoFile.create_from_file(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests
         processor_name = DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
     )
+
+    # Ensure video metadata is loaded, including frame_count and frames are initialized
+    if video_file:
+        video_file.initialize() # This calls initialize_video_specs, set_frame_dir, get_or_create_state, and initialize_frames
+        video_file.save() # Save the updated metadata and initialized frames
 
     return video_file

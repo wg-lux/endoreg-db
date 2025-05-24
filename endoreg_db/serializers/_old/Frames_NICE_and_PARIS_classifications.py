@@ -1,9 +1,6 @@
 from endoreg_db.utils.extract_specific_frames import extract_selected_frames
 from rest_framework import serializers
-#from endoreg_db.models import Label, LabelRawVideoSegment, RawVideoFile
 from endoreg_db.models import Label, LabelVideoSegment
-from collections import defaultdict
-import numpy as np
 from itertools import combinations
 from pathlib import Path
 from django.conf import settings
@@ -174,8 +171,9 @@ class BaseClassificationSerializer(serializers.Serializer):
     
     def select_frames_for_sequence(self, sequence):
         """
-        Selects representative frames from a validated segment.
-        Enforces spacing and optionally uses predictions to filter poor-quality frames.
+        Selects evenly spaced representative frames from a polyp segment.
+        
+        Frames are chosen from the segment's frame range, ensuring a minimum gap between selected frames. Returns a list of dictionaries containing frame numbers and their corresponding file paths. If the video's frame directory is unavailable, returns an empty list.
         """
         polyp_sequence = sequence['polyp']
         video = polyp_sequence.video_file
@@ -183,7 +181,6 @@ class BaseClassificationSerializer(serializers.Serializer):
         start_frame = polyp_sequence.start_frame_number
         end_frame = polyp_sequence.end_frame_number
 
-        predictions = getattr(video, "readable_predictions", [])  # not used anymore
         frame_dir = getattr(video, "frame_dir", "")
 
         if not frame_dir:
@@ -760,7 +757,7 @@ Returns:
 await import('https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js');
 const fetchNiceClassification = async () => {
     try {
-        const response = await axios.get("http://localhost:8000/api/videos/nice-classification/", {
+        const response = await axios.get("http://localhost:8000/videos/nice-classification/", {
             headers: { "Accept": "application/json" }
         });
 

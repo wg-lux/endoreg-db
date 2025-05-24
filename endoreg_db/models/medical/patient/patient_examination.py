@@ -133,11 +133,13 @@ class PatientExamination(models.Model):
 
     def get_indication_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
         """
-        Returns all indication choices that are associated with this patient examination.
+        Returns a list of indication choices associated with this patient examination.
+        
+        Only includes indication choices that are not None.
         """
 
         choices = [
-            _.indication_choice for _ in self.get_indications()
+            _.indication_choice for _ in self.get_indications() if _.indication_choice is not None
         ]
         return choices
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional, Union
 from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
+from django.db.models import F
 
 
 # --- Import model-specific function modules ---
@@ -148,7 +149,6 @@ class VideoFile(models.Model):
     sequences = models.JSONField(default=dict, blank=True, help_text="AI prediction sequences based on raw frames.")
     date = models.DateField(blank=True, null=True)
     meta = models.JSONField(blank=True, null=True)
-
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
 
@@ -369,14 +369,15 @@ class VideoFile(models.Model):
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
         """
-        Gets LabelVideoSegments marked with the 'outside' label.
-
+        Retrieves video segments labeled as "outside" for this video.
+        
+        If `only_validated` is True, only segments with a validated state are returned. If the "outside" label does not exist or an error occurs, an empty queryset is returned.
+        
         Args:
-            only_validated: If True, filters for segments where the related state's
-            is_validated field is True.
-
+            only_validated: Whether to include only segments with a validated state.
+        
         Returns:
-            A QuerySet of LabelVideoSegment instances.
+            A queryset of LabelVideoSegment instances labeled as "outside".
         """
         try:
             outside_label = Label.objects.get(name__iexact="outside")
@@ -393,4 +394,28 @@ class VideoFile(models.Model):
         except Exception as e:
             logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
             return self.label_video_segments.none()
+    
+    @classmethod
+    def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
+        """
+        Returns a queryset containing all VideoFile records.
+        
+        This class method retrieves every VideoFile instance in the database without filtering.
+        """
+        return cls.objects.all()
+        
+    def count_unmodified_others(self) -> int:
+        """
+        Counts other VideoFile records that have never been modified since creation.
+        
+        Returns:
+            The number of VideoFile instances, excluding this one, where the modification
+            timestamp equals the creation timestamp.
+        """
+        return (
+            VideoFile.objects
+            .filter(date_modified=F('date_created'))  # compare the two fields in SQL
+            .exclude(pk=self.pk)                      # exclude this instance
+            .count()                                  # run a fast COUNT(*) on the filtered set
+        )
 

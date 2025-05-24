@@ -1,4 +1,3 @@
-
 from .mock_video_anonym_annotation import mock_video_anonym_annotation
 from .test_pipe_2 import _test_pipe_2
 from .test_pipe_1 import _test_pipe_1
@@ -6,10 +5,10 @@ from .test_pipe_1 import _test_pipe_1
 from django.test import TransactionTestCase
 from logging import getLogger
 import unittest
-import shutil
-from endoreg_db.models import VideoFile
+from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import (
+    VideoFile,
     ModelMeta # Import VideoState # Import SensitiveMeta, # Import ,
 )
 import logging
@@ -40,10 +39,7 @@ from ...helpers.data_loader import (
     load_default_ai_model
 )
 
-FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
-if not FFMPEG_AVAILABLE:
-    logger.warning("ffmpeg command not found. Frame extraction tests will be skipped.")
-
+FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 class VideoFileModelExtractedTest(TransactionTestCase):
     video: "VideoFile"
