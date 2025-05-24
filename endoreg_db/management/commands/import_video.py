@@ -16,6 +16,7 @@ from pathlib import Path
 from endoreg_db.models import VideoFile, ModelMeta
 from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
+#FIXME
 from endoreg_db.management.commands import validate_video
 
 import logging
