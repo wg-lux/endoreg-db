@@ -9,6 +9,19 @@ import shutil
 
 logger = logging.getLogger("ffmpeg_wrapper")
 
+def is_ffmpeg_available() -> bool:
+    """Checks if FFmpeg is installed and available in the system's PATH."""
+    return shutil.which("ffmpeg") is not None
+
+def check_ffmpeg_availability():
+    """Checks if FFmpeg is installed and available. Raises FileNotFoundError if not."""
+    if not is_ffmpeg_available():
+        error_msg = "FFmpeg is not available. Please install it and ensure it's in your PATH."
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
+    # logger.info("FFmpeg is available.") # Caller can log if needed
+    return True
+
 def get_stream_info(file_path: Path) -> Optional[Dict]:
     """
     Runs ffprobe -show_streams, parses JSON, returns relevant stream data.
@@ -429,6 +442,8 @@ def extract_frame_range(
     return extracted_files
 
 __all__ = [
+    "is_ffmpeg_available", # ADDED
+    "check_ffmpeg_availability", # ADDED
     "get_stream_info",
     "assemble_video_from_frames", # Updated name
     "transcode_video",

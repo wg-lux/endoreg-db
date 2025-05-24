@@ -8,8 +8,6 @@ logger = getLogger(__name__)
 
 
 from endoreg_db.utils.video.names import (
-    identify_video_key,
-    get_video_key,
     get_video_key_regex_by_examination_alias
 )
 
@@ -19,13 +17,15 @@ from django.conf import settings
 ASSET_DIR:Path = settings.ASSET_DIR
 assert ASSET_DIR.exists(), f"ASSET_DIR does not exist: {ASSET_DIR}"
 
-TEST_VIDEOS = {
+_TEST_VIDEOS = {
     # "egd-instrument-non_anonymous": ASSET_DIR / "test_instrument.mp4", # No detected segments
     "egd-endoscope-non_anonymous": ASSET_DIR / "test_endoscope.mp4",
     "egd-nbi-non_anonymous": ASSET_DIR / "test_nbi.mp4",
     # "egd-outside-non_anonymous": ASSET_DIR / "test_outside.mp4",
     "egd-small_intestine-non_anonymous": ASSET_DIR / "test_small_intestine.mp4",
 }
+
+TEST_VIDEOS = {key: value if value.exists() else None for key, value in _TEST_VIDEOS.items()}
 
 def get_video_path(video_key:str) -> Path:
     """
@@ -101,5 +101,3 @@ def get_random_video_path_by_examination_alias(
         raise ValueError(f"No matching video keys found for the given criteria.")
 
 
-
-TEST_VIDEOS = {key: value if value.exists() else None for key, value in TEST_VIDEOS.items()}

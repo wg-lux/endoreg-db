@@ -1,13 +1,14 @@
-
 from django.test import TransactionTestCase
 from logging import getLogger
-import shutil
 from typing import List
 # from endoreg_db.models import (
 #)
 import logging
 from django.conf import settings
 import json
+import pytest
+
+from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available # ADDED
 
 logger = getLogger("legacy_data")
 logger.setLevel(logging.WARNING)
@@ -19,11 +20,8 @@ from ..helpers.data_loader import (
 
 IMG_DICT_PATH = "tests/assets/legacy_img_dicts.jsonl"
 
+FFMPEG_AVAILABLE = is_ffmpeg_available() # ADDED
 
-
-FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
-if not FFMPEG_AVAILABLE:
-    logger.warning("ffmpeg command not found. Frame extraction tests will be skipped.")
 
 
 class LegacyImageDataTest(TransactionTestCase):

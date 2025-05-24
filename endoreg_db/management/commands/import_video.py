@@ -19,7 +19,7 @@ from ...helpers.default_objects import (
     get_latest_segmentation_model
 )
 
-import shutil
+from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
 
 from endoreg_db.helpers.data_loader import (
     load_disease_data,
@@ -55,12 +55,6 @@ class Command(BaseCommand):
         2. Checks that the video file is saved and anonymized
         3. Creates or updates a ModelMeta entry with the specified parameters
     """
-    FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
-    if not FFMPEG_AVAILABLE:
-        raise AssertionError(
-            "FFMPEG is not available. Please install it to use this command."
-        )
-
 
     def add_arguments(self, parser):
         
@@ -126,8 +120,7 @@ class Command(BaseCommand):
         # 
         parser.add_argument(
             "--segmentation",
-            type=bool,
-            default=False,
+            action="store_true",
             help="Whether to use segmentation",
         )
         
@@ -140,6 +133,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):  
         
+        try: # ADDED
+            check_ffmpeg_availability() # ADDED
+            self.stdout.write(self.style.SUCCESS("FFMPEG is available")) # ADDED
+        except FileNotFoundError as e: # ADDED
+            self.stderr.write(self.style.ERROR(str(e))) # ADDED
+            # Decide if the command should exit or if FFMPEG is optional for some operations
+            # For this command, it seems FFMPEG is critical for VideoFile.pipe_1 and VideoFile.create_from_file
+            return # ADDED
         
         self.stdout.write(f"Current database: {connection.alias}")
         self.stdout.write(self.style.SUCCESS("Starting video import..."))      
@@ -228,9 +229,6 @@ class Command(BaseCommand):
         if not Path(video_file).exists():
             self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
             return AssertionError(f"Video file not found: {video_file}")
-        if self.FFMPEG_AVAILABLE:
-            self.stdout.write(self.style.SUCCESS("FFMPEG is available"))
-            
         if self.ai_model_meta:
             VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
         else:
@@ -243,18 +241,17 @@ class Command(BaseCommand):
         #         self.stdout.write(self.style.ERROR(f"Error validating video file: {e}"))
         #         return
 
-        if self.FFMPEG_AVAILABLE:
-            VideoFile.create_from_file(
-                file_path=video_file,
-                center_name=center_name,
-                delete_source=delete_source,
-                save_video_file=save_video_file,
-                frame_dir_root=frame_dir_root,
-                video_dir_root=video_dir_root,
-                processor_name=processor_name,
-                model_path=model_path,
-                segmentation=segmentation,
-            )
+        VideoFile.create_from_file(
+            file_path=video_file,
+            center_name=center_name,
+            delete_source=delete_source,
+            save_video_file=save_video_file,
+            frame_dir_root=frame_dir_root,
+            video_dir_root=video_dir_root,
+            processor_name=processor_name,
+            model_path=model_path,
+            segmentation=segmentation,
+        )
     
     
     

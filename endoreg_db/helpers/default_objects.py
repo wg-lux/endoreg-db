@@ -214,11 +214,16 @@ def get_default_egd_pdf():
             delete_source=True,
         )
 
-        assert pdf_file is not None, "Failed to create PDF file object"
+        if pdf_file is None:
+            raise RuntimeError("Failed to create PDF file object")
+        
         # Use storage API to check existence
-        assert default_storage.exists(pdf_file.file.path), f"PDF file does not exist in storage at {pdf_file.file.path}"
+        if not default_storage.exists(pdf_file.file.path):
+            raise RuntimeError(f"PDF file does not exist in storage at {pdf_file.file.path}")
+        
         # Check that the source temp file was deleted
-        assert not temp_file_path.exists(), f"Temporary source file {temp_file_path} still exists after creation"
+        if temp_file_path.exists():
+            raise RuntimeError(f"Temporary source file {temp_file_path} still exists after creation")
 
         # Prepare a minimal report_meta for SensitiveMeta creation
         default_report_meta = {
