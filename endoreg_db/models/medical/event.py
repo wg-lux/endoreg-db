@@ -1,5 +1,8 @@
 from django.db import models
-from typing import List
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import PatientEvent
 
 
 class EventManager(models.Manager):
@@ -39,7 +42,7 @@ class Event(models.Model):
     name_de = models.CharField(max_length=100, blank=True, null=True)
     name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    event_classification = models.ForeignKey(
+    event_classification: models.ForeignKey["EventClassification"] = models.ForeignKey(
         "EventClassification",
         on_delete=models.CASCADE,
         related_name="events",
@@ -47,6 +50,9 @@ class Event(models.Model):
         blank=True,
     )
     objects = EventManager()
+
+    if TYPE_CHECKING:
+        patient_events: models.QuerySet["PatientEvent"]
 
     def natural_key(self):
         """

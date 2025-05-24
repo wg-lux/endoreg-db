@@ -3,7 +3,7 @@ from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models import Examination, Requirement, FindingIntervention
-
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 class ExaminationIndicationManager(models.Manager):
     """
@@ -67,6 +67,23 @@ class ExaminationIndication(models.Model):
         related_requirements: "models.QuerySet[Requirement]"
         expected_interventions: "models.ManyToManyField[FindingIntervention]"
 
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Returns a RequirementLinks instance containing the links related to this indication.
+        
+        This property aggregates the related requirements and classifications into a RequirementLinks object.
+        
+        Returns:
+            RequirementLinks: An instance containing the links related to this indication.
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        return RequirementLinks(
+            examination_indications=[self],
+            examinations=[self.examination],
+            finding_interventions=list(self.expected_interventions.all()),
+        )
+
     def natural_key(self) -> tuple:
         """
         Returns the natural key for the indication.
@@ -108,6 +125,8 @@ class ExaminationIndication(models.Model):
             Examination: The associated examination.
         """
         return self.examination
+    
+
 
 
 class ExaminationIndicationClassificationManager(models.Manager):

@@ -1,9 +1,9 @@
 
-from .models_match_all import _models_match_all
+from .models_match_all import _match_all_links
 
 
 SUPPORTED_OPERATORS = {
-    "models_match_all": _models_match_all,
+    "models_match_all": _match_all_links,
 }
 
 def get_operator_function(operator_name:str):

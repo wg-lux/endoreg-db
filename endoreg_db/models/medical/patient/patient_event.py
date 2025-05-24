@@ -12,12 +12,18 @@ class PatientEvent(models.Model):
     Links a patient to an event type, dates, description, and optional classification choices,
     subcategories, and numerical descriptors.
     """
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
-    event = models.ForeignKey("Event", on_delete=models.CASCADE)
+    patient:models.ForeignKey["Patient"] = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE,
+        related_name="events"
+    )
+    event:models.ForeignKey["Event"] = models.ForeignKey(
+        "Event", on_delete=models.CASCADE,
+        related_name="patient_events"
+    )
     date_start = models.DateField()
     date_end = models.DateField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    classification_choice = models.ForeignKey(
+    classification_choice:models.ForeignKey["EventClassificationChoice"] = models.ForeignKey(
         "EventClassificationChoice", on_delete=models.CASCADE, blank=True, null=True
     )
 
@@ -25,11 +31,6 @@ class PatientEvent(models.Model):
     numerical_descriptors = models.JSONField(default=dict)
 
     last_update = models.DateTimeField(auto_now=True)
-    
-    if TYPE_CHECKING:
-        patient: "Patient"
-        event: "Event"
-        classification_choice: "EventClassificationChoice"
 
     def __str__(self):
         """Returns a string representation including the date and event name."""

@@ -25,4 +25,5 @@ def evaluate_requirement(
     """
     # Implement the logic to evaluate the requirement based on its type
     # and the provided keyword arguments.
+    #  = requirement.links
     pass

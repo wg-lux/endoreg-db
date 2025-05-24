@@ -137,7 +137,7 @@ class PatientExamination(models.Model):
         """
 
         choices = [
-            _.indication_choice for _ in self.get_indications()
+            _.indication_choice for _ in self.get_indications() if _.indication_choice is not None
         ]
         return choices
 
