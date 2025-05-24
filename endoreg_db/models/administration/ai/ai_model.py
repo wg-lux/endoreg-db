@@ -22,7 +22,16 @@ class AiModelManager(models.Manager):
 
     def get_by_natural_key(self, name: str):
         """
-        Return the model with the given name.
+        Retrieves the AiModel instance with the specified unique name.
+        
+        Args:
+            name: The unique identifier of the AiModel to retrieve.
+        
+        Returns:
+            The AiModel instance matching the given name.
+        
+        Raises:
+            AiModel.DoesNotExist: If no AiModel with the specified name exists.
         """
         return self.get(name=name)
 
@@ -77,7 +86,18 @@ class AiModel(models.Model):
 
     def get_version(self, version: int) -> "ModelMeta":
         """
-        Get the model_metadata object from metadata_versions with the given version number.
+        Retrieves the ModelMeta instance for the specified version.
+        
+        If the active_meta matches the requested version, it is returned. Otherwise, searches related metadata_versions for a matching version. Raises ValueError if no matching metadata is found.
+        
+        Args:
+            version: The version number of the desired ModelMeta.
+        
+        Returns:
+            The ModelMeta instance corresponding to the specified version.
+        
+        Raises:
+            ValueError: If no ModelMeta with the given version exists.
         """
         if self.active_meta is not None and self.active_meta.version == version:
             return self.active_meta
@@ -106,7 +126,9 @@ class AiModel(models.Model):
     @classmethod
     def set_active_model_meta(cls, model_name: str, meta_name: str, meta_version: int):
         """
-        Set the active model.
+        Sets the active metadata version for the specified AI model.
+        
+        Updates the `active_meta` field of the AiModel identified by `model_name` to the ModelMeta instance matching `meta_name` and `meta_version`.
         """
         from ...metadata import ModelMeta
 

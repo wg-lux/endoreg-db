@@ -29,7 +29,10 @@ TEST_VIDEOS = {key: value if value.exists() else None for key, value in _TEST_VI
 
 def get_video_path(video_key:str) -> Path:
     """
-    Retrieves the video path based on the provided video key.
+    Returns the file path associated with the given video key.
+    
+    Raises:
+        ValueError: If the video key does not exist in the available test videos.
     """
     if video_key in TEST_VIDEOS:
         return TEST_VIDEOS[video_key]
@@ -40,7 +43,17 @@ def get_video_keys(
     examination_alias:Optional[str]=None, content:Optional[str]=None, is_anonymous:Optional[bool]=None
 ):
     """
-    Retrieves video keys that match the provided regex pattern based on examination alias, content, and anonymity status.
+    Returns a list of video keys matching the specified examination alias, content type, and anonymity status.
+    
+    If no direct matches are found, falls back to suffix-based filtering for anonymity. Logs warnings and errors when fallback logic is used or no matches are found.
+    
+    Args:
+        examination_alias: The examination alias to filter by, or None for any.
+        content: The content type to filter by, or None for any.
+        is_anonymous: Whether to filter for anonymous, non-anonymous, or both.
+    
+    Returns:
+        A list of matching video keys.
     """
     # Build a more flexible pattern locally if content is None
     if content is None:
@@ -90,7 +103,10 @@ def get_random_video_path_by_examination_alias(
     examination_alias:Optional[str]=None, content:Optional[str]=None, is_anonymous:Optional[bool]=None
 ):
     """
-    Retrieves a random video key that matches the provided regex pattern based on examination alias, content, and anonymity status.
+    Returns the file path of a randomly selected video matching the specified examination alias, content type, and anonymity status.
+    
+    Raises:
+        ValueError: If no matching video keys are found for the given criteria.
     """
     keys = get_video_keys(examination_alias, content, is_anonymous)
     if keys:

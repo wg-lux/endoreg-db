@@ -28,8 +28,10 @@ class VideoView(APIView):
 
     def get_all_videos(self):
         """
-        Returns a list of all available videos along with available labels.
-        Used to populate the video selection dropdown in Vue.js.
+        Retrieves all available videos and labels.
+        
+        Returns:
+            Response: A JSON response containing serialized lists of videos and labels with HTTP 200 status.
         """
         videos = VideoFile.objects.all()
         labels = Label.objects.all()
@@ -44,8 +46,14 @@ class VideoView(APIView):
 
     def get_video_details(self, request, video_id):
         """
-        Returns metadata for a specific video if `Accept: application/json` is set.
-        Otherwise, streams the video file.
+        Retrieves metadata or streams the file for a specific video based on the request's Accept header.
+        
+        If the Accept header includes "application/json", returns the video's metadata as JSON.
+        Otherwise, streams the video file to the client.
+        
+        Returns:
+            A Response containing video metadata (JSON) or a streamed video file.
+            Returns HTTP 404 if the video does not exist, or HTTP 500 on other errors.
         """
         try:
             video_entry = VideoFile.objects.get(id=video_id)
@@ -65,8 +73,13 @@ class VideoView(APIView):
 
     def serve_video_file(self, video_entry):
         """
-        Serves the video file dynamically.
-
+        Streams the specified video file as an HTTP response with appropriate headers for browser playback.
+        
+        Raises:
+            Http404: If the video file does not exist.
+        
+        Returns:
+            FileResponse containing the video file with CORS, range, and content disposition headers set for in-browser playback.
         """
         print("-----",video_entry.processed_file.path)
         try:
@@ -100,9 +113,9 @@ class VideoLabelView(APIView):
 
     def get(self, request, video_id, label_name):
         """
-        Handles GET request to return:
-        - Time segments for the selected label.
-        - Frame-wise predictions within those segments.
+        Retrieves time segments and frame-wise predictions for a specific label on a video.
+        
+        Returns a JSON response containing the label name, its associated time segments, and frame predictions. Responds with HTTP 404 if the video or label is not found, or HTTP 500 for other errors.
         """
         try:
             video_entry = VideoFile.objects.get(id=video_id)

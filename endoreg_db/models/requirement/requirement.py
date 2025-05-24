@@ -255,11 +255,7 @@ class Requirement(models.Model):
         return (self.name,)
 
     def __str__(self):
-        """Return the string representation of the requirement's name.
-
-        Returns:
-            str: The name of the requirement.
-        """
+        Returns the name of the requirement as its string representation.
         return str(self.name)
 
     @property
@@ -288,6 +284,11 @@ class Requirement(models.Model):
         "PatientFindingMorphology",
         "PatientLabValue",
     ]]:
+        """
+        Returns a list of model classes expected as input based on the requirement's linked types.
+        
+        The returned list corresponds to the model classes mapped from the names of all associated requirement types.
+        """
         req_types = self.requirement_types.all()
         req_type_names = [_.name for _ in req_types]
 
@@ -297,14 +298,9 @@ class Requirement(models.Model):
     @property
     def links(self) -> "RequirementLinks":
         """
-        Returns a RequirementsModelDict with querysets of all associated models.
-
-        This method aggregates related models by invoking .all() on each
-        many-to-many field of the requirement. The resulting RequirementsModelDict
-        includes querysets for requirement types, operators, requirement sets,
-        examinations, examination indications, lab values, diseases, disease
-        classification choices, events, findings, finding morphology classification
-        choices, finding location classification choices, and finding interventions.
+        Aggregates and returns all related model instances as a RequirementLinks object.
+        
+        The returned RequirementLinks contains lists of all non-null related objects from the requirement's many-to-many fields, providing a structured view of its associations.
         """
         models_dict = RequirementLinks(
             # requirement_types=self.requirement_types.all(),
@@ -330,30 +326,38 @@ class Requirement(models.Model):
     @property
     def data_model_dict(self) -> dict:
         """
-        Returns a dictionary of data models.
-
-        This method constructs a dictionary containing the names of the models
-        and their corresponding querysets. It includes requirement types, operators,
-        requirement sets, examinations, examination indications, lab values, diseases,
-        disease classification choices, events, findings, finding morphology classification
-        choices, finding location classification choices, and finding interventions.
+        Provides a mapping from requirement type names to their corresponding model classes.
+        
+        Returns:
+            A dictionary where keys are requirement type names and values are model classes used for requirement evaluation.
         """
         from .requirement_evaluation.requirement_type_parser import data_model_dict
         return data_model_dict
     
     @property
     def active_links(self) -> Dict[str, List]:
-        """
-        Returns a dictionary of active links.
-
-        This method filters the linked models to include only those that are not empty.
-        Returns:
-            RequirementLinks: A dictionary containing the linked models with non-empty querysets.
-        """
+        Returns a dictionary of linked models containing only non-empty entries.
+        
+        The returned dictionary includes only those related model lists that have at least one linked instance.
         return self.links.active()
     
     
     def evaluate(self, *args, mode:str, **kwargs):
+        """
+        Evaluates the requirement against provided input models using linked operators.
+        
+        Args:
+            *args: Instances of expected model classes to be evaluated.
+            mode: Evaluation mode, either "strict" (all operators must pass) or "loose" (any operator may pass).
+            **kwargs: Additional keyword arguments passed to operator evaluations.
+        
+        Returns:
+            True if the requirement is satisfied according to the specified mode and linked operators; otherwise, False.
+        
+        Raises:
+            ValueError: If an invalid mode is provided.
+            TypeError: If an input is not an instance of an expected model class or its `.links` attribute is not a RequirementLinks instance.
+        """
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
 

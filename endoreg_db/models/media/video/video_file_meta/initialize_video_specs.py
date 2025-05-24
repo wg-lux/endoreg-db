@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
     """
-    Initializes basic video specs (fps, w, h, count, duration) directly from the video file.
-    Raises FileNotFoundError or RuntimeError on failure. Returns True on success or if no update needed.
+    Initializes video specifications for a VideoFile object by reading from the video file.
+    
+    Attempts to populate missing values for fps, width, height, frame count, and duration using OpenCV. Selects the raw file if available and requested, otherwise uses the active file. Updates only unset fields if valid values are obtained. Returns True if successful or if no updates are needed. Raises FileNotFoundError if the video file cannot be found, or RuntimeError if the file cannot be opened or properties cannot be read.
     """
     video_path: Optional[Path] = None
     target_file_name: Optional[str] = None

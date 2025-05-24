@@ -46,6 +46,11 @@ DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_d
 DEFAULT_GENDER = "unknown"
 
 def get_information_source_prediction():
+    """
+    Retrieves the InformationSource object named "prediction" from the database.
+    
+    Loads information source data if necessary and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found.
+    """
     from .data_loader import load_information_source
     load_information_source()
     source = InformationSource.objects.get(name="prediction")
@@ -55,10 +60,9 @@ def get_information_source_prediction():
 
 def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
     """
-    Get the latest segmentation model from the database.
-    This function retrieves the latest ModelMeta object from the database.
-    Returns:
-        ModelMeta: The latest segmentation model.
+    Retrieves the latest version of a segmentation model by name.
+    
+    Loads required data and returns the most recent ModelMeta instance for the specified segmentation model.
     """
     from .data_loader import (
         load_center_data,
@@ -74,26 +78,37 @@ def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME
     
 
 def get_default_gender() -> Gender:
+    """
+    Retrieves the default gender object with the name "unknown".
+    
+    Returns:
+        The Gender instance representing the default gender.
+    """
     return Gender.objects.get(name=DEFAULT_GENDER)
 
 def get_gender_m_or_f() -> Gender:
     """
-    Get a random Gender object, either male or female.
+    Returns a randomly selected Gender object representing either male or female.
     """
     gender_name = random.choice(["male", "female"])
     return Gender.objects.get(name=gender_name)
 
 def get_random_gender() -> Gender:
     """
-    Get a random Gender object
+    Returns a randomly selected Gender object from the available default genders.
     """
     gender_name = random.choice(DEFAULT_GENDERS)
     return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
 
 def get_default_processor() -> EndoscopyProcessor:
     """
-    Get a default EndoscopyProcessor object.
-
+    Retrieves the default EndoscopyProcessor object by its predefined name.
+    
+    Raises:
+        ValueError: If no EndoscopyProcessor with the default name exists.
+        
+    Returns:
+        The EndoscopyProcessor instance with the default name.
     """
     processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
     if not isinstance(processor, EndoscopyProcessor):
@@ -103,7 +118,13 @@ def get_default_processor() -> EndoscopyProcessor:
 
 def get_default_center() -> Center:
     """
-    Create a default Center instance for testing.
+    Retrieves the default Center object with the predefined name.
+    
+    Raises:
+        ValueError: If no Center with the default name exists.
+    
+    Returns:
+        The Center instance with the default name.
     """
     center = Center.objects.get(
         name=DEFAULT_CENTER_NAME,
@@ -115,14 +136,15 @@ def get_default_center() -> Center:
 
 def generate_patient(**kwargs) -> Patient:
     """
-    Generate a patient with random attributes.
-    This function creates a Patient instance with random attributes such as first name, last name, date of birth, and center.
-    The attributes are generated using the Faker library and can be overridden by providing keyword arguments.
-
-    Parameters:
-        **kwargs: Optional keyword arguments to override default values.
-
+    Creates a Patient instance with randomized or specified attributes.
     
+    Randomly generates first name, last name, date of birth, gender, and center for the patient unless overridden by keyword arguments. Raises ValueError if the provided gender is invalid.
+    
+    Args:
+        **kwargs: Optional overrides for patient attributes such as 'first_name', 'last_name', 'birth_date', 'gender', and 'center'.
+    
+    Returns:
+        A Patient instance with the specified or randomly generated attributes.
     """
     # Set default values
     gender = kwargs.get("gender", get_random_gender())
@@ -154,9 +176,10 @@ def generate_patient(**kwargs) -> Patient:
     
 def get_random_default_examination():
     """
-    Get a random examination type from the list of default examinations.
+    Retrieves a random Examination object from the default examination names.
+    
     Returns:
-        str: A random examination type.
+        Examination: A randomly selected Examination instance from the defaults.
     """
     examination_name = random.choice(DEFAULT_EXAMINATIONS)
 
@@ -165,9 +188,9 @@ def get_random_default_examination():
 
 def get_random_default_examination_indication():
     """
-    Get a random examination indication from the list of default indications.
-    Returns:
-        str: A random examination indication.
+    Returns a random ExaminationIndication object from the default indications list.
+    
+    Selects a random indication name from the predefined defaults and retrieves the corresponding ExaminationIndication instance from the database.
     """
     examination_indication = random.choice(DEFAULT_INDICATIONS)
     all_examination_indications = ExaminationIndication.objects.all()
@@ -182,11 +205,10 @@ def get_random_default_examination_indication():
 
 def get_default_egd_pdf():
     """
-    Get a default EGD PDF file for testing.
-    This function creates a temporary copy of the default PDF file, uses it to create and save
-    a RawPdfFile instance using the refactored create_from_file method,
-    processes it to create SensitiveMeta, and ensures that the temporary file is deleted.
-
+    Creates and processes a default EGD PDF file for testing purposes.
+    
+    This function copies a default EGD PDF to a temporary location, creates a RawPdfFile instance from it, processes the file to generate associated metadata, and ensures cleanup of the temporary file. The resulting RawPdfFile instance is returned for use in tests.
+    
     Returns:
         RawPdfFile: The created and processed RawPdfFile instance.
     """
@@ -260,6 +282,11 @@ def get_default_egd_pdf():
     return pdf_file
 
 def get_default_video_file():
+    """
+    Creates and returns a VideoFile instance using a randomly selected video for the 'egd' examination.
+    
+    Loads required data dependencies, retrieves a random video path for the esophagogastroduodenoscopy (EGD) examination, and creates a VideoFile object with the default center and processor names.
+    """
     from .test_video_helper import get_random_video_path_by_examination_alias
     from endoreg_db.models import VideoFile
     from .data_loader import (

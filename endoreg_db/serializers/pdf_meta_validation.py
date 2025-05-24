@@ -46,7 +46,10 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
     def get_pdf_url(self, obj):
         """
-        Generates the full URL for Vue.js to fetch and display the PDF.
+        Generates an absolute URL for accessing the PDF associated with the given object.
+        
+        Returns:
+            The full URL as a string if the file exists; otherwise, None.
         """
         request = self.context.get('request')
         print("---------------------here :",obj.file)
@@ -56,7 +59,10 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
     def get_file(self, obj):
         """
-        Returns the relative file path stored in the database.
+        Retrieves the relative file path of the PDF from the database.
+        
+        Returns:
+            The relative file path as a string, or None if no file is linked.
         """
         if not obj.file:
             return None  # No file linked
@@ -77,7 +83,9 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        Ensures that the PDF file is valid and has required fields.
+        Validates that a PDF file is provided and the referenced sensitive_meta_id exists.
+        
+        Raises a ValidationError with detailed messages if the file is missing or the sensitive_meta_id does not correspond to an existing SensitiveMeta record.
         """
         errors = {}
 

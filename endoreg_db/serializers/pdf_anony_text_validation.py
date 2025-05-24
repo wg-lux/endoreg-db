@@ -30,14 +30,19 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def get_pdf_url(self, obj):
         """
-        Generates the full URL where Vue.js can fetch and display the PDF.
+        Returns the absolute URL for accessing the anonymized text PDF endpoint for the given object.
+        
+        If the request context or file is missing, returns None.
         """
         request = self.context.get('request')
         return request.build_absolute_uri(f"/pdf/anony_text/?id={obj.id}") if request and obj.file else None
 
     def get_file(self, obj):
         """
-        Returns the relative file path stored in the database.
+        Retrieves the relative file path of the PDF from the model instance.
+        
+        Returns:
+            The relative file path as a string, or None if no file is associated.
         """
         return str(obj.file.name).strip() if obj.file else None  
 
@@ -53,7 +58,10 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def validate_anonymized_text(self, value):
         """
-        Ensures the anonymized_text is not empty or too long.
+        Validates that the anonymized text is non-empty and does not exceed 5000 characters.
+        
+        Raises:
+            serializers.ValidationError: If the text is empty or exceeds the length limit.
         """
         if not value.strip():
             raise serializers.ValidationError("Anonymized text cannot be empty.")

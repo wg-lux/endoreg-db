@@ -26,6 +26,11 @@ class EmployeeQualification(models.Model):
         qualifications: models.QuerySet["Qualification"]
 
     def __str__(self):
+        """
+        Returns a human-readable string summarizing the employee and their qualifications.
+        
+        If the employee has qualifications, lists them separated by commas; otherwise, indicates that no qualifications are assigned.
+        """
         qualification_list = self.qualifications.all()
         if qualification_list:
             # Assuming Qualification model has a decent __str__ representation

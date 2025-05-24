@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__) # Added logger
 
 class ShiftTypeManager(models.Manager):
     def get_queryset(self):
+        """
+        Returns a queryset containing only active shift types.
+        """
         return super().get_queryset().filter(is_active=True)
     
 class ShiftType(models.Model):
@@ -31,13 +34,18 @@ class ShiftType(models.Model):
         shift: models.QuerySet["Shift"]
 
     def __str__(self):
+        """
+        Returns the name of the shift type as its string representation.
+        """
         return str(self.name)
 
     @classmethod
     def get_type_regular(cls) -> "ShiftType | None": # Modified return type
         """
-        Get the common shift type by name.
-        Returns None if the type does not exist.
+        Retrieves the 'regular' shift type instance.
+        
+        Returns:
+            The ShiftType instance with the name 'regular', or None if it does not exist.
         """
         try:
             return cls.objects.get(name=NAME_REGULAR)
@@ -51,8 +59,10 @@ class ShiftType(models.Model):
     @classmethod
     def get_type_on_call(cls) -> "ShiftType | None": # Modified return type
         """
-        Get the on-call shift type by name.
-        Returns None if the type does not exist.
+        Retrieves the ShiftType instance representing the on-call shift type.
+        
+        Returns:
+            The ShiftType instance with the on-call name, or None if it does not exist.
         """
         try:
             return cls.objects.get(name=NAME_ON_CALL)
@@ -66,8 +76,10 @@ class ShiftType(models.Model):
     @classmethod
     def get_type_ward(cls) -> "ShiftType | None": # Modified return type
         """
-        Get the ward shift type by name.
-        Returns None if the type does not exist.
+        Retrieves the ShiftType instance representing a ward shift.
+        
+        Returns:
+            The ShiftType instance with the name corresponding to a ward shift, or None if it does not exist.
         """
         try:
             return cls.objects.get(name=NAME_WARD)
@@ -81,8 +93,10 @@ class ShiftType(models.Model):
     @classmethod
     def get_type_off_hours(cls) -> "ShiftType | None": # Modified return type
         """
-        Get the off-hours shift type by name.
-        Returns None if the type does not exist.
+        Retrieves the off-hours shift type instance by name.
+        
+        Returns:
+            The ShiftType instance for off-hours if it exists, otherwise None.
         """
         try:
             return cls.objects.get(name=NAME_OFF_HOURS)

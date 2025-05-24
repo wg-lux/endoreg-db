@@ -33,6 +33,9 @@ class Command(BaseCommand):
     into the Qualification / Qualification Type model"""
 
     def add_arguments(self, parser):
+        """
+        Adds the --verbose flag to the command-line parser to enable detailed output.
+        """
         parser.add_argument(
             '--verbose',
             action='store_true',
@@ -40,6 +43,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Loads data from YAML files into the QualificationType and Qualification models.
+        
+        Iterates over predefined models and imports their data from YAML files using associated metadata. Supports verbose output if enabled via command-line options.
+        """
         verbose = options['verbose']
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

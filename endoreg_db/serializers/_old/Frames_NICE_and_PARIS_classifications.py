@@ -171,8 +171,9 @@ class BaseClassificationSerializer(serializers.Serializer):
     
     def select_frames_for_sequence(self, sequence):
         """
-        Selects representative frames from a validated segment.
-        Enforces spacing and optionally uses predictions to filter poor-quality frames.
+        Selects evenly spaced representative frames from a polyp segment.
+        
+        Frames are chosen from the segment's frame range, ensuring a minimum gap between selected frames. Returns a list of dictionaries containing frame numbers and their corresponding file paths. If the video's frame directory is unavailable, returns an empty list.
         """
         polyp_sequence = sequence['polyp']
         video = polyp_sequence.video_file

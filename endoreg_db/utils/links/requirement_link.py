@@ -64,24 +64,32 @@ class RequirementLinks(BaseModel):
 
     @property
     def data_model_dict(self):
+        """
+        Provides access to the data model dictionary used for requirement type parsing.
+        
+        Returns:
+            The `data_model_dict` imported from the requirement type parser module.
+        """
         from endoreg_db.models.requirement.requirement_evaluation.requirement_type_parser import data_model_dict
         return data_model_dict
 
     @property
     def data_model_dict_reverse(self):
+        """
+        Provides a reverse mapping dictionary for data model types used in requirement evaluation.
+        
+        Returns:
+            The `data_model_dict_reverse` dictionary imported from the requirement type parser module.
+        """
         from endoreg_db.models.requirement.requirement_evaluation.requirement_type_parser import data_model_dict_reverse
 
         return data_model_dict_reverse
 
     def match_any(self, other:"RequirementLinks") -> bool:
         """
-        Checks if any of the linked models in this instance match with another instance.
-
-        Args:
-            other (RequirementLinks): The other RequirementLinks instance to compare with.
-
-        Returns:
-            bool: True if any linked model matches, False otherwise.
+        Determines if any linked model in this instance is also present in another RequirementLinks instance.
+        
+        Compares each list attribute of both instances and returns True if any element in any list overlaps.
         """
         
         other_dict = other.model_dump()
@@ -94,11 +102,9 @@ class RequirementLinks(BaseModel):
     
     def active(self) -> dict[str, list]:
         """
-        Returns a dictionary of active links.
-
-        This method filters the linked models to include only those that are not empty.
-        Returns:
-            dict[str, list]: A dictionary containing the linked models with non-empty lists.
+        Returns a dictionary of all non-empty linked model lists.
+        
+        Only attributes with non-empty lists are included in the returned dictionary.
         """
         active_links_dict = {}
         for field_name, field_value in self:
@@ -108,9 +114,7 @@ class RequirementLinks(BaseModel):
 
     def __repr__(self):
         """
-        Returns a string representation of the RequirementLinks instance.
-
-        This method provides a concise summary of the linked models contained within the instance.
+        Returns a concise string summarizing the counts of each linked model list in the instance.
         """
         return f"RequirementLinks(examinations={len(self.examinations)}, " \
                f"examination_indications={len(self.examination_indications)}, " \

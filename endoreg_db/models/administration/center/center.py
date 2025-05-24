@@ -57,4 +57,7 @@ class Center(models.Model):
         return self.last_names.all()
 
     def get_endoscopes(self):
+        """
+        Returns all Endoscope instances associated with this center.
+        """
         return self.endoscopes.all()
