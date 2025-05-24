@@ -238,12 +238,8 @@ class Command(BaseCommand):
             
         VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
         
-        # Assert Video File is Anonymized
-        if not validate_video(video_file):
-            self.stdout.write(self.style.ERROR(f"Video file is not anonymized: {video_file}"))
-            return AssertionError(f"Video file is not anonymized: {video_file}")
-
-        while anonym=False:
+        anonym = False
+        while not anonym:
             try:
                 anonym = validate_video(video_file)
             except Exception as e:
