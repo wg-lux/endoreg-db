@@ -255,7 +255,7 @@ class Requirement(models.Model):
         return (self.name,)
 
     def __str__(self):
-        Returns the name of the requirement as its string representation.
+        """Returns the name of the requirement as its string representation."""
         return str(self.name)
 
     @property
@@ -336,9 +336,10 @@ class Requirement(models.Model):
     
     @property
     def active_links(self) -> Dict[str, List]:
-        Returns a dictionary of linked models containing only non-empty entries.
+        """Returns a dictionary of linked models containing only non-empty entries.
         
         The returned dictionary includes only those related model lists that have at least one linked instance.
+        """
         return self.links.active()
     
     
