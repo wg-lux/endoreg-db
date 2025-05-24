@@ -1,27 +1,20 @@
-# See Pipe 1 video file function. 
-# 
+# See Pipe 1 video file function.
+#
 
 """
 Management command to import a video file into the database.
 This command is designed to be run from the command line and takes various arguments
 to specify the video file, center name, and other options.
 """
-from curses.ascii import FF
-from itertools import count
-from multiprocessing import process
 from django.core.management import BaseCommand
 from django.db import connection
-from django.core.management import BaseCommand
 from pathlib import Path
 from endoreg_db.models import VideoFile, ModelMeta
 from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
-#FIXME
-from endoreg_db.management.commands import validate_video
+# #FIXME
+# from endoreg_db.management.commands import validate_video
 
-import logging
-
-from tests.media import video
 from ...helpers.default_objects import (
     get_latest_segmentation_model
 )
@@ -160,6 +153,7 @@ class Command(BaseCommand):
         load_endoscope_data()
 
         segmentation = options["segmentation"]
+        self.ai_model_meta = None
         if segmentation:
             load_ai_model_label_data()
             load_ai_model_data()
@@ -232,20 +226,22 @@ class Command(BaseCommand):
             return
 
         if not Path(video_file).exists():
-            assert self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
+            self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
             return AssertionError(f"Video file not found: {video_file}")
         if self.FFMPEG_AVAILABLE:
-            self.stdout.write(self.style.SUCCESS(f"FFMPEG is available"))
+            self.stdout.write(self.style.SUCCESS("FFMPEG is available"))
             
-        VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
+        if self.ai_model_meta:
+            VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
+        else:
+            VideoFile.pipe_1(video_file)
         
-        anonym = False
-        while not anonym:
-            try:
-                anonym = validate_video(video_file)
-            except Exception as e:
-                self.stdout.write(self.style.ERROR(f"Error validating video file: {e}"))
-                return
+        # while not anonym:
+        #     try:
+        #         anonym = validate_video(video_file)
+        #     except Exception as e:
+        #         self.stdout.write(self.style.ERROR(f"Error validating video file: {e}"))
+        #         return
 
         if self.FFMPEG_AVAILABLE:
             VideoFile.create_from_file(

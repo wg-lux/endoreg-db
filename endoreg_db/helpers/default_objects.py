@@ -49,7 +49,8 @@ def get_information_source_prediction():
     from .data_loader import load_information_source
     load_information_source()
     source = InformationSource.objects.get(name="prediction")
-    assert isinstance(source, InformationSource), "No InformationSource found in the database."
+    if not isinstance(source, InformationSource):
+        raise ValueError("No InformationSource found in the database.")
     return source
 
 def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
@@ -76,7 +77,11 @@ def get_default_gender() -> Gender:
     return Gender.objects.get(name=DEFAULT_GENDER)
 
 def get_gender_m_or_f() -> Gender:
-    return Gender.objects.get(name=DEFAULT_GENDER)
+    """
+    Get a random Gender object, either male or female.
+    """
+    gender_name = random.choice(["male", "female"])
+    return Gender.objects.get(name=gender_name)
 
 def get_random_gender() -> Gender:
     """
@@ -88,13 +93,13 @@ def get_random_gender() -> Gender:
 def get_default_processor() -> EndoscopyProcessor:
     """
     Get a default EndoscopyProcessor object.
-    This function retrieves the first EndoscopyProcessor object from the database.
-    Returns:
-        EndoscopyProcessor: The default EndoscopyProcessor object.
+
     """
     processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
-    assert isinstance(processor, EndoscopyProcessor), "No EndoscopyProcessor found in the database."
+    if not isinstance(processor, EndoscopyProcessor):
+        raise ValueError(f"No EndoscopyProcessor found with name {DEFAULT_ENDOSCOPY_PROCESSOR_NAME}")
     return processor
+
 
 def get_default_center() -> Center:
     """
@@ -103,7 +108,9 @@ def get_default_center() -> Center:
     center = Center.objects.get(
         name=DEFAULT_CENTER_NAME,
     )
-    assert isinstance(center, Center), f"Center with name {DEFAULT_CENTER_NAME} not found."
+    if not isinstance(center, Center):
+        raise ValueError(f"No Center found with name {DEFAULT_CENTER_NAME}")
+    
     return center
 
 def generate_patient(**kwargs) -> Patient:
@@ -120,8 +127,10 @@ def generate_patient(**kwargs) -> Patient:
     # Set default values
     gender = kwargs.get("gender", get_random_gender())
     if not isinstance(gender, Gender):
-        assert isinstance(gender, str)
         gender = Gender.objects.get(name=gender)
+
+    if not isinstance(gender, Gender):
+        raise ValueError("No Gender Found")
     first_name, last_name = create_mock_patient_name(gender = gender.name)
     first_name = kwargs.get("first_name", first_name)
     last_name = kwargs.get("last_name", last_name)
@@ -246,7 +255,7 @@ def get_default_egd_pdf():
     return pdf_file
 
 def get_default_video_file():
-    from ..media.video.helper import get_random_video_path_by_examination_alias
+    from .test_video_helper import get_random_video_path_by_examination_alias
     from endoreg_db.models import VideoFile
     from .data_loader import (
         load_disease_data,

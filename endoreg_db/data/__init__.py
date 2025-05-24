@@ -130,3 +130,5 @@ RULESET_DATA_DIR = DATA_DIR / "ruleset"
 LX_PERMISSION_DATA_DIR = DATA_DIR / "lx_permission"
 LX_CLIENT_TAG_DATA_DIR = DATA_DIR / "lx_client_tag"
 LX_CLIENT_TYPE_DATA_DIR = DATA_DIR / "lx_client_type"
+
+QUALIFICATION_DATA_DIR = DATA_DIR / "qualification"

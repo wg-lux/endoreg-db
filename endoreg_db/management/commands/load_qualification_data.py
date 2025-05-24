@@ -2,15 +2,16 @@
 from django.core.management.base import BaseCommand
 from ...models import Qualification, QualificationType
 from ...utils import load_model_data_from_yaml
-from ...data import REPORT_READER_FLAG_DATA_DIR
+from ...data import QUALIFICATION_DATA_DIR
 
-SOURCE_DIR = REPORT_READER_FLAG_DATA_DIR # e.g. settings.DATA_DIR_INTERVENTION
+SOURCE_DIR = QUALIFICATION_DATA_DIR # e.g. settings.DATA_DIR_INTERVENTION
 
 model_0 = QualificationType
 model_1 = Qualification
 
 IMPORT_MODELS = [ # string as model key, serves as key in IMPORT_METADATA
     model_0.__name__,
+    model_1.__name__,
 ]
 
 IMPORT_METADATA = {
@@ -23,14 +24,14 @@ IMPORT_METADATA = {
     model_1.__name__: {
         "dir": SOURCE_DIR, # e.g. "interventions"
         "model": model_1, # e.g. Intervention
-        "foreign_keys": [model_0], # e.g. ["intervention_types"]
-        "foreign_key_models": ["qualification_types"] # e.g. [InterventionType]
+        "foreign_keys": ["qualification_types"], # e.g. ["intervention_types"]
+        "foreign_key_models": [model_0] # e.g. [InterventionType]
     }
 }
 
 class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
+    help = """Load all .yaml files in the data/qualification directory
+    into the Qualification / Qualification Type model"""
 
     def add_arguments(self, parser):
         parser.add_argument(
