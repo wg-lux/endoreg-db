@@ -1,27 +1,17 @@
-
 from django.test import TestCase
 from logging import getLogger
-import shutil
+import logging
 
 from endoreg_db.models import (
     Requirement, 
-    RequirementOperator,
-    RequirementType,
-    FindingIntervention,
     ExaminationIndication,
-    PatientExamination
 )
-import logging
-from django.conf import settings
-
 
 from ...helpers.data_loader import (
     load_data
 )
 
 from ...helpers.default_objects import (
-    get_default_center, 
-    get_gender_m_or_f,
     generate_patient
 )
 
