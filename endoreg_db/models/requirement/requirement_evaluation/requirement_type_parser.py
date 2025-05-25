@@ -1,10 +1,10 @@
 # Currently those strings MUST match the ones
 # in the requirement_type data definitions
-from collections import namedtuple
 
 from typing import TYPE_CHECKING, Dict, Union
 from endoreg_db.models import (
     Disease,
+    DiseaseClassification,
     DiseaseClassificationChoice,
     Event,
     EventClassification,
@@ -27,6 +27,7 @@ from endoreg_db.models import (
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientLabValue,
+    Patient,
 )
 # if TYPE_CHECKING:
 #     from endoreg_db.models import (
@@ -38,6 +39,7 @@ from endoreg_db.models import (
 
 data_model_dict: Dict[str, Union[
     Disease,
+    DiseaseClassification,
     DiseaseClassificationChoice,
     Event,
     EventClassification,
@@ -60,9 +62,11 @@ data_model_dict: Dict[str, Union[
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientLabValue,
+    Patient,
 ]] = {
     "disease": Disease,
-    "disease_classification": DiseaseClassificationChoice,
+    "disease_classification_choice": DiseaseClassificationChoice,
+    "disease_classification": DiseaseClassification,
     "event": Event,
     "event_classification": EventClassification,
     "event_classification_choice": EventClassificationChoice,
@@ -83,7 +87,8 @@ data_model_dict: Dict[str, Union[
     "patient_finding_intervention": PatientFindingIntervention,
     "patient_finding_location": PatientFindingLocation,
     "patient_finding_morphology": PatientFindingMorphology,
-    "patient_lab_value": PatientLabValue
+    "patient_lab_value": PatientLabValue,
+    "patient": Patient
 }
 
 data_model_dict_reverse = {

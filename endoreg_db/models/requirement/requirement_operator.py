@@ -38,6 +38,52 @@ def _evaluate_models_match_any(
     # with the combined links from all input arguments.
     return requirement_links.match_any(input_links)
 
+def _evaluate_models_match_all(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks", # Changed from inputs: Dict[str, List["RequirementLinks"]]
+    **kwargs
+) -> bool:
+    """
+    Evaluates if all active links in requirement_links are present in input_links.
+
+    For each category of links in requirement_links (e.g., diseases, examinations),
+    all items specified in that category in requirement_links must be present in the
+    corresponding category in input_links.
+
+    Args:
+        requirement_links: The RequirementLinks object from the Requirement model.
+        input_links: The aggregated RequirementLinks object from the input arguments.
+        **kwargs: Additional keyword arguments (currently unused).
+
+    Returns:
+        True if all specified items in requirement_links are found in input_links,
+        False otherwise.
+    """
+    active_req_links = requirement_links.active() # Get dict of non-empty lists from requirement
+
+    if not active_req_links: # If the requirement specifies no actual items to link
+        return True # Vacuously true, as there are no conditions to fail
+
+    for link_category_name, req_items_list in active_req_links.items():
+        input_items_list = getattr(input_links, link_category_name, [])
+        
+        # Convert to sets for efficient subset checking if items are hashable
+        # Django model instances are hashable.
+        try:
+            set_input_items = set(input_items_list)
+            set_req_items = set(req_items_list)
+        except TypeError: # Fallback if items are not hashable for some reason
+            # Perform list-based checking (less efficient)
+            for req_item in req_items_list:
+                if req_item not in input_items_list:
+                    return False # A required item is missing in this category
+            continue # Check next category
+
+        if not set_req_items.issubset(set_input_items):
+            return False # Not all required items in this category are present in the input
+            
+    return True # All required items across all active categories were found
+
 class RequirementOperator(models.Model):
     """
     A class representing a requirement operator.
@@ -114,12 +160,14 @@ class RequirementOperator(models.Model):
         # from endoreg_db.models.requirement.requirement import RequirementLinks # Already imported at TYPE_CHECKING level
 
         eval_func = None
-
+    
         if self.name == "models_match_any":
             eval_func = _evaluate_models_match_any
+        elif self.name == "models_match_all": # Added this condition
+            eval_func = _evaluate_models_match_all
         # Add other operator types here with elif self.name == "some_other_operator":
         #     eval_func = _evaluate_some_other_operator
-
+    
         if eval_func:
             return eval_func(
                 requirement_links=requirement_links,

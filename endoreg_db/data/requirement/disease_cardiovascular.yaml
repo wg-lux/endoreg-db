@@ -6,7 +6,7 @@
     name_en: "Coronary artery disease"
     description: "Coronary artery disease"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:
@@ -20,7 +20,7 @@
     name_en: "Hypertension"
     description: "Hypertension"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:
@@ -33,7 +33,7 @@
     name_en: "Congestive heart failure"
     description: "Congestive heart failure"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:
@@ -46,7 +46,7 @@
     name_en: "Diabetes mellitus type I"
     description: "Diabetes mellitus type I"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:
@@ -59,7 +59,7 @@
     name_en: "Diabetes mellitus type II"
     description: "Diabetes mellitus type II"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:
@@ -72,7 +72,7 @@
     name_en: "Non valvular atrial fibrillation"
     description: "Non valvular atrial fibrillation"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:

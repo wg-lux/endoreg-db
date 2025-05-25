@@ -4,9 +4,11 @@ from django.db import models
 from faker import Faker
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List  # Added List
 import logging
 from django.utils import timezone  # Add this import
+
+# Import RequirementLinks and Disease for the links property
 
 logger = logging.getLogger("patient")
 
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
         AnonymExaminationReport,
         AnonymHistologyReport, RawPdfFile
     )
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
 class Patient(Person):
     """
     A class representing a patient.
@@ -393,3 +396,20 @@ class Patient(Person):
         )
 
         return patient_lab_sample
+
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Aggregates and returns all related model instances relevant for requirement evaluation
+        as a RequirementLinks object. For a Patient, this primarily includes their diseases.
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.models.medical.disease import Disease
+        patient_diseases = self.diseases.all() # diseases is the related_name from PatientDisease.patient
+        actual_diseases: List[Disease] = [pd.disease for pd in patient_diseases if pd.disease]
+        
+        return RequirementLinks(
+            diseases=actual_diseases
+            # Other fields like patient_diseases (for PatientDisease instances themselves)
+            # could be added if requirements need to evaluate properties of the linking model.
+        )
