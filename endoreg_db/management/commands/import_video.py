@@ -14,6 +14,8 @@ from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
 # #FIXME
 # from endoreg_db.management.commands import validate_video
+from endoreg_db.models import VideoPredictionMeta
+from ffmpeg import video
 
 from ...helpers.default_objects import (
     get_latest_segmentation_model
@@ -242,7 +244,10 @@ class Command(BaseCommand):
         if self.ai_model_meta:
             VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
         else:
-            VideoFile.pipe_1(video_file)
+            VideoPredictionMeta.objects.filter(
+                video_file=video_file, model_meta=test.ai_model_meta
+    )
+            VideoFile.pipe_1(video_file, video_prediction_meta=None, model_name=None)
         
         # while not anonym:
         #     try:
