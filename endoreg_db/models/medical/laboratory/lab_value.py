@@ -124,9 +124,10 @@ class LabValue(models.Model):
         """
         Retrieve the normal range for the lab value based on optional age and gender.
 
-        This method returns the default normal range when the lab value is not age-, gender-, or special-case dependent.
-        For gender-dependent ranges, it uses a gender-specific default range and, if no gender is provided, selects one at random with a warning.
-        Note that age-dependent and special-case normal ranges are not implemented and will issue warnings when invoked.
+        This method prioritizes gender-specific ranges if the lab value is gender-dependent.
+        If a gender-specific range (or its 'min' value) is not found, it falls back to
+        a general default normal range if defined at the top level of default_normal_range.
+        Age-dependent and special-case normal ranges are not fully implemented and will issue warnings.
 
         Args:
             age (int, optional): The age in years used for age-dependent range computation.
@@ -146,37 +147,80 @@ class LabValue(models.Model):
 
         min_value = None
         max_value = None
-
-        if not age_dependent and not gender_dependent and not special_case:
-            min_value = self.default_normal_range.get("min", None)
-            max_value = self.default_normal_range.get("max", None)
-
-        if age_dependent:
-            # get normal range for age)
-            warnings.warn("Age dependent normal range not implemented yet")
-
+        
+        gender_name_to_use = None
         if gender_dependent:
-            if not gender:
+            if gender and hasattr(gender, 'name') and gender.name:
+                gender_name_to_use = gender.name
+            elif not gender: # Gender not provided for a gender-dependent value
                 warnings.warn(
-                    "Calling get_normal_range with gender_dependent=True requires gender to be set, choosing by random"
+                    f"Gender not provided for gender-dependent LabValue '{self.name}'. Choosing a random gender (male/female) for normal range lookup."
                 )
-                # set gender to either "male" or "female"
                 from random import choice
+                gender_name_to_use = choice(["male", "female"])
+            # If gender object is present but gender.name is 'unknown', gender_name_to_use will be 'unknown'.
+            # If gender object is present but .name is None/empty, gender_name_to_use remains None.
 
-                choices = ["male", "female"]
-                gender = choice(choices)
-
-            default_range_dict = self.default_normal_range.get(gender.name, {})
-            min_value = default_range_dict.get("min", None)
-            max_value = default_range_dict.get("max", None)
-
+        # Try to get gender-specific range if gender_dependent and gender_name_to_use is determined
+        if gender_name_to_use: # This implies gender_dependent is True
+            if self.default_normal_range and isinstance(self.default_normal_range, dict):
+                gender_specific_data = self.default_normal_range.get(gender_name_to_use)
+                if gender_specific_data and isinstance(gender_specific_data, dict):
+                    min_value = gender_specific_data.get("min")
+                    max_value = gender_specific_data.get("max")
+                else:
+                    warnings.warn(
+                        f"No normal range data found for gender '{gender_name_to_use}' for LabValue '{self.name}'. "
+                        f"Attempting to use general default normal range if available."
+                    )
+            else:
+                warnings.warn(
+                    f"default_normal_range is not a valid dictionary for LabValue '{self.name}' when looking up gender '{gender_name_to_use}'. "
+                    f"Attempting to use general default normal range if available."
+                )
+        
+        # If min_value is still None (either not gender_dependent, or gender_dependent but specific range not found/incomplete),
+        # try to use the general default normal range.
+        if min_value is None and self.default_normal_range and isinstance(self.default_normal_range, dict):
+            general_min = self.default_normal_range.get("min")
+            if general_min is not None:
+                min_value = general_min
+            
+            # Set max_value from general default only if it hasn't been set by a (potentially partial) gender-specific range
+            if max_value is None: 
+                general_max = self.default_normal_range.get("max")
+                if general_max is not None:
+                    max_value = general_max
+        
+        # Age-dependent and special_case logic (currently just warnings)
+        if age_dependent:
+            warnings.warn(f"Age dependent normal range not implemented yet for LabValue '{self.name}'. Age: {age}.")
+        
         if special_case:
-            # get normal range for special case
-            warnings.warn("Special case normal range not implemented yet")
+            warnings.warn(f"Special case normal range not implemented yet for LabValue '{self.name}'.")
 
-        normal_range_dict = {"min": min_value, "max": max_value}
-
-        return normal_range_dict
+        # Final check and warning if min_value is still None
+        if min_value is None:
+            context_parts = []
+            if gender_dependent:
+                gender_repr = (gender.name if gender and hasattr(gender, 'name') else 'None')
+                if gender_name_to_use and gender_name_to_use != gender_repr : # e.g. random choice was made
+                     gender_repr = f"{gender_repr} (lookup attempted for: {gender_name_to_use})"
+                context_parts.append(f"gender: {gender_repr}")
+            if age_dependent:
+                context_parts.append(f"age: {age}")
+            
+            warning_message = (
+                f"Could not determine a 'min' normal range for LabValue '{self.name}'"
+            )
+            if context_parts:
+                warning_message += f" with context ({', '.join(context_parts)})."
+            else:
+                warning_message += " (general context)."
+            warning_message += " Check LabValue's default_normal_range definition."
+            warnings.warn(warning_message)
+            
+        return {"min": min_value, "max": max_value}
 
     def get_increased_value(self, patient: "Patient" = None):
         """
