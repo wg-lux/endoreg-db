@@ -5,7 +5,8 @@
     name_en: "Coronary artery disease (1-vessel disease)"
     description: "Coronary artery disease (1-vessel disease)"
     requirement_types:
-      - "disease_classification_choice"
+      - "patient"
+      - "patient_disease"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -18,7 +19,8 @@
     name_en: "Coronary artery disease (2-vessel disease)"
     description: "Coronary artery disease (2-vessel disease)"
     requirement_types:
-      - "disease_classification_choice"
+      - "patient"
+      - "patient_disease"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -31,7 +33,8 @@
     name_en: "Coronary artery disease (3-vessel disease)"
     description: "Coronary artery disease (3-vessel disease)"
     requirement_types:
-      - "disease_classification_choice"
+      - "patient"
+      - "patient_disease"
     operators:
       - models_match_all
     disease_classification_choices:

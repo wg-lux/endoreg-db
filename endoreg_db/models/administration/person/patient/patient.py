@@ -1,4 +1,3 @@
-from asyncio import events
 from ..person import Person
 from django.db import models
 from faker import Faker
@@ -344,7 +343,7 @@ class Patient(Person):
         # No need to call save() again after create()
         return patient
 
-    def age(self):
+    def age(self) -> int | None:
         """
         Get the age of the patient.
 
@@ -401,15 +400,28 @@ class Patient(Person):
     def links(self) -> "RequirementLinks":
         """
         Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object. For a Patient, this primarily includes their diseases.
+        as a RequirementLinks object. For a Patient, this includes their diseases, associated classification choices,
+        and all their lab values.
         """
         from endoreg_db.utils.links.requirement_link import RequirementLinks
-        from endoreg_db.models.medical.disease import Disease
-        patient_diseases = self.diseases.all() # diseases is the related_name from PatientDisease.patient
-        actual_diseases: List[Disease] = [pd.disease for pd in patient_diseases if pd.disease]
+        from endoreg_db.models.medical.disease import Disease, DiseaseClassificationChoice
         
+        patient_disease_instances = list(self.diseases.all()) # PatientDisease instances
+        actual_diseases: List[Disease] = []
+        all_classification_choices: List[DiseaseClassificationChoice] = []
+
+        for pd_instance in patient_disease_instances:
+            if pd_instance.disease:
+                actual_diseases.append(pd_instance.disease)
+            all_classification_choices.extend(list(pd_instance.classification_choices.all()))
+        
+        # Fetch all patient lab values associated with this patient
+        # The related name from PatientLabValue.patient is "lab_values"
+        patient_lab_values = list(self.lab_values.all())
+
         return RequirementLinks(
-            diseases=actual_diseases
-            # Other fields like patient_diseases (for PatientDisease instances themselves)
-            # could be added if requirements need to evaluate properties of the linking model.
+            diseases=list(set(actual_diseases)), # Ensure uniqueness
+            patient_diseases=patient_disease_instances, # List of PatientDisease objects
+            disease_classification_choices=list(set(all_classification_choices)), # Ensure uniqueness
+            patient_lab_values=patient_lab_values
         )

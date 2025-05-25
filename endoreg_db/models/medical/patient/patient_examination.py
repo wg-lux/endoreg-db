@@ -151,6 +151,7 @@ class PatientExamination(models.Model):
         as a RequirementLinks object.
         """
         from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue # Added
         # Get all PatientExaminationIndication instances linked to this PatientExamination
         patient_exam_indications = self.indications.all() 
         
@@ -163,10 +164,19 @@ class PatientExamination(models.Model):
             if pei.indication_choice:
                 indication_choices_list.append(pei.indication_choice)
 
+        # Fetch all patient lab values associated with this patient examination\'s patient
+        patient_lab_values = []
+        if self.patient:
+            patient_lab_values = list(PatientLabValue.objects.filter(patient=self.patient))
+
+        current_examination = [self.examination] if self.examination else []
+
         return RequirementLinks(
+            patient_examinations=[self],  # Add the instance itself
+            examinations=current_examination, # Add the related Examination model
             examination_indications=examination_indications_list,
-            examination_indication_classification_choices=indication_choices_list
-            # finding_interventions=finding_interventions_list # if applicable
+            examination_indication_classification_choices=indication_choices_list,
+            patient_lab_values=patient_lab_values
         )
 
     def create_finding(self, finding:"Finding") -> "PatientFinding":

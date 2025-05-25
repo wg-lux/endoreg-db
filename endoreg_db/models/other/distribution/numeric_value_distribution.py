@@ -41,9 +41,38 @@ class NumericValueDistribution(BaseValueDistribution):
         assert isinstance(lab_value, LabValue)
         default_normal_range_dict = lab_value.get_normal_range(patient.age(), patient.gender)
         assert isinstance(default_normal_range_dict, dict)
+
         if self.distribution_type == 'uniform':
             assert self.min_descriptor and self.max_descriptor
-            assert "min" in default_normal_range_dict and "max" in default_normal_range_dict
+            
+            min_key_needed = self.min_descriptor.split('_')[0]
+            max_key_needed = self.max_descriptor.split('_')[0]
+
+            min_val_from_range = default_normal_range_dict.get(min_key_needed)
+            max_val_from_range = default_normal_range_dict.get(max_key_needed)
+
+            if min_val_from_range is None:
+                raise ValueError(
+                    f"Cannot generate value for LabValue '{lab_value.name}' using distribution "
+                    f"'{getattr(self, 'name', self.pk)}'. "
+                    f"Required normal range component '{min_key_needed}' derived from min_descriptor "
+                    f"'{self.min_descriptor}' is None. "
+                    f"Patient context: age={patient.age()}, gender='{patient.gender.name if patient.gender else None}'. "
+                    f"LabValue '{lab_value.name}' is gender-dependent: {lab_value.normal_range_gender_dependent}. "
+                    f"Check LabValue's default_normal_range definition for this patient context."
+                )
+            
+            if max_val_from_range is None:
+                raise ValueError(
+                    f"Cannot generate value for LabValue '{lab_value.name}' using distribution "
+                    f"'{getattr(self, 'name', self.pk)}'. "
+                    f"Required normal range component '{max_key_needed}' derived from max_descriptor "
+                    f"'{self.max_descriptor}' is None. "
+                    f"Patient context: age={patient.age()}, gender='{patient.gender.name if patient.gender else None}'. "
+                    f"LabValue '{lab_value.name}' is gender-dependent: {lab_value.normal_range_gender_dependent}. "
+                    f"Check LabValue's default_normal_range definition for this patient context."
+                )
+            
             value = self._generate_value_uniform(default_normal_range_dict)
             
             return value
@@ -94,4 +123,3 @@ class NumericValueDistribution(BaseValueDistribution):
         # generate value
         return np.random.uniform(result_dict["min"], result_dict["max"])
 
-    

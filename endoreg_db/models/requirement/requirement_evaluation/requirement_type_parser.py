@@ -1,7 +1,7 @@
 # Currently those strings MUST match the ones
 # in the requirement_type data definitions
 
-from typing import TYPE_CHECKING, Dict, Union
+from typing import Dict, Union
 from endoreg_db.models import (
     Disease,
     DiseaseClassification,
@@ -27,6 +27,7 @@ from endoreg_db.models import (
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientLabValue,
+    PatientLabSample,  # Assuming PatientLabSample is defined elsewhere,
     Patient,
 )
 # if TYPE_CHECKING:
@@ -62,6 +63,7 @@ data_model_dict: Dict[str, Union[
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientLabValue,
+    PatientLabSample,
     Patient,
 ]] = {
     "disease": Disease,
@@ -88,6 +90,7 @@ data_model_dict: Dict[str, Union[
     "patient_finding_location": PatientFindingLocation,
     "patient_finding_morphology": PatientFindingMorphology,
     "patient_lab_value": PatientLabValue,
+    "patient_lab_sample": PatientLabSample,  # Changed from string "PatientLabSample" to the class
     "patient": Patient
 }
 

@@ -1,8 +1,11 @@
 from django.db import models
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING # Added List
+
 if TYPE_CHECKING:
     from ...administration.person.patient.patient import Patient
     from ..disease import Disease, DiseaseClassificationChoice
+    from endoreg_db.utils.links.requirement_link import RequirementLinks # Added RequirementLinks
+
 
 class PatientDisease(models.Model):
     """
@@ -36,6 +39,24 @@ class PatientDisease(models.Model):
         """Returns a string representation including the patient and disease name."""
         return f"{self.patient} - {self.disease}"
     
+    @property
+    def links(self) -> "RequirementLinks":
+        from endoreg_db.utils.links.requirement_link import RequirementLinks # Added RequirementLinks
+
+        """
+        Aggregates and returns related model instances relevant for requirement evaluation
+        as a RequirementLinks object.
+        """
+        links_data = {
+            "patient_diseases": [self],
+            "diseases": [],
+            "disease_classification_choices": list(self.classification_choices.all())
+        }
+        if self.disease:
+            links_data["diseases"].append(self.disease)
+        
+        return RequirementLinks(**links_data)
+
     class Meta:
         # unique_together = ('patient', 'disease', 'start_date')
         verbose_name = 'Patient Disease'

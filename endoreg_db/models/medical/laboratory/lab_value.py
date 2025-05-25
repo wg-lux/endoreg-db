@@ -10,6 +10,7 @@ if TYPE_CHECKING:
         MultipleCategoricalValueDistribution,
         DateValueDistribution,
     )
+    from ...administration.person.patient import Patient  # Added Patient for type hinting
 
 LANG = "de"
 
@@ -18,12 +19,12 @@ class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
         """
         Retrieves a model instance by its natural key.
-        
+
         This method returns the instance whose unique name matches the provided natural key.
-          
+
         Args:
             name: The unique identifier corresponding to the model's "name" field.
-          
+
         Returns:
             The model instance with a matching name.
         """
@@ -83,7 +84,7 @@ class LabValue(models.Model):
     def natural_key(self):
         """
         Return a tuple representing the natural key for this instance.
-        
+
         Returns:
             tuple: A single-element tuple containing the instance's unique name.
         """
@@ -92,7 +93,7 @@ class LabValue(models.Model):
     def __str__(self):
         """
         Return the lab value name as a string.
-        
+
         Converts the lab value's `name` attribute into its string representation for
         display purposes.
         """
@@ -101,7 +102,7 @@ class LabValue(models.Model):
     def get_default_default_distribution(self):
         """
         Returns the first available default distribution for the lab value.
-        
+
         Checks the default distribution fields in the following order:
         default_single_categorical_value_distribution, default_numerical_value_distribution,
         default_multiple_categorical_value_distribution, and default_date_value_distribution.
@@ -122,15 +123,15 @@ class LabValue(models.Model):
     def get_normal_range(self, age: int = None, gender=None):
         """
         Retrieve the normal range for the lab value based on optional age and gender.
-        
+
         This method returns the default normal range when the lab value is not age-, gender-, or special-case dependent.
         For gender-dependent ranges, it uses a gender-specific default range and, if no gender is provided, selects one at random with a warning.
         Note that age-dependent and special-case normal ranges are not implemented and will issue warnings when invoked.
-        
+
         Args:
             age (int, optional): The age in years used for age-dependent range computation.
             gender (Gender, optional): The gender instance used for gender-dependent range computation.
-        
+
         Returns:
             dict: A dictionary with 'min' and 'max' keys indicating the lower and upper bounds of the normal range.
         """
@@ -176,3 +177,173 @@ class LabValue(models.Model):
         normal_range_dict = {"min": min_value, "max": max_value}
 
         return normal_range_dict
+
+    def get_increased_value(self, patient: "Patient" = None):
+        """
+        Returns a value that is considered increased for this lab value.
+        It prioritizes sampling from a numerical distribution if available,
+        otherwise uses the upper bound of the normal range.
+        """
+        _age = patient.age() if patient else None
+        _gender = patient.gender if patient else None
+        normal_range = self.get_normal_range(age=_age, gender=_gender)
+        upper_bound = normal_range.get("max")
+
+        if self.default_numerical_value_distribution:
+            if patient:
+                # Attempt to sample above the upper bound, or a high value if no bound
+                for _ in range(10):  # Try a few times to get a value if bounds are restrictive
+                    generated_value = self.default_numerical_value_distribution.generate_value(
+                        lab_value=self, patient=patient
+                    )
+                    if upper_bound is not None:
+                        if generated_value > upper_bound:
+                            return generated_value
+                    # Heuristic for "high" if no upper_bound, compare against mean + stddev
+                    elif hasattr(self.default_numerical_value_distribution, "mean") and \
+                            hasattr(self.default_numerical_value_distribution, "stddev") and \
+                            self.default_numerical_value_distribution.mean is not None and \
+                            self.default_numerical_value_distribution.stddev is not None and \
+                            generated_value > (
+                            self.default_numerical_value_distribution.mean + self.default_numerical_value_distribution.stddev
+                    ):
+                        return generated_value
+                # Fallback if sampling fails to produce a clearly increased value
+                if upper_bound is not None:
+                    return upper_bound + (abs(upper_bound * 0.1) if upper_bound != 0 else 1)  # Increase by 10% or 1
+                # If no upper bound and sampling didn't provide a clear high value, return a generated value as last resort
+                return self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
+            else:  # No patient, cannot use distribution
+                warnings.warn(
+                    f"Cannot use numerical distribution for {self.name} without patient context. Falling back to normal range logic for increased value."
+                )
+                if upper_bound is not None:
+                    return upper_bound + (abs(upper_bound * 0.1) if upper_bound != 0 else 1)
+                else:
+                    warnings.warn(
+                        f"Cannot determine an increased value for {self.name} without an upper normal range or patient context for distribution."
+                    )
+                    return None
+
+        elif upper_bound is not None:
+            return upper_bound + (abs(upper_bound * 0.1) if upper_bound != 0 else 1)
+        else:
+            warnings.warn(
+                f"Cannot determine an increased value for {self.name} without a numerical distribution or an upper normal range."
+            )
+            return None
+
+    def get_normal_value(self, patient: "Patient" = None):
+        """
+        Returns a value that is considered normal for this lab value.
+        It prioritizes sampling from a numerical distribution if available and
+        the sampled value falls within the normal range. Otherwise, it uses
+        the midpoint of the normal range or a direct sample.
+        """
+        _age = patient.age() if patient else None
+        _gender = patient.gender if patient else None
+        normal_range = self.get_normal_range(age=_age, gender=_gender)
+        lower_bound = normal_range.get("min")
+        upper_bound = normal_range.get("max")
+
+        if self.default_numerical_value_distribution:
+            if patient:
+                for _ in range(10):  # Try a few times
+                    generated_value = self.default_numerical_value_distribution.generate_value(
+                        lab_value=self, patient=patient
+                    )
+                    if lower_bound is not None and upper_bound is not None:
+                        if lower_bound <= generated_value <= upper_bound:
+                            return generated_value
+                    elif lower_bound is not None and generated_value >= lower_bound:  # No upper bound
+                        return generated_value
+                    elif upper_bound is not None and generated_value <= upper_bound:  # No lower bound
+                        return generated_value
+                    elif lower_bound is None and upper_bound is None:  # No range defined
+                        return generated_value
+                # Fallback if sampling fails to produce a value in range
+                if lower_bound is not None and upper_bound is not None:
+                    return (lower_bound + upper_bound) / 2.0
+                # Return any generated value as last resort
+                return self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
+            else:  # No patient, cannot use distribution
+                warnings.warn(
+                    f"Cannot use numerical distribution for {self.name} without patient context. Falling back to normal range logic for normal value."
+                )
+                if lower_bound is not None and upper_bound is not None:
+                    return (lower_bound + upper_bound) / 2.0
+                elif lower_bound is not None:
+                    return lower_bound
+                elif upper_bound is not None:
+                    return upper_bound
+                else:
+                    warnings.warn(
+                        f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution."
+                    )
+                    return None
+
+        elif lower_bound is not None and upper_bound is not None:
+            return (lower_bound + upper_bound) / 2.0
+        elif lower_bound is not None:  # Only min is defined
+            return lower_bound
+        elif upper_bound is not None:  # Only max is defined
+            return upper_bound
+        else:
+            warnings.warn(
+                f"Cannot determine a normal value for {self.name} without a numerical distribution or a normal range."
+            )
+            return None
+
+    def get_decreased_value(self, patient: "Patient" = None):
+        """
+        Returns a value that is considered decreased for this lab value.
+        It prioritizes sampling from a numerical distribution if available,
+        otherwise uses the lower bound of the normal range.
+        """
+        _age = patient.age() if patient else None
+        _gender = patient.gender if patient else None
+        normal_range = self.get_normal_range(age=_age, gender=_gender)
+        lower_bound = normal_range.get("min")
+
+        if self.default_numerical_value_distribution:
+            if patient:
+                for _ in range(10):  # Try a few times
+                    generated_value = self.default_numerical_value_distribution.generate_value(
+                        lab_value=self, patient=patient
+                    )
+                    if lower_bound is not None:
+                        if generated_value < lower_bound:
+                            return generated_value
+                    # Heuristic for "low" if no lower_bound, compare against mean - stddev
+                    elif hasattr(self.default_numerical_value_distribution, "mean") and \
+                            hasattr(self.default_numerical_value_distribution, "stddev") and \
+                            self.default_numerical_value_distribution.mean is not None and \
+                            self.default_numerical_value_distribution.stddev is not None and \
+                            generated_value < (
+                            self.default_numerical_value_distribution.mean - self.default_numerical_value_distribution.stddev
+                    ):
+                        return generated_value
+                # Fallback
+                if lower_bound is not None:
+                    return lower_bound - (abs(lower_bound * 0.1) if lower_bound != 0 else 1)  # Decrease by 10% or 1
+                # Return any generated value as last resort
+                return self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
+            else:  # No patient, cannot use distribution
+                warnings.warn(
+                    f"Cannot use numerical distribution for {self.name} without patient context. Falling back to normal range logic for decreased value."
+                )
+                if lower_bound is not None:
+                    return lower_bound - (abs(lower_bound * 0.1) if lower_bound != 0 else 1)
+                else:
+                    warnings.warn(
+                        f"Cannot determine a decreased value for {self.name} without a lower normal range or patient context for distribution."
+                    )
+                    return None
+
+        elif lower_bound is not None:
+            return lower_bound - (abs(lower_bound * 0.1) if lower_bound != 0 else 1)
+        else:
+            warnings.warn(
+                f"Cannot determine a decreased value for {self.name} without a numerical distribution or a lower normal range."
+            )
+            return None

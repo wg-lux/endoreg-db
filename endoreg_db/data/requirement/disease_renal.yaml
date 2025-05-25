@@ -19,6 +19,7 @@
     description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 1)"
     requirement_types:
       - "patient_disease"
+      - "patient"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -32,6 +33,7 @@
     description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 2)"
     requirement_types:
       - "patient_disease"
+      - "patient"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -45,6 +47,7 @@
     description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 3a)"
     requirement_types:
       - "patient_disease"
+      - "patient"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -58,6 +61,7 @@
     description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 3b)"
     requirement_types:
       - "patient_disease"
+      - "patient"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -71,6 +75,7 @@
     description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 4)"
     requirement_types:
       - "patient_disease"
+      - "patient"
     operators:
       - models_match_all
     disease_classification_choices:
@@ -84,6 +89,7 @@
     description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 5)"
     requirement_types:
       - "patient_disease"
+      - "patient"
     operators:
       - models_match_all
     disease_classification_choices:

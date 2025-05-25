@@ -115,6 +115,7 @@ class Requirement(models.Model):
     name_de = models.CharField(max_length=100, blank=True, null=True)
     name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    
     numeric_value = models.FloatField(
         blank=True,
         null=True,
@@ -447,10 +448,13 @@ class Requirement(models.Model):
 
         operator_results = []
         for operator in operators:
+            # Prepare kwargs for the operator, including the current Requirement instance
+            op_kwargs = kwargs.copy() # Start with kwargs passed to Requirement.evaluate
+            op_kwargs['requirement'] = self # Add the Requirement instance itself
             operator_results.append(operator.evaluate(
                 requirement_links=requirement_req_links,
                 input_links=final_input_links,
-                **kwargs
+                **op_kwargs
             ))
 
         is_valid = evaluate_result_list_func(operator_results)

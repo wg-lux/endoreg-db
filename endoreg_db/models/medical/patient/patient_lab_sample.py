@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING
 from datetime import datetime as dt, timezone
 
 if TYPE_CHECKING:
-    from ...administration.person.patient import Patient
-    from .patient_lab_value import PatientLabValue
+    from endoreg_db.models import Patient, LabValue, PatientLabValue
+    from endoreg_db.utils.links.requirement_link import RequirementLinks # Added import
 
 DEFAULT_PATIENT_LAB_SAMPLE_TYPE_NAME = "generic"
 
@@ -74,6 +74,23 @@ class PatientLabSample(models.Model):
         """Returns all PatientLabValue instances associated with this sample."""
         return self.values.all()
     
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Aggregates and returns all related model instances relevant for requirement evaluation
+        as a RequirementLinks object.
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        # Assuming PatientLabValue is already imported or accessible
+        # from .patient_lab_value import PatientLabValue # If direct import needed and not circular
+
+        patient_lab_values = list(self.values.all())
+
+        return RequirementLinks(
+            patient_lab_values=patient_lab_values,
+            patient_lab_samples=[self] # Include the sample itself
+        )
+
     @classmethod
     def create_by_patient(cls, patient=None, sample_type=None, date=None, save = True):
         """
@@ -114,5 +131,23 @@ class PatientLabSample(models.Model):
         return patient_lab_sample
 
 
+    def add_empty_value(self, lab_value:"LabValue"):
+        """
+        Adds an empty PatientLabValue for the given lab value to this sample.
 
-
+        Args:
+            lab_value (LabValue): The lab value to add.
+        """
+        from endoreg_db.models import PatientLabValue, LabValue
+        if not isinstance(lab_value, LabValue):
+            raise ValueError("lab_value must be an instance of LabValue.")
+        patient_lab_value = PatientLabValue.create_lab_value_by_sample(
+            sample=self,
+            lab_value_name=lab_value.name,
+            value=None,  # Empty value
+            value_str=None,  # Empty string
+            unit=lab_value.default_unit  # Use the unit from the lab value
+        )
+        patient_lab_value.save()
+        return patient_lab_value
+    
