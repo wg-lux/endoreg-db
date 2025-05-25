@@ -57,7 +57,6 @@ def get_information_source_prediction():
     if not isinstance(source, InformationSource):
         raise ValueError("No InformationSource found in the database.")
     return source
-
 def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
     """
     Retrieves the latest version of a segmentation model by name.
