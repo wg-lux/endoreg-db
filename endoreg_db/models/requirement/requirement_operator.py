@@ -1,5 +1,5 @@
 from django.db import models
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.utils.links.requirement_link import RequirementLinks 
@@ -21,26 +21,23 @@ class RequirementOperatorManager(models.Manager):
 
 def _evaluate_models_match_any(
     requirement_links: "RequirementLinks",
-    inputs: Dict[str, List["RequirementLinks"]],
+    input_links: "RequirementLinks", # Changed from inputs: Dict[str, List["RequirementLinks"]]
     **kwargs
 ) -> bool:
     """
-    Checks if any set of requirement links in the provided inputs matches the given requirement links.
-    
-    Iterates over each model's requirement links in the inputs and returns True if any set matches according to the `match_any` method. Returns False if no matches are found.
+    Checks if the requirement_links matches any of the input_links.
     
     Args:
         requirement_links: The reference set of requirement links to compare against.
-        inputs: A dictionary mapping model names to lists of requirement links.
+        input_links: The aggregated requirement links from the input objects.
     
     Returns:
-        True if any input set of requirement links matches; otherwise, False.
+        True if the input set of requirement links matches according to requirement_links.match_any; otherwise, False.
     """
-    for model_name, req_links in inputs.items():
-        is_true = requirement_links.match_any(req_links)
-        if is_true:
-            return True
-    return False
+    # The core logic is to check if the Requirement's own links have any commonality
+    # with the combined links from all input arguments.
+    return requirement_links.match_any(input_links)
+
 class RequirementOperator(models.Model):
     """
     A class representing a requirement operator.
@@ -98,33 +95,36 @@ class RequirementOperator(models.Model):
         """
         return str(self.name)
     
-    def evaluate(self, requirement:"Requirement", inputs:Dict[str, List["RequirementLinks"]], **kwargs) -> bool:
+    def evaluate(self, requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool: # Changed signature
         
         """
-        Evaluates the requirement operator against the provided requirement and input data.
+        Evaluates the requirement operator against the provided requirement links and input links.
         
-        This method is intended to execute the logic associated with the operator's name, using the given requirement and a dictionary of input model data. The evaluation logic is not yet implemented.
-        """
-        from endoreg_db.models.requirement.requirement import RequirementLinks
+        Args:
+            requirement_links: The RequirementLinks object from the Requirement model.
+            input_links: The aggregated RequirementLinks object from the input arguments.
+            **kwargs: Additional keyword arguments for specific operator logic.
 
-        is_true = False
+        Returns:
+            True if the condition defined by the operator is met, False otherwise.
+            
+        Raises:
+            NotImplementedError: If the evaluation logic for the operator's name is not implemented.
+        """
+        # from endoreg_db.models.requirement.requirement import RequirementLinks # Already imported at TYPE_CHECKING level
 
         eval_func = None
 
         if self.name == "models_match_any":
-            eval_func = self.evaluate
+            eval_func = _evaluate_models_match_any
+        # Add other operator types here with elif self.name == "some_other_operator":
+        #     eval_func = _evaluate_some_other_operator
 
-    # def get_function(self):
-    #     """
-    #     Retrieve the function associated with the requirement operator.
-        
-    #     This method looks up the operator name in the supported operators mapping
-    #     and returns the corresponding operator function used for evaluating requirements.
-    #     If the operator name is not recognized, the behavior is undefined.
-        
-    #     Returns:
-    #         function: The operator function associated with the operator name.
-    #     """
-    #     from endoreg_db.models.requirement.requirement_evaluation import get_operator_function
-
-    #     return get_operator_function(self.name)
+        if eval_func:
+            return eval_func(
+                requirement_links=requirement_links,
+                input_links=input_links,
+                **kwargs
+            )
+        else:
+            raise NotImplementedError(f"Evaluation logic for operator '{self.name}' is not implemented.")

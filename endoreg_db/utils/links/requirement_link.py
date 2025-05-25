@@ -95,10 +95,11 @@ class RequirementLinks(BaseModel):
         other_dict = other.model_dump()
         self_dict = self.model_dump()
         for key in self_dict:
-            print(f"Checking key: {key}")
+            # print(f"Checking key: {key}") # This is a debug print, can be removed
             if key in other_dict and self_dict[key] and other_dict[key]:
                 if any(item in other_dict[key] for item in self_dict[key]):
                     return True
+        return False # Ensure False is returned if no match is found
     
     def active(self) -> dict[str, list]:
         """

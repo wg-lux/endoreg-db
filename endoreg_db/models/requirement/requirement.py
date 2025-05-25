@@ -33,7 +33,7 @@ if TYPE_CHECKING:
         RequirementOperator,
         RequirementSet
     )
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    # from endoreg_db.utils.links.requirement_link import RequirementLinks # Already imported above
 
 
 class RequirementTypeManager(models.Manager):
@@ -348,7 +348,8 @@ class Requirement(models.Model):
         Evaluates the requirement against provided input models using linked operators.
         
         Args:
-            *args: Instances of expected model classes to be evaluated.
+            *args: Instances of expected model classes (e.g., PatientExamination, ExaminationIndication) to be evaluated.
+                   Each input instance must have a `.links` property returning a RequirementLinks object.
             mode: Evaluation mode, either "strict" (all operators must pass) or "loose" (any operator may pass).
             **kwargs: Additional keyword arguments passed to operator evaluations.
         
@@ -362,45 +363,96 @@ class Requirement(models.Model):
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
 
-        if mode == "strict":
-            evaluate_result_list_func = all
-        elif mode == "loose":
-            evaluate_result_list_func = any
+        evaluate_result_list_func = all if mode == "strict" else any
 
         requirement_req_links = self.links
+        expected_models_tuple = tuple(self.expected_models) # For faster type checking
 
-        expected_models = self.expected_models
+        # Aggregate RequirementLinks from all input arguments
+        aggregated_input_links_data = {}
+        processed_inputs_count = 0
 
-        inputs = [_ for _ in args]
-        input_req_links = {_model:[] for _model in expected_models}
+        for _input in args:
+            # Check if the input is an instance of any of the expected model types
+            if not isinstance(_input, expected_models_tuple):
+                # Allow QuerySets of expected models
+                if isinstance(_input, models.QuerySet) and issubclass(_input.model, expected_models_tuple):
+                    # Process each item in the queryset
+                    if not _input.exists(): # Skip empty querysets
+                        continue
+                    for item in _input:
+                        if not hasattr(item, 'links') or not isinstance(item.links, RequirementLinks):
+                            raise TypeError(
+                                f"Item {item} of type {type(item)} in QuerySet does not have a valid .links attribute of type RequirementLinks."
+                            )
+                        active_item_links = item.links.active()
+                        for link_key, link_list in active_item_links.items():
+                            if link_key not in aggregated_input_links_data:
+                                aggregated_input_links_data[link_key] = []
+                            aggregated_input_links_data[link_key].extend(link_list)
+                        processed_inputs_count +=1
+                    continue # Move to the next arg after processing queryset
+                else:
+                    raise TypeError(
+                        f"Input type {type(_input)} is not among expected models: {self.expected_models} "
+                        f"nor a QuerySet of expected models."
+                    )
 
-        for _input in inputs:
-            input_type = type(_input)
-            if input_type not in expected_models:
-                raise TypeError(f"Input type {input_type} is not among expected models: {expected_models}")
+            # Process single model instance
+            if not hasattr(_input, 'links') or not isinstance(_input.links, RequirementLinks):
+                raise TypeError(
+                    f"Input {_input} of type {type(_input)} does not have a valid .links attribute of type RequirementLinks."
+                )
+            
+            active_input_links = _input.links.active() # Get dict of non-empty lists
+            for link_key, link_list in active_input_links.items():
+                if link_key not in aggregated_input_links_data:
+                    aggregated_input_links_data[link_key] = []
+                aggregated_input_links_data[link_key].extend(link_list)
+            processed_inputs_count += 1
 
-            _input_links: RequirementLinks = _input.links
-            if not isinstance(_input_links, RequirementLinks):
-                raise TypeError(f"Expected RequirementLinks, got {type(_input_links)}")
-            input_req_links[input_type].append(_input_links)
+        if not processed_inputs_count and args: # If args were provided but none were processable (e.g. all empty querysets)
+             # This situation implies no relevant data was provided for evaluation against the requirement.
+             # Depending on operator logic (e.g., "requires at least one matching item"), this might lead to False.
+             # For "models_match_any", an empty input_links will likely result in False if requirement_req_links is not empty.
+             pass
 
-        input_req_links_obj = RequirementLinks(
-            **input_req_links
-        )
 
+        # Deduplicate items within each list after aggregation
+        for key in aggregated_input_links_data:
+            try:
+                # Using dict.fromkeys to preserve order and remove duplicates for hashable items
+                aggregated_input_links_data[key] = list(dict.fromkeys(aggregated_input_links_data[key]))
+            except TypeError:
+                # Fallback for non-hashable items (though Django models are hashable)
+                temp_list = []
+                for item in aggregated_input_links_data[key]:
+                    if item not in temp_list:
+                        temp_list.append(item)
+                aggregated_input_links_data[key] = temp_list
+        
+        final_input_links = RequirementLinks(**aggregated_input_links_data)
+        
         operators = self.operators.all()
+        if not operators.exists(): # If a requirement has no operators, its evaluation is ambiguous.
+            # Consider if this should be True, False, or an error.
+            # For now, if no operators, and mode is strict, it's vacuously true. If loose, vacuously false.
+            # However, typically a requirement implies some condition.
+            # Let's assume if no operators, it cannot be satisfied unless it also has no specific links.
+            # This behavior might need further refinement based on business logic.
+            if not requirement_req_links.active(): # No conditions in requirement
+                 return True # Vacuously true if requirement itself is empty
+            return False # Cannot be satisfied if requirement has conditions but no operators to check them
+
 
         operator_results = []
         for operator in operators:
-            #TODO
             operator_results.append(operator.evaluate(
                 requirement_links=requirement_req_links,
-                input_links=input_req_links_obj,
+                input_links=final_input_links,
                 **kwargs
             ))
 
-        is_valid = evaluate_result_list_func(
-            operator_results
-        )
+        is_valid = evaluate_result_list_func(operator_results)
 
         return is_valid
