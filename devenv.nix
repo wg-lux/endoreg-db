@@ -1,4 +1,4 @@
-{ pkgs, lib, config, inputs, ... }:
+{ pkgs, lib, config, inputs, baseBuildInputs, ... }:
 let
   # --- Project Configuration ---
   DJANGO_MODULE = "endoreg_db";
@@ -26,19 +26,26 @@ let
     tesseract
     glib
     openssh
-    libglvnd # Add libglvnd for libGL.so.1
+    libglvnd
   ];
   runtimePackages = with pkgs; [
     cudaPackages.cuda_nvcc # Needed for runtime? Check dependencies
     stdenv.cc.cc
     ffmpeg-headless.bin
     tesseract
-    zsh # If you prefer zsh as the shell
     uvPackage # Add uvPackage to runtime packages if needed elsewhere, or just for devenv internal use
     libglvnd # Add libglvnd for libGL.so.1
     glib
     zlib
   ];
+
+  _module.args.buildInputs = baseBuildInputs;
+
+  imports = [ 
+    ./lx-anonymizer/devenv.nix 
+  ]; 
+
+  packages = runtimePackages ++ buildInputs;
 
 in 
 {
