@@ -99,8 +99,7 @@
       - "patient"
       - "patient_lab_sample"
       - "patient_lab_value"
-      - "patient_examination":
-      - "lab_value"
+      - "patient_examination"
     operators:
       - lab_latest_numeric_increased
     lab_values:
@@ -117,8 +116,7 @@
       - "patient"
       - "patient_lab_sample"
       - "patient_lab_value"
-      - "patient_examination":
-      - "lab_value"
+      - "patient_examination"
     operators:
       - lab_latest_numeric_increased
     lab_values:
@@ -127,16 +125,15 @@
 ## Fibrinogen below normal
 - model: endoreg_db.requirement
   fields:
-    name: "lab_value_latest_fibrinogen_below_normal"
-    name_de: "Laborwert Fibrinogen unter Normalwert"
-    name_en: "Lab value fibrinogen below normal"
-    description: "Lab value fibrinogen below normal"
+    name: "lab_value_latest_alkaline_phosphatase_below_normal"
+    name_de: "Laborwert Alkalische Phosphatase unter Normalwert"
+    name_en: "Lab value alkaline phosphatase below normal"
+    description: "Lab value alkaline phosphatase below normal"
     requirement_types:
       - "patient"
       - "patient_lab_sample"
       - "patient_lab_value"
-      - "patient_examination":
-      - "lab_value"
+      - "patient_examination"
     operators:
       - lab_latest_numeric_decreased
     lab_values:
@@ -153,8 +150,7 @@
       - "patient"
       - "patient_lab_sample"
       - "patient_lab_value"
-      - "patient_examination":
-      - "lab_value"
+      - "patient_examination"
     operators:
       - lab_latest_numeric_increased
     lab_values:
@@ -192,7 +188,7 @@
     operators:
       - lab_latest_numeric_decreased_factor_in_timeframe
     lab_values:
-      - "hemoglobin" # Changed from platelet_count
+      - "platelets" # Changed from platelet_count
     numeric_value: 2 # Factor
     numeric_value_min: -7 # Days ago (start of timeframe)
     numeric_value_max: 0  # Days ago (end of timeframe, i.e., today)

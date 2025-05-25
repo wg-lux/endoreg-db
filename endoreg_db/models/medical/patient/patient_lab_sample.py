@@ -148,6 +148,5 @@ class PatientLabSample(models.Model):
             value_str=None,  # Empty string
             unit=lab_value.default_unit  # Use the unit from the lab value
         )
-        patient_lab_value.save()
         return patient_lab_value
     

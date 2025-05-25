@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, List, Optional, Callable, Dict, Any
+import re # Added import
 from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
 from endoreg_db.models.requirement.requirement import Requirement
 from datetime import datetime, timedelta
@@ -424,7 +425,6 @@ def lab_latest_categorical_match_regex(
     """
     Checks if the latest categorical lab value matches regex in requirement.string_value.
     """
-    import re
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists() or requirement.string_value is None:
         return False
@@ -513,7 +513,6 @@ def lab_latest_categorical_match_regex_in_timeframe(
     Checks if any categorical lab value in timeframe matches regex in requirement.string_value.
     Timeframe in requirement.numeric_value_min/max.
     """
-    import re
     patient_lab_values = input_links.patient_lab_values
     if (not requirement.lab_values.exists() or
         requirement.string_value is None or
@@ -548,17 +547,21 @@ LAB_VALUE_OPERATOR_FUNCTIONS: Dict[str, Callable] = {
     "lab_latest_numeric_normal": lab_latest_numeric_normal,
     "lab_latest_numeric_lower_than_value": lab_latest_numeric_lower_than_value,
     "lab_latest_numeric_greater_than_value": lab_latest_numeric_greater_than_value,
+
+    # Aliases for backward compatibility, pointing to timeframe versions
+    "lab_latest_numeric_increased_factor": lab_latest_numeric_increased_factor_in_timeframe,
+    "lab_latest_numeric_decreased_factor": lab_latest_numeric_decreased_factor_in_timeframe,
+
     "lab_latest_numeric_increased_factor_in_timeframe": lab_latest_numeric_increased_factor_in_timeframe,
     "lab_latest_numeric_decreased_factor_in_timeframe": lab_latest_numeric_decreased_factor_in_timeframe,
     "lab_latest_numeric_normal_in_timeframe": lab_latest_numeric_normal_in_timeframe,
     "lab_latest_numeric_lower_than_value_in_timeframe": lab_latest_numeric_lower_than_value_in_timeframe,
     "lab_latest_numeric_greater_than_value_in_timeframe": lab_latest_numeric_greater_than_value_in_timeframe,
+
     "lab_latest_categorical_match": lab_latest_categorical_match,
     "lab_latest_categorical_match_substring": lab_latest_categorical_match_substring,
     "lab_latest_categorical_match_regex": lab_latest_categorical_match_regex,
     "lab_latest_categorical_match_in_timeframe": lab_latest_categorical_match_in_timeframe,
     "lab_latest_categorical_match_substring_in_timeframe": lab_latest_categorical_match_substring_in_timeframe,
     "lab_latest_categorical_match_regex_in_timeframe": lab_latest_categorical_match_regex_in_timeframe,
-    # TODO Note: The YAML uses "lab_latest_numeric_increased_factor" for "lab_latest_numeric_increased_factor_in_timeframe"
-    # Ensure consistency or add an alias if needed. For now, mapping directly to the more descriptive Python function name.
 }

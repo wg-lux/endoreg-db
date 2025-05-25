@@ -9,4 +9,4 @@
     operators:
       - models_match_all
     diseases:
-      - "malignoma_unspecified"
+      - "disease_is_malignoma_unspecified"

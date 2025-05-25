@@ -3,12 +3,7 @@ from logging import getLogger
 
 from endoreg_db.models import (
     Requirement, 
-    PatientDisease, # Added PatientDisease
-    Disease,        # Added Disease
-    Patient,         # Added Patient
-    RequirementType,  # Added RequirementType
 )
-from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 import logging
 

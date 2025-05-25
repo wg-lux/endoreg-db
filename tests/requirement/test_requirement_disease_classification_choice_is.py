@@ -1,4 +1,3 @@
-\
 from django.test import TestCase
 from logging import getLogger
 
@@ -6,8 +5,6 @@ from endoreg_db.models import (
     Requirement, 
     PatientDisease,
     Disease,
-    DiseaseClassificationChoice, # Added DiseaseClassificationChoice
-    Patient
 )
 from endoreg_db.utils.links.requirement_link import RequirementLinks # Added RequirementLinks
 

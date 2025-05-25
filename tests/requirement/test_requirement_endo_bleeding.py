@@ -8,7 +8,6 @@ from endoreg_db.models import (
     FindingIntervention,
     ExaminationIndication,
     PatientExamination,
-    PatientExaminationIndication # Added import
 )
 
 from endoreg_db.utils.links.requirement_link import RequirementLinks
