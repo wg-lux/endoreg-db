@@ -6,6 +6,7 @@ Management command to import a video file into the database.
 This command is designed to be run from the command line and takes various arguments
 to specify the video file, center name, and other options.
 """
+from curses import meta
 from django.core.management import BaseCommand
 from django.db import connection
 from pathlib import Path
@@ -244,10 +245,14 @@ class Command(BaseCommand):
         if self.ai_model_meta:
             VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
         else:
-            VideoPredictionMeta.objects.filter(
-                video_file=video_file, model_meta=test.ai_model_meta
+            meta_obj = VideoPredictionMeta
+            meta_obj.ai_model_meta = ModelMeta.objects.filter(
+                model__name="colo_segmentation_RegNetX800MF_6"
+            ).first()
+            meta_obj= VideoPredictionMeta.objects.filter(
+                video_file=video_file, model_meta=meta_obj.ai_model_meta
     )
-            VideoFile.pipe_1(video_file, video_prediction_meta=None, model_name=None)
+            VideoFile.pipe_1(video_file, video_prediction_meta=None, model_name=model_meta)
         
         # while not anonym:
         #     try:
