@@ -25,14 +25,14 @@ from .views.examination_views import (
     get_instruments_for_exam,
 )
 # Add missing imports for stats and labels
-from .views.stats_views import StatsView
-from .views.label_views import LabelViewSet
-from .views.user_views import UserViewSet, UserStatusView
+# from .views.stats_views import StatsView
+# from .views.label_views import LabelViewSet
+# from .views.user_views import UserViewSet, UserStatusView
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
-router.register(r'labels', LabelViewSet)
-router.register(r'users', UserViewSet)
+# router.register(r'labels', LabelViewSet)
+# router.register(r'users', UserViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -369,10 +369,10 @@ urlpatterns = [
     path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
 
     # Stats endpoint
-    path('stats/', StatsView.as_view(), name='stats'),
+    # path('stats/', StatsView.as_view(), name='stats'),
 
     # User status endpoint for authentication checks
-    path('user-status/', UserStatusView.as_view(), name='user_status'),
+    # path('user-status/', UserStatusView.as_view(), name='user_status'),
     ]
 
     
