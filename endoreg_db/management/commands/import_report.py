@@ -122,7 +122,17 @@ class Command(BaseCommand):
         
         This method validates input options, optionally starts the Ollama LLM service, ensures the existence of required files and directories, determines the report type, processes the PDF for text and metadata extraction, anonymizes content, and saves the resulting data to the database. Provides verbose output and error handling throughout the process.
         """
-        load_data()
+        # Load initial or prerequisite data for the application.
+        # This may include loading default values, configurations, or lookup table data
+        # necessary for the import process or other application functionalities.
+        try:
+            load_data()
+            self.stdout.write(self.style.SUCCESS("Successfully loaded initial data."))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"Failed to load initial data: {e}"))
+            # Depending on the criticality of load_data(), you might want to exit or handle differently.
+            # For now, we'll just log the error and continue.
+            
         verbose = options["verbose"]
         center_name = options["center_name"]
         report_dir_root = options["report_dir_root"]

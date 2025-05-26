@@ -41,7 +41,7 @@ DEFAULT_INDICATIONS = [
     "colonoscopy_diagnostic_acute_symptomatic",
 ]
 
-DEFAULT__NAME = "image_multilabel_classification_colonoscopy_default"
+DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 
 DEFAULT_GENDER = "unknown"
 

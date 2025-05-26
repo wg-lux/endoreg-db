@@ -1,6 +1,5 @@
 from pathlib import Path
 from django.core.management.base import BaseCommand
-from django.conf import settings
 from endoreg_db.models import (
     VideoFile, 
     Center, 
@@ -12,6 +11,34 @@ from endoreg_db.models import (
 
 class Command(BaseCommand):
     help = 'Import fallback test video and create default labels'
+
+    def _ensure_default_objects(self):
+        """
+        Ensures that default Center and EndoscopyProcessor objects exist, creating them if necessary.
+        
+        Returns:
+            tuple: A tuple containing the Center and EndoscopyProcessor objects.
+        """
+        center, created = Center.objects.get_or_create(
+            name="Default Center",
+            defaults={
+                'description': 'Fallback center for test videos',
+                'location': 'Test Location'
+            }
+        )
+        if created:
+            self.stdout.write(f"Created center: {center.name}")
+
+        processor, created = EndoscopyProcessor.objects.get_or_create(
+            name="Default Processor",
+            defaults={
+                'description': 'Fallback processor for test videos'
+            }
+        )
+        if created:
+            self.stdout.write(f"Created processor: {processor.name}")
+        
+        return center, processor
 
     def add_arguments(self, parser):
         """
@@ -45,26 +72,8 @@ class Command(BaseCommand):
             self.create_fallback_entries()
             return
         
-        # Create or get default center
-        center, created = Center.objects.get_or_create(
-            name="Default Center",
-            defaults={
-                'description': 'Fallback center for test videos',
-                'location': 'Test Location'
-            }
-        )
-        if created:
-            self.stdout.write(f"Created center: {center.name}")
-        
-        # Create or get default processor
-        processor, created = EndoscopyProcessor.objects.get_or_create(
-            name="Default Processor",
-            defaults={
-                'description': 'Fallback processor for test videos'
-            }
-        )
-        if created:
-            self.stdout.write(f"Created processor: {processor.name}")
+        # Create or get default center and processor
+        center, processor = self._ensure_default_objects()
         
         # Create default labels
         self.create_default_labels()
@@ -102,6 +111,9 @@ class Command(BaseCommand):
         )
         if created:
             self.stdout.write(f"Created labelset: {labelset.name}")
+        
+        # Fetch existing labels in the labelset to avoid N+1 queries
+        existing_labels_in_set = set(labelset.labels.values_list('pk', flat=True))
         
         # Default labels for endoscopy
         default_labels = [
@@ -146,8 +158,9 @@ class Command(BaseCommand):
                 self.stdout.write(f"Created label: {label_data['name']}")
             
             # Link to labelset
-            if vs_label not in labelset.labels.all():
+            if vs_label.pk not in existing_labels_in_set:
                 labelset.labels.add(vs_label)
+                existing_labels_in_set.add(vs_label.pk) # Keep the set in sync
         
         labelset.save()
         self.stdout.write(f"Labelset configured with {labelset.labels.count()} labels")
@@ -163,20 +176,7 @@ class Command(BaseCommand):
         self.create_default_labels()
         
         # Create a placeholder VideoFile entry for frontend testing
-        center, _ = Center.objects.get_or_create(
-            name="Default Center",
-            defaults={
-                'description': 'Fallback center for test videos',
-                'location': 'Test Location'
-            }
-        )
-        
-        processor, _ = EndoscopyProcessor.objects.get_or_create(
-            name="Default Processor",
-            defaults={
-                'description': 'Fallback processor for test videos'
-            }
-        )
+        center, processor = self._ensure_default_objects()
         
         # Check if we already have a fallback video
         if not VideoFile.objects.filter(original_file_name="lux-gastro-video.mp4").exists():

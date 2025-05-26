@@ -1,5 +1,4 @@
-# stats/services.py
-from django.db.models import Count
+# endoreg_db/helpers/count_db.py  
 from endoreg_db.models.state.audit_ledger import AuditLedger
 
 def _distinct(object_type: str, action: str):
@@ -35,7 +34,8 @@ def collect_counters():
     - "videosAnonym": Count of distinct video files that have been anonymized.
     """
     return {
-        "totalCases":           _distinct("VideoFile", "created"),
+        #TODO @maxhild can we remove the totalCases key?
+        # "totalCases":           _distinct("VideoFile", "created"),
         "totalVideos":          _distinct("VideoFile", "created"),
         "totalAnnotations":     AuditLedger.objects.filter(action="annotation_added").count(),
         "totalAnonymizations":  _distinct("VideoFile", "anonymized"),
