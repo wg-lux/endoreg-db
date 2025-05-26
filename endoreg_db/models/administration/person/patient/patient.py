@@ -19,9 +19,17 @@ if TYPE_CHECKING:
         PatientExamination,
         Center,
         AnonymExaminationReport,
-        AnonymHistologyReport, RawPdfFile
+        AnonymHistologyReport, RawPdfFile,
+        # Added for links property
+        Medication,
+        PatientMedication,
+        MedicationIndication,
+        MedicationIntakeTime,
+        PatientLabValue, # Assuming self.lab_values are PatientLabValue instances
+        LabValue # If RequirementLinks expects actual LabValue instances
     )
     from endoreg_db.utils.links.requirement_link import RequirementLinks
+
 class Patient(Person):
     """
     A class representing a patient.
@@ -401,27 +409,52 @@ class Patient(Person):
         """
         Aggregates and returns all related model instances relevant for requirement evaluation
         as a RequirementLinks object. For a Patient, this includes their diseases, associated classification choices,
-        and all their lab values.
+        all their lab values, and medication information.
         """
         from endoreg_db.utils.links.requirement_link import RequirementLinks
         from endoreg_db.models.medical.disease import Disease, DiseaseClassificationChoice
         
-        patient_disease_instances = list(self.diseases.all()) # PatientDisease instances
+        # Imports for medication related models
+        from endoreg_db.models.medical.medication.medication import Medication
+        from endoreg_db.models.medical.medication.medication_indication import MedicationIndication
+        from endoreg_db.models.medical.medication.medication_intake_time import MedicationIntakeTime
+        # PatientMedication objects are retrieved via self.patientmedication_set
+        # PatientLabValue objects are retrieved via self.lab_values
+
+        patient_disease_instances = list(self.diseases.all()) # These are PatientDisease model instances
         actual_diseases: List[Disease] = []
         all_classification_choices: List[DiseaseClassificationChoice] = []
 
         for pd_instance in patient_disease_instances:
-            if pd_instance.disease:
+            if pd_instance.disease: # pd_instance.disease is a Disease instance
                 actual_diseases.append(pd_instance.disease)
             all_classification_choices.extend(list(pd_instance.classification_choices.all()))
         
-        # Fetch all patient lab values associated with this patient
-        # The related name from PatientLabValue.patient is "lab_values"
-        patient_lab_values = list(self.lab_values.all())
+        # Assuming self.lab_values is a related manager for PatientLabValue instances
+        patient_lab_value_instances = list(self.lab_values.all()) # These are PatientLabValue model instances
+
+        # Medication information
+        # self.patientmedication_set gives a QuerySet of PatientMedication
+        patient_medication_instances = list(self.patientmedication_set.all()) 
+        
+        actual_medications: List[Medication] = []
+        med_indications: List[MedicationIndication] = []
+        med_intake_times: List[MedicationIntakeTime] = []
+
+        for pm_instance in patient_medication_instances:
+            if pm_instance.medication: # pm_instance.medication is a Medication instance
+                actual_medications.append(pm_instance.medication)
+            if pm_instance.medication_indication: # pm_instance.medication_indication is a MedicationIndication instance
+                med_indications.append(pm_instance.medication_indication)
+            med_intake_times.extend(list(pm_instance.intake_times.all())) # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
         return RequirementLinks(
-            diseases=list(set(actual_diseases)), # Ensure uniqueness
-            patient_diseases=patient_disease_instances, # List of PatientDisease objects
-            disease_classification_choices=list(set(all_classification_choices)), # Ensure uniqueness
-            patient_lab_values=patient_lab_values
+            diseases=list(set(actual_diseases)), 
+            patient_diseases=patient_disease_instances, 
+            disease_classification_choices=list(set(all_classification_choices)), 
+            patient_lab_values=patient_lab_value_instances,
+            medications=list(set(actual_medications)), 
+            patient_medications=patient_medication_instances,
+            medication_indications=list(set(med_indications)),
+            medication_intake_times=list(set(med_intake_times))
         )

@@ -1,4 +1,4 @@
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "apixaban"
     name_de: "Apixaban"
@@ -11,7 +11,7 @@
     adapt_to_risk: true
     default_unit: "miligram"
 
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "dabigatran"
     name_de: "Dabigatran"
@@ -24,7 +24,7 @@
     adapt_to_risk: true
     default_unit: "miligram"
 
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "edoxaban"
     name_de: "Edoxaban"
@@ -37,7 +37,7 @@
     adapt_to_risk: true
     default_unit: "miligram"
 
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "rivaroxaban"
     name_de: "Rivaroxaban"
@@ -50,7 +50,7 @@
     adapt_to_risk: true
     default_unit: "miligram"
 
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "enoxaparin"
     name_de: "Enoxaparin"

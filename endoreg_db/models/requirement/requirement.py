@@ -22,6 +22,10 @@ if TYPE_CHECKING:
         FindingMorphologyClassificationChoice,
         FindingMorphologyClassificationType,
         LabValue,
+        Medication,
+        MedicationIndication,
+        MedicationIntakeTime, # Added MedicationIntakeTime
+        MedicationSchedule,
         PatientDisease,
         PatientEvent,
         PatientExamination,
@@ -30,6 +34,7 @@ if TYPE_CHECKING:
         PatientFindingLocation,
         PatientFindingMorphology,
         PatientLabValue,
+        PatientMedicationSchedule, # Added PatientMedicationSchedule
         RequirementOperator,
         RequirementSet
     )
@@ -228,6 +233,30 @@ class Requirement(models.Model):
         related_name="required_in",
     )
 
+    medications = models.ManyToManyField(
+        "Medication",
+        blank=True,
+        related_name="required_in",
+    )
+
+    medication_indications = models.ManyToManyField(
+        "MedicationIndication",
+        blank=True,
+        related_name="required_in",
+    )
+
+    medication_intake_times = models.ManyToManyField( # Added medication_intake_times field
+        "MedicationIntakeTime",
+        blank=True,
+        related_name="required_in",
+    )
+
+    medication_schedules = models.ManyToManyField(
+        "MedicationSchedule",
+        blank=True,
+        related_name="required_in",
+    )
+
     if TYPE_CHECKING:
         requirement_types: models.QuerySet[RequirementType]
         operators: models.QuerySet[RequirementOperator]
@@ -246,6 +275,10 @@ class Requirement(models.Model):
             FindingLocationClassificationChoice
         ]
         finding_interventions: models.QuerySet[FindingIntervention]
+        medications: models.QuerySet[Medication]
+        medication_indications: models.QuerySet[MedicationIndication]
+        medication_intake_times: models.QuerySet[MedicationIntakeTime] # Added type hint
+        medication_schedules: models.QuerySet[MedicationSchedule]
 
     def natural_key(self):
         """
@@ -276,6 +309,9 @@ class Requirement(models.Model):
         "FindingMorphologyClassificationChoice",
         "FindingMorphologyClassificationType",
         "LabValue",
+        "Medication",
+        "MedicationIndication",
+        "MedicationIntakeTime", # Added MedicationIntakeTime
         "PatientDisease",
         "PatientEvent",
         "PatientExamination",
@@ -284,6 +320,7 @@ class Requirement(models.Model):
         "PatientFindingLocation",
         "PatientFindingMorphology",
         "PatientLabValue",
+        "PatientMedicationSchedule", # Added PatientMedicationSchedule
     ]]:
         """
         Returns a list of model classes expected as input based on the requirement's linked types.
@@ -301,7 +338,7 @@ class Requirement(models.Model):
         """
         Aggregates and returns all related model instances as a RequirementLinks object.
         
-        The returned RequirementLinks contains lists of all non-null related objects from the requirement's many-to-many fields, providing a structured view of its associations.
+        The returned RequirementLinks contains lists of all non-null related objects from the requirement\\'s many-to-many fields, providing a structured view of its associations.
         """
         models_dict = RequirementLinks(
             # requirement_types=self.requirement_types.all(),
@@ -321,6 +358,9 @@ class Requirement(models.Model):
                 _ for _ in self.finding_location_classification_choices.all() if _ is not None
             ],
             finding_interventions=[_ for _ in self.finding_interventions.all() if _ is not None],
+            medications=[_ for _ in self.medications.all() if _ is not None],
+            medication_indications=[_ for _ in self.medication_indications.all() if _ is not None],
+            medication_intake_times=[_ for _ in self.medication_intake_times.all() if _ is not None] # Added medication_intake_times
         )
         return models_dict
     

@@ -1,5 +1,9 @@
 '''Model for medication indication type.'''
 from django.db import models
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import MedicationIndication
 
 class MedicationIndicationTypeManager(models.Manager):
     '''Manager for the medication indication type model.'''
@@ -14,6 +18,9 @@ class MedicationIndicationType(models.Model):
     name_en = models.CharField(max_length=255, blank=True, null=True)
 
     objects = MedicationIndicationTypeManager()
+
+    if TYPE_CHECKING:
+        medication_indications: models.QuerySet["MedicationIndication"]
 
     def natural_key(self):
         '''Return the natural key for the medication indication type.'''

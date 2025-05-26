@@ -16,6 +16,12 @@ from endoreg_db.models import (
     PatientLabValue,
     PatientLabSample,
     PatientLabSampleType,
+    PatientMedication, # Added
+    PatientMedicationSchedule, # Added
+    Medication, # Added
+    MedicationIndication, # Added
+    MedicationIntakeTime, # Added
+    MedicationSchedule # Added
 )
 if TYPE_CHECKING: # Added for Patient import
     from endoreg_db.models.administration.person.patient import Patient
@@ -63,6 +69,13 @@ class RequirementLinks(BaseModel):
     finding_location_classification_choices: List["FindingLocationClassificationChoice"] = []
     finding_interventions: List["FindingIntervention"] = []
     patient_lab_sample_types: List["PatientLabSampleType"] = []
+    patient_medications: List["PatientMedication"] = [] # Added
+    patient_medication_schedules: List["PatientMedicationSchedule"] = [] # Added
+    # Added direct medication-related fields
+    medications: List["Medication"] = []
+    medication_indications: List["MedicationIndication"] = []
+    medication_intake_times: List["MedicationIntakeTime"] = []
+    medication_schedules: List["MedicationSchedule"] = []
 
     def get_first_patient(self) -> Optional["Patient"]:
         """
@@ -95,6 +108,16 @@ class RequirementLinks(BaseModel):
             for pf in self.patient_findings:
                 if hasattr(pf, 'patient') and pf.patient:
                     return pf.patient
+        # Check PatientMedication
+        if self.patient_medications:
+            for pm in self.patient_medications:
+                if hasattr(pm, 'patient') and pm.patient:
+                    return pm.patient
+        # Check PatientMedicationSchedule
+        if self.patient_medication_schedules:
+            for pms in self.patient_medication_schedules:
+                if hasattr(pms, 'patient') and pms.patient:
+                    return pms.patient
         return None
 
     @property
@@ -166,6 +189,12 @@ class RequirementLinks(BaseModel):
                f"patient_findings={len(self.patient_findings)}, " \
                f"finding_morphology_classification_choices={len(self.finding_morphology_classification_choices)}, " \
                f"finding_location_classification_choices={len(self.finding_location_classification_choices)}, " \
-               f"finding_interventions={len(self.finding_interventions)})"
+               f"finding_interventions={len(self.finding_interventions)}, " \
+               f"patient_medications={len(self.patient_medications)}, " \
+               f"patient_medication_schedules={len(self.patient_medication_schedules)}, " \
+               f"medications={len(self.medications)}, " \
+               f"medication_indications={len(self.medication_indications)}, " \
+               f"medication_intake_times={len(self.medication_intake_times)}, " \
+               f"medication_schedules={len(self.medication_schedules)})"
 
 

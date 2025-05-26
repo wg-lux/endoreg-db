@@ -1,4 +1,4 @@
-- model: medication_intake_time
+- model: endoreg_db.endoreg_db.medication_intake_time # Changed to fully qualified model name
   fields:
     name: "daily-morning"
     name_de: "täglich, morgens"
@@ -6,7 +6,7 @@
     repeats: "daily"
     time: "07:00:00"
 
-- model: medication_intake_time
+- model: endoreg_db.endoreg_db.medication_intake_time # Changed to fully qualified model name
   fields:
     name: "daily-evening"
     name_de: "täglich, abends"
@@ -14,7 +14,7 @@
     repeats: "daily"
     time: "19:00:00"
 
-- model: medication_intake_time
+- model: endoreg_db.endoreg_db.medication_intake_time # Changed to fully qualified model name
   fields:
     name: "daily-noon"
     name_de: "täglich, mittags"
@@ -22,7 +22,7 @@
     repeats: "daily"
     time: "13:00:00"
 
-- model: medication_intake_time
+- model: endoreg_db.endoreg_db.medication_intake_time # Changed to fully qualified model name
   fields:
     name: "daily-night"
     name_de: "täglich, nachts"
