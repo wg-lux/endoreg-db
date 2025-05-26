@@ -5,7 +5,6 @@ Location suggested: /home/admin/dev/lx-annotate/dev_settings_root.py
 """
 
 from pathlib import Path
-from icecream import ic
 
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.logger_conf import get_logging_config
@@ -33,7 +32,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ------------------------------------------------------------------------------
 # Top-level directory of the mono-repo (…/lx-annotate)
 BASE_DIR = Path(__file__).resolve().parents[2]   # go two levels up **from this file**
-ic(f"dev_settings_root.py – BASE_DIR: {BASE_DIR}")
 
 # SQLite sits next to manage.py so both the Vue app and any sub-packages
 # see the *same* database.
