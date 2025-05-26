@@ -18,5 +18,3 @@
         - looking at a similar method from the lab_value operators might be helpful (e.g., "get_patient_lab_values_in_timeframe" from endoreg_db/utils/requirement_operator_logic/lab_value_operators.py)
 - Add Tests for the new Requirements
 
-
-## Implement Medication Requirements

@@ -32,6 +32,26 @@ class PatientEvent(models.Model):
 
     last_update = models.DateTimeField(auto_now=True)
 
+    @property
+    def links(self):
+        """
+        Returns a dictionary of links related to this PatientEvent.
+        Currently, it only includes the patient and event.
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        return RequirementLinks(
+            patient_events=[self],
+            patients=[self.patient],
+            events=[self.event]
+        )
+        
+    @property
+    def date(self):
+        """
+        Returns the start date of the event.
+        """
+        return self.date_start
+
     def __str__(self):
         """
         Returns a string representation of the event's start date and name.

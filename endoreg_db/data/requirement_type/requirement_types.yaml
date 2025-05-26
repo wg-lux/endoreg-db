@@ -108,4 +108,11 @@
     name: "patient"
     name_de: "Patient"
     name_en: "Patient"
-    description: "Patient-related requirements"
+    description: "Relates to a patient record."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_event"
+    name_de: "Patientenereignis"
+    name_en: "Patient Event"
+    description: "Requirements of this type are used on PatientEvent Objects."
