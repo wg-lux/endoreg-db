@@ -31,3 +31,46 @@
     default_unit: "units per liter"
     default_normal_range: {"min": 60, "max": 160}
     default_numerical_value_distribution: "uniform_default"
+
+# Categorical Lab Values
+- model: endoreg_db.lab_value
+  fields:
+    name: "blood_group"
+    name_de: "Blutgruppe"
+    name_en: "Blood Group"
+    abbreviation: "BG"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "urine_bacteria_culture"
+    name_de: "Urinbakterienkultur"
+    name_en: "Urine Bacteria Culture"
+    abbreviation: "UBC"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "microbiology_pathogen_report"
+    name_de: "Mikrobiologie Erregerbericht"
+    name_en: "Microbiology Pathogen Report"
+    abbreviation: "MPR"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "drug_screening_urine"
+    name_de: "Drogenscreening Urin"
+    name_en: "Drug Screening Urine"
+    abbreviation: "DSU"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "antibiotic_resistance_report"
+    name_de: "Antibiotikaresistenzbericht"
+    name_en: "Antibiotic Resistance Report"
+    abbreviation: "ARR"
+
+- model: endoreg_db.lab_value
+  fields:
+    name: "cytology_report"
+    name_de: "Zytologiebericht"
+    name_en: "Cytology Report"
+    abbreviation: "CR"

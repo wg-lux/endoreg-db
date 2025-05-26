@@ -1,10 +1,10 @@
 # Currently those strings MUST match the ones
 # in the requirement_type data definitions
-from collections import namedtuple
 
-from typing import TYPE_CHECKING, Dict, Union
+from typing import Dict, Union
 from endoreg_db.models import (
     Disease,
+    DiseaseClassification,
     DiseaseClassificationChoice,
     Event,
     EventClassification,
@@ -27,30 +27,20 @@ from endoreg_db.models import (
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientLabValue,
-    Requirement,
-    RequirementType,
+    PatientLabSample,  # Assuming PatientLabSample is defined elsewhere,
+    Patient,
 )
-from typing import List
-from icecream import ic
-# Requirement has RequirementTypes
-# Requirement has RequirementOperators
-# For each Operator/Type pair, there must be a custom function
-# for evaluation
+# if TYPE_CHECKING:
+#     from endoreg_db.models import (
+#         RequirementOperator,
+#         Patient,
+#     )
 
-if TYPE_CHECKING:
-    from endoreg_db.models import (
-        RequirementOperator,
-        Patient,
-    )
-
-OperatorTypeTuple = namedtuple(
-    "OperatorTypeTuple",
-    ["operator", "requirement_type"],
-)
 
 
 data_model_dict: Dict[str, Union[
     Disease,
+    DiseaseClassification,
     DiseaseClassificationChoice,
     Event,
     EventClassification,
@@ -73,9 +63,12 @@ data_model_dict: Dict[str, Union[
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientLabValue,
+    PatientLabSample,
+    Patient,
 ]] = {
     "disease": Disease,
-    "disease_classification": DiseaseClassificationChoice,
+    "disease_classification_choice": DiseaseClassificationChoice,
+    "disease_classification": DiseaseClassification,
     "event": Event,
     "event_classification": EventClassification,
     "event_classification_choice": EventClassificationChoice,
@@ -96,99 +89,11 @@ data_model_dict: Dict[str, Union[
     "patient_finding_intervention": PatientFindingIntervention,
     "patient_finding_location": PatientFindingLocation,
     "patient_finding_morphology": PatientFindingMorphology,
-    "patient_lab_value": PatientLabValue
+    "patient_lab_value": PatientLabValue,
+    "patient_lab_sample": PatientLabSample,  # Changed from string "PatientLabSample" to the class
+    "patient": Patient,
 }
 
 data_model_dict_reverse = {
     v: k for k, v in data_model_dict.items()
 }
-
-def get_kwargs_for_operator_type_tuple(operator_type_tuple: OperatorTypeTuple, **kwargs):
-    """
-    Extracts relevant keyword arguments for a given operator and requirement type tuple.
-    
-    Asserts that the tuple contains valid operator and requirement type instances, then returns a dictionary of keyword arguments suitable for evaluating the specified operator-type combination. Currently returns an empty dictionary as a placeholder.
-    
-    Args:
-        operator_type_tuple: A tuple containing an operator and a requirement type.
-    
-    Returns:
-        A dictionary of keyword arguments relevant for the operator-type evaluation.
-    """
-    from endoreg_db.models import RequirementOperator, RequirementType
-    operator = operator_type_tuple.operator
-    requirement_type = operator_type_tuple.requirement_type
-
-    #TODO change?
-    assert isinstance(
-        requirement_type, RequirementType), f"Expected RequirementType, got {type(requirement_type)}"
-    
-    assert isinstance(
-        operator, RequirementOperator),f"Expected RequirementOperator, got {type(operator)}"
-
-
-    required_kwargs = []
-
-    return required_kwargs
-
-
-def evaluate_operator_type_tuple(
-    operator_type_tuple: OperatorTypeTuple, data: object, **kwargs
-):
-    """
-    Evaluates whether the provided data satisfies the condition defined by the given operator and requirement type.
-    
-    Args:
-        operator_type_tuple: A tuple containing a requirement operator and a requirement type.
-        data: The data object to be evaluated.
-    
-    Returns:
-        True if the data meets the condition specified by the operator and requirement type; otherwise, False.
-    """
-    # data = kwargs.get(name, None)
-
-    # # make sure data type matches the model for the req_type name
-    # if data is None:
-    #     raise ValueError(f"No data found for requirement type: {name}")
-    # if name not in data_model_dict:
-    #     raise ValueError(f"Unknown requirement type: {name}")
-
-    # model = data_model_dict[name]
-    # if not isinstance(data, model):
-    #     raise TypeError(
-    #         f"Data type mismatch for {name}: expected {model}, got {type(data)}"
-    #     )
-
-    requirement_type = operator_type_tuple.requirement_type
-    operator = operator_type_tuple.operator
-
-    # Call the appropriate function based on the requirement type and operator
-    # This is a placeholder; actual implementation will depend on your logic
-    return True  # Replace with actual evaluation logic
-
-
-def evaluate_requirement(requirement: Requirement, **kwargs):
-    requirement_types = requirement.requirement_types.all()
-    requirement_operators = requirement.operators.all()
-    operator_return_values = {}
-    operator_evaluation_results = {}
-
-    for requirement_operator in requirement_operators:
-        # Create tuples
-        requirement_type_operator_tuples = [
-            OperatorTypeTuple(requirement_operator, rt) for rt in requirement_types
-        ]
-
-        eval_result = [
-            evaluate_operator_type_tuple(t, **kwargs)
-            for t in requirement_type_operator_tuples
-        ]
-
-        operator_evaluation_results[requirement_operator.name] = eval_result
-
-        # TODO FIX
-        operator_return_values[requirement_operator.name] = (
-            requirement_operator.evaluate_return_values()
-        )
-
-    return operator_evaluation_results, operator_return_values

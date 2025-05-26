@@ -302,6 +302,7 @@ class VideoFile(models.Model):
         center_name:str,
         processor_name: Optional[str] = None,
         delete_source:bool = False, 
+        save_video_file:bool = True, # Add this line
     ):
         """
         Creates a VideoFile instance from a given video file path.
@@ -319,6 +320,7 @@ class VideoFile(models.Model):
             center_name=center_name,
             processor_name=processor_name,
             delete_source=delete_source,
+            save=save_video_file, # Add this line
         )
 
         video_file = video_file.initialize()

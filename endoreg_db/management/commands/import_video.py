@@ -32,6 +32,7 @@ from endoreg_db.helpers.data_loader import (
     load_ai_model_label_data,
     load_ai_model_data,
     load_default_ai_model
+    
 )
 
 IMPORT_MODELS = [
@@ -139,9 +140,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):  
         
         """
-        Handles the import of a video file into the database, associating it with a specified medical center and endoscopy processor, and optionally applying AI-based segmentation.
+        Imports a video file into the database, associating it with a specified medical center and endoscopy processor, and optionally applies AI-based segmentation.
         
-        Checks for required dependencies (such as FFMPEG), loads reference data, validates the existence of the specified center and processor, and processes the video file. If segmentation is enabled, retrieves the latest segmentation model metadata. If multiple processors are linked to the center, prompts the user to select one interactively. Creates a new `VideoFile` database entry with the provided options, and can optionally delete the source file or save the video to a specified directory.
+        Checks for required dependencies, loads reference data, validates the existence of the specified center and processor, and processes the video file. If segmentation is enabled, retrieves the latest segmentation model metadata. Handles interactive processor selection if multiple are available, creates a new `VideoFile` entry, and invokes the processing pipeline. Can optionally delete the source file or save the video to a specified directory. Reports the outcome of the import and processing steps.
         """
         try: # ADDED
             check_ffmpeg_availability() # ADDED
@@ -164,7 +165,7 @@ class Command(BaseCommand):
         load_endoscope_data()
 
         segmentation = options["segmentation"]
-        self.ai_model_meta = None
+        self.ai_model_meta = None  # MODIFIED: Initialize to None. Original call to get_latest_segmentation_model() removed.
         if segmentation:
             load_ai_model_label_data()
             load_ai_model_data()
@@ -239,45 +240,55 @@ class Command(BaseCommand):
         if not Path(video_file).exists():
             self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
             return AssertionError(f"Video file not found: {video_file}")
-        if self.ai_model_meta:
-            VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
-        else:
-            VideoFile.pipe_1(video_file)
         
-        # while not anonym:
-        #     try:
-        #         anonym = validate_video(video_file)
-        #     except Exception as e:
-        #         self.stdout.write(self.style.ERROR(f"Error validating video file: {e}"))
-        #         return
-
-        VideoFile.create_from_file(
+        # Create VideoFile instance first
+        video_file_obj = VideoFile.create_from_file_initialized(
             file_path=video_file,
             center_name=center_name,
-            delete_source=delete_source,
-            save_video_file=save_video_file,
-            frame_dir_root=frame_dir_root,
-            video_dir_root=video_dir_root,
             processor_name=processor_name,
-            model_path=model_path,
-            segmentation=segmentation,
+            delete_source=delete_source,
+            save_video_file=save_video_file, # Add this line
         )
-    
+        
+        if not video_file_obj:
+            self.stdout.write(self.style.ERROR("Failed to create VideoFile instance"))
+            return
+        
+        # Now call pipe_1 on the VideoFile instance
+        if self.ai_model_meta:
+            success = video_file_obj.pipe_1(model_name=self.ai_model_meta.model.name)
+        else:
+            # Get the default model meta if segmentation is not enabled
+            ai_model_meta = ModelMeta.objects.filter(
+                model__name="colo_segmentation_RegNetX800MF_6"
+            ).first()
+            
+            if ai_model_meta:
+                success = video_file_obj.pipe_1(model_name=ai_model_meta.model.name)
+            else:
+                # Fallback to pipe_1 with default model name
+                success = video_file_obj.pipe_1(model_name="colo_segmentation_RegNetX800MF_6")
+        
+        if success:
+            self.stdout.write(self.style.SUCCESS("Pipeline 1 completed successfully"))
+        else:
+            self.stdout.write(self.style.ERROR("Pipeline 1 failed"))
+            
     
     
     def _choose_processor_interactively(
         self, processors_qs
     ) -> EndoscopyProcessor:
         """
-        Prompts the user to select an endoscopy processor from a list when multiple are available.
+        Interactively prompts the user to select an endoscopy processor from a list.
         
-        Displays all processors associated with a center and repeatedly prompts the user to choose one by number. Aborts if the user interrupts input.
+        Displays all available processors and requests user input until a valid selection is made. Aborts the process if the user interrupts input.
         
         Args:
-            processors_qs: A queryset of EndoscopyProcessor objects to choose from.
+            processors_qs: Queryset of EndoscopyProcessor objects to present for selection.
         
         Returns:
-            The selected EndoscopyProcessor object.
+            The EndoscopyProcessor object chosen by the user.
         """
         # turn the QS into a concrete list so we can index it later
         processors = list(processors_qs)           # -> [EndoscopyProcessor, …]

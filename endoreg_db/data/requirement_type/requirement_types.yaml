@@ -7,6 +7,27 @@
 
 - model: endoreg_db.requirement_type
   fields:
+    name: "patient_lab_sample"
+    name_de: "Patientenlabormuster"
+    name_en: "Patient lab sample"
+    description: "Requirements of this type are used on PatientLabSample Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_lab_value"
+    name_de: "Patientenlaborwert"
+    name_en: "Patient lab value"
+    description: "Requirements of this type are used on PatientLabValue Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_disease"
+    name_de: "Patientenerkrankung"
+    name_en: "Patient Disease"
+    description: "Requirements of this type are used on PatientDisease Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
     name: "examination"
     name_de: "Untersuchung"
     name_en: "Examination"
@@ -81,3 +102,10 @@
     name_de: "Befundinterventionen (multiple)"
     name_en: "Finding Interventions (multiple)"
     description: "Finding interventions (multiple) requirements"
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient"
+    name_de: "Patient"
+    name_en: "Patient"
+    description: "Patient-related requirements"

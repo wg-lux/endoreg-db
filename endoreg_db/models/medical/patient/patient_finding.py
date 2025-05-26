@@ -27,6 +27,13 @@ class PatientFinding(models.Model):
         verbose_name_plural = 'Patient Findings'
         ordering = ['patient_examination', 'finding']
 
+    @property
+    def patient(self):
+        """
+        Returns the patient associated with this patient finding.
+        """
+        return self.patient_examination.patient
+
     def __str__(self):
         return f"{self.patient_examination} - {self.finding}"
 

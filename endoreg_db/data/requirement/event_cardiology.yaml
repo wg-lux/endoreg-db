@@ -9,7 +9,7 @@
     events:
       - "coro_des_implantation"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -24,7 +24,7 @@
     numeric_value_min: 1
     numeric_value_max: 3
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -38,7 +38,7 @@
       - "coro_des_implantation"
     numeric_value: 3
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -51,7 +51,7 @@
     events:
       - "coro_bms_implantation"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -64,7 +64,7 @@
     events:
       - "complication_coro_stent_thrombosis"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -77,7 +77,7 @@
     events:
       - "pulmonary_embolism"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -90,7 +90,7 @@
     events:
       - "deep_vein_thrombosis"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -106,7 +106,7 @@
     numeric_value_max: 0
     unit: "days"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -120,7 +120,7 @@
       - "deep_vein_thrombosis"
     numeric_value: 1
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -136,7 +136,7 @@
     numeric_value_max: 0
     unit: "days"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -152,7 +152,7 @@
     numeric_value_max: 0
     unit: "weeks"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -168,7 +168,7 @@
     numeric_value_max: 0
     unit: "months"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -184,7 +184,7 @@
     numeric_value_max: 0
     unit: "years"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -200,7 +200,7 @@
     numeric_value_max: 0
     unit: "days"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -216,7 +216,7 @@
     numeric_value_max: 0
     unit: "weeks"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -232,7 +232,7 @@
     numeric_value_max: 0
     unit: "months"
     requirement_types:
-      - "event"
+      - "patient"
 
 - model: endoreg_db.requirement
   fields:
@@ -248,4 +248,4 @@
     numeric_value_max: 0
     unit: "years"
     requirement_types:
-      - "event"
+      - "patient"

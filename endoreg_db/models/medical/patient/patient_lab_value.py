@@ -1,10 +1,13 @@
 from django.db import models
 from typing import TYPE_CHECKING, Optional
+
 if TYPE_CHECKING:
     from ...administration.person.patient import Patient
     from ..laboratory import LabValue
     from ...other.unit import Unit
     from .patient_lab_sample import PatientLabSample
+    from endoreg_db.utils.links.requirement_link import RequirementLinks # Added import
+
 class PatientLabValue(models.Model):
     """
     A class representing a patient lab value.
@@ -126,7 +129,6 @@ class PatientLabValue(models.Model):
         super().save(*args, **kwargs)
 
     def set_value_by_distribution(self, distribution=None, save = True):
-        from ...other.gender import Gender
         from ...administration.person.patient import Patient
         from ..laboratory import LabValue
         from ...other.distribution import (
@@ -139,8 +141,6 @@ class PatientLabValue(models.Model):
 
         patient:Patient = self.patient
 
-        dob = patient.dob #TODO: age specific norm values
-        gender:Gender = patient.gender # TODO: gender specific norm values
         lab_value:LabValue = self.lab_value
 
         assert self.lab_value, "Lab value must be set to set value by distribution"
@@ -205,5 +205,18 @@ class PatientLabValue(models.Model):
             self.value = value
             if save:
                 self.save()
+            return value
+
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Aggregates and returns all related model instances relevant for requirement evaluation
+        as a RequirementLinks object.
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+
+        return RequirementLinks(
+            patient_lab_values=[self] # Include the lab value itself
+        )
 
 

@@ -5,7 +5,7 @@
     name_en: "Disease Liver Cirrhosis"
     description: "Disease Liver Cirrhosis"
     requirement_types:
-      - "disease"
+      - "patient"
     operators:
       - models_match_all
     diseases:

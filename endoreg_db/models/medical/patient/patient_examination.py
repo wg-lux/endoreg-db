@@ -8,7 +8,8 @@ if TYPE_CHECKING:
     from ..examination import Examination
     from ...media import VideoFile, RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
     from .patient_examination_indication import PatientExaminationIndication
-    from ..examination import ExaminationIndicationClassificationChoice
+    from ..examination import ExaminationIndicationClassificationChoice, ExaminationIndication
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 class PatientExamination(models.Model):
     patient = models.ForeignKey(
@@ -142,6 +143,41 @@ class PatientExamination(models.Model):
             _.indication_choice for _ in self.get_indications() if _.indication_choice is not None
         ]
         return choices
+
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Aggregates and returns all related model instances relevant for requirement evaluation
+        as a RequirementLinks object.
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue # Added
+        # Get all PatientExaminationIndication instances linked to this PatientExamination
+        patient_exam_indications = self.indications.all() 
+        
+        examination_indications_list: List["ExaminationIndication"] = []
+        indication_choices_list: List["ExaminationIndicationClassificationChoice"] = []
+
+        for pei in patient_exam_indications:
+            if pei.examination_indication:
+                examination_indications_list.append(pei.examination_indication)
+            if pei.indication_choice:
+                indication_choices_list.append(pei.indication_choice)
+
+        # Fetch all patient lab values associated with this patient examination\'s patient
+        patient_lab_values = []
+        if self.patient:
+            patient_lab_values = list(PatientLabValue.objects.filter(patient=self.patient))
+
+        current_examination = [self.examination] if self.examination else []
+
+        return RequirementLinks(
+            patient_examinations=[self],  # Add the instance itself
+            examinations=current_examination, # Add the related Examination model
+            examination_indications=examination_indications_list,
+            examination_indication_classification_choices=indication_choices_list,
+            patient_lab_values=patient_lab_values
+        )
 
     def create_finding(self, finding:"Finding") -> "PatientFinding":
         """

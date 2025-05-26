@@ -1,6 +1,5 @@
 - model: endoreg_db.disease
   fields:
-    name: "malignoma_unspecified"
+    name: "disease_is_malignoma_unspecified"
     name_de: "Malignom, nicht näher bezeichnet"
     name_en: "Malignoma, unspecified"
-    

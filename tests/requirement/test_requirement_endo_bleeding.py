@@ -7,7 +7,7 @@ from endoreg_db.models import (
     RequirementType,
     FindingIntervention,
     ExaminationIndication,
-    PatientExamination
+    PatientExamination,
 )
 
 from endoreg_db.utils.links.requirement_link import RequirementLinks
@@ -96,59 +96,40 @@ class RequirementTest(TestCase):
             )
 
     def test_high_bleed_risk_examination(self):
-        # Create sample patient examination 
-        examination_indication = ExaminationIndication.objects.get(
+        # Get the ExaminationIndication that implies high bleeding risk
+        examination_indication_large_lesion = ExaminationIndication.objects.get(
             name = "colonoscopy_lesion_removal_large"
         )
+        self.assertIsInstance(examination_indication_large_lesion, ExaminationIndication)
+        self.assertTrue(hasattr(examination_indication_large_lesion, 'links'), "ExaminationIndication should have a 'links' property")
+        self.assertIsInstance(examination_indication_large_lesion.links, RequirementLinks)
 
+        # Get the Requirement
         requirement = Requirement.objects.get(name=self.req_name_bleeding_high)
         self.assertIsInstance(requirement, Requirement)
-        requirement_links = requirement.links
-        self.assertIsInstance(requirement_links, RequirementLinks)
 
-        examination_indication_links = examination_indication.links
-        self.assertIsInstance(examination_indication_links, RequirementLinks)
-        examination_indication_finding_interventions = examination_indication_links.finding_interventions
-        self.assertGreater(len(examination_indication_finding_interventions), 0)
+        # Assert that this requirement expects "examination_indication" as input type
+        # This is a crucial check for Option C to be valid.
+        # If this fails, the data fixtures for the requirement need to be updated.
+        self.assertIn(ExaminationIndication, requirement.expected_models, 
+                        f"Requirement {self.req_name_bleeding_high} should expect ExaminationIndication as an input model type.")
 
-        # print(f"Examination indication links: {examination_indication_links.active()}")
-        # print(f"Requirement links: {requirement_links.active()}")
+        # Evaluate the requirement against the ExaminationIndication directly
+        is_fulfilled = requirement.evaluate(examination_indication_large_lesion, mode="loose")
+        self.assertTrue(is_fulfilled, 
+                        f"Requirement '{self.req_name_bleeding_high}' should be fulfilled by ExaminationIndication '{examination_indication_large_lesion.name}'. "
+                        f"Requirement links: {requirement.links.active()}, Indication links: {examination_indication_large_lesion.links.active()}")
 
-        match_any_true = requirement_links.match_any(other = examination_indication_links)
-        self.assertTrue(match_any_true, "Requirement links should match examination indication links")
-        
-        # finding_interventions = patient_examination_indication.examination_indication.expected_interventions.all()
-        # # make sure we have at least one intervention
-        # self.assertGreater(len(finding_interventions), 0)
-        
-        # requirement = Requirement.objects.get(name=self.req_name_bleeding_high)
-        # self.assertIsInstance(requirement, Requirement)
+        # Negative test case: an indication that should not fulfill the high bleeding risk requirement
+        indication_gastroscopy_baseline = ExaminationIndication.objects.get(
+            name="gastroscopy_baseline"
+        )
+        self.assertIsInstance(indication_gastroscopy_baseline, ExaminationIndication)
+        self.assertTrue(hasattr(indication_gastroscopy_baseline, 'links'), "Screening Indication should have a 'links' property")
 
-        # # assert sample_indication in requirement.finding_interventions
-        # self.assertIn(
-        #     sample_intervention, 
-        #     requirement.finding_interventions.all()
-        # )
-        
-        # # assert "patient_examination" in requirement.requirement_types
-        # self.assertIn(
-        #     self.requirement_type_patient_examination, 
-        #     requirement.requirement_types.all()
-        # )
+        is_fulfilled_screening = requirement.evaluate(indication_gastroscopy_baseline, mode="loose")
+        self.assertFalse(is_fulfilled_screening, 
+                         f"Requirement '{self.req_name_bleeding_high}' should NOT be fulfilled by ExaminationIndication '{indication_gastroscopy_baseline.name}'. "
+                         f"Requirement links: {requirement.links.active()}, Indication links: {indication_gastroscopy_baseline.links.active()}")
 
-        # # assert operator_models_match_any in requirement.operators
-        # self.assertIn(
-        #     self.operator_models_match_any, 
-        #     requirement.operators.all()
-        # )
 
-        # operator_type_tuples = requirement.operator_type_tuples
-        # from endoreg_db.models.requirement.requirement_evaluation import (
-        #     OperatorTypeTuple
-        # )
-        # self.assertIsInstance(operator_type_tuples, list)
-        # self.assertIsInstance(operator_type_tuples[0], OperatorTypeTuple)
-        # self.assertEqual(
-        #     operator_type_tuples[0].operator, 
-        #     self.operator_models_match_any
-        # )

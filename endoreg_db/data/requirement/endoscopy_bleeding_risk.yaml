@@ -5,7 +5,7 @@
     name_en: "Endoscopy Intervention - Bleeding Risk: High"
     description: "Endoskopische Intervention - Blutungsrisiko: hoch"
     requirement_types:
-      - "patient_examination"
+      - "examination_indication"
     operators:
       - "models_match_any"
     finding_interventions:
@@ -26,6 +26,7 @@
       - "percutaneous_transhepatic_cholangiography"
       - "percutaneous_transhepatic_biliary_drainage"
       - "ercp_radiofrequency_ablation"
+    
 
 - model: endoreg_db.requirement
   fields:
@@ -34,7 +35,7 @@
     name_en: "Endoscopy Intervention - Bleeding Risk: Low"
     description: "Endoskopische Intervention - Blutungsrisiko: niedrig"
     requirement_types:
-      - "patient_examination"
+      - "examination_indication"
     operators:
       - "models_match_any"
     finding_interventions:
@@ -50,7 +51,7 @@
     name_en: "Indication colon EMR"
     description: "This functions evaluates whether the input ()"
     requirement_types:
-      - "finding_intervention"
+      - "examination_indication"
     operators:
       - "models_match_any"
     # when creating a requirement involving other models,

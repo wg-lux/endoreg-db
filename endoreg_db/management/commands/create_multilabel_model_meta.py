@@ -26,6 +26,11 @@ class Command(BaseCommand):
     """
 
     def add_arguments(self, parser):
+        """
+        Adds command-line arguments for configuring model meta creation.
+        
+        This method defines all necessary arguments for specifying model details, label set selection, normalization parameters, image dimensions, axes configuration, batch size, worker count, and versioning options for the Django management command.
+        """
         parser.add_argument(
             "--model_name",
             type=str,
@@ -54,6 +59,13 @@ class Command(BaseCommand):
             type=str,
             default="multilabel_classification_colonoscopy_default",
             help="Name of the LabelSet for image classification",
+        )
+
+        parser.add_argument(
+            "--image_classification_labelset_version",
+            type=int,
+            default=-1,
+            help="Version of the LabelSet for image classification, default is -1 which invokes the highest version",
         )
 
         # activation: str = "sigmoid"
@@ -126,6 +138,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Processes command-line arguments to create or update a ModelMeta object for a multilabel classification model.
+        
+        Retrieves and validates the specified LabelSet and AiModel, ensures the model file exists, and invokes ModelMeta.create_from_file with the provided configuration. Raises a ValueError if the requested LabelSet does not exist.
+        """
         model_name = options["model_name"]
 
         model_path = options["model_path"]
@@ -143,11 +160,30 @@ class Command(BaseCommand):
             "image_classification_labelset_name"
         ]
 
-        # Assert labelset exists
-        labelset = LabelSet.objects.filter(
-            name=image_classification_labelset_name
-        ).first()
-        assert labelset, f"LabelSet not found: {image_classification_labelset_name}"
+        image_classification_labelset_version = options[
+            "image_classification_labelset_version"
+        ]
+        if image_classification_labelset_version == -1:
+            # If version is -1, we want the latest version of the labelset
+            labelset = LabelSet.objects.filter(
+                name=image_classification_labelset_name
+            ).order_by("-version").first()
+            if labelset:
+                image_classification_labelset_version = labelset.version
+            else:
+                raise ValueError(
+                    f"No LabelSet found with name: {image_classification_labelset_name}"
+                )
+        else:
+            # If a specific version is provided, we use that
+            labelset = LabelSet.objects.filter(
+                name=image_classification_labelset_name,
+                version=image_classification_labelset_version
+            ).first()
+            if not labelset:
+                raise ValueError(
+                    f"No LabelSet found with name: {image_classification_labelset_name} and version: {image_classification_labelset_version}"
+                )
 
         # assert model exists
         db_ai_model = AiModel.objects.filter(name=model_name).first()

@@ -47,9 +47,9 @@ DEFAULT_GENDER = "unknown"
 
 def get_information_source_prediction():
     """
-    Retrieves the InformationSource object named "prediction" from the database.
+    Retrieves the InformationSource object with the name "prediction".
     
-    Loads information source data if necessary and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found.
+    Loads information source data if needed and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found or is not an InformationSource.
     """
     from .data_loader import load_information_source
     load_information_source()
@@ -59,10 +59,20 @@ def get_information_source_prediction():
     return source
 
 def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
+
     """
-    Retrieves the latest version of a segmentation model by name.
+    Retrieves the latest metadata for a segmentation model by name.
     
-    Loads required data and returns the most recent ModelMeta instance for the specified segmentation model.
+    Loads necessary data and returns the most recent ModelMeta instance for the specified AI model. If no metadata exists, attempts to initialize it automatically; if initialization fails, raises a ValueError with instructions for manual setup.
+    
+    Args:
+        model_name: The name of the segmentation model to retrieve.
+    
+    Returns:
+        The latest ModelMeta instance for the specified model.
+    
+    Raises:
+        ValueError: If the AI model does not exist, or if model metadata cannot be found or initialized.
     """
     from .data_loader import (
         load_center_data,
@@ -72,17 +82,42 @@ def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME
     load_center_data()
     load_ai_model_label_data()
     load_ai_model_data()
-    ai_model = AiModel.objects.get(name=model_name)
-    latest_meta = ai_model.get_latest_version()
-    return latest_meta
+    
+    try:
+        ai_model = AiModel.objects.get(name=model_name)
+    except AiModel.DoesNotExist:
+        raise ValueError(f"AI model '{model_name}' not found. Run 'python manage.py load_ai_model_data' first.")
+    
+    try:
+        latest_meta = ai_model.get_latest_version()
+        return latest_meta
+    except ValueError as e:
+        if "No model metadata found" in str(e):
+            logger.warning(f"No ModelMeta found for {model_name}. Attempting to initialize default model metadata...")
+            
+            # Try to initialize the default model metadata
+            try:
+                from django.core.management import call_command
+                call_command('init_default_ai_model')
+                # Try again after initialization
+                latest_meta = ai_model.get_latest_version()
+                return latest_meta
+            except Exception as init_error:
+                raise ValueError(
+                    f"No model metadata found for AI model '{model_name}' and failed to auto-initialize. "
+                    f"Please run 'python manage.py init_default_ai_model' manually. "
+                    f"Original error: {e}. Initialization error: {init_error}"
+                ) from e
+        else:
+            raise
     
 
 def get_default_gender() -> Gender:
     """
-    Retrieves the default gender object with the name "unknown".
+    Retrieves the Gender object representing the default "unknown" gender.
     
     Returns:
-        The Gender instance representing the default gender.
+        The Gender instance with the name "unknown".
     """
     return Gender.objects.get(name=DEFAULT_GENDER)
 

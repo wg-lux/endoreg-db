@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, TYPE_CHECKING # Modified import
 
 from pydantic import BaseModel
 
@@ -17,6 +17,8 @@ from endoreg_db.models import (
     PatientLabSample,
     PatientLabSampleType,
 )
+if TYPE_CHECKING: # Added for Patient import
+    from endoreg_db.models.administration.person.patient import Patient
 
 class RequirementLinks(BaseModel):
     """
@@ -62,6 +64,39 @@ class RequirementLinks(BaseModel):
     finding_interventions: List["FindingIntervention"] = []
     patient_lab_sample_types: List["PatientLabSampleType"] = []
 
+    def get_first_patient(self) -> Optional["Patient"]:
+        """
+        Retrieves the first Patient instance found through the linked patient-specific models.
+        Iterates through various patient-related lists and returns the .patient attribute
+        from the first relevant object found.
+        """
+        if self.patient_lab_values:
+            for plv in self.patient_lab_values:
+                if hasattr(plv, 'sample') and plv.sample and \
+                   hasattr(plv.sample, 'patient') and plv.sample.patient:
+                    return plv.sample.patient
+        if self.patient_lab_samples:
+            for pls in self.patient_lab_samples:
+                if hasattr(pls, 'patient') and pls.patient:
+                    return pls.patient
+        if self.patient_examinations:
+            for pe in self.patient_examinations:
+                if hasattr(pe, 'patient') and pe.patient:
+                    return pe.patient
+        if self.patient_diseases:
+            for pd in self.patient_diseases:
+                if hasattr(pd, 'patient') and pd.patient:
+                    return pd.patient
+        if self.patient_events:
+            for pev in self.patient_events:
+                if hasattr(pev, 'patient') and pev.patient:
+                    return pev.patient
+        if self.patient_findings:
+            for pf in self.patient_findings:
+                if hasattr(pf, 'patient') and pf.patient:
+                    return pf.patient
+        return None
+
     @property
     def data_model_dict(self):
         """
@@ -95,10 +130,11 @@ class RequirementLinks(BaseModel):
         other_dict = other.model_dump()
         self_dict = self.model_dump()
         for key in self_dict:
-            print(f"Checking key: {key}")
+            # print(f"Checking key: {key}") # This is a debug print, can be removed
             if key in other_dict and self_dict[key] and other_dict[key]:
                 if any(item in other_dict[key] for item in self_dict[key]):
                     return True
+        return False # Ensure False is returned if no match is found
     
     def active(self) -> dict[str, list]:
         """

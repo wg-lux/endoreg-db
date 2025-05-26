@@ -80,17 +80,41 @@ def get_gender_m_or_f() -> Gender:
 
 def get_random_gender() -> Gender:
     """
-    Get a random Gender object
+    Returns a randomly selected Gender object from the predefined list of default genders.
     """
     gender_name = random.choice(DEFAULT_GENDERS)
     return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
 
+def generate_gender(name: str|None = None):
+    """
+    Retrieves a Gender object by name, defaulting to "unknown" if no name is provided.
+    
+    Args:
+        name: The name of the gender to retrieve. If None, uses the default gender.
+    
+    Returns:
+        The Gender object matching the specified name.
+    
+    Raises:
+        ValueError: If no Gender object with the given name exists.
+    """
+    if not name:
+        name = DEFAULT_GENDER
+
+    gender = Gender.objects.filter(name=name).first()
+    if not gender:
+        raise ValueError
+    return gender
+
 def get_default_processor() -> EndoscopyProcessor:
     """
-    Get a default EndoscopyProcessor object.
-    This function retrieves the first EndoscopyProcessor object from the database.
+    Retrieves the default EndoscopyProcessor by name.
+    
     Returns:
-        EndoscopyProcessor: The default EndoscopyProcessor object.
+        The EndoscopyProcessor instance with the default processor name.
+    
+    Raises:
+        AssertionError: If no EndoscopyProcessor with the default name exists.
     """
     processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
     assert isinstance(processor, EndoscopyProcessor), "No EndoscopyProcessor found in the database."

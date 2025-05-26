@@ -45,8 +45,8 @@ TEST_LOGGER_NAMES = [
     "endoreg_db.models.media.video.video_file_anonymize",
     "endoreg_db.models.media.video.pipe_1",
     "endoreg_db.models.media.video.pipe_2",
-    "endoreg_db.utils.pipelines.process_video_dir"
-    "endoreg_db.models.metadata.sensitive_meta"
+    "endoreg_db.utils.pipelines.process_video_dir",
+    "endoreg_db.models.metadata.sensitive_meta",
     # Add any other specific loggers used in your tests or app code
 ]
 
@@ -54,7 +54,7 @@ TEST_LOGGER_NAMES = [
 LOGGING = get_logging_config(TEST_LOGGER_NAMES, file_log_level="INFO",
                              console_log_level = "WARNING") # Or set level via env var
 
-# STATIC_URL = "static/" # Commented out as per the change
+STATIC_URL = "/static/"  # Uncommented - required by staticfiles app
 
 ROOT_URLCONF = "endoreg_db.urls"
 CORS_ALLOWED_ORIGINS = ["http://127.0.0.1:5174", "http://127.0.0.1:8000"]
