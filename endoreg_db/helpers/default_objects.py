@@ -58,7 +58,8 @@ def get_information_source_prediction():
         raise ValueError("No InformationSource found in the database.")
     return source
 
-def get_latest_segmentation_model(model_name:str="image_multilabel_classification_colonoscopy_default") -> ModelMeta:
+def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
+
     """
     Retrieves the latest metadata for a segmentation model by name.
     
