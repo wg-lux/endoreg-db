@@ -5,7 +5,6 @@ Location suggested: /home/admin/dev/lx-annotate/dev_settings_root.py
 """
 
 from pathlib import Path
-from django.conf.global_settings import STATIC_URL
 from icecream import ic
 
 from endoreg_db.utils.paths import STORAGE_DIR

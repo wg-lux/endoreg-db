@@ -17,7 +17,7 @@ class StatsSerializer(serializers.Serializer):
     
     # You can add additional fields or methods here as needed
     # For example, to calculate derived statistics:
-    
+    #TODO
     def get_completion_percentage(self, obj):
         """Calculate the percentage of completed videos."""
         if obj['totalVideos'] > 0:

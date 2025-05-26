@@ -1,4 +1,3 @@
-from io import StringIO
 from pathlib import Path
 import os
 import sys
@@ -6,15 +5,12 @@ from django.core.management import BaseCommand
 from endoreg_db.models import (
     RawPdfFile,
     PdfType,
-    Center,
-    EndoscopyProcessor,
 )
 from endoreg_db.helpers.data_loader import (
     load_data
 )
 from icecream import ic
 
-load_data()
 # Dynamic import path manipulation to ensure local development version is used
 def ensure_local_lx_anonymizer():
     """Ensure the local development version of lx-anonymizer is used."""
@@ -111,6 +107,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        load_data()
         verbose = options["verbose"]
         center_name = options["center_name"]
         report_dir_root = options["report_dir_root"]

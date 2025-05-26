@@ -6,11 +6,12 @@ This command ensures that a default AI model exists with proper ModelMeta record
 from django.core.management.base import BaseCommand
 from django.core.management import call_command
 from pathlib import Path
+#FIXME
 from endoreg_db.data.ai_model_meta import (
     default_multilabel_classification
 )
 
-from endoreg_db.models import AiModel, ModelMeta
+from endoreg_db.models import AiModel
 from endoreg_db.helpers.data_loader import (
     load_ai_model_label_data,
     load_ai_model_data,
