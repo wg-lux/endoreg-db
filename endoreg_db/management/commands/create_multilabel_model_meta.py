@@ -52,8 +52,15 @@ class Command(BaseCommand):
         parser.add_argument(
             "--image_classification_labelset_name",
             type=str,
-            default="image_multilabel_classification_colonoscopy_default",
+            default="multilabel_classification_colonoscopy_default",
             help="Name of the LabelSet for image classification",
+        )
+
+        parser.add_argument(
+            "--image_classification_labelset_version",
+            type=int,
+            default=-1,
+            help="Version of the LabelSet for image classification, default is -1 which invokes the highest version",
         )
 
         # activation: str = "sigmoid"
@@ -143,10 +150,30 @@ class Command(BaseCommand):
             "image_classification_labelset_name"
         ]
 
-        # Assert labelset exists
-        labelset = LabelSet.objects.filter(
-        ).first()
-        assert labelset, f"LabelSet not found: {image_classification_labelset_name}"
+        image_classification_labelset_version = options[
+            "image_classification_labelset_version"
+        ]
+        if image_classification_labelset_version == -1:
+            # If version is -1, we want the latest version of the labelset
+            labelset = LabelSet.objects.filter(
+                name=image_classification_labelset_name
+            ).order_by("-version").first()
+            if labelset:
+                image_classification_labelset_version = labelset.version
+            else:
+                raise ValueError(
+                    f"No LabelSet found with name: {image_classification_labelset_name}"
+                )
+        else:
+            # If a specific version is provided, we use that
+            labelset = LabelSet.objects.filter(
+                name=image_classification_labelset_name,
+                version=image_classification_labelset_version
+            ).first()
+            if not labelset:
+                raise ValueError(
+                    f"No LabelSet found with name: {image_classification_labelset_name} and version: {image_classification_labelset_version}"
+                )
 
         # assert model exists
         db_ai_model = AiModel.objects.filter(name=model_name).first()
