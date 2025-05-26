@@ -125,7 +125,7 @@ class LabValue(models.Model):
         Retrieve the normal range for the lab value based on optional age and gender.
 
         This method returns the default normal range when the lab value is not age-, gender-, or special-case dependent.
-        For gender-dependent ranges, it uses a gender-specific default range and, if no gender is provided, selects one at random with a warning.
+        For gender-dependent ranges, if no gender is provided, it defaults to the 'male' range and issues a UserWarning.
         Note that age-dependent and special-case normal ranges are not implemented and will issue warnings when invoked.
 
         Args:
@@ -146,29 +146,37 @@ class LabValue(models.Model):
 
         min_value = None
         max_value = None
+        current_range_source = self.default_normal_range or {}
 
         if not age_dependent and not gender_dependent and not special_case:
-            min_value = self.default_normal_range.get("min", None)
-            max_value = self.default_normal_range.get("max", None)
+            min_value = current_range_source.get("min", None)
+            max_value = current_range_source.get("max", None)
 
         if age_dependent:
             # get normal range for age)
             warnings.warn("Age dependent normal range not implemented yet")
 
         if gender_dependent:
-            if not gender:
+            determined_gender_key = None
+            if gender: # gender is a Gender model instance
+                determined_gender_key = gender.name
+                # Check if this specific gender key exists in the normal range data
+                if determined_gender_key not in current_range_source:
+                    warnings.warn(
+                        f"Normal range for gender '{determined_gender_key}' not found for LabValue '{self.name}'. Defaulting to 'male' range.",
+                        UserWarning
+                    )
+                    determined_gender_key = "male" # Fallback to 'male'
+            else: # gender is None
                 warnings.warn(
-                    "Calling get_normal_range with gender_dependent=True requires gender to be set, choosing by random"
+                    "Calling get_normal_range with gender_dependent=True and no gender provided. Defaulting to 'male' range.",
+                    UserWarning
                 )
-                # set gender to either "male" or "female"
-                from random import choice
-
-                choices = ["male", "female"]
-                gender = choice(choices)
-
-            default_range_dict = self.default_normal_range.get(gender.name, {})
-            min_value = default_range_dict.get("min", None)
-            max_value = default_range_dict.get("max", None)
+                determined_gender_key = "male" # Default to 'male'
+            
+            gender_specific_ranges = current_range_source.get(determined_gender_key, {})
+            min_value = gender_specific_ranges.get("min", None)
+            max_value = gender_specific_ranges.get("max", None)
 
         if special_case:
             # get normal range for special case

@@ -85,6 +85,23 @@ def get_random_gender() -> Gender:
     gender_name = random.choice(DEFAULT_GENDERS)
     return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
 
+def generate_gender(name: str|None = None):
+    """
+    Generate a Gender object with the specified name. If no name is provided, use the default ("unknown").
+    Parameters:
+        name (str):
+
+    Returns:
+        gender
+    """
+    if not name:
+        name = DEFAULT_GENDER
+
+    gender = Gender.objects.filter(name=name).first()
+    if not gender:
+        raise ValueError
+    return gender
+
 def get_default_processor() -> EndoscopyProcessor:
     """
     Get a default EndoscopyProcessor object.
