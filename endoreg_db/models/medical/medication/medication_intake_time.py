@@ -25,7 +25,7 @@ class MedicationIntakeTime(models.Model):
     
     @classmethod
     def dno(cls):
-        '''Return the daily night intake time object.'''
+        '''Return the daily noon intake time object.'''
         return cls.objects.get(name='daily-noon')
 
     @classmethod

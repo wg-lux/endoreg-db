@@ -10,6 +10,28 @@ if TYPE_CHECKING:
 
 # Helper function to check if a date is within the timeframe specified by a Requirement
 def _is_date_in_timeframe(date_to_check: datetime.date | None, requirement: "Requirement") -> bool:
+    """
+    Checks if a given date falls within the timeframe specified by a Requirement.
+
+    The timeframe is defined by `numeric_value_min` and `numeric_value_max` on the
+    Requirement, interpreted relative to the current date.
+
+    Currently, this function only supports timeframes specified in "days".
+    If the Requirement's unit is not "days", a NotImplementedError will be raised.
+
+    Args:
+        date_to_check: The date to evaluate. If None, returns False.
+        requirement: The Requirement instance containing timeframe definitions
+                     (unit, numeric_value_min, numeric_value_max).
+
+    Returns:
+        True if the date_to_check is within the defined timeframe, False otherwise.
+        Returns False if date_to_check is None or if the requirement lacks
+        necessary timeframe information (unit, min/max values).
+
+    Raises:
+        NotImplementedError: If the requirement.unit.name is not 'days' (case-insensitive).
+    """
     if date_to_check is None:
         return False
     if not requirement.unit or requirement.numeric_value_min is None or requirement.numeric_value_max is None:
@@ -17,9 +39,10 @@ def _is_date_in_timeframe(date_to_check: datetime.date | None, requirement: "Req
 
     # For now, primarily supporting 'days'. Extend if other units are common.
     if requirement.unit.name.lower() != "days":
-        # Log a warning or raise NotImplementedError if unsupported unit is critical
-        # logger.warning(f"Timeframe unit '{requirement.unit.name}' not fully supported for generic timeframe check, assuming days or failing.")
-        return False # Or handle other units specifically
+        raise NotImplementedError(
+            f"Timeframe unit '{requirement.unit.name}' is not supported. "
+            "Currently, only 'days' is implemented for timeframe checks."
+        )
 
     today = datetime.date.today()
     # numeric_value_min is typically negative for "days ago" (e.g., -30 for 30 days ago)
