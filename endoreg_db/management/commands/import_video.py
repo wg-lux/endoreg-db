@@ -7,6 +7,8 @@ This command is designed to be run from the command line and takes various argum
 to specify the video file, center name, and other options.
 """
 from curses import meta
+from operator import ge
+from re import M
 from django.core.management import BaseCommand
 from django.db import connection
 from pathlib import Path
@@ -35,6 +37,10 @@ from endoreg_db.helpers.data_loader import (
     load_ai_model_label_data,
     load_ai_model_data,
     load_default_ai_model
+    
+)
+from endoreg_db.helpers.default_objects import (
+    get_latest_segmentation_model
 )
 
 IMPORT_MODELS = [
@@ -167,7 +173,7 @@ class Command(BaseCommand):
         load_endoscope_data()
 
         segmentation = options["segmentation"]
-        self.ai_model_meta = None
+        self.ai_model_meta = get_latest_segmentation_model()
         if segmentation:
             load_ai_model_label_data()
             load_ai_model_data()
@@ -242,37 +248,39 @@ class Command(BaseCommand):
         if not Path(video_file).exists():
             self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
             return AssertionError(f"Video file not found: {video_file}")
-        if self.ai_model_meta:
-            VideoFile.pipe_1(video_file, model_name=self.ai_model_meta)
-        else:
-            meta_obj = VideoPredictionMeta
-            meta_obj.ai_model_meta = ModelMeta.objects.filter(
-                model__name="colo_segmentation_RegNetX800MF_6"
-            ).first()
-            meta_obj= VideoPredictionMeta.objects.filter(
-                video_file=video_file, model_meta=meta_obj.ai_model_meta
-    )
-            VideoFile.pipe_1(video_file, video_prediction_meta=None, model_name=model_meta)
         
-        # while not anonym:
-        #     try:
-        #         anonym = validate_video(video_file)
-        #     except Exception as e:
-        #         self.stdout.write(self.style.ERROR(f"Error validating video file: {e}"))
-        #         return
-
-        VideoFile.create_from_file(
+        # Create VideoFile instance first
+        video_file_obj = VideoFile.create_from_file_initialized(
             file_path=video_file,
             center_name=center_name,
-            delete_source=delete_source,
-            save_video_file=save_video_file,
-            frame_dir_root=frame_dir_root,
-            video_dir_root=video_dir_root,
             processor_name=processor_name,
-            model_path=model_path,
-            segmentation=segmentation,
+            delete_source=delete_source,
         )
-    
+        
+        if not video_file_obj:
+            self.stdout.write(self.style.ERROR("Failed to create VideoFile instance"))
+            return
+        
+        # Now call pipe_1 on the VideoFile instance
+        if self.ai_model_meta:
+            success = video_file_obj.pipe_1(model_name=self.ai_model_meta.model.name)
+        else:
+            # Get the default model meta if segmentation is not enabled
+            ai_model_meta = ModelMeta.objects.filter(
+                model__name="colo_segmentation_RegNetX800MF_6"
+            ).first()
+            
+            if ai_model_meta:
+                success = video_file_obj.pipe_1(model_name=ai_model_meta.model.name)
+            else:
+                # Fallback to pipe_1 with default model name
+                success = video_file_obj.pipe_1(model_name="colo_segmentation_RegNetX800MF_6")
+        
+        if success:
+            self.stdout.write(self.style.SUCCESS("Pipeline 1 completed successfully"))
+        else:
+            self.stdout.write(self.style.ERROR("Pipeline 1 failed"))
+            
     
     
     def _choose_processor_interactively(

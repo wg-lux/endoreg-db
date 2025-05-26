@@ -253,8 +253,3 @@ class Command(BaseCommand):
         sensitive_meta.save()
         if verbose:
             ic(sensitive_meta)
-<<<<<<< Updated upstream
-=======
-            
-        self.stdout.write(self.style.SUCCESS(f"Successfully imported report: {file_path.name}"))
->>>>>>> Stashed changes

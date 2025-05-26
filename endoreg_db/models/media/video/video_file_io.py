@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 from django.db import transaction
 
-from ...utils import data_paths, ANONYM_VIDEO_DIR # Import necessary paths
+from ...utils import data_paths, ANONYM_VIDEO_DIR, VIDEO_DIR # Import VIDEO_DIR for correct path resolution
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -14,7 +14,11 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     """Returns the absolute Path object for the raw file, if it exists."""
     try:
         if video.has_raw and video.raw_file.name:
-            return Path(video.raw_file.path)
+            # Use VIDEO_DIR from utils instead of Django's MEDIA_ROOT
+            # since files are stored in the custom storage directory
+            raw_file_relative_path = Path(video.raw_file.name)
+            full_path = VIDEO_DIR / raw_file_relative_path.name
+            return full_path
         else:
             return None
     except Exception as e:

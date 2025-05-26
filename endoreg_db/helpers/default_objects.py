@@ -41,7 +41,7 @@ DEFAULT_INDICATIONS = [
     "colonoscopy_diagnostic_acute_symptomatic",
 ]
 
-DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
+DEFAULT__NAME = "image_multilabel_classification_colonoscopy_default"
 
 DEFAULT_GENDER = "unknown"
 
@@ -58,11 +58,12 @@ def get_information_source_prediction():
         raise ValueError("No InformationSource found in the database.")
     return source
 
-def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
+def get_latest_segmentation_model(model_name:str="image_multilabel_classification_colonoscopy_default") -> ModelMeta:
     """
     Retrieves the latest version of a segmentation model by name.
     
     Loads required data and returns the most recent ModelMeta instance for the specified segmentation model.
+    If no ModelMeta exists, attempts to initialize it using the init_default_ai_model command.
     """
     from .data_loader import (
         load_center_data,
@@ -72,9 +73,34 @@ def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME
     load_center_data()
     load_ai_model_label_data()
     load_ai_model_data()
-    ai_model = AiModel.objects.get(name=model_name)
-    latest_meta = ai_model.get_latest_version()
-    return latest_meta
+    
+    try:
+        ai_model = AiModel.objects.get(name=model_name)
+    except AiModel.DoesNotExist:
+        raise ValueError(f"AI model '{model_name}' not found. Run 'python manage.py load_ai_model_data' first.")
+    
+    try:
+        latest_meta = ai_model.get_latest_version()
+        return latest_meta
+    except ValueError as e:
+        if "No model metadata found" in str(e):
+            logger.warning(f"No ModelMeta found for {model_name}. Attempting to initialize default model metadata...")
+            
+            # Try to initialize the default model metadata
+            try:
+                from django.core.management import call_command
+                call_command('init_default_ai_model')
+                # Try again after initialization
+                latest_meta = ai_model.get_latest_version()
+                return latest_meta
+            except Exception as init_error:
+                raise ValueError(
+                    f"No model metadata found for AI model '{model_name}' and failed to auto-initialize. "
+                    f"Please run 'python manage.py init_default_ai_model' manually. "
+                    f"Original error: {e}. Initialization error: {init_error}"
+                ) from e
+        else:
+            raise
     
 
 def get_default_gender() -> Gender:

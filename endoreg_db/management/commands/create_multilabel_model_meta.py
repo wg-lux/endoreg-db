@@ -52,7 +52,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--image_classification_labelset_name",
             type=str,
-            default="multilabel_classification_colonoscopy_default",
+            default="image_multilabel_classification_colonoscopy_default",
             help="Name of the LabelSet for image classification",
         )
 
@@ -145,7 +145,6 @@ class Command(BaseCommand):
 
         # Assert labelset exists
         labelset = LabelSet.objects.filter(
-            name=image_classification_labelset_name
         ).first()
         assert labelset, f"LabelSet not found: {image_classification_labelset_name}"
 

@@ -26,6 +26,10 @@ let
     tesseract
     glib
     openssh
+    cmake
+    gcc
+    pkg-config
+    protobuf
     libglvnd
   ];
   runtimePackages = with pkgs; [
