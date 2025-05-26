@@ -270,12 +270,23 @@ def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, 
     selected_data["patient_last_name"] = last_name
 
     if "patient_gender" not in selected_data or not selected_data["patient_gender"]:
-        gender = guess_name_gender(first_name)
-        if not gender:
+        gender_name = guess_name_gender(first_name)
+        if not gender_name:
              # Handle cases where gender cannot be guessed (e.g., raise error or use a default)
-             logger.warning(f"Could not guess gender for name '{first_name}'. Attempting to save without gender.")
-             # raise ValueError(f"Could not guess gender for name '{first_name}'. Please provide 'patient_gender'.")
+            logger.warning(f"Could not guess gender for name '{first_name}'. Setting Gender to unknown.")
+            gender_name = "unknown"  # Default to unknown if guessing fails
+        try:
+            gender = Gender.objects.get(name=gender_name)
+        except Gender.DoesNotExist:
+            raise ValueError("Gender with name '{}' does not exist.".format(gender_name))
         selected_data["patient_gender"] = gender # Can be None if guess failed
+
+
+    if isinstance(selected_data["patient_gender"], str):
+        gender = Gender.objects.get(name=selected_data["patient_gender"])
+        selected_data["patient_gender"] = gender
+
+    gender = selected_data["patient_gender"]
 
     # Update name DB
     update_name_db(first_name, last_name)

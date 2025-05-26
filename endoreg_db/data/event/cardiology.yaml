@@ -13,16 +13,3 @@
     name: "complication_coro_stent_thrombosis"
     name_de: "Komplikation: Koronar Stent Thrombose"
     name_en: "Complication: Coronary Stent Thrombosis"
-
-- model: endoreg_db.event
-  fields:
-    name: "pulmonary_embolism"
-    name_de: "Lungenembolie"
-    name_en: "Pulmonary Embolism"
-
-- model: endoreg_db.event
-  fields:
-    name: "deep_vein_thrombosis"
-    name_de: "Tiefe Beinvenenthrombose"
-    name_en: "Deep Vein Thrombosis"
-    

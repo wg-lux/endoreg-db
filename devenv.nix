@@ -41,6 +41,7 @@ let
     libglvnd # Add libglvnd for libGL.so.1
     glib
     zlib
+    ollama.out
   ];
 
   _module.args.buildInputs = baseBuildInputs;

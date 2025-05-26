@@ -10,7 +10,7 @@ from endoreg_db.helpers.data_loader import (
     load_data
 )
 from icecream import ic
-
+# python manage.py import_report tests/assets/lux-gastro-report.pdf --verbose --start_ollama
 # Dynamic import path manipulation to ensure local development version is used
 def ensure_local_lx_anonymizer():
     """
@@ -37,7 +37,7 @@ local_version_available = ensure_local_lx_anonymizer()
 
 # Now import from lx_anonymizer
 try:
-    from lx_anonymizer.ollama_service import init_ollama_service
+    from lx_anonymizer.ollama_service import ollama_service
 except ImportError:
     print("Could not import init_ollama_service from local or installed lx_anonymizer")
     raise
@@ -202,7 +202,7 @@ class Command(BaseCommand):
                         self.stdout.write(self.style.ERROR("Ollama binary not found in PATH"))
                 
                 # Start the service with explicit initialization
-                init_ollama_service(auto_start=True)
+                ollama_service(auto_start=True)
                 self.stdout.write(self.style.SUCCESS("Ollama service initialized successfully"))
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"Failed to initialize Ollama service: {e}"))
@@ -259,6 +259,7 @@ class Command(BaseCommand):
         text, anonymized_text, report_meta = rr.process_report(
             pdf_path, verbose=verbose
         )
+
         if verbose:
             ic(text, anonymized_text, report_meta)
             

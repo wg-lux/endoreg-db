@@ -165,7 +165,7 @@ class Command(BaseCommand):
         load_endoscope_data()
 
         segmentation = options["segmentation"]
-        self.ai_model_meta = get_latest_segmentation_model()
+        self.ai_model_meta = None  # MODIFIED: Initialize to None. Original call to get_latest_segmentation_model() removed.
         if segmentation:
             load_ai_model_label_data()
             load_ai_model_data()

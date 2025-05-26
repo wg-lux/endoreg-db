@@ -23,20 +23,32 @@ def get_latest_version_number_logic(
 ) -> int:
     """
     Finds the highest numerical version for a given meta_name and model_name.
-    Assumes versions are simple integers or can be cast to integers.
+    Iterates through all versions, attempts to parse them as integers,
+    and returns the maximum integer found. If no numeric versions are found,
+    returns 0.
     """
-    try:
-        latest = cls.objects.filter(
-            name=meta_name, model__name=model_name
-        ).latest("date_created") # Or order by version if it's reliably numeric/sortable
-        # Attempt to convert version to int, default to 0 if fails or no version exists
-        return int(latest.version) if latest and latest.version else 0
-    except cls.DoesNotExist:
-        return 0
-    except ValueError: # Handle cases where version might not be purely numeric
-        # Add more sophisticated version parsing if needed (e.g., semantic versioning)
-        logger.warning(f"Warning: Could not parse version '{latest.version}' as integer for {meta_name}/{model_name}. Defaulting to 0.")
-        return 0
+    versions_qs = cls.objects.filter(
+        name=meta_name, model__name=model_name
+    ).values_list('version', flat=True)
+
+    max_v = 0
+    found_numeric_version = False
+
+    for v_str in versions_qs:
+        if v_str is None: # Skip None versions
+            continue
+        try:
+            v_int = int(v_str)
+            if not found_numeric_version or v_int > max_v:
+                max_v = v_int
+            found_numeric_version = True
+        except ValueError:
+            logger.warning(
+                f"Warning: Could not parse version string '{v_str}' as an integer for "
+                f"meta_name='{meta_name}', model_name='{model_name}' while determining the max version."
+            )
+    
+    return max_v if found_numeric_version else 0
 
 
 @transaction.atomic

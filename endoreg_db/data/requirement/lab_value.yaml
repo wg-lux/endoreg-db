@@ -167,6 +167,7 @@
       - "patient"
       - "patient_lab_sample"
       - "patient_lab_value"
+      - "patient_examination"
     operators:
       - lab_latest_numeric_normal
     lab_values:

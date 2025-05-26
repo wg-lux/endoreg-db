@@ -1,18 +1,22 @@
 # Tasks
-## Requirement Validation
-Context:
-- Data Models: endoreg_db/data/requirement_set, endoreg_db/data/requirement_set_type, endoreg_db/data/requirement_operator, endoreg_db/data/requirement, endoreg_db/data/requirement_type
-- Django Models: endoreg_db/models/requirement
-- Utility Models / Functions: endoreg_db/utils/links
-- Data Model Dict: endoreg_db/models/requirement/requirement_evaluation/requirement_type_parser.py
+## Add Requirements
+- Add Requirements which check whether a certain event has taken place
+    - requirement_types should include Patient
+    - operators should include "models_match_any"
+    - Create Requirements for the following events
+        - coro_des_implantation
+        - coro_bms_implantation
+        - pulmonary_embolism
+        - deep_vein_thrombosis
+        - stroke
+        - transient_ischemic_attack
+        - hip_replacement_surgery
+        - knee_replacement_surgery
+        - recurrent_thrombembolism
+    - Create an example requirement which also checks if a model matches AND is within a certain timeframe
+        - we might have to introduce a new requirement_operator for that
+        - looking at a similar method from the lab_value operators might be helpful (e.g., "get_patient_lab_values_in_timeframe" from endoreg_db/utils/requirement_operator_logic/lab_value_operators.py)
+- Add Tests for the new Requirements
 
-1. Analyse current code of the requirement, requirementType, RequirementSet, Requirement Operator to understand the current state of development
-2. Make a plan to implement a validate function:
 
-*validate function functionality:*
-- expects inputs corresponding to the RequirementType (we can look up RequirementType.name in data_model_dict to get the expected input models)
-- fetches the input objects "links" property which will yield a RequirementLinks object
-- Evaluate the Requirements RequirementLinks, the requirement operator and the inputs to return either true or false
-    - use the linked requirement operator to identify the correct evaluation logic (e.g., models_match_any)
-
-3. Implement the Validate Function and use it to modify our current test (tests/requirement/test_requirement_endo_bleeding.py, tests/requirement/links/test_requirement_links.py)
+## Implement Medication Requirements

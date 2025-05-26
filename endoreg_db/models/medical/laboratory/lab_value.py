@@ -72,6 +72,10 @@ class LabValue(models.Model):
     normal_range_age_dependent = models.BooleanField(default=False)
     normal_range_gender_dependent = models.BooleanField(default=False)
     normal_range_special_case = models.BooleanField(default=False)
+    bound_adjustment_factor = models.FloatField(
+        default=0.1,
+        help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%."
+    )
     objects = LabValueManager()
 
     if TYPE_CHECKING:
@@ -238,7 +242,7 @@ class LabValue(models.Model):
                         return generated_value
                 # Fallback if sampling fails to produce a clearly increased value
                 if upper_bound is not None:
-                    return upper_bound + (abs(upper_bound * 0.1) if upper_bound != 0 else 1)  # Increase by 10% or 1
+                    return upper_bound + (abs(upper_bound * self.bound_adjustment_factor) if upper_bound != 0 else 1)  # Increase by factor or 1
                 # If no upper bound and sampling didn't provide a clear high value, return a generated value as last resort
                 return self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
             else:  # No patient, cannot use distribution
@@ -246,7 +250,7 @@ class LabValue(models.Model):
                     f"Cannot use numerical distribution for {self.name} without patient context. Falling back to normal range logic for increased value."
                 )
                 if upper_bound is not None:
-                    return upper_bound + (abs(upper_bound * 0.1) if upper_bound != 0 else 1)
+                    return upper_bound + (abs(upper_bound * self.bound_adjustment_factor) if upper_bound != 0 else 1)
                 else:
                     warnings.warn(
                         f"Cannot determine an increased value for {self.name} without an upper normal range or patient context for distribution."
@@ -254,7 +258,7 @@ class LabValue(models.Model):
                     return None
 
         elif upper_bound is not None:
-            return upper_bound + (abs(upper_bound * 0.1) if upper_bound != 0 else 1)
+            return upper_bound + (abs(upper_bound * self.bound_adjustment_factor) if upper_bound != 0 else 1)
         else:
             warnings.warn(
                 f"Cannot determine an increased value for {self.name} without a numerical distribution or an upper normal range."
@@ -353,7 +357,7 @@ class LabValue(models.Model):
                         return generated_value
                 # Fallback
                 if lower_bound is not None:
-                    return lower_bound - (abs(lower_bound * 0.1) if lower_bound != 0 else 1)  # Decrease by 10% or 1
+                    return lower_bound - (abs(lower_bound * self.bound_adjustment_factor) if lower_bound != 0 else 1)  # Decrease by factor or 1
                 # Return any generated value as last resort
                 return self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
             else:  # No patient, cannot use distribution
@@ -361,7 +365,7 @@ class LabValue(models.Model):
                     f"Cannot use numerical distribution for {self.name} without patient context. Falling back to normal range logic for decreased value."
                 )
                 if lower_bound is not None:
-                    return lower_bound - (abs(lower_bound * 0.1) if lower_bound != 0 else 1)
+                    return lower_bound - (abs(lower_bound * self.bound_adjustment_factor) if lower_bound != 0 else 1)
                 else:
                     warnings.warn(
                         f"Cannot determine a decreased value for {self.name} without a lower normal range or patient context for distribution."
@@ -369,7 +373,7 @@ class LabValue(models.Model):
                     return None
 
         elif lower_bound is not None:
-            return lower_bound - (abs(lower_bound * 0.1) if lower_bound != 0 else 1)
+            return lower_bound - (abs(lower_bound * self.bound_adjustment_factor) if lower_bound != 0 else 1)
         else:
             warnings.warn(
                 f"Cannot determine a decreased value for {self.name} without a numerical distribution or a lower normal range."

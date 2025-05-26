@@ -91,7 +91,7 @@ data_model_dict: Dict[str, Union[
     "patient_finding_morphology": PatientFindingMorphology,
     "patient_lab_value": PatientLabValue,
     "patient_lab_sample": PatientLabSample,  # Changed from string "PatientLabSample" to the class
-    "patient": Patient
+    "patient": Patient,
 }
 
 data_model_dict_reverse = {
