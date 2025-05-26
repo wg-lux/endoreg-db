@@ -14,6 +14,11 @@ class Command(BaseCommand):
     help = 'Import fallback test video and create default labels'
 
     def add_arguments(self, parser):
+        """
+        Adds the --video-path argument to specify the path of the test video file.
+        
+        This optional argument allows users to provide a custom path to the test video file to be imported. If not specified, a default path is used.
+        """
         parser.add_argument(
             '--video-path',
             type=str,
@@ -22,6 +27,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Handles the import of a test video and setup of default labels for frontend testing.
+        
+        Checks for the existence of the specified video file. If found, ensures default Center and EndoscopyProcessor objects exist, creates default annotation labels, and imports the video into the database. If the video file is missing or import fails, creates fallback database entries to enable frontend testing.
+        """
         video_path_str = options['video_path']
         video_path = Path(video_path_str).expanduser()
         
@@ -77,7 +87,11 @@ class Command(BaseCommand):
             self.create_fallback_entries()
 
     def create_default_labels(self):
-        """Create default labels for video segmentation"""
+        """
+        Creates a default set of video segmentation labels and associates them with a label set.
+        
+        This method ensures that a predefined group of labels, each with multilingual names, colors, and order priorities, exists in the database for endoscopy video annotation. It creates or retrieves both specialized segmentation labels and general labels for compatibility, and links the segmentation labels to a default label set named "Default Endoscopy Labels."
+        """
         
         # Create default labelset
         labelset, created = VideoSegmentationLabelSet.objects.get_or_create(
@@ -139,7 +153,11 @@ class Command(BaseCommand):
         self.stdout.write(f"Labelset configured with {labelset.labels.count()} labels")
 
     def create_fallback_entries(self):
-        """Create fallback entries for testing when video file is not available"""
+        """
+        Creates fallback database entries for testing when the video file is unavailable.
+        
+        This method ensures that default annotation labels, a default center, and a default endoscopy processor exist. If a fallback video entry named "lux-gastro-video.mp4" does not already exist, it creates a minimal `VideoFile` record with preset metadata and initializes its state and frame directory for frontend testing.
+        """
         
         # Create default labels anyway
         self.create_default_labels()

@@ -25,6 +25,11 @@ class Command(BaseCommand):
     """
 
     def add_arguments(self, parser):
+        """
+        Adds the --force command-line argument to control metadata recreation.
+        
+        The --force flag, when specified, forces the recreation of model metadata even if it already exists.
+        """
         parser.add_argument(
             '--force',
             action='store_true',
@@ -32,6 +37,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Initializes the default AI model and its metadata, creating or updating as needed.
+        
+        Loads required AI model label and model data, ensures the presence of a default AI model, and creates associated model metadata if it does not already exist or if the `--force` flag is specified. Generates a dummy weights file if necessary and invokes the metadata creation command. Verifies successful creation and outputs status messages throughout the process.
+        """
         force = options.get('force', False)
         default_multilabel_classification()
         # First ensure the basic AI model data is loaded

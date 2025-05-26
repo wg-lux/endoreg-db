@@ -12,6 +12,13 @@ if TYPE_CHECKING:
 class Command(BaseCommand):
     help = "Data extraction and validation of video files in the database and updating their states accordingly."
     def add_arguments(self, parser):
+        """
+        Adds command-line arguments for verbose output, forced revalidation, and anonymization.
+        
+        This method configures the management command to accept optional flags:
+        --verbose for detailed output, --force to revalidate all videos regardless of status,
+        and --anonymize to anonymize video files during processing.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -30,7 +37,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Validate video files in the database and update their states accordingly.
+        Validates video files stored in the database and updates their validation states.
+        
+        This method processes video files according to the provided command-line options,
+        such as verbose output, forced revalidation, or anonymization.
         """
         
     

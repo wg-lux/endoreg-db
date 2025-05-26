@@ -42,6 +42,11 @@ class RequirementLabValueLatestTest(TestCase):
     ]
 
     def setUp(self):
+        """
+        Initializes test data and verifies the existence of required operators and requirements.
+        
+        Loads lab value test data, creates patient instances for each gender category, and ensures that all operators in OPERATOR_NAMES exist in the database. Builds a mapping of operator names to their associated Requirement instances for use in test methods.
+        """
         load_data() # This should load the new examples from lab_value.yaml
 
         self.male_patient = generate_patient(gender=generate_gender(name="male"))
@@ -106,8 +111,9 @@ class RequirementLabValueLatestTest(TestCase):
 
     def test_lab_value_latest_increased_requirements_patient(self):
         """
-        Test requirements that use the lab value latest increased operator
-        for male, female, and unknown gender patients.
+        Verifies that requirements using the 'lab_latest_numeric_increased' operator are fulfilled for patients of all genders.
+        
+        For each patient gender, this test creates lab samples and increased lab values, then asserts that the associated requirements are fulfilled when evaluated with the lab value, the patient, and the lab sample as input.
         """
         operator_name = "lab_latest_numeric_increased"
         increased_requirements = self.requirements_map.get(operator_name, [])
@@ -171,8 +177,9 @@ class RequirementLabValueLatestTest(TestCase):
 
     def test_lab_value_latest_decreased_requirements_patient(self):
         """
-        Test requirements that use the lab value latest decreased operator
-        for male, female, and unknown gender patients.
+        Verifies that requirements using the 'lab_latest_numeric_decreased' operator are fulfilled for patients of all genders.
+        
+        For each patient gender, this test creates lab samples and decreased lab values, then checks that all associated requirements are correctly evaluated as fulfilled when provided with the lab value, the patient, or the lab sample as input.
         """
         operator_name = "lab_latest_numeric_decreased"
         decreased_requirements = self.requirements_map.get(operator_name, [])
@@ -235,8 +242,9 @@ class RequirementLabValueLatestTest(TestCase):
 
     def test_lab_value_latest_normal_requirements_patient(self):
         """
-        Test requirements that use the lab_latest_numeric_normal operator
-        for male, female, and unknown gender patients.
+        Verifies that requirements using the 'lab_latest_numeric_normal' operator are fulfilled for patients of all genders.
+        
+        For each patient gender, this test creates lab samples and normal lab values, then asserts that the corresponding requirements are fulfilled when evaluated with the generated lab values, the patient, and the lab sample.
         """
         operator_name = "lab_latest_numeric_normal"
         requirements_for_operator = self.requirements_map.get(operator_name)
@@ -271,8 +279,9 @@ class RequirementLabValueLatestTest(TestCase):
 
     def test_lab_value_latest_lower_than_value_requirements_patient(self):
         """
-        Test requirements for lab_latest_numeric_lower_than_value operator
-        for male, female, and unknown gender patients.
+        Verifies that requirements using the 'lab_latest_numeric_lower_than_value' operator are fulfilled for patients of all genders when lab values are set just below the defined threshold.
+        
+        For each patient gender, this test creates lab samples and lab values slightly less than the requirement's numeric threshold, then asserts that the requirement is fulfilled for the lab value, the patient, and the lab sample.
         """
         operator_name = "lab_latest_numeric_lower_than_value"
         requirements_for_operator = self.requirements_map.get(operator_name)
@@ -305,8 +314,9 @@ class RequirementLabValueLatestTest(TestCase):
 
     def test_lab_value_latest_greater_than_value_requirements_patient(self):
         """
-        Test requirements for lab_latest_numeric_greater_than_value operator
-        for male, female, and unknown gender patients.
+        Verifies that requirements with the 'lab_latest_numeric_greater_than_value' operator are fulfilled for patients of all genders when lab values exceed the specified threshold.
+        
+        For each patient gender, creates lab samples and lab values just above the requirement's numeric threshold, then asserts that the requirement is fulfilled for the lab value, patient, and lab sample.
         """
         operator_name = "lab_latest_numeric_greater_than_value"
         requirements_for_operator = self.requirements_map.get(operator_name)

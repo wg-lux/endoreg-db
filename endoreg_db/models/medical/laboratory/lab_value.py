@@ -122,18 +122,16 @@ class LabValue(models.Model):
 
     def get_normal_range(self, age: int = None, gender=None):
         """
-        Retrieve the normal range for the lab value based on optional age and gender.
-
-        This method returns the default normal range when the lab value is not age-, gender-, or special-case dependent.
-        For gender-dependent ranges, if no gender is provided, it defaults to the 'male' range and issues a UserWarning.
-        Note that age-dependent and special-case normal ranges are not implemented and will issue warnings when invoked.
-
+        Returns the normal range for the lab value, considering age and gender dependencies.
+        
+        If the normal range is gender-dependent and no gender is provided or the specified gender is not found, the method defaults to the 'male' range and issues a warning. Age-dependent and special-case normal ranges are not implemented and will trigger warnings. The result is a dictionary with 'min' and 'max' keys representing the lower and upper bounds of the normal range.
+        
         Args:
-            age (int, optional): The age in years used for age-dependent range computation.
-            gender (Gender, optional): The gender instance used for gender-dependent range computation.
-
+            age (int, optional): Age in years for age-dependent ranges.
+            gender (Gender, optional): Gender instance for gender-dependent ranges.
+        
         Returns:
-            dict: A dictionary with 'min' and 'max' keys indicating the lower and upper bounds of the normal range.
+            dict: Dictionary with 'min' and 'max' keys for the normal range bounds.
         """
         from ...other.gender import Gender
 

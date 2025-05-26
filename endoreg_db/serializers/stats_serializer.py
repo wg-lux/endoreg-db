@@ -19,7 +19,15 @@ class StatsSerializer(serializers.Serializer):
     # For example, to calculate derived statistics:
     #TODO
     def get_completion_percentage(self, obj):
-        """Calculate the percentage of completed videos."""
+        """
+        Calculates the percentage of completed videos out of the total videos.
+        
+        Args:
+            obj: A dictionary containing 'videosCompleted' and 'totalVideos' keys.
+        
+        Returns:
+            The completion percentage as a float rounded to two decimal places, or 0 if totalVideos is zero or less.
+        """
         if obj['totalVideos'] > 0:
             return round((obj['videosCompleted'] / obj['totalVideos']) * 100, 2)
         return 0
