@@ -26,6 +26,11 @@ class Command(BaseCommand):
     """
 
     def add_arguments(self, parser):
+        """
+        Adds command-line arguments for configuring model meta creation.
+        
+        This method defines all necessary arguments for specifying model details, label set selection, normalization parameters, image dimensions, axes configuration, batch size, worker count, and versioning options for the Django management command.
+        """
         parser.add_argument(
             "--model_name",
             type=str,
@@ -133,6 +138,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Processes command-line arguments to create or update a ModelMeta object for a multilabel classification model.
+        
+        Retrieves and validates the specified LabelSet and AiModel, ensures the model file exists, and invokes ModelMeta.create_from_file with the provided configuration. Raises a ValueError if the requested LabelSet does not exist.
+        """
         model_name = options["model_name"]
 
         model_path = options["model_path"]

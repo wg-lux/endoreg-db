@@ -47,9 +47,9 @@ DEFAULT_GENDER = "unknown"
 
 def get_information_source_prediction():
     """
-    Retrieves the InformationSource object named "prediction" from the database.
+    Retrieves the InformationSource object with the name "prediction".
     
-    Loads information source data if necessary and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found.
+    Loads information source data if needed and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found or is not an InformationSource.
     """
     from .data_loader import load_information_source
     load_information_source()
@@ -60,10 +60,18 @@ def get_information_source_prediction():
 
 def get_latest_segmentation_model(model_name:str="image_multilabel_classification_colonoscopy_default") -> ModelMeta:
     """
-    Retrieves the latest version of a segmentation model by name.
+    Retrieves the latest metadata for a segmentation model by name.
     
-    Loads required data and returns the most recent ModelMeta instance for the specified segmentation model.
-    If no ModelMeta exists, attempts to initialize it using the init_default_ai_model command.
+    Loads necessary data and returns the most recent ModelMeta instance for the specified AI model. If no metadata exists, attempts to initialize it automatically; if initialization fails, raises a ValueError with instructions for manual setup.
+    
+    Args:
+        model_name: The name of the segmentation model to retrieve.
+    
+    Returns:
+        The latest ModelMeta instance for the specified model.
+    
+    Raises:
+        ValueError: If the AI model does not exist, or if model metadata cannot be found or initialized.
     """
     from .data_loader import (
         load_center_data,
@@ -105,10 +113,10 @@ def get_latest_segmentation_model(model_name:str="image_multilabel_classificatio
 
 def get_default_gender() -> Gender:
     """
-    Retrieves the default gender object with the name "unknown".
+    Retrieves the Gender object representing the default "unknown" gender.
     
     Returns:
-        The Gender instance representing the default gender.
+        The Gender instance with the name "unknown".
     """
     return Gender.objects.get(name=DEFAULT_GENDER)
 

@@ -11,7 +11,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger("video_file")
 
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
-    """Returns the absolute Path object for the raw file, if it exists."""
+    """
+    Resolves and returns the absolute path to the raw video file if available.
+    
+    Returns:
+        The absolute Path to the raw file if the video has a raw file and a filename; otherwise, None.
+    """
     try:
         if video.has_raw and video.raw_file.name:
             # Use VIDEO_DIR from utils instead of Django's MEDIA_ROOT

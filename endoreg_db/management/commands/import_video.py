@@ -140,9 +140,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):  
         
         """
-        Handles the import of a video file into the database, associating it with a specified medical center and endoscopy processor, and optionally applying AI-based segmentation.
+        Imports a video file into the database, associating it with a specified medical center and endoscopy processor, and optionally applies AI-based segmentation.
         
-        Checks for required dependencies (such as FFMPEG), loads reference data, validates the existence of the specified center and processor, and processes the video file. If segmentation is enabled, retrieves the latest segmentation model metadata. If multiple processors are linked to the center, prompts the user to select one interactively. Creates a new `VideoFile` database entry with the provided options, and can optionally delete the source file or save the video to a specified directory.
+        Checks for required dependencies, loads reference data, validates the existence of the specified center and processor, and processes the video file. If segmentation is enabled, retrieves the latest segmentation model metadata. Handles interactive processor selection if multiple are available, creates a new `VideoFile` entry, and invokes the processing pipeline. Can optionally delete the source file or save the video to a specified directory. Reports the outcome of the import and processing steps.
         """
         try: # ADDED
             check_ffmpeg_availability() # ADDED
@@ -279,15 +279,15 @@ class Command(BaseCommand):
         self, processors_qs
     ) -> EndoscopyProcessor:
         """
-        Prompts the user to select an endoscopy processor from a list when multiple are available.
+        Interactively prompts the user to select an endoscopy processor from a list.
         
-        Displays all processors associated with a center and repeatedly prompts the user to choose one by number. Aborts if the user interrupts input.
+        Displays all available processors and requests user input until a valid selection is made. Aborts the process if the user interrupts input.
         
         Args:
-            processors_qs: A queryset of EndoscopyProcessor objects to choose from.
+            processors_qs: Queryset of EndoscopyProcessor objects to present for selection.
         
         Returns:
-            The selected EndoscopyProcessor object.
+            The EndoscopyProcessor object chosen by the user.
         """
         # turn the QS into a concrete list so we can index it later
         processors = list(processors_qs)           # -> [EndoscopyProcessor, …]

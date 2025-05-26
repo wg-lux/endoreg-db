@@ -13,7 +13,12 @@ from icecream import ic
 
 # Dynamic import path manipulation to ensure local development version is used
 def ensure_local_lx_anonymizer():
-    """Ensure the local development version of lx-anonymizer is used."""
+    """
+    Checks for a local development version of the lx-anonymizer package and adds it to sys.path if available.
+    
+    Returns:
+        True if the local lx-anonymizer directory was found and added to sys.path; False otherwise.
+    """
     script_dir = Path(__file__).parent.parent.parent.parent.parent  # /home/admin/dev/lx-annotate/endoreg-db
     local_lx_anonymizer_path = script_dir / "lx-anonymizer"
     
@@ -46,6 +51,11 @@ class Command(BaseCommand):
     """
 
     def add_arguments(self, parser):
+        """
+        Defines command-line arguments for the import_report management command.
+        
+        Adds options for specifying the report file path, center name, report directory, deletion and save behavior, and controls for initializing the Ollama LLM service.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -107,6 +117,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Handles the import of a PDF report file into the database, with optional LLM service initialization and anonymization.
+        
+        This method validates input options, optionally starts the Ollama LLM service, ensures the existence of required files and directories, determines the report type, processes the PDF for text and metadata extraction, anonymizes content, and saves the resulting data to the database. Provides verbose output and error handling throughout the process.
+        """
         load_data()
         verbose = options["verbose"]
         center_name = options["center_name"]
