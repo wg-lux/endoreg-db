@@ -1,4 +1,4 @@
-- model: endoreg_db.LabelSet
+- model: endoreg_db.label_set
   fields:
     name: "multilabel_classification_colonoscopy_default"
     version: 1
@@ -20,7 +20,7 @@
         "wound",
       ]
 
-- model: endoreg_db.LabelSet
+- model: endoreg_db.label_set
   fields:
     name: "multilabel_classification_colonoscopy_default"
     version: 2

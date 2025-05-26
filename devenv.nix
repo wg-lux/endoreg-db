@@ -1,4 +1,4 @@
-{ pkgs, lib, config, inputs, ... }:
+{ pkgs, lib, config, inputs, baseBuildInputs, ... }:
 let
   # --- Project Configuration ---
   DJANGO_MODULE = "endoreg_db";
@@ -26,19 +26,35 @@ let
     tesseract
     glib
     openssh
-    libglvnd # Add libglvnd for libGL.so.1
+    cmake
+    gcc
+    pkg-config
+    protobuf
+    libglvnd
   ];
   runtimePackages = with pkgs; [
     cudaPackages.cuda_nvcc # Needed for runtime? Check dependencies
     stdenv.cc.cc
     ffmpeg-headless.bin
     tesseract
-    zsh # If you prefer zsh as the shell
     uvPackage # Add uvPackage to runtime packages if needed elsewhere, or just for devenv internal use
     libglvnd # Add libglvnd for libGL.so.1
     glib
     zlib
   ];
+
+  _module.args.buildInputs = baseBuildInputs;
+
+  lx-anonymizer-src = pkgs.fetchGit {
+    url = "https://github.com/wg-lux/lx-anonymizer";
+    ref = "prototype";
+    # If you know the specific revision, it's better to use rev for reproducibility
+    # rev = "abcdef1234567890"; 
+  };
+
+  imports = [ 
+    "${lx-anonymizer-src}/devenv.nix"
+  ]; 
 
 in 
 {
@@ -47,7 +63,7 @@ in
   dotenv.enable = true;
   dotenv.disableHint = true;
 
-  packages = runtimePackages;
+  packages = runtimePackages ++ buildInputs;
 
   env = {
     LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
@@ -127,7 +143,7 @@ in
 
     if [ -d "$LX_ANONYMIZER_DIR" ]; then
       echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
-      (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git pull origin "$LX_ANONYMIZER_BRANCH")
+      (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git reset --hard "origin/$LX_ANONYMIZER_BRANCH")
     else
       echo "lx-anonymizer directory does not exist. Cloning repository..."
       git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
