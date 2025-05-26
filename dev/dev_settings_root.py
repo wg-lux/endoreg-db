@@ -50,7 +50,7 @@ TIME_ZONE = "Europe/Berlin"
 MEDIA_ROOT = STORAGE_DIR           # already absolute
 MEDIA_URL = "/media/"
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 
 # ------------------------------------------------------------------------------
 # Logging (unchanged)
@@ -90,7 +90,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:5174",
-    "http://127.0.0.1:5174/api/patients",
+    # "http://127.0.0.1:5174/api/patients", # AI Suggestion: The CSRF_TRUSTED_ORIGINS should only contain origins (protocol + domain + port), not paths. The second entry with /api/patients path is incorrect.
 ]
 
 # ------------------------------------------------------------------------------

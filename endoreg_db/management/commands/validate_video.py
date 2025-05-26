@@ -1,17 +1,15 @@
 from django.core.management.base import BaseCommand
-from endoreg_db.models import VideoFile # MODIFIED: Removed ModelMeta import
+from endoreg_db.models import VideoFile
 from endoreg_db.helpers.default_objects import get_latest_segmentation_model
-# Assuming VideoFile.VideoFileStateChoices is how states are defined, e.g., an inner class on VideoFile
-# e.g., class VideoFile(models.Model):
-#           class VideoFileStateChoices(models.TextChoices):
-#               INITIALIZED = 'INIT', 'Initialized'
-#               VALIDATED = 'VALID', 'Validated'
-#               ANONYMIZED = 'ANON', 'Anonymized'
-#               ERROR = 'ERR', 'Error'
-#           # ... and a field like:
-#           # status = models.CharField(max_length=5, choices=VideoFileStateChoices.choices, default=VideoFileStateChoices.INITIALIZED)
-#           # or through a related state model:
-#           # state = models.OneToOneField(VideoFileState, ...)
+from django.db.models import Q # Add this import
+
+# VideoFile instances have a related 'state' (a VideoState object).
+# VideoState uses boolean fields (e.g., state.anonymized, state.initial_prediction_completed)
+# to track the processing status, rather than a single status field with choices.
+# This command interprets combinations of these boolean fields to determine
+# if a video is considered "validated" or "anonymized".
+# The VideoState model itself is defined in endoreg_db/models/state/video.py (or similar)
+# and does not contain an enum like the previously assumed 'VideoFileStateChoices'.
 
 class Command(BaseCommand):
     help = "Data extraction and validation of video files in the database and updating their states accordingly."
@@ -46,6 +44,9 @@ class Command(BaseCommand):
         
         This method processes video files according to the provided command-line options,
         such as verbose output, forced revalidation, or anonymization.
+        It interprets the boolean flags in the related VideoState object to determine
+        if a video is 'validated' (e.g., initial_prediction_completed and lvs_created are True)
+        or 'anonymized' (e.g., anonymized is True).
         """
         #TODO @maxhild here is some ai generated code for now, not validated yet
         verbose = options["verbose"]
@@ -58,18 +59,19 @@ class Command(BaseCommand):
         # Eager load related state if VideoFile.state is a ForeignKey or OneToOneField
         videos_query = VideoFile.objects.select_related('state').all()
 
+        # Define conditions for "validated" and "anonymized" based on VideoState boolean fields
+        # Validated: initial_prediction_completed = True AND lvs_created = True
+        q_validated = Q(state__initial_prediction_completed=True, state__lvs_created=True)
+        # Anonymized: anonymized = True
+        q_anonymized = Q(state__anonymized=True)
+
         if not force:
             if anonymize_option:
                 # If anonymization is the goal, process videos not yet anonymized.
-                # Assumes 'ANONYMIZED' is a status string in VideoFile.state.status
-                # and VideoFileStateChoices is an enum/choices class on VideoFile model
-                videos_query = videos_query.exclude(state__status=VideoFile.VideoFileStateChoices.ANONYMIZED)
+                videos_query = videos_query.exclude(q_anonymized)
             else:
-                # If only validation is the goal, process videos not yet validated (or anonymized).
-                videos_query = videos_query.exclude(state__status__in=[
-                    VideoFile.VideoFileStateChoices.VALIDATED,
-                    VideoFile.VideoFileStateChoices.ANONYMIZED
-                ])
+                # If only validation is the goal, process videos not yet validated or anonymized.
+                videos_query = videos_query.exclude(q_validated | q_anonymized)
         
         videos_to_process = list(videos_query)
 
@@ -93,16 +95,26 @@ class Command(BaseCommand):
             # model_name_for_pipe1 can remain None if pipe_1 handles it, or set a default if known.
 
         for video in videos_to_process:
-            current_status_display = video.state.status if hasattr(video, 'state') and video.state else 'N/A'
+            state_summary = "N/A"
+            if hasattr(video, 'state') and video.state:
+                s = video.state
+                state_summary = f"anonymized={s.anonymized}, predicted={s.initial_prediction_completed}, lvs_created={s.lvs_created}"
+            
             if verbose:
-                self.stdout.write(f"Processing video: {video.uuid} (Current state: {current_status_display})")
+                self.stdout.write(f"Processing video: {video.uuid} (Current state: {state_summary})")
             
             try:
                 # Determine if pipe_1 needs to run
-                needs_pipe_1 = force or not (hasattr(video, 'state') and video.state and video.state.status in [
-                    VideoFile.VideoFileStateChoices.VALIDATED,
-                    VideoFile.VideoFileStateChoices.ANONYMIZED
-                ])
+                needs_pipe_1 = force
+                if not force and hasattr(video, 'state') and video.state:
+                    s = video.state
+                    is_validated = s.initial_prediction_completed and s.lvs_created
+                    is_anonymized = s.anonymized
+                    if not (is_validated or is_anonymized):
+                        needs_pipe_1 = True
+                elif not force: # No state object, assume it needs processing
+                    needs_pipe_1 = True
+
 
                 if needs_pipe_1:
                     if verbose:
@@ -110,64 +122,82 @@ class Command(BaseCommand):
                     if not model_name_for_pipe1 and verbose:
                          self.stdout.write(self.style.WARNING(f"Attempting pipe_1 for {video.uuid} without a specific model name."))
                     
-                    # Assuming pipe_1 is a method on the VideoFile instance
-                    # and it updates the video's state internally.
                     success_pipe_1 = video.pipe_1(model_name=model_name_for_pipe1)
-                    video.refresh_from_db() # Refresh to get the latest state updated by pipe_1
+                    video.refresh_from_db() 
+
+                    new_state_summary = "N/A"
+                    if hasattr(video, 'state') and video.state:
+                        s = video.state
+                        new_state_summary = f"anonymized={s.anonymized}, predicted={s.initial_prediction_completed}, lvs_created={s.lvs_created}"
 
                     if not success_pipe_1:
-                        # Check state after pipe_1 failure, it might have set an error state
-                        final_state_after_pipe1_fail = video.state.status if hasattr(video, 'state') and video.state else 'N/A'
-                        raise Exception(f"pipe_1 validation failed for video {video.uuid}. State after attempt: {final_state_after_pipe1_fail}")
+                        raise Exception(f"pipe_1 validation failed for video {video.uuid}. State after attempt: {new_state_summary}")
                     
                     if verbose:
-                        self.stdout.write(self.style.SUCCESS(f"Video {video.uuid} successfully passed pipe_1. New state: {video.state.status if hasattr(video, 'state') and video.state else 'N/A'}"))
+                        self.stdout.write(self.style.SUCCESS(f"Video {video.uuid} successfully passed pipe_1. New state: {new_state_summary}"))
                 elif verbose:
-                    self.stdout.write(f"Video {video.uuid} already meets validation criteria, skipping pipe_1 (force=False).")
+                    self.stdout.write(f"Video {video.uuid} already meets validation criteria or is anonymized, skipping pipe_1 (force=False).")
 
                 # Anonymization step
                 if anonymize_option:
-                    is_validated_or_anonymized_by_pipe1 = hasattr(video, 'state') and video.state and video.state.status in [VideoFile.VideoFileStateChoices.VALIDATED, VideoFile.VideoFileStateChoices.ANONYMIZED]
-                    is_currently_anonymized = hasattr(video, 'state') and video.state and video.state.status == VideoFile.VideoFileStateChoices.ANONYMIZED
+                    should_anonymize = False
+                    current_state_summary_for_anonym = "N/A"
+                    if hasattr(video, 'state') and video.state:
+                        s = video.state
+                        current_state_summary_for_anonym = f"anonymized={s.anonymized}, predicted={s.initial_prediction_completed}, lvs_created={s.lvs_created}"
+                        is_validated_for_anonymization = s.initial_prediction_completed and s.lvs_created
+                        is_currently_anonymized = s.anonymized
+                        if force or (is_validated_for_anonymization and not is_currently_anonymized):
+                            should_anonymize = True
+                    elif force: # No state, but force anonymize
+                        should_anonymize = True
 
-                    # Anonymize if forced, OR if it's (now or previously) validated and not yet anonymized.
-                    if force or (is_validated_or_anonymized_by_pipe1 and not is_currently_anonymized):
+
+                    if should_anonymize:
                         if verbose:
-                            self.stdout.write(f"Attempting to anonymize video: {video.uuid} (force={force}, current_state={video.state.status if hasattr(video, 'state') and video.state else 'N/A'}).")
+                            self.stdout.write(f"Attempting to anonymize video: {video.uuid} (force={force}, current_state_before_anonym={current_state_summary_for_anonym}).")
                         
-                        # Replace with the actual anonymization method on VideoFile.
-                        # This method should also update the state internally.
-                        # Example: video.anonymize_video_content() 
-                        if hasattr(video, 'anonymize_video_content'): # Check if method exists
+                        if hasattr(video, 'anonymize_video_content'): 
                             video.anonymize_video_content() 
-                            video.refresh_from_db() # Get state after anonymization
+                            video.refresh_from_db() 
                         else:
                             self.stdout.write(self.style.ERROR(f"Video model does not have 'anonymize_video_content' method. Skipping anonymization for {video.uuid}."))
-                            # Potentially raise an error or handle as a failure depending on requirements
+                            # Potentially raise an error or handle as a failure
 
-                        if hasattr(video, 'state') and video.state and video.state.status == VideoFile.VideoFileStateChoices.ANONYMIZED:
+                        post_anonym_state_summary = "N/A"
+                        is_now_anonymized = False
+                        if hasattr(video, 'state') and video.state:
+                            s = video.state
+                            post_anonym_state_summary = f"anonymized={s.anonymized}, predicted={s.initial_prediction_completed}, lvs_created={s.lvs_created}"
+                            is_now_anonymized = s.anonymized
+
+                        if is_now_anonymized:
                             if verbose:
-                                self.stdout.write(self.style.SUCCESS(f"Video {video.uuid} successfully anonymized. New state: {video.state.status}"))
+                                self.stdout.write(self.style.SUCCESS(f"Video {video.uuid} successfully anonymized. New state: {post_anonym_state_summary}"))
                         else:
-                            # If anonymize_video_content was called but state isn't ANONYMIZED
-                            if hasattr(video, 'anonymize_video_content'):
-                                raise Exception(f"Anonymization called but did not set state to ANONYMIZED for video {video.uuid}. Current state: {video.state.status if hasattr(video, 'state') and video.state else 'N/A'}")
+                            if hasattr(video, 'anonymize_video_content'): # Only raise if we attempted
+                                raise Exception(f"Anonymization called but video is not marked as anonymized for video {video.uuid}. Current state: {post_anonym_state_summary}")
                     
-                    elif is_currently_anonymized and verbose:
+                    elif hasattr(video, 'state') and video.state and video.state.anonymized and verbose: # Already anonymized
                         self.stdout.write(f"Video {video.uuid} is already anonymized.")
                     elif verbose: 
-                        self.stdout.write(f"Skipping anonymization for video {video.uuid} (not validated, or already anonymized and not forced).")
+                        self.stdout.write(f"Skipping anonymization for video {video.uuid} (not validated for anonymization, or already anonymized and not forced).")
                 
                 processed_count += 1
             except Exception as e:
                 failed_count += 1
-                video.refresh_from_db() # Get potentially updated error state
-                error_state_display = video.state.status if hasattr(video, 'state') and video.state else 'N/A'
-                self.stdout.write(self.style.ERROR(f"Error processing video {video.uuid}: {e}. State after error: {error_state_display}"))
+                video.refresh_from_db() 
+                error_state_summary = "N/A"
+                if hasattr(video, 'state') and video.state:
+                    s = video.state
+                    error_state_summary = f"anonymized={s.anonymized}, predicted={s.initial_prediction_completed}, lvs_created={s.lvs_created}"
+                self.stdout.write(self.style.ERROR(f"Error processing video {video.uuid}: {e}. State after error: {error_state_summary}"))
                 # Optionally, explicitly set an error state if the methods don't do it reliably:
-                # if hasattr(video, 'state') and video.state and video.state.status != VideoFile.VideoFileStateChoices.ERROR:
-                #     video.state.set_status(VideoFile.VideoFileStateChoices.ERROR, message=f"Validation command error: {str(e)[:250]}")
-                #     video.state.save()
+                # if hasattr(video, 'state') and video.state: # Further checks would depend on how an error state is defined with booleans
+                #     # video.state.set_status(VideoFile.VideoFileStateChoices.ERROR, message=f"Validation command error: {str(e)[:250]}") # Old way
+                #     # video.state.save() # New way would involve setting specific boolean flags to indicate error
+                pass
+
 
         if verbose:
             self.stdout.write(self.style.SUCCESS(f"Video processing finished. Succeeded: {processed_count}, Failed: {failed_count}."))

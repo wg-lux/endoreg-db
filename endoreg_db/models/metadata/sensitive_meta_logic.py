@@ -269,24 +269,30 @@ def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, 
     selected_data["patient_first_name"] = first_name # Ensure defaults are set
     selected_data["patient_last_name"] = last_name
 
-    if "patient_gender" not in selected_data or not selected_data["patient_gender"]:
-        gender_name = guess_name_gender(first_name)
-        if not gender_name:
-             # Handle cases where gender cannot be guessed (e.g., raise error or use a default)
-            logger.warning(f"Could not guess gender for name '{first_name}'. Setting Gender to unknown.")
-            gender_name = "unknown"  # Default to unknown if guessing fails
+    patient_gender_input = selected_data.get("patient_gender")
+
+    if isinstance(patient_gender_input, Gender):
+        # Already a Gender object, nothing to do
+        pass
+    elif isinstance(patient_gender_input, str):
+        # Input is a string (gender name)
         try:
-            gender = Gender.objects.get(name=gender_name)
+            selected_data["patient_gender"] = Gender.objects.get(name=patient_gender_input)
         except Gender.DoesNotExist:
-            raise ValueError("Gender with name '{}' does not exist.".format(gender_name))
-        selected_data["patient_gender"] = gender # Can be None if guess failed
-
-
-    if isinstance(selected_data["patient_gender"], str):
-        gender = Gender.objects.get(name=selected_data["patient_gender"])
-        selected_data["patient_gender"] = gender
-
-    gender = selected_data["patient_gender"]
+            logger.warning(f"Gender with name '{patient_gender_input}' provided but not found. Attempting to guess or use default.")
+            # Fall through to guessing logic if provided string name is invalid
+            patient_gender_input = None # Reset to trigger guessing
+    
+    if not isinstance(selected_data.get("patient_gender"), Gender): # If not already a Gender object (e.g. was None, or string lookup failed)
+        gender_name_to_use = guess_name_gender(first_name)
+        if not gender_name_to_use:
+            logger.warning(f"Could not guess gender for name '{first_name}'. Setting Gender to unknown.")
+            gender_name_to_use = "unknown"
+        try:
+            selected_data["patient_gender"] = Gender.objects.get(name=gender_name_to_use)
+        except Gender.DoesNotExist:
+            # This should ideally not happen if "unknown" gender is guaranteed to exist
+            raise ValueError(f"Default or guessed gender '{gender_name_to_use}' does not exist in Gender table.")
 
     # Update name DB
     update_name_db(first_name, last_name)

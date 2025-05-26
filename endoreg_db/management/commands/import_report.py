@@ -143,7 +143,8 @@ class Command(BaseCommand):
         ollama_debug = options["ollama_debug"]
         ollama_timeout = options["ollama_timeout"]
 
-        assert isinstance(delete_source, bool), "delete_source must be a boolean"
+        if not isinstance(delete_source, bool):
+            raise ValueError("delete_source must be a boolean")
 
         self.stdout.write(self.style.SUCCESS(f"Starting report import for {file_path}..."))
         

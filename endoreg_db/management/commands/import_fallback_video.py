@@ -1,5 +1,6 @@
 from pathlib import Path
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from endoreg_db.models import (
     VideoFile, 
     Center, 
@@ -171,32 +172,32 @@ class Command(BaseCommand):
         
         This method ensures that default annotation labels, a default center, and a default endoscopy processor exist. If a fallback video entry named "lux-gastro-video.mp4" does not already exist, it creates a minimal `VideoFile` record with preset metadata and initializes its state and frame directory for frontend testing.
         """
-        
-        # Create default labels anyway
-        self.create_default_labels()
-        
-        # Create a placeholder VideoFile entry for frontend testing
-        center, processor = self._ensure_default_objects()
-        
-        # Check if we already have a fallback video
-        if not VideoFile.objects.filter(original_file_name="lux-gastro-video.mp4").exists():
-            # Create a minimal VideoFile entry for frontend testing
-            video_file = VideoFile.objects.create(
-                original_file_name="lux-gastro-video.mp4",
-                video_hash="fallback_hash_12345",
-                center=center,
-                processor=processor,
-                fps=30.0,
-                duration=120.0,  # 2 minutes fallback
-                frame_count=3600,
-                width=1920,
-                height=1080
-            )
+        with transaction.atomic():
+            # Create default labels anyway
+            self.create_default_labels()
             
-            # Initialize the video file
-            video_file.get_or_create_state()
-            video_file.set_frame_dir()
+            # Create a placeholder VideoFile entry for frontend testing
+            center, processor = self._ensure_default_objects()
             
-            self.stdout.write(
-                self.style.SUCCESS(f"Created fallback video entry: {video_file.uuid}")
-            )
+            # Check if we already have a fallback video
+            if not VideoFile.objects.filter(original_file_name="lux-gastro-video.mp4").exists():
+                # Create a minimal VideoFile entry for frontend testing
+                video_file = VideoFile.objects.create(
+                    original_file_name="lux-gastro-video.mp4",
+                    video_hash="fallback_hash_12345",
+                    center=center,
+                    processor=processor,
+                    fps=30.0,
+                    duration=120.0,  # 2 minutes fallback
+                    frame_count=3600,
+                    width=1920,
+                    height=1080
+                )
+                
+                # Initialize the video file
+                video_file.get_or_create_state()
+                video_file.set_frame_dir()
+                
+                self.stdout.write(
+                    self.style.SUCCESS(f"Created fallback video entry: {video_file.uuid}")
+                )

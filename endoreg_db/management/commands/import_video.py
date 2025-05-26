@@ -247,6 +247,7 @@ class Command(BaseCommand):
             center_name=center_name,
             processor_name=processor_name,
             delete_source=delete_source,
+            save_video_file=save_video_file, # Add this line
         )
         
         if not video_file_obj:
