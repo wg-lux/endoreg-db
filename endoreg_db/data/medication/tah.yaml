@@ -1,5 +1,5 @@
 # ASS
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "aspirin"
     name_de: "Aspririn"
@@ -13,7 +13,7 @@
     default_unit: "miligram"
 
 # Clopidogrel
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "clopidogrel"
     name_de: "Clopidogrel"
@@ -27,7 +27,7 @@
     default_unit: "miligram"
 
 # Prasugrel
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "prasugrel"
     name_de: "Prasugrel"
@@ -42,7 +42,7 @@
 
 
 # Ticagrelor
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "ticagrelor"
     name_de: "Ticagrelor"
@@ -56,7 +56,7 @@
     default_unit: "miligram"
 
 # Tirofiban
-- models: endoreg_db.models.medication
+- models: endoreg_db.medication
   fields:
     name: "tirofiban"
     name_de: "Tirofiban"

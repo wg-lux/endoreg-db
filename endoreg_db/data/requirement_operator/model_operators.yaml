@@ -49,17 +49,17 @@
 
 - model: endoreg_db.requirement_operator
   fields:
+    name: "models_match_any_in_timeframe"
+    name_de: "Mindestens ein Modell existiert im angegebenen Zeitraum"
+    name_en: "At least one model exists in the given timeframe"
+    description: "Make sure that at least one of the provided Foreign Key models exist and its associated date falls within the specified timeframe. Timeframe is defined by numeric_value_min, numeric_value_max, and unit on the Requirement."
+
+- model: endoreg_db.requirement_operator
+  fields:
     name: "models_match_all_in_timeframe"
     name_de: "Modelle existieren im angegebenen Zeitraum"
     name_en: "Models exist in the given timeframe"
     description: "Make sure that all the provided Foreign Key models have a date within the given timeframe. The timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
-
-- model: endoreg_db.requirement_operator
-  fields:
-    name: "models_match_any_in_timeframe"
-    name_de: "Mindestens ein Modell existiert im angegebenen Zeitraum"
-    name_en: "At least one model exists in the given timeframe"
-    description: "Make sure that at least one of the provided Foreign Key models has a date within the given timeframe. The timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
 
 - model: endoreg_db.requirement_operator
   fields:
@@ -88,3 +88,9 @@
     name_de: "Höchstens n Modelle existieren im angegebenen Zeitraum"
     name_en: "At most n models exist in the given timeframe"
     description: "Make sure that at most n of the provided Foreign Key models have a date within the given timeframe. The timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week). The number n is defined using the numeric_value_min field."
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_medication_schedule_matches_template"
+    description: "Checks if any PatientMedication in the input PatientMedicationSchedule matches the profile (medication, dose, unit, intake times) of any MedicationSchedule template linked to the requirement."
+    evaluation_function_name: "_evaluate_patient_medication_schedule_matches_template"

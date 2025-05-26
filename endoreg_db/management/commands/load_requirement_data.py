@@ -22,6 +22,8 @@ from endoreg_db.models import (
     MedicationIndication,
     MedicationIndicationType,
     MedicationSchedule,
+    Medication,  # Added Medication model
+    MedicationIntakeTime,
 )
 from ...utils import load_model_data_from_yaml
 from ...data import (
@@ -76,6 +78,8 @@ IMPORT_METADATA = {
             "medication_indications",
             "medication_indication_types",
             "medication_schedules",
+            "medications",  # Added medications
+            "medication_intake_times",
         ],
         "foreign_key_models": [
             RequirementType,
@@ -96,6 +100,8 @@ IMPORT_METADATA = {
             MedicationIndication,
             MedicationIndicationType,
             MedicationSchedule,
+            Medication,  # Added Medication model
+            MedicationIntakeTime,
         ],
     },
     RequirementSetType.__name__: {

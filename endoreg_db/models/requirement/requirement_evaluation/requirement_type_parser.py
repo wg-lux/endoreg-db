@@ -29,6 +29,8 @@ from endoreg_db.models import (
     PatientLabValue,
     PatientLabSample,  # Assuming PatientLabSample is defined elsewhere,
     Patient,
+    PatientMedication,  # Added PatientMedication
+    PatientMedicationSchedule, # Added PatientMedicationSchedule
 )
 # if TYPE_CHECKING:
 #     from endoreg_db.models import (
@@ -65,6 +67,8 @@ data_model_dict: Dict[str, Union[
     PatientLabValue,
     PatientLabSample,
     Patient,
+    PatientMedication,  # Added PatientMedication
+    PatientMedicationSchedule, # Added PatientMedicationSchedule
 ]] = {
     "disease": Disease,
     "disease_classification_choice": DiseaseClassificationChoice,
@@ -92,6 +96,8 @@ data_model_dict: Dict[str, Union[
     "patient_lab_value": PatientLabValue,
     "patient_lab_sample": PatientLabSample,  # Changed from string "PatientLabSample" to the class
     "patient": Patient,
+    "patient_medication": PatientMedication,  # Added PatientMedication mapping
+    "patient_medication_schedule": PatientMedicationSchedule, # Added PatientMedicationSchedule mapping
 }
 
 data_model_dict_reverse = {

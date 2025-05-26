@@ -1,9 +1,12 @@
 from django.db import models
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
+from logging import getLogger # Added logger
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links.requirement_link import RequirementLinks 
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    from .requirement import Requirement # Added Requirement import for type hint
 
+logger = getLogger(__name__) # Added logger instance
 
 class RequirementOperatorManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -34,6 +37,7 @@ class RequirementOperator(models.Model):
     name_de = models.CharField(max_length=100, blank=True, null=True)
     name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    evaluation_function_name = models.CharField(max_length=255, blank=True, null=True) # Added field
 
     objects = RequirementOperatorManager()
 
@@ -79,13 +83,14 @@ class RequirementOperator(models.Model):
     def evaluate(self, requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool: # Changed signature
         
         """
-        Evaluates the requirement operator against the provided requirement links and input links.
+        Evaluates the requirement operator against the provided requirement links and input_links.
         
         Args:
             requirement_links: The RequirementLinks object from the Requirement model.
             input_links: The aggregated RequirementLinks object from the input arguments.
             **kwargs: Additional keyword arguments for specific operator logic.
                         For lab value operators, this includes 'requirement' (the Requirement model instance).
+                        The 'requirement' instance is now passed for all operators.
 
         Returns:
             True if the condition defined by the operator is met, False otherwise.
@@ -93,11 +98,80 @@ class RequirementOperator(models.Model):
         Raises:
             NotImplementedError: If the evaluation logic for the operator's name is not implemented.
         """
-        from endoreg_db.utils.requirement_operator_logic.model_evaluators import dispatch_operator_evaluation
+        # kwargs should contain 'requirement' (the Requirement instance) passed from Requirement.evaluate()
+        if self.evaluation_function_name:
+            eval_func = getattr(self, self.evaluation_function_name, None)
+            if eval_func and callable(eval_func):
+                return eval_func(requirement_links=requirement_links, input_links=input_links, **kwargs)
+            else:
+                logger.error(
+                    f"Evaluation function '{self.evaluation_function_name}' "
+                    f"not found or not callable on {self.__class__.__name__} "
+                    f"for operator '{self.name}'."
+                )
+                raise NotImplementedError(
+                    f"Evaluation function '{self.evaluation_function_name}' "
+                    f"not implemented correctly for operator '{self.name}'."
+                )
+        else:
+            # Fallback to the central dispatcher if no specific function name is provided
+            from endoreg_db.utils.requirement_operator_logic.model_evaluators import dispatch_operator_evaluation
+            return dispatch_operator_evaluation(
+                operator_name=self.name,
+                requirement_links=requirement_links,
+                input_links=input_links,
+                operator_instance=self,  # Pass the operator instance
+                **kwargs 
+            )
+    
+    from ..medical.patient.patient_medication import PatientMedication # Added
+    from ..medical.medication import MedicationSchedule as MedicationScheduleTemplate # Added with alias
 
-        return dispatch_operator_evaluation(
-            operator_name=self.name,
-            requirement_links=requirement_links,
-            input_links=input_links,
-            **kwargs
-        )
+    def _evaluate_patient_medication_schedule_matches_template(
+        self,
+        requirement_links: "RequirementLinks",
+        input_links: "RequirementLinks",
+        requirement: "Requirement", # Added requirement
+        **kwargs,
+    ) -> bool:
+        """
+        Checks if any PatientMedication in the input PatientMedicationSchedule
+        matches the profile (medication, dose, unit, intake times)
+        of any MedicationSchedule template linked to the requirement.
+        """
+        # Get MedicationSchedule templates from the requirement
+        req_schedule_templates = requirement_links.medication_schedules
+        if not req_schedule_templates:
+            # If the requirement doesn't specify any templates to match against,
+            # it's ambiguous. Consider this a non-match.
+            return False
+
+        # Get PatientMedication instances from the input (derived from PatientMedicationSchedule.links)
+        input_patient_medications = input_links.patient_medications
+        if not input_patient_medications:
+            # If the input schedule has no medications, it cannot match any template.
+            return False
+
+        for pm_instance in input_patient_medications:
+            pm_intake_times_set = set(pm_instance.intake_times.all())
+            for schedule_template in req_schedule_templates:
+                template_intake_times_set = set(schedule_template.intake_times.all())
+
+                # Check for profile match
+                medication_match = pm_instance.medication == schedule_template.medication
+                dose_match = pm_instance.dosage == schedule_template.dose 
+                unit_match = pm_instance.unit == schedule_template.unit
+                intake_times_match = pm_intake_times_set == template_intake_times_set
+                
+                # Debugging output (optional, can be removed)
+                # print(f"Comparing PM ID {pm_instance.id} with Template {schedule_template.name}:")
+                # print(f"  Medication: {pm_instance.medication} vs {schedule_template.medication} -> {medication_match}")
+                # print(f"  Dose: {pm_instance.dosage} vs {schedule_template.dose} -> {dose_match}")
+                # print(f"  Unit: {pm_instance.unit} vs {schedule_template.unit} -> {unit_match}")
+                # print(f"  Intake Times: {pm_intake_times_set} vs {template_intake_times_set} -> {intake_times_match}")
+
+
+                if medication_match and dose_match and unit_match and intake_times_match:
+                    return True  # Found a match
+
+        return False # No PatientMedication matched any template

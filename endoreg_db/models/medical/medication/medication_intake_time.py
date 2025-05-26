@@ -10,13 +10,33 @@ class MedicationIntakeTimeManager(models.Manager):
     
 class MedicationIntakeTime(models.Model):
     '''Model representing a medication intake time.'''
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, unique=True)  # Made unique=True
     name_de = models.CharField(max_length=255, blank=True, null=True)
     name_en = models.CharField(max_length=255, blank=True, null=True)
     repeats = models.CharField(max_length=20, default = "daily")
     time = models.TimeField()
 
     objects = MedicationIntakeTimeManager()
+
+    @classmethod
+    def dm(cls):
+        '''Return the daily morning intake time object.'''
+        return cls.objects.get(name='daily-morning')
+    
+    @classmethod
+    def dno(cls):
+        '''Return the daily noon intake time object.'''
+        return cls.objects.get(name='daily-noon')
+
+    @classmethod
+    def de(cls):
+        '''Return the daily evening intake time object.'''
+        return cls.objects.get(name='daily-evening')
+    
+    @classmethod
+    def dn(cls):
+        '''Return the daily night intake time object.'''
+        return cls.objects.get(name='daily-night')
 
     def natural_key(self):
         '''Return the natural key for the medication intake time.'''

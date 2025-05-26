@@ -1,11 +1,14 @@
 from django.db import models
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List # Added List
 from datetime import datetime as dt
 
 if TYPE_CHECKING:
     from ...administration.person.patient import Patient
     from .patient_medication import PatientMedication
     from ..medication import MedicationSchedule
+    from ....utils.links.requirement_link import RequirementLinks # Added
+    from ..medication import Medication, MedicationIndication, MedicationIntakeTime # Added
+
 
 class PatientMedicationSchedule(models.Model):
     """
@@ -24,6 +27,34 @@ class PatientMedicationSchedule(models.Model):
     if TYPE_CHECKING:
         patient: "Patient"
         medication: models.QuerySet["PatientMedication"]
+
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Aggregates RequirementLinks from all PatientMedication instances in this schedule.
+        """
+        from ....utils.links.requirement_link import RequirementLinks
+
+        aggregated_medications: List["Medication"] = []
+        aggregated_medication_indications: List["MedicationIndication"] = []
+        aggregated_medication_intake_times: List["MedicationIntakeTime"] = []
+        
+        patient_meds_in_schedule: List["PatientMedication"] = list(self.medication.all())
+
+        for pm_instance in patient_meds_in_schedule:
+            pm_links_obj = pm_instance.links 
+            
+            aggregated_medications.extend(pm_links_obj.medications)
+            aggregated_medication_indications.extend(pm_links_obj.medication_indications)
+            aggregated_medication_intake_times.extend(pm_links_obj.medication_intake_times)
+
+        return RequirementLinks(
+            medications=list(set(aggregated_medications)),
+            medication_indications=list(set(aggregated_medication_indications)),
+            medication_intake_times=list(set(aggregated_medication_intake_times)),
+            patient_medications=patient_meds_in_schedule,
+            patient_medication_schedules=[self]
+        )
 
     def __str__(self):
         """Returns a string representation including the patient and associated medications."""

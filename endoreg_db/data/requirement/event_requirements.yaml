@@ -1,0 +1,145 @@
+# /home/admin/dev/endo-ai/endoreg-db/endoreg_db/data/requirement/event_requirements.yaml
+- model: endoreg_db.requirement
+  fields:
+    name: "event_coro_des_implantation_exists"
+    name_de: "Ereignis Koronarstent-Implantation (DES) vorhanden"
+    name_en: "Event Coronary Stent Implantation (DES) exists"
+    description: "Checks if a 'coro_des_implantation' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "coro_des_implantation"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_coro_bms_implantation_exists"
+    name_de: "Ereignis Koronarstent-Implantation (BMS) vorhanden"
+    name_en: "Event Coronary Stent Implantation (BMS) exists"
+    description: "Checks if a 'coro_bms_implantation' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "coro_bms_implantation"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_pulmonary_embolism_exists"
+    name_de: "Ereignis Lungenembolie vorhanden"
+    name_en: "Event Pulmonary Embolism exists"
+    description: "Checks if a 'pulmonary_embolism' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "pulmonary_embolism"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_deep_vein_thrombosis_exists"
+    name_de: "Ereignis Tiefe Beinvenenthrombose vorhanden"
+    name_en: "Event Deep Vein Thrombosis exists"
+    description: "Checks if a 'deep_vein_thrombosis' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "deep_vein_thrombosis"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_stroke_exists"
+    name_de: "Ereignis Schlaganfall vorhanden"
+    name_en: "Event Stroke exists"
+    description: "Checks if a 'stroke' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "stroke"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_transient_ischemic_attack_exists"
+    name_de: "Ereignis Transitorische ischämische Attacke vorhanden"
+    name_en: "Event Transient Ischemic Attack exists"
+    description: "Checks if a 'transient_ischemic_attack' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "transient_ischemic_attack"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_hip_replacement_surgery_exists"
+    name_de: "Ereignis Hüft-TEP Operation vorhanden"
+    name_en: "Event Hip replacement surgery exists"
+    description: "Checks if a 'hip_replacement_surgery' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "hip_replacement_surgery"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_knee_replacement_surgery_exists"
+    name_de: "Ereignis Knie-TEP Operation vorhanden"
+    name_en: "Event Knee replacement surgery exists"
+    description: "Checks if a 'knee_replacement_surgery' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "knee_replacement_surgery"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_recurrent_thrombembolism_exists"
+    name_de: "Ereignis Rezidivierende Thrombembolien vorhanden"
+    name_en: "Event Recurrent Thrombembolism exists"
+    description: "Checks if a 'recurrent_thrombembolism' event exists for the patient."
+    requirement_types:
+      - "patient"
+      - "patient_event" # Added patient_event
+    operators:
+      - models_match_any
+    events:
+      - "recurrent_thrombembolism"
+
+# Example for models_match_any_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "event_stroke_in_last_30_days"
+    name_de: "Ereignis Schlaganfall in den letzten 30 Tagen"
+    name_en: "Event Stroke in the last 30 days"
+    description: "Checks if a 'stroke' event occurred for the patient in the last 30 days."
+    requirement_types: # Defines which input models are expected by Requirement.evaluate()
+      - "patient"
+      - "patient_event" # This tells the system to look for PatientEvent models in the input
+    operators:
+      - models_match_any_in_timeframe
+    events: # This links the Requirement to specific Event models (e.g. "stroke")
+      - "stroke"
+    # Timeframe definition for the operator:
+    numeric_value_min: -30 # Start of timeframe (days ago)
+    numeric_value_max: 0   # End of timeframe (days ago, i.e., today)
+    unit: "days"           # Unit for the timeframe

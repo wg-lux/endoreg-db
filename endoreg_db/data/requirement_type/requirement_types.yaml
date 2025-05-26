@@ -108,4 +108,53 @@
     name: "patient"
     name_de: "Patient"
     name_en: "Patient"
-    description: "Patient-related requirements"
+    description: "Relates to a patient record."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_event"
+    name_de: "Patientenereignis"
+    name_en: "Patient Event"
+    description: "Requirements of this type are used on PatientEvent Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_medication"
+    name_de: "Patientenmedikation"
+    name_en: "Patient Medication"
+    description: "Requirements of this type are used on PatientMedication Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "medication"
+    name_de: "Medikament"
+    name_en: "Medication"
+    description: "Requirements of this type are used on Medication Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "medication_indication"
+    name_de: "Medikationsindikation"
+    name_en: "Medication Indication"
+    description: "Requirements of this type are used on MedicationIndication Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "medication_intake_time"
+    name_de: "Medikamenteneinnahmezeit"
+    name_en: "Medication Intake Time"
+    description: "Requirements of this type are used on MedicationIntakeTime Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "medication_schedule"
+    name_de: "Medikationsschema"
+    name_en: "Medication Schedule"
+    description: "Requirements of this type are used on MedicationSchedule Objects."
+
+- model: endoreg_db.requirement_type
+  fields:
+    name: "patient_medication_schedule"
+    name_de: "Patienten-Medikationsplan"
+    name_en: "Patient Medication Schedule"
+    description: "Represents a patient's overall medication schedule, which may contain multiple patient medications."
