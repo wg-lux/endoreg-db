@@ -19,6 +19,31 @@
     operators: ["models_match_any"]
     medication_indications: ["te_prevention-non_valvular_af-apixaban"]
 
+# medication indication te_prevention-after_hip-apixaban
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_after_hip_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication_indication"]
+    operators: ["models_match_any"]
+    medication_indications: ["te_prevention-after_hip-apixaban"]
+
+# te_prevention-after_knee-apixaban
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_after_knee_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication_indication"]
+    operators: ["models_match_any"]
+    medication_indications: ["te_prevention-after_knee-apixaban"]
+
+# te_prevention-non_valvular_af-apixaban
+- model: endoreg_db.requirement
+  fields:
+    name: "intake_time_daily_morning_is_defined_in_requirement"
+    requirement_types: ["medication_intake_time"]
+    operators: ["models_match_any"]
+    medication_indications: ["te_prevention-non_valvular_af-apixaban"]   
+
+
 - model: endoreg_db.requirement
   fields:
     name: "intake_time_daily_morning_is_defined_in_requirement"
