@@ -14,7 +14,7 @@ from endoreg_db.logger_conf import get_logging_config
 # ------------------------------------------------------------------------------
 DEBUG = True
 SECRET_KEY = "fake-key"
-
+USE_TZ = True
 INSTALLED_APPS = [
     "tests",
     "endoreg_db.apps.EndoregDbConfig",
