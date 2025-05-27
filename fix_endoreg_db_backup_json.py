@@ -7,7 +7,7 @@ from django.db.models import (
     ForeignKey, UUIDField, JSONField,
 )
 
-# Config
+# input output file
 input_file = "endoreg_db_backup.json"
 output_file = "endoreg_db_backup_fixed.json"
 
