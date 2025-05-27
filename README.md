@@ -173,7 +173,8 @@ To export the current database into a JSON file:
 This will create a backup file such as `endoreg_db_backup.json`.
 
 #### List of the comands in 'export_db.sh'
-1. `python manage.py dumpdata --indent 4 --output=endoreg_db_backup.json`
+1. `python manage.py dumpdata --indent 4 --output=endoreg_db_backup.json` (if migrate comand generates and stores data in database table then wee nee dto exclude those tables from dumping)
+
 2. `python manage.py shell < fix_endoreg_db_backup_json.py`
 
 ###  Import (Restore) the Database
