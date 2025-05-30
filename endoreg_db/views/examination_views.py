@@ -9,7 +9,10 @@ from rest_framework.response import Response
 from endoreg_db.models import (
     FindingMorphologyClassificationChoice,
     FindingMorphologyClassification,
-    FindingLocationClassificationChoice, FindingIntervention #, Instrument
+    FindingLocationClassificationChoice, 
+    FindingLocationClassification,
+    FindingIntervention,
+    Finding
 )
 from django.shortcuts import get_object_or_404
 
@@ -17,30 +20,74 @@ class ExaminationViewSet(ReadOnlyModelViewSet):
     queryset = Examination.objects.all()
     serializer_class = ExaminationSerializer
 
+# NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
+
+@api_view(["GET"])
+def get_location_classifications_for_exam(request, exam_id):
+    """
+    Retrieves location classifications available for a given examination.
+    Returns a list of location classifications linked to the examination.
+    """
+    exam = get_object_or_404(Examination, id=exam_id)
+    location_classifications = exam.location_classifications.all()
+    return Response([{"id": lc.id, "name": lc.name} for lc in location_classifications])
+
+@api_view(["GET"])
+def get_findings_for_exam(request, exam_id):
+    """
+    Retrieves findings available for a given examination.
+    Returns a list of findings linked to the examination.
+    """
+    exam = get_object_or_404(Examination, id=exam_id)
+    findings = exam.get_available_findings()
+    return Response([{"id": f.id, "name": f.name} for f in findings])
+
+@api_view(["GET"])
+def get_location_choices_for_classification(request, exam_id, location_classification_id):
+    """
+    Retrieves location choices for a specific location classification within an examination.
+    """
+    exam = get_object_or_404(Examination, id=exam_id)
+    location_classification = get_object_or_404(FindingLocationClassification, id=location_classification_id)
+    
+    # Get choices for this specific classification
+    choices = location_classification.get_choices()
+    return Response([{"id": c.id, "name": c.name, "classificationId": location_classification_id} for c in choices])
+
+@api_view(["GET"])
+def get_interventions_for_finding(request, exam_id, finding_id):
+    """
+    Retrieves interventions available for a specific finding within an examination.
+    """
+    exam = get_object_or_404(Examination, id=exam_id)
+    finding = get_object_or_404(Finding, id=finding_id)
+    
+    # Get interventions for this specific finding
+    interventions = finding.finding_interventions.all()
+    return Response([{"id": i.id, "name": i.name} for i in interventions])
+
+# EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
+
 @api_view(["GET"])
 def get_morphology_classification_choices_for_exam(request, exam_id):
-        """
-        Retrieves morphology classification choices available for a given examination.
-        
-        Returns a list of distinct morphology classification choices linked to the required and optional morphology classification types of the findings associated with the specified examination.
-        """
-        exam = get_object_or_404(Examination, id=exam_id)
-        findings = exam.get_available_findings()
-
-        all_classification_types = set()
-        for finding in findings:
-            all_classification_types.update(finding.required_morphology_classification_types.all())
-            all_classification_types.update(finding.optional_morphology_classification_types.all())
-
-        choices = FindingMorphologyClassificationChoice.objects.filter(
-            classification__in=FindingMorphologyClassification.objects.filter(
-                classification_type__in=list(all_classification_types)
-            )
-        ).distinct()
-
-        return Response([{"id": c.id, "name": c.name} for c in choices])
+    """
+    Retrieves morphology classification choices available for a given examination.
     
-    
+    Returns a list of distinct morphology classification choices linked to the required and optional morphology classification types of the findings associated with the specified examination.
+    """
+    exam = get_object_or_404(Examination, id=exam_id)
+    findings = exam.get_available_findings()
+    all_classification_types = set()
+    for finding in findings:
+        all_classification_types.update(finding.required_morphology_classification_types.all())
+        all_classification_types.update(finding.optional_morphology_classification_types.all())
+    choices = FindingMorphologyClassificationChoice.objects.filter(
+        classification__in=FindingMorphologyClassification.objects.filter(
+            classification_type__in=list(all_classification_types)
+        )
+    ).distinct()
+    return Response([{"id": c.id, "name": c.name} for c in choices])
+
 @api_view(["GET"])
 def get_location_classification_choices_for_exam(request, exam_id):
     """
@@ -50,15 +97,12 @@ def get_location_classification_choices_for_exam(request, exam_id):
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
-
     choices = FindingLocationClassificationChoice.objects.filter(
         location_classifications__in=[
             lc for finding in findings for lc in finding.get_location_classifications()
         ]
     ).distinct()
-
     return Response([{"id": c.id, "name": c.name} for c in choices])
-
 
 @api_view(["GET"])
 def get_interventions_for_exam(request, exam_id):
@@ -70,9 +114,7 @@ def get_interventions_for_exam(request, exam_id):
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
     interventions = FindingIntervention.objects.filter(findings__in=findings).distinct()
-
     return Response([{"id": i.id, "name": i.name} for i in interventions])
-
 
 @api_view(["GET"])
 def get_instruments_for_exam(request, exam_id):

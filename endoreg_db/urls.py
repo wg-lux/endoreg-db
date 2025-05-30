@@ -23,11 +23,12 @@ from .views.examination_views import (
     get_location_classification_choices_for_exam,
     get_interventions_for_exam,
     get_instruments_for_exam,
+    # New imports for restructured frontend
+    get_location_classifications_for_exam,
+    get_findings_for_exam,
+    get_location_choices_for_classification,
+    get_interventions_for_finding,
 )
-# Add missing imports for stats and labels
-# from .views.stats_views import StatsView
-# from .views.label_views import LabelViewSet
-# from .views.user_views import UserViewSet, UserStatusView
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
@@ -40,6 +41,30 @@ urlpatterns = [
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
     path('examinations/', ExaminationViewSet.as_view({'get': 'list'}), name='examination-list'),
+    
+    # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
+    path(
+        'examination/<int:exam_id>/location-classifications/',
+        get_location_classifications_for_exam,
+        name='get_location_classifications_for_exam'
+    ),
+    path(
+        'examination/<int:exam_id>/findings/',
+        get_findings_for_exam,
+        name='get_findings_for_exam'
+    ),
+    path(
+        'examination/<int:exam_id>/location-classification/<int:location_classification_id>/choices/',
+        get_location_choices_for_classification,
+        name='get_location_choices_for_classification'
+    ),
+    path(
+        'examination/<int:exam_id>/finding/<int:finding_id>/interventions/',
+        get_interventions_for_finding,
+        name='get_interventions_for_finding'
+    ),
+    
+    # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
     path(
         'examination/<int:exam_id>/morphology-classification-choices/',
         get_morphology_classification_choices_for_exam,
