@@ -55,7 +55,7 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and obj.file:
             print("---------------------------:",obj.file)
-            return request.build_absolute_uri(f"/video/{obj.id}/")  # Generates full URL
+            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
         return None  # Return None instead of an error dictionary
     
     def get_file(self, obj):

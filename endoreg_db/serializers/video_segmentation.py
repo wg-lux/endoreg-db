@@ -74,7 +74,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/video/{obj.id}/")
+            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
 
         return {"error": "Video URL not avalaible"}
 
@@ -120,26 +120,28 @@ class VideoFileSerializer(serializers.ModelSerializer):
     def get_full_video_path(self, obj:"Video"):
         """
         Constructs the absolute file path dynamically.
-        - Uses the actual storage directory (`/home/admin/test-data/`)
+        - Uses the actual storage directory from the video file's active_file_path
         """
-        from ..utils import data_paths
-        STORAGE_DIR = data_paths["storage"]  #  Get the storage directory from the utility
         if not obj.active_file:
             return {"error": "No video file associated with this entry"}
 
-        video_relative_path = str(obj.active_file.name).strip()  #  Convert FieldFile to string
-        if not video_relative_path:
-            return {
-                "error": "Video file path is empty or invalid"
-            }  #  none might cause, 500 error, Handle edge case where the file name is empty
-
-        full_path = STORAGE_DIR / video_relative_path
-
-        return (
-            str(full_path)
-            if full_path.exists()
-            else {"error": f"file not found at: {full_path}"}
-        )
+        try:
+            # Use the active_file_path property which handles both processed and raw files
+            if hasattr(obj, 'active_file_path') and obj.active_file_path:
+                full_path = obj.active_file_path
+                return str(full_path) if full_path.exists() else {"error": f"file not found at: {full_path}"}
+            else:
+                # Fallback: construct path manually
+                video_relative_path = str(obj.active_file.name).strip()
+                if not video_relative_path:
+                    return {"error": "Video file path is empty or invalid"}
+                
+                # Construct the path using the file's actual path
+                full_path = obj.active_file.path
+                return str(full_path) if Path(full_path).exists() else {"error": f"file not found at: {full_path}"}
+                
+        except Exception as e:
+            return {"error": f"Error constructing file path: {str(e)}"}
 
     def get_sequences(self, obj:"Video"):
         """

@@ -12,14 +12,37 @@ class VideoFileForMetaView(APIView):
     """
     API endpoint to fetch video metadata step-by-step.
     Uses the serializer to get the first or next available video.
+    
+    - Returns JSON metadata when Accept: application/json
+    - Returns video file when accessed directly by video tag
     """
 
     def get(self, request):
         """
+        - Returns video file stream if Accept header is not application/json
+        - Returns JSON metadata if Accept header is application/json
         - Fetches the **first available video** if `last_id` is NOT provided.
         - Fetches the **next available video** where `id > last_id` if provided.
-        - If no video is available, returns a structured error response.
         """
+        # Get video ID from URL path if present
+        video_id = None
+        if hasattr(request, 'resolver_match') and request.resolver_match.kwargs:
+            video_id = request.resolver_match.kwargs.get('video_id')
+        
+        # Check Accept header to determine response type
+        accept_header = request.META.get('HTTP_ACCEPT', '')
+        
+        # If video_id is provided and Accept header doesn't specifically request JSON,
+        # serve the video file directly
+        if video_id and 'application/json' not in accept_header:
+            try:
+                from ..models import VideoFile
+                video_entry = VideoFile.objects.get(id=video_id)
+                return self.serve_video_file(video_entry)
+            except VideoFile.DoesNotExist:
+                raise Http404("Video not found.")
+        
+        # Otherwise, return JSON metadata
         last_id = request.GET.get("last_id")  # Get last_id from query params
 
         #  Get the next video as a model instance
@@ -69,15 +92,25 @@ class VideoFileForMetaView(APIView):
         Streams the video file dynamically.
         """
         try:
-            full_video_path = video_entry.file.path  #  Get file path
+            # Try different file sources
+            file_path = None
+            
+            if hasattr(video_entry, 'processed_file') and video_entry.processed_file:
+                file_path = video_entry.processed_file.path
+            elif hasattr(video_entry, 'raw_file') and video_entry.raw_file:
+                file_path = video_entry.raw_file.path
+            elif hasattr(video_entry, 'file') and video_entry.file:
+                file_path = video_entry.file.path
 
-            if not os.path.exists(full_video_path):
-                raise Http404("Video file not found.")
+            if not file_path or not os.path.exists(file_path):
+                raise Http404("Video file not found on server.")
 
-            mime_type, _ = mimetypes.guess_type(full_video_path)  # Detects file type
-            response = FileResponse(open(full_video_path, "rb"), content_type=mime_type or "video/mp4")
+            mime_type, _ = mimetypes.guess_type(file_path)  # Detects file type
+            response = FileResponse(open(file_path, "rb"), content_type=mime_type or "video/mp4")
 
-            response["Content-Disposition"] = f'inline; filename="{os.path.basename(full_video_path)}"'  # Allows direct streaming
+            response["Content-Disposition"] = f'inline; filename="{os.path.basename(file_path)}"'  # Allows direct streaming
+            response["Accept-Ranges"] = "bytes"  # Enable range requests for video seeking
+            response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
 
             return response  # Sends the video file as a stream
 

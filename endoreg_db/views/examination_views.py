@@ -43,17 +43,31 @@ def get_findings_for_exam(request, exam_id):
     return Response([{"id": f.id, "name": f.name} for f in findings])
 
 @api_view(["GET"])
+@api_view(["GET"])
 def get_location_choices_for_classification(request, exam_id, location_classification_id):
     """
     Retrieves location choices for a specific location classification within an examination.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     location_classification = get_object_or_404(FindingLocationClassification, id=location_classification_id)
-    
+
+    # Validate that the location classification belongs to this examination
+    if location_classification not in exam.location_classifications.all():
+        return Response(
+            {"error": "Location classification not found for this examination"},
+            status=404,
+        )
+
     # Get choices for this specific classification
     choices = location_classification.get_choices()
-    return Response([{"id": c.id, "name": c.name, "classificationId": location_classification_id} for c in choices])
+    return Response(
+        [
+            {"id": c.id, "name": c.name, "classificationId": location_classification_id}
+            for c in choices
+        ]
+    )
 
+@api_view(["GET"])
 @api_view(["GET"])
 def get_interventions_for_finding(request, exam_id, finding_id):
     """
@@ -61,10 +75,28 @@ def get_interventions_for_finding(request, exam_id, finding_id):
     """
     exam = get_object_or_404(Examination, id=exam_id)
     finding = get_object_or_404(Finding, id=finding_id)
-    
+
+    # Validate that the finding belongs to this examination
+    exam_findings = exam.get_available_findings()
+    if finding not in exam_findings:
+        return Response({"error": "Finding not found for this examination"}, status=404)
+
     # Get interventions for this specific finding
     interventions = finding.finding_interventions.all()
     return Response([{"id": i.id, "name": i.name} for i in interventions])
+
+@api_view(["GET"])
+def get_examinations_for_video(request, video_id):
+    """
+    Retrieves all examinations for a specific video.
+    Returns a list of examinations with their basic information.
+    """
+    from ..models import VideoFile
+    video = get_object_or_404(VideoFile, id=video_id)
+    
+    # For now, return empty list since video-examination relationship needs to be established
+    # TODO: Implement proper video-examination relationship
+    return Response([])
 
 # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
 

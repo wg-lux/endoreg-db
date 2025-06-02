@@ -74,7 +74,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/video/{obj.id}/")
+            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
 
         return {"error": "Video URL not avalaible"}
 
@@ -249,17 +249,51 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
 class VideoListSerializer(serializers.ModelSerializer):
     """
-    Minimal serializer to return only `id` and `original_file_name`
-    for the video selection dropdown in Vue.js.
+    Enhanced serializer to return video metadata for dashboard statistics.
+    Includes status information and user assignments for proper dashboard display.
     """
+    status = serializers.SerializerMethodField()
+    assignedUser = serializers.SerializerMethodField()
+    anonymized = serializers.SerializerMethodField()
 
     class Meta:
         model = VideoFile
-        fields = ["id", "original_file_name"]  # Only fetch required fields
+        fields = ["id", "original_file_name", "status", "assignedUser", "anonymized"]
 
-
-
-
+    def get_status(self, obj):
+        """
+        Determine video status based on available data.
+        Returns 'completed' if video has prediction sequences, 'in_progress' if processing, 'available' otherwise.
+        """
+        if hasattr(obj, 'sequences') and obj.sequences:
+            return 'completed'
+        elif hasattr(obj, 'frames_extracted') and obj.frames_extracted:
+            return 'in_progress'
+        else:
+            return 'available'
+    
+    def get_assignedUser(self, obj):
+        """
+        Get assigned user from video metadata or prediction metadata.
+        Returns None if no user is assigned.
+        """
+        # Check if there's a prediction meta with user assignment
+        try:
+            from ...models import VideoPredictionMeta
+            prediction_meta = VideoPredictionMeta.objects.filter(video_file=obj).first()
+            if prediction_meta and hasattr(prediction_meta, 'assigned_user'):
+                return prediction_meta.assigned_user
+        except:
+            pass
+        return None
+    
+    def get_anonymized(self, obj):
+        """
+        Check if video has been anonymized.
+        Returns True if anonymized file exists, False otherwise.
+        """
+        return hasattr(obj, 'anonymized') and bool(obj.anonymized)
+    
 
 class LabelSerializer(serializers.ModelSerializer):
     """
