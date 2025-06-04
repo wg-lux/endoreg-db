@@ -8,6 +8,8 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
 )
 
+from endoreg_db.serializers import LabelVideoSegmentSerializer
+
 import logging
 from ..helpers.data_loader import (
     load_ai_model_label_data,
@@ -147,6 +149,14 @@ class LabelVideoSegmentModelTest(TestCase):
         if sample_frame:
             sample_frame.refresh_from_db()
             self.assertFalse(sample_frame.file_path.exists(), f"Frame file {sample_frame.file_path} should NOT exist after deletion")
+    
+    def test_create_segment_with_video_seg_label_name(self):
+        data = {"video_id": v.id, "label_name": "appendix",
+                "start_time": 0, "end_time": 1}
+        s = LabelVideoSegmentSerializer(data=data)
+        assert s.is_valid(), s.errors
+        segment = s.save()
+        assert isinstance(segment.label, Label)
 
     def test_get_segment_len_in_s(self):
         """Test calculating the segment length in seconds."""

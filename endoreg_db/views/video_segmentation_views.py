@@ -6,7 +6,7 @@ from rest_framework import viewsets, decorators, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from ..models import VideoFile, Label
+from ..models import VideoFile, Label, LabelVideoSegment
 from ..serializers._old.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
 
 
@@ -137,29 +137,91 @@ class VideoLabelView(APIView):
         """
         Retrieves time segments and frame-wise predictions for a specific label on a video.
         
-        Returns a JSON response containing the label name, its associated time segments, and frame predictions. Responds with HTTP 404 if the video or label is not found, or HTTP 500 for other errors.
+        Returns a JSON response containing the label name, its associated time segments, and frame predictions. 
+        Responds with HTTP 404 if the video or label is not found, or HTTP 500 for other errors.
         """
         try:
+            # Verify video exists
             video_entry = VideoFile.objects.get(id=video_id)
             
-            serializer = VideoFileSerializer(video_entry, context={'request': request})
-            label_data = serializer.get_label_time_segments(video_entry)
-
-            # Ensure the requested label exists
-            if label_name not in label_data:
-                return Response({"error": f"Label '{label_name}' not found"}, status=status.HTTP_404_NOT_FOUND)
-
+            # Try to get label by name
+            try:
+                label = Label.objects.get(name=label_name)
+            except Label.DoesNotExist:
+                return Response({
+                    "error": f"Label '{label_name}' not found in database"
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Get label video segments directly from the database
+            label_segments = LabelVideoSegment.objects.filter(
+                video_file=video_entry,
+                label=label
+            ).order_by('start_frame_number')
+            
+            if not label_segments.exists():
+                # No segments found for this label, return empty data
+                return Response({
+                    "label": label_name,
+                    "time_segments": [],
+                    "frame_predictions": {}
+                }, status=status.HTTP_200_OK)
+            
+            # Convert segments to time-based format
+            fps = getattr(video_entry, 'fps', None) or video_entry.get_fps() if hasattr(video_entry, 'get_fps') else 25
+            
+            time_segments = []
+            frame_predictions = {}
+            
+            for segment in label_segments:
+                start_time = segment.start_frame_number / fps
+                end_time = segment.end_frame_number / fps
+                
+                segment_data = {
+                    "segment_id": segment.id,
+                    "segment_start": segment.start_frame_number,
+                    "segment_end": segment.end_frame_number,
+                    "start_time": round(start_time, 2),
+                    "end_time": round(end_time, 2),
+                    "frames": {}
+                }
+                
+                # Add frame-wise data if available
+                for frame_num in range(segment.start_frame_number, segment.end_frame_number + 1):
+                    frame_filename = f"frame_{str(frame_num).zfill(7)}.jpg"
+                    frame_predictions[frame_num] = {
+                        "frame_number": frame_num,
+                        "label": label_name,
+                        "confidence": 1.0  # Default confidence
+                    }
+                    
+                    segment_data["frames"][frame_num] = {
+                        "frame_filename": frame_filename,
+                        "frame_file_path": str(video_entry.frame_dir / frame_filename) if hasattr(video_entry, 'frame_dir') else "",
+                        "predictions": frame_predictions[frame_num]
+                    }
+                
+                time_segments.append(segment_data)
+            
             return Response({
                 "label": label_name,
-                "time_segments": label_data[label_name]["time_ranges"],
-                "frame_predictions": label_data[label_name]["frame_predictions"]
+                "time_segments": time_segments,
+                "frame_predictions": frame_predictions
             }, status=status.HTTP_200_OK)
 
         except VideoFile.DoesNotExist:
-            return Response({"error": "Video not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                "error": "Video not found"
+            }, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as e:
-            return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # Log the error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in VideoLabelView for video {video_id}, label {label_name}: {str(e)}")
+            
+            return Response({
+                "error": f"Internal error: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UpdateLabelSegmentsView(APIView):

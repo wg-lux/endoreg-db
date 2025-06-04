@@ -1,0 +1,264 @@
+from rest_framework import serializers
+from django.core.exceptions import ObjectDoesNotExist
+from ..models import LabelVideoSegment, VideoFile, Label, InformationSource, VideoSegmentationLabel
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class LabelVideoSegmentSerializer(serializers.ModelSerializer):
+    """Serializer for creating and retrieving LabelVideoSegment instances."""
+    
+    # Additional fields for convenience - matching frontend expectations
+    start_time = serializers.FloatField(required=False, help_text="Start time in seconds")
+    end_time = serializers.FloatField(required=False, help_text="End time in seconds")
+    video_id = serializers.IntegerField(required=True, help_text="Video file ID")
+    label_id = serializers.IntegerField(required=False, allow_null=True, help_text="Label ID")
+    
+    # Add support for label names (both Label and VideoSegmentationLabel)
+    label_name = serializers.CharField(required=False, allow_null=True, help_text="Label name (supports both Label and VideoSegmentationLabel names)")
+    
+    # Read-only fields for response
+    video_name = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = LabelVideoSegment
+        fields = [
+            'id',
+            'start_frame_number',
+            'end_frame_number',
+            'start_time',
+            'end_time',
+            'video_id',
+            'label_id',
+            'label_name',
+            'video_name',
+        ]
+        read_only_fields = ['id', 'video_name']
+        extra_kwargs = {
+            'start_frame_number': {'required': False},
+            'end_frame_number': {'required': False},
+        }
+    
+    def get_video_name(self, obj):
+        """Get a display name for the video."""
+        try:
+            video = obj.video_file
+            return getattr(video, 'original_file_name', f'Video {video.id}')
+        except (AttributeError, ObjectDoesNotExist):
+            return 'Unknown Video'
+    
+    def get_or_create_label_from_name(self, label_name):
+        """
+        Get or create a Label instance from a label name.
+        First tries to find an existing Label, then tries VideoSegmentationLabel,
+        finally creates a new Label if neither exists.
+        """
+        if not label_name:
+            return None
+            
+        # First, try to find an existing Label with this name
+        try:
+            label = Label.objects.get(name=label_name)
+            logger.info("Found existing Label: %s", label_name)
+            return label
+        except ObjectDoesNotExist:
+            pass
+        
+        # Next, try to find a VideoSegmentationLabel and create corresponding Label
+        try:
+            video_seg_label = VideoSegmentationLabel.objects.get(name=label_name)
+            
+            # Create a new Label based on the VideoSegmentationLabel
+            label = Label.objects.create(
+                name=video_seg_label.name,
+                description=getattr(video_seg_label, 'description', f'Label created from VideoSegmentationLabel: {video_seg_label.name}')
+            )
+            logger.info("Created new Label '%s' from VideoSegmentationLabel", label_name)
+            return label
+            
+        except ObjectDoesNotExist:
+            pass
+        
+        # If neither exists, create a new Label
+        label = Label.objects.create(
+            name=label_name,
+            description=f'Manually created label: {label_name}'
+        )
+        logger.info("Created new Label: %s", label_name)
+        return label
+    
+    def validate(self, attrs):
+        """Validate the input data."""
+        # Check if we have either time or frame data
+        has_time_data = 'start_time' in attrs and 'end_time' in attrs
+        has_frame_data = 'start_frame_number' in attrs and 'end_frame_number' in attrs
+        
+        if not has_time_data and not has_frame_data:
+            raise serializers.ValidationError(
+                "Either start_time/end_time or start_frame_number/end_frame_number must be provided"
+            )
+        
+        # Validate that we have either label_id or label_name
+        label_id = attrs.get('label_id')
+        label_name = attrs.get('label_name')
+        
+        if not label_id and not label_name:
+            # Allow null labels for segments without specific labels
+            logger.info("Creating segment without label")
+        
+        # Validate time data if provided
+        if has_time_data:
+            if attrs['start_time'] < 0:
+                raise serializers.ValidationError("start_time must be non-negative")
+            if attrs['end_time'] <= attrs['start_time']:
+                raise serializers.ValidationError("end_time must be greater than start_time")
+        
+        # Validate frame data if provided
+        if has_frame_data:
+            if attrs['start_frame_number'] < 0:
+                raise serializers.ValidationError("start_frame_number must be non-negative")
+            if attrs['end_frame_number'] <= attrs['start_frame_number']:
+                raise serializers.ValidationError("end_frame_number must be greater than start_frame_number")
+        
+        return attrs
+    
+    def create(self, validated_data):
+        """Create a new LabelVideoSegment instance."""
+        try:
+            # Extract convenience fields
+            video_id = validated_data.pop('video_id')
+            label_id = validated_data.pop('label_id', None)
+            label_name = validated_data.pop('label_name', None)
+            start_time = validated_data.pop('start_time', None)
+            end_time = validated_data.pop('end_time', None)
+            
+            # Get the video file
+            try:
+                video_file = VideoFile.objects.get(id=video_id)
+            except ObjectDoesNotExist as exc:
+                raise serializers.ValidationError(f"VideoFile with id {video_id} does not exist") from exc
+            
+            # Determine the label to use
+            label = None
+            if label_id:
+                try:
+                    label = Label.objects.get(id=label_id)
+                except ObjectDoesNotExist as exc:
+                    raise serializers.ValidationError(f"Label with id {label_id} does not exist") from exc
+            elif label_name:
+                label = self.get_or_create_label_from_name(label_name)
+            
+            # Calculate frame numbers from time if provided and not already set
+            fps = getattr(video_file, 'fps', 30)  # Default to 30 fps if not available
+            
+            if start_time is not None and 'start_frame_number' not in validated_data:
+                validated_data['start_frame_number'] = int(start_time * fps)
+            
+            if end_time is not None and 'end_frame_number' not in validated_data:
+                validated_data['end_frame_number'] = int(end_time * fps)
+            
+            # Ensure we have frame numbers
+            if 'start_frame_number' not in validated_data or 'end_frame_number' not in validated_data:
+                raise serializers.ValidationError("Could not determine frame numbers from provided data")
+            
+            # Get or create a default information source for manual annotations
+            source, _ = InformationSource.objects.get_or_create(
+                name='Manual Annotation',
+                defaults={
+                    'description': 'Manually created label segments via web interface',
+                }
+            )
+            
+            # Create the segment directly
+            segment = LabelVideoSegment(
+                video_file=video_file,
+                label=label,
+                source=source,
+                start_frame_number=validated_data['start_frame_number'],
+                end_frame_number=validated_data['end_frame_number'],
+                prediction_meta=None  # No prediction meta for manual annotations
+            )
+            segment.save()
+            
+            logger.info("Created new video segment: %s for video %s with label %s", 
+                       segment.pk, video_id, label.name if label else 'None')
+            return segment
+            
+        except Exception as e:
+            logger.error("Error creating video segment: %s", str(e))
+            raise serializers.ValidationError(f"Failed to create segment: {str(e)}")
+    
+    def update(self, instance, validated_data):
+        """Update an existing LabelVideoSegment instance."""
+        try:
+            # Handle time-based updates
+            start_time = validated_data.pop('start_time', None)
+            end_time = validated_data.pop('end_time', None)
+            video_id = validated_data.pop('video_id', None)
+            label_id = validated_data.pop('label_id', None)
+            label_name = validated_data.pop('label_name', None)
+            
+            # Update video if provided
+            if video_id and video_id != instance.video_file.id:
+                try:
+                    instance.video_file = VideoFile.objects.get(id=video_id)
+                except ObjectDoesNotExist as exc:
+                    raise serializers.ValidationError(f"VideoFile with id {video_id} does not exist") from exc
+            
+            # Update label if provided
+            if label_id is not None:
+                if label_id:
+                    try:
+                        instance.label = Label.objects.get(id=label_id)
+                    except ObjectDoesNotExist as exc:
+                        raise serializers.ValidationError(f"Label with id {label_id} does not exist") from exc
+                else:
+                    instance.label = None
+            elif label_name is not None:
+                if label_name:
+                    instance.label = self.get_or_create_label_from_name(label_name)
+                else:
+                    instance.label = None
+            
+            # Convert time to frame numbers if provided
+            if start_time is not None:
+                fps = getattr(instance.video_file, 'fps', 30)
+                instance.start_frame_number = int(start_time * fps)
+            
+            if end_time is not None:
+                fps = getattr(instance.video_file, 'fps', 30)
+                instance.end_frame_number = int(end_time * fps)
+            
+            # Update other fields
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            
+            instance.save()
+            logger.info("Updated video segment: %s", instance.pk)
+            return instance
+            
+        except Exception as e:
+            logger.error("Error updating video segment %s: %s", instance.pk, str(e))
+            raise serializers.ValidationError(f"Failed to update segment: {str(e)}")
+    
+    def to_representation(self, instance):
+        """Convert model instance to JSON representation."""
+        data = super().to_representation(instance)
+        
+        # Add calculated time fields for frontend compatibility
+        try:
+            fps = getattr(instance.video_file, 'fps', 30)
+            data['start_time'] = instance.start_frame_number / fps
+            data['end_time'] = instance.end_frame_number / fps
+        except (AttributeError, ZeroDivisionError):
+            data['start_time'] = 0
+            data['end_time'] = 0
+        
+        # Ensure label_name is always present in response
+        if instance.label:
+            data['label_name'] = instance.label.name
+        else:
+            data['label_name'] = None
+        
+        return data
