@@ -49,7 +49,11 @@ for field_type, value in PLACEHOLDERS.items():
 print("") 
 
 def get_required_fields(model):
-    """Get all required fields (null=False) and their default placeholders."""
+    """
+    Returns a dictionary mapping required (non-nullable) field names of a Django model to their default placeholder values.
+    
+    Only includes fields that are not many-to-many or auto-generated, and matches each field to a placeholder based on its type.
+    """
     required_fields = {}
     for field in model._meta.get_fields():
         if not getattr(field, 'null', True):
@@ -63,6 +67,17 @@ def get_required_fields(model):
     return required_fields
 
 def fix_fields(obj):
+    """
+    Replaces empty string values in problematic or required fields of a Django fixture object.
+    
+    For each field in the object's model, replaces empty strings with `None` for numeric or foreign key fields, or with a suitable placeholder for required text fields. Tracks and logs all changes made.
+    
+    Args:
+        obj: A dictionary representing a Django fixture object with "model" and "fields" keys.
+    
+    Returns:
+        The modified fixture object with fixed field values.
+    """
     global total_fixes
     model_label = obj["model"]
     app_label, model_name = model_label.split(".")

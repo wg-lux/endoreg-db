@@ -25,8 +25,9 @@ class ExaminationViewSet(ReadOnlyModelViewSet):
 @api_view(["GET"])
 def get_location_classifications_for_exam(request, exam_id):
     """
-    Retrieves location classifications available for a given examination.
-    Returns a list of location classifications linked to the examination.
+    Retrieves location classifications linked to a specific examination.
+    
+    Returns a list of dictionaries containing the ID and name of each location classification associated with the examination identified by `exam_id`.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     location_classifications = exam.location_classifications.all()
@@ -35,8 +36,9 @@ def get_location_classifications_for_exam(request, exam_id):
 @api_view(["GET"])
 def get_findings_for_exam(request, exam_id):
     """
-    Retrieves findings available for a given examination.
-    Returns a list of findings linked to the examination.
+    Retrieves findings associated with a specific examination.
+    
+    Returns a list of dictionaries containing the ID and name of each finding linked to the examination identified by `exam_id`.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
@@ -45,7 +47,9 @@ def get_findings_for_exam(request, exam_id):
 @api_view(["GET"])
 def get_location_choices_for_classification(request, exam_id, location_classification_id):
     """
-    Retrieves location choices for a specific location classification within an examination.
+    Retrieves location choices for a given location classification within an examination.
+    
+    Returns a list of choices, each with its ID, name, and the associated classification ID. Responds with a 404 error if the location classification does not belong to the specified examination.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     location_classification = get_object_or_404(FindingLocationClassification, id=location_classification_id)
@@ -69,7 +73,9 @@ def get_location_choices_for_classification(request, exam_id, location_classific
 @api_view(["GET"])
 def get_interventions_for_finding(request, exam_id, finding_id):
     """
-    Retrieves interventions available for a specific finding within an examination.
+    Retrieves interventions linked to a specific finding within an examination.
+    
+    Returns a JSON list of interventions with their IDs and names. Responds with a 404 error if the finding does not belong to the specified examination.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     finding = get_object_or_404(Finding, id=finding_id)
@@ -86,8 +92,9 @@ def get_interventions_for_finding(request, exam_id, finding_id):
 @api_view(["GET"])
 def get_examinations_for_video(request, video_id):
     """
-    Retrieves all examinations for a specific video.
-    Returns a list of examinations with their basic information.
+    Placeholder endpoint for retrieving examinations linked to a specific video.
+    
+    Currently returns an empty list, as the relationship between videos and examinations is not yet implemented.
     """
     from ..models import VideoFile
     video = get_object_or_404(VideoFile, id=video_id)
@@ -101,9 +108,9 @@ def get_examinations_for_video(request, video_id):
 @api_view(["GET"])
 def get_morphology_classification_choices_for_exam(request, exam_id):
     """
-    Retrieves morphology classification choices available for a given examination.
+    Retrieves distinct morphology classification choices for a specific examination.
     
-    Returns a list of distinct morphology classification choices linked to the required and optional morphology classification types of the findings associated with the specified examination.
+    Returns a list of unique morphology classification choices associated with the required and optional morphology classification types of findings linked to the given examination.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
@@ -121,9 +128,9 @@ def get_morphology_classification_choices_for_exam(request, exam_id):
 @api_view(["GET"])
 def get_location_classification_choices_for_exam(request, exam_id):
     """
-    Retrieves available location classification choices for a given examination.
+    Retrieves distinct location classification choices linked to findings of an examination.
     
-    Returns a list of distinct location classification choices associated with the findings of the specified examination as dictionaries containing their IDs and names.
+    Returns a list of dictionaries with the ID and name of each location classification choice associated with the findings of the specified examination.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
@@ -137,9 +144,10 @@ def get_location_classification_choices_for_exam(request, exam_id):
 @api_view(["GET"])
 def get_interventions_for_exam(request, exam_id):
     """
-    Retrieves interventions associated with the findings of a specific examination.
+    Retrieves interventions linked to findings of a specific examination.
     
-    Returns a JSON response containing a list of intervention IDs and names linked to the findings available for the given examination.
+    Returns:
+        JSON response with a list of interventions, each containing its ID and name, associated with the findings available for the specified examination.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
@@ -152,6 +160,6 @@ def get_instruments_for_exam(request, exam_id):
     """
     Returns an empty list of instruments for the specified examination.
     
-    This is a placeholder endpoint for future implementation of instrument retrieval linked to an examination.
+    This placeholder endpoint is intended for future implementation of instrument retrieval linked to an examination.
     """
     return Response([])

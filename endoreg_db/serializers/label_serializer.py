@@ -41,7 +41,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         }
     
     def get_video_name(self, obj):
-        """Get a display name for the video."""
+        """
+        Returns the display name of the associated video file.
+        
+        If the video file has an `original_file_name`, it is returned; otherwise, a fallback name using the video ID is provided. Returns 'Unknown Video' if the video file is inaccessible.
+        """
         try:
             video = obj.video_file
             return getattr(video, 'original_file_name', f'Video {video.id}')
@@ -50,9 +54,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     
     def get_or_create_label_from_name(self, label_name):
         """
-        Get or create a Label instance from a label name.
-        First tries to find an existing Label, then tries VideoSegmentationLabel,
-        finally creates a new Label if neither exists.
+        Retrieves or creates a Label instance based on the provided label name.
+        
+        If a Label with the given name exists, it is returned. If not, attempts to find a VideoSegmentationLabel with the same name and creates a new Label using its details. If neither exists, creates a new Label with a manual creation description. Returns None if no label name is provided.
         """
         if not label_name:
             return None
@@ -89,7 +93,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         return label
     
     def validate(self, attrs):
-        """Validate the input data."""
+        """
+        Validates input data for a video segment, ensuring either time or frame information is provided and logically consistent.
+        
+        Checks that either start/end times or start/end frame numbers are present, and that start values are non-negative and end values are greater than start values. Allows segments without labels.
+        """
         # Check if we have either time or frame data
         has_time_data = 'start_time' in attrs and 'end_time' in attrs
         has_frame_data = 'start_frame_number' in attrs and 'end_frame_number' in attrs
@@ -124,7 +132,14 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
-        """Create a new LabelVideoSegment instance."""
+        """
+        Creates a new LabelVideoSegment instance using validated input data.
+        
+        Associates the segment with a specified video file and label, supporting label assignment by ID or by name (creating a new label if necessary). Converts provided start and end times to frame numbers based on the video's FPS if frame numbers are not directly supplied. Ensures required frame data is present and links the segment to a default manual annotation information source. Raises a validation error if referenced video or label does not exist, or if frame data cannot be determined.
+        
+        Returns:
+            The created LabelVideoSegment instance.
+        """
         try:
             # Extract convenience fields
             video_id = validated_data.pop('video_id')
@@ -190,7 +205,14 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Failed to create segment: {str(e)}")
     
     def update(self, instance, validated_data):
-        """Update an existing LabelVideoSegment instance."""
+        """
+        Updates a LabelVideoSegment instance with new data.
+        
+        Handles updates to the associated video file, label (by ID or name), and segment boundaries (by time or frame number). Converts provided start and end times to frame numbers using the video's FPS. Raises a validation error if referenced video or label does not exist or if an error occurs during the update.
+        
+        Returns:
+            The updated LabelVideoSegment instance.
+        """
         try:
             # Handle time-based updates
             start_time = validated_data.pop('start_time', None)
@@ -243,7 +265,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Failed to update segment: {str(e)}")
     
     def to_representation(self, instance):
-        """Convert model instance to JSON representation."""
+        """
+        Returns a JSON-compatible representation of the label video segment, including calculated start and end times in seconds and the label name.
+        
+        Adds `start_time` and `end_time` fields by converting frame numbers to seconds using the video's FPS, defaulting to zero if unavailable. Ensures `label_name` is always included in the output.
+        """
         data = super().to_representation(instance)
         
         # Add calculated time fields for frontend compatibility

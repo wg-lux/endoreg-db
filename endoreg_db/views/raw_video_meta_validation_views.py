@@ -19,10 +19,9 @@ class VideoFileForMetaView(APIView):
 
     def get(self, request):
         """
-        - Returns video file stream if Accept header is not application/json
-        - Returns JSON metadata if Accept header is application/json
-        - Fetches the **first available video** if `last_id` is NOT provided.
-        - Fetches the **next available video** where `id > last_id` if provided.
+        Handles GET requests for video files or their metadata.
+        
+        If a `video_id` is provided in the URL and the `Accept` header does not request JSON, streams the corresponding video file. Otherwise, returns JSON metadata for the next available video after the specified `last_id`, or the first available video if `last_id` is not provided. Responds with detailed error information if required metadata fields are missing or if no videos are available.
         """
         # Get video ID from URL path if present
         video_id = None
@@ -89,7 +88,9 @@ class VideoFileForMetaView(APIView):
 
     def serve_video_file(self, video_entry):
         """
-        Streams the video file dynamically.
+        Streams a video file associated with the given video entry as an HTTP response.
+        
+        Attempts to locate the video file from multiple possible attributes on the video entry. If found, returns a streaming response with appropriate headers for inline display, byte-range support, and client-side caching. Returns HTTP 404 if the file is not found, or HTTP 500 with an error message for other errors.
         """
         try:
             # Try different file sources
