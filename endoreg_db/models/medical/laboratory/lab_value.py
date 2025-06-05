@@ -129,7 +129,7 @@ class LabValue(models.Model):
 
 
     def natural_key(self):
-        Returns a tuple containing the unique name of this lab value instance.
+        """Returns a tuple containing the unique name of this lab value instance."""
         return (self.name,)
 
     def __str__(self):
