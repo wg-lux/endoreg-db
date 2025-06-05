@@ -14,6 +14,28 @@ if TYPE_CHECKING:
 
 LANG = "de"
 
+from pydantic import BaseModel, ConfigDict
+
+class CommonLabValues(BaseModel):
+    """
+    A Pydantic model representing a lookup for common lab values.
+    It is used to provide a structured way to access common lab values like
+    hemoglobin, creatinine, and others
+    """
+    hb: "LabValue"
+    wbc: "LabValue"
+    plt: "LabValue"
+    cr: "LabValue"
+    na: "LabValue"
+    k: "LabValue"
+    glc: "LabValue"
+    inr: "LabValue"
+    crp: "LabValue"
+
+    model_config = ConfigDict(
+        from_attributes = True,
+        arbitrary_types_allowed = True
+    )
 
 class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -29,7 +51,7 @@ class LabValueManager(models.Manager):
             The model instance with a matching name.
         """
         return self.get(name=name)
-
+    
 
 class LabValue(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -84,6 +106,29 @@ class LabValue(models.Model):
         default_numerical_value_distribution: "NumericValueDistribution"
         default_multiple_categorical_value_distribution: "MultipleCategoricalValueDistribution"
         default_date_value_distribution: "DateValueDistribution"
+
+    @classmethod
+    def get_common_lab_values(cls):
+        """
+        Returns a CommonLabValues instance containing common lab values.
+
+        This method retrieves predefined common lab values and returns them as a
+        CommonLabValues Pydantic model instance.
+        """
+        from endoreg_db.models.medical.laboratory.lab_value import CommonLabValues
+
+        return CommonLabValues(
+            hb=cls.objects.get(name ="hemoglobin"),
+            wbc=cls.objects.get(name="white_blood_cells"),
+            plt=cls.objects.get(name="platelets"),
+            cr=cls.objects.get(name="creatinine"),
+            na=cls.objects.get(name="sodium"),
+            k=cls.objects.get(name="potassium"),
+            glc=cls.objects.get(name="glucose"),
+            inr=cls.objects.get(name="international_normalized_ratio"),
+            crp=cls.objects.get(name="c_reactive_protein")
+        )
+
 
     def natural_key(self):
         """
@@ -188,6 +233,9 @@ class LabValue(models.Model):
             warnings.warn(f"Special case normal range not implemented yet for LabValue '{self.name}'.")
 
         # Final contextual warning
+        if min_value is None and max_value is None:
+            # Do not warn here; let get_normal_value handle the warning for missing range
+            return {"min": min_value, "max": max_value}
         if min_value is None:
             context_parts = []
             if gender_dependent:
@@ -206,7 +254,7 @@ class LabValue(models.Model):
             else:
                 warning_message += " (general context)."
             warning_message += " Check LabValue's default_normal_range definition."
-            warnings.warn(warning_message)
+            warnings.warn(warning_message, UserWarning)
 
         return {"min": min_value, "max": max_value}
 
@@ -310,7 +358,8 @@ class LabValue(models.Model):
                     return upper_bound
                 else:
                     warnings.warn(
-                        f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution."
+                        f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution.",
+                        UserWarning
                     )
                     return None
 

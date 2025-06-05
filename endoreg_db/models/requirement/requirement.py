@@ -36,7 +36,8 @@ if TYPE_CHECKING:
         PatientLabValue,
         PatientMedicationSchedule, # Added PatientMedicationSchedule
         RequirementOperator,
-        RequirementSet
+        RequirementSet, 
+        Gender
     )
     # from endoreg_db.utils.links.requirement_link import RequirementLinks # Already imported above
 
@@ -257,6 +258,12 @@ class Requirement(models.Model):
         related_name="required_in",
     )
 
+    genders = models.ManyToManyField(
+        "Gender",
+        blank=True,
+        related_name="required_in",
+    )
+
     if TYPE_CHECKING:
         requirement_types: models.QuerySet[RequirementType]
         operators: models.QuerySet[RequirementOperator]
@@ -279,6 +286,7 @@ class Requirement(models.Model):
         medication_indications: models.QuerySet[MedicationIndication]
         medication_intake_times: models.QuerySet[MedicationIntakeTime] # Added type hint
         medication_schedules: models.QuerySet[MedicationSchedule]
+        genders: models.QuerySet[Gender]
 
     def natural_key(self):
         """
@@ -474,6 +482,21 @@ class Requirement(models.Model):
         
         final_input_links = RequirementLinks(**aggregated_input_links_data)
         
+        # Gender strict check: if this requirement has genders, only pass if patient.gender is in the set
+        if self.genders.exists():
+            # Try to find a patient object in args
+            patient = None
+            for arg in args:
+                # Import here to avoid circular import
+                from endoreg_db.models.administration.person.patient import Patient
+                if isinstance(arg, Patient):
+                    patient = arg
+                    break
+            if patient is None or patient.gender is None:
+                return False
+            if not self.genders.filter(pk=patient.gender.pk).exists():
+                return False
+
         operators = self.operators.all()
         if not operators.exists(): # If a requirement has no operators, its evaluation is ambiguous.
             # Consider if this should be True, False, or an error.

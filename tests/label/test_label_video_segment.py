@@ -151,6 +151,7 @@ class LabelVideoSegmentModelTest(TestCase):
             self.assertFalse(sample_frame.file_path.exists(), f"Frame file {sample_frame.file_path} should NOT exist after deletion")
     
     def test_create_segment_with_video_seg_label_name(self):
+        v = self.video_file
         data = {"video_id": v.id, "label_name": "appendix",
                 "start_time": 0, "end_time": 1}
         s = LabelVideoSegmentSerializer(data=data)

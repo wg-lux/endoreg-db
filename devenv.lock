@@ -3,10 +3,10 @@
     "devenv": {
       "locked": {
         "dir": "src/modules",
-        "lastModified": 1747717470,
+        "lastModified": 1749054588,
         "owner": "cachix",
         "repo": "devenv",
-        "rev": "c7f2256ee4a4a4ee9cbf1e82a6e49b253c374995",
+        "rev": "b6be42d9e6f6053be1d180e4a4fb95e0aa9a8424",
         "type": "github"
       },
       "original": {
@@ -31,48 +31,10 @@
         "type": "github"
       }
     },
-    "flake-utils": {
-      "inputs": {
-        "systems": "systems"
-      },
-      "locked": {
-        "lastModified": 1731533236,
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "type": "github"
-      }
-    },
-    "git-hooks": {
-      "inputs": {
-        "flake-compat": "flake-compat",
-        "gitignore": "gitignore",
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1747372754,
-        "owner": "cachix",
-        "repo": "git-hooks.nix",
-        "rev": "80479b6ec16fefd9c1db3ea13aeb038c60530f46",
-        "type": "github"
-      },
-      "original": {
-        "owner": "cachix",
-        "repo": "git-hooks.nix",
-        "type": "github"
-      }
-    },
     "gitignore": {
       "inputs": {
         "nixpkgs": [
-          "git-hooks",
+          "pre-commit-hooks",
           "nixpkgs"
         ]
       },
@@ -105,16 +67,15 @@
     },
     "nix2container": {
       "inputs": {
-        "flake-utils": "flake-utils",
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1744699837,
+        "lastModified": 1749074755,
         "owner": "nlewo",
         "repo": "nix2container",
-        "rev": "78aadfc4ee1f9c2ee256e304b180ca356eb6a045",
+        "rev": "b7467d7cf0f05f9f467ab6b719008e1d9c2602c8",
         "type": "github"
       },
       "original": {
@@ -125,10 +86,10 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1748186667,
+        "lastModified": 1748856973,
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "bdac72d387dca7f836f6ef1fe547755fb0e9df61",
+        "rev": "e4b09e47ace7d87de083786b404bf232eb6c89d8",
         "type": "github"
       },
       "original": {
@@ -138,30 +99,34 @@
         "type": "github"
       }
     },
-    "root": {
+    "pre-commit-hooks": {
       "inputs": {
-        "devenv": "devenv",
-        "git-hooks": "git-hooks",
-        "mk-shell-bin": "mk-shell-bin",
-        "nix2container": "nix2container",
-        "nixpkgs": "nixpkgs",
-        "pre-commit-hooks": [
-          "git-hooks"
+        "flake-compat": "flake-compat",
+        "gitignore": "gitignore",
+        "nixpkgs": [
+          "nixpkgs"
         ]
-      }
-    },
-    "systems": {
+      },
       "locked": {
-        "lastModified": 1681028828,
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "lastModified": 1747372754,
+        "owner": "cachix",
+        "repo": "pre-commit-hooks.nix",
+        "rev": "80479b6ec16fefd9c1db3ea13aeb038c60530f46",
         "type": "github"
       },
       "original": {
-        "owner": "nix-systems",
-        "repo": "default",
+        "owner": "cachix",
+        "repo": "pre-commit-hooks.nix",
         "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "devenv": "devenv",
+        "mk-shell-bin": "mk-shell-bin",
+        "nix2container": "nix2container",
+        "nixpkgs": "nixpkgs",
+        "pre-commit-hooks": "pre-commit-hooks"
       }
     }
   },

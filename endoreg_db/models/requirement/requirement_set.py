@@ -1,6 +1,15 @@
 from django.db import models
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
+
+REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP = {
+    "all": all,
+    "any": any,
+    "none": lambda x: not any(x),  # Custom function for 'none'
+    "exactly_1": lambda x: sum(1 for item in x if item) == 1,
+    "at_least_1": lambda x: sum(1 for item in x if item) >= 1,  # Equivalent to any(x)
+    "at_most_1": lambda x: sum(1 for item in x if item) <= 1,
+}
 
 class RequirementSetTypeManager(models.Manager):
     """
@@ -125,3 +134,69 @@ class RequirementSet(models.Model):
             str: The name of the requirement set.
         """
         return str(self.name)
+    
+    def evaluate_requirements(self, input_object) -> List[bool]:
+        """
+        Evaluate the requirements in this set against a given input object.
+        
+        Args:
+            input_object: The object to evaluate against the requirements in this set.
+        
+        Returns:
+            bool: True if all requirements are met, False otherwise.
+        """
+        results = []
+        for requirement in self.requirements.all():
+            result = requirement.evaluate(input_object, mode="loose")
+            results.append(result)
+        return results
+
+    def evaluate_requirement_sets(self, input_object) -> List[bool]:
+        """
+        Evaluate the linked requirement sets against a given input object.
+        
+        Args:
+            input_object: The object to evaluate against the linked requirement sets.
+        
+        Returns:
+            bool: True if all linked requirement sets are met, False otherwise.
+        """
+        results = []
+        for linked_set in self.links_to_sets.all():
+            result = linked_set.evaluate(input_object)
+            results.append(result)
+        return results
+    
+    @property
+    def eval_function(self):
+        """
+        Returns the evaluation function for this requirement set type.
+        
+        The function is determined by the requirement_set_type's name.
+        
+        Returns:
+            function: The evaluation function corresponding to the requirement set type.
+        """
+        if self.requirement_set_type and self.requirement_set_type.name in REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP:
+            return REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP[self.requirement_set_type.name]
+        return None
+
+    def evaluate(self, input_object):
+        """
+        Evaluate the requirement set against a given input object.
+        
+        Args:
+            input_object: The object to evaluate against the requirements in this set.
+        
+        Returns:
+            bool: 
+        """
+        evaluate_r_results = self.evaluate_requirements(input_object)
+        evaluate_rs_results = self.evaluate_requirement_sets(input_object)
+
+        results = evaluate_r_results + evaluate_rs_results
+
+        eval_result = self.eval_function(results) if self.eval_function else all(results)
+
+        return eval_result
+

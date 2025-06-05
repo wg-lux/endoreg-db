@@ -63,24 +63,23 @@ def lab_latest_numeric_increased(
 ) -> bool:
     """
     Checks if the latest numeric lab value is above its normal range.
+    Returns False if the latest value is missing or not above normal.
     """
     patient_lab_values = input_links.patient_lab_values
-    if not requirement.lab_values.exists(): # Changed from not requirement.lab_values
-        return False # Or raise an error, as lab_values are expected
-
+    if not requirement.lab_values.exists():
+        return False
     for lab_value_model in requirement.lab_values.all():
         latest_plv = get_latest_patient_lab_value(patient_lab_values, lab_value_model.name)
-        if latest_plv and latest_plv.value is not None and latest_plv.lab_value: # Added check for latest_plv.lab_value
-            # Assuming get_normal_range might need patient context if it's gender/age dependent
-            patient_context = input_links.get_first_patient() # Helper to get a patient if available
-            # Call get_normal_range on the LabValue instance (latest_plv.lab_value)
-            normal_range = latest_plv.lab_value.get_normal_range(
-                age=patient_context.age() if patient_context else None, 
-                gender=patient_context.gender if patient_context else None
-            )
-            if normal_range.get("max") is not None and latest_plv.value > normal_range["max"]:
-                return True
-    return False
+        if not (latest_plv and latest_plv.value is not None and latest_plv.lab_value):
+            return False
+        patient_context = input_links.get_first_patient()
+        normal_range = latest_plv.lab_value.get_normal_range(
+            age=patient_context.age() if patient_context else None,
+            gender=patient_context.gender if patient_context else None
+        )
+        if normal_range.get("max") is None or latest_plv.value <= normal_range["max"]:
+            return False
+    return True
 
 def lab_latest_numeric_decreased(
     input_links: "RequirementLinks", # Changed
@@ -89,22 +88,23 @@ def lab_latest_numeric_decreased(
 ) -> bool:
     """
     Checks if the latest numeric lab value is below its normal range.
+    Returns False if the latest value is missing or not below normal.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists(): # Changed
         return False
     for lab_value_model in requirement.lab_values.all():
         latest_plv = get_latest_patient_lab_value(patient_lab_values, lab_value_model.name)
-        if latest_plv and latest_plv.value is not None and latest_plv.lab_value: # Added check for latest_plv.lab_value
-            patient_context = input_links.get_first_patient()
-            # Call get_normal_range on the LabValue instance (latest_plv.lab_value)
-            normal_range = latest_plv.lab_value.get_normal_range(
-                age=patient_context.age() if patient_context else None, 
-                gender=patient_context.gender if patient_context else None
-            )
-            if normal_range.get("min") is not None and latest_plv.value < normal_range["min"]:
-                return True
-    return False
+        if not (latest_plv and latest_plv.value is not None and latest_plv.lab_value): # Added check for latest_plv.lab_value
+            return False
+        patient_context = input_links.get_first_patient()
+        normal_range = latest_plv.lab_value.get_normal_range(
+            age=patient_context.age() if patient_context else None, 
+            gender=patient_context.gender if patient_context else None
+        )
+        if normal_range.get("min") is None or latest_plv.value >= normal_range["min"]:
+            return False
+    return True
 
 def lab_latest_numeric_normal(
     input_links: "RequirementLinks", # Changed
@@ -113,25 +113,27 @@ def lab_latest_numeric_normal(
 ) -> bool:
     """
     Checks if the latest numeric lab value is within its normal range.
+    Returns False if the latest value is missing or out of range.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists(): # Changed
         return False
     for lab_value_model in requirement.lab_values.all():
         latest_plv = get_latest_patient_lab_value(patient_lab_values, lab_value_model.name)
-        if latest_plv and latest_plv.value is not None and latest_plv.lab_value: # Added check for latest_plv.lab_value
-            patient_context = input_links.get_first_patient()
-            # Call get_normal_range on the LabValue instance (latest_plv.lab_value)
-            normal_range = latest_plv.lab_value.get_normal_range(
-                age=patient_context.age() if patient_context else None, 
-                gender=patient_context.gender if patient_context else None
-            )
-            min_val = normal_range.get("min")
-            max_val = normal_range.get("max")
-            if min_val is not None and max_val is not None:
-                if min_val <= latest_plv.value <= max_val:
-                    return True
-    return False
+        if not (latest_plv and latest_plv.value is not None and latest_plv.lab_value): # Added check for latest_plv.lab_value
+            return False
+        patient_context = input_links.get_first_patient()
+        normal_range = latest_plv.lab_value.get_normal_range(
+            age=patient_context.age() if patient_context else None, 
+            gender=patient_context.gender if patient_context else None
+        )
+        min_val = normal_range.get("min")
+        max_val = normal_range.get("max")
+        if min_val is None or max_val is None:
+            return False
+        if not (min_val <= latest_plv.value <= max_val):
+            return False
+    return True
 
 def lab_latest_numeric_lower_than_value(
     input_links: "RequirementLinks", # Changed
@@ -140,16 +142,18 @@ def lab_latest_numeric_lower_than_value(
 ) -> bool:
     """
     Checks if the latest numeric lab value is lower than a specific value defined in the requirement.
+    Returns False if the latest value is missing or not lower than the threshold.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists() or requirement.numeric_value is None: # Changed
         return False
     for lab_value_model in requirement.lab_values.all():
         latest_plv = get_latest_patient_lab_value(patient_lab_values, lab_value_model.name)
-        if latest_plv and latest_plv.value is not None:
-            if latest_plv.value < requirement.numeric_value:
-                return True
-    return False
+        if not (latest_plv and latest_plv.value is not None):
+            return False
+        if not (latest_plv.value < requirement.numeric_value):
+            return False
+    return True
 
 def lab_latest_numeric_greater_than_value(
     input_links: "RequirementLinks", # Changed
@@ -158,16 +162,18 @@ def lab_latest_numeric_greater_than_value(
 ) -> bool:
     """
     Checks if the latest numeric lab value is greater than a specific value defined in the requirement.
+    Returns False if the latest value is missing or not greater than the threshold.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists() or requirement.numeric_value is None: # Changed
         return False
     for lab_value_model in requirement.lab_values.all():
         latest_plv = get_latest_patient_lab_value(patient_lab_values, lab_value_model.name)
-        if latest_plv and latest_plv.value is not None:
-            if latest_plv.value > requirement.numeric_value:
-                return True
-    return False
+        if not (latest_plv and latest_plv.value is not None):
+            return False
+        if not (latest_plv.value > requirement.numeric_value):
+            return False
+    return True
 
 # --- Operators with timeframe ---
 

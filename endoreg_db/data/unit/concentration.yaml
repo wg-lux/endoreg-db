@@ -6,6 +6,21 @@
     name_en: "picogram per mililiter"
     abbreviation: "pg/ml"
 
+# gram per liter
+- model: endoreg_db.unit
+  fields:
+    name: "gram per liter"
+    name_de: "Gramm pro Liter"
+    name_en: "gram per liter"
+    abbreviation: "g/L"
+
+# micromole per liter: 
+- model: endoreg_db.unit
+  fields:
+    name: "micromole per liter"
+    name_de: "Mikromol pro Liter"
+    name_en: "micromole per liter"
+    abbreviation: "µmol/L"
 
 - model: endoreg_db.unit
   fields:

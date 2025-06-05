@@ -32,6 +32,7 @@ from endoreg_db.models import (
     PatientMedication,  # Added PatientMedication
     PatientMedicationSchedule, # Added PatientMedicationSchedule
 )
+from endoreg_db.models.other.gender import Gender
 # if TYPE_CHECKING:
 #     from endoreg_db.models import (
 #         RequirementOperator,
@@ -98,6 +99,7 @@ data_model_dict: Dict[str, Union[
     "patient": Patient,
     "patient_medication": PatientMedication,  # Added PatientMedication mapping
     "patient_medication_schedule": PatientMedicationSchedule, # Added PatientMedicationSchedule mapping
+    "gender": Gender,
 }
 
 data_model_dict_reverse = {
