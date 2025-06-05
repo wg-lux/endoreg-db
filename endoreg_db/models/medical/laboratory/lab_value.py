@@ -40,15 +40,13 @@ class CommonLabValues(BaseModel):
 class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
         """
-        Retrieves a model instance by its natural key.
-
-        This method returns the instance whose unique name matches the provided natural key.
-
+        Retrieves a LabValue instance by its unique name.
+        
         Args:
-            name: The unique identifier corresponding to the model's "name" field.
-
+            name: The unique name of the LabValue.
+        
         Returns:
-            The model instance with a matching name.
+            The LabValue instance with the specified name.
         """
         return self.get(name=name)
     
@@ -110,10 +108,10 @@ class LabValue(models.Model):
     @classmethod
     def get_common_lab_values(cls):
         """
-        Returns a CommonLabValues instance containing common lab values.
-
-        This method retrieves predefined common lab values and returns them as a
-        CommonLabValues Pydantic model instance.
+        Retrieves a structured set of common laboratory values as a CommonLabValues instance.
+        
+        Returns:
+            A CommonLabValues Pydantic model populated with LabValue objects for hemoglobin, white blood cells, platelets, creatinine, sodium, potassium, glucose, international normalized ratio, and C-reactive protein.
         """
         from endoreg_db.models.medical.laboratory.lab_value import CommonLabValues
 
@@ -131,12 +129,7 @@ class LabValue(models.Model):
 
 
     def natural_key(self):
-        """
-        Return a tuple representing the natural key for this instance.
-
-        Returns:
-            tuple: A single-element tuple containing the instance's unique name.
-        """
+        Returns a tuple containing the unique name of this lab value instance.
         return (self.name,)
 
     def __str__(self):
@@ -171,10 +164,9 @@ class LabValue(models.Model):
 
     def get_normal_range(self, age: int = None, gender=None):
         """
-        Returns the normal range for the lab value, considering age and gender dependencies.
-
-        If gender-dependent and no gender or unknown gender is provided, defaults to 'male'.
-        If no matching gender-specific data exists, attempts fallback to general min/max.
+        Returns the normal range for this lab value, considering age and gender dependencies.
+        
+        If the normal range is gender-dependent, attempts to use the provided gender; defaults to "male" if gender is missing or unknown. Falls back to general min/max values if gender-specific data is unavailable. Issues warnings for unimplemented age-dependent or special case ranges, and when min or max values cannot be determined. Returns a dictionary with keys "min" and "max", which may be None if the range is not defined.
         """
         from ...other.gender import Gender
 
@@ -315,10 +307,9 @@ class LabValue(models.Model):
 
     def get_normal_value(self, patient: "Patient" = None):
         """
-        Returns a value that is considered normal for this lab value.
-        It prioritizes sampling from a numerical distribution if available and
-        the sampled value falls within the normal range. Otherwise, it uses
-        the midpoint of the normal range or a direct sample.
+        Returns a value considered normal for this lab value.
+        
+        If a numerical distribution and patient context are available, attempts to generate a value within the normal range. Falls back to the midpoint of the normal range or to available bounds if sampling fails or context is insufficient. Returns None if neither a normal range nor a distribution is available.
         """
         _age = patient.age() if patient else None
         _gender = patient.gender if patient else None

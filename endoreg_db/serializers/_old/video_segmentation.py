@@ -63,9 +63,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the absolute API endpoint URL for accessing the video resource.
+        Returns the absolute API URL for accessing the video resource.
         
-        If the video ID is missing or the request context is unavailable, returns an error dictionary.
+        If the video ID or request context is missing, returns a dictionary with an error message.
         """
         if not obj.id:
             return {"error": "Invalid video ID"}
@@ -262,8 +262,9 @@ class VideoListSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj):
         """
-        Determine video status based on available data.
-        Returns 'completed' if video has prediction sequences, 'in_progress' if processing, 'available' otherwise.
+        Returns the processing status of a video as 'completed', 'in_progress', or 'available'.
+        
+        A video is 'completed' if prediction sequences exist, 'in_progress' if frames have been extracted but no sequences are present, and 'available' if neither condition is met.
         """
         if hasattr(obj, 'sequences') and obj.sequences:
             return 'completed'
@@ -274,8 +275,10 @@ class VideoListSerializer(serializers.ModelSerializer):
     
     def get_assigned_user(self, obj):
         """
-        Get assigned user from video metadata or prediction metadata.
-        Returns None if no user is assigned.
+        Retrieves the user assigned to the video from its prediction metadata.
+        
+        Returns:
+            The assigned user object if available; otherwise, None.
         """
         # Check if there's a prediction meta with user assignment
         try:
@@ -289,8 +292,9 @@ class VideoListSerializer(serializers.ModelSerializer):
     
     def get_anonymized(self, obj):
         """
-        Check if video has been anonymized.
-        Returns True if anonymized file exists, False otherwise.
+        Returns True if the video has been anonymized, otherwise False.
+        
+        Checks for the presence and truthiness of the 'anonymized' attribute on the video object.
         """
         return hasattr(obj, 'anonymized') and bool(obj.anonymized)
     

@@ -63,9 +63,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the absolute API endpoint URL for accessing the video file.
+        Returns the absolute API URL for accessing the video file.
         
-        If the video ID is invalid or the request context is missing, returns an error dictionary.
+        If the video ID is invalid or the request context is missing, returns a dictionary with an error message.
         """
         if not obj.id:
             return {"error": "Invalid video ID"}
@@ -119,8 +119,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_full_video_path(self, obj:"Video"):
         """
-        Constructs the absolute file path dynamically.
-        - Uses the actual storage directory from the video file's active_file_path
+        Returns the absolute file path to the video's active file.
+        
+        If the file does not exist or an error occurs during path construction, returns a dictionary with an error message.
         """
         if not obj.active_file:
             return {"error": "No video file associated with this entry"}
@@ -145,13 +146,10 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_sequences(self, obj:"Video"):
         """
-        Extracts the sequences field from the RawVideoFile model.
-        Example Output:
-        {
-            "outside": [[1, 32], [123, 200]],
-            "needle": [[36, 141]],
-            "kolonpolyp": [[91, 126]]
-        }
+        Retrieves the frame sequences for each label from the video object.
+        
+        Returns:
+            A dictionary mapping label names to lists of frame ranges. If no sequences are found, returns a dictionary with an error message.
         """
         return obj.sequences or {
             "error": "no sequence found, check database first"

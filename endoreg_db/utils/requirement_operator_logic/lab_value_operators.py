@@ -62,8 +62,9 @@ def lab_latest_numeric_increased(
     operator_kwargs: Dict[str, Any]
 ) -> bool:
     """
-    Checks if the latest numeric lab value is above its normal range.
-    Returns False if the latest value is missing or not above normal.
+    Returns True if the latest numeric lab value for all required lab values is above the normal maximum range; otherwise returns False.
+    
+    Returns False if any required lab value is missing, the latest value is unavailable, or the value does not exceed the normal maximum.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists():
@@ -87,8 +88,9 @@ def lab_latest_numeric_decreased(
     operator_kwargs: Dict[str, Any]
 ) -> bool:
     """
-    Checks if the latest numeric lab value is below its normal range.
-    Returns False if the latest value is missing or not below normal.
+    Returns True if the latest numeric lab value for all required lab values is below the normal minimum range.
+    
+    Returns False if any latest value is missing, lacks a normal range, or is not below the minimum.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists(): # Changed
@@ -112,8 +114,9 @@ def lab_latest_numeric_normal(
     operator_kwargs: Dict[str, Any]
 ) -> bool:
     """
-    Checks if the latest numeric lab value is within its normal range.
-    Returns False if the latest value is missing or out of range.
+    Returns True if the latest numeric lab value for all required lab values is within the normal range.
+    
+    Returns False if any latest value is missing, lacks a normal range, or falls outside the normal range.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists(): # Changed
@@ -141,8 +144,9 @@ def lab_latest_numeric_lower_than_value(
     operator_kwargs: Dict[str, Any]
 ) -> bool:
     """
-    Checks if the latest numeric lab value is lower than a specific value defined in the requirement.
-    Returns False if the latest value is missing or not lower than the threshold.
+    Returns True if the latest numeric lab value for all required lab values is lower than the specified threshold.
+    
+    Returns False if any latest value is missing or not below the requirement's numeric value.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists() or requirement.numeric_value is None: # Changed
@@ -161,8 +165,9 @@ def lab_latest_numeric_greater_than_value(
     operator_kwargs: Dict[str, Any]
 ) -> bool:
     """
-    Checks if the latest numeric lab value is greater than a specific value defined in the requirement.
-    Returns False if the latest value is missing or not greater than the threshold.
+    Returns True if the latest numeric lab value for all required lab values is greater than the specified threshold.
+    
+    Returns False if any latest value is missing or not greater than the requirement's numeric value.
     """
     patient_lab_values = input_links.patient_lab_values
     if not requirement.lab_values.exists() or requirement.numeric_value is None: # Changed

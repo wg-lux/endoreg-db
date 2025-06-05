@@ -18,9 +18,9 @@ DEFAULT_FPS = 30  # Consistent default FPS for all video segment calculations
 @permission_classes([IsAuthenticated])
 def video_segments_view(request):
     """
-    Handle video segment creation and listing.
-    POST: Create a new label video segment
-    GET: List all segments (with optional video_id filter)
+    Handles creation and retrieval of labeled video segments.
+    
+    POST creates a new labeled video segment with validated data and returns the created segment. GET lists all labeled video segments, optionally filtered by video ID and/or label ID. Returns appropriate error responses for invalid input or missing referenced objects.
     """
     if request.method == 'POST':
         logger.info(f"Creating new video segment with data: {request.data}")
@@ -84,10 +84,14 @@ def video_segments_view(request):
 @permission_classes([IsAuthenticated])
 def video_segment_detail_view(request, segment_id):
     """
-    Handle individual video segment operations.
-    GET: Retrieve segment details
-    PUT: Update segment
-    DELETE: Delete segment
+    Handles retrieval, update, and deletion of a single labeled video segment.
+    
+    Supports:
+    - GET: Returns details of the specified video segment.
+    - PUT: Partially updates the segment with validated data.
+    - DELETE: Removes the segment from the database.
+    
+    Returns appropriate HTTP status codes and error messages for invalid data or exceptions.
     """
     segment = get_object_or_404(LabelVideoSegment, id=segment_id)
     
@@ -139,10 +143,9 @@ def video_segment_detail_view(request, segment_id):
 @permission_classes([IsAuthenticated])
 def video_segments_by_label_id_view(request, video_id, label_id):
     """
-    Get segments for a specific video and label by their IDs.
-    This endpoint solves the problem of duplicate label names by using IDs instead.
+    Retrieves all labeled segments for a given video and label by their IDs.
     
-    GET: /api/video/{video_id}/label-id/{label_id}/segments/
+    Returns a list of time segments for the specified video and label, including start and end frames and their corresponding times in seconds. If no segments exist, returns an empty list. Responds with 404 if the video or label is not found.
     """
     try:
         video = get_object_or_404(VideoFile, id=video_id)
@@ -209,10 +212,9 @@ def video_segments_by_label_id_view(request, video_id, label_id):
 @permission_classes([IsAuthenticated])
 def video_segments_by_label_name_view(request, video_id, label_name):
     """
-    Get segments for a specific video and label by label name.
-    This endpoint handles the case where multiple labels might have the same name.
+    Retrieves labeled video segments for a given video and label name.
     
-    GET: /api/video/{video_id}/label/{label_name}/segments/
+    Handles cases where multiple labels share the same name by returning a conflict response with details of all matching labels and a suggestion to use the label ID endpoint. If a unique label is found, returns a list of segments for the specified video and label, including frame and time information. Returns appropriate error responses if the video or label is not found, or if an internal error occurs.
     """
     try:
         video = get_object_or_404(VideoFile, id=video_id)

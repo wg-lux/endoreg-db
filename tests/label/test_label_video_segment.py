@@ -91,7 +91,11 @@ class LabelVideoSegmentModelTest(TestCase):
         self.assertEqual(frames.filter(is_extracted=True).count(), 0, "No frames should be extracted initially")
 
     def test_extract_and_delete_segment_frame_files(self):
-        """Test extracting and deleting frame files for the segment."""
+        """
+        Tests extraction and deletion of frame files for a video segment.
+        
+        Verifies that no frames are initially extracted, successfully extracts frame files for all frames in the segment, and ensures only segment frames are marked as extracted. Confirms that extracted frame files exist on disk, then deletes the frame files and checks that no frames remain marked as extracted and the files are removed from disk. Skips the test if required video assets or FFmpeg are missing.
+        """
         frames_qs = self.segment.get_frames()
         self.assertEqual(frames_qs.filter(is_extracted=True).count(), 0, "No frames should be extracted initially")
 
@@ -151,6 +155,11 @@ class LabelVideoSegmentModelTest(TestCase):
             self.assertFalse(sample_frame.file_path.exists(), f"Frame file {sample_frame.file_path} should NOT exist after deletion")
     
     def test_create_segment_with_video_seg_label_name(self):
+        """
+        Tests creating a LabelVideoSegment using a serializer with a label name and video ID.
+        
+        Verifies that the serializer validates the input data, successfully creates a segment, and assigns a Label instance to the segment.
+        """
         v = self.video_file
         data = {"video_id": v.id, "label_name": "appendix",
                 "start_time": 0, "end_time": 1}
@@ -160,7 +169,9 @@ class LabelVideoSegmentModelTest(TestCase):
         assert isinstance(segment.label, Label)
 
     def test_get_segment_len_in_s(self):
-        """Test calculating the segment length in seconds."""
+        """
+        Tests that the segment's duration in seconds is correctly calculated based on its frame range and the video's FPS.
+        """
         expected_fps = self.video_file.fps
 
         expected_duration = (self.segment.end_frame_number - self.segment.start_frame_number) / expected_fps

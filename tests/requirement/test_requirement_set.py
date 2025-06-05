@@ -22,6 +22,11 @@ logger.setLevel(logging.INFO)
 class RequirementSetEvaluationTest(TestCase):
     @classmethod
     def setUpTestData(cls):
+        """
+        Sets up initial test data for all tests in the class.
+        
+        Loads fixture data and ensures required units, lab value definitions with normal ranges, and gender objects exist for use in requirement set evaluation tests.
+        """
         load_data() # Load all YAML data including RequirementSets, Requirements, LabValues etc.
 
         # Ensure necessary Units exist
@@ -81,6 +86,18 @@ class RequirementSetEvaluationTest(TestCase):
 
 
     def _create_patient_lab_value(self, patient, lab_value_def, value, days_ago=1):
+        """
+        Creates a PatientLabValue record for a patient with a specified lab value, numeric result, and timestamp offset by a given number of days.
+        
+        Args:
+            patient: The patient instance for whom the lab value is recorded.
+            lab_value_def: The LabValue definition associated with the measurement.
+            value: The numeric result of the lab value.
+            days_ago: Number of days before the current time to set as the measurement timestamp (default is 1).
+        
+        Returns:
+            The created PatientLabValue instance.
+        """
         return PatientLabValue.objects.create(
             patient=patient,
             lab_value=lab_value_def,
@@ -90,8 +107,7 @@ class RequirementSetEvaluationTest(TestCase):
 
     def test_basic_lab_values_normal_set_all_normal(self):
         """
-        Tests RequirementSet "basic_lab_values_normal" (type: all)
-        when all linked lab value requirements are met (all labs are normal).
+        Verifies that the "basic_lab_values_normal" RequirementSet evaluates to True when all associated lab values for a patient are within normal ranges.
         """
         patient = generate_patient()
         patient.save()
@@ -118,8 +134,9 @@ class RequirementSetEvaluationTest(TestCase):
 
     def test_basic_lab_values_normal_set_one_abnormal(self):
         """
-        Tests RequirementSet "basic_lab_values_normal" (type: all)
-        when one linked lab value requirement is not met (one lab is abnormal).
+        Verifies that the "basic_lab_values_normal" requirement set evaluates to False when one required lab value is abnormal.
+        
+        This test creates a patient with all required lab values in the normal range except for hemoglobin, which is set to an abnormal (low) value. It asserts that the requirement set of type "all" is not fulfilled when any single lab value requirement fails.
         """
         patient = generate_patient()
         patient.save()
@@ -138,8 +155,9 @@ class RequirementSetEvaluationTest(TestCase):
 
     def test_patient_gender_generic_set_male(self):
         """
-        Tests RequirementSet "patient_gender_generic" (type: any)
-        when patient is male.
+        Tests that the "patient_gender_generic" requirement set evaluates to True for a male patient.
+        
+        Creates a male patient and verifies that the requirement set of type "any" is fulfilled when evaluated against this patient.
         """
         patient = generate_patient(gender=self.male_gender) # generate_patient needs to support gender
         patient.save()
@@ -157,8 +175,9 @@ class RequirementSetEvaluationTest(TestCase):
 
     def test_patient_gender_generic_set_female(self):
         """
-        Tests RequirementSet "patient_gender_generic" (type: any)
-        when patient is female.
+        Verifies that the "patient_gender_generic" requirement set evaluates to True for a female patient.
+        
+        Creates a female patient and checks that the requirement set of type "any" is fulfilled when evaluated against this patient.
         """
         patient = generate_patient(gender=self.female_gender)
         patient.save()
@@ -171,9 +190,9 @@ class RequirementSetEvaluationTest(TestCase):
     
     def test_patient_gender_generic_set_unknown_gender(self):
         """
-        Tests RequirementSet "patient_gender_generic" (type: any)
-        when patient has a gender other than male or female (or null).
-        It assumes the individual requirements for male/female will evaluate to False.
+        Tests that the "patient_gender_generic" requirement set evaluates to False for a patient with an unknown gender.
+        
+        This verifies that when a requirement set of type "any" contains only male and female gender requirements, a patient whose gender is neither male nor female does not fulfill the set.
         """
         other_gender = generate_gender(name="unknown")
         patient = generate_patient(gender=other_gender)
@@ -199,7 +218,11 @@ class RequirementSetEvaluationTest(TestCase):
         self.assertFalse(is_fulfilled, "Set 'patient_gender_generic' should be false for 'other' gender if only male/female reqs exist.")
 
     def test_empty_requirement_set_all_type(self):
-        """ Tests an 'all' type RequirementSet with no direct requirements or linked sets. """
+        """
+        Tests that an empty 'all' type RequirementSet evaluates to True for any patient.
+        
+        Creates a RequirementSet of type 'all' with no requirements or linked sets, evaluates it against a patient, and asserts that the result is True.
+        """
         all_type = RequirementSetType.objects.get(name="all")
         empty_set = RequirementSet.objects.create(name="empty_all_set_test", requirement_set_type=all_type)
         patient = generate_patient()
@@ -209,7 +232,11 @@ class RequirementSetEvaluationTest(TestCase):
 
 
     def test_empty_requirement_set_any_type(self):
-        """ Tests an 'any' type RequirementSet with no direct requirements or linked sets. """
+        """
+        Tests that an empty RequirementSet of type 'any' evaluates to False.
+        
+        Creates an 'any' type RequirementSet with no requirements or linked sets, evaluates it against a patient, and asserts that the result is False.
+        """
         any_type = RequirementSetType.objects.get(name="any")
         empty_set = RequirementSet.objects.create(name="empty_any_set_test", requirement_set_type=any_type)
         patient = generate_patient()
@@ -218,7 +245,9 @@ class RequirementSetEvaluationTest(TestCase):
         empty_set.delete()
 
     def test_empty_requirement_set_none_type(self):
-        """ Tests a 'none' type RequirementSet with no direct requirements or linked sets. """
+        """
+        Tests that an empty 'none' type RequirementSet with no requirements or linked sets evaluates to True for a patient.
+        """
         none_type = RequirementSetType.objects.get(name="none")
         empty_set = RequirementSet.objects.create(name="empty_none_set_test", requirement_set_type=none_type)
         patient = generate_patient()

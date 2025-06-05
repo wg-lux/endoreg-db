@@ -12,6 +12,11 @@ class Command(BaseCommand):
     help = 'Generates a structured report summarizing the database content of custom endoreg_db models and saves it to Excel and CSV files, excluding models with zero records from the files.' # Updated help text
 
     def handle(self, *args, **options):
+        """
+        Generates a summary report of all models in the 'endoreg_db' app and exports the results to Excel and CSV files.
+        
+        For each model, counts the total number of records and includes only models with at least one record in the output files. For models with records, attempts to display the range of values for common date or datetime fields and provides value counts for up to three categorical or ForeignKey fields, using heuristics based on field type and name. Handles missing app configuration, file saving errors, and aggregation exceptions gracefully, outputting progress and warnings to the console. Creates a 'data' directory within the app if it does not exist and saves the reports there.
+        """
         self.stdout.write(self.style.SUCCESS("Starting database content summarization for endoreg_db models..."))
 
         try:

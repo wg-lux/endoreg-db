@@ -128,23 +128,20 @@ class RequirementSet(models.Model):
 
     def __str__(self):
         """
-        Return the string representation of the requirement set.
-        
-        Returns:
-            str: The name of the requirement set.
+        Returns the name of the requirement set as its string representation.
         """
         return str(self.name)
     
     def evaluate_requirements(self, input_object, mode="loose") -> List[bool]:
         """
-        Evaluate the requirements in this set against a given input object.
+        Evaluates all requirements in the set against the provided input object.
         
         Args:
-            input_object: The object to evaluate against the requirements in this set.
-            mode (str, optional): The evaluation mode to use (default is "loose").
+            input_object: The object to be evaluated by each requirement.
+            mode: Optional evaluation mode passed to each requirement (default is "loose").
         
         Returns:
-            List[bool]: List of booleans indicating if each requirement is met.
+            A list of boolean values indicating whether each requirement is satisfied.
         """
         results = []
         for requirement in self.requirements.all():
@@ -154,13 +151,10 @@ class RequirementSet(models.Model):
 
     def evaluate_requirement_sets(self, input_object) -> List[bool]:
         """
-        Evaluate the linked requirement sets against a given input object.
-        
-        Args:
-            input_object: The object to evaluate against the linked requirement sets.
+        Evaluates all linked requirement sets against the provided input object.
         
         Returns:
-            List[bool]: List of booleans indicating if each linked requirement set is met.
+            A list of boolean values indicating whether each linked requirement set is satisfied.
         """
         results = []
         for linked_set in self.links_to_sets.all():
@@ -171,12 +165,9 @@ class RequirementSet(models.Model):
     @property
     def eval_function(self):
         """
-        Returns the evaluation function for this requirement set type.
+        Returns the evaluation function associated with this requirement set's type.
         
-        The function is determined by the requirement_set_type's name.
-        
-        Returns:
-            function: The evaluation function corresponding to the requirement set type.
+        If the requirement set type is defined and matches a known type, returns the corresponding function from REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP. Returns None if no matching function is found.
         """
         if self.requirement_set_type and self.requirement_set_type.name in REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP:
             return REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP[self.requirement_set_type.name]
@@ -184,13 +175,15 @@ class RequirementSet(models.Model):
 
     def evaluate(self, input_object):
         """
-        Evaluate the requirement set against a given input object.
+        Evaluates whether the input object satisfies this requirement set.
+        
+        Combines the evaluation results of all direct requirements and linked requirement sets, then applies the set's evaluation function (such as all, any, none, etc.) to determine if the input object meets the overall criteria.
         
         Args:
-            input_object: The object to evaluate against the requirements in this set.
+            input_object: The object to be evaluated against the requirements and linked sets.
         
         Returns:
-            bool: True if the input_object meets the requirements of the set according to the set's evaluation function (e.g., all, any), otherwise False.
+            True if the input object satisfies the requirement set according to its evaluation logic; otherwise, False.
         """
         evaluate_r_results = self.evaluate_requirements(input_object)
         evaluate_rs_results = self.evaluate_requirement_sets(input_object)

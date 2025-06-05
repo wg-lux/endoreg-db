@@ -290,9 +290,9 @@ class Requirement(models.Model):
 
     def natural_key(self):
         """
-        Return a tuple containing the natural key of the instance.
-
-        The tuple, comprised solely of the instance's name, serves as an alternative unique identifier for serialization.
+        Returns a tuple containing the instance's name as its natural key.
+        
+        This tuple provides a unique identifier for serialization purposes.
         """
         return (self.name,)
 
@@ -394,20 +394,21 @@ class Requirement(models.Model):
     
     def evaluate(self, *args, mode:str, **kwargs):
         """
-        Evaluates the requirement against provided input models using linked operators.
+        Evaluates whether the requirement is satisfied for the given input models using linked operators and gender constraints.
         
         Args:
-            *args: Instances of expected model classes (e.g., PatientExamination, ExaminationIndication) to be evaluated.
-                   Each input instance must have a `.links` property returning a RequirementLinks object.
-            mode: Evaluation mode, either "strict" (all operators must pass) or "loose" (any operator may pass).
+            *args: Instances or QuerySets of expected model classes to be evaluated. Each must have a `.links` property returning a `RequirementLinks` object.
+            mode: Evaluation mode; "strict" requires all operators to pass, "loose" requires any operator to pass.
             **kwargs: Additional keyword arguments passed to operator evaluations.
         
         Returns:
-            True if the requirement is satisfied according to the specified mode and linked operators; otherwise, False.
+            True if the requirement is satisfied according to the specified mode, linked operators, and gender restrictions; otherwise, False.
         
         Raises:
             ValueError: If an invalid mode is provided.
-            TypeError: If an input is not an instance of an expected model class or its `.links` attribute is not a RequirementLinks instance.
+            TypeError: If an input is not an instance or QuerySet of expected models, or lacks a valid `.links` attribute.
+        
+        If the requirement specifies genders, only input containing a patient with a matching gender will be considered valid for evaluation.
         """
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")

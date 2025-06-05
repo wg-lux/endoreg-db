@@ -22,10 +22,9 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
 
     def list(self, request, *args, **kwargs):
         """
-        Retrieves all available videos and labels.
+        Returns a JSON response with all video metadata and available labels.
         
-        Returns:
-            Response: A JSON response containing serialized lists of videos and labels with HTTP 200 status.
+        The response includes serialized lists of all videos and labels in the database.
         """
         videos = VideoFile.objects.all()
         labels = Label.objects.all()
@@ -41,7 +40,10 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     # ---------- JSON ---------- #
     def retrieve(self, request, *args, **kwargs):
         """
-        Returns detailed metadata for a specific video as JSON.
+        Retrieves detailed metadata for a specific video as a JSON response.
+        
+        Returns:
+            JSON representation of the requested video's metadata.
         """
         obj = self.get_object()
         return Response(VideoFileSerializer(obj, context={'request': request}).data)
@@ -51,7 +53,12 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
                        url_path='stream', renderer_classes=[])  # <- disable HTML & JSON renderers
     def stream(self, request, pk=None):
         """
-        Streams the video file directly as bytes with range support.
+        Streams the raw video file for the specified video with HTTP range and CORS support.
+        
+        Returns:
+            A FileResponse streaming the video file bytes with appropriate headers for
+            content type, content length, byte-range requests, and CORS. Raises Http404
+            if the video file is missing or not found on disk.
         """
         vf: VideoFile = self.get_object()
         
@@ -93,7 +100,9 @@ class VideoView(APIView):
 
     def get(self, request, video_id=None):
         """
-        Handles GET requests for backward compatibility.
+        Handles GET requests for the legacy video API.
+        
+        If `video_id` is provided, returns metadata for the specified video; otherwise, returns a list of all videos and labels.
         """
         if video_id is None:
             return self.get_all_videos()
@@ -101,7 +110,10 @@ class VideoView(APIView):
 
     def get_all_videos(self):
         """
-        Retrieves all available videos and labels.
+        Retrieves all videos and labels and returns them as serialized JSON data.
+        
+        Returns:
+            Response containing serialized lists of videos and labels with HTTP 200 status.
         """
         videos = VideoFile.objects.all()
         labels = Label.objects.all()
@@ -116,7 +128,9 @@ class VideoView(APIView):
 
     def get_video_details(self, request, video_id):
         """
-        Returns video metadata as JSON.
+        Retrieves metadata for a specific video as a JSON response.
+        
+        Returns HTTP 200 with serialized video metadata if found, 404 if the video does not exist, or 500 with an error message on unexpected exceptions.
         """
         try:
             video_entry = VideoFile.objects.get(id=video_id)
@@ -135,10 +149,9 @@ class VideoLabelView(APIView):
 
     def get(self, request, video_id, label_name):
         """
-        Retrieves time segments and frame-wise predictions for a specific label on a video.
+        Retrieves time segments and frame-level predictions for a specific label on a video.
         
-        Returns a JSON response containing the label name, its associated time segments, and frame predictions. 
-        Responds with HTTP 404 if the video or label is not found, or HTTP 500 for other errors.
+        Returns a JSON response containing the label name, a list of time segments (with frame ranges and timestamps), and frame-wise prediction data. Responds with HTTP 404 if the video or label does not exist, or HTTP 200 with empty data if no segments are found. Returns HTTP 500 with an error message for unexpected exceptions.
         """
         try:
             # Verify video exists

@@ -23,6 +23,13 @@ logger.setLevel(logging.INFO) # Changed to INFO for more verbose logging during 
 class CommonLabValuesTest(TestCase):
     @classmethod
     def setUpTestData(cls):
+        """
+        Initializes test data for the CommonLabValuesTest class.
+        
+        Creates and retrieves LabValue and Gender instances with various normal range configurations
+        to support different test scenarios. This includes lab values with no range, min-only, max-only,
+        zero bounds, and reference values for distribution-based tests.
+        """
         load_data()
         
         cls.hb = LabValue.objects.get(name="hemoglobin")
@@ -76,6 +83,9 @@ class CommonLabValuesTest(TestCase):
         )
 
     def setUp(self):
+        """
+        Creates mock male and female patient objects with predefined age and gender for use in test cases.
+        """
         self.mock_male_patient = MagicMock(spec=Patient)
         self.mock_male_patient.age.return_value = 30
         self.mock_male_patient.gender = self.male_gender
@@ -85,11 +95,19 @@ class CommonLabValuesTest(TestCase):
         self.mock_female_patient.gender = self.female_gender
 
     def test_common_lab_values(self):
+        """
+        Tests that LabValue.get_common_lab_values() returns a CommonLabValues instance.
+        """
         common_lab_values = LabValue.get_common_lab_values()
         self.assertIsInstance(common_lab_values, CommonLabValues, "Expected CommonLabValues instance.")
 
     def test_get_normal_range_gender_dependent(self):
         # Hemoglobin: Male: 14-18, Female: 12-16
+        """
+        Tests that gender-dependent normal ranges are correctly returned for hemoglobin.
+        
+        Verifies that the correct normal range is provided for male and female genders, and that appropriate warnings are issued and fallback behavior occurs when gender is missing or unknown.
+        """
         normal_range_male = self.hb.get_normal_range(gender=self.male_gender)
         self.assertEqual(normal_range_male, {"min": 14, "max": 18})
 
@@ -106,6 +124,11 @@ class CommonLabValuesTest(TestCase):
 
     def test_get_normal_range_non_gender_dependent(self):
         # Platelets: 150-350
+        """
+        Tests that the normal range for a non-gender-dependent lab value is consistent regardless of gender.
+        
+        Verifies that calling `get_normal_range` on the platelets lab value returns the same range whether or not a gender is specified.
+        """
         normal_range = self.platelets.get_normal_range()
         self.assertEqual(normal_range, {"min": 150, "max": 350})
 
@@ -119,17 +142,28 @@ class CommonLabValuesTest(TestCase):
     #         self.assertIsNone(normal_range.get("max"))
             
     def test_get_normal_range_min_only(self):
+        """
+        Tests that a lab value with only a minimum normal range returns the correct min value and no max value.
+        """
         normal_range = self.min_only_lv.get_normal_range()
         self.assertEqual(normal_range.get("min"), 10)
         self.assertIsNone(normal_range.get("max"))
 
     def test_get_normal_range_max_only(self):
+        """
+        Tests that get_normal_range returns only the maximum value when the lab value has a max-only normal range.
+        
+        Verifies that the minimum is None and the maximum is correctly set.
+        """
         normal_range = self.max_only_lv.get_normal_range()
         self.assertIsNone(normal_range.get("min"))
         self.assertEqual(normal_range.get("max"), 100)
 
     # Tests for get_increased_value
     def test_get_increased_value_no_distribution_with_upper_bound(self):
+        """
+        Tests that get_increased_value returns the upper bound plus adjustment factor when no distribution is present and an upper bound exists.
+        """
         original = self.platelets.default_numerical_value_distribution
         self.platelets.default_numerical_value_distribution = None
         try:
@@ -139,6 +173,9 @@ class CommonLabValuesTest(TestCase):
             self.platelets.default_numerical_value_distribution = original
 
     def test_get_increased_value_no_distribution_no_upper_bound(self):
+        """
+        Tests that get_increased_value returns None and issues a warning when called on a lab value with no distribution and no upper normal range.
+        """
         original = self.min_only_lv.default_numerical_value_distribution
         self.min_only_lv.default_numerical_value_distribution = None
         try:
@@ -149,6 +186,9 @@ class CommonLabValuesTest(TestCase):
             self.min_only_lv.default_numerical_value_distribution = original
 
     def test_get_increased_value_upper_bound_zero(self):
+        """
+        Tests that get_increased_value returns 1 when the upper bound is zero and no distribution is present.
+        """
         original = self.zero_max_lv.default_numerical_value_distribution
         self.zero_max_lv.default_numerical_value_distribution = None
         try:
@@ -159,6 +199,9 @@ class CommonLabValuesTest(TestCase):
 
     # Tests for get_normal_value
     def test_get_normal_value_no_distribution_min_only(self):
+        """
+        Tests that get_normal_value returns the minimum value when no distribution exists and only a minimum bound is set.
+        """
         original = self.min_only_lv.default_numerical_value_distribution
         self.min_only_lv.default_numerical_value_distribution = None
         try:
@@ -168,6 +211,9 @@ class CommonLabValuesTest(TestCase):
             self.min_only_lv.default_numerical_value_distribution = original
 
     def test_get_normal_value_no_distribution_max_only(self):
+        """
+        Tests that get_normal_value returns the maximum value when only a maximum bound is defined and no distribution is present.
+        """
         original = self.max_only_lv.default_numerical_value_distribution
         self.max_only_lv.default_numerical_value_distribution = None
         try:
@@ -177,6 +223,9 @@ class CommonLabValuesTest(TestCase):
             self.max_only_lv.default_numerical_value_distribution = original
 
     def test_get_normal_value_no_distribution_no_bounds(self):
+        """
+        Tests that get_normal_value returns None and issues a warning when neither a numerical distribution nor normal range bounds are available.
+        """
         original = self.no_range_lv.default_numerical_value_distribution
         self.no_range_lv.default_numerical_value_distribution = None
         try:
@@ -188,6 +237,9 @@ class CommonLabValuesTest(TestCase):
 
     # Tests for get_decreased_value
     def test_get_decreased_value_no_distribution_with_lower_bound(self):
+        """
+        Tests that get_decreased_value returns the lower bound minus the adjustment factor when no numerical value distribution is present and a lower bound exists.
+        """
         original = self.platelets.default_numerical_value_distribution
         self.platelets.default_numerical_value_distribution = None
         try:
@@ -197,6 +249,9 @@ class CommonLabValuesTest(TestCase):
             self.platelets.default_numerical_value_distribution = original
 
     def test_get_decreased_value_no_distribution_no_lower_bound(self):
+        """
+        Tests that get_decreased_value returns None and issues a warning when no distribution or lower normal range bound exists.
+        """
         original = self.max_only_lv.default_numerical_value_distribution
         self.max_only_lv.default_numerical_value_distribution = None
         try:
@@ -207,6 +262,9 @@ class CommonLabValuesTest(TestCase):
             self.max_only_lv.default_numerical_value_distribution = original
 
     def test_get_decreased_value_lower_bound_zero(self):
+        """
+        Tests that `get_decreased_value` returns -1 when the lower bound is zero and no distribution is present.
+        """
         original = self.zero_min_lv.default_numerical_value_distribution
         self.zero_min_lv.default_numerical_value_distribution = None
         try:
@@ -217,6 +275,14 @@ class CommonLabValuesTest(TestCase):
 
     # Tests with distribution
     def test_get_increased_value_with_distribution_patient(self):
+        """
+        Tests that get_increased_value returns an appropriately increased lab value using a numerical distribution and patient context.
+        
+        Verifies that:
+        - When the generated value exceeds the upper bound, it is returned directly.
+        - When the generated value does not exceed the upper bound after multiple attempts, a fallback calculation is used.
+        - For lab values without an upper bound, the method uses a mean plus standard deviation heuristic, with similar retry and fallback logic.
+        """
         mock_distribution = MagicMock(spec=NumericValueDistribution)
         # Platelets (lv_with_dist_ref): max 350
         with patch.object(type(self.lv_with_dist_ref), 'default_numerical_value_distribution', new_callable=PropertyMock) as mock_prop:
@@ -252,6 +318,10 @@ class CommonLabValuesTest(TestCase):
             self.assertEqual(mock_dist_mean_std.generate_value.call_count, 10 + 1) 
 
     def test_get_increased_value_with_distribution_no_patient(self):
+        """
+        Tests that get_increased_value falls back to a calculated value and issues a warning
+        when called without patient context, even if a numerical distribution exists.
+        """
         self.assertIsNotNone(self.lv_with_dist_ref.default_numerical_value_distribution, 
                              "Platelets (lv_with_dist_ref) must have a distribution from load_data()")
         with self.assertWarnsRegex(UserWarning, "Cannot use numerical distribution.*without patient context"):
@@ -259,6 +329,14 @@ class CommonLabValuesTest(TestCase):
             self.assertEqual(increased_value, 350 + (350 * self.lv_with_dist_ref.bound_adjustment_factor))
 
     def test_get_normal_value_with_distribution_patient(self):
+        """
+        Tests that get_normal_value returns appropriate values when a numerical distribution is present and a patient is provided.
+        
+        Verifies that:
+        - If the generated value is within the normal range, it is returned.
+        - If the generated value is outside the normal range, the method retries up to 10 times before falling back to the midpoint of the range.
+        - If no normal range is defined, the generated value is returned.
+        """
         mock_distribution = MagicMock(spec=NumericValueDistribution)
         # Platelets (lv_with_dist_ref): 150-350
         with patch.object(type(self.lv_with_dist_ref), 'default_numerical_value_distribution', new_callable=PropertyMock) as mock_prop:
@@ -286,6 +364,9 @@ class CommonLabValuesTest(TestCase):
             mock_no_range_dist.generate_value.assert_called_once_with(lab_value=self.lv_no_range_dist, patient=self.mock_male_patient)
 
     def test_get_normal_value_with_distribution_no_patient(self):
+        """
+        Tests that get_normal_value falls back to the midpoint of the normal range and issues a warning when called without patient context, even if a numerical value distribution exists.
+        """
         self.assertIsNotNone(self.lv_with_dist_ref.default_numerical_value_distribution)
         with self.assertWarnsRegex(UserWarning, "Cannot use numerical distribution.*without patient context"):
             normal_value = self.lv_with_dist_ref.get_normal_value()
@@ -293,6 +374,11 @@ class CommonLabValuesTest(TestCase):
 
     def test_get_decreased_value_with_distribution_patient(self):
         # Get the real distribution object
+        """
+        Tests decreased value generation for a lab value with a numerical distribution and patient context.
+        
+        Covers scenarios where the generated value is below the lower bound, above the lower bound (triggering retries and fallback), and when no lower bound exists (using mean minus standard deviation heuristic).
+        """
         dist = self.lv_with_dist_ref.default_numerical_value_distribution
 
         # Scenario 1: generated value < lower_bound
@@ -327,6 +413,9 @@ class CommonLabValuesTest(TestCase):
                 self.assertEqual(mock_gen.call_count, 10 + 1)
 
     def test_get_decreased_value_with_distribution_no_patient(self):
+        """
+        Tests that get_decreased_value falls back to a calculated value and issues a warning when called without patient context and a numerical distribution is present.
+        """
         self.assertIsNotNone(self.lv_with_dist_ref.default_numerical_value_distribution)
         with self.assertWarnsRegex(UserWarning, "Cannot use numerical distribution.*without patient context"):
             decreased_value = self.lv_with_dist_ref.get_decreased_value()
