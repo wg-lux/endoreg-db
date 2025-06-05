@@ -1,4 +1,3 @@
-\
 import logging
 from django.test import TestCase
 from django.utils import timezone
@@ -7,12 +6,11 @@ import datetime
 from endoreg_db.models import (
     RequirementSet,
     RequirementSetType,
-    Patient,
     LabValue,
     PatientLabValue,
     Unit,
     # GenderChoice,
-    Requirement # Added for direct requirement checks if needed
+    # Requirement # Added for direct requirement checks if needed
 )
 from ..helpers.data_loader import load_data
 from ..helpers.default_objects import generate_patient, generate_gender

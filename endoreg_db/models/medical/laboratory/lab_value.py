@@ -118,7 +118,7 @@ class LabValue(models.Model):
         from endoreg_db.models.medical.laboratory.lab_value import CommonLabValues
 
         return CommonLabValues(
-            hb=cls.objects.get(name ="hemoglobin"),
+            hb=cls.objects.get(name="hemoglobin"),
             wbc=cls.objects.get(name="white_blood_cells"),
             plt=cls.objects.get(name="platelets"),
             cr=cls.objects.get(name="creatinine"),

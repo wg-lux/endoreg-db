@@ -38,11 +38,10 @@
 # te_prevention-non_valvular_af-apixaban
 - model: endoreg_db.requirement
   fields:
-    name: "intake_time_daily_morning_is_defined_in_requirement"
+    name: "intake_time_daily_morning_for_non_valvular_af_apixaban_is_defined_in_requirement"
     requirement_types: ["medication_intake_time"]
     operators: ["models_match_any"]
-    medication_indications: ["te_prevention-non_valvular_af-apixaban"]   
-
+    medication_intake_times: ["te_prevention-non_valvular_af-apixaban"]
 
 - model: endoreg_db.requirement
   fields:

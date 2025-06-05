@@ -483,12 +483,12 @@ class Requirement(models.Model):
         final_input_links = RequirementLinks(**aggregated_input_links_data)
         
         # Gender strict check: if this requirement has genders, only pass if patient.gender is in the set
-        if self.genders.exists():
-            # Try to find a patient object in args
+        genders_exist = self.genders.exists()
+        if genders_exist:
+            # Import here to avoid circular import
+            from endoreg_db.models.administration.person.patient import Patient
             patient = None
             for arg in args:
-                # Import here to avoid circular import
-                from endoreg_db.models.administration.person.patient import Patient
                 if isinstance(arg, Patient):
                     patient = arg
                     break

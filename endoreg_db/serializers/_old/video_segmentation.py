@@ -272,7 +272,7 @@ class VideoListSerializer(serializers.ModelSerializer):
         else:
             return 'available'
     
-    def get_assignedUser(self, obj):
+    def get_assigned_user(self, obj):
         """
         Get assigned user from video metadata or prediction metadata.
         Returns None if no user is assigned.

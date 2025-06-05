@@ -43,7 +43,6 @@ def get_findings_for_exam(request, exam_id):
     return Response([{"id": f.id, "name": f.name} for f in findings])
 
 @api_view(["GET"])
-@api_view(["GET"])
 def get_location_choices_for_classification(request, exam_id, location_classification_id):
     """
     Retrieves location choices for a specific location classification within an examination.
@@ -67,7 +66,6 @@ def get_location_choices_for_classification(request, exam_id, location_classific
         ]
     )
 
-@api_view(["GET"])
 @api_view(["GET"])
 def get_interventions_for_finding(request, exam_id, finding_id):
     """

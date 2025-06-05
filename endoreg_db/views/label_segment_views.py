@@ -11,6 +11,9 @@ from ..serializers.label_serializer import LabelVideoSegmentSerializer
 
 logger = logging.getLogger(__name__)
 
+#TODO move DEFAULT_FPS to settings and fetch from environment with a sensible default
+DEFAULT_FPS = 30  # Consistent default FPS for all video segment calculations
+
 @api_view(['POST', 'GET'])
 @permission_classes([IsAuthenticated])
 def video_segments_view(request):
@@ -154,7 +157,7 @@ def video_segments_by_label_id_view(request, video_id, label_id):
         # Build response in the expected format
         if segments.exists():
             # Get video properties for time calculation
-            fps = video.get_fps() or 25  # Default to 25 FPS if not available
+            fps = video.get_fps() or DEFAULT_FPS  # Use module-level constant
             
             time_segments = []
             for segment in segments:
@@ -248,7 +251,7 @@ def video_segments_by_label_name_view(request, video_id, label_name):
         # Build response in the expected format
         if segments.exists():
             # Get video properties for time calculation
-            fps = video.get_fps() or 25  # Default to 25 FPS if not available
+            fps = video.get_fps() or DEFAULT_FPS  # Use module-level constant
             
             time_segments = []
             for segment in segments:

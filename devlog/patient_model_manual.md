@@ -1,7 +1,3 @@
-Okay, I can help you create a detailed manual for the `Patient` model based on the provided context.
-
-Here's a breakdown of the `Patient` model and its related entities:
-
 ## Patient Model Manual
 
 The `Patient` model is a cornerstone of the system, representing individuals receiving medical care. It inherits from a more general `Person` model, likely adding patient-specific attributes and relationships.

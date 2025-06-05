@@ -135,19 +135,20 @@ class RequirementSet(models.Model):
         """
         return str(self.name)
     
-    def evaluate_requirements(self, input_object) -> List[bool]:
+    def evaluate_requirements(self, input_object, mode="loose") -> List[bool]:
         """
         Evaluate the requirements in this set against a given input object.
         
         Args:
             input_object: The object to evaluate against the requirements in this set.
+            mode (str, optional): The evaluation mode to use (default is "loose").
         
         Returns:
-            bool: True if all requirements are met, False otherwise.
+            List[bool]: List of booleans indicating if each requirement is met.
         """
         results = []
         for requirement in self.requirements.all():
-            result = requirement.evaluate(input_object, mode="loose")
+            result = requirement.evaluate(input_object, mode=mode)
             results.append(result)
         return results
 
@@ -159,7 +160,7 @@ class RequirementSet(models.Model):
             input_object: The object to evaluate against the linked requirement sets.
         
         Returns:
-            bool: True if all linked requirement sets are met, False otherwise.
+            List[bool]: List of booleans indicating if each linked requirement set is met.
         """
         results = []
         for linked_set in self.links_to_sets.all():
@@ -189,7 +190,7 @@ class RequirementSet(models.Model):
             input_object: The object to evaluate against the requirements in this set.
         
         Returns:
-            bool: 
+            bool: True if the input_object meets the requirements of the set according to the set's evaluation function (e.g., all, any), otherwise False.
         """
         evaluate_r_results = self.evaluate_requirements(input_object)
         evaluate_rs_results = self.evaluate_requirement_sets(input_object)
