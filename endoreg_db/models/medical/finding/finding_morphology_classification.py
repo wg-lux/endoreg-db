@@ -1,5 +1,6 @@
+# from random import choices
 from django.db import models
-from typing import List
+from typing import TYPE_CHECKING, List
 
 class FindingMorphologyClassificationTypeManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -39,8 +40,24 @@ class FindingMorphologyClassification(models.Model):
     name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     classification_type = models.ForeignKey(FindingMorphologyClassificationType, on_delete=models.CASCADE)
+
+    findings = models.ManyToManyField('Finding', blank=True, related_name='morphology_classifications')
+    examinations = models.ManyToManyField('Examination', blank=True, related_name='morphology_classifications')
+    finding_types = models.ManyToManyField('FindingType', blank=True, related_name='morphology_classifications')
     
+
     objects = FindingMorphologyClassificationManager()
+
+
+
+    if TYPE_CHECKING:
+        from endoreg_db.models import Finding, Examination, FindingType
+        classification_type: models.ForeignKey[FindingMorphologyClassificationType]
+        findings: models.QuerySet[Finding]
+        examinations: models.QuerySet[Examination]
+        finding_types: models.QuerySet[FindingType]
+        choices: models.QuerySet['FindingMorphologyClassificationChoice']
+
     
     def natural_key(self):
         return (self.name,)

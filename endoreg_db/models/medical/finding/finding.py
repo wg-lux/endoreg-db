@@ -2,6 +2,8 @@
 from django.db import models
 from typing import List
 
+from sphinx import TYPE_CHECKING
+
 class FindingManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
@@ -15,6 +17,17 @@ class Finding(models.Model):
     description_en = models.TextField(blank=True, null=True)
     examinations = models.ManyToManyField('Examination', blank=True, related_name='findings')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='findings')
+
+    # morphology_classifications = models.ManyToManyField(
+    #     'FindingMorphologyClassification',
+    #     blank=True,
+    #     related_name='findings',
+    # )
+    # location_classifications = models.ManyToManyField(
+    #     'FindingLocationClassification',
+    #     blank=True,
+    #     related_name='findings'
+    # )
 
     finding_interventions = models.ManyToManyField(
         'FindingIntervention',
@@ -47,6 +60,20 @@ class Finding(models.Model):
     )
 
     objects = FindingManager()
+
+    if TYPE_CHECKING:
+        from endoreg_db.models import (
+            Examination, FindingType, FindingIntervention, FindingMorphologyClassificationType,
+            FindingMorphologyClassification, FindingLocationClassification
+        )
+    
+        examinations: models.QuerySet[Examination]
+        morphology_classifications: models.QuerySet['FindingMorphologyClassification']
+        location_classifications: models.QuerySet['FindingLocationClassification']
+        finding_types: models.QuerySet[FindingType]
+        finding_interventions: models.QuerySet[FindingIntervention]
+        required_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
+        optional_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
 
     def natural_key(self):
         return (self.name,)
