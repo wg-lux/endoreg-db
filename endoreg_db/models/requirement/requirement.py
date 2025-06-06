@@ -36,7 +36,8 @@ if TYPE_CHECKING:
         PatientLabValue,
         PatientMedicationSchedule, # Added PatientMedicationSchedule
         RequirementOperator,
-        RequirementSet
+        RequirementSet, 
+        Gender
     )
     # from endoreg_db.utils.links.requirement_link import RequirementLinks # Already imported above
 
@@ -257,6 +258,12 @@ class Requirement(models.Model):
         related_name="required_in",
     )
 
+    genders = models.ManyToManyField(
+        "Gender",
+        blank=True,
+        related_name="required_in",
+    )
+
     if TYPE_CHECKING:
         requirement_types: models.QuerySet[RequirementType]
         operators: models.QuerySet[RequirementOperator]
@@ -279,12 +286,13 @@ class Requirement(models.Model):
         medication_indications: models.QuerySet[MedicationIndication]
         medication_intake_times: models.QuerySet[MedicationIntakeTime] # Added type hint
         medication_schedules: models.QuerySet[MedicationSchedule]
+        genders: models.QuerySet[Gender]
 
     def natural_key(self):
         """
-        Return a tuple containing the natural key of the instance.
-
-        The tuple, comprised solely of the instance's name, serves as an alternative unique identifier for serialization.
+        Returns a tuple containing the instance's name as its natural key.
+        
+        This tuple provides a unique identifier for serialization purposes.
         """
         return (self.name,)
 
@@ -386,20 +394,21 @@ class Requirement(models.Model):
     
     def evaluate(self, *args, mode:str, **kwargs):
         """
-        Evaluates the requirement against provided input models using linked operators.
+        Evaluates whether the requirement is satisfied for the given input models using linked operators and gender constraints.
         
         Args:
-            *args: Instances of expected model classes (e.g., PatientExamination, ExaminationIndication) to be evaluated.
-                   Each input instance must have a `.links` property returning a RequirementLinks object.
-            mode: Evaluation mode, either "strict" (all operators must pass) or "loose" (any operator may pass).
+            *args: Instances or QuerySets of expected model classes to be evaluated. Each must have a `.links` property returning a `RequirementLinks` object.
+            mode: Evaluation mode; "strict" requires all operators to pass, "loose" requires any operator to pass.
             **kwargs: Additional keyword arguments passed to operator evaluations.
         
         Returns:
-            True if the requirement is satisfied according to the specified mode and linked operators; otherwise, False.
+            True if the requirement is satisfied according to the specified mode, linked operators, and gender restrictions; otherwise, False.
         
         Raises:
             ValueError: If an invalid mode is provided.
-            TypeError: If an input is not an instance of an expected model class or its `.links` attribute is not a RequirementLinks instance.
+            TypeError: If an input is not an instance or QuerySet of expected models, or lacks a valid `.links` attribute.
+        
+        If the requirement specifies genders, only input containing a patient with a matching gender will be considered valid for evaluation.
         """
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
@@ -474,6 +483,21 @@ class Requirement(models.Model):
         
         final_input_links = RequirementLinks(**aggregated_input_links_data)
         
+        # Gender strict check: if this requirement has genders, only pass if patient.gender is in the set
+        genders_exist = self.genders.exists()
+        if genders_exist:
+            # Import here to avoid circular import
+            from endoreg_db.models.administration.person.patient import Patient
+            patient = None
+            for arg in args:
+                if isinstance(arg, Patient):
+                    patient = arg
+                    break
+            if patient is None or patient.gender is None:
+                return False
+            if not self.genders.filter(pk=patient.gender.pk).exists():
+                return False
+
         operators = self.operators.all()
         if not operators.exists(): # If a requirement has no operators, its evaluation is ambiguous.
             # Consider if this should be True, False, or an error.

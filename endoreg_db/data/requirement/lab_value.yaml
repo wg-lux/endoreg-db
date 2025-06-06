@@ -364,3 +364,78 @@
     numeric_value_min: -180 # Days ago (approx 6 months)
     numeric_value_max: 0    # Days ago
     unit: "days"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_hb_normal"
+    name_de: "Hämoglobin im Normalbereich"
+    name_en: "Hemoglobin normal"
+    description: "Checks if the latest hemoglobin is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "hemoglobin"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_leukocytes_normal"
+    name_de: "Leukozyten im Normalbereich"
+    name_en: "Leukocytes normal"
+    description: "Checks if the latest leukocyte count is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "white_blood_cells"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_platelets_normal"
+    name_de: "Thrombozyten im Normalbereich"
+    name_en: "Platelets normal"
+    description: "Checks if the latest platelet count is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "platelets"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_creatinine_normal"
+    name_de: "Kreatinin im Normalbereich"
+    name_en: "Creatinine normal"
+    description: "Checks if the latest creatinine is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "creatinine"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_inr_normal"
+    name_de: "INR im Normalbereich"
+    name_en: "INR normal"
+    description: "Checks if the latest INR is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "international_normalized_ratio"

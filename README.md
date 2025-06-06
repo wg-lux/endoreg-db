@@ -150,6 +150,44 @@ This infrastructure was originally designed for clinical research studies and is
 
 
 
+---
+## 📦 Database Backup and Restore
+
+This project includes two shell scripts to **export** and **import** database data in JSON format using Django's management commands.
+
+###  Setup
+
+First, make the scripts executable:
+
+```bash
+chmod +x import_db.sh
+chmod +x export_db.sh
+```
+###  Export (Backup) the Database
+
+To export the current database into a JSON file:
+
+```bash
+./export_db.sh
+```
+This will create a backup file such as `endoreg_db_backup.json`.
+
+#### List of the comands in 'export_db.sh'
+1. `python manage.py dumpdata --indent 4 --output=endoreg_db_backup.json` (if migrate comand generates and stores data in database table then wee nee dto exclude those tables from dumping)
+
+2. `python manage.py shell < fix_endoreg_db_backup_json.py`
+
+###  Import (Restore) the Database
+
+To load the data back into the database
+```bash
+./import_db.sh
+```
+####  List of the comands in 'import_db.sh'
+1. `rm dev_db.sqlite3`
+2. `python manage.py migrate`
+3. `python manage.py shell < fix_endoreg_db_backup_json.py`
+4. `python manage.py loaddata endoreg_db_backup_fixed.json`
 
 ---
 
@@ -201,3 +239,4 @@ For issues and questions:
 MIT - see LICENSE
 
 ---
+

@@ -63,9 +63,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the absolute API endpoint URL for accessing the video resource.
+        Returns the absolute API URL for accessing the video resource.
         
-        If the video ID is missing or the request context is unavailable, returns an error dictionary.
+        If the video ID or request context is missing, returns a dictionary with an error message.
         """
         if not obj.id:
             return {"error": "Invalid video ID"}
@@ -74,7 +74,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/video/{obj.id}/")
+            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
 
         return {"error": "Video URL not avalaible"}
 
@@ -249,17 +249,55 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
 class VideoListSerializer(serializers.ModelSerializer):
     """
-    Minimal serializer to return only `id` and `original_file_name`
-    for the video selection dropdown in Vue.js.
+    Enhanced serializer to return video metadata for dashboard statistics.
+    Includes status information and user assignments for proper dashboard display.
     """
+    status = serializers.SerializerMethodField()
+    assignedUser = serializers.SerializerMethodField()
+    anonymized = serializers.SerializerMethodField()
 
     class Meta:
         model = VideoFile
-        fields = ["id", "original_file_name"]  # Only fetch required fields
+        fields = ["id", "original_file_name", "status", "assignedUser", "anonymized"]
 
-
-
-
+    def get_status(self, obj):
+        """
+        Returns the processing status of a video as 'completed', 'in_progress', or 'available'.
+        
+        A video is 'completed' if prediction sequences exist, 'in_progress' if frames have been extracted but no sequences are present, and 'available' if neither condition is met.
+        """
+        if hasattr(obj, 'sequences') and obj.sequences:
+            return 'completed'
+        elif hasattr(obj, 'frames_extracted') and obj.frames_extracted:
+            return 'in_progress'
+        else:
+            return 'available'
+    
+    def get_assigned_user(self, obj):
+        """
+        Retrieves the user assigned to the video from its prediction metadata.
+        
+        Returns:
+            The assigned user object if available; otherwise, None.
+        """
+        # Check if there's a prediction meta with user assignment
+        try:
+            from ...models import VideoPredictionMeta
+            prediction_meta = VideoPredictionMeta.objects.filter(video_file=obj).first()
+            if prediction_meta and hasattr(prediction_meta, 'assigned_user'):
+                return prediction_meta.assigned_user
+        except:
+            pass
+        return None
+    
+    def get_anonymized(self, obj):
+        """
+        Returns True if the video has been anonymized, otherwise False.
+        
+        Checks for the presence and truthiness of the 'anonymized' attribute on the video object.
+        """
+        return hasattr(obj, 'anonymized') and bool(obj.anonymized)
+    
 
 class LabelSerializer(serializers.ModelSerializer):
     """

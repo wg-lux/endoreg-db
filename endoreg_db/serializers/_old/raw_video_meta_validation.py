@@ -48,17 +48,22 @@ class VideoFileForMetaSerializer(serializers.ModelSerializer):
 
     def get_video_url(self, obj):
         """
-        Generates the full URL where Vue.js can fetch and stream the video.
+        Returns the absolute URL for streaming the processed video file, or None if unavailable.
+        
+        The URL includes an "api/" prefix and is constructed only if a request context and a processed video file are present.
         """
         request = self.context.get('request')
         if request and obj.processed_file:
             print("---------------------------:",obj.processed_file)
-            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Generates full URL
+            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
         return None  # Return None instead of an error dictionary
     
     def get_file(self, obj):
         """
-        Returns only the relative file path, without `/media/`.
+        Returns the relative file path of the processed video, excluding the `/media/` prefix.
+        
+        Returns:
+            The relative file path as a string if available, otherwise None.
         """
         if not obj.processed_file:
             return None  # No file associated

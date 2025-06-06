@@ -1,0 +1,25 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_gender_is_male"
+    name_de: "Patient ist männlich"
+    name_en: "Patient is male"
+    description: "Checks if the patient is male."
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    genders:
+      - "male"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_gender_is_female"
+    name_de: "Patient ist weiblich"
+    name_en: "Patient is female"
+    description: "Checks if the patient is female."
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    genders:
+      - "female"

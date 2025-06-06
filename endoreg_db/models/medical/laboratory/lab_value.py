@@ -14,22 +14,42 @@ if TYPE_CHECKING:
 
 LANG = "de"
 
+from pydantic import BaseModel, ConfigDict
+
+class CommonLabValues(BaseModel):
+    """
+    A Pydantic model representing a lookup for common lab values.
+    It is used to provide a structured way to access common lab values like
+    hemoglobin, creatinine, and others
+    """
+    hb: "LabValue"
+    wbc: "LabValue"
+    plt: "LabValue"
+    cr: "LabValue"
+    na: "LabValue"
+    k: "LabValue"
+    glc: "LabValue"
+    inr: "LabValue"
+    crp: "LabValue"
+
+    model_config = ConfigDict(
+        from_attributes = True,
+        arbitrary_types_allowed = True
+    )
 
 class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
         """
-        Retrieves a model instance by its natural key.
-
-        This method returns the instance whose unique name matches the provided natural key.
-
+        Retrieves a LabValue instance by its unique name.
+        
         Args:
-            name: The unique identifier corresponding to the model's "name" field.
-
+            name: The unique name of the LabValue.
+        
         Returns:
-            The model instance with a matching name.
+            The LabValue instance with the specified name.
         """
         return self.get(name=name)
-
+    
 
 class LabValue(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -85,13 +105,31 @@ class LabValue(models.Model):
         default_multiple_categorical_value_distribution: "MultipleCategoricalValueDistribution"
         default_date_value_distribution: "DateValueDistribution"
 
-    def natural_key(self):
+    @classmethod
+    def get_common_lab_values(cls):
         """
-        Return a tuple representing the natural key for this instance.
-
+        Retrieves a structured set of common laboratory values as a CommonLabValues instance.
+        
         Returns:
-            tuple: A single-element tuple containing the instance's unique name.
+            A CommonLabValues Pydantic model populated with LabValue objects for hemoglobin, white blood cells, platelets, creatinine, sodium, potassium, glucose, international normalized ratio, and C-reactive protein.
         """
+        from endoreg_db.models.medical.laboratory.lab_value import CommonLabValues
+
+        return CommonLabValues(
+            hb=cls.objects.get(name="hemoglobin"),
+            wbc=cls.objects.get(name="white_blood_cells"),
+            plt=cls.objects.get(name="platelets"),
+            cr=cls.objects.get(name="creatinine"),
+            na=cls.objects.get(name="sodium"),
+            k=cls.objects.get(name="potassium"),
+            glc=cls.objects.get(name="glucose"),
+            inr=cls.objects.get(name="international_normalized_ratio"),
+            crp=cls.objects.get(name="c_reactive_protein")
+        )
+
+
+    def natural_key(self):
+        """Returns a tuple containing the unique name of this lab value instance."""
         return (self.name,)
 
     def __str__(self):
@@ -126,10 +164,9 @@ class LabValue(models.Model):
 
     def get_normal_range(self, age: int = None, gender=None):
         """
-        Returns the normal range for the lab value, considering age and gender dependencies.
-
-        If gender-dependent and no gender or unknown gender is provided, defaults to 'male'.
-        If no matching gender-specific data exists, attempts fallback to general min/max.
+        Returns the normal range for this lab value, considering age and gender dependencies.
+        
+        If the normal range is gender-dependent, attempts to use the provided gender; defaults to "male" if gender is missing or unknown. Falls back to general min/max values if gender-specific data is unavailable. Issues warnings for unimplemented age-dependent or special case ranges, and when min or max values cannot be determined. Returns a dictionary with keys "min" and "max", which may be None if the range is not defined.
         """
         from ...other.gender import Gender
 
@@ -188,6 +225,9 @@ class LabValue(models.Model):
             warnings.warn(f"Special case normal range not implemented yet for LabValue '{self.name}'.")
 
         # Final contextual warning
+        if min_value is None and max_value is None:
+            # Do not warn here; let get_normal_value handle the warning for missing range
+            return {"min": min_value, "max": max_value}
         if min_value is None:
             context_parts = []
             if gender_dependent:
@@ -206,7 +246,7 @@ class LabValue(models.Model):
             else:
                 warning_message += " (general context)."
             warning_message += " Check LabValue's default_normal_range definition."
-            warnings.warn(warning_message)
+            warnings.warn(warning_message, UserWarning)
 
         return {"min": min_value, "max": max_value}
 
@@ -267,10 +307,9 @@ class LabValue(models.Model):
 
     def get_normal_value(self, patient: "Patient" = None):
         """
-        Returns a value that is considered normal for this lab value.
-        It prioritizes sampling from a numerical distribution if available and
-        the sampled value falls within the normal range. Otherwise, it uses
-        the midpoint of the normal range or a direct sample.
+        Returns a value considered normal for this lab value.
+        
+        If a numerical distribution and patient context are available, attempts to generate a value within the normal range. Falls back to the midpoint of the normal range or to available bounds if sampling fails or context is insufficient. Returns None if neither a normal range nor a distribution is available.
         """
         _age = patient.age() if patient else None
         _gender = patient.gender if patient else None
@@ -310,7 +349,8 @@ class LabValue(models.Model):
                     return upper_bound
                 else:
                     warnings.warn(
-                        f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution."
+                        f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution.",
+                        UserWarning
                     )
                     return None
 

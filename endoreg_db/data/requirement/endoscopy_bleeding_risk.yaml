@@ -26,7 +26,6 @@
       - "percutaneous_transhepatic_cholangiography"
       - "percutaneous_transhepatic_biliary_drainage"
       - "ercp_radiofrequency_ablation"
-    
 
 - model: endoreg_db.requirement
   fields:
