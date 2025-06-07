@@ -2,7 +2,7 @@
 from django.db import models
 from typing import List
 
-from sphinx import TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 class FindingManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -18,16 +18,6 @@ class Finding(models.Model):
     examinations = models.ManyToManyField('Examination', blank=True, related_name='findings')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='findings')
 
-    # morphology_classifications = models.ManyToManyField(
-    #     'FindingMorphologyClassification',
-    #     blank=True,
-    #     related_name='findings',
-    # )
-    # location_classifications = models.ManyToManyField(
-    #     'FindingLocationClassification',
-    #     blank=True,
-    #     related_name='findings'
-    # )
 
     finding_interventions = models.ManyToManyField(
         'FindingIntervention',

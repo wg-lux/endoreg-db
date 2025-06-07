@@ -342,7 +342,7 @@ urlpatterns = [
     # path('user-status/', UserStatusView.as_view(), name='user_status'),
 ]
 
-    
-#https://biigle.de/manual/tutorials/videos/navigating-timeline#for time line example
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Always serve media files, not just in DEBUG
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Optionally, always serve static files as well
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

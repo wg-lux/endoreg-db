@@ -47,12 +47,15 @@ class ColonPolypInterventionTest(TestCase):
         colon_polyp_finding = self.colo_findings.get(name="colon_polyp")
         self.assertIsNotNone(colon_polyp_finding, "Colonoscopy should have a 'colon polyp' finding associated with it.")
         
-        # get the polyp location classifications
-        colon_polyp_locations = colon_polyp_finding.finding_interventions.all()
+        # get the polyp interventions
+        colon_polyp_interventions = colon_polyp_finding.finding_interventions.all()
 
-        self.assertTrue(colon_polyp_locations.exists(), "Colonoscopy should have colon polyp locations associated with it.")
+        self.assertTrue(
+            colon_polyp_interventions.exists(),
+            "Colonoscopy should have colon polyp interventions associated with it."
+        )
 
-        names = [location.name for location in colon_polyp_locations]
+        names = [intervention.name for intervention in colon_polyp_interventions]
 
         expected_names = [
             "colon_lesion_polypectomy_cold_snare",

@@ -1,24 +1,15 @@
+from base_settings import *
 from pathlib import Path
 import os
-from endoreg_db.utils.paths import STORAGE_DIR
-from endoreg_db.logger_conf import get_logging_config # Import the function
+
+# Only keep settings that are different from base_settings.py
+
 
 ASSET_DIR = Path(__file__).parent / "assets"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 
-DEBUG=True
+DEBUG = True
 SECRET_KEY = "fake-key"
-INSTALLED_APPS = [
-    "tests",
-    "endoreg_db.apps.EndoregDbConfig",
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.staticfiles',
-]
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-BASE_DIR = Path(__file__).parent.parent
 
 DATABASES = {
     'default': {
@@ -27,10 +18,19 @@ DATABASES = {
     },
 }
 
-TIME_ZONE = "Europe/Berlin"
 
-MEDIA_ROOT = STORAGE_DIR
-MEDIA_URL = '/media/' # Adjust if needed
+
+MIDDLEWARE = [
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
 
 # --- Define logger names needed for tests ---
 TEST_LOGGER_NAMES = [
@@ -49,5 +49,4 @@ TEST_LOGGER_NAMES = [
     # Add any other specific loggers used in your tests or app code
 ]
 
-# --- Use the imported function to generate LOGGING ---
-LOGGING = get_logging_config(TEST_LOGGER_NAMES, file_log_level="INFO") # Or set level via env var
+LOGGING = get_logging_config(TEST_LOGGER_NAMES, file_log_level="INFO")
