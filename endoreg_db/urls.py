@@ -9,11 +9,16 @@ from .views.patient_views import (
     get_location_choices,
     get_morphology_choices, 
 )
-from .views.Frames_NICE_and_PARIS_classifications_views import ForNiceClassificationView, ForParisClassificationView
+from .views.Frames_NICE_and_PARIS_classifications_views import (
+    ForNiceClassificationView, 
+    ForParisClassificationView,
+    BatchClassificationView,
+    ClassificationStatusView
+)
 # endoreg_db_production/endoreg_db/urls.py
 from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
-from .views.video_segmentation_views import VideoViewSet, VideoView, VideoLabelView, UpdateLabelSegmentsView
+from .views.video_segmentation_views import VideoViewSet, VideoView, VideoLabelView, UpdateLabelSegmentsView, VideoStreamView
 from .views.views_for_timeline import video_timeline_view
 from .views.raw_video_meta_validation_views import VideoFileForMetaView
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
@@ -34,8 +39,15 @@ from .views.examination_views import (
     get_examinations_for_video,
 )
 
-# Fix: Use relative import for the new label segment views
 from .views.label_segment_views import video_segments_view, video_segment_detail_view
+from .views.report_service_views import (
+    ReportListView,
+    ReportWithSecureUrlView,
+    SecureFileUrlView, 
+    ReportFileMetadataView,
+    SecureFileServingView,
+    validate_secure_url
+)
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
@@ -48,6 +60,42 @@ urlpatterns = [
     path('video-segments/', video_segments_view, name='video_segments'),
     path('video-segments/<int:segment_id>/', video_segment_detail_view, name='video_segment_detail'),
     
+    # ---------------------------------------------------------------------------------------
+    # CLASSIFICATION API ENDPOINTS
+    #
+    # Diese Endpunkte führen automatische Polyp-Klassifikationen durch:
+    # - NICE: Für digitale Chromoendoskopie/NBI-basierte Klassifikation
+    # - PARIS: Für Standard-Weißlicht-Klassifikation
+    # 
+    # Diese APIs sind für Backend-Verarbeitung gedacht und werden typischerweise
+    # nach dem Import eines Videos automatisch aufgerufen.
+    # ---------------------------------------------------------------------------------------
+    
+    # NICE Classification API
+    # POST /api/classifications/nice/
+    # Body: {"video_ids": [1, 2, 3]} oder leerer Body für alle Videos
+    # Führt NICE-Klassifikation für spezifizierte Videos durch
+    path('classifications/nice/', ForNiceClassificationView.as_view(), name='nice_classification'),
+    
+    # PARIS Classification API  
+    # POST /api/classifications/paris/
+    # Body: {"video_ids": [1, 2, 3]} oder leerer Body für alle Videos
+    # Führt PARIS-Klassifikation für spezifizierte Videos durch
+    path('classifications/paris/', ForParisClassificationView.as_view(), name='paris_classification'),
+    
+    # Batch Classification API (beide Typen)
+    # POST /api/classifications/batch/
+    # Body: {"video_ids": [1, 2, 3], "types": ["nice", "paris"]}
+    # Führt beide Klassifikationstypen für spezifizierte Videos durch
+    path('classifications/batch/', BatchClassificationView.as_view(), name='batch_classification'),
+    
+    # Classification Status API
+    # GET /api/classifications/status/<video_id>/
+    # Gibt den Status der Klassifikationen für ein Video zurück
+    path('classifications/status/<int:video_id>/', ClassificationStatusView.as_view(), name='classification_status'),
+    
+    # ---------------------------------------------------------------------------------------
+
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
@@ -99,13 +147,12 @@ urlpatterns = [
     path('conf/', csrf_token_view, name='csrf_token'),
 
     # VIDEO STREAMING ENDPOINTS - Raw bytes only
-    # /videos/<id>/stream/  → Raw video file streaming (no JSON/HTML renderers)
-    path('videostream/<int:pk>/stream/', 
-         VideoViewSet.as_view({'get': 'stream'}), 
-         name='video-stream'),
+    # /api/videos/<id>/stream/  → Raw video file streaming (automatically created by router)
+    # Note: The stream action is automatically available through the VideoViewSet router registration
 
     path('videos/', VideoView.as_view(), name='video-list-legacy'),
     path('videos/<int:video_id>/', VideoView.as_view(), name='video-detail-legacy'),
+    path('videostream/<int:video_id>/', VideoStreamView.as_view(), name='video_stream'),
     
     # Video label endpoints for backward compatibility
     path("video/<int:video_id>/label/<str:label_name>/", VideoLabelView.as_view(), name="video_label_times"),
@@ -208,57 +255,62 @@ urlpatterns = [
 
 
     # ---------------------------------------------------------------------------------------
-    # NICE CLASSIFICATION FRAME SELECTION ENDPOINT
+    # REPORT SERVICE ENDPOINTS
     #
-    # API to return **3 diverse polyp + chromo segments** per video and **5 low_quality-filtered frames** per segment.
+    # Neue API-Endpunkte für den Report-Service mit sicheren URLs
     #
-    #  What it does:
-    # - Automatically loops over all videos in the database.
-    # - For each video:
-    #   - Finds segments where both `"polyp"` and `"digital_chromo_endoscopy"` labels overlap.
-    #   - From matching sequences:
-    #     - Selects 3 **diverse** segments that are:
-    #         - At least 2 seconds (100 frames) long
-    #         - At least 10 seconds (500 frames) apart
-    #     - If > 3 valid segments are found:
-    #         - Chooses the 3 that are **most spread out in time** (max total gap)
-    #     - If < 3 valid sequences:
-    #         - Falls back to top 3 longest available sequences
-    #   - For each selected segment:
-    #     - Selects 5 frames that:
-    #         - Have the **lowest "low_quality" prediction**
-    #         - Are at least 2 seconds (100 frames) apart from each other
+    # Diese Endpunkte ermöglichen es dem Frontend (UniversalReportViewer), 
+    # Reports mit zeitlich begrenzten, sicheren URLs zu laden und anzuzeigen.
     #
-    #  Fully configurable via constants at the top:
-    #   - POLYP_LABEL_NAME, CHROMO_LABEL_NAME
-    #   - FPS, MIN_SEGMENT_LENGTH_SECONDS, MIN_SEQUENCE_GAP_SECONDS, etc.
+    # Verwendung im Frontend:
+    #   - loadReportWithSecureUrl(reportId) 
+    #   - generateSecureUrl(reportId, fileType)
+    #   - validateCurrentUrl()
     #
-    # Example URL:
-    #   GET /videos/nice-classification/
-    #
-    #  Example response (per segment):
-    # [
-    #     {
-    #         "video_id": 5,
-    #         "segment_start": 125,
-    #         "segment_end": 275,
-    #         "frames": [
-    #             {
-    #                 "frame_number": 130,
-    #                 "low_quality": 0.021,
-    #                 "frame_path": "/home/.../frame_0000130.jpg"
-    #             },
-    #             ...
-    #         ]
-    #     },
-    #     ...
-    # ]
-    #
-    #  Frontend Usage:
-    # - Trigger this from Vue.js when clinician or AI needs to preview high-quality polyp classification frames.
-    # - Ideal for NICE classification training dataset generation or QA workflows.
-    path('video/niceclassification/', ForNiceClassificationView.as_view(), name="niceclassification"),
-    path('video/parisclassification/', ForParisClassificationView.as_view(), name="parisclassification"),
+    # ---------------------------------------------------------------------------------------
+
+    # API-Endpunkt für paginierte Report-Listen mit Filterung
+    # GET /api/reports/?page=1&page_size=20&status=pending&file_type=pdf&patient_name=John
+    # Lädt eine paginierte Liste aller Reports mit optionalen Filtern
+    path('reports/', 
+         ReportListView.as_view(), 
+         name='report_list'),
+
+    # API-Endpunkt für Reports mit automatischer sicherer URL-Generierung
+    # GET /api/reports/{report_id}/with-secure-url/
+    # Lädt Report-Daten inklusive Metadaten und generiert automatisch eine sichere URL
+    path('reports/<int:report_id>/with-secure-url/', 
+         ReportWithSecureUrlView.as_view(), 
+         name='report_with_secure_url'),
+
+    # API-Endpunkt für manuelle sichere URL-Generierung  
+    # POST /api/secure-file-urls/
+    # Body: {"report_id": 123, "file_type": "pdf"}
+    # Generiert eine neue sichere URL für einen bestehenden Report
+    path('secure-file-urls/', 
+         SecureFileUrlView.as_view(), 
+         name='generate_secure_file_url'),
+
+    # API-Endpunkt für Report-Datei-Metadaten
+    # GET /api/reports/{report_id}/file-metadata/
+    # Gibt Datei-Metadaten zurück (Größe, Typ, Datum, etc.)
+    path('reports/<int:report_id>/file-metadata/', 
+         ReportFileMetadataView.as_view(), 
+         name='report_file_metadata'),
+
+    # Sichere Datei-Serving-Endpunkt mit Token-Validierung
+    # GET /api/reports/{report_id}/secure-file/?token={token}
+    # Serviert die tatsächliche Datei über eine sichere, tokenbasierte URL
+    path('reports/<int:report_id>/secure-file/', 
+         SecureFileServingView.as_view(), 
+         name='secure_file_serving'),
+
+    # URL-Validierungs-Endpunkt
+    # GET /api/validate-secure-url/?url={url}
+    # Validiert, ob eine sichere URL noch gültig ist
+    path('validate-secure-url/', 
+         validate_secure_url, 
+         name='validate_secure_url'),
 
     # ---------------------------------------------------------------------------------------
 
