@@ -21,8 +21,6 @@ from base_settings import (
 # Only keep settings that are different from base_settings.py
 
 
-ASSET_DIR = Path(__file__).parent / "assets"
-RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 
 DEBUG = True
 SECRET_KEY = "fake-key"

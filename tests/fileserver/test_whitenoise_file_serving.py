@@ -1,12 +1,9 @@
-import os
 from django.test import LiveServerTestCase
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.conf import settings
-from django.urls import reverse
+
 from tests.media.video.helper import get_random_video_path_by_examination_alias
 from ..helpers.data_loader import load_data
 from endoreg_db.models import VideoFile
-from ..helpers.default_objects import get_default_center
+from ..helpers.default_objects import get_default_center, get_default_egd_pdf
 import requests
 
 
@@ -24,6 +21,9 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
 
         self.assertIsNotNone(self.video_file, "VideoFile creation failed.")
         self.assertTrue(self.video_file.active_file_path.exists(), f"Video file {self.video_file.active_file_path} does not exist.")
+        self.pdf_file = get_default_egd_pdf()
+        self.assertIsNotNone(self.pdf_file, "PDF file creation failed.")
+        self.pdf_url = self.pdf_file.file_url
 
     def tearDown(self):
         # Clean up the created VideoFile and its file
@@ -42,4 +42,10 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
         # Optionally, check content type or partial content
 
     def test_pdf_file_accessible_via_url(self):
-        pass
+        full_url = self.live_server_url + self.pdf_url
+        print(f"DEBUG: Testing full URL for PDF: {full_url}")
+        response = requests.get(full_url)
+        print(f"DEBUG: Response status code for PDF: {response.status_code}")
+        print(f"DEBUG: Response content-type for PDF: {response.headers.get('Content-Type')}")
+        print(f"DEBUG: Response content length for PDF: {len(response.content)}")
+        self.assertEqual(response.status_code, 200)

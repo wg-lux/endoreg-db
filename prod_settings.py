@@ -1,3 +1,4 @@
+from pathlib import Path
 from base_settings import (
     INSTALLED_APPS,
     DEFAULT_AUTO_FIELD,
@@ -22,6 +23,8 @@ from base_settings import (
     # SECURE_CONTENT_TYPE_NOSNIFF, 
 )
 import os
+ASSET_DIR = Path(__file__).parent / "tests/assets"
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 
 # Production settings
 DEBUG = True #TODO change to False in production
