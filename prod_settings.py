@@ -11,6 +11,7 @@ from base_settings import (
     ROOT_URLCONF,
     MIDDLEWARE,
     LOGGING,
+    BASE_URL,
     # SECURE_SSL_REDIRECT, 
     # SESSION_COOKIE_SECURE, 
     # CSRF_COOKIE_SECURE, 

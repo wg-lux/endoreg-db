@@ -9,25 +9,21 @@ from endoreg_db.models import VideoFile
 from ..helpers.default_objects import get_default_center
 import requests
 
+
 class WhiteNoiseFileServingTest(LiveServerTestCase):
     def setUp(self):
         load_data()
 
         # Use the video test helper to get a real video file path and create a VideoFile instance
-        self.video_path = get_random_video_path_by_examination_alias(examination_alias='egd', is_anonymous=False)
+        self.video_path = get_random_video_path_by_examination_alias(examination_alias="egd", is_anonymous=False)
         self.center = get_default_center()
         # Create a VideoFile instance if not already present
-        self.video_file = VideoFile.create_from_file(
-            self.video_path,
-            center_name=self.center.name,
-            delete_source=False
-        )
+        self.video_file = VideoFile.create_from_file(self.video_path, center_name=self.center.name, delete_source=False)
+
+        self.video_url = self.video_file.active_file_url
+
         self.assertIsNotNone(self.video_file, "VideoFile creation failed.")
         self.assertTrue(self.video_file.active_file_path.exists(), f"Video file {self.video_file.active_file_path} does not exist.")
-        self.relative_path = self.video_file.active_file_path.relative_to(settings.MEDIA_ROOT)
-        self.url = settings.MEDIA_URL + str(self.relative_path)
-        print(f"DEBUG: File should exist at: {self.video_file.active_file_path}")
-        print(f"DEBUG: Requesting URL: {self.url}")
 
     def tearDown(self):
         # Clean up the created VideoFile and its file
@@ -35,8 +31,8 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
             self.video_file.delete_with_file()
 
     def test_video_file_accessible_via_url(self):
-        # Use requests to make a real HTTP request to the live server
-        full_url = self.live_server_url + self.url
+        # Use the live server's URL, not a hardcoded one
+        full_url = self.live_server_url + self.video_url  # self.url should be the relative media path, e.g. '/media/videos/uuid.mp4'
         print(f"DEBUG: Testing full URL: {full_url}")
         response = requests.get(full_url)
         print(f"DEBUG: Response status code: {response.status_code}")
@@ -44,3 +40,6 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
         print(f"DEBUG: Response content length: {len(response.content)}")
         self.assertEqual(response.status_code, 200)
         # Optionally, check content type or partial content
+
+    def test_pdf_file_accessible_via_url(self):
+        pass

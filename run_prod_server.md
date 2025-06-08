@@ -25,7 +25,7 @@ DJANGO_SETTINGS_MODULE=prod_settings python manage.py runserver
 ```python
 from endoreg_db.models import VideoFile
 v = VideoFile.objects.first()
-v.active_file.url
+v.active_file_url
 ```
 
 DJANGO_SETTINGS_MODULE=prod_settings gunicorn wsgi:application --bind 0.0.0.0:8000

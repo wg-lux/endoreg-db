@@ -165,6 +165,13 @@ class VideoFile(models.Model):
         ai_model_meta: "ModelMeta"
         import_meta: "VideoImportMeta"
 
+    @property
+    def active_file_url(self) -> str:
+        _file = self.active_file
+        assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
+        url = _file.url
+
+        return url
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -260,14 +267,13 @@ class VideoFile(models.Model):
         return bool(self.raw_file and self.raw_file.name)
 
     @property
-    def active_file(self) -> Optional[File]:
+    def active_file(self) -> File:
         if self.is_processed:
             return self.processed_file
         elif self.has_raw:
             return self.raw_file
         else:
-            logger.warning("VideoFile %s has neither processed nor raw file set.", self.uuid)
-            return None
+            raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
 
     @property
     def active_file_path(self) -> Optional[Path]:

@@ -15,6 +15,7 @@ from base_settings import (
     ROOT_URLCONF,
     get_logging_config,
     MIDDLEWARE,
+    BASE_URL,
 
 )
 # Only keep settings that are different from base_settings.py

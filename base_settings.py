@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from endoreg_db.utils.paths import STORAGE_DIR
 
+BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
+
 # Shared settings for dev and test
 BASE_DIR = Path(__file__).parent
 
