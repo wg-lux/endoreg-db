@@ -2,6 +2,14 @@
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from endoreg_db.models import Examination
 from ..serializers.examination import ExaminationSerializer
+from ..serializers.optimized_examination_serializers import (
+    ExaminationSerializer as OptimizedExaminationSerializer,
+    FindingSerializer as OptimizedFindingSerializer,
+    FindingLocationClassificationSerializer,
+    FindingMorphologyClassificationSerializer,
+    FindingLocationClassificationChoiceSerializer,
+    FindingMorphologyClassificationChoiceSerializer,
+)
 
 # views/examination_views.py
 from rest_framework.decorators import api_view
@@ -18,7 +26,7 @@ from django.shortcuts import get_object_or_404
 
 class ExaminationViewSet(ReadOnlyModelViewSet):
     queryset = Examination.objects.all()
-    serializer_class = ExaminationSerializer
+    serializer_class = OptimizedExaminationSerializer
 
 # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
 
@@ -42,7 +50,8 @@ def get_findings_for_exam(request, exam_id):
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
-    return Response([{"id": f.id, "name": f.name} for f in findings])
+    serializer = OptimizedFindingSerializer(findings, many=True)
+    return Response(serializer.data)
 
 @api_view(["GET"])
 def get_location_choices_for_classification(request, exam_id, location_classification_id):
@@ -102,6 +111,73 @@ def get_examinations_for_video(request, video_id):
     # For now, return empty list since video-examination relationship needs to be established
     # TODO: Implement proper video-examination relationship
     return Response([])
+
+@api_view(["GET"])
+def get_findings_for_examination(request, examination_id):
+    """
+    Retrieves findings associated with a specific examination.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    """
+    exam = get_object_or_404(Examination, id=examination_id)
+    findings = exam.get_available_findings()
+    
+    # Return findings with German names
+    return Response([
+        {
+            "id": f.id, 
+            "name": f.name,
+            "name_de": getattr(f, 'name_de', ''),
+            "name_en": getattr(f, 'name_en', ''),
+            "description": getattr(f, 'description', ''),
+            "description_de": getattr(f, 'description_de', ''),
+            "description_en": getattr(f, 'description_en', '')
+        } 
+        for f in findings
+    ])
+
+@api_view(["GET"])
+def get_location_classifications_for_finding(request, finding_id):
+    """
+    Retrieves location classifications for a specific finding.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    """
+    finding = get_object_or_404(Finding, id=finding_id)
+    location_classifications = finding.location_classifications.all()
+    serializer = FindingLocationClassificationSerializer(location_classifications, many=True)
+    return Response(serializer.data)
+
+@api_view(["GET"])
+def get_morphology_classifications_for_finding(request, finding_id):
+    """
+    Retrieves morphology classifications for a specific finding.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    """
+    finding = get_object_or_404(Finding, id=finding_id)
+    morphology_classifications = finding.morphology_classifications.all()
+    serializer = FindingMorphologyClassificationSerializer(morphology_classifications, many=True)
+    return Response(serializer.data)
+
+@api_view(["GET"])
+def get_choices_for_location_classification(request, classification_id):
+    """
+    Retrieves choices for a specific location classification.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    """
+    classification = get_object_or_404(FindingLocationClassification, id=classification_id)
+    choices = classification.choices.all()
+    serializer = FindingLocationClassificationChoiceSerializer(choices, many=True)
+    return Response(serializer.data)
+
+@api_view(["GET"])
+def get_choices_for_morphology_classification(request, classification_id):
+    """
+    Retrieves choices for a specific morphology classification.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    """
+    classification = get_object_or_404(FindingMorphologyClassification, id=classification_id)
+    choices = classification.choices.all()
+    serializer = FindingMorphologyClassificationChoiceSerializer(choices, many=True)
+    return Response(serializer.data)
 
 # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
 

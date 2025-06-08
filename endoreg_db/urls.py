@@ -37,6 +37,24 @@ from .views.examination_views import (
     get_interventions_for_finding,
     # Import for video examinations
     get_examinations_for_video,
+    # NEW: Add the missing API endpoints for ExaminationForm.vue
+    get_findings_for_examination,
+    get_location_classifications_for_finding,
+    get_morphology_classifications_for_finding,
+    get_choices_for_location_classification,
+    get_choices_for_morphology_classification,
+)
+
+# Add new imports for missing endpoints
+from .views.finding_views import FindingViewSet
+from .views.classification_views import (
+    LocationClassificationViewSet,
+    MorphologyClassificationViewSet
+)
+from .views.patient_finding_views import (
+    PatientFindingViewSet,
+    create_patient_finding_location,
+    create_patient_finding_morphology
 )
 
 from .views.label_segment_views import video_segments_view, video_segment_detail_view
@@ -52,9 +70,16 @@ from .views.report_service_views import (
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'videos', VideoViewSet, basename='videos')  # New: separate JSON endpoints
+router.register(r'examinations', ExaminationViewSet)
+# Add new router registrations
+router.register(r'findings', FindingViewSet)
+router.register(r'location-classifications', LocationClassificationViewSet)
+router.register(r'morphology-classifications', MorphologyClassificationViewSet)
+router.register(r'patient-findings', PatientFindingViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints
+    path('videostream/<int:video_id>/', VideoStreamView.as_view(), name='video_stream'),
     
     # NEW: Label Video Segment API endpoints
     path('video-segments/', video_segments_view, name='video_segments'),
@@ -96,6 +121,7 @@ urlpatterns = [
     
     # ---------------------------------------------------------------------------------------
 
+    # ORIGINAL ENDPOINTS USED BY SimpleExaminationForm - KEEPING FOR COMPATIBILITY
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
@@ -123,6 +149,33 @@ urlpatterns = [
         name='get_interventions_for_finding'
     ),
     
+    # NEW: Add the missing URL patterns for ExaminationForm.vue API calls
+    path(
+        'examinations/<int:examination_id>/findings/',
+        get_findings_for_examination,
+        name='get_findings_for_examination'
+    ),
+    path(
+        'findings/<int:finding_id>/location-classifications/',
+        get_location_classifications_for_finding,
+        name='get_location_classifications_for_finding'
+    ),
+    path(
+        'findings/<int:finding_id>/morphology-classifications/',
+        get_morphology_classifications_for_finding,
+        name='get_morphology_classifications_for_finding'
+    ),
+    path(
+        'location-classifications/<int:classification_id>/choices/',
+        get_choices_for_location_classification,
+        name='get_choices_for_location_classification'
+    ),
+    path(
+        'morphology-classifications/<int:classification_id>/choices/',
+        get_choices_for_morphology_classification,
+        name='get_choices_for_morphology_classification'
+    ),
+
     # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
     path(
         'examination/<int:exam_id>/morphology-classification-choices/',
@@ -314,22 +367,19 @@ urlpatterns = [
 
     # ---------------------------------------------------------------------------------------
 
+    # PatientFinding related endpoints
+    path(
+        'patient-finding-locations/',
+        create_patient_finding_location,
+        name='create_patient_finding_location'
+    ),
+    path(
+        'patient-finding-morphologies/',
+        create_patient_finding_morphology,
+        name='create_patient_finding_morphology'
+    ),
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # ---------------------------------------------------------------------------------------
 
     #this is for, to test the timeline
     #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
