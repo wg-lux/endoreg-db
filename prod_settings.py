@@ -1,14 +1,34 @@
-from base_settings import *
+from base_settings import (
+    INSTALLED_APPS,
+    DEFAULT_AUTO_FIELD,
+    TIME_ZONE,
+    STATIC_URL,
+    STATIC_ROOT,
+    MEDIA_ROOT,
+    MEDIA_URL,
+    BASE_DIR,
+    TEMPLATES,
+    ROOT_URLCONF,
+    MIDDLEWARE,
+    LOGGING,
+    # SECURE_SSL_REDIRECT, 
+    # SESSION_COOKIE_SECURE, 
+    # CSRF_COOKIE_SECURE, 
+    # SECURE_HSTS_SECONDS, 
+    # SECURE_HSTS_INCLUDE_SUBDOMAINS, 
+    # SECURE_HSTS_PRELOAD, 
+    # SECURE_BROWSER_XSS_FILTER, 
+    # SECURE_CONTENT_TYPE_NOSNIFF, 
+)
 import os
-from pathlib import Path
 
 # Production settings
-
-DEBUG = False
+DEBUG = True #TODO change to False in production
 
 # It's best to set this via environment variable in production
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "replace-this-with-a-secure-key")
 
+#TODO in a real production project, you would set this to a list of your domain names
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 # Example PostgreSQL config (adjust as needed)
@@ -28,46 +48,10 @@ DATABASES = {
     },
 }
 
-# BASE_DIR = Path(__file__).parent
-# STATIC_ROOT = BASE_DIR / 'staticfiles'
-# MEDIA_ROOT = BASE_DIR / 'mediafiles'
-# STATIC_URL = '/static/'
-# MEDIA_URL = '/media/'
-
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
-
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# Security best practices
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-SECURE_HSTS_SECONDS = 3600
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-
-# Logging (minimal example, adjust as needed)
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-}
+# Disable HTTPS redirect for demonstration
+SECURE_SSL_REDIRECT = False
+# Optionally, also disable secure cookies for demo
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False

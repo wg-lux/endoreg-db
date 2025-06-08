@@ -35,7 +35,7 @@ def start_token_validator_service():
             'KEYCLOAK_REALM': env.get('KEYCLOAK_REALM', 'master'),
             'KEYCLOAK_SERVER_URL': env.get('KEYCLOAK_SERVER_URL', 'https://keycloak.endo-reg.net'),
             'KEYCLOAK_CLIENT_ID': env.get('KEYCLOAK_CLIENT_ID', 'lx-frontend'),
-            'KEYCLOAK_CLIENT_SECRET': env.get('KEYCLOAK_CLIENT_SECRET', 'FmXqjdtoZLidEMqfeZ7Jqap4L5CTw72E'),
+            'KEYCLOAK_CLIENT_SECRET': env.get('KEYCLOAK_CLIENT_SECRET',),
             'TOKEN_VALIDATOR_PORT': env.get('TOKEN_VALIDATOR_PORT', '3001'),
         })
         
