@@ -5,9 +5,12 @@ from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from .views.patient_views import (
     PatientViewSet,
+    GenderViewSet,
+    CenterViewSet,
     start_examination,
     get_location_choices,
-    get_morphology_choices, 
+    get_morphology_choices,
+     
 )
 from .views.Frames_NICE_and_PARIS_classifications_views import (
     ForNiceClassificationView, 
@@ -72,6 +75,8 @@ router.register(r'patients', PatientViewSet)
 router.register(r'videos', VideoViewSet, basename='videos')  # New: separate JSON endpoints
 router.register(r'examinations', ExaminationViewSet)
 # Add new router registrations
+router.register(r'gender', GenderViewSet)
+router.register(r'centers', CenterViewSet)
 router.register(r'findings', FindingViewSet)
 router.register(r'location-classifications', LocationClassificationViewSet)
 router.register(r'morphology-classifications', MorphologyClassificationViewSet)

@@ -1,12 +1,13 @@
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
-from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 from django.core.exceptions import ObjectDoesNotExist
-from rest_framework import viewsets
-from ..models import Patient
-from ..serializers.patient import PatientSerializer
+from rest_framework import viewsets, status, serializers
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from ..models import Patient, Gender, Center
+from ..serializers.patient import PatientSerializer, GenderSerializer, CenterSerializer
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from endoreg_db.models import (
     FindingLocationClassification,
@@ -53,15 +54,51 @@ class PatientViewSet(viewsets.ModelViewSet):
     #permission_classes = [IsAuthenticatedOrReadOnly] 
 
     def perform_create(self, serializer):
-        serializer.save()
+        """Erweiterte Validierung beim Erstellen eines Patienten"""
+        try:
+            # Zusätzliche Validierung falls nötig
+            patient = serializer.save()
+            return patient
+        except Exception as e:
+            raise serializers.ValidationError(f"Fehler beim Erstellen des Patienten: {str(e)}")
     
     def update(self, request, *args, **kwargs):
-        # custom edit logic here if needed
-        return super().update(request, *args, **kwargs)
+        """Erweiterte Logik für das Aktualisieren von Patienten"""
+        try:
+            return super().update(request, *args, **kwargs)
+        except Exception as e:
+            return Response(
+                {"error": f"Fehler beim Aktualisieren des Patienten: {str(e)}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     def destroy(self, request, *args, **kwargs):
-        # custom delete logic here if needed
-        return super().destroy(request, *args, **kwargs)
+        """Erweiterte Logik für das Löschen von Patienten"""
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except Exception as e:
+            return Response(
+                {"error": f"Fehler beim Löschen des Patienten: {str(e)}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=False, methods=['get'])
+    def patient_count(self, request):
+        """Gibt die Anzahl der Patienten zurück"""
+        count = Patient.objects.count()
+        return Response({"count": count})
+
+class GenderViewSet(viewsets.ReadOnlyModelViewSet):
+    """API endpoint für Gender-Optionen (nur lesend)"""
+    queryset = Gender.objects.all()
+    serializer_class = GenderSerializer
+    #permission_classes = [IsAuthenticatedOrReadOnly]
+
+class CenterViewSet(viewsets.ReadOnlyModelViewSet):
+    """API endpoint für Center-Optionen (nur lesend)"""
+    queryset = Center.objects.all()
+    serializer_class = CenterSerializer
+    #permission_classes = [IsAuthenticatedOrReadOnly]
 
 @require_GET
 def get_location_choices(request, location_id):
