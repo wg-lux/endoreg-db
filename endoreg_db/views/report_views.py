@@ -1,42 +1,27 @@
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
+from django.http import JsonResponse
+from django.db import transaction
+from django.core.exceptions import ProtectedError, ObjectDoesNotExist
 
-@staff_member_required  # Ensures only staff members can access the page
-def start_examination(request):
-    return render(request, 'admin/start_examination.html')  # Loads the simple HTML page
-
-from django.shortcuts import render
-#from ..models.patient.patient_finding_location import PatientFindingLocation
-from ..models import FindingLocationClassification, FindingLocationClassificationChoice  # Correct models
-
-
-#need to implement one with json data after tesing whethe rthis works or not
-"""def get_location_choices(request, location_id):
-   
-    try:
-        # Ensure the location exists
-        location = FindingLocationClassification.objects.get(id=location_id)
-        # Get only choices related to the selected location classification
-        #location_choices = FindingLocationClassificationChoice.objects.filter(location_classification=location)
-        #its many to may relation so
-        location_choices = location.choices.all()
-        
-    except FindingLocationClassification.DoesNotExist:
-        location_choices = []
-
-    # Get previously selected values to retain them after reloading
-    selected_location = int(location_id) if location_id else None
-
-    return render(request, 'admin/patient_finding_intervention.html', {
-        "location_choices": location_choices,  # Pass updated choices to the template
-        "selected_location": location_id,  # Keep previous selection
-    })
-"""
-from django.shortcuts import render
-from rest_framework import viewsets
-from ..models import Patient
-from ..serializers import PatientSerializer
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
+
+from ..models import (
+    Patient, 
+    FindingLocationClassification, 
+    FindingMorphologyClassification, 
+    FindingMorphologyClassificationType
+)
+from ..serializers import PatientSerializer
+
+
+@staff_member_required
+def start_examination(request):
+    return render(request, 'admin/start_examination.html')
+
 
 class PatientViewSet(viewsets.ModelViewSet):
     """API endpoint for managing patients."""
@@ -47,8 +32,91 @@ class PatientViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save()
 
-from django.http import JsonResponse
-from ..models import FindingLocationClassification, FindingLocationClassificationChoice
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a patient with proper error handling and cascade protection.
+        """
+        patient = self.get_object()
+        
+        try:
+            with transaction.atomic():
+                # Check if patient has related examinations
+                examination_count = patient.patient_examinations.count()
+                finding_count = sum(exam.patient_findings.count() for exam in patient.patient_examinations.all())
+                
+                if examination_count > 0:
+                    return Response({
+                        'error': 'Patient cannot be deleted',
+                        'reason': f'Patient has {examination_count} examination(s) and {finding_count} finding(s).',
+                        'detail': 'Please remove all related examinations and findings before deleting the patient.'
+                    }, status=status.HTTP_409_CONFLICT)
+                
+                # Check if this is a real person (additional protection)
+                if hasattr(patient, 'is_real_person') and patient.is_real_person:
+                    return Response({
+                        'error': 'Cannot delete real patient',
+                        'reason': 'This patient is marked as a real person.',
+                        'detail': 'Real patient data cannot be deleted for data protection reasons.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                
+                # Perform the deletion
+                patient_name = f"{patient.first_name} {patient.last_name}"
+                patient.delete()
+                
+                return Response({
+                    'message': f'Patient "{patient_name}" has been successfully deleted.'
+                }, status=status.HTTP_200_OK)
+                
+        except ProtectedError as e:
+            return Response({
+                'error': 'Patient deletion failed',
+                'reason': 'Patient has protected related objects.',
+                'detail': str(e)
+            }, status=status.HTTP_409_CONFLICT)
+        except Exception as e:
+            return Response({
+                'error': 'Unexpected error during patient deletion',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'])
+    def check_deletion_safety(self, request, pk=None):
+        """
+        Check if a patient can be safely deleted.
+        Returns information about related objects.
+        """
+        patient = self.get_object()
+        
+        examination_count = patient.patient_examinations.count()
+        examinations = patient.patient_examinations.all()
+        
+        finding_count = sum(exam.patient_findings.count() for exam in examinations)
+        video_count = sum(1 for exam in examinations if hasattr(exam, 'video') and exam.video)
+        report_count = sum(exam.raw_pdf_files.count() for exam in examinations if hasattr(exam, 'raw_pdf_files'))
+        
+        is_real_person = hasattr(patient, 'is_real_person') and patient.is_real_person
+        can_delete = examination_count == 0 and not is_real_person
+        
+        warnings = []
+        if is_real_person:
+            warnings.append('This patient is marked as a real person')
+        if examination_count > 0:
+            warnings.append(f'Patient has {examination_count} examination(s)')
+        if finding_count > 0:
+            warnings.append(f'Patient has {finding_count} finding(s)')
+        
+        return Response({
+            'can_delete': can_delete,
+            'is_real_person': is_real_person,
+            'related_objects': {
+                'examinations': examination_count,
+                'findings': finding_count,
+                'videos': video_count,
+                'reports': report_count
+            },
+            'warnings': warnings
+        })
+
 
 def get_location_choices(request, location_id):
     """
@@ -56,17 +124,12 @@ def get_location_choices(request, location_id):
     """
     try:
         location = FindingLocationClassification.objects.get(id=location_id)
-        location_choices = location.choices.all()  # Get choices via Many-to-Many relationship
+        location_choices = location.choices.all()
         data = [{"id": choice.id, "name": choice.name} for choice in location_choices]
     except FindingLocationClassification.DoesNotExist:
         data = []
 
     return JsonResponse({"location_choices": data})
-
-from django.http import JsonResponse
-from ..models import FindingMorphologyClassification, FindingMorphologyClassificationChoice, FindingMorphologyClassificationType
-from django.core.exceptions import ObjectDoesNotExist
-
 
 
 def get_morphology_choices(request, morphology_id):
@@ -82,15 +145,15 @@ def get_morphology_choices(request, morphology_id):
             id=morphology_classification.classification_type_id
         )
 
-        #  Cpnvert QuerySet to JSON
+        # Convert QuerySet to JSON
         data = [{"id": choice.id, "name": choice.name} for choice in morphology_choices]
 
-        return JsonResponse({"morphology_choices": data})  #  Always return JSON
+        return JsonResponse({"morphology_choices": data})
 
     except ObjectDoesNotExist:
         return JsonResponse({"error": "Morphology classification not found", "morphology_choices": []}, status=404)
 
     except Exception as e:
-        print(f"Error fetching morphology choices: {e}")  # Debugging Log
+        print(f"Error fetching morphology choices: {e}")
         return JsonResponse({"error": "Internal server error", "morphology_choices": []}, status=500)
 

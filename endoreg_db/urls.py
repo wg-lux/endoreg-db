@@ -58,6 +58,7 @@ from .views.patient_finding_views import (
     create_patient_finding_location,
     create_patient_finding_morphology
 )
+from .views.patient_examination_views import PatientExaminationViewSet
 
 from .views.label_segment_views import video_segments_view, video_segment_detail_view
 from .views.report_service_views import (
@@ -71,15 +72,16 @@ from .views.report_service_views import (
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
+router.register(r'genders', GenderViewSet)
+router.register(r'centers', CenterViewSet)
 router.register(r'videos', VideoViewSet, basename='videos')  # New: separate JSON endpoints
 router.register(r'examinations', ExaminationViewSet)
 # Add new router registrations
-router.register(r'gender', GenderViewSet)
-router.register(r'centers', CenterViewSet)
 router.register(r'findings', FindingViewSet)
 router.register(r'location-classifications', LocationClassificationViewSet)
 router.register(r'morphology-classifications', MorphologyClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
+router.register(r'patient-examinations', PatientExaminationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints

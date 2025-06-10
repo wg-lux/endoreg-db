@@ -1,5 +1,5 @@
 # endoreg_db/views/examination_views.py
-from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework.viewsets import ModelViewSet
 from endoreg_db.models import Examination
 from ..serializers.examination import ExaminationSerializer
 from ..serializers.optimized_examination_serializers import (
@@ -24,7 +24,7 @@ from endoreg_db.models import (
 )
 from django.shortcuts import get_object_or_404
 
-class ExaminationViewSet(ReadOnlyModelViewSet):
+class ExaminationViewSet(ModelViewSet):
     queryset = Examination.objects.all()
     serializer_class = OptimizedExaminationSerializer
 

@@ -231,12 +231,29 @@ class VideoLabelView(APIView):
                 }, status=status.HTTP_200_OK)
             
             # Convert segments to time-based format
-            fps = getattr(video_entry, 'fps', None) or video_entry.get_fps() if hasattr(video_entry, 'get_fps') else 25
+            # Fix: Ensure fps is a number, not a string
+            fps_raw = getattr(video_entry, 'fps', None) or (video_entry.get_fps() if hasattr(video_entry, 'get_fps') else 25)
+            
+            # Convert fps to float if it's a string
+            try:
+                if isinstance(fps_raw, str):
+                    fps = float(fps_raw)
+                elif isinstance(fps_raw, (int, float)):
+                    fps = float(fps_raw)
+                else:
+                    fps = 25.0  # Default fallback
+            except (ValueError, TypeError):
+                fps = 25.0  # Default fallback if conversion fails
+            
+            # Ensure fps is positive
+            if fps <= 0:
+                fps = 25.0
             
             time_segments = []
             frame_predictions = {}
             
             for segment in label_segments:
+                # Now fps is guaranteed to be a float
                 start_time = segment.start_frame_number / fps
                 end_time = segment.end_frame_number / fps
                 
