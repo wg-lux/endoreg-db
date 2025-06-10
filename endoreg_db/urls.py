@@ -9,8 +9,7 @@ from .views.patient_views import (
     CenterViewSet,
     start_examination,
     get_location_choices,
-    get_morphology_choices,
-     
+    get_morphology_choices,     
 )
 from .views.Frames_NICE_and_PARIS_classifications_views import (
     ForNiceClassificationView, 

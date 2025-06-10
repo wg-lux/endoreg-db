@@ -83,10 +83,42 @@ class Finding(models.Model):
         
         return location_classifications 
     
+    def get_morphology_classifications(self):
+        from endoreg_db.models import FindingMorphologyClassification
+        # Get morphology classifications through the classification types
+        # Since Finding has relationships to FindingMorphologyClassificationType,
+        # we need to get the classifications through these types
+        
+        # Get all required and optional morphology classification types for this finding
+        required_types = self.required_morphology_classification_types.all()
+        optional_types = self.optional_morphology_classification_types.all()
+        
+        # Combine both sets of types
+        all_types = list(required_types) + list(optional_types)
+        
+        # Get all morphology classifications that belong to these types
+        morphology_classifications = []
+        for classification_type in all_types:
+            # Get all classifications of this type
+            classifications = FindingMorphologyClassification.objects.filter(
+                classification_type=classification_type
+            )
+            morphology_classifications.extend(classifications)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_classifications = []
+        for classification in morphology_classifications:
+            if classification.id not in seen:
+                seen.add(classification.id)
+                unique_classifications.append(classification)
+                
+        return unique_classifications
+    
     def get_required_morphology_classification_types(self):
         from endoreg_db.models import FindingMorphologyClassificationType
         finding_morphology_classification_types:List[FindingMorphologyClassificationType] = [
             _ for _ in self.required_morphology_classification_types.all()
         ]
         return finding_morphology_classification_types
-    
+

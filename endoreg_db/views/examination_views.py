@@ -117,11 +117,12 @@ def get_findings_for_examination(request, examination_id):
     """
     Retrieves findings associated with a specific examination.
     NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/examinations/{examination_id}/findings/
     """
     exam = get_object_or_404(Examination, id=examination_id)
     findings = exam.get_available_findings()
     
-    # Return findings with German names
+    # Return findings with German names and full details
     return Response([
         {
             "id": f.id, 
@@ -140,44 +141,185 @@ def get_location_classifications_for_finding(request, finding_id):
     """
     Retrieves location classifications for a specific finding.
     NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/findings/{finding_id}/location-classifications/
     """
     finding = get_object_or_404(Finding, id=finding_id)
-    location_classifications = finding.location_classifications.all()
-    serializer = FindingLocationClassificationSerializer(location_classifications, many=True)
-    return Response(serializer.data)
+    location_classifications = finding.get_location_classifications()
+    
+    # Return with choices included and required flag
+    result = []
+    for lc in location_classifications:
+        lc_data = {
+            'id': lc.id,
+            'name': lc.name,
+            'name_de': getattr(lc, 'name_de', ''),
+            'name_en': getattr(lc, 'name_en', ''),
+            'description': getattr(lc, 'description', ''),
+            'description_de': getattr(lc, 'description_de', ''),
+            'description_en': getattr(lc, 'description_en', ''),
+            'required': getattr(lc, 'required', True),  # Default to required
+            'choices': []
+        }
+        
+        # Get choices for this classification
+        choices = lc.get_choices()
+        for choice in choices:
+            lc_data['choices'].append({
+                'id': choice.id,
+                'name': choice.name,
+                'name_de': getattr(choice, 'name_de', ''),
+                'name_en': getattr(choice, 'name_en', ''),
+                'description': getattr(choice, 'description', ''),
+                'description_de': getattr(choice, 'description_de', ''),
+                'description_en': getattr(choice, 'description_en', ''),
+                'classificationId': lc.id
+            })
+        
+        result.append(lc_data)
+    
+    return Response(result)
 
 @api_view(["GET"])
 def get_morphology_classifications_for_finding(request, finding_id):
     """
     Retrieves morphology classifications for a specific finding.
     NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/findings/{finding_id}/morphology-classifications/
     """
     finding = get_object_or_404(Finding, id=finding_id)
-    morphology_classifications = finding.morphology_classifications.all()
-    serializer = FindingMorphologyClassificationSerializer(morphology_classifications, many=True)
-    return Response(serializer.data)
+    
+    # Get required and optional classification types separately
+    required_types = finding.required_morphology_classification_types.all()
+    optional_types = finding.optional_morphology_classification_types.all()
+    
+    # Get morphology classifications for both required and optional types
+    from endoreg_db.models import FindingMorphologyClassification
+    
+    result = []
+    
+    # Process required classifications
+    for classification_type in required_types:
+        classifications = FindingMorphologyClassification.objects.filter(
+            classification_type=classification_type
+        )
+        for mc in classifications:
+            mc_data = {
+                'id': mc.id,
+                'name': mc.name,
+                'name_de': getattr(mc, 'name_de', ''),
+                'name_en': getattr(mc, 'name_en', ''),
+                'description': getattr(mc, 'description', ''),
+                'description_de': getattr(mc, 'description_de', ''),
+                'description_en': getattr(mc, 'description_en', ''),
+                'required': True,  # This is a required classification
+                'choices': []
+            }
+            
+            # Get choices for this classification
+            choices = mc.get_choices()
+            for choice in choices:
+                mc_data['choices'].append({
+                    'id': choice.id,
+                    'name': choice.name,
+                    'name_de': getattr(choice, 'name_de', ''),
+                    'name_en': getattr(choice, 'name_en', ''),
+                    'description': getattr(choice, 'description', ''),
+                    'description_de': getattr(choice, 'description_de', ''),
+                    'description_en': getattr(choice, 'description_en', ''),
+                    'classificationId': mc.id
+                })
+            
+            result.append(mc_data)
+    
+    # Process optional classifications
+    for classification_type in optional_types:
+        classifications = FindingMorphologyClassification.objects.filter(
+            classification_type=classification_type
+        )
+        for mc in classifications:
+            # Check if this classification is already in results (avoid duplicates)
+            if any(existing['id'] == mc.id for existing in result):
+                continue
+                
+            mc_data = {
+                'id': mc.id,
+                'name': mc.name,
+                'name_de': getattr(mc, 'name_de', ''),
+                'name_en': getattr(mc, 'name_en', ''),
+                'description': getattr(mc, 'description', ''),
+                'description_de': getattr(mc, 'description_de', ''),
+                'description_en': getattr(mc, 'description_en', ''),
+                'required': False,  # This is an optional classification
+                'choices': []
+            }
+            
+            # Get choices for this classification
+            choices = mc.get_choices()
+            for choice in choices:
+                mc_data['choices'].append({
+                    'id': choice.id,
+                    'name': choice.name,
+                    'name_de': getattr(choice, 'name_de', ''),
+                    'name_en': getattr(choice, 'name_en', ''),
+                    'description': getattr(choice, 'description', ''),
+                    'description_de': getattr(choice, 'description_de', ''),
+                    'description_en': getattr(choice, 'description_en', ''),
+                    'classificationId': mc.id
+                })
+            
+            result.append(mc_data)
+    
+    return Response(result)
 
 @api_view(["GET"])
 def get_choices_for_location_classification(request, classification_id):
     """
     Retrieves choices for a specific location classification.
     NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/location-classifications/{classification_id}/choices/
     """
     classification = get_object_or_404(FindingLocationClassification, id=classification_id)
-    choices = classification.choices.all()
-    serializer = FindingLocationClassificationChoiceSerializer(choices, many=True)
-    return Response(serializer.data)
+    choices = classification.get_choices()
+    
+    result = []
+    for choice in choices:
+        result.append({
+            'id': choice.id,
+            'name': choice.name,
+            'name_de': getattr(choice, 'name_de', ''),
+            'name_en': getattr(choice, 'name_en', ''),
+            'description': getattr(choice, 'description', ''),
+            'description_de': getattr(choice, 'description_de', ''),
+            'description_en': getattr(choice, 'description_en', ''),
+            'classificationId': classification.id
+        })
+    
+    return Response(result)
 
 @api_view(["GET"])
 def get_choices_for_morphology_classification(request, classification_id):
     """
     Retrieves choices for a specific morphology classification.
     NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/morphology-classifications/{classification_id}/choices/
     """
     classification = get_object_or_404(FindingMorphologyClassification, id=classification_id)
-    choices = classification.choices.all()
-    serializer = FindingMorphologyClassificationChoiceSerializer(choices, many=True)
-    return Response(serializer.data)
+    choices = classification.get_choices()
+    
+    result = []
+    for choice in choices:
+        result.append({
+            'id': choice.id,
+            'name': choice.name,
+            'name_de': getattr(choice, 'name_de', ''),
+            'name_en': getattr(choice, 'name_en', ''),
+            'description': getattr(choice, 'description', ''),
+            'description_de': getattr(choice, 'description_de', ''),
+            'description_en': getattr(choice, 'description_en', ''),
+            'classificationId': classification.id
+        })
+    
+    return Response(result)
 
 # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
 
