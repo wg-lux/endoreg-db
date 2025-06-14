@@ -27,7 +27,7 @@ ASSET_DIR = Path(__file__).parent / "tests/assets"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 
 # Production settings
-DEBUG = True #TODO change to False in production
+DEBUG = False  # Changed from True to False for production
 
 # It's best to set this via environment variable in production
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "replace-this-with-a-secure-key")

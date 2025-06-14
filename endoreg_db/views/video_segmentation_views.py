@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from ..models import VideoFile, Label, LabelVideoSegment
 from ..serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
+from ..utils.permissions import DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 
 class VideoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -18,7 +19,7 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = VideoFile.objects.all()
     serializer_class = VideoListSerializer   # for the list view
-    permission_classes = [permissions.AllowAny]
+    permission_classes = DEBUG_PERMISSIONS
 
     def list(self, request, *args, **kwargs):
         """
@@ -275,9 +276,30 @@ class VideoLabelView(APIView):
                         "confidence": 1.0  # Default confidence
                     }
                     
+                    # Fix: Safely construct frame_file_path to avoid string/string division errors
+                    frame_file_path = ""
+                    if hasattr(video_entry, 'frame_dir') and video_entry.frame_dir:
+                        try:
+                            # Ensure frame_dir is converted to Path properly
+                            if isinstance(video_entry.frame_dir, str):
+                                frame_dir = Path(video_entry.frame_dir)
+                            elif isinstance(video_entry.frame_dir, Path):
+                                frame_dir = video_entry.frame_dir
+                            else:
+                                # Try to convert to string first, then to Path
+                                frame_dir = Path(str(video_entry.frame_dir))
+                            
+                            frame_file_path = str(frame_dir / frame_filename)
+                        except (TypeError, ValueError) as e:
+                            # Log warning but don't fail the request
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Could not construct frame path for frame {frame_num}: {e}")
+                            frame_file_path = ""
+                    
                     segment_data["frames"][frame_num] = {
                         "frame_filename": frame_filename,
-                        "frame_file_path": str(video_entry.frame_dir / frame_filename) if hasattr(video_entry, 'frame_dir') else "",
+                        "frame_file_path": frame_file_path,
                         "predictions": frame_predictions[frame_num]
                     }
                 

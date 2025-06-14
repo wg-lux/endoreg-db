@@ -8,6 +8,7 @@ import logging
 
 from ..models import VideoFile, LabelVideoSegment, Label
 from ..serializers.label_serializer import LabelVideoSegmentSerializer
+from ..utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_FPS = 30  # Consistent default FPS for all video segment calculations
 
 @api_view(['POST', 'GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes(DEBUG_PERMISSIONS)
 def video_segments_view(request):
     """
     Handles creation and retrieval of labeled video segments.

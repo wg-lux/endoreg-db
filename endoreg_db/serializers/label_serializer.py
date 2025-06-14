@@ -12,8 +12,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     # Additional fields for convenience - matching frontend expectations
     start_time = serializers.FloatField(required=False, help_text="Start time in seconds")
     end_time = serializers.FloatField(required=False, help_text="End time in seconds")
-    video_id = serializers.IntegerField(required=True, help_text="Video file ID")
-    label_id = serializers.IntegerField(required=False, allow_null=True, help_text="Label ID")
+    
+    # Input fields (write_only for creation)
+    video_id = serializers.IntegerField(write_only=True, required=True, help_text="Video file ID")
+    label_id = serializers.IntegerField(write_only=True, required=False, allow_null=True, help_text="Label ID")
     
     # Add support for label names (both Label and VideoSegmentationLabel)
     label_name = serializers.CharField(required=False, allow_null=True, help_text="Label name (supports both Label and VideoSegmentationLabel names)")
@@ -165,7 +167,22 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 label = self.get_or_create_label_from_name(label_name)
             
             # Calculate frame numbers from time if provided and not already set
-            fps = getattr(video_file, 'fps', 30)  # Default to 30 fps if not available
+            # Fix: Ensure fps is properly converted to numeric type
+            fps_raw = getattr(video_file, 'fps', 30)  # Default to 30 fps if not available
+            
+            try:
+                if isinstance(fps_raw, str):
+                    fps = float(fps_raw)
+                elif isinstance(fps_raw, (int, float)):
+                    fps = float(fps_raw)
+                else:
+                    fps = 30.0  # Default fallback
+            except (ValueError, TypeError):
+                fps = 30.0  # Default fallback if conversion fails
+            
+            # Ensure fps is positive
+            if fps <= 0:
+                fps = 30.0
             
             if start_time is not None and 'start_frame_number' not in validated_data:
                 validated_data['start_frame_number'] = int(start_time * fps)
@@ -245,11 +262,33 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             
             # Convert time to frame numbers if provided
             if start_time is not None:
-                fps = getattr(instance.video_file, 'fps', 30)
+                fps_raw = getattr(instance.video_file, 'fps', 30)
+                try:
+                    if isinstance(fps_raw, str):
+                        fps = float(fps_raw)
+                    elif isinstance(fps_raw, (int, float)):
+                        fps = float(fps_raw)
+                    else:
+                        fps = 30.0
+                except (ValueError, TypeError):
+                    fps = 30.0
+                if fps <= 0:
+                    fps = 30.0
                 instance.start_frame_number = int(start_time * fps)
             
             if end_time is not None:
-                fps = getattr(instance.video_file, 'fps', 30)
+                fps_raw = getattr(instance.video_file, 'fps', 30)
+                try:
+                    if isinstance(fps_raw, str):
+                        fps = float(fps_raw)
+                    elif isinstance(fps_raw, (int, float)):
+                        fps = float(fps_raw)
+                    else:
+                        fps = 30.0
+                except (ValueError, TypeError):
+                    fps = 30.0
+                if fps <= 0:
+                    fps = 30.0
                 instance.end_frame_number = int(end_time * fps)
             
             # Update other fields
@@ -274,7 +313,22 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         
         # Add calculated time fields for frontend compatibility
         try:
-            fps = getattr(instance.video_file, 'fps', 30)
+            fps_raw = getattr(instance.video_file, 'fps', 30)
+            
+            # Robust FPS conversion matching create/update methods
+            try:
+                if isinstance(fps_raw, str):
+                    fps = float(fps_raw)
+                elif isinstance(fps_raw, (int, float)):
+                    fps = float(fps_raw)
+                else:
+                    fps = 30.0
+            except (ValueError, TypeError):
+                fps = 30.0
+            
+            if fps <= 0:
+                fps = 30.0
+            
             data['start_time'] = instance.start_frame_number / fps
             data['end_time'] = instance.end_frame_number / fps
         except (AttributeError, ZeroDivisionError):
