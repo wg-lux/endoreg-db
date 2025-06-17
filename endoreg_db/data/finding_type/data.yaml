@@ -28,3 +28,9 @@
     name_de: "Blutung"
     name_en: "Bleeding"
 
+- model: endoreg_db.finding_type
+  fields:
+    name: "endoscopy_baseline"
+    name_de: "Basis Informationen (Endoskopie)"
+    name_en: "Baseline Information (Endoscopy)"
+    
