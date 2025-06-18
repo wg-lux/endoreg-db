@@ -213,7 +213,8 @@ urlpatterns = [
     path('videos/<int:video_id>/', VideoView.as_view(), name='video-detail-legacy'),
     path('videostream/<int:video_id>/', VideoStreamView.as_view(), name='video_stream'),
     
-    # Video label endpoints for backward compatibility
+    # Video label endpoints - unified for both timeline and legacy compatibility
+    path("videos/<int:video_id>/labels/<str:label_name>/", VideoLabelView.as_view(), name="video_labels_timeline"),
     path("video/<int:video_id>/label/<str:label_name>/", VideoLabelView.as_view(), name="video_label_times"),
     path("video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
     path("video/<int:video_id>/examinations/", get_examinations_for_video, name="video_examinations"),
