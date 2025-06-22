@@ -6,14 +6,10 @@ from rest_framework.response import Response
 from endoreg_db.models import (
     FindingLocationClassification,
     FindingMorphologyClassification,
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassificationChoice
 )
 from ..serializers.optimized_examination_serializers import (
     FindingLocationClassificationSerializer,
     FindingMorphologyClassificationSerializer,
-    FindingLocationClassificationChoiceSerializer,
-    FindingMorphologyClassificationChoiceSerializer
 )
 
 class LocationClassificationViewSet(ReadOnlyModelViewSet):

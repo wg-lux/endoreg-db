@@ -3,6 +3,7 @@
 Wrapper script for the LX-Anonymizer Report Reader CLI.
 This script allows calling the CLI from anywhere without worrying about Python paths.
 """
+set -euo pipefail
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"

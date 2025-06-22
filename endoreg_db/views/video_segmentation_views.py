@@ -11,6 +11,37 @@ from ..serializers.video_segmentation import VideoFileSerializer, VideoListSeria
 from ..utils.permissions import DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 
+def _stream_video_file(vf, frontend_origin):
+    """
+    Helper to stream a video file with proper headers and CORS.
+    Raises Http404 if file is missing.
+    """
+    # Use active_file_path which handles both processed and raw files
+    if hasattr(vf, 'active_file_path') and vf.active_file_path:
+        path = Path(vf.active_file_path)
+    elif vf.active_file and hasattr(vf.active_file, 'path'):
+        try:
+            path = Path(vf.active_file.path)
+        except ValueError as exc:
+            raise Http404("No file associated with this video") from exc
+    else:
+        raise Http404("No video file available for this entry")
+
+    if not path.exists():
+        raise Http404("Video file not found on disk")
+
+    mime, _ = mimetypes.guess_type(str(path))
+    # Open file in binary mode and ensure file descriptor is closed by FileResponse
+    file_handle = open(path, 'rb')
+    response = FileResponse(file_handle, content_type=mime or 'video/mp4')
+    response['Content-Length'] = path.stat().st_size
+    response['Accept-Ranges'] = 'bytes'
+    response['Content-Disposition'] = f'inline; filename="{path.name}"'
+    response["Access-Control-Allow-Origin"] = frontend_origin
+    response["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+
 class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     """
     /api/videos/          → list of metadata   (JSON)
@@ -55,41 +86,10 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     def stream(self, request, pk=None):
         """
         Streams the raw video file for the specified video with HTTP range and CORS support.
-        
-        Returns:
-            A FileResponse streaming the video file bytes with appropriate headers for
-            content type, content length, byte-range requests, and CORS. Raises Http404
-            if the video file is missing or not found on disk.
         """
         vf: VideoFile = self.get_object()
-        
-        # Use active_file_path which handles both processed and raw files
-        if hasattr(vf, 'active_file_path') and vf.active_file_path:
-            path = Path(vf.active_file_path)
-        elif vf.active_file and hasattr(vf.active_file, 'path'):
-            try:
-                path = Path(vf.active_file.path)
-            except ValueError as exc:
-                raise Http404("No file associated with this video") from exc
-        else:
-            raise Http404("No video file available for this entry")
-
-        if not path.exists():
-            raise Http404("Video file not found on disk")
-
-        mime, _ = mimetypes.guess_type(str(path))
-        response = FileResponse(open(path, 'rb'),
-                                content_type=mime or 'video/mp4')
-        response['Content-Length'] = path.stat().st_size
-        response['Accept-Ranges'] = 'bytes'          # lets the browser seek
-        response['Content-Disposition'] = f'inline; filename="{path.name}"'
-        
-        # CORS headers for frontend compatibility
         frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-        response["Access-Control-Allow-Origin"] = frontend_origin
-        response["Access-Control-Allow-Credentials"] = "true"
-        
-        return response
+        return _stream_video_file(vf, frontend_origin)
     
 # Neue separate View für Video-Streaming außerhalb des ViewSets
 class VideoStreamView(APIView):
@@ -102,9 +102,6 @@ class VideoStreamView(APIView):
     def get(self, request, video_id=None):
         """
         Streams the raw video file for the specified video with HTTP range and CORS support.
-        
-        Args:
-            video_id: The ID of the video to stream (can come from patient examination data)
         """
         if video_id is None:
             raise Http404("Video ID is required")
@@ -113,34 +110,8 @@ class VideoStreamView(APIView):
             vf = VideoFile.objects.get(pk=video_id)
         except VideoFile.DoesNotExist:
             raise Http404("Video not found")
-        
-        # Use active_file_path which handles both processed and raw files
-        if hasattr(vf, 'active_file_path') and vf.active_file_path:
-            path = Path(vf.active_file_path)
-        elif vf.active_file and hasattr(vf.active_file, 'path'):
-            try:
-                path = Path(vf.active_file.path)
-            except ValueError as exc:
-                raise Http404("No file associated with this video") from exc
-        else:
-            raise Http404("No video file available for this entry")
-
-        if not path.exists():
-            raise Http404("Video file not found on disk")
-
-        mime, _ = mimetypes.guess_type(str(path))
-        response = FileResponse(open(path, 'rb'),
-                                content_type=mime or 'video/mp4')
-        response['Content-Length'] = path.stat().st_size
-        response['Accept-Ranges'] = 'bytes'
-        response['Content-Disposition'] = f'inline; filename="{path.name}"'
-        
-        # CORS headers for frontend compatibility
         frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-        response["Access-Control-Allow-Origin"] = frontend_origin
-        response["Access-Control-Allow-Credentials"] = "true"
-        
-        return response
+        return _stream_video_file(vf, frontend_origin)
 
 
 # Kept the old VideoView class for backward compatibility during transition

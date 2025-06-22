@@ -85,7 +85,6 @@ router.register(r'patient-examinations', PatientExaminationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints
-    path('videostream/<int:video_id>/', VideoStreamView.as_view(), name='video_stream'),
     
     # NEW: Label Video Segment API endpoints
     path('video-segments/', video_segments_view, name='video_segments'),

@@ -4,18 +4,17 @@ Isolierter Test für die sensitive_meta_logic Funktionen
 Testet die Logik ohne Django-Setup
 """
 
-import os
 import sys
 from datetime import datetime, date, timedelta
 from hashlib import sha256
 
 # Add the endoreg-db directory to the path
-sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
+# sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
 
 def generate_random_dob():
     """Generates a random timezone-aware datetime between 1920-01-01 and 2000-12-31."""
     import random
-    from django.utils import timezone
+    import pytz
     
     start_date = date(1920, 1, 1)
     end_date = date(2000, 12, 31)
@@ -24,7 +23,8 @@ def generate_random_dob():
     random_number_of_days = random.randrange(days_between_dates)
     random_date = start_date + timedelta(days=random_number_of_days)
     random_datetime = datetime.combine(random_date, datetime.min.time())
-    return timezone.make_aware(random_datetime)
+    # Use UTC as the timezone for simplicity
+    return pytz.UTC.localize(random_datetime)
 
 def generate_random_examination_date():
     """Generates a random date within the last 20 years."""

@@ -65,8 +65,11 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
         """Get overall verification status."""
         try:
             return obj.is_verified
-        except Exception:
+        except AttributeError:
             return False
+        except Exception as e:
+            logger.exception(f"Unexpected error in get_is_verified for SensitiveMeta {getattr(obj, 'pk', None)}: {e}")
+            raise
 
     def get_dob_verified(self, obj):
         """Get DOB verification status."""

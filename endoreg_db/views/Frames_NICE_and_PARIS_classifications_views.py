@@ -42,7 +42,7 @@ class ForNiceClassificationView(APIView):
                 print(f"[DEBUG] Processing NICE classification for specific videos: {video_ids}")
             else:
                 videos = VideoFile.objects.all()
-                print(f"[DEBUG] Processing NICE classification for all videos")
+                print("[DEBUG] Processing NICE classification for all videos")
 
             print(f"[DEBUG] Total videos found: {videos.count()}")
             for v in videos:

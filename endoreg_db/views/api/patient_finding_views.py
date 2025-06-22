@@ -9,6 +9,7 @@ from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
+from django.utils import timezone
 
 from endoreg_db.models import (
     PatientFinding, 
@@ -17,7 +18,8 @@ from endoreg_db.models import (
     FindingLocationClassification,
     FindingMorphologyClassification
 )
-from .serializers.patient_finding import (
+from ...serializers.patient_finding import (
+    PatientFindingLocationSerializer,
     PatientFindingDetailSerializer,
     PatientFindingListSerializer,
     PatientFindingWriteSerializer

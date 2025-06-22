@@ -67,6 +67,8 @@ dependencies = [
     "whitenoise>=6.9.0",
     "requests>=2.32.3",
     "gunicorn>=23.0.0",
+    "modeltranslation>=0.25",
+    "django-filter>=25.1",
 ]
 
 [project.urls]

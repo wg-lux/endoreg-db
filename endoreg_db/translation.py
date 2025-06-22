@@ -9,10 +9,10 @@ from endoreg_db.models import (
     Examination,
     Finding,
     FindingLocationClassification,
-    FindingLocationChoice,
+    FindingLocationClassificationChoice,
     FindingMorphologyClassification,
-    FindingMorphologyChoice,
-    Intervention
+    FindingMorphologyClassificationChoice,
+    FindingIntervention
 )
 
 
@@ -37,7 +37,7 @@ class FindingLocationClassificationTranslationOptions(TranslationOptions):
     fallback_languages = {'default': ('en', 'de')}
 
 
-@register(FindingLocationChoice)
+@register(FindingLocationClassificationChoice)
 class FindingLocationChoiceTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
@@ -51,14 +51,14 @@ class FindingMorphologyClassificationTranslationOptions(TranslationOptions):
     fallback_languages = {'default': ('en', 'de')}
 
 
-@register(FindingMorphologyChoice)
+@register(FindingMorphologyClassificationChoice)
 class FindingMorphologyChoiceTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
 
 
-@register(Intervention)
+@register(FindingIntervention)
 class InterventionTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')

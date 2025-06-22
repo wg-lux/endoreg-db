@@ -1,14 +1,9 @@
 # endoreg_db/views/examination_views.py
 from rest_framework.viewsets import ModelViewSet
 from endoreg_db.models import Examination
-from ..serializers.examination import ExaminationSerializer
 from ..serializers.optimized_examination_serializers import (
     ExaminationSerializer as OptimizedExaminationSerializer,
     FindingSerializer as OptimizedFindingSerializer,
-    FindingLocationClassificationSerializer,
-    FindingMorphologyClassificationSerializer,
-    FindingLocationClassificationChoiceSerializer,
-    FindingMorphologyClassificationChoiceSerializer,
 )
 
 # views/examination_views.py
@@ -23,6 +18,36 @@ from endoreg_db.models import (
     Finding
 )
 from django.shortcuts import get_object_or_404
+
+def build_multilingual_response(obj, include_choices=False, classification_id=None):
+    """
+    Helper to build a multilingual response dict for an object.
+    If include_choices is True, adds a 'choices' key with multilingual dicts for each choice.
+    If classification_id is given, adds 'classificationId' to each choice.
+    """
+    data = {
+        'id': obj.id,
+        'name': getattr(obj, 'name', ''),
+        'name_de': getattr(obj, 'name_de', ''),
+        'name_en': getattr(obj, 'name_en', ''),
+        'description': getattr(obj, 'description', ''),
+        'description_de': getattr(obj, 'description_de', ''),
+        'description_en': getattr(obj, 'description_en', ''),
+    }
+    # Add 'required' if present on the object
+    if hasattr(obj, 'required'):
+        data['required'] = getattr(obj, 'required', True)
+    if include_choices:
+        data['choices'] = [
+            build_multilingual_response(choice, include_choices=False, classification_id=classification_id or obj.id)
+            for choice in obj.get_choices()
+        ]
+        # Add classificationId to each choice
+        for choice_dict in data['choices']:
+            choice_dict['classificationId'] = classification_id or obj.id
+    if classification_id is not None and not include_choices:
+        data['classificationId'] = classification_id
+    return data
 
 class ExaminationViewSet(ModelViewSet):
     queryset = Examination.objects.all()
@@ -124,15 +149,7 @@ def get_findings_for_examination(request, examination_id):
     
     # Return findings with German names and full details
     return Response([
-        {
-            "id": f.id, 
-            "name": f.name,
-            "name_de": getattr(f, 'name_de', ''),
-            "name_en": getattr(f, 'name_en', ''),
-            "description": getattr(f, 'description', ''),
-            "description_de": getattr(f, 'description_de', ''),
-            "description_en": getattr(f, 'description_en', '')
-        } 
+        build_multilingual_response(f)
         for f in findings
     ])
 
@@ -147,36 +164,10 @@ def get_location_classifications_for_finding(request, finding_id):
     location_classifications = finding.get_location_classifications()
     
     # Return with choices included and required flag
-    result = []
-    for lc in location_classifications:
-        lc_data = {
-            'id': lc.id,
-            'name': lc.name,
-            'name_de': getattr(lc, 'name_de', ''),
-            'name_en': getattr(lc, 'name_en', ''),
-            'description': getattr(lc, 'description', ''),
-            'description_de': getattr(lc, 'description_de', ''),
-            'description_en': getattr(lc, 'description_en', ''),
-            'required': getattr(lc, 'required', True),  # Default to required
-            'choices': []
-        }
-        
-        # Get choices for this classification
-        choices = lc.get_choices()
-        for choice in choices:
-            lc_data['choices'].append({
-                'id': choice.id,
-                'name': choice.name,
-                'name_de': getattr(choice, 'name_de', ''),
-                'name_en': getattr(choice, 'name_en', ''),
-                'description': getattr(choice, 'description', ''),
-                'description_de': getattr(choice, 'description_de', ''),
-                'description_en': getattr(choice, 'description_en', ''),
-                'classificationId': lc.id
-            })
-        
-        result.append(lc_data)
-    
+    result = [
+        build_multilingual_response(lc, include_choices=True)
+        for lc in location_classifications
+    ]
     return Response(result)
 
 @api_view(["GET"])
@@ -192,83 +183,29 @@ def get_morphology_classifications_for_finding(request, finding_id):
     required_types = finding.required_morphology_classification_types.all()
     optional_types = finding.optional_morphology_classification_types.all()
     
-    # Get morphology classifications for both required and optional types
     from endoreg_db.models import FindingMorphologyClassification
     
     result = []
-    
     # Process required classifications
     for classification_type in required_types:
         classifications = FindingMorphologyClassification.objects.filter(
             classification_type=classification_type
         )
         for mc in classifications:
-            mc_data = {
-                'id': mc.id,
-                'name': mc.name,
-                'name_de': getattr(mc, 'name_de', ''),
-                'name_en': getattr(mc, 'name_en', ''),
-                'description': getattr(mc, 'description', ''),
-                'description_de': getattr(mc, 'description_de', ''),
-                'description_en': getattr(mc, 'description_en', ''),
-                'required': True,  # This is a required classification
-                'choices': []
-            }
-            
-            # Get choices for this classification
-            choices = mc.get_choices()
-            for choice in choices:
-                mc_data['choices'].append({
-                    'id': choice.id,
-                    'name': choice.name,
-                    'name_de': getattr(choice, 'name_de', ''),
-                    'name_en': getattr(choice, 'name_en', ''),
-                    'description': getattr(choice, 'description', ''),
-                    'description_de': getattr(choice, 'description_de', ''),
-                    'description_en': getattr(choice, 'description_en', ''),
-                    'classificationId': mc.id
-                })
-            
+            mc_data = build_multilingual_response(mc, include_choices=True)
+            mc_data['required'] = True
             result.append(mc_data)
-    
     # Process optional classifications
     for classification_type in optional_types:
         classifications = FindingMorphologyClassification.objects.filter(
             classification_type=classification_type
         )
         for mc in classifications:
-            # Check if this classification is already in results (avoid duplicates)
             if any(existing['id'] == mc.id for existing in result):
                 continue
-                
-            mc_data = {
-                'id': mc.id,
-                'name': mc.name,
-                'name_de': getattr(mc, 'name_de', ''),
-                'name_en': getattr(mc, 'name_en', ''),
-                'description': getattr(mc, 'description', ''),
-                'description_de': getattr(mc, 'description_de', ''),
-                'description_en': getattr(mc, 'description_en', ''),
-                'required': False,  # This is an optional classification
-                'choices': []
-            }
-            
-            # Get choices for this classification
-            choices = mc.get_choices()
-            for choice in choices:
-                mc_data['choices'].append({
-                    'id': choice.id,
-                    'name': choice.name,
-                    'name_de': getattr(choice, 'name_de', ''),
-                    'name_en': getattr(choice, 'name_en', ''),
-                    'description': getattr(choice, 'description', ''),
-                    'description_de': getattr(choice, 'description_de', ''),
-                    'description_en': getattr(choice, 'description_en', ''),
-                    'classificationId': mc.id
-                })
-            
+            mc_data = build_multilingual_response(mc, include_choices=True)
+            mc_data['required'] = False
             result.append(mc_data)
-    
     return Response(result)
 
 @api_view(["GET"])
@@ -281,19 +218,10 @@ def get_choices_for_location_classification(request, classification_id):
     classification = get_object_or_404(FindingLocationClassification, id=classification_id)
     choices = classification.get_choices()
     
-    result = []
-    for choice in choices:
-        result.append({
-            'id': choice.id,
-            'name': choice.name,
-            'name_de': getattr(choice, 'name_de', ''),
-            'name_en': getattr(choice, 'name_en', ''),
-            'description': getattr(choice, 'description', ''),
-            'description_de': getattr(choice, 'description_de', ''),
-            'description_en': getattr(choice, 'description_en', ''),
-            'classificationId': classification.id
-        })
-    
+    result = [
+        build_multilingual_response(choice, classification_id=classification.id)
+        for choice in choices
+    ]
     return Response(result)
 
 @api_view(["GET"])
@@ -306,19 +234,10 @@ def get_choices_for_morphology_classification(request, classification_id):
     classification = get_object_or_404(FindingMorphologyClassification, id=classification_id)
     choices = classification.get_choices()
     
-    result = []
-    for choice in choices:
-        result.append({
-            'id': choice.id,
-            'name': choice.name,
-            'name_de': getattr(choice, 'name_de', ''),
-            'name_en': getattr(choice, 'name_en', ''),
-            'description': getattr(choice, 'description', ''),
-            'description_de': getattr(choice, 'description_de', ''),
-            'description_en': getattr(choice, 'description_en', ''),
-            'classificationId': classification.id
-        })
-    
+    result = [
+        build_multilingual_response(choice, classification_id=classification.id)
+        for choice in choices
+    ]
     return Response(result)
 
 # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
