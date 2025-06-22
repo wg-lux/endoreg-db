@@ -14,10 +14,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from endoreg_db.models import VideoFile, Label, LabelType, LabelVideoSegment, VideoPredictionMeta
-from endoreg_db.models.administration.person import Gender
-from endoreg_db.models.administration.center import Center
-
+from endoreg_db.models import VideoFile, Label, LabelType, LabelVideoSegment, VideoPredictionMeta, Gender, Center
 
 class VideoSegmentationViewTests(TestCase):
     """Test video segmentation API endpoints."""

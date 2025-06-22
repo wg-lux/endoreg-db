@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
+from re import X
 from endoreg_db.utils.paths import STORAGE_DIR
-from lx_annotate.settings.prod import X_FRAME_OPTIONS
+# from lx_annotate.settings.prod import X_FRAME_OPTIONS
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
 
@@ -92,5 +94,3 @@ LOGGING = get_logging_config(LOGGER_NAMES, file_log_level=FILE_LOG_LEVEL)
 # SECURE_HSTS_PRELOAD = True
 # SECURE_BROWSER_XSS_FILTER = True
 # SECURE_CONTENT_TYPE_NOSNIFF = True
-
-X_FRAME_OPTIONS = X_FRAME_OPTIONS or 'SAMEORIGIN'
