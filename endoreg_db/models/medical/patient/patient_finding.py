@@ -145,28 +145,25 @@ class PatientFinding(models.Model):
     # Optimierte Query-Methoden
     def get_locations(self):
         """Returns all active location choices that are associated with this patient finding."""
-        from .patient_finding_location import PatientFindingLocation
         return self.locations.filter(is_active=True).select_related(
             'location_classification', 'location_choice'
         )
     
     def get_morphologies(self):
         """Returns all active morphology choices that are associated with this patient finding."""
-        from .patient_finding_morphology import PatientFindingMorphology
         return self.morphologies.filter(is_active=True).select_related(
             'morphology_classification', 'morphology_choice'
         )
 
     def get_interventions(self):
         """Returns all active interventions that are associated with this patient finding."""
-        from .patient_finding_intervention import PatientFindingIntervention 
         return self.interventions.filter(is_active=True).select_related('intervention')
 
     # Verbesserte Add-Methoden mit Validierung
     def add_location(self, location_classification_id, location_choice_id, user=None):
         """Adds a validated location choice to this patient finding."""
         from .patient_finding_location import PatientFindingLocation
-        from ..finding.location import FindingLocationClassification
+        from ..finding import FindingLocationClassification
         
         try:
             location_classification = FindingLocationClassification.objects.get(
@@ -204,7 +201,7 @@ class PatientFinding(models.Model):
     def add_morphology(self, morphology_classification_id, morphology_choice_id, user=None):
         """Adds a validated morphology choice to this patient finding."""
         from .patient_finding_morphology import PatientFindingMorphology
-        from ..finding.morphology import FindingMorphologyClassification
+        from ..finding import FindingMorphologyClassification
         
         try:
             morphology_classification = FindingMorphologyClassification.objects.get(
@@ -242,10 +239,10 @@ class PatientFinding(models.Model):
     def add_intervention(self, intervention_id, state="pending", date=None, user=None):
         """Adds a validated intervention to this patient finding."""
         from .patient_finding_intervention import PatientFindingIntervention
-        from ..intervention import Intervention
+        from ..finding import FindingIntervention
         
         try:
-            intervention = Intervention.objects.get(id=intervention_id)
+            intervention = FindingIntervention.objects.get(id=intervention_id)
             
             patient_finding_intervention = PatientFindingIntervention.objects.create(
                 patient_finding=self,
@@ -257,7 +254,7 @@ class PatientFinding(models.Model):
             
             return patient_finding_intervention
             
-        except Intervention.DoesNotExist:
+        except FindingIntervention.DoesNotExist:
             raise ValidationError(f'Intervention {intervention_id} nicht gefunden')
 
     # Legacy Methoden für Backward Compatibility (deprecated)

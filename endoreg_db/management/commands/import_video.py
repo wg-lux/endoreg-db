@@ -6,7 +6,7 @@ Management command to import a video file into the database.
 This command is designed to be run from the command line and takes various arguments
 to specify the video file, center name, and other options.
 """
-from multiprocessing import process
+
 from django.core.management import BaseCommand
 from django.db import connection
 from pathlib import Path
@@ -16,25 +16,8 @@ from endoreg_db.models.medical.hardware import EndoscopyProcessor
 # #FIXME
 # from endoreg_db.management.commands import validate_video
 
-from ...helpers.default_objects import (
-    get_latest_segmentation_model
-)
-
 from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
 
-from endoreg_db.helpers.data_loader import (
-    load_disease_data,
-    load_gender_data,
-    load_event_data,
-    load_information_source,
-    load_examination_data,
-    load_center_data,
-    load_endoscope_data,
-    load_ai_model_label_data,
-    load_ai_model_data,
-    load_default_ai_model
-    
-)
 
 IMPORT_MODELS = [
     VideoFile.__name__,

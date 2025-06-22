@@ -336,54 +336,45 @@ def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, A
     if patient_gender_input is not None:
         try:
             if isinstance(patient_gender_input, Gender):
-                # Already a Gender object, use directly
                 selected_data["patient_gender"] = patient_gender_input
             elif isinstance(patient_gender_input, str):
-                # String input - lookup Gender object
-                try:
-                    gender_obj = Gender.objects.get(name=patient_gender_input)
+                gender_input_clean = patient_gender_input.strip()
+                # Try direct case-insensitive DB lookup first
+                gender_obj = Gender.objects.filter(name__iexact=gender_input_clean).first()
+                if gender_obj:
                     selected_data["patient_gender"] = gender_obj
-                    logger.debug(f"Successfully converted gender string '{patient_gender_input}' to Gender object")
-                except Gender.DoesNotExist:
-                    # Try to find a matching gender or use default
-                    logger.warning(f"Gender '{patient_gender_input}' not found in database. Attempting fallback.")
-                    
-                    # Try common fallback mappings
-                    fallback_mappings = {
-                        'male': ['male', 'm', 'männlich', 'man'],
-                        'female': ['female', 'f', 'weiblich', 'woman'], 
-                        'unknown': ['unknown', 'unbekannt', 'other', 'diverse']
-                    }
-                    
-                    gender_lower = patient_gender_input.lower().strip()
-                    found_gender = None
-                    
-                    for standard_name, variations in fallback_mappings.items():
-                        if gender_lower in variations:
-                            try:
-                                found_gender = Gender.objects.get(name=standard_name)
-                                logger.info(f"Mapped gender '{patient_gender_input}' to '{standard_name}'")
-                                break
-                            except Gender.DoesNotExist:
-                                continue
-                    
-                    if found_gender:
-                        selected_data["patient_gender"] = found_gender
+                    logger.debug(f"Successfully matched gender string '{patient_gender_input}' to Gender object via iexact lookup")
+                else:
+                    # Use mapping helper for fallback
+                    mapped = _map_gender_string_to_standard(gender_input_clean)
+                    if mapped:
+                        gender_obj = Gender.objects.filter(name__iexact=mapped).first()
+                        if gender_obj:
+                            selected_data["patient_gender"] = gender_obj
+                            logger.info(f"Mapped gender '{patient_gender_input}' to '{mapped}' via fallback mapping")
+                        else:
+                            logger.warning(f"Mapped gender '{patient_gender_input}' to '{mapped}', but no such Gender in DB. Trying 'unknown'.")
+                            unknown_gender = Gender.objects.filter(name__iexact='unknown').first()
+                            if unknown_gender:
+                                selected_data["patient_gender"] = unknown_gender
+                                logger.warning(f"Using 'unknown' gender as fallback for '{patient_gender_input}'")
+                            else:
+                                logger.error(f"No 'unknown' gender found in database. Cannot handle gender '{patient_gender_input}'. Skipping gender update.")
+                                selected_data.pop("patient_gender", None)
                     else:
-                        # Last resort: try to get 'unknown' gender or create it
-                        try:
-                            unknown_gender = Gender.objects.get(name='unknown')
+                        # Last resort: try to get 'unknown' gender
+                        unknown_gender = Gender.objects.filter(name__iexact='unknown').first()
+                        if unknown_gender:
                             selected_data["patient_gender"] = unknown_gender
-                            logger.warning(f"Using 'unknown' gender as fallback for '{patient_gender_input}'")
-                        except Gender.DoesNotExist:
+                            logger.warning(f"Using 'unknown' gender as fallback for '{patient_gender_input}' (no mapping)")
+                        else:
                             logger.error(f"No 'unknown' gender found in database. Cannot handle gender '{patient_gender_input}'. Skipping gender update.")
                             selected_data.pop("patient_gender", None)
             else:
                 logger.warning(f"Unexpected patient_gender type {type(patient_gender_input)}: {patient_gender_input}. Skipping gender update.")
                 selected_data.pop("patient_gender", None)
-                
         except Exception as e:
-            logger.error(f"Error handling patient_gender '{patient_gender_input}': {e}. Skipping gender update.")
+            logger.exception(f"Error handling patient_gender '{patient_gender_input}': {e}. Skipping gender update.")
             selected_data.pop("patient_gender", None)
 
     # Update other attributes from selected_data
@@ -443,3 +434,17 @@ def update_or_create_sensitive_meta_from_dict(
     else:
         # Create a new instance
         return create_sensitive_meta_from_dict(cls, data), True
+
+
+def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
+    """Maps various gender string inputs to standard gender names used in the DB."""
+    mapping = {
+        'male': ['male', 'm', 'männlich', 'man'],
+        'female': ['female', 'f', 'weiblich', 'woman'],
+        'unknown': ['unknown', 'unbekannt', 'other', 'diverse', '']
+    }
+    gender_lower = gender_str.strip().lower()
+    for standard, variants in mapping.items():
+        if gender_lower in variants:
+            return standard
+    return None

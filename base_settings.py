@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from re import X
+
 from endoreg_db.utils.paths import STORAGE_DIR
 # from lx_annotate.settings.prod import X_FRAME_OPTIONS
 X_FRAME_OPTIONS = "SAMEORIGIN"
