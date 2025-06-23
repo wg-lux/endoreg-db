@@ -151,129 +151,140 @@ class Command(BaseCommand):
         if local_version_available:
             self.stdout.write(self.style.SUCCESS("Using local development version of lx-anonymizer"))
         
-        # Initialize Ollama service if requested
-        if start_ollama:
-            self.stdout.write(self.style.SUCCESS("Initializing Ollama service..."))
-            try:
-                # Set Ollama environment variables
-                os.environ["OLLAMA_MAX_WAIT_TIME"] = str(ollama_timeout)
-                os.environ["OLLAMA_DEBUG"] = "true" if ollama_debug else "false"
-                
-                # Try to find Ollama binary location from env or common paths
-                ollama_bin = os.environ.get("OLLAMA_BIN")
-                if not ollama_bin:
-                    # Try common Nix store paths first
-                    for path in ["/run/current-system/sw/bin/ollama", 
-                                "/nix/store/*/bin/ollama"]:
-                        import glob
-                        matches = glob.glob(path)
-                        if matches:
-                            ollama_bin = matches[0]
-                            break
-                
-                if ollama_bin:
-                    self.stdout.write(self.style.SUCCESS(f"Using Ollama binary at: {ollama_bin}"))
-                    os.environ["OLLAMA_BIN"] = ollama_bin
-                
-                # Start Ollama server process if not already running
-                import subprocess
-                import shutil
-                
-                # Check if ollama is already running
-                try:
-                    import requests
-                    resp = requests.get("http://127.0.0.1:11434/api/version", timeout=1)
-                    if resp.status_code == 200:
-                        self.stdout.write(self.style.SUCCESS("Ollama is already running"))
-                    else:
-                        self.stdout.write(self.style.WARNING(f"Ollama returned status code {resp.status_code}"))
-                except requests.exceptions.RequestException:
-                    self.stdout.write(self.style.WARNING("Ollama is not running, attempting to start..."))
-                    # Find ollama binary
-                    ollama_path = ollama_bin or shutil.which("ollama")
-                    if ollama_path:
-                        self.stdout.write(self.style.SUCCESS(f"Starting Ollama using {ollama_path}"))
-                        # Start ollama serve in background
-                        subprocess.Popen([ollama_path, "serve"], 
-                                         stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT,
-                                         start_new_session=True)
-                        self.stdout.write(self.style.SUCCESS("Ollama server started in background"))
-                    else:
-                        self.stdout.write(self.style.ERROR("Ollama binary not found in PATH"))
-                
-                # Start the service with explicit initialization
-                ollama_service(auto_start=True)
-                self.stdout.write(self.style.SUCCESS("Ollama service initialized successfully"))
-            except Exception as e:
-                self.stdout.write(self.style.ERROR(f"Failed to initialize Ollama service: {e}"))
-                self.stdout.write(self.style.WARNING("Continuing without Ollama - some features may not work"))
-
-        # Ensure the report file exists
-        file_path = Path(file_path).expanduser()
-        if not file_path.exists():
-            self.stdout.write(self.style.ERROR(f"Report file not found: {file_path}"))
-            return
-
-        # Ensure the report directory exists
-        report_dir_root = Path(report_dir_root).expanduser()
-        report_dir_root.mkdir(parents=True, exist_ok=True)
-
-        # Create the report file object
-        self.stdout.write(self.style.SUCCESS(f"Creating RawPdfFile object from {file_path}..."))
-        report_file_obj = RawPdfFile.create_from_file(
-            file_path=file_path,
-            center_name=center_name,
-            delete_source=delete_source,
-            save=save,
-        )
-
-        # Assign pdfType to the report file object
-        if "report" in file_path.name:
-            pdf_type_name = "ukw-endoscopy-examination-report-generic"
-        elif "histo" in file_path.name:
-            pdf_type_name = "ukw-endoscopy-histology-report-generic"
-        elif "AW_PA" in file_path.name:
-            pdf_type_name = "rkh-endoscopy-histology-report-generic"
-        elif "AW" in file_path.name:
-            pdf_type_name = "rkh-endoscopy-examination-report-generic"
-        else:
-            raise ValueError(f"Unknown report type: {file_path.name}")
-
-        self.stdout.write(self.style.SUCCESS(f"Using PDF type: {pdf_type_name}"))
+        ollama_proc = None  # Track Ollama process if started
         try:
-            pdf_type = PdfType.objects.get(name=pdf_type_name)
-        except PdfType.DoesNotExist:
-            self.stdout.write(self.style.ERROR(f"PdfType with name '{pdf_type_name}' does not exist."))
-            return
-        report_file_obj.pdf_type = pdf_type
+            # Initialize Ollama service if requested
+            if start_ollama:
+                self.stdout.write(self.style.SUCCESS("Initializing Ollama service..."))
+                try:
+                    # Set Ollama environment variables
+                    os.environ["OLLAMA_MAX_WAIT_TIME"] = str(ollama_timeout)
+                    os.environ["OLLAMA_DEBUG"] = "true" if ollama_debug else "false"
+                    
+                    # Try to find Ollama binary location from env or common paths
+                    ollama_bin = os.environ.get("OLLAMA_BIN")
+                    if not ollama_bin:
+                        # Try common Nix store paths first
+                        for path in ["/run/current-system/sw/bin/ollama", 
+                                    "/nix/store/*/bin/ollama"]:
+                            import glob
+                            matches = glob.glob(path)
+                            if matches:
+                                ollama_bin = matches[0]
+                                break
+                    
+                    if ollama_bin:
+                        self.stdout.write(self.style.SUCCESS(f"Using Ollama binary at: {ollama_bin}"))
+                        os.environ["OLLAMA_BIN"] = ollama_bin
+                    
+                    # Start Ollama server process if not already running
+                    import subprocess
+                    import shutil
+                    
+                    # Check if ollama is already running
+                    try:
+                        import requests
+                        resp = requests.get("http://127.0.0.1:11434/api/version", timeout=1)
+                        if resp.status_code == 200:
+                            self.stdout.write(self.style.SUCCESS("Ollama is already running"))
+                        else:
+                            self.stdout.write(self.style.WARNING(f"Ollama returned status code {resp.status_code}"))
+                    except requests.exceptions.RequestException:
+                        self.stdout.write(self.style.WARNING("Ollama is not running, attempting to start..."))
+                        # Find ollama binary
+                        ollama_path = ollama_bin or shutil.which("ollama")
+                        if ollama_path:
+                            self.stdout.write(self.style.SUCCESS(f"Starting Ollama using {ollama_path}"))
+                            # Start ollama serve in background
+                            ollama_proc = subprocess.Popen([
+                                ollama_path, "serve"
+                            ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+                            self.stdout.write(self.style.SUCCESS("Ollama server started in background"))
+                        else:
+                            self.stdout.write(self.style.ERROR("Ollama binary not found in PATH"))
+                    
+                    # Start the service with explicit initialization
+                    ollama_service(auto_start=True)
+                    self.stdout.write(self.style.SUCCESS("Ollama service initialized successfully"))
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f"Failed to initialize Ollama service: {e}"))
+                    self.stdout.write(self.style.WARNING("Continuing without Ollama - some features may not work"))
 
-        rr_config = report_file_obj.get_report_reader_config()
-        pdf_path = report_file_obj.file.path
-        
-        # Import at this point to avoid initializing the module too early
-        from lx_anonymizer import ReportReader
-        self.stdout.write(self.style.SUCCESS("Creating ReportReader..."))
-        rr = ReportReader(**rr_config)
+            # Ensure the report file exists
+            file_path = Path(file_path).expanduser()
+            if not file_path.exists():
+                self.stdout.write(self.style.ERROR(f"Report file not found: {file_path}"))
+                return
 
-        self.stdout.write(self.style.SUCCESS(f"Processing report: {pdf_path}"))
-        text, anonymized_text, report_meta = rr.process_report(
-            pdf_path, verbose=verbose
-        )
+            # Ensure the report directory exists
+            report_dir_root = Path(report_dir_root).expanduser()
+            report_dir_root.mkdir(parents=True, exist_ok=True)
 
-        if verbose:
-            ic(text, anonymized_text, report_meta)
+            # Create the report file object
+            self.stdout.write(self.style.SUCCESS(f"Creating RawPdfFile object from {file_path}..."))
+            report_file_obj = RawPdfFile.create_from_file(
+                file_path=file_path,
+                center_name=center_name,
+                delete_source=delete_source,
+                save=save,
+            )
+
+            # Assign pdfType to the report file object
+            if "report" in file_path.name:
+                pdf_type_name = "ukw-endoscopy-examination-report-generic"
+            elif "histo" in file_path.name:
+                pdf_type_name = "ukw-endoscopy-histology-report-generic"
+            elif "AW_PA" in file_path.name:
+                pdf_type_name = "rkh-endoscopy-histology-report-generic"
+            elif "AW" in file_path.name:
+                pdf_type_name = "rkh-endoscopy-examination-report-generic"
+            else:
+                raise ValueError(f"Unknown report type: {file_path.name}")
+
+            self.stdout.write(self.style.SUCCESS(f"Using PDF type: {pdf_type_name}"))
+            try:
+                pdf_type = PdfType.objects.get(name=pdf_type_name)
+            except PdfType.DoesNotExist:
+                self.stdout.write(self.style.ERROR(f"PdfType with name '{pdf_type_name}' does not exist."))
+                return
+            report_file_obj.pdf_type = pdf_type
+
+            rr_config = report_file_obj.get_report_reader_config()
+            pdf_path = report_file_obj.file.path
             
-        self.stdout.write(self.style.SUCCESS("Processing file..."))
-        report_file_obj.process_file(text, anonymized_text, report_meta, verbose=verbose)
-        
-        sensitive_meta = report_file_obj.sensitive_meta
-        if verbose:
-            ic(report_file_obj.sensitive_meta)
+            # Import at this point to avoid initializing the module too early
+            from lx_anonymizer import ReportReader
+            self.stdout.write(self.style.SUCCESS("Creating ReportReader..."))
+            rr = ReportReader(**rr_config)
+
+            self.stdout.write(self.style.SUCCESS(f"Processing report: {pdf_path}"))
+            text, anonymized_text, report_meta = rr.process_report(
+                pdf_path, verbose=verbose
+            )
+
+            if verbose:
+                ic(text, anonymized_text, report_meta)
+                
+            self.stdout.write(self.style.SUCCESS("Processing file..."))
+            report_file_obj.process_file(text, anonymized_text, report_meta, verbose=verbose)
             
-        
+            sensitive_meta = report_file_obj.sensitive_meta
+            if verbose:
+                ic(report_file_obj.sensitive_meta)
+                
             
-        self.stdout.write(self.style.SUCCESS("Saving..."))
-        sensitive_meta.save()
-        if verbose:
-            ic(sensitive_meta)
+            self.stdout.write(self.style.SUCCESS("Saving..."))
+            sensitive_meta.save()
+            if verbose:
+                ic(sensitive_meta)
+        finally:
+            # Clean up Ollama process if we started it
+            if ollama_proc is not None:
+                import signal
+                self.stdout.write(self.style.SUCCESS("Cleaning up Ollama server process..."))
+                try:
+                    ollama_proc.terminate()
+                    ollama_proc.wait(timeout=10)
+                    self.stdout.write(self.style.SUCCESS("Ollama server process terminated."))
+                except Exception as e:
+                    self.stdout.write(self.style.WARNING(f"Failed to terminate Ollama server process: {e}"))

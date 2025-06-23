@@ -232,7 +232,7 @@
     numeric_value: 70 # Threshold value
     numeric_value_min: -3 # Days ago
     numeric_value_max: 0  # Days ago
-    unit: "mg/dL" # Unit of the numeric_value, contextually
+    unit: "miligram per deciliter" # Unit of the numeric_value, contextually
 
 # lab_latest_numeric_greater_than_value_in_timeframe
 - model: endoreg_db.requirement
@@ -252,7 +252,7 @@
     numeric_value: 10 # Threshold value
     numeric_value_min: -7 # Days ago
     numeric_value_max: 0  # Days ago
-    unit: "mg/L" # Unit of the numeric_value, contextually
+    unit: "miligram per liter" # Unit of the numeric_value, contextually
 
 # lab_latest_categorical_match
 - model: endoreg_db.requirement

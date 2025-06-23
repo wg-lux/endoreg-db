@@ -61,6 +61,14 @@ dependencies = [
     "pytest-env>=1.1.5",
     "lx-anonymizer",
     "openpyxl>=3.1.5",
+    "pyjwt>=2.10.1",
+    "cryptography>=44.0.2",
+    "mypy>=1.16.0",
+    "whitenoise>=6.9.0",
+    "requests>=2.32.3",
+    "gunicorn>=23.0.0",
+    "modeltranslation>=0.25",
+    "django-filter>=25.1",
 ]
 
 [project.urls]

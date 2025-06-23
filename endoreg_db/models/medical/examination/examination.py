@@ -35,6 +35,11 @@ class Examination(models.Model):
 
     objects = ExaminationManager()
 
+    if TYPE_CHECKING:
+        from endoreg_db.models import ExaminationIndication, Finding
+        indications: models.QuerySet[ExaminationIndication]
+        findings: models.QuerySet["Finding"]
+
     def __str__(self) -> str:
         """
         String representation of the examination.

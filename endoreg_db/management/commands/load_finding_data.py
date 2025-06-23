@@ -111,9 +111,13 @@ IMPORT_METADATA = {
         "model": MODEL_5, # e.g. Intervention
         "foreign_keys": [
             "classification_type",
+            "findings",
+            "examinations",
         ],
         "foreign_key_models": [
             FindingMorphologyClassificationType,
+            Finding,
+            Examination,
         ] 
     },
     MODEL_6.__name__: {

@@ -34,8 +34,8 @@ IMPORT_METADATA = {
     EndoscopyProcessor.__name__: {
         "dir": ENDOSCOPY_PROCESSOR_DATA_DIR,
         "model": EndoscopyProcessor,
-        "foreign_keys": [],
-        "foreign_key_models": []
+        "foreign_keys": ["centers"],
+        "foreign_key_models": [Center]
     },
     Endoscope.__name__: {
         "dir": ENDOSCOPE_DATA_DIR,

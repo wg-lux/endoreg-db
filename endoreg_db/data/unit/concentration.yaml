@@ -82,6 +82,14 @@
     name_en: "miligram per deciliter"
     description: "miligrams per deciliter, commonly used for various blood measurements."
 
+- model: endoreg_db.Unit
+  fields:
+    name: "miligram per liter"
+    abbreviation: "mg/L"
+    name_de: "miligramm pro Liter"
+    name_en: "miligram per liter"
+    description: "miligrams per liter, a unit of measurement for concentration in blood."
+
 # x 10^9 per liter
 - model: endoreg_db.Unit
   fields:

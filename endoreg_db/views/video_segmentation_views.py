@@ -7,7 +7,39 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from ..models import VideoFile, Label, LabelVideoSegment
-from ..serializers._old.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
+from ..serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
+from ..utils.permissions import DEBUG_PERMISSIONS, EnvironmentAwarePermission
+
+
+def _stream_video_file(vf, frontend_origin):
+    """
+    Helper to stream a video file with proper headers and CORS.
+    Raises Http404 if file is missing.
+    """
+    # Use active_file_path which handles both processed and raw files
+    if hasattr(vf, 'active_file_path') and vf.active_file_path:
+        path = Path(vf.active_file_path)
+    elif vf.active_file and hasattr(vf.active_file, 'path'):
+        try:
+            path = Path(vf.active_file.path)
+        except ValueError as exc:
+            raise Http404("No file associated with this video") from exc
+    else:
+        raise Http404("No video file available for this entry")
+
+    if not path.exists():
+        raise Http404("Video file not found on disk")
+
+    mime, _ = mimetypes.guess_type(str(path))
+    # Open file in binary mode and ensure file descriptor is closed by FileResponse
+    file_handle = open(path, 'rb')
+    response = FileResponse(file_handle, content_type=mime or 'video/mp4')
+    response['Content-Length'] = path.stat().st_size
+    response['Accept-Ranges'] = 'bytes'
+    response['Content-Disposition'] = f'inline; filename="{path.name}"'
+    response["Access-Control-Allow-Origin"] = frontend_origin
+    response["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 
 class VideoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -18,7 +50,7 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = VideoFile.objects.all()
     serializer_class = VideoListSerializer   # for the list view
-    permission_classes = [permissions.AllowAny]
+    permission_classes = DEBUG_PERMISSIONS
 
     def list(self, request, *args, **kwargs):
         """
@@ -54,44 +86,35 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     def stream(self, request, pk=None):
         """
         Streams the raw video file for the specified video with HTTP range and CORS support.
-        
-        Returns:
-            A FileResponse streaming the video file bytes with appropriate headers for
-            content type, content length, byte-range requests, and CORS. Raises Http404
-            if the video file is missing or not found on disk.
         """
         vf: VideoFile = self.get_object()
-        
-        # Use active_file_path which handles both processed and raw files
-        if hasattr(vf, 'active_file_path') and vf.active_file_path:
-            path = Path(vf.active_file_path)
-        elif vf.active_file and hasattr(vf.active_file, 'path'):
-            try:
-                path = Path(vf.active_file.path)
-            except ValueError as exc:
-                raise Http404("No file associated with this video") from exc
-        else:
-            raise Http404("No video file available for this entry")
-
-        if not path.exists():
-            raise Http404("Video file not found on disk")
-
-        mime, _ = mimetypes.guess_type(str(path))
-        response = FileResponse(open(path, 'rb'),
-                                content_type=mime or 'video/mp4')
-        response['Content-Length'] = path.stat().st_size
-        response['Accept-Ranges'] = 'bytes'          # lets the browser seek
-        response['Content-Disposition'] = f'inline; filename="{path.name}"'
-        
-        # CORS headers for frontend compatibility
         frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-        response["Access-Control-Allow-Origin"] = frontend_origin
-        response["Access-Control-Allow-Credentials"] = "true"
-        
-        return response
+        return _stream_video_file(vf, frontend_origin)
+    
+# Neue separate View für Video-Streaming außerhalb des ViewSets
+class VideoStreamView(APIView):
+    """
+    Separate view for video streaming to avoid DRF content negotiation issues.
+    Supports streaming videos from different database entries based on patient examination data.
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def get(self, request, video_id=None):
+        """
+        Streams the raw video file for the specified video with HTTP range and CORS support.
+        """
+        if video_id is None:
+            raise Http404("Video ID is required")
+            
+        try:
+            vf = VideoFile.objects.get(pk=video_id)
+        except VideoFile.DoesNotExist:
+            raise Http404("Video not found")
+        frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
+        return _stream_video_file(vf, frontend_origin)
 
 
-# Keep the old VideoView class for backward compatibility during transition
+# Kept the old VideoView class for backward compatibility during transition
 class VideoView(APIView):
     """
     DEPRECATED: Use VideoViewSet instead.
@@ -180,12 +203,29 @@ class VideoLabelView(APIView):
                 }, status=status.HTTP_200_OK)
             
             # Convert segments to time-based format
-            fps = getattr(video_entry, 'fps', None) or video_entry.get_fps() if hasattr(video_entry, 'get_fps') else 25
+            # Fix: Ensure fps is a number, not a string
+            fps_raw = getattr(video_entry, 'fps', None) or (video_entry.get_fps() if hasattr(video_entry, 'get_fps') else 25)
+            
+            # Convert fps to float if it's a string
+            try:
+                if isinstance(fps_raw, str):
+                    fps = float(fps_raw)
+                elif isinstance(fps_raw, (int, float)):
+                    fps = float(fps_raw)
+                else:
+                    fps = 25.0  # Default fallback
+            except (ValueError, TypeError):
+                fps = 25.0  # Default fallback if conversion fails
+            
+            # Ensure fps is positive
+            if fps <= 0:
+                fps = 25.0
             
             time_segments = []
             frame_predictions = {}
             
             for segment in label_segments:
+                # Now fps is guaranteed to be a float
                 start_time = segment.start_frame_number / fps
                 end_time = segment.end_frame_number / fps
                 
@@ -207,9 +247,30 @@ class VideoLabelView(APIView):
                         "confidence": 1.0  # Default confidence
                     }
                     
+                    # Fix: Safely construct frame_file_path to avoid string/string division errors
+                    frame_file_path = ""
+                    if hasattr(video_entry, 'frame_dir') and video_entry.frame_dir:
+                        try:
+                            # Ensure frame_dir is converted to Path properly
+                            if isinstance(video_entry.frame_dir, str):
+                                frame_dir = Path(video_entry.frame_dir)
+                            elif isinstance(video_entry.frame_dir, Path):
+                                frame_dir = video_entry.frame_dir
+                            else:
+                                # Try to convert to string first, then to Path
+                                frame_dir = Path(str(video_entry.frame_dir))
+                            
+                            frame_file_path = str(frame_dir / frame_filename)
+                        except (TypeError, ValueError) as e:
+                            # Log warning but don't fail the request
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Could not construct frame path for frame {frame_num}: {e}")
+                            frame_file_path = ""
+                    
                     segment_data["frames"][frame_num] = {
                         "frame_filename": frame_filename,
-                        "frame_file_path": str(video_entry.frame_dir / frame_filename) if hasattr(video_entry, 'frame_dir') else "",
+                        "frame_file_path": frame_file_path,
                         "predictions": frame_predictions[frame_num]
                     }
                 

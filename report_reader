@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+"""
+Wrapper script for the LX-Anonymizer Report Reader CLI.
+This script allows calling the CLI from anywhere without worrying about Python paths.
+"""
+set -euo pipefail
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Navigate to the lx-anonymizer directory
+LX_ANONYMIZER_DIR="$SCRIPT_DIR/lx-anonymizer"
+
+# Check if the directory exists
+if [ ! -d "$LX_ANONYMIZER_DIR" ]; then
+    echo "Error: lx-anonymizer directory not found at $LX_ANONYMIZER_DIR"
+    exit 1
+fi
+
+# Change to the lx-anonymizer directory and run the CLI
+cd "$LX_ANONYMIZER_DIR" && python3 cli/report_reader.py "$@"

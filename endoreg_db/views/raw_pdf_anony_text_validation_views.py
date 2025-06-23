@@ -6,6 +6,8 @@ import os
 import mimetypes
 from ..models import RawPdfFile
 from ..serializers._old.raw_pdf_anony_text_validation import RawPdfAnonyTextSerializer
+from django.views.decorators.clickjacking import xframe_options_sameorigin
+from django.utils.decorators import method_decorator
 
 class RawPdfAnonyTextView(APIView):
     """
@@ -51,9 +53,11 @@ class RawPdfAnonyTextView(APIView):
         serialized_pdf = RawPdfAnonyTextSerializer(pdf_entry, context={'request': self.request})
         return Response(serialized_pdf.data, status=status.HTTP_200_OK)
 
+    @method_decorator(xframe_options_sameorigin)
     def serve_pdf_file(self, pdf_id):
         """
         Serves the actual PDF file for viewing.
+        Allows iframe embedding from same origin.
         """
         try:
             pdf_entry = RawPdfFile.objects.get(id=pdf_id)
@@ -66,7 +70,12 @@ class RawPdfAnonyTextView(APIView):
 
             mime_type, _ = mimetypes.guess_type(full_pdf_path)
             response = FileResponse(open(full_pdf_path, "rb"), content_type=mime_type or "application/pdf")
+            
+            # Enhanced headers for iframe compatibility
             response["Content-Disposition"] = f'inline; filename="{os.path.basename(full_pdf_path)}"'
+            response["X-Frame-Options"] = "SAMEORIGIN"  # Explicitly allow same-origin iframe embedding
+            response["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
+            
             return response
 
         except RawPdfFile.DoesNotExist:

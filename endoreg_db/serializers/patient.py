@@ -1,33 +1,87 @@
 from rest_framework import serializers
-from endoreg_db.models import Patient, Gender
+from endoreg_db.models import Patient, Gender, Center
+from datetime import date
 
 class PatientSerializer(serializers.ModelSerializer):
     # Use the slug field "name" so that the gender is represented by its string value
     gender = serializers.SlugRelatedField(
         slug_field='name',
-        queryset=Gender.objects.all()
+        queryset=Gender.objects.all(),
+        required=False,
+        allow_null=True
     )
+    center = serializers.SlugRelatedField(
+        slug_field='name',
+        queryset=Center.objects.all(),
+        required=False,
+        allow_null=True
+    )
+    age = serializers.SerializerMethodField()
 
     class Meta:
         model = Patient
-        fields = '__all__'
-        read_only_fields = ['id']
+        fields = ['id', 'first_name', 'last_name', 'dob', 'gender', 'center', 
+                 'email', 'phone', 'patient_hash', 'is_real_person', 'age']
+        read_only_fields = ['id', 'age']
 
     def get_age(self, obj):
-        return obj.age()
+        """Berechnet das Alter des Patienten"""
+        if obj.dob:
+            return obj.age()
+        return None
+
+    def validate_first_name(self, value):
+        """Validiert den Vornamen"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Vorname ist erforderlich")
+        return value.strip()
+
+    def validate_last_name(self, value):
+        """Validiert den Nachnamen"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Nachname ist erforderlich")
+        return value.strip()
+
+    def validate_dob(self, value):
+        """Validiert das Geburtsdatum"""
+        if value and value > date.today():
+            raise serializers.ValidationError("Geburtsdatum kann nicht in der Zukunft liegen")
+        return value
+
+    def validate_email(self, value):
+        """Validiert die E-Mail-Adresse"""
+        if value and '@' not in value:
+            raise serializers.ValidationError("Ungültige E-Mail-Adresse")
+        return value
 
     def create(self, validated_data):
-        center = validated_data.pop('center', None)
-        gender = validated_data.pop('gender', None)
-        patient = Patient.objects.create(center=center, gender=gender, **validated_data)
-        return patient
+        """Erstellt einen neuen Patienten mit verbesserter Fehlerbehandlung"""
+        try:
+            patient = Patient.objects.create(**validated_data)
+            return patient
+        except Exception as e:
+            raise serializers.ValidationError(f"Fehler beim Erstellen des Patienten: {str(e)}")
 
     def update(self, instance, validated_data):
-        center = validated_data.pop('center', None)
-        gender = validated_data.pop('gender', None)
-        instance.center = center if center else instance.center
-        instance.gender = gender if gender else instance.gender
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        return instance
+        """Aktualisiert einen bestehenden Patienten"""
+        try:
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            return instance
+        except Exception as e:
+            raise serializers.ValidationError(f"Fehler beim Aktualisieren des Patienten: {str(e)}")
+
+class GenderSerializer(serializers.ModelSerializer):
+    """Serializer für Gender-Modell"""
+    class Meta:
+        model = Gender
+        fields = ['id', 'name', 'name_de', 'name_en', 'abbreviation', 'description']
+        read_only_fields = ['id']
+
+class CenterSerializer(serializers.ModelSerializer):
+    """Serializer für Center-Modell"""
+    class Meta:
+        model = Center
+        fields = ['id', 'name', 'name_de', 'name_en']
+        read_only_fields = ['id']

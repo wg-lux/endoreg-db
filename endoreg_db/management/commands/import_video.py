@@ -6,6 +6,7 @@ Management command to import a video file into the database.
 This command is designed to be run from the command line and takes various arguments
 to specify the video file, center name, and other options.
 """
+
 from django.core.management import BaseCommand
 from django.db import connection
 from pathlib import Path
@@ -15,25 +16,8 @@ from endoreg_db.models.medical.hardware import EndoscopyProcessor
 # #FIXME
 # from endoreg_db.management.commands import validate_video
 
-from ...helpers.default_objects import (
-    get_latest_segmentation_model
-)
-
 from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
 
-from endoreg_db.helpers.data_loader import (
-    load_disease_data,
-    load_gender_data,
-    load_event_data,
-    load_information_source,
-    load_examination_data,
-    load_center_data,
-    load_endoscope_data,
-    load_ai_model_label_data,
-    load_ai_model_data,
-    load_default_ai_model
-    
-)
 
 IMPORT_MODELS = [
     VideoFile.__name__,
@@ -117,10 +101,10 @@ class Command(BaseCommand):
 
         # model_path
         parser.add_argument(
-            "--model_path",
+            "--model_name",
             type=str,
-            default="./data/models/colo_segmentation_RegNetX800MF_6.ckpt",
-            help="Path to the model file",
+            default="image_multilabel_classification_colonoscopy_default",
+            help="AiModel Name",
         )
         
         # 
@@ -156,26 +140,16 @@ class Command(BaseCommand):
         self.stdout.write(f"Current database: {connection.alias}")
         self.stdout.write(self.style.SUCCESS("Starting video import..."))      
 
-        load_gender_data()
-        load_disease_data()
-        load_event_data()
-        load_information_source()
-        load_examination_data()
-        load_center_data()
-        load_endoscope_data()
+        # Should not be invoked here but in a previous db setup step
+        # load_gender_data()
+        # load_disease_data()
+        # load_event_data()
+        # load_information_source()
+        # load_examination_data()
+        # load_center_data()
+        # load_endoscope_data()
 
         segmentation = options["segmentation"]
-        self.ai_model_meta = None  # MODIFIED: Initialize to None. Original call to get_latest_segmentation_model() removed.
-        if segmentation:
-            load_ai_model_label_data()
-            load_ai_model_data()
-            load_default_ai_model()
-            # Fetch the associated ModelMeta instance
-            try:
-                # Assuming ModelMeta has a foreign key 'model' to AiModel
-                self.ai_model_meta = get_latest_segmentation_model()
-            except ModelMeta.DoesNotExist as exc:
-                raise AssertionError("No ModelMeta found for the latest default segmentation AiModel") from exc
 
         verbose = options["verbose"]
         center_name = options["center_name"]
@@ -184,7 +158,7 @@ class Command(BaseCommand):
         video_dir_root = options["video_dir_root"]
         delete_source = options["delete_source"]
         save_video_file = options["save_video_file"]
-        model_path = options["model_path"]
+        model_name = options["model_name"]
         processor_name = options["processor_name"]
         video_file = Path(video_file).expanduser()
 
@@ -204,38 +178,32 @@ class Command(BaseCommand):
             return
 
         # Assert Processor Exists
-        try:
-            processors_qs = EndoscopyProcessor.objects.filter(centers=center)
+        if processor_name is None:
+            processors_qs = center.endoscopy_processors.all()
             proc_count = processors_qs.count()
             if proc_count == 0:
-                fallback_name = options.get("processor_name", "endoscope_processor")
-                processor = EndoscopyProcessor.objects.filter(name=fallback_name).first()
-                if processor is None:
-                    self.stderr.write(
-                        self.style.ERROR(
-                            f"No processors linked to '{center.name}' and "
-                            f"no processor called '{fallback_name}' exists. Fallback from default Processor applied."
-                        )
-                    )
-                    processor = EndoscopyProcessor.objects.filter(name="olympus_cv_1500").first()
-
-                processor.centers.add(center)
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"Linked fallback processor '{processor.name}' to centre '{center.name}'."
-                    )
+                raise AssertionError(
+                    f"No processors linked to '{center.name}' and no processor called '{processor_name}' exists. "
+                    "Fallback from default Processor applied."
                 )
-                return
-
             elif proc_count == 1:
                 processor = processors_qs.first()
             else:
-                processor = self._choose_processor_interactively(processors_qs)
 
-            self.stdout.write(self.style.SUCCESS(f"Using processor: {processor.name}"))
-        except EndoscopyProcessor.DoesNotExist:
-            self.stdout.write(self.style.ERROR(f"Processor not found: {processor_name}"))
-            return
+                processor = self._choose_processor_interactively(processors_qs)
+                self.stdout.write(self.style.SUCCESS(f"Using processor: {processor.name}"))
+        
+        else:
+            processor = EndoscopyProcessor.objects.get(name=processor_name)
+
+            cns = processor.centers.values_list("name", flat=True)
+            if center_name not in cns:
+                self.stdout.write(
+                    self.style.ERROR(
+                        f"Processor '{processor_name}' is not linked to center '{center_name}'."
+                    )
+                )
+                return
 
         if not Path(video_file).exists():
             self.stdout.write(self.style.ERROR(f"Video file not found: {video_file} saving unsuccessful."))
@@ -255,24 +223,13 @@ class Command(BaseCommand):
             return
         
         # Now call pipe_1 on the VideoFile instance
-        if self.ai_model_meta:
-            success = video_file_obj.pipe_1(model_name=self.ai_model_meta.model.name)
-        else:
-            # Get the default model meta if segmentation is not enabled
-            ai_model_meta = ModelMeta.objects.filter(
-                model__name="colo_segmentation_RegNetX800MF_6"
-            ).first()
-            
-            if ai_model_meta:
-                success = video_file_obj.pipe_1(model_name=ai_model_meta.model.name)
+        if segmentation:
+            success = video_file_obj.pipe_1(model_name=model_name, model_meta_version = None)
+
+            if success:
+                self.stdout.write(self.style.SUCCESS("Pipeline 1 completed successfully"))
             else:
-                # Fallback to pipe_1 with default model name
-                success = video_file_obj.pipe_1(model_name="colo_segmentation_RegNetX800MF_6")
-        
-        if success:
-            self.stdout.write(self.style.SUCCESS("Pipeline 1 completed successfully"))
-        else:
-            self.stdout.write(self.style.ERROR("Pipeline 1 failed"))
+                self.stdout.write(self.style.ERROR("Pipeline 1 failed"))
             
     
     

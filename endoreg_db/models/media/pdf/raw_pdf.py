@@ -70,6 +70,11 @@ class RawPdfFile(models.Model):
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
+
+    @property
+    def file_url(self):
+        return self.file.url if self.file else None 
+
     patient = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,

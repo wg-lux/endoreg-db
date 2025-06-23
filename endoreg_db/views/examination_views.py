@@ -1,7 +1,10 @@
 # endoreg_db/views/examination_views.py
-from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework.viewsets import ModelViewSet
 from endoreg_db.models import Examination
-from ..serializers.examination import ExaminationSerializer
+from ..serializers.optimized_examination_serializers import (
+    ExaminationSerializer as OptimizedExaminationSerializer,
+    FindingSerializer as OptimizedFindingSerializer,
+)
 
 # views/examination_views.py
 from rest_framework.decorators import api_view
@@ -16,9 +19,39 @@ from endoreg_db.models import (
 )
 from django.shortcuts import get_object_or_404
 
-class ExaminationViewSet(ReadOnlyModelViewSet):
+def build_multilingual_response(obj, include_choices=False, classification_id=None):
+    """
+    Helper to build a multilingual response dict for an object.
+    If include_choices is True, adds a 'choices' key with multilingual dicts for each choice.
+    If classification_id is given, adds 'classificationId' to each choice.
+    """
+    data = {
+        'id': obj.id,
+        'name': getattr(obj, 'name', ''),
+        'name_de': getattr(obj, 'name_de', ''),
+        'name_en': getattr(obj, 'name_en', ''),
+        'description': getattr(obj, 'description', ''),
+        'description_de': getattr(obj, 'description_de', ''),
+        'description_en': getattr(obj, 'description_en', ''),
+    }
+    # Add 'required' if present on the object
+    if hasattr(obj, 'required'):
+        data['required'] = getattr(obj, 'required', True)
+    if include_choices:
+        data['choices'] = [
+            build_multilingual_response(choice, include_choices=False, classification_id=classification_id or obj.id)
+            for choice in obj.get_choices()
+        ]
+        # Add classificationId to each choice
+        for choice_dict in data['choices']:
+            choice_dict['classificationId'] = classification_id or obj.id
+    if classification_id is not None and not include_choices:
+        data['classificationId'] = classification_id
+    return data
+
+class ExaminationViewSet(ModelViewSet):
     queryset = Examination.objects.all()
-    serializer_class = ExaminationSerializer
+    serializer_class = OptimizedExaminationSerializer
 
 # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
 
@@ -42,7 +75,8 @@ def get_findings_for_exam(request, exam_id):
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
-    return Response([{"id": f.id, "name": f.name} for f in findings])
+    serializer = OptimizedFindingSerializer(findings, many=True)
+    return Response(serializer.data)
 
 @api_view(["GET"])
 def get_location_choices_for_classification(request, exam_id, location_classification_id):
@@ -102,6 +136,109 @@ def get_examinations_for_video(request, video_id):
     # For now, return empty list since video-examination relationship needs to be established
     # TODO: Implement proper video-examination relationship
     return Response([])
+
+@api_view(["GET"])
+def get_findings_for_examination(request, examination_id):
+    """
+    Retrieves findings associated with a specific examination.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/examinations/{examination_id}/findings/
+    """
+    exam = get_object_or_404(Examination, id=examination_id)
+    findings = exam.get_available_findings()
+    
+    # Return findings with German names and full details
+    return Response([
+        build_multilingual_response(f)
+        for f in findings
+    ])
+
+@api_view(["GET"])
+def get_location_classifications_for_finding(request, finding_id):
+    """
+    Retrieves location classifications for a specific finding.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/findings/{finding_id}/location-classifications/
+    """
+    finding = get_object_or_404(Finding, id=finding_id)
+    location_classifications = finding.get_location_classifications()
+    
+    # Return with choices included and required flag
+    result = [
+        build_multilingual_response(lc, include_choices=True)
+        for lc in location_classifications
+    ]
+    return Response(result)
+
+@api_view(["GET"])
+def get_morphology_classifications_for_finding(request, finding_id):
+    """
+    Retrieves morphology classifications for a specific finding.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/findings/{finding_id}/morphology-classifications/
+    """
+    finding = get_object_or_404(Finding, id=finding_id)
+    
+    # Get required and optional classification types separately
+    required_types = finding.required_morphology_classification_types.all()
+    optional_types = finding.optional_morphology_classification_types.all()
+    
+    from endoreg_db.models import FindingMorphologyClassification
+    
+    result = []
+    # Process required classifications
+    for classification_type in required_types:
+        classifications = FindingMorphologyClassification.objects.filter(
+            classification_type=classification_type
+        )
+        for mc in classifications:
+            mc_data = build_multilingual_response(mc, include_choices=True)
+            mc_data['required'] = True
+            result.append(mc_data)
+    # Process optional classifications
+    for classification_type in optional_types:
+        classifications = FindingMorphologyClassification.objects.filter(
+            classification_type=classification_type
+        )
+        for mc in classifications:
+            if any(existing['id'] == mc.id for existing in result):
+                continue
+            mc_data = build_multilingual_response(mc, include_choices=True)
+            mc_data['required'] = False
+            result.append(mc_data)
+    return Response(result)
+
+@api_view(["GET"])
+def get_choices_for_location_classification(request, classification_id):
+    """
+    Retrieves choices for a specific location classification.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/location-classifications/{classification_id}/choices/
+    """
+    classification = get_object_or_404(FindingLocationClassification, id=classification_id)
+    choices = classification.get_choices()
+    
+    result = [
+        build_multilingual_response(choice, classification_id=classification.id)
+        for choice in choices
+    ]
+    return Response(result)
+
+@api_view(["GET"])
+def get_choices_for_morphology_classification(request, classification_id):
+    """
+    Retrieves choices for a specific morphology classification.
+    NEW: This endpoint matches the ExaminationForm.vue API call pattern
+    Called by: GET /api/morphology-classifications/{classification_id}/choices/
+    """
+    classification = get_object_or_404(FindingMorphologyClassification, id=classification_id)
+    choices = classification.get_choices()
+    
+    result = [
+        build_multilingual_response(choice, classification_id=classification.id)
+        for choice in choices
+    ]
+    return Response(result)
 
 # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
 

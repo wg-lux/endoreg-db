@@ -1,3 +1,4 @@
+from base_settings import *
 from pathlib import Path
 from icecream import ic
 import os
@@ -9,9 +10,6 @@ BASE_DIR = Path(__file__).parent.parent
 if not os.environ.get("STORAGE_DIR"):
     os.environ["STORAGE_DIR"] = str(BASE_DIR / "storage")
 
-from endoreg_db.utils.paths import STORAGE_DIR
-from endoreg_db.logger_conf import get_logging_config
-
 DEBUG = True
 SECRET_KEY = "fake-key"
 
@@ -21,20 +19,6 @@ RUN_VIDEO_TESTS = True
 # Add the missing ASSET_DIR setting for test video files
 ASSET_DIR = BASE_DIR / "data"
 
-INSTALLED_APPS = [
-    "tests",
-    "endoreg_db.apps.EndoregDbConfig",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.staticfiles",
-    "rest_framework",
-]
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-ic(f"endoreg_db.dev.dev_settings.py - BASE_DIR: {BASE_DIR}")
-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -42,12 +26,10 @@ DATABASES = {
     },
 }
 
-TIME_ZONE = "Europe/Berlin"
-
 MEDIA_ROOT = STORAGE_DIR
 MEDIA_URL = '/media/' # Adjust if needed
 
-# --- Define logger names needed for tests ---
+# --- Define logger names needed for dev ---
 TEST_LOGGER_NAMES = [
     "tests", # General test logger
     "paths",
