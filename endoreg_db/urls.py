@@ -60,6 +60,14 @@ from .views.patient_finding_views import (
 )
 from .views.patient_examination_views import PatientExaminationViewSet
 
+# NEW: Import Stats Views
+from .views.stats_views import (
+    ExaminationStatsView,
+    VideoSegmentStatsView,
+    SensitiveMetaStatsView,
+    GeneralStatsView
+)
+
 from .views.label_segment_views import video_segments_view, video_segment_detail_view
 from .views.report_service_views import (
     ReportListView,
@@ -213,8 +221,7 @@ urlpatterns = [
     path('videos/<int:video_id>/', VideoView.as_view(), name='video-detail-legacy'),
     path('videostream/<int:video_id>/', VideoStreamView.as_view(), name='video_stream'),
     
-    # Video label endpoints - unified for both timeline and legacy compatibility
-    path("videos/<int:video_id>/labels/<str:label_name>/", VideoLabelView.as_view(), name="video_labels_timeline"),
+    # Video label endpoints for backward compatibility
     path("video/<int:video_id>/label/<str:label_name>/", VideoLabelView.as_view(), name="video_label_times"),
     path("video/<int:video_id>/label/<int:label_id>/update_segments/", UpdateLabelSegmentsView.as_view(), name="update_label_segments"),
     path("video/<int:video_id>/examinations/", get_examinations_for_video, name="video_examinations"),
@@ -391,6 +398,34 @@ urlpatterns = [
     #this is for, to test the timeline
     #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
     path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
+
+    # ---------------------------------------------------------------------------------------
+    # STATISTICS API ENDPOINTS
+    #
+    # Diese Endpunkte stellen Dashboard-Statistiken bereit für das Frontend
+    # ---------------------------------------------------------------------------------------
+    
+    # Examination Statistics API
+    # GET /api/examinations/stats/
+    # Liefert Statistiken über Examinations und PatientExaminations
+    path('examinations/stats/', ExaminationStatsView.as_view(), name='examination_stats'),
+    
+    # Video Segment Statistics API  
+    # GET /api/video-segments/stats/
+    # Liefert Statistiken über Video-Segmente und Label-Verteilung
+    path('video-segments/stats/', VideoSegmentStatsView.as_view(), name='video_segment_stats'),
+    
+    # Sensitive Meta Statistics API
+    # GET /api/video/sensitivemeta/stats/
+    # Liefert Statistiken über SensitiveMeta-Einträge und Verifikationsstatus
+    path('video/sensitivemeta/stats/', SensitiveMetaStatsView.as_view(), name='sensitive_meta_stats'),
+    
+    # General Dashboard Statistics API
+    # GET /api/stats/
+    # Liefert allgemeine Übersichtsstatistiken für das Dashboard
+    path('stats/', GeneralStatsView.as_view(), name='general_stats'),
+
+    # ---------------------------------------------------------------------------------------
 
     # Stats endpoint
     # path('stats/', StatsView.as_view(), name='stats'),
