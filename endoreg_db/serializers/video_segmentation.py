@@ -186,10 +186,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         print("here is fps::::::::::::::::::.-----------::::::", fps)
         sequences = self.get_sequences(obj)  # Fetch sequence data
-        readable_predictions = obj.readable_predictions  # Predictions from DB
 
-        if not isinstance(readable_predictions, list):
-            return {"error": "Invalid prediction data format. Expected a list."}
 
         frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model
 
@@ -211,9 +208,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
                 # Fetch predictions for frames within this range
                 for frame_num in range(start_frame, end_frame + 1):
-                    if (
-                        0 <= frame_num < len(readable_predictions)
-                    ):  # Ensure index is valid
+
                         frame_filename = f"frame_{str(frame_num).zfill(7)}.jpg"  # Frame filename format
                         frame_path = (
                             frame_dir / frame_filename
@@ -222,11 +217,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
                         frame_data[frame_num] = {
                             "frame_filename": frame_filename,
                             "frame_file_path": str(frame_path),
-                            "predictions": readable_predictions[frame_num],
+                            "predictions": None,
                         }
-
-                        # Store frame-wise predictions in frame_predictions
-                        frame_predictions[frame_num] = readable_predictions[frame_num]
 
                 # Append the converted time segment
                 label_times.append(
