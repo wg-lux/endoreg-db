@@ -308,25 +308,29 @@ class UpdateLabelSegmentsView(APIView):
         Updates segments for a given video & label.
         """
 
-        # Ensure required fields are provided
-        required_fields = ["video_id", "label_id", "segments"]
-        missing_fields = [field for field in required_fields if field not in request.data]
-
-        if missing_fields:
-            return Response({"error": "Missing required fields", "missing": missing_fields}, status=status.HTTP_400_BAD_REQUEST)
+        # Prepare data for serializer by combining URL params with request data
+        serializer_data = {
+            "video_id": video_id,    # From URL parameter
+            "label_id": label_id,    # From URL parameter  
+            "segments": request.data.get("segments", [])  # From request body
+        }
 
         # Validate input data
-        serializer = LabelSegmentUpdateSerializer(data=request.data, partial=True)
+        serializer = LabelSegmentUpdateSerializer(data=serializer_data)
 
         if not serializer.is_valid():
             return Response({"error": "Invalid segment data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
         # Process and save segment updates
-        result = serializer.save()
-
-        return Response({
-            "message": "Segments updated successfully.",
-            "updated_segments": result["updated_segments"],
-            "new_segments": result["new_segments"],
-            "deleted_segments": result["deleted_segments"]
-        }, status=status.HTTP_200_OK)
+        try:
+            result = serializer.save()
+            return Response({
+                "message": "Segments updated successfully.",
+                "updated_segments": result["updated_segments"],
+                "new_segments": result["new_segments"],
+                "deleted_segments": result["deleted_segments"]
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "error": f"Failed to update segments: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

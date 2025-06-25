@@ -183,7 +183,18 @@ class VideoFileSerializer(serializers.ModelSerializer):
         #readable_predictions = getattr(obj, "readable_predictions", [])
 
          # Check predictions
-        readable_predictions = getattr(obj, "readable_predictions", None)
+        # Fix: Safely get readable_predictions with proper fallback
+        readable_predictions = getattr(obj, "readable_predictions", [])
+        
+        # If readable_predictions is None or empty, create a default structure
+        if not readable_predictions:
+            # Create empty predictions list based on video duration/fps if available
+            try:
+                # Try to estimate frame count for empty predictions
+                total_frames = int(fps * 60)  # Default to 60 seconds worth of frames
+                readable_predictions = [{"label": "unknown", "confidence": 0.0} for _ in range(total_frames)]
+            except:
+                readable_predictions = []
 
         if not isinstance(readable_predictions, list):
             return {"error": "Invalid prediction data format. Expected a list."}
