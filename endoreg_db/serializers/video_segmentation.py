@@ -347,7 +347,7 @@ class LabelSegmentSerializer(serializers.ModelSerializer):
             if fps and fps > 0:
                 return round(obj.end_frame_number / fps, 2)
             return 0.0
-        except:
+        except (AttributeError, TypeError, ValueError):
             return 0.0
 class LabelSegmentUpdateSerializer(serializers.Serializer):
     """

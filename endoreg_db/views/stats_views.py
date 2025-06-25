@@ -134,8 +134,7 @@ class SensitiveMetaStatsView(APIView):
                 patient_last_name__isnull=False,
                 patient_dob__isnull=False
             ).exclude(
-                patient_first_name='',
-                patient_last_name=''
+                Q(patient_first_name='') | Q(patient_last_name='')
             ).count()
             
             incomplete_patient_data = total_sensitive_meta - complete_patient_data
