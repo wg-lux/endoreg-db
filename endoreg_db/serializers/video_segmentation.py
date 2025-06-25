@@ -279,21 +279,76 @@ class LabelSegmentSerializer(serializers.ModelSerializer):
     """
     Serializer for retrieving label segments from `endoreg_db_labelrawvideosegment`.
     """
-
+    label_name = serializers.SerializerMethodField()
+    label_display = serializers.SerializerMethodField()
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
+    
     class Meta:
         model = LabelVideoSegment
         fields = [
             "id",
-            "video_id",
-            "label_id",
+            "video_file",  # Changed from video_id to video_file
+            "label",       # Changed from label_id to label
             "start_frame_number",
             "end_frame_number",
+            "label_name",
+            "label_display", 
+            "start_time",
+            "end_time",
         ]
-
-
-
-
-
+    
+    def get_label_name(self, obj):
+        """Get the actual label name from the related Label model"""
+        if obj.label:
+            return obj.label.name
+        return "unknown"
+    
+    def get_label_display(self, obj):
+        """Get the German translation for display"""
+        if not obj.label:
+            return "Unbekannt"
+            
+        label_name = obj.label.name
+        translations = {
+            'appendix': 'Appendix',
+            'blood': 'Blut',
+            'diverticule': 'Divertikel',
+            'grasper': 'Greifer',
+            'ileocaecalvalve': 'Ileozäkalklappe',
+            'ileum': 'Ileum',
+            'low_quality': 'Niedrige Bildqualität',
+            'nbi': 'Narrow Band Imaging',
+            'needle': 'Nadel',
+            'outside': 'Außerhalb',
+            'polyp': 'Polyp',
+            'snare': 'Snare',
+            'water_jet': 'Wasserstrahl',
+            'wound': 'Wunde'
+        }
+        return translations.get(label_name, label_name)
+    
+    def get_start_time(self, obj):
+        """Convert start frame to time in seconds"""
+        try:
+            video = obj.video_file
+            fps = video.get_fps() if hasattr(video, 'get_fps') else 25.0
+            if fps and fps > 0:
+                return round(obj.start_frame_number / fps, 2)
+            return 0.0
+        except:
+            return 0.0
+    
+    def get_end_time(self, obj):
+        """Convert end frame to time in seconds"""
+        try:
+            video = obj.video_file
+            fps = video.get_fps() if hasattr(video, 'get_fps') else 25.0
+            if fps and fps > 0:
+                return round(obj.end_frame_number / fps, 2)
+            return 0.0
+        except:
+            return 0.0
 class LabelSegmentUpdateSerializer(serializers.Serializer):
     """
     Serializer for updating label segments.
@@ -363,7 +418,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         )  # Get the correct prediction_meta_id
 
         existing_segments = LabelVideoSegment.objects.filter(
-            video_id=video_id, label_id=label_id
+            video_file_id=video_id, label_id=label_id  # FIXED: video_file_id instead of video_id
         )
 
         # Convert existing segments into a dictionary for quick lookup
