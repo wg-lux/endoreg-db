@@ -76,7 +76,7 @@ class VideoSegmentStatsView(APIView):
             total_segments = LabelVideoSegment.objects.count()
             total_videos = VideoFile.objects.count()
             videos_with_segments = VideoFile.objects.filter(
-                label_video_segment__isnull=False
+                label_video_segments__isnull=False
             ).distinct().count()
             
             # Label-Verteilung
@@ -187,7 +187,7 @@ class GeneralStatsView(APIView):
             
             # System-Status
             videos_with_segments = VideoFile.objects.filter(
-                label_video_segment__isnull=False
+                label_video_segments__isnull=False
             ).distinct().count()
             
             processing_completion = (videos_with_segments / total_videos * 100) if total_videos > 0 else 0
