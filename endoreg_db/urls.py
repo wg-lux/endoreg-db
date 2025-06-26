@@ -410,9 +410,13 @@ urlpatterns = [
     path('examinations/stats/', ExaminationStatsView.as_view(), name='examination_stats'),
     
     # Video Segment Statistics API  
-    # GET /api/video-segments/stats/
+    # GET /api/video-segment/stats/  (Note: singular 'segment' to match frontend)
     # Liefert Statistiken über Video-Segmente und Label-Verteilung
-    path('video-segments/stats/', VideoSegmentStatsView.as_view(), name='video_segment_stats'),
+    path('video-segment/stats/', VideoSegmentStatsView.as_view(), name='video_segment_stats'),
+    
+    # Alternative Video Segments Statistics API (plural version for compatibility)
+    # GET /api/video-segments/stats/
+    path('video-segments/stats/', VideoSegmentStatsView.as_view(), name='video_segments_stats'),
     
     # Sensitive Meta Statistics API
     # GET /api/video/sensitivemeta/stats/
