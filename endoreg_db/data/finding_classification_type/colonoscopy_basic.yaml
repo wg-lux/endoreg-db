@@ -1,0 +1,5 @@
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "bowel_prep"
+    name_de: "Darmvorbereitung"
+    name_en: "Bowel Preparation"

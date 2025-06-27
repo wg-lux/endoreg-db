@@ -54,9 +54,11 @@ class Finding(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import (
             Examination, FindingType, FindingIntervention, FindingMorphologyClassificationType,
-            FindingMorphologyClassification, FindingLocationClassification
+            FindingMorphologyClassification, FindingLocationClassification,
+            FindingClassificationType, FindingClassification, FindingLocationClassificationChoice,
         )
     
+        finding_classifications: models.QuerySet['FindingClassification']
         examinations: models.QuerySet[Examination]
         morphology_classifications: models.QuerySet['FindingMorphologyClassification']
         location_classifications: models.QuerySet['FindingLocationClassification']

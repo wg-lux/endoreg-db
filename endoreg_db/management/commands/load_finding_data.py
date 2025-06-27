@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from endoreg_db.models import (
     Finding, FindingType, Examination,
+    FindingClassification, FindingClassificationType, FindingClassificationChoice,
     FindingLocationClassification, FindingLocationClassificationChoice,
     Organ,
     FindingMorphologyClassificationType, FindingMorphologyClassification,
@@ -17,7 +18,10 @@ from ...data import (
     FINDING_MORPHOLOGY_CLASSIFICATION_DATA_DIR,
     FINDING_MORPGOLOGY_CLASSIFICATION_TYPE_DATA_DIR,
     FINDING_INTERVETION_DATA_DIR,
-    FINIDNG_INTERVENTION_TYPE_DATA_DIR
+    FINIDNG_INTERVENTION_TYPE_DATA_DIR,
+    FINDING_CLASSIFICATION_TYPE_DATA_DIR,
+    FINDING_CLASSIFICATION_DATA_DIR,
+    FINDING_CLASSIFICATION_CHOICE_DATA_DIR
 )
 
 MODEL_0 = FindingType
@@ -29,6 +33,9 @@ MODEL_5 = FindingMorphologyClassification
 MODEL_6 = FindingMorphologyClassificationChoice
 MODEL_7 = FindingInterventionType
 MODEL_8 = FindingIntervention
+MODEL_9 = FindingClassificationType
+MODEL_10 = FindingClassification 
+MODEL_11 = FindingClassificationChoice 
 
 IMPORT_MODELS = [ # string as model key, serves as key in IMPORT_METADATA
     MODEL_7.__name__,
@@ -40,6 +47,9 @@ IMPORT_MODELS = [ # string as model key, serves as key in IMPORT_METADATA
     MODEL_4.__name__,
     MODEL_5.__name__,
     MODEL_6.__name__,
+    MODEL_9.__name__,
+    MODEL_10.__name__,
+    MODEL_11.__name__,
 ]
 
 IMPORT_METADATA = {
@@ -148,6 +158,38 @@ IMPORT_METADATA = {
             FindingInterventionType,
             LabValue,
             Contraindication
+        ] # e.g. [InterventionType]
+    },
+    FindingClassificationType.__name__: {
+        "dir": FINDING_CLASSIFICATION_TYPE_DATA_DIR, # e.g. "interventions"
+        "model": FindingClassificationType, # e.g. Intervention
+        "foreign_keys": [], # e.g. ["intervention_types"]
+        "foreign_key_models": [] # e.g. [InterventionType]
+    },
+    FindingClassification.__name__: {
+        "dir": FINDING_CLASSIFICATION_DATA_DIR, # e.g. "interventions"
+        "model": FindingClassification, # e.g. Intervention
+        "foreign_keys": [
+            "classification_type",
+            "findings",
+            "examinations",
+            "finding_types"
+        ], # e.g. ["intervention_types"]
+        "foreign_key_models": [
+            FindingClassificationType,
+            Finding,
+            Examination,
+            FindingType
+        ] # e.g. [InterventionType]
+    },
+    FindingClassificationChoice.__name__: {
+        "dir": FINDING_CLASSIFICATION_CHOICE_DATA_DIR, # e.g. "interventions"
+        "model": FindingClassificationChoice, # e.g. Intervention
+        "foreign_keys": [
+            "classifications",
+        ], # e.g. ["intervention_types"]
+        "foreign_key_models": [
+            FindingClassification
         ] # e.g. [InterventionType]
     },
 }

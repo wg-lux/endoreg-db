@@ -14,6 +14,9 @@ from .examination import (
 
 from .finding import (
     Finding,
+    FindingClassificationType,
+    FindingClassification,
+    FindingClassificationChoice,
     FindingType,
     FindingLocationClassification,
     FindingLocationClassificationChoice,
@@ -94,6 +97,9 @@ __all__ = [
     
     # Finding
     "Finding",
+    "FindingClassificationType",
+    "FindingClassification",
+    "FindingClassificationChoice",
     "FindingType",
     "FindingLocationClassification",
     "FindingLocationClassificationChoice",
