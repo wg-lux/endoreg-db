@@ -18,6 +18,20 @@ from endoreg_db.models.medical.hardware import EndoscopyProcessor
 
 from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
 
+# Import frame cleaning functionality
+import sys
+from pathlib import Path
+lx_anonymizer_path = Path(__file__).parent.parent.parent / "lx-anonymizer"
+if lx_anonymizer_path.exists():
+    sys.path.insert(0, str(lx_anonymizer_path))
+
+try:
+    from lx_anonymizer import frame_cleaner
+    from lx_anonymizer.report_reader import ReportReader
+    FRAME_CLEANING_AVAILABLE = True
+except ImportError:
+    FRAME_CLEANING_AVAILABLE = False
+
 
 IMPORT_MODELS = [
     VideoFile.__name__,
@@ -221,6 +235,20 @@ class Command(BaseCommand):
         if not video_file_obj:
             self.stdout.write(self.style.ERROR("Failed to create VideoFile instance"))
             return
+        
+        # Frame-level anonymization integration
+        if FRAME_CLEANING_AVAILABLE and video_file_obj.raw_file:
+            try:
+                self.stdout.write(self.style.SUCCESS("Starting frame-level anonymization..."))
+                report_reader = ReportReader()
+                cleaned_video_path = frame_cleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
+                video_file_obj.raw_file = str(cleaned_video_path.relative_to(Path(video_file_obj.raw_file.path).parent.parent))
+                video_file_obj.save()
+                self.stdout.write(self.style.SUCCESS(f"Frame cleaning completed: {cleaned_video_path.name}"))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f"Frame cleaning failed, continuing with original video: {e}"))
+        elif not FRAME_CLEANING_AVAILABLE:
+            self.stdout.write(self.style.WARNING("Frame cleaning not available (lx_anonymizer not found)"))
         
         # Now call pipe_1 on the VideoFile instance
         if segmentation:
