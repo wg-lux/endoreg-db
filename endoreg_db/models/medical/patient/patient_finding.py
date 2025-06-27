@@ -1,7 +1,10 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
+
+from endoreg_db.models.medical.patient.patient_finding_location import PatientFindingLocation
+
 if TYPE_CHECKING:
     from .patient_examination import PatientExamination
     from ..finding import (
@@ -10,7 +13,7 @@ if TYPE_CHECKING:
     from .patient_finding_location import PatientFindingLocation
     from .patient_finding_morphology import PatientFindingMorphology
     from .patient_finding_intervention import PatientFindingIntervention
-
+    from .patient_finding_classification import PatientFindingClassification
 
 import random
 class PatientFinding(models.Model):
@@ -31,6 +34,7 @@ class PatientFinding(models.Model):
     if TYPE_CHECKING:
         patient_examination: "PatientExamination"
         finding: "Finding"
+        classifications: models.QuerySet["PatientFindingClassification"]
         locations: models.QuerySet["PatientFindingLocation"]
         morphologies: models.QuerySet["PatientFindingMorphology"]
         interventions: models.QuerySet["PatientFindingIntervention"]
@@ -159,8 +163,48 @@ class PatientFinding(models.Model):
         """Returns all active interventions that are associated with this patient finding."""
         return self.interventions.filter(is_active=True).select_related('intervention')
 
+    def add_classification(
+            self,
+            classification_id,
+            classification_choice_id, user=None,
+        ) -> "PatientFindingClassification":
+        """Adds a validated classification choice to this patient finding."""
+        from .patient_finding_classification import PatientFindingClassification
+        from ..finding import FindingClassification, FindingClassificationChoice
+
+        try:
+            classification = FindingClassification.objects.get(id=classification_id)
+            classification_choice = FindingClassificationChoice.objects.filter(id=classification_choice_id).first()
+
+            if not classification.choices.filter(id=classification_choice_id).exists():
+                raise ValidationError(
+                    f'Classification Choice {classification_choice_id} gehört nicht zu Classification {classification_id}'
+                )
+            
+
+            existing = self.classifications.filter(
+                classification=classification,
+                classification_choice=classification_choice,
+                is_active=True
+            ).first()
+
+            if existing:
+                return existing
+            
+            patient_finding_classification = PatientFindingClassification.objects.create(
+                finding=self,
+                classification_id=classification_id,
+                classification_choice_id=classification_choice_id,
+            )
+
+            return patient_finding_classification
+        
+        except FindingClassification.DoesNotExist:
+            raise ValidationError(f'Classification {classification_id} nicht gefunden')
+
+
     # Verbesserte Add-Methoden mit Validierung
-    def add_location(self, location_classification_id, location_choice_id, user=None):
+    def add_location(self, location_classification_id, location_choice_id, user=None) -> "PatientFindingLocation":
         """Adds a validated location choice to this patient finding."""
         from .patient_finding_location import PatientFindingLocation
         from ..finding import FindingLocationClassification

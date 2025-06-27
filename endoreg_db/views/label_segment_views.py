@@ -1,3 +1,4 @@
+from re import DEBUG
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -81,8 +82,8 @@ def video_segments_view(request):
         serializer = LabelVideoSegmentSerializer(segments, many=True)
         return Response(serializer.data)
 
-@api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
+@permission_classes(DEBUG_PERMISSIONS)
 def video_segment_detail_view(request, segment_id):
     """
     Handles retrieval, update, and deletion of a single labeled video segment.
@@ -100,11 +101,13 @@ def video_segment_detail_view(request, segment_id):
         serializer = LabelVideoSegmentSerializer(segment)
         return Response(serializer.data)
     
-    elif request.method == 'PUT':
+    elif request.method in ('PUT', 'PATCH'):
         logger.info(f"Updating video segment {segment_id} with data: {request.data}")
         
+        partial = request.method == 'PATCH'  # Allow partial updates with PATCH
+        
         with transaction.atomic():
-            serializer = LabelVideoSegmentSerializer(segment, data=request.data, partial=True)
+            serializer = LabelVideoSegmentSerializer(segment, data=request.data, partial=partial)
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
@@ -141,7 +144,7 @@ def video_segment_detail_view(request, segment_id):
             )
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes(DEBUG_PERMISSIONS) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_id_view(request, video_id, label_id):
     """
     Retrieves all labeled segments for a given video and label by their IDs.
@@ -210,7 +213,7 @@ def video_segments_by_label_id_view(request, video_id, label_id):
         )
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes(DEBUG_PERMISSIONS) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_name_view(request, video_id, label_name):
     """
     Retrieves labeled video segments for a given video and label name.

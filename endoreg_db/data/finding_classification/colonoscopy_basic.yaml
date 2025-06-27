@@ -1,0 +1,46 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_boston"
+    classification_type: "bowel_prep"
+    name_de: "Boston Bowel Preparation Scale"
+    name_en: "Boston Bowel Preparation Scale"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "bowel_preparation_lc",
+      "bowel_preparation_tc",
+      "bowel_preparation_rc",
+
+    ] 
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_boston_simplified"
+    classification_type: "bowel_prep"
+    name_de: "Boston Bowel Preparation Scale"
+    name_en: "Boston Bowel Preparation Scale"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "bowel_preparation_simplified"
+    ] 
+
+
+#Aronchick
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_aronchick"
+    classification_type: "bowel_prep"
+    name_de: "Aronchick Bowel Preparation Scale"
+    name_en: "Aronchick Bowel Preparation Scale"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "bowel_preparation_lc",
+      "bowel_preparation_tc",
+      "bowel_preparation_rc",
+    ]
+
