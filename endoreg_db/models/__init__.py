@@ -78,6 +78,7 @@ from .medical import (
     ExaminationTime,
     ExaminationTimeType,
     Finding,
+    PatientFindingClassification,
     FindingClassificationType,
     FindingClassification,
     FindingClassificationChoice,
@@ -260,6 +261,7 @@ __all__ = [
     "ExaminationTimeType",
     # Finding
     "Finding",
+    "PatientFindingClassification",
     "FindingClassificationType",
     "FindingClassification",
     "FindingClassificationChoice",

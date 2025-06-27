@@ -21,7 +21,7 @@ class FindingType(models.Model):
         )
         finding_classifications: models.QuerySet['FindingClassification']
         morphology_classifications: models.QuerySet['FindingMorphologyClassification']
-
+        
 
     def natural_key(self):
         return (self.name,)

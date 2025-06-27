@@ -144,7 +144,7 @@ class Patient(Person):
         date_start: datetime = None,
         date_end: datetime = None,
         save: bool = True,
-    ):
+    ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
 
         if examination_name_str:

@@ -56,6 +56,7 @@ class Finding(models.Model):
             Examination, FindingType, FindingIntervention, FindingMorphologyClassificationType,
             FindingMorphologyClassification, FindingLocationClassification,
             FindingClassificationType, FindingClassification, FindingLocationClassificationChoice,
+            PatientFindingClassification
         )
     
         finding_classifications: models.QuerySet['FindingClassification']
@@ -66,7 +67,7 @@ class Finding(models.Model):
         finding_interventions: models.QuerySet[FindingIntervention]
         required_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
         optional_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
-
+        
     def natural_key(self):
         return (self.name,)
     

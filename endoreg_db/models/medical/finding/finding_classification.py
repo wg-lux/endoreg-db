@@ -48,12 +48,15 @@ class FindingClassification(models.Model):
     objects = FindingClassificationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import Finding, Examination, FindingType
+        from endoreg_db.models import (
+            Finding, Examination, FindingType, PatientFindingClassification
+        )
         classification_type: models.ForeignKey[FindingClassificationType]
         findings: models.QuerySet[Finding]
         examinations: models.QuerySet[Examination]
         finding_types: models.QuerySet[FindingType]
         choices: models.QuerySet['FindingClassificationChoice']
+        patient_finding_classifications: models.QuerySet['PatientFindingClassification']
 
     
     def natural_key(self):
@@ -76,7 +79,7 @@ class FindingClassificationChoice(models.Model):
     name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     classifications = models.ManyToManyField(
-        FindingClassification, 
+        "FindingClassification", 
         related_name='choices'
     )
     
@@ -89,6 +92,14 @@ class FindingClassificationChoice(models.Model):
     )
 
     objects = FindingClassificationChoiceManager()
+
+    if TYPE_CHECKING:
+        from endoreg_db.models import (
+            PatientFindingClassification
+        )
+        classifications: models.QuerySet['FindingClassification']
+        patient_finding_classifications: models.QuerySet['PatientFindingClassification']
+
     
     def natural_key(self):
         return (self.name,)
