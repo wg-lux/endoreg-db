@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 import cv2
 import numpy as np
 
-from celery import shared_task
+from celery_app import shared_task
 from django.conf import settings
 from django.utils import timezone
 

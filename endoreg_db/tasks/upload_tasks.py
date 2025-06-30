@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional
-from celery import shared_task
+from celery_app import shared_task
 from django.core.files.storage import default_storage
 
 from endoreg_db.models.upload_job import UploadJob
