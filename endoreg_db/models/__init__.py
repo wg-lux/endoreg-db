@@ -37,6 +37,12 @@ from .administration import (
     EmployeeQualification,
 )
 
+from .anonymization import (
+    AnonymousFrame,
+    FrameAnonymizationRequest,
+)
+    
+
 ####### Label ########
 from .label import (
     Label,
@@ -173,6 +179,10 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ModelType",
+    
+    # Anonymization
+    "FrameAnonymizationRequest",
+    "AnonymousFrame",
 
     # Case
     "Case",
