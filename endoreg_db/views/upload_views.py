@@ -122,11 +122,9 @@ class UploadFileView(APIView):
                 'status_url': status_url
             }
             
-            serializer = UploadCreateResponseSerializer(data=response_data)
-            serializer.is_valid(raise_exception=True)
-            
+            # Return the response data directly since serializer fields are read-only
             return Response(
-                serializer.validated_data,
+                response_data,
                 status=status.HTTP_201_CREATED
             )
             
