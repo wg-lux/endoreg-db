@@ -78,7 +78,10 @@ from .views.report_service_views import (
     validate_secure_url
 )
 
-from .views.upload_views import UploadFileView
+from .views.upload_views import (
+    UploadFileView,
+    UploadStatusView
+)
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
@@ -100,8 +103,8 @@ urlpatterns = [
     path('video-segments/', video_segments_view, name='video_segments'),
     path('video-segments/<int:segment_id>/', video_segment_detail_view, name='video_segment_detail'),
 
-    path('api/upload/', UploadFileView.as_view(), name='video_upload'),  #Upload endpoint
-    
+    path('upload/', UploadFileView.as_view(), name='video_upload'),  #Upload endpoint
+    path('upload/<uuid:id>/status', UploadStatusView.as_view(), name='upload_status'),  # Status endpoint for polling
     # ---------------------------------------------------------------------------------------
     # CLASSIFICATION API ENDPOINTS
     #
