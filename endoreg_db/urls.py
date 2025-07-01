@@ -78,6 +78,8 @@ from .views.report_service_views import (
     validate_secure_url
 )
 
+from .views.upload_views import UploadFileView
+
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
@@ -97,6 +99,8 @@ urlpatterns = [
     # NEW: Label Video Segment API endpoints
     path('video-segments/', video_segments_view, name='video_segments'),
     path('video-segments/<int:segment_id>/', video_segment_detail_view, name='video_segment_detail'),
+    
+    path('api/upload/', UploadFileView.as_view(), name='video_upload'),  #Upload endpoint
     
     # ---------------------------------------------------------------------------------------
     # CLASSIFICATION API ENDPOINTS
