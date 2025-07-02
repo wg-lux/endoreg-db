@@ -83,6 +83,14 @@ from .views.upload_views import (
     UploadStatusView
 )
 
+# Add sensitive meta views import
+from .views.sensitive_meta_views import (
+    SensitiveMetaDetailView,
+    SensitiveMetaVerificationView,
+    SensitiveMetaListView,
+    AvailableFilesListView
+)
+
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
@@ -237,7 +245,8 @@ urlpatterns = [
     path('login/', keycloak_login, name='keycloak_login'),
     path('login/callback/', keycloak_callback, name='keycloak_callback'),
 
-#----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+
+    #----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
 
     # API Endpoint for fetching video metadata or streaming the next available video
     # This endpoint is used by the frontend to fetch:
@@ -434,6 +443,55 @@ urlpatterns = [
     # GET /api/stats/
     # Liefert allgemeine Übersichtsstatistiken für das Dashboard
     path('stats/', GeneralStatsView.as_view(), name='general_stats'),
+
+    # ---------------------------------------------------------------------------------------
+    # SENSITIVE META API ENDPOINTS & FILE SELECTION
+    #
+    # New API endpoints for sensitive meta data management and file selection
+    # These endpoints support both PDF and video anonymization workflows
+    # ---------------------------------------------------------------------------------------
+    
+    # Available Files List API
+    # GET /api/available-files/?type=pdf|video|all&limit=50&offset=0
+    # Lists available PDF and video files for anonymization selection
+    path('available-files/', 
+         AvailableFilesListView.as_view(), 
+         name='available_files_list'),
+    
+    # Sensitive Meta Detail API
+    # GET /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
+    # PATCH /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
+    # Used by anonymization store to fetch and update sensitive meta details
+    path('pdf/sensitivemeta/<int:sensitive_meta_id>/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='sensitive_meta_detail'),
+    
+    # Alternative endpoint for query parameter access (backward compatibility)
+    # GET /api/pdf/sensitivemeta/?id=<sensitive_meta_id>
+    path('pdf/sensitivemeta/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='sensitive_meta_query'),
+    
+    # Sensitive Meta Verification API
+    # POST /api/pdf/sensitivemeta/verify/
+    # For updating verification flags specifically
+    path('pdf/sensitivemeta/verify/', 
+         SensitiveMetaVerificationView.as_view(), 
+         name='sensitive_meta_verify'),
+    
+    # Sensitive Meta List API
+    # GET /api/pdf/sensitivemeta/list/
+    # For listing sensitive meta entries with filtering
+    path('pdf/sensitivemeta/list/', 
+         SensitiveMetaListView.as_view(), 
+         name='sensitive_meta_list'),
+
+    # Video Sensitive Meta endpoints (for video anonymization)
+    # GET /api/video/sensitivemeta/<int:sensitive_meta_id>/
+    # PATCH /api/video/sensitivemeta/<int:sensitive_meta_id>/
+    path('video/sensitivemeta/<int:sensitive_meta_id>/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='video_sensitive_meta_detail'),
 
     # ---------------------------------------------------------------------------------------
 
