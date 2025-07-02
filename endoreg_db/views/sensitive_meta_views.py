@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from ..utils.permissions import DEBUG_PERMISSIONS
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 import logging
@@ -24,24 +24,32 @@ class SensitiveMetaDetailView(APIView):
     PATCH: Updates SensitiveMeta fields including verification state
     """
     
-    permission_classes = [IsAuthenticated]
+    permission_classes = [DEBUG_PERMISSIONS]  # Changed from IsAuthenticated for development
 
     def get(self, request, sensitive_meta_id=None):
         """
         Retrieve SensitiveMeta details for display and annotation.
         
-        Query Parameters:
-        - sensitive_meta_id: ID of the SensitiveMeta to retrieve
+        Supports both URL parameter and query parameter access patterns:
+        - /api/pdf/sensitivemeta/123/ (URL parameter)
+        - /api/pdf/sensitivemeta/?id=123 (query parameter - for backward compatibility)
         
         Returns detailed information suitable for user verification.
         """
+        # Handle both URL parameter and query parameter patterns
+        if not sensitive_meta_id:
+            sensitive_meta_id = request.query_params.get('id')
+        
         if not sensitive_meta_id:
             return Response(
-                {"error": "sensitive_meta_id is required"}, 
+                {"error": "sensitive_meta_id is required either as URL parameter or ?id= query parameter"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
+            # Convert to int if it's a string
+            sensitive_meta_id = int(sensitive_meta_id)
+            
             # Get the SensitiveMeta instance with related data
             sensitive_meta = SensitiveMeta.objects.select_related(
                 'center', 
@@ -56,14 +64,18 @@ class SensitiveMetaDetailView(APIView):
             # Serialize for display
             serializer = SensitiveMetaDetailSerializer(sensitive_meta)
             
-            response_data = {
-                "sensitive_meta": serializer.data,
-                "message": "SensitiveMeta details retrieved successfully"
-            }
+            # Return direct data to match anonymization store expectations
+            # Instead of wrapping in "sensitive_meta" key, return data directly
+            response_data = serializer.data
             
             logger.info(f"Retrieved SensitiveMeta {sensitive_meta_id} for user {request.user}")
             return Response(response_data, status=status.HTTP_200_OK)
             
+        except ValueError:
+            return Response(
+                {"error": "Invalid sensitive_meta_id format. Must be an integer."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except SensitiveMeta.DoesNotExist:
             return Response(
                 {"error": f"SensitiveMeta with ID {sensitive_meta_id} not found"}, 
@@ -148,7 +160,7 @@ class SensitiveMetaVerificationView(APIView):
     POST: Update verification flags (dob_verified, names_verified) for a SensitiveMeta
     """
     
-    permission_classes = [IsAuthenticated]
+    permission_classes = [DEBUG_PERMISSIONS]  # Changed from IsAuthenticated for development
 
     @transaction.atomic
     def post(self, request):
@@ -209,7 +221,7 @@ class SensitiveMetaListView(APIView):
     GET: Returns paginated list of SensitiveMeta entries
     """
     
-    permission_classes = [IsAuthenticated]
+    permission_classes = [DEBUG_PERMISSIONS]  # Changed from IsAuthenticated for development
 
     def get(self, request):
         """
