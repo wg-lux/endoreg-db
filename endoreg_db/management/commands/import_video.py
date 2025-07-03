@@ -242,7 +242,8 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS("Starting frame-level anonymization..."))
                 report_reader = ReportReader()
                 cleaned_video_path = frame_cleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
-                video_file_obj.raw_file = str(cleaned_video_path.relative_to(Path(video_file_obj.raw_file.path).parent.parent))
+                with open(cleaned_video_path, 'rb') as f:
+                    video_file_obj.raw_file.save(cleaned_video_path.name, ContentFile(f.read()))
                 video_file_obj.save()
                 self.stdout.write(self.style.SUCCESS(f"Frame cleaning completed: {cleaned_video_path.name}"))
             except Exception as e:

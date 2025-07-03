@@ -68,6 +68,11 @@ def _create_from_file(
         if cls_model.check_hash_exists(video_hash=video_hash):
             existing_video = cls_model.objects.get(video_hash=video_hash)
             logger.warning("Video with hash %s already exists (UUID: %s). Returning existing instance.", video_hash, existing_video.uuid)
+            if existing_video.has_raw and existing_video.get_raw_file_path().exists():
+                logger.warning("Video with hash %s already exists and file is present. Returning existing instance.", video_hash)
+                return existing_video
+            else:
+                logger.warning("Video with hash %s exists but file is missing. Creating new instance.", video_hash)
             # Clean up transcoded file if it was created temporarily and is different from source
             if transcoded_file_path != file_path and transcoded_file_path.exists():
                 transcoded_file_path.unlink(missing_ok=True)
