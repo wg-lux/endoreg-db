@@ -39,7 +39,7 @@ class AnonymizationOverviewView(ListAPIView):
         qs_pdf = (
             RawPdfFile.objects
             .select_related("sensitive_meta")
-            .only("id", "file", "uploaded_at", "anonymized", "sensitive_meta")
+            .only("id", "file", "created_at", "anonymized", "sensitive_meta")
         )
         # union() requires same columns; we just merge in Python later
         return list(qs_video) + list(qs_pdf)
