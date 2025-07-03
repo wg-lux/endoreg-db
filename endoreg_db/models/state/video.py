@@ -70,6 +70,9 @@ class VideoState(models.Model):
     initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
     lvs_created = models.BooleanField(default=False, help_text="True if LabelVideoSegments have been created from predictions.")
     frame_annotations_generated = models.BooleanField(default=False, help_text="True if frame-level annotations have been generated from segments.")
+    
+    # Processing state
+    sensitive_meta_processed = models.BooleanField(default=False, help_text="True if the video has been fully processed, meaning a anonymized person was created.")
 
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")

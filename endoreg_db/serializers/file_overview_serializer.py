@@ -40,6 +40,7 @@ class FileOverviewSerializer(serializers.Serializer):
                 annot_status = "done"
             else:
                 annot_status = "not_started"
+            
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"

@@ -39,12 +39,18 @@ class AnonymizationOverviewView(ListAPIView):
         qs_pdf = (
             RawPdfFile.objects
             .select_related("sensitive_meta")
-            .only("id", "file", "created_at", "anonymized", "sensitive_meta")
+            .only("id", "file", "created_at", "anonymized_text", "sensitive_meta")
         )
         # union() requires same columns; we just merge in Python later
         return list(qs_video) + list(qs_pdf)
 
     def list(self, request, *args, **kwargs):
-        items = sorted(self.get_queryset(), key=lambda obj: getattr(obj, "uploaded_at", None), reverse=True)
+        def get_sort_key(obj):
+            if isinstance(obj, RawPdfFile):
+                return obj.created_at
+            else:
+                return getattr(obj, "uploaded_at", None)
+        
+        items = sorted(self.get_queryset(), key=get_sort_key, reverse=True)
         serializer = self.get_serializer(items, many=True)
         return Response(serializer.data)
