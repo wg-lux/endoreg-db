@@ -44,11 +44,12 @@ class FileOverviewSerializer(serializers.Serializer):
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
-            created_at = instance.uploaded_at
+            created_at = instance.created_at
             filename = instance.file.name.split("/")[-1] if instance.file else "unknown"
             anonym_status = "done" if instance.anonymized else "not_started"
             # PDF annotation == “sensitive meta validated”
             annot_status = "done" if getattr(instance.sensitive_meta, "is_verified", False) else "not_started"
+    
 
         else:  # shouldn't happen
             raise TypeError(f"Unsupported instance for overview: {type(instance)}")
