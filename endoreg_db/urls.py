@@ -180,7 +180,7 @@ urlpatterns = [
     ),
     
     # URL patterns for anonymization overview
-    path('anonymization/overview/', AnonymizationOverviewView.as_view(), name='anonymization_overview'),
+    path('anonymization/items/overview/', AnonymizationOverviewView.as_view(), name='anonymization_overview'),
     
     # URL patterns for ExaminationForm.vue API calls
     path(
