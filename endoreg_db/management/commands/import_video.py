@@ -8,6 +8,7 @@ to specify the video file, center name, and other options.
 """
 
 from django.core.management import BaseCommand
+from django.core.files.base import ContentFile
 from django.db import connection
 from pathlib import Path
 from endoreg_db.models import VideoFile, ModelMeta
@@ -26,7 +27,7 @@ if lx_anonymizer_path.exists():
     sys.path.insert(0, str(lx_anonymizer_path))
 
 try:
-    from lx_anonymizer import frame_cleaner
+    from lx_anonymizer.frame_cleaner import FrameCleaner
     from lx_anonymizer.report_reader import ReportReader
     FRAME_CLEANING_AVAILABLE = True
 except ImportError:
@@ -240,8 +241,16 @@ class Command(BaseCommand):
         if FRAME_CLEANING_AVAILABLE and video_file_obj.raw_file:
             try:
                 self.stdout.write(self.style.SUCCESS("Starting frame-level anonymization..."))
-                report_reader = ReportReader()
-                cleaned_video_path = frame_cleaner.FrameCleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
+                # Properly instantiate FrameCleaner and ReportReader with correct arguments
+                frame_cleaner = FrameCleaner()
+                report_reader = ReportReader(
+                    report_root_path=str(video_file_obj.raw_file.path),
+                    locale="de_DE",  # Default German locale for medical data
+                    text_date_format="%d.%m.%Y"  # Common German date format
+                )
+                cleaned_video_path = frame_cleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
+                
+                # Save the cleaned video using Django's FileField
                 with open(cleaned_video_path, 'rb') as f:
                     video_file_obj.raw_file.save(cleaned_video_path.name, ContentFile(f.read()))
                 video_file_obj.save()
