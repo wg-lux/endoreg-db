@@ -31,7 +31,7 @@ class FileOverviewSerializer(serializers.Serializer):
                 anonym_status = "not_started"
             elif vs.anonymized:                          # fully processed
                 anonym_status = "done"
-            elif vs.processing:                          # <-- if you track that
+            elif not vs.sensitive_meta_processed:                          # <-- if you track that
                 anonym_status = "processing"
             else:
                 anonym_status = "processing"             # safe default
