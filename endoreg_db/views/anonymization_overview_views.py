@@ -1,12 +1,12 @@
 # api/views/anonymization_overview.py
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
+#from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Prefetch, QuerySet
 from endoreg_db.models import VideoFile, RawPdfFile
 from ..serializers.file_overview_serializer import FileOverviewSerializer
-
+from ..utils.permissions import DEBUG_PERMISSIONS  # <-- adapt import path
 
 class NoPagination(PageNumberPagination):
     page_size = None
@@ -19,7 +19,7 @@ class AnonymizationOverviewView(ListAPIView):
     Returns a flat list (Video + PDF) ordered by newest upload first.
     """
     serializer_class = FileOverviewSerializer
-    permission_classes = [IsAuthenticated]               # <-- adapt
+    permission_classes = [DEBUG_PERMISSIONS]               # <-- adapt
     pagination_class = NoPagination
 
     def get_queryset(self) -> QuerySet:                  # type: ignore
