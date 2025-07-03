@@ -241,7 +241,7 @@ class Command(BaseCommand):
             try:
                 self.stdout.write(self.style.SUCCESS("Starting frame-level anonymization..."))
                 report_reader = ReportReader()
-                cleaned_video_path = frame_cleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
+                cleaned_video_path = frame_cleaner.FrameCleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
                 with open(cleaned_video_path, 'rb') as f:
                     video_file_obj.raw_file.save(cleaned_video_path.name, ContentFile(f.read()))
                 video_file_obj.save()
