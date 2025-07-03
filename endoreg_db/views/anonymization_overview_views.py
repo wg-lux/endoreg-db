@@ -19,7 +19,7 @@ class AnonymizationOverviewView(ListAPIView):
     Returns a flat list (Video + PDF) ordered by newest upload first.
     """
     serializer_class = FileOverviewSerializer
-    permission_classes = [DEBUG_PERMISSIONS]               # <-- adapt
+    permission_classes = DEBUG_PERMISSIONS   
     pagination_class = NoPagination
 
     def get_queryset(self) -> QuerySet:                  # type: ignore
