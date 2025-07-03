@@ -91,6 +91,8 @@ from .views.sensitive_meta_views import (
     AvailableFilesListView
 )
 
+from .views.anonymization_overview_views import AnonymizationOverviewView
+
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
@@ -177,7 +179,10 @@ urlpatterns = [
         name='get_interventions_for_finding'
     ),
     
-    # NEW: Add the missing URL patterns for ExaminationForm.vue API calls
+    # URL patterns for anonymization overview
+    path('anonymization/overview/', AnonymizationOverviewView.as_view(), name='anonymization_overview'),
+    
+    # URL patterns for ExaminationForm.vue API calls
     path(
         'examinations/<int:examination_id>/findings/',
         get_findings_for_examination,
