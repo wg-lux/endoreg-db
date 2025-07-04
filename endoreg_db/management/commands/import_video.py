@@ -19,20 +19,35 @@ from endoreg_db.models.medical.hardware import EndoscopyProcessor
 
 from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
 
-# Import frame cleaning functionality
-import sys
-from pathlib import Path
-lx_anonymizer_path = Path(__file__).parent.parent.parent / "lx-anonymizer"
-if lx_anonymizer_path.exists():
-    sys.path.insert(0, str(lx_anonymizer_path))
+# Import frame cleaning functionality - simplified approach
+FRAME_CLEANING_AVAILABLE = False
 
+# Try to import lx_anonymizer using the existing working import method from create_from_file
 try:
-    from lx_anonymizer.frame_cleaner import FrameCleaner
-    from lx_anonymizer.report_reader import ReportReader
-    FRAME_CLEANING_AVAILABLE = True
-except ImportError:
+    # Check if we can find the lx-anonymizer directory
+    current_file = Path(__file__)
+    endoreg_db_root = current_file.parent.parent.parent.parent
+    lx_anonymizer_path = endoreg_db_root / "lx-anonymizer"
+    
+    if lx_anonymizer_path.exists():
+        # Add to Python path temporarily
+        import sys
+        if str(lx_anonymizer_path) not in sys.path:
+            sys.path.insert(0, str(lx_anonymizer_path))
+        
+        # Try simple import
+        from lx_anonymizer import FrameCleaner, ReportReader
+        
+        FRAME_CLEANING_AVAILABLE = True
+        print("DEBUG: Successfully imported lx_anonymizer modules")
+        
+        # Remove from path to avoid conflicts
+        if str(lx_anonymizer_path) in sys.path:
+            sys.path.remove(str(lx_anonymizer_path))
+            
+except Exception as e:
+    print(f"DEBUG: Frame cleaning not available: {e}")
     FRAME_CLEANING_AVAILABLE = False
-
 
 IMPORT_MODELS = [
     VideoFile.__name__,
