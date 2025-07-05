@@ -36,7 +36,8 @@ class Examination(models.Model):
     objects = ExaminationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import ExaminationIndication, Finding
+        from endoreg_db.models import ExaminationIndication, Finding, FindingClassification
+        finding_classifications: models.QuerySet['FindingClassification']
         indications: models.QuerySet[ExaminationIndication]
         findings: models.QuerySet["Finding"]
 

@@ -1,3 +1,4 @@
+from itertools import filterfalse
 import logging
 from typing import TYPE_CHECKING
 from django.db import transaction
@@ -50,8 +51,11 @@ def _pipe_2(video_file:"VideoFile") -> bool:
         with transaction.atomic():
             state: "VideoState" = video_file.get_or_create_state()
             anonymization_needed = not state.anonymized
+        
 
         if anonymization_needed:
+            state.sensitive_meta_processed = False
+
             logger.info("Pipe 2: Video not anonymized. Anonymizing outside main DB transaction...")
             anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy I/O work
             if not anonymize_success:
@@ -67,6 +71,8 @@ def _pipe_2(video_file:"VideoFile") -> bool:
                 logger.info("Pipe 2: Anonymization complete.")
         else:
             logger.info("Pipe 2: Video already anonymized.")
+        
+        state.sensitive_meta_processed = True
 
         # --- Part 3: Final DB operations (now in its own atomic transaction) ---
         with transaction.atomic():

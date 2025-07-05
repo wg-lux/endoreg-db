@@ -19,6 +19,8 @@ from .patient_finding import PatientFinding
 from .patient_finding_location import PatientFindingLocation
 from .patient_finding_morphology import PatientFindingMorphology
 from .patient_finding_intervention import PatientFindingIntervention
+from .patient_finding_classification import PatientFindingClassification
+
 
 # Laboratory
 from .patient_lab_sample import PatientLabSample, PatientLabSampleType
@@ -41,6 +43,7 @@ __all__ = [
 
     # Finding
     "PatientFinding",
+    "PatientFindingClassification",
     "PatientFindingLocation",
     "PatientFindingMorphology",
     "PatientFindingIntervention",

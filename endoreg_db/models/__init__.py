@@ -37,6 +37,12 @@ from .administration import (
     EmployeeQualification,
 )
 
+from .anonymization import (
+    AnonymousFrame,
+    FrameAnonymizationRequest,
+)
+    
+
 ####### Label ########
 from .label import (
     Label,
@@ -78,6 +84,10 @@ from .medical import (
     ExaminationTime,
     ExaminationTimeType,
     Finding,
+    PatientFindingClassification,
+    FindingClassificationType,
+    FindingClassification,
+    FindingClassificationChoice,
     FindingType,
     FindingLocationClassification,
     FindingLocationClassificationChoice,
@@ -169,6 +179,10 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ModelType",
+    
+    # Anonymization
+    "FrameAnonymizationRequest",
+    "AnonymousFrame",
 
     # Case
     "Case",
@@ -257,6 +271,10 @@ __all__ = [
     "ExaminationTimeType",
     # Finding
     "Finding",
+    "PatientFindingClassification",
+    "FindingClassificationType",
+    "FindingClassification",
+    "FindingClassificationChoice",
     "FindingType",
     "FindingLocationClassification",
     "FindingLocationClassificationChoice",

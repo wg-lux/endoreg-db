@@ -14,6 +14,9 @@ from .examination import (
 
 from .finding import (
     Finding,
+    FindingClassificationType,
+    FindingClassification,
+    FindingClassificationChoice,
     FindingType,
     FindingLocationClassification,
     FindingLocationClassificationChoice,
@@ -27,6 +30,7 @@ from .finding import (
 from .patient import (
     PatientExamination,
     PatientFinding,
+    PatientFindingClassification,
     PatientFindingLocation,
     PatientFindingMorphology,
     PatientFindingIntervention,
@@ -94,6 +98,10 @@ __all__ = [
     
     # Finding
     "Finding",
+    "PatientFindingClassification",
+    "FindingClassificationType",
+    "FindingClassification",
+    "FindingClassificationChoice",
     "FindingType",
     "FindingLocationClassification",
     "FindingLocationClassificationChoice",

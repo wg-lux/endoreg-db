@@ -132,6 +132,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"Failed to load initial data: {e}"))
             # Depending on the criticality of load_data(), you might want to exit or handle differently.
             # For now, we'll just log the error and continue.
+        
             
         verbose = options["verbose"]
         center_name = options["center_name"]
@@ -228,7 +229,12 @@ class Command(BaseCommand):
                 delete_source=delete_source,
                 save=save,
             )
-
+            if not report_file_obj:
+                self.stdout.write(self.style.ERROR("Failed to create RawPdfFile object."))
+                return
+            
+            report_file_obj.anonymized = False
+            
             # Assign pdfType to the report file object
             if "report" in file_path.name:
                 pdf_type_name = "ukw-endoscopy-examination-report-generic"
@@ -277,6 +283,8 @@ class Command(BaseCommand):
             sensitive_meta.save()
             if verbose:
                 ic(sensitive_meta)
+                
+            report_file_obj.anonymized=True
         finally:
             # Clean up Ollama process if we started it
             if ollama_proc is not None:

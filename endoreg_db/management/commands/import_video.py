@@ -8,6 +8,7 @@ to specify the video file, center name, and other options.
 """
 
 from django.core.management import BaseCommand
+from django.core.files.base import ContentFile
 from django.db import connection
 from pathlib import Path
 from endoreg_db.models import VideoFile, ModelMeta
@@ -18,6 +19,35 @@ from endoreg_db.models.medical.hardware import EndoscopyProcessor
 
 from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
 
+# Import frame cleaning functionality - simplified approach
+FRAME_CLEANING_AVAILABLE = False
+
+# Try to import lx_anonymizer using the existing working import method from create_from_file
+try:
+    # Check if we can find the lx-anonymizer directory
+    current_file = Path(__file__)
+    endoreg_db_root = current_file.parent.parent.parent.parent
+    lx_anonymizer_path = endoreg_db_root / "lx-anonymizer"
+    
+    if lx_anonymizer_path.exists():
+        # Add to Python path temporarily
+        import sys
+        if str(lx_anonymizer_path) not in sys.path:
+            sys.path.insert(0, str(lx_anonymizer_path))
+        
+        # Try simple import
+        from lx_anonymizer import FrameCleaner, ReportReader
+        
+        FRAME_CLEANING_AVAILABLE = True
+        print("DEBUG: Successfully imported lx_anonymizer modules")
+        
+        # Remove from path to avoid conflicts
+        if str(lx_anonymizer_path) in sys.path:
+            sys.path.remove(str(lx_anonymizer_path))
+            
+except Exception as e:
+    print(f"DEBUG: Frame cleaning not available: {e}")
+    FRAME_CLEANING_AVAILABLE = False
 
 IMPORT_MODELS = [
     VideoFile.__name__,
@@ -221,6 +251,33 @@ class Command(BaseCommand):
         if not video_file_obj:
             self.stdout.write(self.style.ERROR("Failed to create VideoFile instance"))
             return
+        
+        # Frame-level anonymization integration
+        if FRAME_CLEANING_AVAILABLE and video_file_obj.raw_file:
+            try:
+                self.stdout.write(self.style.SUCCESS("Starting frame-level anonymization..."))
+                # Properly instantiate FrameCleaner and ReportReader with correct arguments
+                frame_cleaner = FrameCleaner()
+                report_reader = ReportReader(
+                    report_root_path=str(video_file_obj.raw_file.path),
+                    locale="de_DE",  # Default German locale for medical data
+                    text_date_format="%d.%m.%Y"  # Common German date format
+                )
+                cleaned_video_path = frame_cleaner.clean_video(
+                    Path(video_file_obj.raw_file.path),
+                    report_reader,
+                    device_name=processor_name   # ← add this
+                )
+                
+                # Save the cleaned video using Django's FileField
+                with open(cleaned_video_path, 'rb') as f:
+                    video_file_obj.raw_file.save(cleaned_video_path.name, ContentFile(f.read()))
+                video_file_obj.save()
+                self.stdout.write(self.style.SUCCESS(f"Frame cleaning completed: {cleaned_video_path.name}"))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f"Frame cleaning failed, continuing with original video: {e}"))
+        elif not FRAME_CLEANING_AVAILABLE:
+            self.stdout.write(self.style.WARNING("Frame cleaning not available (lx_anonymizer not found)"))
         
         # Now call pipe_1 on the VideoFile instance
         if segmentation:

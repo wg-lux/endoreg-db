@@ -78,6 +78,37 @@ from .views.report_service_views import (
     validate_secure_url
 )
 
+from .views.upload_views import (
+    UploadFileView,
+    UploadStatusView
+)
+
+# Add sensitive meta views import
+from .views.sensitive_meta_views import (
+    SensitiveMetaDetailView,
+    SensitiveMetaVerificationView,
+    SensitiveMetaListView,
+    AvailableFilesListView
+)
+
+# Add missing anonymization overview imports
+from .views.anonymization_overview_views import (
+    anonymization_items_overview,
+    start_anonymization,
+    get_anonymization_status
+)
+
+# Import the correct version from anonymization_overview.py
+from .views.anonymization_overview import set_current_for_validation
+
+# Add missing video anonymization imports
+from .views.video_anonymization_views import (
+    anonymize_video,
+    anonymization_status,
+    anonymization_batch_status,
+    anonymization_batch_start
+)
+
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
@@ -97,7 +128,9 @@ urlpatterns = [
     # NEW: Label Video Segment API endpoints
     path('video-segments/', video_segments_view, name='video_segments'),
     path('video-segments/<int:segment_id>/', video_segment_detail_view, name='video_segment_detail'),
-    
+
+    path('upload/', UploadFileView.as_view(), name='video_upload'),  #Upload endpoint
+    path('upload/<uuid:id>/status', UploadStatusView.as_view(), name='upload_status'),  # Status endpoint for polling
     # ---------------------------------------------------------------------------------------
     # CLASSIFICATION API ENDPOINTS
     #
@@ -162,7 +195,19 @@ urlpatterns = [
         name='get_interventions_for_finding'
     ),
     
-    # NEW: Add the missing URL patterns for ExaminationForm.vue API calls
+    # URL patterns for anonymization overview
+    path('anonymization/items/overview/', anonymization_items_overview, name='anonymization_items_overview'),
+    path('anonymization/<int:file_id>/current/', set_current_for_validation, name='set_current_for_validation'),
+    path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
+    path('anonymization/<int:file_id>/status/', get_anonymization_status, name='get_anonymization_status'),
+    
+    # Video anonymization API endpoints
+    path('videos/<uuid:video_id>/anonymize/', anonymize_video, name='anonymize_video'),
+    path('videos/<uuid:video_id>/anonymization-status/', anonymization_status, name='anonymization_status'),
+    path('videos/anonymization-batch-status/', anonymization_batch_status, name='anonymization_batch_status'),
+    path('videos/anonymization-batch-start/', anonymization_batch_start, name='anonymization_batch_start'),
+    
+    # URL patterns for ExaminationForm.vue API calls
     path(
         'examinations/<int:examination_id>/findings/',
         get_findings_for_examination,
@@ -230,7 +275,8 @@ urlpatterns = [
     path('login/', keycloak_login, name='keycloak_login'),
     path('login/callback/', keycloak_callback, name='keycloak_callback'),
 
-#----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
+
+    #----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
 
     # API Endpoint for fetching video metadata or streaming the next available video
     # This endpoint is used by the frontend to fetch:
@@ -410,9 +456,13 @@ urlpatterns = [
     path('examinations/stats/', ExaminationStatsView.as_view(), name='examination_stats'),
     
     # Video Segment Statistics API  
-    # GET /api/video-segments/stats/
+    # GET /api/video-segment/stats/  (Note: singular 'segment' to match frontend)
     # Liefert Statistiken über Video-Segmente und Label-Verteilung
-    path('video-segments/stats/', VideoSegmentStatsView.as_view(), name='video_segment_stats'),
+    path('video-segment/stats/', VideoSegmentStatsView.as_view(), name='video_segment_stats'),
+    
+    # Alternative Video Segments Statistics API (plural version for compatibility)
+    # GET /api/video-segments/stats/
+    path('video-segments/stats/', VideoSegmentStatsView.as_view(), name='video_segments_stats'),
     
     # Sensitive Meta Statistics API
     # GET /api/video/sensitivemeta/stats/
@@ -423,6 +473,55 @@ urlpatterns = [
     # GET /api/stats/
     # Liefert allgemeine Übersichtsstatistiken für das Dashboard
     path('stats/', GeneralStatsView.as_view(), name='general_stats'),
+
+    # ---------------------------------------------------------------------------------------
+    # SENSITIVE META API ENDPOINTS & FILE SELECTION
+    #
+    # New API endpoints for sensitive meta data management and file selection
+    # These endpoints support both PDF and video anonymization workflows
+    # ---------------------------------------------------------------------------------------
+    
+    # Available Files List API
+    # GET /api/available-files/?type=pdf|video|all&limit=50&offset=0
+    # Lists available PDF and video files for anonymization selection
+    path('available-files/', 
+         AvailableFilesListView.as_view(), 
+         name='available_files_list'),
+    
+    # Sensitive Meta Detail API
+    # GET /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
+    # PATCH /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
+    # Used by anonymization store to fetch and update sensitive meta details
+    path('pdf/sensitivemeta/<int:sensitive_meta_id>/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='sensitive_meta_detail'),
+    
+    # Alternative endpoint for query parameter access (backward compatibility)
+    # GET /api/pdf/sensitivemeta/?id=<sensitive_meta_id>
+    path('pdf/sensitivemeta/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='sensitive_meta_query'),
+    
+    # Sensitive Meta Verification API
+    # POST /api/pdf/sensitivemeta/verify/
+    # For updating verification flags specifically
+    path('pdf/sensitivemeta/verify/', 
+         SensitiveMetaVerificationView.as_view(), 
+         name='sensitive_meta_verify'),
+    
+    # Sensitive Meta List API
+    # GET /api/pdf/sensitivemeta/list/
+    # For listing sensitive meta entries with filtering
+    path('pdf/sensitivemeta/list/', 
+         SensitiveMetaListView.as_view(), 
+         name='sensitive_meta_list'),
+
+    # Video Sensitive Meta endpoints (for video anonymization)
+    # GET /api/video/sensitivemeta/<int:sensitive_meta_id>/
+    # PATCH /api/video/sensitivemeta/<int:sensitive_meta_id>/
+    path('video/sensitivemeta/<int:sensitive_meta_id>/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='video_sensitive_meta_detail'),
 
     # ---------------------------------------------------------------------------------------
 

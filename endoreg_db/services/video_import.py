@@ -1,0 +1,151 @@
+"""
+Video import service module.
+
+Provides high-level functions for importing and anonymizing video files,
+combining VideoFile creation with frame-level anonymization.
+"""
+
+import logging
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Union
+from django.core.files.base import ContentFile
+from django.db import transaction
+
+if TYPE_CHECKING:
+    from endoreg_db.models import VideoFile
+
+logger = logging.getLogger(__name__)
+
+
+def _ensure_frame_cleaning_available():
+    """
+    Ensure frame cleaning modules are available by adding lx-anonymizer to path.
+    
+    Returns:
+        Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
+    """
+    try:
+        # Check if we can find the lx-anonymizer directory
+        current_file = Path(__file__)
+        endoreg_db_root = current_file.parent.parent.parent.parent
+        lx_anonymizer_path = endoreg_db_root / "lx-anonymizer"
+        
+        if lx_anonymizer_path.exists():
+            # Add to Python path temporarily
+            if str(lx_anonymizer_path) not in sys.path:
+                sys.path.insert(0, str(lx_anonymizer_path))
+            
+            # Try simple import
+            from lx_anonymizer import FrameCleaner, ReportReader
+            
+            logger.info("Successfully imported lx_anonymizer modules")
+            
+            # Remove from path to avoid conflicts
+            if str(lx_anonymizer_path) in sys.path:
+                sys.path.remove(str(lx_anonymizer_path))
+                
+            return True, FrameCleaner, ReportReader
+            
+    except Exception as e:
+        logger.warning(f"Frame cleaning not available: {e}")
+    
+    return False, None, None
+
+
+def import_and_anonymize(
+    file_path: Union[Path, str],
+    center_name: str,
+    processor_name: str,
+    save_video: bool = True,
+    delete_source: bool = False,
+) -> "VideoFile":
+    """
+    High-level helper that wraps:
+      1. VideoFile.create_from_file_initialized(...)
+      2. FrameCleaner.clean_video(...)
+      3. Saves the cleaned file back to VideoFile
+      4. Returns the VideoFile instance (fresh from DB).
+
+    Args:
+        file_path: Path to the video file to import
+        center_name: Name of the center to associate with video
+        processor_name: Name of the processor to associate with video
+        save_video: Whether to save the video file
+        delete_source: Whether to delete the source file after import
+        
+    Returns:
+        VideoFile instance after import and anonymization
+        
+    Raises:
+        Exception: On any failure during import or anonymization
+    """
+    from endoreg_db.models import VideoFile
+    
+    file_path = Path(file_path)
+    logger.info(f"Starting import and anonymization for: {file_path}")
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"Video file not found: {file_path}")
+    
+    # Step 1: Create VideoFile instance
+    logger.info("Creating VideoFile instance...")
+    video_file_obj = VideoFile.create_from_file_initialized(
+        file_path=file_path,
+        center_name=center_name,
+        processor_name=processor_name,
+        delete_source=delete_source,
+        save_video_file=save_video,
+    )
+    
+    if not video_file_obj:
+        raise RuntimeError("Failed to create VideoFile instance")
+    
+    logger.info(f"Created VideoFile with UUID: {video_file_obj.uuid}")
+    
+    # Step 2: Frame-level anonymization (heavy I/O outside transaction)
+    frame_cleaning_available, FrameCleaner, ReportReader = _ensure_frame_cleaning_available()
+    
+    if frame_cleaning_available and video_file_obj.raw_file:
+        try:
+            logger.info("Starting frame-level anonymization...")
+            
+            # Instantiate frame cleaner and report reader
+            frame_cleaner = FrameCleaner()
+            report_reader = ReportReader(
+                report_root_path=str(video_file_obj.raw_file.path),
+                locale="de_DE",  # Default German locale for medical data
+                text_date_format="%d.%m.%Y"  # Common German date format
+            )
+            
+            # Clean video (heavy I/O operation)
+            cleaned_video_path = frame_cleaner.clean_video(
+                Path(video_file_obj.raw_file.path),
+                report_reader,
+                device_name=processor_name
+            )
+            
+            # Step 3: Save cleaned video back to VideoFile (atomic transaction)
+            with transaction.atomic():
+                # Save the cleaned video using Django's FileField
+                with open(cleaned_video_path, 'rb') as f:
+                    video_file_obj.raw_file.save(
+                        cleaned_video_path.name, 
+                        ContentFile(f.read())
+                    )
+                video_file_obj.save()
+                
+            logger.info(f"Frame cleaning completed: {cleaned_video_path.name}")
+            
+        except Exception as e:
+            logger.warning(f"Frame cleaning failed, continuing with original video: {e}")
+            # Don't raise - continue with unprocessed video
+    elif not frame_cleaning_available:
+        logger.warning("Frame cleaning not available (lx_anonymizer not found)")
+    
+    # Step 4: Refresh from database and return
+    with transaction.atomic():
+        video_file_obj.refresh_from_db()
+    
+    logger.info(f"Import and anonymization completed for VideoFile UUID: {video_file_obj.uuid}")
+    return video_file_obj
