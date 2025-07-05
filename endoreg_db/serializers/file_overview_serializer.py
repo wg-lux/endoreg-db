@@ -1,5 +1,7 @@
 # api/serializers/file_overview.py
 from rest_framework import serializers
+from django.conf import settings
+from pathlib import Path
 from endoreg_db.models import VideoFile, RawPdfFile
 
 
@@ -66,39 +68,60 @@ class FileOverviewSerializer(serializers.Serializer):
 
 class PatientDataSerializer(serializers.Serializer):
     """
-    Serializer für Patientendaten, die von der Validierungs-Komponente erwartet werden.
-    Konvertiert VideoFile/RawPdfFile in das Format, das AnonymizationValidationComponent benötigt.
+    Serializer that converts a VideoFile or RawPdfFile to the structure 
+    the Pinia store needs for validation workflow.
     """
-    id = serializers.IntegerField()
-    sensitiveMetaId = serializers.IntegerField(source="sensitive_meta_id", allow_null=True)
-    text = serializers.CharField(allow_null=True)
-    anonymizedText = serializers.CharField(source="anonymized_text", allow_null=True)
-    reportMeta = serializers.JSONField(source="report_meta", allow_null=True)
     
-    # Optional: zusätzliche Felder für bessere UX
-    filename = serializers.CharField()
-    mediaType = serializers.CharField()
-    
-    def to_representation(self, instance):
-        if isinstance(instance, VideoFile):
-            return {
-                "id": instance.pk,
-                "sensitiveMetaId": instance.sensitive_meta_id if hasattr(instance, 'sensitive_meta_id') else None,
-                "text": getattr(instance.sensitive_meta, 'extracted_text', None) if hasattr(instance, 'sensitive_meta') else None,
-                "anonymizedText": getattr(instance, 'anonymized_text', None),
-                "reportMeta": getattr(instance, 'report_meta', {}),
-                "filename": instance.original_file_name or "unknown_video",
-                "mediaType": "video"
-            }
-        elif isinstance(instance, RawPdfFile):
-            return {
-                "id": instance.pk,
-                "sensitiveMetaId": instance.sensitive_meta.pk if instance.sensitive_meta else None,
-                "text": getattr(instance, 'text', None),
-                "anonymizedText": getattr(instance, 'anonymized_text', None),
-                "reportMeta": getattr(instance, 'report_meta', {}),
-                "filename": instance.file.name.split("/")[-1] if instance.file else "unknown_pdf",
-                "mediaType": "pdf"
-            }
+    def to_representation(self, obj):
+        """
+        Convert VideoFile or RawPdfFile instance to PatientData format.
+        """
+        request = self.context.get('request')
+        
+        # Determine if this is a video or PDF
+        is_video = isinstance(obj, VideoFile)
+        
+        # Base patient data structure
+        patient_data = {
+            'id': obj.id,
+            'sensitiveMetaId': obj.sensitive_meta.id if obj.sensitive_meta else None,
+        }
+        
+        if is_video:
+            # Video-specific data
+            patient_data.update({
+                'text': '',  # Videos don't have text
+                'anonymizedText': '',  # Videos don't have anonymized text
+                'reportMeta': {
+                    'id': obj.sensitive_meta.id if obj.sensitive_meta else None,
+                    'patientFirstName': obj.sensitive_meta.patient_first_name if obj.sensitive_meta else '',
+                    'patientLastName': obj.sensitive_meta.patient_last_name if obj.sensitive_meta else '',
+                    'patientDob': obj.sensitive_meta.patient_dob if obj.sensitive_meta else '',
+                    'patientGender': obj.sensitive_meta.patient_gender if obj.sensitive_meta else '',
+                    'examinationDate': obj.sensitive_meta.examination_date if obj.sensitive_meta else '',
+                    'casenumber': getattr(obj.sensitive_meta, 'casenumber', '') if obj.sensitive_meta else '',
+                    'file': request.build_absolute_uri(f"/api/video/{obj.id}/") if request and obj.file else None,
+                    'pdfUrl': None,  # Videos don't have PDF URLs
+                    'fullPdfPath': None
+                }
+            })
         else:
-            raise TypeError(f"Unsupported instance type: {type(instance)}")
+            # PDF-specific data (RawPdfFile)
+            patient_data.update({
+                'text': obj.text or '',
+                'anonymizedText': obj.anonymized_text or '',
+                'reportMeta': {
+                    'id': obj.sensitive_meta.id if obj.sensitive_meta else None,
+                    'patientFirstName': obj.sensitive_meta.patient_first_name if obj.sensitive_meta else '',
+                    'patientLastName': obj.sensitive_meta.patient_last_name if obj.sensitive_meta else '',
+                    'patientDob': obj.sensitive_meta.patient_dob if obj.sensitive_meta else '',
+                    'patientGender': obj.sensitive_meta.patient_gender if obj.sensitive_meta else '',
+                    'examinationDate': obj.sensitive_meta.examination_date if obj.sensitive_meta else '',
+                    'casenumber': getattr(obj.sensitive_meta, 'casenumber', '') if obj.sensitive_meta else '',
+                    'file': None,  # PDFs don't have video files
+                    'pdfUrl': request.build_absolute_uri(obj.file.url) if request and obj.file else None,
+                    'fullPdfPath': str(Path(settings.MEDIA_ROOT) / obj.file.name) if obj.file else None
+                }
+            })
+        
+        return patient_data

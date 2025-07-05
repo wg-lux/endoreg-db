@@ -12,6 +12,7 @@ from django.db.models import Q, F, Case, When, CharField, Value
 from django.utils import timezone
 from endoreg_db.models import VideoFile, RawPdfFile, SensitiveMeta
 from endoreg_db.serializers.video_meta import VideoFileForMetaSerializer
+from endoreg_db.serializers.file_overview_serializer import PatientDataSerializer
 
 # DEBUG: Remove in production
 DEBUG_PERMISSIONS = True
@@ -105,91 +106,31 @@ def anonymization_items_overview(request):
     return Response(items)
 
 
-@api_view(['PUT'])
+@api_view(['PUT', 'POST'])
 @permission_classes([AllowAny] if DEBUG_PERMISSIONS else [])
 def set_current_for_validation(request, file_id):
     """
-    Set a specific file as current for validation workflow.
-    
-    Works with both videos and PDFs, returning unified PatientData format
-    that matches the anonymization store expectations.
-    
-    Args:
-        file_id: Primary key of VideoFile or RawPdfFile
-        
-    Returns:
-        PatientData format with reportMeta included
+    Set current file for validation and return patient data.
+    Accepts both PUT and POST methods for frontend compatibility.
     """
-    
-    # Try to find video first
     try:
-        video = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
+        # Try to find VideoFile first
+        try:
+            obj = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
+        except VideoFile.DoesNotExist:
+            # Try RawPdfFile
+            obj = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
         
-        # Serialize video metadata
-        serializer = VideoFileForMetaSerializer(video, context={'request': request})
-        video_data = serializer.data
-        
-        # Convert to PatientData format
-        patient_data = {
-            'id': video.id,
-            'sensitiveMetaId': video.sensitive_meta.id if video.sensitive_meta else None,
-            'text': '',  # Videos don't have text content
-            'anonymizedText': '',  # Videos don't have anonymized text
-            'reportMeta': {
-                'id': video.sensitive_meta.id if video.sensitive_meta else None,
-                'patientFirstName': video.sensitive_meta.patient_first_name if video.sensitive_meta else '',
-                'patientLastName': video.sensitive_meta.patient_last_name if video.sensitive_meta else '',
-                'patientDob': video.sensitive_meta.patient_dob if video.sensitive_meta else '',
-                'patientGender': video.sensitive_meta.patient_gender if video.sensitive_meta else '',
-                'examinationDate': video.sensitive_meta.examination_date if video.sensitive_meta else '',
-                'casenumber': getattr(video.sensitive_meta, 'casenumber', '') if video.sensitive_meta else '',
-                'centerName': video.center.display_name if video.center else '',
-                'isVerified': video.sensitive_meta.is_verified if video.sensitive_meta else False,
-                'file': video_data.get('video_url'),  # Use the streaming URL
-                'pdfUrl': None  # Videos don't have PDF URLs
-            }
-        }
-        
-        return Response(patient_data)
-        
-    except VideoFile.DoesNotExist:
-        pass
-    
-    # Try to find PDF
-    try:
-        pdf = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
-        
-        # Convert to PatientData format
-        patient_data = {
-            'id': pdf.id,
-            'sensitiveMetaId': pdf.sensitive_meta.id if pdf.sensitive_meta else None,
-            'text': pdf.text or '',
-            'anonymizedText': pdf.anonymized_text or '',
-            'reportMeta': {
-                'id': pdf.sensitive_meta.id if pdf.sensitive_meta else None,
-                'patientFirstName': pdf.sensitive_meta.patient_first_name if pdf.sensitive_meta else '',
-                'patientLastName': pdf.sensitive_meta.patient_last_name if pdf.sensitive_meta else '',
-                'patientDob': pdf.sensitive_meta.patient_dob if pdf.sensitive_meta else '',
-                'patientGender': pdf.sensitive_meta.patient_gender if pdf.sensitive_meta else '',
-                'examinationDate': pdf.sensitive_meta.examination_date if pdf.sensitive_meta else '',
-                'casenumber': getattr(pdf.sensitive_meta, 'casenumber', '') if pdf.sensitive_meta else '',
-                'centerName': getattr(pdf.sensitive_meta, 'center_name', '') if pdf.sensitive_meta else '',
-                'isVerified': pdf.sensitive_meta.is_verified if pdf.sensitive_meta else False,
-                'file': None,  # PDFs don't have video files
-                'pdfUrl': request.build_absolute_uri(pdf.file.url) if pdf.file else None
-            }
-        }
-        
-        return Response(patient_data)
+        # Serialize with PatientDataSerializer
+        serializer = PatientDataSerializer(obj, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
         
     except RawPdfFile.DoesNotExist:
-        pass
-    
-    # Neither video nor PDF found
-    return Response(
-        {'error': f'File with ID {file_id} not found'},
-        status=status.HTTP_404_NOT_FOUND
-    )
+        # Neither video nor PDF found
+        return Response(
+            {'error': f'File with ID {file_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
 
 @api_view(['POST'])
