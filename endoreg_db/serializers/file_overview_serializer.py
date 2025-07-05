@@ -62,3 +62,43 @@ class FileOverviewSerializer(serializers.Serializer):
             "annotationStatus": annot_status,
             "createdAt": created_at,
         }
+
+
+class PatientDataSerializer(serializers.Serializer):
+    """
+    Serializer für Patientendaten, die von der Validierungs-Komponente erwartet werden.
+    Konvertiert VideoFile/RawPdfFile in das Format, das AnonymizationValidationComponent benötigt.
+    """
+    id = serializers.IntegerField()
+    sensitiveMetaId = serializers.IntegerField(source="sensitive_meta_id", allow_null=True)
+    text = serializers.CharField(allow_null=True)
+    anonymizedText = serializers.CharField(source="anonymized_text", allow_null=True)
+    reportMeta = serializers.JSONField(source="report_meta", allow_null=True)
+    
+    # Optional: zusätzliche Felder für bessere UX
+    filename = serializers.CharField()
+    mediaType = serializers.CharField()
+    
+    def to_representation(self, instance):
+        if isinstance(instance, VideoFile):
+            return {
+                "id": instance.pk,
+                "sensitiveMetaId": instance.sensitive_meta_id if hasattr(instance, 'sensitive_meta_id') else None,
+                "text": getattr(instance.sensitive_meta, 'extracted_text', None) if hasattr(instance, 'sensitive_meta') else None,
+                "anonymizedText": getattr(instance, 'anonymized_text', None),
+                "reportMeta": getattr(instance, 'report_meta', {}),
+                "filename": instance.original_file_name or "unknown_video",
+                "mediaType": "video"
+            }
+        elif isinstance(instance, RawPdfFile):
+            return {
+                "id": instance.pk,
+                "sensitiveMetaId": instance.sensitive_meta.pk if instance.sensitive_meta else None,
+                "text": getattr(instance, 'text', None),
+                "anonymizedText": getattr(instance, 'anonymized_text', None),
+                "reportMeta": getattr(instance, 'report_meta', {}),
+                "filename": instance.file.name.split("/")[-1] if instance.file else "unknown_pdf",
+                "mediaType": "pdf"
+            }
+        else:
+            raise TypeError(f"Unsupported instance type: {type(instance)}")

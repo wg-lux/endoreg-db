@@ -1,13 +1,13 @@
 # api/views/anonymization_overview.py
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
-#from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from django.http import JsonResponse
 from django.db.models import Prefetch, QuerySet
+from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
-from ..serializers.file_overview_serializer import FileOverviewSerializer
+from ..serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
 from ..utils.permissions import DEBUG_PERMISSIONS  # <-- adapt import path
 
 class NoPagination(PageNumberPagination):
@@ -64,32 +64,46 @@ def anonymization_items_overview(request):
     API endpoint for anonymization items overview
     """
     view = AnonymizationOverviewView()
+    view.setup(request)  # Properly initialize the view with request
     view.request = request
+    view.format_kwarg = None  # Set required attribute
+    view.args = ()
+    view.kwargs = {}
     return view.list(request)
 
 
 @api_view(['POST'])
 def set_current_for_validation(request, file_id):
     """
-    Set current file for validation
+    Set current file for validation and return patient data
     """
     try:
         # Try to find the file in VideoFile first
         try:
-            video_file = VideoFile.objects.get(id=file_id)
-            # Set as current for validation logic here
-            return JsonResponse({'status': 'success', 'message': 'Video file set as current for validation'})
+            video_file = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
+            serializer = PatientDataSerializer(video_file)
+            return Response({
+                'status': 'success',
+                'message': 'Video file set as current for validation',
+                **serializer.data  # Merge the serialized patient data
+            })
         except VideoFile.DoesNotExist:
             pass
         
         # Try to find the file in RawPdfFile
         try:
-            pdf_file = RawPdfFile.objects.get(id=file_id)
-            # Set as current for validation logic here
-            return JsonResponse({'status': 'success', 'message': 'PDF file set as current for validation'})
+            pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
+            serializer = PatientDataSerializer(pdf_file)
+            return Response({
+                'status': 'success',
+                'message': 'PDF file set as current for validation',
+                **serializer.data  # Merge the serialized patient data
+            })
         except RawPdfFile.DoesNotExist:
             pass
         
+        return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
+    except ObjectDoesNotExist:
         return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

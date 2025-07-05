@@ -94,10 +94,12 @@ from .views.sensitive_meta_views import (
 # Add missing anonymization overview imports
 from .views.anonymization_overview_views import (
     anonymization_items_overview,
-    set_current_for_validation,
     start_anonymization,
     get_anonymization_status
 )
+
+# Import the correct version from anonymization_overview.py
+from .views.anonymization_overview import set_current_for_validation
 
 # Add missing video anonymization imports
 from .views.video_anonymization_views import (
