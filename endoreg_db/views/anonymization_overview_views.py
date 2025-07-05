@@ -72,7 +72,7 @@ def anonymization_items_overview(request):
     return view.list(request)
 
 
-@api_view(['POST'])
+@api_view(['GET', 'POST', 'PUT'])
 def set_current_for_validation(request, file_id):
     """
     Set current file for validation and return patient data
