@@ -263,7 +263,11 @@ class Command(BaseCommand):
                     locale="de_DE",  # Default German locale for medical data
                     text_date_format="%d.%m.%Y"  # Common German date format
                 )
-                cleaned_video_path = frame_cleaner.clean_video(Path(video_file_obj.raw_file.path), report_reader)
+                cleaned_video_path = frame_cleaner.clean_video(
+                    Path(video_file_obj.raw_file.path),
+                    report_reader,
+                    device_name=processor_name   # ← add this
+                )
                 
                 # Save the cleaned video using Django's FileField
                 with open(cleaned_video_path, 'rb') as f:
