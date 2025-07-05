@@ -91,7 +91,21 @@ from .views.sensitive_meta_views import (
     AvailableFilesListView
 )
 
-from .views.anonymization_overview_views import AnonymizationOverviewView
+# Add missing anonymization overview imports
+from .views.anonymization_overview_views import (
+    anonymization_items_overview,
+    set_current_for_validation,
+    start_anonymization,
+    get_anonymization_status
+)
+
+# Add missing video anonymization imports
+from .views.video_anonymization_views import (
+    anonymize_video,
+    anonymization_status,
+    anonymization_batch_status,
+    anonymization_batch_start
+)
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
@@ -180,7 +194,16 @@ urlpatterns = [
     ),
     
     # URL patterns for anonymization overview
-    path('anonymization/items/overview/', AnonymizationOverviewView.as_view(), name='anonymization_overview'),
+    path('anonymization/items/overview/', anonymization_items_overview, name='anonymization_items_overview'),
+    path('anonymization/<int:file_id>/current/', set_current_for_validation, name='set_current_for_validation'),
+    path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
+    path('anonymization/<int:file_id>/status/', get_anonymization_status, name='get_anonymization_status'),
+    
+    # Video anonymization API endpoints
+    path('videos/<uuid:video_id>/anonymize/', anonymize_video, name='anonymize_video'),
+    path('videos/<uuid:video_id>/anonymization-status/', anonymization_status, name='anonymization_status'),
+    path('videos/anonymization-batch-status/', anonymization_batch_status, name='anonymization_batch_status'),
+    path('videos/anonymization-batch-start/', anonymization_batch_start, name='anonymization_batch_start'),
     
     # URL patterns for ExaminationForm.vue API calls
     path(
