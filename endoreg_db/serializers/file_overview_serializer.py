@@ -13,8 +13,9 @@ class FileOverviewSerializer(serializers.Serializer):
 
     # --- fields expected by the front-end ---------------------------
     id = serializers.IntegerField()
-    filename = serializers.CharField()
-    mediaType = serializers.CharField(source="media_type")
+    filename = serializers.CharField(read_only=True)
+    # Use read_only=True to avoid conflicts with the polymorphic nature
+    mediaType = serializers.CharField(read_only=True, source="media_type")
     anonymizationStatus = serializers.CharField(source="anonym_status")
     annotationStatus = serializers.CharField(source="annot_status")
     createdAt = serializers.DateTimeField(source="created_at")
