@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Union
 from django.core.files.base import ContentFile
 from django.db import transaction
+from datetime import date
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -51,6 +52,62 @@ def _ensure_frame_cleaning_available():
         logger.warning(f"Frame cleaning not available: {e}")
     
     return False, None, None
+
+
+def _ensure_default_patient_data(video_file: "VideoFile") -> None:
+    """
+    Ensure video has minimum required patient data in SensitiveMeta.
+    Creates default values if data is missing after OCR processing.
+    """
+    from endoreg_db.models import SensitiveMeta
+    
+    if not video_file.sensitive_meta:
+        logger.info(f"No SensitiveMeta found for video {video_file.uuid}, creating default")
+        
+        # Create default SensitiveMeta with placeholder data
+        default_data = {
+            "patient_first_name": "Patient",
+            "patient_last_name": "Unknown", 
+            "patient_dob": date(1990, 1, 1),  # Default DOB
+            "examination_date": date.today(),
+            "center_name": video_file.center.name if video_file.center else "university_hospital_wuerzburg"
+        }
+        
+        try:
+            sensitive_meta = SensitiveMeta.create_from_dict(default_data)
+            video_file.sensitive_meta = sensitive_meta
+            video_file.save(update_fields=['sensitive_meta'])
+            logger.info(f"Created default SensitiveMeta for video {video_file.uuid}")
+        except Exception as e:
+            logger.error(f"Failed to create default SensitiveMeta for video {video_file.uuid}: {e}")
+            
+    else:
+        # Update existing SensitiveMeta with missing fields
+        update_needed = False
+        update_data = {}
+        
+        if not video_file.sensitive_meta.patient_first_name:
+            update_data["patient_first_name"] = "Patient"
+            update_needed = True
+            
+        if not video_file.sensitive_meta.patient_last_name:
+            update_data["patient_last_name"] = "Unknown"
+            update_needed = True
+            
+        if not video_file.sensitive_meta.patient_dob:
+            update_data["patient_dob"] = date(1990, 1, 1)
+            update_needed = True
+            
+        if not video_file.sensitive_meta.examination_date:
+            update_data["examination_date"] = date.today()
+            update_needed = True
+            
+        if update_needed:
+            try:
+                video_file.sensitive_meta.update_from_dict(update_data)
+                logger.info(f"Updated missing SensitiveMeta fields for video {video_file.uuid}: {list(update_data.keys())}")
+            except Exception as e:
+                logger.error(f"Failed to update SensitiveMeta for video {video_file.uuid}: {e}")
 
 
 def import_and_anonymize(
@@ -126,6 +183,10 @@ def import_and_anonymize(
         raise RuntimeError(f"Pipe 1 processing failed for video {video_file_obj.uuid}")
     
     logger.info("Pipe 1 processing completed successfully")
+    
+    # Step 4.5: Ensure minimum patient data is available
+    logger.info("Ensuring minimum patient data availability...")
+    _ensure_default_patient_data(video_file_obj)
     
     # Step 5: Frame-level anonymization (if available)
     frame_cleaning_available, FrameCleaner, ReportReader = _ensure_frame_cleaning_available()

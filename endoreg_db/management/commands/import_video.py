@@ -252,6 +252,31 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("Failed to create VideoFile instance"))
             return
         
+        self.stdout.write(self.style.SUCCESS(f"Created VideoFile with UUID: {video_file_obj.uuid}"))
+        
+        # Initialize video specs and frames
+        video_file_obj.initialize_video_specs()
+        video_file_obj.initialize_frames()
+        
+        # Run Pipe 1 for OCR and AI processing
+        self.stdout.write(self.style.SUCCESS("Starting Pipe 1 processing (OCR + AI)..."))
+        success = video_file_obj.pipe_1(
+            model_name=model_name,
+            delete_frames_after=True,
+            ocr_frame_fraction=0.01,
+            ocr_cap=5
+        )
+        
+        if not success:
+            self.stdout.write(self.style.ERROR("Pipe 1 processing failed"))
+            return
+            
+        self.stdout.write(self.style.SUCCESS("Pipe 1 processing completed"))
+        
+        # Ensure minimum patient data is available
+        self.stdout.write(self.style.SUCCESS("Ensuring minimum patient data..."))
+        self._ensure_default_patient_data(video_file_obj)
+        
         # Frame-level anonymization integration
         if FRAME_CLEANING_AVAILABLE and video_file_obj.raw_file:
             try:
@@ -287,8 +312,64 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS("Pipeline 1 completed successfully"))
             else:
                 self.stdout.write(self.style.ERROR("Pipeline 1 failed"))
-            
     
+    def _ensure_default_patient_data(self, video_file):
+        """
+        Ensure video has minimum required patient data in SensitiveMeta.
+        Creates default values if data is missing after OCR processing.
+        """
+        from endoreg_db.models import SensitiveMeta
+        from datetime import date
+        
+        if not video_file.sensitive_meta:
+            self.stdout.write(self.style.WARNING(f"No SensitiveMeta found for video {video_file.uuid}, creating default"))
+            
+            # Create default SensitiveMeta with placeholder data
+            default_data = {
+                "patient_first_name": "Patient",
+                "patient_last_name": "Unknown", 
+                "patient_dob": date(1990, 1, 1),  # Default DOB
+                "examination_date": date.today(),
+                "center_name": video_file.center.name if video_file.center else "university_hospital_wuerzburg"
+            }
+            
+            try:
+                sensitive_meta = SensitiveMeta.create_from_dict(default_data)
+                video_file.sensitive_meta = sensitive_meta
+                video_file.save(update_fields=['sensitive_meta'])
+                self.stdout.write(self.style.SUCCESS(f"Created default SensitiveMeta for video {video_file.uuid}"))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"Failed to create default SensitiveMeta for video {video_file.uuid}: {e}"))
+                
+        else:
+            # Update existing SensitiveMeta with missing fields
+            update_needed = False
+            update_data = {}
+            
+            if not video_file.sensitive_meta.patient_first_name:
+                update_data["patient_first_name"] = "Patient"
+                update_needed = True
+                
+            if not video_file.sensitive_meta.patient_last_name:
+                update_data["patient_last_name"] = "Unknown"
+                update_needed = True
+                
+            if not video_file.sensitive_meta.patient_dob:
+                update_data["patient_dob"] = date(1990, 1, 1)
+                update_needed = True
+                
+            if not video_file.sensitive_meta.examination_date:
+                update_data["examination_date"] = date.today()
+                update_needed = True
+                
+            if update_needed:
+                try:
+                    video_file.sensitive_meta.update_from_dict(update_data)
+                    self.stdout.write(self.style.SUCCESS(f"Updated missing SensitiveMeta fields for video {video_file.uuid}: {list(update_data.keys())}"))
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f"Failed to update SensitiveMeta for video {video_file.uuid}: {e}"))
+            else:
+                self.stdout.write(self.style.SUCCESS(f"SensitiveMeta for video {video_file.uuid} already has all required fields"))
     
     def _choose_processor_interactively(
         self, processors_qs

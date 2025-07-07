@@ -56,6 +56,7 @@ class VideoFileForMetaView(APIView):
         response_data = serialized_video.data
         missing_fields = {}
 
+        # Critical fields that must be present for video playback
         if response_data.get('file') is None:
             missing_fields['file'] = "No file associated with this entry."
 
@@ -65,26 +66,38 @@ class VideoFileForMetaView(APIView):
         if response_data.get('full_video_path') is None:
             missing_fields['full_video_path'] = "No file path found on server."
 
+        # Optional patient data fields - only warn, don't fail
+        optional_missing = {}
+        
         if not response_data.get('patient_first_name'):
-            missing_fields['patient_first_name'] = "Patient first name is missing."
+            optional_missing['patient_first_name'] = "Patient first name is missing."
 
         if not response_data.get('patient_last_name'):
-            missing_fields['patient_last_name'] = "Patient last name is missing."
+            optional_missing['patient_last_name'] = "Patient last name is missing."
 
         if not response_data.get('patient_dob'):
-            missing_fields['patient_dob'] = "Patient date of birth is missing."
+            optional_missing['patient_dob'] = "Patient date of birth is missing."
 
         if not response_data.get('examination_date'):
-            missing_fields['examination_date'] = "Examination date is missing."
+            optional_missing['examination_date'] = "Examination date is missing."
 
         if response_data.get('duration') is None:
-            missing_fields['duration'] = "Unable to determine video duration. The file might be corrupted or unreadable."
+            optional_missing['duration'] = "Unable to determine video duration. The file might be corrupted or unreadable."
 
+        # Only fail if critical video file fields are missing
         if missing_fields:
             return Response({"error": "Missing required data.", "details": missing_fields}, 
                             status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(serialized_video.data, status=status.HTTP_200_OK)
+        # Include warnings about optional fields in response but don't fail
+        response_data_with_warnings = serialized_video.data.copy()
+        if optional_missing:
+            response_data_with_warnings['warnings'] = {
+                "message": "Some optional patient data is missing",
+                "missing_optional_fields": optional_missing
+            }
+
+        return Response(response_data_with_warnings, status=status.HTTP_200_OK)
 
     def serve_video_file(self, video_entry):
         """
