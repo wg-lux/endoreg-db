@@ -76,10 +76,24 @@ class UploadFileView(APIView):
         
         uploaded_file = request.FILES['file']
         
+        # Validate file is not empty
+        if not uploaded_file or uploaded_file.size == 0:
+            return Response(
+                {'error': 'Uploaded file is empty. Please select a valid file.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         # Validate file size
         if uploaded_file.size > self.MAX_FILE_SIZE:
             return Response(
                 {'error': f'File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate filename
+        if not uploaded_file.name or uploaded_file.name.strip() == '':
+            return Response(
+                {'error': 'Invalid filename. Please ensure the file has a valid name.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -108,7 +122,15 @@ class UploadFileView(APIView):
             
             # Start asynchronous processing if Celery is available
             if CELERY_AVAILABLE:
-                process_upload_job.delay(str(upload_job.id))
+                try:
+                    process_upload_job.delay(str(upload_job.id))
+                except Exception as e:
+                    # If Celery task fails to start, mark job as failed
+                    upload_job.mark_failed(f'Failed to start processing: {str(e)}')
+                    return Response(
+                        {'error': f'Failed to start processing: {str(e)}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
             else:
                 # For development without Celery, mark as processing immediately
                 upload_job.mark_processing()
@@ -118,8 +140,9 @@ class UploadFileView(APIView):
             # Prepare response
             status_url = reverse('upload_status', kwargs={'id': upload_job.id})
             response_data = {
-                'upload_id': upload_job.id,
-                'status_url': status_url
+                'upload_id': str(upload_job.id),  # Ensure UUID is converted to string
+                'status_url': status_url,
+                'message': 'Upload job created successfully'
             }
             
             # Return the response data directly since serializer fields are read-only

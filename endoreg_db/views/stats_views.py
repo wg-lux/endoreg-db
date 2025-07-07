@@ -38,9 +38,13 @@ class ExaminationStatsView(APIView):
             
             recent_data = []
             for exam in recent_examinations:
+                patient = exam.patient
+                if not patient:
+                    logger.warning(f"Patient not found for examination ID {exam.id}")
+                    continue
                 recent_data.append({
                     'id': exam.id,
-                    'patient_name': exam.patient.get_full_name() if exam.patient else 'Unknown',
+                    'patient_name': f"{patient.first_name} {patient.last_name}".strip() if patient.first_name or patient.last_name else 'Unknown',
                     'examination_type': exam.examination.name if exam.examination else 'Unknown',
                     'date': exam.date_start.isoformat() if exam.date_start else None,
                 })

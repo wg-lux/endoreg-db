@@ -28,6 +28,7 @@ from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
 from .views.examination_views import (
     ExaminationViewSet,
+    VideoExaminationViewSet,  # NEW: Add the VideoExaminationViewSet
     get_morphology_classification_choices_for_exam,
     get_location_classification_choices_for_exam,
     get_interventions_for_exam,
@@ -83,6 +84,13 @@ from .views.upload_views import (
     UploadStatusView
 )
 
+# Add missing examination CRUD imports
+from .views.examination_crud_views import (
+    ExaminationCreateView,
+    ExaminationDetailView,
+    ExaminationListView
+)
+
 # Add sensitive meta views import
 from .views.sensitive_meta_views import (
     SensitiveMetaDetailView,
@@ -124,6 +132,7 @@ router.register(r'genders', GenderViewSet)
 router.register(r'centers', CenterViewSet)
 router.register(r'videos', VideoViewSet, basename='videos')  # New: separate JSON endpoints
 router.register(r'examinations', ExaminationViewSet)
+router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
 # Add new router registrations
 router.register(r'findings', FindingViewSet)
 router.register(r'location-classifications', LocationClassificationViewSet)
@@ -181,6 +190,15 @@ urlpatterns += [
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
     path('examinations/', ExaminationViewSet.as_view({'get': 'list'}), name='examination-list'),
+    
+    # NEW: Examination CRUD endpoints for SimpleExaminationForm
+    # POST /api/examinations/create/ - Create new examination
+    # GET /api/examinations/{id}/ - Get examination details
+    # PATCH /api/examinations/{id}/ - Update examination
+    # GET /api/examinations/list/ - List examinations with filtering
+    path('examinations/create/', ExaminationCreateView.as_view(), name='examination_create'),
+    path('examinations/<int:pk>/', ExaminationDetailView.as_view(), name='examination_detail'),
+    path('examinations/list/', ExaminationListView.as_view(), name='examination_list'),
     
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     path(

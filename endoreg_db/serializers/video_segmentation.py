@@ -250,7 +250,7 @@ class VideoListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = VideoFile
-        fields = ["id", "original_file_name"]  # Only fetch required fields
+        fields = ["id", "original_file_name", "anonymization_status", "requires_validation"]  # Add anonymization fields
 
 
 

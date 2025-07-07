@@ -16,30 +16,52 @@ def _stream_video_file(vf, frontend_origin):
     Helper to stream a video file with proper headers and CORS.
     Raises Http404 if file is missing.
     """
-    # Use active_file_path which handles both processed and raw files
-    if hasattr(vf, 'active_file_path') and vf.active_file_path:
-        path = Path(vf.active_file_path)
-    elif vf.active_file and hasattr(vf.active_file, 'path'):
+    try:
+        # Use active_file_path which handles both processed and raw files
+        if hasattr(vf, 'active_file_path') and vf.active_file_path:
+            path = Path(vf.active_file_path)
+        elif vf.active_file and hasattr(vf.active_file, 'path'):
+            try:
+                path = Path(vf.active_file.path)
+            except (ValueError, AttributeError) as exc:
+                raise Http404("No file associated with this video") from exc
+        else:
+            raise Http404("No video file available for this entry")
+
+        if not path.exists():
+            raise Http404("Video file not found on disk")
+
+        # Validate file size before streaming
         try:
-            path = Path(vf.active_file.path)
-        except ValueError as exc:
-            raise Http404("No file associated with this video") from exc
-    else:
-        raise Http404("No video file available for this entry")
+            file_size = path.stat().st_size
+            if file_size == 0:
+                raise Http404("Video file is empty")
+        except OSError as e:
+            raise Http404(f"Cannot access video file: {str(e)}")
 
-    if not path.exists():
-        raise Http404("Video file not found on disk")
-
-    mime, _ = mimetypes.guess_type(str(path))
-    # Open file in binary mode and ensure file descriptor is closed by FileResponse
-    file_handle = open(path, 'rb')
-    response = FileResponse(file_handle, content_type=mime or 'video/mp4')
-    response['Content-Length'] = path.stat().st_size
-    response['Accept-Ranges'] = 'bytes'
-    response['Content-Disposition'] = f'inline; filename="{path.name}"'
-    response["Access-Control-Allow-Origin"] = frontend_origin
-    response["Access-Control-Allow-Credentials"] = "true"
-    return response
+        mime, _ = mimetypes.guess_type(str(path))
+        # Default to mp4 if MIME type detection fails
+        content_type = mime or 'video/mp4'
+        
+        try:
+            # Open file in binary mode and ensure file descriptor is closed by FileResponse
+            file_handle = open(path, 'rb')
+            response = FileResponse(file_handle, content_type=content_type)
+            response['Content-Length'] = str(file_size)
+            response['Accept-Ranges'] = 'bytes'
+            response['Content-Disposition'] = f'inline; filename="{path.name}"'
+            response["Access-Control-Allow-Origin"] = frontend_origin
+            response["Access-Control-Allow-Credentials"] = "true"
+            return response
+        except IOError as e:
+            raise Http404(f"Cannot open video file: {str(e)}")
+            
+    except Exception as e:
+        # Log unexpected errors but don't expose internal details
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Unexpected error in _stream_video_file: {str(e)}")
+        raise Http404("Video file cannot be streamed")
 
 
 class VideoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -87,10 +109,21 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Streams the raw video file for the specified video with HTTP range and CORS support.
         """
-        vf: VideoFile = self.get_object()
-        frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-        return _stream_video_file(vf, frontend_origin)
-    
+        try:
+            vf: VideoFile = self.get_object()
+            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
+            return _stream_video_file(vf, frontend_origin)
+        except Http404:
+            # Re-raise Http404 exceptions as they should bubble up
+            raise
+        except Exception as e:
+            # Log unexpected errors and convert to Http404
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Unexpected error in video stream for pk={pk}: {str(e)}")
+            raise Http404("Video streaming failed")
+
+
 # Neue separate View für Video-Streaming außerhalb des ViewSets
 class VideoStreamView(APIView):
     """
@@ -107,11 +140,23 @@ class VideoStreamView(APIView):
             raise Http404("Video ID is required")
             
         try:
-            vf = VideoFile.objects.get(pk=video_id)
+            # Validate video_id is numeric
+            try:
+                video_id_int = int(video_id)
+            except (ValueError, TypeError):
+                raise Http404("Invalid video ID format")
+                
+            vf = VideoFile.objects.get(pk=video_id_int)
+            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
+            return _stream_video_file(vf, frontend_origin)
         except VideoFile.DoesNotExist:
             raise Http404("Video not found")
-        frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-        return _stream_video_file(vf, frontend_origin)
+        except Exception as e:
+            # Log unexpected errors and convert to Http404
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Unexpected error in VideoStreamView for video_id={video_id}: {str(e)}")
+            raise Http404("Video streaming failed")
 
 
 # Kept the old VideoView class for backward compatibility during transition

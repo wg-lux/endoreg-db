@@ -33,6 +33,7 @@ class SensitiveMetaDetailView(APIView):
         Supports both URL parameter and query parameter access patterns:
         - /api/pdf/sensitivemeta/123/ (URL parameter)
         - /api/pdf/sensitivemeta/?id=123 (query parameter - for backward compatibility)
+        - /api/pdf/sensitivemeta/ (list all - returns empty list instead of 400)
         
         Returns detailed information suitable for user verification.
         """
@@ -40,11 +41,9 @@ class SensitiveMetaDetailView(APIView):
         if not sensitive_meta_id:
             sensitive_meta_id = request.query_params.get('id')
         
+        # If no ID provided, return empty list instead of error
         if not sensitive_meta_id:
-            return Response(
-                {"error": "sensitive_meta_id is required either as URL parameter or ?id= query parameter"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response([], status=status.HTTP_200_OK)
 
         try:
             # Convert to int if it's a string
