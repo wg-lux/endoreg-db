@@ -18,6 +18,10 @@ class FileOverviewSerializer(serializers.Serializer):
     anonymizationStatus = serializers.CharField(source="anonym_status")
     annotationStatus = serializers.CharField(source="annot_status")
     createdAt = serializers.DateTimeField(source="created_at")
+    text = serializers.CharField(required=False, allow_blank=True)
+    anonymizedText = serializers.CharField(
+        source="anonymized_text", required=False, allow_blank=True
+    )
 
     # --- converting DB objects to that shape -----------------------
     def to_representation(self, instance):
@@ -45,6 +49,8 @@ class FileOverviewSerializer(serializers.Serializer):
                 annot_status = "done"
             else:
                 annot_status = "not_started"
+            text = instance.text or ""
+            anonym_text = instance.anonymized_text or ""
             
 
         elif isinstance(instance, RawPdfFile):
@@ -55,7 +61,8 @@ class FileOverviewSerializer(serializers.Serializer):
             anonym_status = "done" if (instance.anonymized_text and instance.anonymized_text.strip()) else "not_started"
             # PDF annotation == "sensitive meta validated"
             annot_status = "done" if getattr(instance.sensitive_meta, "is_verified", False) else "not_started"
-    
+            text = instance.text or ""
+            anonym_text = instance.anonymized_text or ""
 
         else:  # shouldn't happen
             raise TypeError(f"Unsupported instance for overview: {type(instance)}")
@@ -67,6 +74,8 @@ class FileOverviewSerializer(serializers.Serializer):
             "anonymizationStatus": anonym_status,
             "annotationStatus": annot_status,
             "createdAt": created_at,
+            "text": text,
+            "anonymizedText": anonym_text,
         }
 
 
@@ -94,8 +103,8 @@ class PatientDataSerializer(serializers.Serializer):
         if is_video:
             # Video-specific data
             patient_data.update({
-                'text': '',  # Videos don't have text
-                'anonymizedText': '',  # Videos don't have anonymized text
+                'text': obj.text,  # Videos don't have text
+                'anonymizedText': obj.anonymized_text,  # Videos don't have anonymized text
                 'reportMeta': {
                     'id': obj.sensitive_meta.id if obj.sensitive_meta else None,
                     'patientFirstName': obj.sensitive_meta.patient_first_name if obj.sensitive_meta else '',
