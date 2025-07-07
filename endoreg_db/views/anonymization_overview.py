@@ -49,7 +49,7 @@ class AnonymizationOverviewView(ListAPIView):
             VideoFile.objects
             .select_related("state", "sensitive_meta")
             .prefetch_related("label_video_segments__state")
-            .only("id", "original_file_name", "raw_file", "uploaded_at", "sensitive_meta")
+            .only("id", "original_file_name", "raw_file", "uploaded_at", "state", "sensitive_meta")
         )
 
         # 2) RawPdfFile queryset - only fields that exist on RawPdfFile
