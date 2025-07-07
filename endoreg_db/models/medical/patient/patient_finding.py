@@ -97,9 +97,15 @@ class PatientFinding(models.Model):
         if self.finding and self.patient_examination:
             self._validate_required_findings()
     
-    def save(self, *args, **kwargs):
+    '''def save(self, *args, **kwargs):
         self.full_clean()
+        super().save(*args, **kwargs)'''
+    # This avoids validation errors on partial updates 
+    def save(self, *args, **kwargs):
+        if not kwargs.get('update_fields'):
+            self.full_clean()
         super().save(*args, **kwargs)
+
     
     def _validate_required_findings(self):
         """Validiert Required vs Optional Finding Constraints"""
