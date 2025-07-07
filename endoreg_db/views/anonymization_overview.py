@@ -130,14 +130,7 @@ def start_anonymization(request, file_id):
         try:
             video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
             
-            # Check if video anonymization is available and prerequisites are met
-            if not _anonymize:
-                return JsonResponse({
-                    'status': 'error', 
-                    'message': 'Video anonymization functionality not available'
-                }, status=500)
-            
-            # Check video state and prerequisites
+            # For videos, we need to ensure the complete pipeline runs
             state = video_file.get_or_create_state()
             
             if state.anonymized:
@@ -146,57 +139,45 @@ def start_anonymization(request, file_id):
                     'message': 'Video is already anonymized'
                 })
             
-            if not video_file.has_raw:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Raw video file is missing'
-                }, status=400)
-            
-            if not state.frames_extracted:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Video frames must be extracted first'
-                }, status=400)
-            
-            if not video_file.sensitive_meta or not video_file.sensitive_meta.is_verified:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Sensitive metadata must be validated first'
-                }, status=400)
-            
-            # Check if all outside segments are validated
-            outside_segments = video_file.get_outside_segments(only_validated=False)
-            unvalidated_outside = outside_segments.filter(state__is_validated=False)
-            if unvalidated_outside.exists():
-                return JsonResponse({
-                    'status': 'error',
-                    'message': f'All outside segments must be validated first. {unvalidated_outside.count()} segments pending.'
-                }, status=400)
-            
-            # Mark as processing and start anonymization
-            logger.info(f"Starting anonymization for video {video_file.uuid}")
-            
-            try:
-                # Try to run anonymization synchronously for now
-                # In production, you might want to queue this as a background job
-                success = _anonymize(video_file, delete_original_raw=True)
+            # Check if we need to run Pipe 1 first (frame extraction + AI processing)
+            if not state.frames_extracted or not state.initial_prediction_completed:
+                logger.info(f"Running Pipe 1 for video {video_file.uuid}")
                 
-                if success:
-                    return JsonResponse({
-                        'status': 'success', 
-                        'message': 'Video anonymization completed successfully'
-                    })
-                else:
+                model_name = "image_multilabel_classification_colonoscopy_default"
+                success = video_file.pipe_1(
+                    model_name=model_name,
+                    delete_frames_after=True,
+                    ocr_frame_fraction=0.01,
+                    ocr_cap=5
+                )
+                
+                if not success:
                     return JsonResponse({
                         'status': 'error',
-                        'message': 'Video anonymization failed'
+                        'message': 'Pipe 1 processing failed'
                     }, status=500)
-                    
-            except Exception as e:
-                logger.error(f"Error during video anonymization: {e}")
+                
+                # Simulate user validation (test_after_pipe_1) for automatic processing
+                validation_success = video_file.test_after_pipe_1()
+                if not validation_success:
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'Validation simulation failed'
+                    }, status=500)
+            
+            # Now run Pipe 2 (anonymization)
+            logger.info(f"Running Pipe 2 for video {video_file.uuid}")
+            success = video_file.pipe_2()
+            
+            if success:
+                return JsonResponse({
+                    'status': 'success', 
+                    'message': 'Video anonymization completed successfully'
+                })
+            else:
                 return JsonResponse({
                     'status': 'error',
-                    'message': f'Anonymization failed: {str(e)}'
+                    'message': 'Video anonymization failed'
                 }, status=500)
                 
         except VideoFile.DoesNotExist:

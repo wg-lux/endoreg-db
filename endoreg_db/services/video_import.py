@@ -63,9 +63,11 @@ def import_and_anonymize(
     """
     High-level helper that wraps:
       1. VideoFile.create_from_file_initialized(...)
-      2. FrameCleaner.clean_video(...)
-      3. Saves the cleaned file back to VideoFile
-      4. Returns the VideoFile instance (fresh from DB).
+      2. VideoFile.initialize_video_specs() 
+      3. VideoFile.initialize_frames()
+      4. VideoFile.pipe_1() - CRITICAL: This was missing!
+      5. Saves the cleaned file back to VideoFile
+      6. Returns the VideoFile instance (fresh from DB).
 
     Args:
         file_path: Path to the video file to import
@@ -85,6 +87,8 @@ def import_and_anonymize(
     file_path = Path(file_path)
     logger.info(f"Starting import and anonymization for: {file_path}")
     
+    model_name = "image_multilabel_classification_colonoscopy_default"
+    
     if not file_path.exists():
         raise FileNotFoundError(f"Video file not found: {file_path}")
     
@@ -103,7 +107,27 @@ def import_and_anonymize(
     
     logger.info(f"Created VideoFile with UUID: {video_file_obj.uuid}")
     
-    # Step 2: Frame-level anonymization (heavy I/O outside transaction)
+    # Step 2: Initialize video specifications (duration, fps, etc.)
+    video_file_obj.initialize_video_specs()
+    
+    # Step 3: Initialize frame objects in database (without extracting)
+    video_file_obj.initialize_frames()
+    
+    # Step 4: Run Pipe 1 - CRITICAL MISSING STEP!
+    logger.info("Starting Pipe 1 processing...")
+    success = video_file_obj.pipe_1(
+        model_name=model_name,
+        delete_frames_after=True,  # Clean up frames after processing
+        ocr_frame_fraction=0.01,
+        ocr_cap=5
+    )
+    
+    if not success:
+        raise RuntimeError(f"Pipe 1 processing failed for video {video_file_obj.uuid}")
+    
+    logger.info("Pipe 1 processing completed successfully")
+    
+    # Step 5: Frame-level anonymization (if available)
     frame_cleaning_available, FrameCleaner, ReportReader = _ensure_frame_cleaning_available()
     
     if frame_cleaning_available and video_file_obj.raw_file:
@@ -125,7 +149,7 @@ def import_and_anonymize(
                 device_name=processor_name
             )
             
-            # Step 3: Save cleaned video back to VideoFile (atomic transaction)
+            # Save cleaned video back to VideoFile (atomic transaction)
             with transaction.atomic():
                 # Save the cleaned video using Django's FileField
                 with open(cleaned_video_path, 'rb') as f:
@@ -143,7 +167,7 @@ def import_and_anonymize(
     elif not frame_cleaning_available:
         logger.warning("Frame cleaning not available (lx_anonymizer not found)")
     
-    # Step 4: Refresh from database and return
+    # Step 6: Refresh from database and return
     with transaction.atomic():
         video_file_obj.refresh_from_db()
     

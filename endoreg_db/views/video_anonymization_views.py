@@ -12,6 +12,7 @@ from django.db import transaction
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_file_anonymize import _anonymize
+from endoreg_db.services.video_import import import_and_anonymize
 
 logger = logging.getLogger(__name__)
 
@@ -89,21 +90,61 @@ def anonymize_video(request, video_id):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Start anonymization process
-        logger.info(f"Starting anonymization for video {video.uuid} by user {request.user}")
+        logger.info(f"Starting full anonymization pipeline for video {video.uuid} by user {request.user}")
         
-        success = _anonymize(video, delete_original_raw=delete_original_raw)
-        
-        if success:
-            return Response({
-                'success': True,
-                'message': 'Video anonymization completed successfully',
-                'video_id': str(video.uuid),
-                'anonymized': True
-            })
-        else:
+        try:
+            # Use the complete import_and_anonymize pipeline instead of just _anonymize
+            # This ensures Pipe 1 (frame extraction, AI processing) and Pipe 2 (anonymization) are both executed
+            
+            # Get the video file path for re-processing
+            video_file_path = video.get_raw_file_path()
+            if not video_file_path or not video_file_path.exists():
+                return Response({
+                    'success': False,
+                    'message': 'Raw video file path not accessible for re-processing',
+                    'video_id': str(video.uuid),
+                    'anonymized': False
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get processor and center info from existing video
+            processor_name = video.processor.name if video.processor else "olympus_cv_1500"
+            center_name = video.center.name if video.center else "default_center"
+            
+            # Run the complete pipeline - this will:
+            # 1. Re-extract frames if needed
+            # 2. Run Pipe 1 (AI processing, metadata extraction)
+            # 3. Run Pipe 2 (video anonymization)
+            anonymized_video = import_and_anonymize(
+                file_path=video_file_path,
+                center_name=center_name,
+                processor_name=processor_name,
+                save_video=True,
+                delete_source=False  # Don't delete the original during re-processing
+            )
+            
+            if anonymized_video and anonymized_video.uuid == video.uuid:
+                # Update the original video object reference
+                video.refresh_from_db()
+                
+                return Response({
+                    'success': True,
+                    'message': 'Video anonymization pipeline completed successfully',
+                    'video_id': str(video.uuid),
+                    'anonymized': True
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': 'Video anonymization pipeline failed - video object mismatch',
+                    'video_id': str(video.uuid),
+                    'anonymized': False
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+        except Exception as pipeline_error:
+            logger.error(f"Error in anonymization pipeline for video {video.uuid}: {pipeline_error}", exc_info=True)
             return Response({
                 'success': False,
-                'message': 'Video anonymization failed',
+                'message': f'Anonymization pipeline failed: {str(pipeline_error)}',
                 'video_id': str(video.uuid),
                 'anonymized': False
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
