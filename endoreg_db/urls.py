@@ -117,6 +117,9 @@ from .views.video_anonymization_views import (
     anonymization_batch_start
 )
 
+from .views.video_reimport_views import VideoReimportView
+
+
 # Move stats endpoint BEFORE router to avoid conflicts
 urlpatterns = [
     # STATISTICS API ENDPOINTS (moved to top to avoid router conflicts)
@@ -551,6 +554,13 @@ urlpatterns += [
          SensitiveMetaDetailView.as_view(), 
          name='video_sensitive_meta_detail'),
 
+    # Video Re-import API endpoint
+    # POST /api/video/<int:video_id>/reimport/
+    # Re-imports a video file to regenerate metadata when OCR failed or data is incomplete
+    path('video/<int:video_id>/reimport/', 
+         VideoReimportView.as_view(), 
+         name='video_reimport'),
+
 ]
 
 """# Always serve media files, not just in DEBUG
@@ -561,3 +571,4 @@ urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)""
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
