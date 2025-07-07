@@ -249,6 +249,7 @@ class VideoFile(models.Model):
 
     predict_video = _predict_video_pipeline
     extract_text_from_frames = _extract_text_from_video_frames
+    
 
 
     @classmethod
