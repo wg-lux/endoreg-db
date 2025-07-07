@@ -85,56 +85,67 @@ class PatientDataSerializer(serializers.Serializer):
     the Pinia store needs for validation workflow.
     """
     
-    def to_representation(self, obj):
-        """
-        Convert VideoFile or RawPdfFile instance to PatientData format.
-        """
-        request = self.context.get('request')
-        
-        # Determine if this is a video or PDF
-        is_video = isinstance(obj, VideoFile)
-        
-        # Base patient data structure
-        patient_data = {
-            'id': obj.id,
-            'sensitiveMetaId': obj.sensitive_meta.id if obj.sensitive_meta else None,
-        }
-        
-        if is_video:
-            # Video-specific data
-            patient_data.update({
-                'text': obj.text,  # Videos don't have text
-                'anonymizedText': obj.anonymized_text,  # Videos don't have anonymized text
-                'reportMeta': {
-                    'id': obj.sensitive_meta.id if obj.sensitive_meta else None,
-                    'patientFirstName': obj.sensitive_meta.patient_first_name if obj.sensitive_meta else '',
-                    'patientLastName': obj.sensitive_meta.patient_last_name if obj.sensitive_meta else '',
-                    'patientDob': obj.sensitive_meta.patient_dob if obj.sensitive_meta else '',
-                    'patientGender': obj.sensitive_meta.patient_gender if obj.sensitive_meta else '',
-                    'examinationDate': obj.sensitive_meta.examination_date if obj.sensitive_meta else '',
-                    'casenumber': getattr(obj.sensitive_meta, 'casenumber', '') if obj.sensitive_meta else '',
-                    'file': request.build_absolute_uri(f"/api/videostream/{obj.id}/") if request else None,
-                    'pdfUrl': None,  # Videos don't have PDF URLs
-                    'fullPdfPath': None
-                }
-            })
+def to_representation(self, instance):
+    """
+    Handles both VideoFile and RawPdfFile instances.
+    """
+    text = ""
+    anonym_text = ""
+    
+    if isinstance(instance, VideoFile):
+        media_type = "video"
+        created_at = instance.uploaded_at
+        filename = instance.original_file_name or (
+            instance.raw_file.name.split("/")[-1] if instance.raw_file else "unknown"
+        )
+        # ------- anonymization status (adjust to your VideoState model)
+        vs = instance.state
+        if vs is None:
+            anonym_status = "not_started"
+        elif hasattr(vs, 'processing_error') and vs.processing_error:
+            anonym_status = "failed"
+        elif vs.anonymized:
+            anonym_status = "done"
+        elif vs.frames_extracted:
+            anonym_status = "processing"
         else:
-            # PDF-specific data (RawPdfFile)
-            patient_data.update({
-                'text': obj.text or '',
-                'anonymizedText': obj.anonymized_text or '',
-                'reportMeta': {
-                    'id': obj.sensitive_meta.id if obj.sensitive_meta else None,
-                    'patientFirstName': obj.sensitive_meta.patient_first_name if obj.sensitive_meta else '',
-                    'patientLastName': obj.sensitive_meta.patient_last_name if obj.sensitive_meta else '',
-                    'patientDob': obj.sensitive_meta.patient_dob if obj.sensitive_meta else '',
-                    'patientGender': obj.sensitive_meta.patient_gender if obj.sensitive_meta else '',
-                    'examinationDate': obj.sensitive_meta.examination_date if obj.sensitive_meta else '',
-                    'casenumber': getattr(obj.sensitive_meta, 'casenumber', '') if obj.sensitive_meta else '',
-                    'file': None,  # PDFs don't have video files
-                    'pdfUrl': request.build_absolute_uri(obj.file.url) if request and obj.file else None,
-                    'fullPdfPath': str(Path(settings.MEDIA_ROOT) / obj.file.name) if obj.file else None
-                }
-            })
+            anonym_status = "not_started"
         
-        return patient_data
+        # ------- annotation status (validated label segments)
+        if instance.label_video_segments.filter(state__is_validated=True).exists():
+            annot_status = "done"
+        else:
+            annot_status = "not_started"
+        
+        # Videos don't have text content, but we could potentially extract 
+        # text from the sensitive_meta if needed
+        # For now, keep them empty as per the original requirement
+        text = ""
+        anonym_text = ""
+
+    elif isinstance(instance, RawPdfFile):
+        media_type = "pdf"
+        created_at = instance.created_at
+        filename = instance.file.name.split("/")[-1] if instance.file else "unknown"
+        # Fix: Check anonymized_text field instead of non-existent anonymized field
+        anonym_status = "done" if (instance.anonymized_text and instance.anonymized_text.strip()) else "not_started"
+        # PDF annotation == "sensitive meta validated"
+        annot_status = "done" if getattr(instance.sensitive_meta, "is_verified", False) else "not_started"
+        
+        # Extract text content from PDF
+        text = instance.text or ""
+        anonym_text = instance.anonymized_text or ""
+
+    else:  # shouldn't happen
+        raise TypeError(f"Unsupported instance for overview: {type(instance)}")
+
+    return {
+        "id": instance.pk,
+        "filename": filename,
+        "mediaType": media_type,
+        "anonymizationStatus": anonym_status,
+        "annotationStatus": annot_status,
+        "createdAt": created_at,
+        "text": text,
+        "anonymizedText": anonym_text,
+    }

@@ -40,29 +40,28 @@ class AnonymizationOverviewView(ListAPIView):
     permission_classes = DEBUG_PERMISSIONS   
     pagination_class = NoPagination
 
-    def get_queryset(self) -> QuerySet:                  # type: ignore
+    def get_queryset(self):
+        """
+        Returns a combined queryset of VideoFile and RawPdfFile instances.
+        """
+        # 1) VideoFile queryset - only fields that exist on VideoFile
         qs_video = (
             VideoFile.objects
-            .select_related("state")
-            .prefetch_related(
-                Prefetch(
-                    "label_video_segments",
-                    queryset=VideoFile.label_video_segments.rel.related_model.objects
-                             .filter(state__is_validated=True)
-                             .only("id")                # we only need existence
-                )
-            )
-            .only("id", "original_file_name", "raw_file",
-                  "uploaded_at", "text", "anonymized_text", "state")
+            .select_related("state", "sensitive_meta")
+            .prefetch_related("label_video_segments__state")
+            .only("id", "original_file_name", "raw_file", "uploaded_at", "sensitive_meta")
         )
+
+        # 2) RawPdfFile queryset - only fields that exist on RawPdfFile
         qs_pdf = (
             RawPdfFile.objects
             .select_related("sensitive_meta")
             .only("id", "file", "created_at", 
-                  "text", "anonymized_text",       # ← add these two
-                  "sensitive_meta")
+                "text", "anonymized_text",       # These fields only exist on RawPdfFile
+                "sensitive_meta")
         )
-        # union() requires same columns; we just merge in Python later
+
+        # 3) Combine them
         return list(qs_video) + list(qs_pdf)
 
     def list(self, request, *args, **kwargs):
