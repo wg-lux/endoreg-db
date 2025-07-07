@@ -6,8 +6,8 @@ from django.db import transaction
 import logging
 from pathlib import Path
 
-from ..models import VideoFile
-from ..services.video_import import import_and_anonymize
+from ..models import VideoFile, SensitiveMeta
+from ..services.video_import import _ensure_default_patient_data
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class VideoReimportView(APIView):
     def post(self, request, video_id):
         """
         Re-import a video file to regenerate SensitiveMeta and other metadata.
+        Instead of creating a new video, this updates the existing one.
         """
         # Validate video_id parameter
         if not video_id or not isinstance(video_id, int):
@@ -65,43 +66,63 @@ class VideoReimportView(APIView):
             )
 
         try:
-            # Log the re-import attempt
-            logger.info(f"Starting re-import for video {video.uuid} (ID: {video_id})")
+            logger.info(f"Starting in-place re-import for video {video.uuid} (ID: {video_id})")
             
-            # Don't use transaction.atomic() for the entire operation
-            # as import_and_anonymize might take a long time
-            
-            # Clear existing metadata to force regeneration
-            if video.sensitive_meta:
-                logger.info(f"Clearing existing SensitiveMeta for video {video.uuid}")
-                old_meta_id = video.sensitive_meta.id
-                video.sensitive_meta = None
-                video.save(update_fields=['sensitive_meta'])
-                logger.info(f"Cleared SensitiveMeta {old_meta_id} from video {video.uuid}")
-            
-            # Get center and processor info
-            center_name = video.center.name if video.center else "university_hospital_wuerzburg"
-            processor_name = video.processor.name if video.processor else "olympus_cv_1500"
-            
-            logger.info(f"Re-importing video {video.uuid} with center={center_name}, processor={processor_name}")
-            
-            # Use the existing import service
-            reimported_video = import_and_anonymize(
-                file_path=str(raw_file_path),
-                center_name=center_name,
-                processor_name=processor_name,
-                save_video=False,  # Don't move the file again
-                delete_source=False  # Don't delete the existing file
-            )
-            
-            logger.info(f"Re-import completed successfully for video {video.uuid}")
+            with transaction.atomic():
+                # Clear existing metadata to force regeneration
+                old_meta_id = None
+                if video.sensitive_meta:
+                    old_meta_id = video.sensitive_meta.id
+                    logger.info(f"Clearing existing SensitiveMeta {old_meta_id} for video {video.uuid}")
+                    video.sensitive_meta = None
+                    video.save(update_fields=['sensitive_meta'])
+                    
+                    # Delete the old SensitiveMeta record
+                    try:
+                        SensitiveMeta.objects.filter(id=old_meta_id).delete()
+                        logger.info(f"Deleted old SensitiveMeta {old_meta_id}")
+                    except Exception as e:
+                        logger.warning(f"Could not delete old SensitiveMeta {old_meta_id}: {e}")
+                
+                # Re-initialize video specs and frames
+                logger.info(f"Re-initializing video specs for {video.uuid}")
+                video.initialize_video_specs()
+                video.initialize_frames()
+                
+                # Run Pipe 1 for OCR and AI processing
+                logger.info(f"Starting Pipe 1 processing for {video.uuid}")
+                success = video.pipe_1(
+                    model_name="image_multilabel_classification_colonoscopy_default",
+                    delete_frames_after=True,
+                    ocr_frame_fraction=0.01,
+                    ocr_cap=5
+                )
+                
+                if not success:
+                    logger.error(f"Pipe 1 processing failed for video {video.uuid}")
+                    return Response(
+                        {"error": "OCR and AI processing failed during re-import."}, 
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+                logger.info(f"Pipe 1 processing completed for {video.uuid}")
+                
+                # Ensure minimum patient data is available
+                logger.info(f"Ensuring minimum patient data for {video.uuid}")
+                _ensure_default_patient_data(video)
+                
+                # Refresh from database to get updated data
+                video.refresh_from_db()
+                
+            logger.info(f"In-place re-import completed successfully for video {video.uuid}")
             
             return Response({
                 "message": "Video re-import completed successfully.",
                 "video_id": video_id,
-                "original_uuid": str(video.uuid),
-                "reimported_uuid": str(reimported_video.uuid),
-                "sensitive_meta_created": reimported_video.sensitive_meta is not None
+                "uuid": str(video.uuid),
+                "sensitive_meta_created": video.sensitive_meta is not None,
+                "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
+                "updated_in_place": True
             }, status=status.HTTP_200_OK)
                 
         except FileNotFoundError as e:
