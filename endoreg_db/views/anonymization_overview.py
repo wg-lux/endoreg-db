@@ -2,6 +2,7 @@
 Anonymization overview API views.
 Provides endpoints for managing file anonymization status and validation workflow.
 """
+import logging
 from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -12,6 +13,14 @@ from django.db.models import Prefetch, QuerySet
 from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
 from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
+
+# Import anonymization functionality
+try:
+    from endoreg_db.models.media.video.video_file_anonymize import _anonymize
+except ImportError:
+    _anonymize = None
+
+logger = logging.getLogger(__name__)
 
 # DEBUG: Remove in production
 DEBUG_PERMISSIONS = [AllowAny]
@@ -119,24 +128,105 @@ def start_anonymization(request, file_id):
     try:
         # Try to find the file in VideoFile first
         try:
-            VideoFile.objects.get(id=file_id)
-            # Start anonymization logic here
-            # For now, just return success
-            return JsonResponse({'status': 'success', 'message': 'Anonymization started for video file'})
+            video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
+            
+            # Check if video anonymization is available and prerequisites are met
+            if not _anonymize:
+                return JsonResponse({
+                    'status': 'error', 
+                    'message': 'Video anonymization functionality not available'
+                }, status=500)
+            
+            # Check video state and prerequisites
+            state = video_file.get_or_create_state()
+            
+            if state.anonymized:
+                return JsonResponse({
+                    'status': 'success', 
+                    'message': 'Video is already anonymized'
+                })
+            
+            if not video_file.has_raw:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Raw video file is missing'
+                }, status=400)
+            
+            if not state.frames_extracted:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Video frames must be extracted first'
+                }, status=400)
+            
+            if not video_file.sensitive_meta or not video_file.sensitive_meta.is_verified:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Sensitive metadata must be validated first'
+                }, status=400)
+            
+            # Check if all outside segments are validated
+            outside_segments = video_file.get_outside_segments(only_validated=False)
+            unvalidated_outside = outside_segments.filter(state__is_validated=False)
+            if unvalidated_outside.exists():
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'All outside segments must be validated first. {unvalidated_outside.count()} segments pending.'
+                }, status=400)
+            
+            # Mark as processing and start anonymization
+            logger.info(f"Starting anonymization for video {video_file.uuid}")
+            
+            try:
+                # Try to run anonymization synchronously for now
+                # In production, you might want to queue this as a background job
+                success = _anonymize(video_file, delete_original_raw=True)
+                
+                if success:
+                    return JsonResponse({
+                        'status': 'success', 
+                        'message': 'Video anonymization completed successfully'
+                    })
+                else:
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'Video anonymization failed'
+                    }, status=500)
+                    
+            except Exception as e:
+                logger.error(f"Error during video anonymization: {e}")
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f'Anonymization failed: {str(e)}'
+                }, status=500)
+                
         except VideoFile.DoesNotExist:
             pass
         
         # Try to find the file in RawPdfFile
         try:
-            RawPdfFile.objects.get(id=file_id)
-            # Start anonymization logic here
-            # For now, just return success
-            return JsonResponse({'status': 'success', 'message': 'Anonymization started for PDF file'})
+            pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
+            
+            # For PDFs, anonymization means having anonymized text
+            if pdf_file.anonymized_text and pdf_file.anonymized_text.strip():
+                return JsonResponse({
+                    'status': 'success', 
+                    'message': 'PDF is already anonymized'
+                })
+            
+            # For now, we'll just mark it as needing manual anonymization
+            # In a real implementation, you might trigger an AI service to generate anonymized text
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'PDF anonymization initiated - please complete anonymization manually'
+            })
+            
         except RawPdfFile.DoesNotExist:
             pass
         
         return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
+        
     except (ValueError, TypeError, AttributeError) as e:
+        logger.error(f"Error in start_anonymization: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 
@@ -193,4 +283,5 @@ def get_anonymization_status(request, file_id):
         
         return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
     except (ValueError, TypeError, AttributeError) as e:
+        logger.error(f"Error in get_anonymization_status: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

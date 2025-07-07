@@ -7,7 +7,7 @@ from endoreg_db.models import VideoFile, RawPdfFile
 
 class FileOverviewSerializer(serializers.Serializer):
     """
-    Polymorphic “union” serializer – we normalise both model types
+    Polymorphic "union" serializer – we normalise both model types
     (VideoFile, RawPdfFile) into the data structure the Vue store needs.
     """
 
@@ -29,14 +29,17 @@ class FileOverviewSerializer(serializers.Serializer):
             )
             # ------- anonymization status (adjust to your VideoState model)
             vs = instance.state
-            if vs is None or not vs.frames_extracted:
+            if vs is None:
                 anonym_status = "not_started"
-            elif vs.anonymized:                          # fully processed
+            elif hasattr(vs, 'processing_error') and vs.processing_error:
+                anonym_status = "failed"
+            elif vs.anonymized:
                 anonym_status = "done"
-            elif not vs.sensitive_meta_processed:                          # <-- if you track that
+            elif vs.frames_extracted:
                 anonym_status = "processing"
             else:
-                anonym_status = "processing"             # safe default
+                anonym_status = "not_started"
+            
             # ------- annotation status (validated label segments)
             if instance.label_video_segments.filter(state__is_validated=True).exists():
                 annot_status = "done"
@@ -48,8 +51,9 @@ class FileOverviewSerializer(serializers.Serializer):
             media_type = "pdf"
             created_at = instance.created_at
             filename = instance.file.name.split("/")[-1] if instance.file else "unknown"
-            anonym_status = "done" if instance.anonymized else "not_started"
-            # PDF annotation == “sensitive meta validated”
+            # Fix: Check anonymized_text field instead of non-existent anonymized field
+            anonym_status = "done" if (instance.anonymized_text and instance.anonymized_text.strip()) else "not_started"
+            # PDF annotation == "sensitive meta validated"
             annot_status = "done" if getattr(instance.sensitive_meta, "is_verified", False) else "not_started"
     
 
@@ -100,7 +104,7 @@ class PatientDataSerializer(serializers.Serializer):
                     'patientGender': obj.sensitive_meta.patient_gender if obj.sensitive_meta else '',
                     'examinationDate': obj.sensitive_meta.examination_date if obj.sensitive_meta else '',
                     'casenumber': getattr(obj.sensitive_meta, 'casenumber', '') if obj.sensitive_meta else '',
-                    'file': request.build_absolute_uri(f"/api/video/{obj.id}/") if request and obj.file else None,
+                    'file': request.build_absolute_uri(f"/api/videostream/{obj.id}/") if request else None,
                     'pdfUrl': None,  # Videos don't have PDF URLs
                     'fullPdfPath': None
                 }

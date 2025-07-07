@@ -24,7 +24,7 @@ class SensitiveMetaDetailView(APIView):
     PATCH: Updates SensitiveMeta fields including verification state
     """
     
-    permission_classes = [DEBUG_PERMISSIONS]  # Changed from IsAuthenticated for development
+    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
 
     def get(self, request, sensitive_meta_id=None):
         """
@@ -160,7 +160,7 @@ class SensitiveMetaVerificationView(APIView):
     POST: Update verification flags (dob_verified, names_verified) for a SensitiveMeta
     """
     
-    permission_classes = [DEBUG_PERMISSIONS]  # Changed from IsAuthenticated for development
+    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
 
     @transaction.atomic
     def post(self, request):
@@ -221,7 +221,7 @@ class SensitiveMetaListView(APIView):
     GET: Returns paginated list of SensitiveMeta entries
     """
     
-    permission_classes = [AllowAny]  # Changed from IsAuthenticated for development
+    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
 
     def get(self, request):
         """
@@ -301,7 +301,7 @@ class AvailableFilesListView(APIView):
     GET: Returns lists of available PDF and video files with their metadata
     """
     
-    permission_classes = [AllowAny]
+    permission_classes = DEBUG_PERMISSIONS
 
     def get(self, request):
         """

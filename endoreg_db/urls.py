@@ -92,7 +92,7 @@ from .views.sensitive_meta_views import (
 )
 
 # Add missing anonymization overview imports
-from .views.anonymization_overview_views import (
+from .views.anonymization_overview import (
     anonymization_items_overview,
     start_anonymization,
     get_anonymization_status
@@ -109,6 +109,15 @@ from .views.video_anonymization_views import (
     anonymization_batch_start
 )
 
+# Move stats endpoint BEFORE router to avoid conflicts
+urlpatterns = [
+    # STATISTICS API ENDPOINTS (moved to top to avoid router conflicts)
+    # Examination Statistics API
+    # GET /api/examinations/stats/
+    # Liefert Statistiken über Examinations und PatientExaminations
+    path('examinations/stats/', ExaminationStatsView.as_view(), name='examination_stats'),
+]
+
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
@@ -122,7 +131,7 @@ router.register(r'morphology-classifications', MorphologyClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
 router.register(r'patient-examinations', PatientExaminationViewSet)
 
-urlpatterns = [
+urlpatterns += [
     path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints
     
     # NEW: Label Video Segment API endpoints
@@ -313,10 +322,25 @@ urlpatterns = [
         
 #----------------------------------START : SENSITIVE META AND RAWPDFOFILE PDF PATIENT DETAILS-------------------------------
         
+    # Sensitive Meta Detail API (moved before generic pdf/sensitivemeta/ to avoid conflicts)
+    # GET /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
+    # PATCH /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
+    # Used by anonymization store to fetch and update sensitive meta details
+    path('pdf/sensitivemeta/<int:sensitive_meta_id>/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='sensitive_meta_detail'),
+    
+    # Alternative endpoint for query parameter access (backward compatibility)
+    # GET /api/pdf/sensitivemeta/?id=<sensitive_meta_id>
+    path('pdf/sensitivemeta/', 
+         SensitiveMetaDetailView.as_view(), 
+         name='sensitive_meta_query'),
+    
     #The first request (without id) fetches the first available PDF metadata.
     #The "Next" button (with id) fetches the next available PDF.
     #If an id is provided, the API returns the actual PDF file instead of JSON.
-    path("pdf/sensitivemeta/", PDFFileForMetaView.as_view(), name="pdf_meta"),  
+    # RENAMED to avoid conflict with new SensitiveMetaDetailView
+    path("pdf/meta/", PDFFileForMetaView.as_view(), name="pdf_meta"),  
 
 
 
@@ -488,20 +512,6 @@ urlpatterns = [
          AvailableFilesListView.as_view(), 
          name='available_files_list'),
     
-    # Sensitive Meta Detail API
-    # GET /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
-    # PATCH /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
-    # Used by anonymization store to fetch and update sensitive meta details
-    path('pdf/sensitivemeta/<int:sensitive_meta_id>/', 
-         SensitiveMetaDetailView.as_view(), 
-         name='sensitive_meta_detail'),
-    
-    # Alternative endpoint for query parameter access (backward compatibility)
-    # GET /api/pdf/sensitivemeta/?id=<sensitive_meta_id>
-    path('pdf/sensitivemeta/', 
-         SensitiveMetaDetailView.as_view(), 
-         name='sensitive_meta_query'),
-    
     # Sensitive Meta Verification API
     # POST /api/pdf/sensitivemeta/verify/
     # For updating verification flags specifically
@@ -523,13 +533,6 @@ urlpatterns = [
          SensitiveMetaDetailView.as_view(), 
          name='video_sensitive_meta_detail'),
 
-    # ---------------------------------------------------------------------------------------
-
-    # Stats endpoint
-    # path('stats/', StatsView.as_view(), name='stats'),
-
-    # User status endpoint for authentication checks
-    # path('user-status/', UserStatusView.as_view(), name='user_status'),
 ]
 
 # Always serve media files, not just in DEBUG
