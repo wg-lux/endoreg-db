@@ -34,8 +34,8 @@ def to_representation(self, instance):
     if isinstance(instance, VideoFile):
         media_type = "video"
         created_at = instance.uploaded_at
-        filename = instance.original_file_name or (
-            instance.raw_file.name.split("/")[-1] if instance.raw_file else "unknown"
+        filename = instance.processed_video_hash or (
+            instance.get_raw_file_path.name.split("/")[-1] if instance.raw_file else "unknown"
         )
         
         # ------- anonymization status (adjust to your VideoState model)
