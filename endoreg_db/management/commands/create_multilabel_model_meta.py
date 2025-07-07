@@ -42,7 +42,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--model_path",
             type=str,
-            default="./data/models/colo_segmentation_RegNetX800MF_6.ckpt",
+            #default="./data/models/colo_segmentation_RegNetX800MF_6.ckpt", #model not yet here
+            default="./tests/assets/colo_segmentation_RegNetX800MF_6.ckpt", # model currently still here
             help="Path to the model file",
         )
 
