@@ -119,6 +119,8 @@ from .views.video_anonymization_views import (
 
 from .views.video_reimport_views import VideoReimportView
 
+from .views.pdf_stream_views import PDFStreamView
+
 
 # Move stats endpoint BEFORE router to avoid conflicts
 urlpatterns = [
@@ -347,6 +349,8 @@ urlpatterns += [
     # GET /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
     # PATCH /api/pdf/sensitivemeta/<int:sensitive_meta_id>/
     # Used by anonymization store to fetch and update sensitive meta details
+    path('pdfstream/<int:pdf_id>/', PDFStreamView.as_view(), name='pdf_stream'),
+    
     path('pdf/sensitivemeta/<int:sensitive_meta_id>/', 
          SensitiveMetaDetailView.as_view(), 
          name='sensitive_meta_detail'),
