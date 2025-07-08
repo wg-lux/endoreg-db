@@ -76,10 +76,13 @@ class VideoState(models.Model):
 
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
-
+    anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
+    
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
+    
+    was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
 
     def __str__(self):
         # Find the related VideoFile's UUID if possible
@@ -99,6 +102,7 @@ class VideoState(models.Model):
             f"PredictionDone={self.initial_prediction_completed}",
             f"LvsCreated={self.lvs_created}",
             f"Anonymized={self.anonymized}",
+            f"AnonymizationValidated={self.anonymization_validated}",
         ]
         return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
 

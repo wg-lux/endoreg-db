@@ -1,9 +1,9 @@
 """
-Celery Tasks für Frame-Anonymisierung
+Celery Tasks for Frame Anonymization
 
-Diese Datei enthält asynchrone Tasks für die Anonymisierung von Video-Frames.
-Die Tasks werden über Celery ausgeführt und können zeitaufwändige Anonymisierungs-
-operationen im Hintergrund verarbeiten.
+This file contains asynchronous tasks for anonymizing video frames.
+The tasks are executed via Celery and can process time-consuming anonymization
+operations in the background.
 """
 
 import os
@@ -20,9 +20,9 @@ from django.conf import settings
 from django.utils import timezone
 
 from endoreg_db.models import (
-    VideoFile, 
-    LabelVideoSegment, 
-    FrameAnonymizationRequest, 
+    VideoFile,
+    LabelVideoSegment,
+    FrameAnonymizationRequest,
     AnonymousFrame
 )
 

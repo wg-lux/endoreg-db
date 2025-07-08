@@ -122,7 +122,7 @@ def import_and_anonymize(
       1. VideoFile.create_from_file_initialized(...)
       2. VideoFile.initialize_video_specs() 
       3. VideoFile.initialize_frames()
-      4. VideoFile.pipe_1() - CRITICAL: This was missing!
+      4. VideoFile.pipe_1()
       5. Saves the cleaned file back to VideoFile
       6. Returns the VideoFile instance (fresh from DB).
 
@@ -198,7 +198,7 @@ def import_and_anonymize(
             # Instantiate frame cleaner and report reader
             frame_cleaner = FrameCleaner()
             report_reader = ReportReader(
-                report_root_path=str(video_file_obj.raw_file.path),
+                report_root_path=str(Path(video_file_obj.raw_file.path).parent),
                 locale="de_DE",  # Default German locale for medical data
                 text_date_format="%d.%m.%Y"  # Common German date format
             )

@@ -13,6 +13,8 @@ from django.db.models import Prefetch, QuerySet
 from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
 from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
+from lx_anonymizer import FrameCleaner, ReportReader
+
 
 # Import anonymization functionality
 try:
@@ -167,7 +169,6 @@ def start_anonymization(request, file_id):
                         'message': 'Validation simulation failed'
                     }, status=500)
             
-            # Now run Pipe 2 (anonymization)
             logger.info(f"Running Pipe 2 for video {video_file.uuid}")
             success = video_file.pipe_2()
             
@@ -195,6 +196,13 @@ def start_anonymization(request, file_id):
                     'status': 'success', 
                     'message': 'PDF is already anonymized'
                 })
+                
+            logger.info(f"Starting PDF anonymization for file {pdf_file.id}")
+            report_reader = ReportReader(pdf_file.file.path)
+            
+            report_reader.process_report(
+                pdf_path=pdf_file.file.path,
+            )
             
             # For now, we'll just mark it as needing manual anonymization
             # In a real implementation, you might trigger an AI service to generate anonymized text
@@ -230,13 +238,17 @@ def get_anonymization_status(request, file_id):
                     anonymization_status = 'done'
                 elif hasattr(video_file.state, 'processing_error') and video_file.state.processing_error:
                     anonymization_status = 'failed'
-                elif video_file.state.frames_extracted:
-                    anonymization_status = 'processing'
+                elif video_file.state.frames_extracted and not video_file.state.anonymized:
+                    anonymization_status = 'in_progress'
+                elif video_file.state.was_created and not video_file.state.frames_extracted:
+                    anonymization_status = 'extracting frames'
+                elif video_file.state.anonymization_validated:
+                    anonymization_status = 'validated'
                 else:
                     anonymization_status = 'not_started'
             else:
                 anonymization_status = 'not_started'
-            
+                
             return JsonResponse({
                 'status': 'success',
                 'file_type': 'video',
