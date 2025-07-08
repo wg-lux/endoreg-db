@@ -82,6 +82,10 @@ class VideoState(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
     
+    # Segment Annotation State
+    segment_annotations_created = models.BooleanField(default=False, help_text="True if segment annotations have been created from LabelVideoSegments.")
+    segment_annotations_validated = models.BooleanField(default=False, help_text="True if segment annotations have been validated.")
+    
     was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
 
     def __str__(self):
@@ -103,6 +107,12 @@ class VideoState(models.Model):
             f"LvsCreated={self.lvs_created}",
             f"Anonymized={self.anonymized}",
             f"AnonymizationValidated={self.anonymization_validated}",
+            f"SensitiveMetaProcessed={self.sensitive_meta_processed}",
+            f"FrameCount={self.frame_count}" if self.frame_count is not None else "FrameCount=None",
+            f"SegmentAnnotationsCreated={self.segment_annotations_created}",
+            f"SegmentAnnotationsValidated={self.segment_annotations_validated}",
+            f"DateCreated={self.date_created.isoformat()}",
+            f"DateModified={self.date_modified.isoformat()}"
         ]
         return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
 

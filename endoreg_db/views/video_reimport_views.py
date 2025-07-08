@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 import logging
 from pathlib import Path
-
+from django.db import transaction
 from ..models import VideoFile, SensitiveMeta
 from ..services.video_import import _ensure_default_patient_data
 

@@ -234,16 +234,18 @@ def get_anonymization_status(request, file_id):
             
             # Determine anonymization status based on video state
             if hasattr(video_file, 'state') and video_file.state:
-                if video_file.state.anonymized:
+                if video_file.state.anonymized and video_file.state.frames_extracted and video_file.state.initial_prediction_completed:
                     anonymization_status = 'done'
                 elif hasattr(video_file.state, 'processing_error') and video_file.state.processing_error:
                     anonymization_status = 'failed'
                 elif video_file.state.frames_extracted and not video_file.state.anonymized:
-                    anonymization_status = 'in_progress'
+                    anonymization_status = 'processing_anonymization'
                 elif video_file.state.was_created and not video_file.state.frames_extracted:
                     anonymization_status = 'extracting frames'
                 elif video_file.state.anonymization_validated:
                     anonymization_status = 'validated'
+                elif not video_file.state.initial_prediction_completed and video_file.state.anonymization_validated:
+                    anonymization_status = 'predicting_segments'
                 else:
                     anonymization_status = 'not_started'
             else:
