@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import List
 from typing import TYPE_CHECKING, Optional
 import logging
+from django.db import OperationalError
+import time
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -74,37 +76,46 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
             frames_to_create.append(
                 _create_frame_object(video, frame_number, relative_path_str, extracted=mark_as_extracted)
             )
-
+            
     if frames_to_create:
-        try:
-            _bulk_create_frames(video, frames_to_create)
-            num_created_or_ignored = len(frames_to_create)
-            logger.info("Bulk create attempted for %d Frame objects for video %s (ignore_conflicts=True).", num_created_or_ignored, video.uuid)
-
-            if mark_as_extracted:
-                frame_numbers_to_update = [f.frame_number for f in frames_to_create]
-                if frame_numbers_to_update:
-                    update_count = Frame.objects.filter(
-                    video=video,
-                    frame_number__in=frame_numbers_to_update,
-                    is_extracted=False
-                    ).update(is_extracted=True)
-                    if update_count > 0:
-                        logger.info("Marked %d existing Frame objects as is_extracted=True for video %s.", update_count, video.uuid)
+        for attempt in range(5):
 
             try:
-                state = video.get_or_create_state()
-                state.frames_initialized = True
-                state.frame_count = num_expected_or_provided
-                state.save(update_fields=['frames_initialized', 'frame_count'])
-                logger.info("Set frames_initialized=True and frame_count=%d for video %s.", num_expected_or_provided, video.uuid)
-            except Exception as state_e:
-                logger.error("Failed to update state after frame initialization for video %s: %s", video.uuid, state_e, exc_info=True)
-                raise RuntimeError(f"Failed to update state after frame initialization for video {video.uuid}") from state_e
+                _bulk_create_frames(video, frames_to_create)
+                num_created_or_ignored = len(frames_to_create)
+                logger.info("Bulk create attempted for %d Frame objects for video %s (ignore_conflicts=True).", num_created_or_ignored, video.uuid)
 
-        except Exception as e:
-            logger.error("Error initializing frames for video %s: %s", video.uuid, e, exc_info=True)
-            raise RuntimeError(f"Failed to initialize frames for video {video.uuid}.") from e
+                if mark_as_extracted:
+                    frame_numbers_to_update = [f.frame_number for f in frames_to_create]
+                    if frame_numbers_to_update:
+                        update_count = Frame.objects.filter(
+                        video=video,
+                        frame_number__in=frame_numbers_to_update,
+                        is_extracted=False
+                        ).update(is_extracted=True)
+                        if update_count > 0:
+                            logger.info("Marked %d existing Frame objects as is_extracted=True for video %s.", update_count, video.uuid)
+
+                try:
+                    state = video.get_or_create_state()
+                    state.frames_initialized = True
+                    state.frame_count = num_expected_or_provided
+                    state.save(update_fields=['frames_initialized', 'frame_count'])
+                    logger.info("Set frames_initialized=True and frame_count=%d for video %s.", num_expected_or_provided, video.uuid)
+                except Exception as state_e:
+                    logger.error("Failed to update state after frame initialization for video %s: %s", video.uuid, state_e, exc_info=True)
+                    raise RuntimeError(f"Failed to update state after frame initialization for video {video.uuid}") from state_e
+
+            except OperationalError as e:
+                if "database is locked" in str(e):
+                    logger.warning("Database is locked, retrying frame initialization for video %s (attempt %d/5).", video.uuid, attempt + 1)
+                    time.sleep(2 ** attempt)
+                    if attempt < 4:
+                        continue
+                    else:
+                        raise RuntimeError(f"Failed to initialize frames for video {video.uuid}.") from e
+                logger.error("Error initializing frames for video %s: %s", video.uuid, e, exc_info=True)
+                raise RuntimeError(f"Failed to initialize frames for video {video.uuid}.") from e
 
     else:
         logger.warning("No valid frames found/generated to initialize for video %s.", video.uuid)

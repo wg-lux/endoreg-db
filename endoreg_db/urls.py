@@ -121,6 +121,9 @@ from .views.video_reimport_views import VideoReimportView
 
 from .views.pdf_stream_views import PDFStreamView
 
+# NEW: Import annotation views
+from .views.annotation_views import create_annotation, update_annotation
+
 
 # Move stats endpoint BEFORE router to avoid conflicts
 urlpatterns = [
@@ -147,6 +150,18 @@ router.register(r'patient-examinations', PatientExaminationViewSet)
 
 urlpatterns += [
     path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints
+    
+    # ---------------------------------------------------------------------------------------
+    # ANNOTATION API ENDPOINTS
+    #
+    # New endpoints for segment annotation management that create user-source segments
+    # POST /api/annotations/ - Create new annotation (creates user segment if type=segment)
+    # PATCH /api/annotations/<id>/ - Update annotation (creates user segment if timing/label changed)
+    # ---------------------------------------------------------------------------------------
+    
+    # Annotation CRUD endpoints
+    path('annotations/', create_annotation, name='create_annotation'),
+    path('annotations/<int:annotation_id>/', update_annotation, name='update_annotation'),
     
     # NEW: Label Video Segment API endpoints
     path('video-segments/', video_segments_view, name='video_segments'),
