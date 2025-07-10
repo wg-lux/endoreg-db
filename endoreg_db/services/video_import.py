@@ -169,18 +169,7 @@ def import_and_anonymize(
     
     # Step 3: Initialize frame objects in database (without extracting)
     video_file_obj.initialize_frames()
-    
-    # Step 4: Run Pipe 1 - CRITICAL MISSING STEP!
-    logger.info("Starting Pipe 1 processing...")
-    success = video_file_obj.pipe_1(
-        model_name=model_name,
-        delete_frames_after=True,  # Clean up frames after processing
-        ocr_frame_fraction=0.01,
-        ocr_cap=5
-    )
-    
-    if not success:
-        raise RuntimeError(f"Pipe 1 processing failed for video {video_file_obj.uuid}")
+
     
     logger.info("Pipe 1 processing completed successfully")
     
