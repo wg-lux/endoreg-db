@@ -32,7 +32,7 @@ class PDFStreamView(APIView):
     - Sets correct headers for inline PDF display
     - Compatible with all major browsers
     """
-    permission_classes = [EnvironmentAwarePermissions]
+    permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, pdf_id: int, *args, **kwargs):
         """
