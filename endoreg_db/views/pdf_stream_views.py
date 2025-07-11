@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from ..utils.permissions import EnvironmentAwarePermission
 from endoreg_db.models import RawPdfFile
 import os
+from django.views.decorators.clickjacking import xframe_options_exempt
 
 logger = logging.getLogger(__name__)
 _RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)")
@@ -29,13 +30,14 @@ class ClosingFileWrapper:
     def close(self):
         if hasattr(self.file_handle, 'close'):
             self.file_handle.close()
-
+            
 class PDFStreamView(APIView):
     """
     Streams a PDF file with correct HTTP range support and proper file handle management.
     """
     permission_classes = [EnvironmentAwarePermission]
 
+    @xframe_options_exempt
     def get(self, request, pdf_id: int, *args, **kwargs):
         try:
             pdf_obj = RawPdfFile.objects.filter(pk=pdf_id).first()
