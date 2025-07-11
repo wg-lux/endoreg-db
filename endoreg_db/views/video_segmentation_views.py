@@ -16,6 +16,7 @@ def _stream_video_file(vf, frontend_origin):
     Helper to stream a video file with proper headers and CORS.
     Raises Http404 if file is missing.
     """
+    decorators.permission_classes = [EnvironmentAwarePermission]
     try:
         # Use active_file_path which handles both processed and raw files
         if hasattr(vf, 'active_file_path') and vf.active_file_path:

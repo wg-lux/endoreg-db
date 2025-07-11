@@ -13,6 +13,7 @@ from django.http import (
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from endoreg_db.models import RawPdfFile
+from ..utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ class PDFStreamView(APIView):
     - Sets correct headers for inline PDF display
     - Compatible with all major browsers
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [EnvironmentAwarePermissions]
 
     def get(self, request, pdf_id: int, *args, **kwargs):
         """
@@ -57,12 +58,13 @@ class PDFStreamView(APIView):
             try:
                 file_size = pdf_obj.file.size
                 file_handle = pdf_obj.file.open("rb")
+                safe_filename = pdf_obj.file.name.split('/')[-1] if pdf_obj.file.name else f"document_{pdf_id}.pdf"
+
             except (OSError, IOError) as e:
                 logger.error(f"Error accessing PDF file {pdf_id}: {e}")
                 raise Http404("PDF file not accessible")
 
-            # Generate safe filename
-            safe_filename = pdf_obj.file.name.split('/')[-1] if pdf_obj.file.name else f"document_{pdf_id}.pdf"
+                # Generate safe filename
             if not safe_filename.endswith('.pdf'):
                 safe_filename += '.pdf'
 
@@ -119,3 +121,7 @@ class PDFStreamView(APIView):
         except Exception as e:
             logger.error(f"Unexpected error streaming PDF {pdf_id}: {e}", exc_info=True)
             raise Http404("Error streaming PDF")
+        
+        finally:
+            if 'file_handle' in locals() and not file_handle.closed:
+                file_handle.close()

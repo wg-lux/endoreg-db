@@ -125,15 +125,6 @@ from .views.pdf_stream_views import PDFStreamView
 from .views.annotation_views import create_annotation, update_annotation
 
 
-# Move stats endpoint BEFORE router to avoid conflicts
-urlpatterns = [
-    # STATISTICS API ENDPOINTS (moved to top to avoid router conflicts)
-    # Examination Statistics API
-    # GET /api/examinations/stats/
-    # Liefert Statistiken über Examinations und PatientExaminations
-    path('examinations/stats/', ExaminationStatsView.as_view(), name='examination_stats'),
-]
-
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
@@ -148,7 +139,7 @@ router.register(r'morphology-classifications', MorphologyClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
 router.register(r'patient-examinations', PatientExaminationViewSet)
 
-urlpatterns += [
+urlpatterns = [
     path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints
     
     # ---------------------------------------------------------------------------------------
@@ -581,11 +572,6 @@ urlpatterns += [
          name='video_reimport'),
 
 ]
-
-"""# Always serve media files, not just in DEBUG
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-# Optionally, always serve static files as well
-urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)"""
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
