@@ -3,7 +3,7 @@ import logging
 from wsgiref.util import FileWrapper
 from django.http import FileResponse, StreamingHttpResponse, Http404
 from rest_framework.views import APIView
-from ..utils.permissions import EnvironemtAwarePermission
+from ..utils.permissions import EnvironmtAwarePermission
 from endoreg_db.models import RawPdfFile
 import os
 
@@ -34,7 +34,7 @@ class PDFStreamView(APIView):
     """
     Streams a PDF file with correct HTTP range support and proper file handle management.
     """
-    permission_classes = [EnvironemtAwarePermission]
+    permission_classes = [EnvironmtAwarePermission]
 
     def get(self, request, pdf_id: int, *args, **kwargs):
         try:
