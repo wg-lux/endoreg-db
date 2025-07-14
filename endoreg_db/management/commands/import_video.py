@@ -288,17 +288,23 @@ class Command(BaseCommand):
                     locale="de_DE",  # Default German locale for medical data
                     text_date_format="%d.%m.%Y"  # Common German date format
                 )
-                cleaned_video_path = frame_cleaner.clean_video(
+                
+                # Updated to handle new return signature (path, metadata)
+                cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
                     Path(video_file_obj.raw_file.path),
-                    report_reader,
-                    device_name=processor_name   # ← add this
+                    video_file_obj=video_file_obj,  # Pass VideoFile object to store metadata
+                    report_reader=report_reader,
+                    device_name=processor_name
                 )
                 
                 # Save the cleaned video using Django's FileField
                 with open(cleaned_video_path, 'rb') as f:
                     video_file_obj.raw_file.save(cleaned_video_path.name, ContentFile(f.read()))
                 video_file_obj.save()
+                
                 self.stdout.write(self.style.SUCCESS(f"Frame cleaning completed: {cleaned_video_path.name}"))
+                self.stdout.write(self.style.SUCCESS(f"Extracted metadata: {extracted_metadata}"))
+                
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f"Frame cleaning failed, continuing with original video: {e}"))
         elif not FRAME_CLEANING_AVAILABLE:

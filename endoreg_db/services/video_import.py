@@ -30,7 +30,8 @@ def _ensure_frame_cleaning_available():
         # Check if we can find the lx-anonymizer directory
         current_file = Path(__file__)
         endoreg_db_root = current_file.parent.parent.parent.parent
-        lx_anonymizer_path = endoreg_db_root / "lx-anonymizer"
+        from importlib import resources
+        lx_anonymizer_path = resources.files("lx_anonymizer")
         
         if lx_anonymizer_path.exists():
             # Add to Python path temporarily
@@ -228,9 +229,10 @@ def import_and_anonymize(
             
             # Clean video with ROI masking (heavy I/O operation)
             # Pass the endoscope ROI to the frame cleaner for masking
-            cleaned_video_path = frame_cleaner.clean_video(
+            cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
                 Path(video_file_obj.raw_file.path),
-                report_reader,
+                video_file_obj=video_file_obj,  # Pass VideoFile object to store metadata
+                report_reader=report_reader,
                 device_name=processor_name,
                 endoscope_roi=endoscope_roi,  # Pass ROI for masking
                 processor_rois=processor_roi,   # Pass all ROIs for comprehensive anonymization

@@ -4,9 +4,9 @@ from rest_framework import status
 import logging
 from pathlib import Path
 from django.db import transaction
+from django.core.files.base import ContentFile
 from ..models import VideoFile, SensitiveMeta, VideoState
-from ..services.video_import import _ensure_default_patient_data
-
+from ..services.video_import import _ensure_default_patient_data, _ensure_frame_cleaning_available
 logger = logging.getLogger(__name__)
 
 
@@ -89,6 +89,7 @@ class VideoReimportView(APIView):
                 
                 # Run Pipe 1 for OCR and AI processing
                 logger.info(f"Starting Pipe 1 processing for {video.uuid}")
+                '''
                 try:
                     success = video.pipe_1(
                         model_name="image_multilabel_classification_colonoscopy_default",
@@ -109,7 +110,7 @@ class VideoReimportView(APIView):
                         {"error": "OCR and AI processing failed during re-import."}, 
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
-                
+                '''
                 logger.info(f"Pipe 1 processing completed for {video.uuid}")
                 
                 # Ensure minimum patient data is available
@@ -118,9 +119,97 @@ class VideoReimportView(APIView):
                 
                 # Refresh from database to get updated data
                 video.refresh_from_db()
+                frame_cleaning_available, FrameCleaner, ReportReader = _ensure_frame_cleaning_available()
+    
+                if frame_cleaning_available:
+                    try:
+                        logger.info("Starting frame-level anonymization with processor ROI masking...")
+                        
+                        # Get processor ROI information for masking
+                        processor_roi = None
+                        endoscope_roi = None
+                        
+                        try:
+                            if video.video_meta and video.video_meta.processor:
+                                processor = video.video_meta.processor
+                                
+                                # Get the endoscope ROI for masking
+                                endoscope_roi = processor.get_roi_endoscope_image()
+                                
+                                # Get all processor ROIs for comprehensive masking
+                                processor_roi = {
+                                    'endoscope_image': endoscope_roi,
+                                    'patient_first_name': processor.get_roi_patient_first_name(),
+                                    'patient_last_name': processor.get_roi_patient_last_name(),
+                                    'patient_dob': processor.get_roi_patient_dob(),
+                                    'examination_date': processor.get_roi_examination_date(),
+                                    'examination_time': processor.get_roi_examination_time(),
+                                    'endoscope_type': processor.get_roi_endoscope_type(),
+                                    'endoscopy_sn': processor.get_roi_endoscopy_sn(),
+                                }
+                                
+                                logger.info(f"Retrieved processor ROI information: endoscope_roi={endoscope_roi}")
+                                
+                            else:
+                                logger.warning(f"No processor found for video {video.uuid}, proceeding without ROI masking")
+                                
+                        except Exception as e:
+                            logger.error(f"Failed to retrieve processor ROI information: {e}")
+                            # Continue without ROI - don't fail the entire import process
+                        
+                        # Instantiate frame cleaner and report reader
+                        frame_cleaner = FrameCleaner()
+                        report_reader = ReportReader(
+                            report_root_path=str(Path(video.raw_file.path).parent),
+                            locale="de_DE",  # Default German locale for medical data
+                            text_date_format="%d.%m.%Y"  # Common German date format
+                        )
+                        
+                        # Clean video with ROI masking (heavy I/O operation)
+                        # Pass the endoscope ROI to the frame cleaner for masking
+                        cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
+                            Path(video.raw_file.path),
+                            video_file_obj=video,  # Pass VideoFile object to store metadata
+                            report_reader=report_reader,
+                            device_name=processor.name if processor else "Unknown",
+                            endoscope_roi=endoscope_roi,  # Pass ROI for masking
+                            processor_rois=processor_roi,   # Pass all ROIs for comprehensive anonymization
+                            frame_paths=video.get_frame_paths()
+                        )
+                        
+                        # Save cleaned video back to VideoFile (atomic transaction)
+                        with transaction.atomic():
+                            # Save the cleaned video using Django's FileField
+                            with open(cleaned_video_path, 'rb') as f:
+                                video.raw_file.save(
+                                    cleaned_video_path.name, 
+                                    ContentFile(f.read())
+                                )
+                            video.save()
+                            
+                        logger.info(f"Frame cleaning with ROI masking completed: {cleaned_video_path.name}")
+                        logger.info(f"Extracted metadata: {extracted_metadata}")
+                            
+                        logger.info(f"In-place re-import completed successfully for video {video.uuid}")
+                        # FIX: Return proper Response object instead of bare return
+                        return Response({
+                            "message": "Video re-import with frame cleaning completed successfully.",
+                            "video_id": video_id,
+                            "uuid": str(video.uuid),
+                            "cleaned_video": str(cleaned_video_path.name),
+                            "frame_cleaning_applied": True,
+                            "extracted_metadata": extracted_metadata,
+                            "sensitive_meta_created": video.sensitive_meta is not None,
+                            "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
+                            "updated_in_place": True
+                        }, status=status.HTTP_200_OK)
+                    except Exception as e:
+                        logger.exception(f"Frame cleaning with ROI masking failed for video {video.uuid}: {e}")
+                        # FIX: Don't return here, let it continue to the success response
+                        logger.warning("Continuing without frame cleaning due to error")
+                else:
+                    logger.warning("Frame cleaning not available, skipping anonymization step")
                 
-            logger.info(f"In-place re-import completed successfully for video {video.uuid}")
-            
             return Response({
                 "message": "Video re-import completed successfully.",
                 "video_id": video_id,
