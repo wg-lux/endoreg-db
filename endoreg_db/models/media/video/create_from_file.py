@@ -77,15 +77,13 @@ def _create_from_file(
                     transcoded_file_path.unlink(missing_ok=True)
                 # Clean up the potentially empty output path if transcoding wasn't needed but path was provided
                 if transcoded_file_path == file_path and temp_transcoded_output_path.exists():
-                     temp_transcoded_output_path.unlink(missing_ok=True)
+                    temp_transcoded_output_path.unlink(missing_ok=True)
                 return existing_video
-            else:
-                logger.warning("Video with hash %s exists but file is missing. Deleting orphaned record and creating new instance.", video_hash)
-                # Delete the orphaned database record
-                existing_video.delete()
-                # Continue with normal creation process below - new UUID will be generated
 
-        # 4. Prepare final storage path (for the raw file) - ALWAYS generate new UUID here
+            logger.warning("Video with hash %s exists but file is missing. Deleting orphaned record and creating new instance.", video_hash)
+            # Delete the orphaned database record
+            existing_video.delete()
+            # Continue with normal creation process below - new UUID will be generated
         new_file_name, uuid_val = get_uuid_filename(transcoded_file_path) # Use UUID filename based on the file we'll store
         final_storage_path = video_dir / new_file_name  # Path in VIDEO_DIR
         final_storage_path.parent.mkdir(parents=True, exist_ok=True) # Ensure directory exists
