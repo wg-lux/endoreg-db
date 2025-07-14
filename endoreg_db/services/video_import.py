@@ -233,7 +233,7 @@ def import_and_anonymize(
                 report_reader,
                 device_name=processor_name,
                 endoscope_roi=endoscope_roi,  # Pass ROI for masking
-                processor_rois=processor_roi   # Pass all ROIs for comprehensive anonymization
+                processor_rois=processor_roi,   # Pass all ROIs for comprehensive anonymization
                 frame_paths=video_file_obj.get_frame_paths()
             )
             
