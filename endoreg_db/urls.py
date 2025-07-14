@@ -20,9 +20,8 @@ from .views.Frames_NICE_and_PARIS_classifications_views import (
 # endoreg_db_production/endoreg_db/urls.py
 from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
-from .views.video_segmentation_views import VideoViewSet, VideoView, VideoLabelView, UpdateLabelSegmentsView, VideoStreamView
+from .views.video_segmentation_views import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
 from .views.views_for_timeline import video_timeline_view
-from .views.raw_video_meta_validation_views import VideoFileForMetaView
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
@@ -101,27 +100,18 @@ from .views.sensitive_meta_views import (
 
 # Add missing anonymization overview imports
 from .views.anonymization_overview import (
-    anonymization_items_overview,
+    AnonymizationOverviewView,
     start_anonymization,
-    get_anonymization_status
+    get_anonymization_status,
+    set_current_for_validation
 )
 
-# Import the correct version from anonymization_overview.py
-from .views.anonymization_overview import set_current_for_validation
-
-# Add missing video anonymization imports
-from .views.video_anonymization_views import (
-    anonymize_video,
-    anonymization_status,
-    anonymization_batch_status,
-    anonymization_batch_start
-)
+from .views.video_media_views import VideoMediaView
 
 from .views.video_reimport_views import VideoReimportView
 
 from .views.pdf_stream_views import PDFStreamView
 
-# NEW: Import annotation views
 from .views.annotation_views import create_annotation, update_annotation
 
 
@@ -129,7 +119,7 @@ router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
 router.register(r'genders', GenderViewSet)
 router.register(r'centers', CenterViewSet)
-router.register(r'videos', VideoViewSet, basename='videos')  # New: separate JSON endpoints
+router.register(r'videos', VideoViewSet, basename='videos')  
 router.register(r'examinations', ExaminationViewSet)
 router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
 # Add new router registrations
@@ -140,7 +130,7 @@ router.register(r'patient-findings', PatientFindingViewSet)
 router.register(r'patient-examinations', PatientExaminationViewSet)
 
 urlpatterns = [
-    path('', include(router.urls)),  # This creates /api/videos/ and /api/videos/<id>/ endpoints
+    path('', include(router.urls)),  
     
     # ---------------------------------------------------------------------------------------
     # ANNOTATION API ENDPOINTS
@@ -150,9 +140,23 @@ urlpatterns = [
     # PATCH /api/annotations/<id>/ - Update annotation (creates user segment if timing/label changed)
     # ---------------------------------------------------------------------------------------
     
-    # Annotation CRUD endpoints
+    # Simplified Meta and Validation Endpoints
+    
+    # video meta + stream
+    path("media/videos/",               VideoMediaView.as_view(), name="videos-list"),
+    path("media/videos/<int:pk>/",      VideoMediaView.as_view(), name="videos-detail"),
+
+    # pdf meta + stream
+    path("media/pdfs/",                 PDFFileForMetaView.as_view(),   name="pdfs-list"),
+    path("media/pdfs/<int:pk>/",        PDFStreamView.as_view(),  name="pdfs-detail"),
+
+    
+    # Annotation CRUD endpoints (Segmentation)
     path('annotations/', create_annotation, name='create_annotation'),
     path('annotations/<int:annotation_id>/', update_annotation, name='update_annotation'),
+    
+    path('save-anonymization-annotation-pdf/<int:annotation_id>/', UpdateAnonymizedTextView.as_view(), name='save_anonymization_annotation'),
+    path('save-anonymization-annotation-video/<int:annotation_id>/', SensitiveMetaDetailView.as_view(), name='save_anonymization_annotation_video'),
     
     # NEW: Label Video Segment API endpoints
     path('video-segments/', video_segments_view, name='video_segments'),
@@ -234,17 +238,12 @@ urlpatterns = [
     ),
     
     # URL patterns for anonymization overview
-    path('anonymization/items/overview/', anonymization_items_overview, name='anonymization_items_overview'),
+    path('anonymization/items/overview/', AnonymizationOverviewView.as_view(), name='anonymization_items_overview'),
     path('anonymization/<int:file_id>/current/', set_current_for_validation, name='set_current_for_validation'),
     path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
     path('anonymization/<int:file_id>/status/', get_anonymization_status, name='get_anonymization_status'),
     
-    # Video anonymization API endpoints
-    path('videos/<uuid:video_id>/anonymize/', anonymize_video, name='anonymize_video'),
-    path('videos/<uuid:video_id>/anonymization-status/', anonymization_status, name='anonymization_status'),
-    path('videos/anonymization-batch-status/', anonymization_batch_status, name='anonymization_batch_status'),
-    path('videos/anonymization-batch-start/', anonymization_batch_start, name='anonymization_batch_start'),
-    
+
     # URL patterns for ExaminationForm.vue API calls
     path(
         'examinations/<int:examination_id>/findings/',
@@ -294,14 +293,7 @@ urlpatterns = [
         name='get_instruments_for_exam'
     ),
     path('conf/', csrf_token_view, name='csrf_token'),
-
-    # VIDEO STREAMING ENDPOINTS - Raw bytes only
-    # /api/videos/<id>/stream/  → Raw video file streaming (automatically created by router)
-    # Note: The stream action is automatically available through the VideoViewSet router registration
-
-    path('videos/', VideoView.as_view(), name='video-list-legacy'),
-    path('videos/<int:video_id>/', VideoView.as_view(), name='video-detail-legacy'),
-    path('videostream/<int:video_id>/', VideoStreamView.as_view(), name='video_stream'),
+    
     
     # Video label endpoints for backward compatibility
     path("video/<int:video_id>/label/<str:label_name>/", VideoLabelView.as_view(), name="video_label_times"),
@@ -312,40 +304,6 @@ urlpatterns = [
     path('endoreg_db/', public_home, name='public_home'),
     path('login/', keycloak_login, name='keycloak_login'),
     path('login/callback/', keycloak_callback, name='keycloak_callback'),
-
-
-    #----------------------------------START : SENSITIVE META AND RAWVIDEOFILE VIDEO PATIENT DETAILS-------------------------------
-
-    # API Endpoint for fetching video metadata or streaming the next available video
-    # This endpoint is used by the frontend to fetch:
-    #  - The first available video if `last_id` is NOT provided.
-    #  - The next available video where `id > last_id` if `last_id` is provided.
-    #  - If `Accept: application/json` is set in headers, it returns video metadata as JSON.
-    #  - If no videos are available, it returns {"error": "No more videos available."}.
-    #  const url = lastId ? `http://localhost:8000/video/meta/?last_id=${lastId}` : "http://localhost:8000/video/meta/";
-    path("video/sensitivemeta/", VideoFileForMetaView.as_view(), name="video_meta"),  # Single endpoint for both first and next video    
-
-
-
-    # This API endpoint allows updating specific patient details (SensitiveMeta)
-    # linked to a video. It is used to correct or modify the patient's first name,
-    # last name, date of birth, and examination date.
-    # Fetch video metadata and update patient details
-    # The frontend should send a JSON request body like this:
-    # {
-    #     "sensitive_meta_id": 2,          # The ID of the SensitiveMeta entry (REQUIRED)
-    #     "patient_first_name": "John",    # New first name (REQUIRED, cannot be empty)
-    #     "patient_last_name": "Doe",      # New last name (REQUIRED, cannot be empty)
-    #     "patient_dob": "1985-06-15",     # New Date of Birth (REQUIRED, format YYYY-MM-DD)
-    #     "examination_date": "2024-03-20" # New Examination Date (OPTIONAL, format YYYY-MM-DD)
-    # }
-    # - The frontend sends a PATCH request to this endpoint with updated patient data.
-    # - The backend validates the input using the serializer (`SensitiveMetaUpdateSerializer`).
-    # - If validation passes, the patient information is updated in the database.
-    # - If there are errors (e.g., missing fields, incorrect date format), 
-    #   the API returns structured error messages.
-    path("video/update_sensitivemeta/", VideoFileForMetaView.as_view(), name="update_patient_meta"),
-
 
         
         

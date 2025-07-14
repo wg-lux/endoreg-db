@@ -160,56 +160,6 @@ class VideoStreamView(APIView):
             raise Http404("Video streaming failed")
 
 
-# Kept the old VideoView class for backward compatibility during transition
-class VideoView(APIView):
-    """
-    DEPRECATED: Use VideoViewSet instead.
-    Legacy API endpoint for backward compatibility.
-    """
-
-    def get(self, request, video_id=None):
-        """
-        Handles GET requests for the legacy video API.
-        
-        If `video_id` is provided, returns metadata for the specified video; otherwise, returns a list of all videos and labels.
-        """
-        if video_id is None:
-            return self.get_all_videos()
-        return self.get_video_details(request, video_id)
-
-    def get_all_videos(self):
-        """
-        Retrieves all videos and labels and returns them as serialized JSON data.
-        
-        Returns:
-            Response containing serialized lists of videos and labels with HTTP 200 status.
-        """
-        videos = VideoFile.objects.all()
-        labels = Label.objects.all()
-
-        video_serializer = VideoListSerializer(videos, many=True)
-        label_serializer = LabelSerializer(labels, many=True)
-
-        return Response({
-            "videos": video_serializer.data, 
-            "labels": label_serializer.data  
-        }, status=status.HTTP_200_OK)
-
-    def get_video_details(self, request, video_id):
-        """
-        Retrieves metadata for a specific video as a JSON response.
-        
-        Returns HTTP 200 with serialized video metadata if found, 404 if the video does not exist, or 500 with an error message on unexpected exceptions.
-        """
-        try:
-            video_entry = VideoFile.objects.get(id=video_id)
-            serializer = VideoFileSerializer(video_entry, context={'request': request})
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except VideoFile.DoesNotExist:
-            return Response({"error": "Video not found in the database."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class VideoLabelView(APIView):
     """

@@ -80,10 +80,16 @@ if TYPE_CHECKING:
         VideoState,
         ModelMeta,
         VideoImportMeta,
-    )
+    )   
+class VideoQuerySet(models.QuerySet):
+    def next_after(self, last_id=None):
+        q = self if last_id is None else self.filter(pk__gt=last_id)
+        return q.order_by("pk").first()
 
 class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    
+    objects = VideoQuerySet.as_manager()
 
     raw_file = models.FileField(
         upload_to=VIDEO_DIR.name,  # Use .name for relative path

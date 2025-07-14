@@ -78,19 +78,7 @@ class AnonymizationOverviewView(ListAPIView):
         return Response(serializer.data)
 
 
-@api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS)
-def anonymization_items_overview(request):
-    """
-    API endpoint for anonymization items overview
-    """
-    view = AnonymizationOverviewView()
-    view.setup(request)  # Properly initialize the view with request
-    view.request = request
-    view.format_kwarg = None  # Set required attribute
-    view.args = ()
-    view.kwargs = {}
-    return view.list(request)
+
 
 
 @api_view(['GET', 'POST', 'PUT'])
@@ -99,28 +87,26 @@ def set_current_for_validation(request, file_id):
     """
     Set current file for validation and return patient data
     """
+    # Try to find the file in VideoFile first
     try:
-        # Try to find the file in VideoFile first
-        try:
-            video_file = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
-            serializer = PatientDataSerializer(video_file, context={'request': request})
-            return Response(serializer.data)
-        except VideoFile.DoesNotExist:
-            pass
-        
-        # Try to find the file in RawPdfFile
-        try:
-            pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
-            serializer = PatientDataSerializer(pdf_file, context={'request': request})
-            return Response(serializer.data)
-        except RawPdfFile.DoesNotExist:
-            pass
-        
-        return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
-    except ObjectDoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
+        video_file = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
+        serializer = PatientDataSerializer(video_file, context={'request': request})
+        return Response(serializer.data)
+    except VideoFile.DoesNotExist:
+        pass
+    
+    # Try to find the file in RawPdfFile
+    try:
+        pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
+        serializer = PatientDataSerializer(pdf_file, context={'request': request})
+        return Response(serializer.data)
+    except RawPdfFile.DoesNotExist:
+        pass
     except (ValueError, TypeError, AttributeError) as e:
+        logger.error(f"Error in set_current_for_validation: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
 
 
 @api_view(['POST'])
@@ -205,7 +191,6 @@ def start_anonymization(request, file_id):
             )
             
             # For now, we'll just mark it as needing manual anonymization
-            # In a real implementation, you might trigger an AI service to generate anonymized text
             return JsonResponse({
                 'status': 'success', 
                 'message': 'PDF anonymization initiated - please complete anonymization manually'
@@ -233,19 +218,20 @@ def get_anonymization_status(request, file_id):
             video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
             
             # Determine anonymization status based on video state
-            if hasattr(video_file, 'state') and video_file.state:
-                if video_file.state.anonymized and video_file.state.frames_extracted and video_file.state.initial_prediction_completed:
-                    anonymization_status = 'done'
-                elif hasattr(video_file.state, 'processing_error') and video_file.state.processing_error:
-                    anonymization_status = 'failed'
-                elif video_file.state.frames_extracted and not video_file.state.anonymized:
-                    anonymization_status = 'processing_anonymization'
-                elif video_file.state.was_created and not video_file.state.frames_extracted:
-                    anonymization_status = 'extracting frames'
-                elif video_file.state.anonymization_validated:
+            s = video_file.state
+            if s:
+                # ---- finished states ----------------------------------------
+                if s.anonymization_validated:
                     anonymization_status = 'validated'
-                elif not video_file.state.initial_prediction_completed and video_file.state.anonymization_validated:
-                    anonymization_status = 'predicting_segments'
+                elif s.anonymized:
+                    anonymization_status = 'done'
+                # ---- still running ------------------------------------------
+                elif s.frames_extracted and not s.anonymized:
+                    anonymization_status = 'processing_anonymization'
+                elif s.was_created and not s.frames_extracted:
+                    anonymization_status = 'extracting_frames'  # 🐛 fixed typo
+                elif getattr(s, "processing_error", False):
+                    anonymization_status = 'failed'
                 else:
                     anonymization_status = 'not_started'
             else:

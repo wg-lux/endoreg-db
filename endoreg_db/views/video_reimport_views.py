@@ -4,7 +4,7 @@ from rest_framework import status
 import logging
 from pathlib import Path
 from django.db import transaction
-from ..models import VideoFile, SensitiveMeta
+from ..models import VideoFile, SensitiveMeta, VideoState
 from ..services.video_import import _ensure_default_patient_data
 
 logger = logging.getLogger(__name__)
@@ -89,12 +89,19 @@ class VideoReimportView(APIView):
                 
                 # Run Pipe 1 for OCR and AI processing
                 logger.info(f"Starting Pipe 1 processing for {video.uuid}")
-                success = video.pipe_1(
-                    model_name="image_multilabel_classification_colonoscopy_default",
-                    delete_frames_after=True,
-                    ocr_frame_fraction=0.01,
-                    ocr_cap=5
-                )
+                try:
+                    success = video.pipe_1(
+                        model_name="image_multilabel_classification_colonoscopy_default",
+                        delete_frames_after=True,
+                        ocr_frame_fraction=0.01,
+                        ocr_cap=5
+                    )
+                except Exception as e:
+                    logger.error(f"Pipe 1 processing raised exception for {video.uuid}: {e}")
+                    return Response(
+                        {"error": f"OCR and AI processing failed: {str(e)}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
                 
                 if not success:
                     logger.error(f"Pipe 1 processing failed for video {video.uuid}")

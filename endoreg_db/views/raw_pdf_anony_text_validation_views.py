@@ -17,7 +17,7 @@ class RawPdfAnonyTextView(APIView):
     - Serving the actual PDF file.
     """
 
-    def get(self, request):
+    def get(self, request) -> Response | FileResponse:
         """
         Handles:
         - First available PDF if `last_id` is NOT provided.
