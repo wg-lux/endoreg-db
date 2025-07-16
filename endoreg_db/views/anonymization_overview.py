@@ -50,7 +50,7 @@ def validate_anonymization(request, file_id: int):
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
     return Response({"detail": f"Anonymization validated for {kind} file"})
 
-@api_view(["GET"]
+@api_view(["GET"])
 @permission_classes(PERMS)
 def anonymization_current(request, file_id: int):
     """
