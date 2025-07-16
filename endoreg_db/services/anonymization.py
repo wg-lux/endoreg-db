@@ -64,3 +64,29 @@ class AnonymizationService:
             return "pdf"
 
         return None
+    
+    @staticmethod
+    def list_items():
+        """
+        Returns a list of all files with their anonymization status.
+        """
+        video_files = VideoFile.objects.select_related("state").all()
+        pdf_files = RawPdfFile.objects.select_related("sensitive_meta").all()
+
+        data = []
+        for vf in video_files:
+            data.append({
+                "file_id": vf.id,
+                "file_type": "video",
+                "anonymizationStatus": vf.state.anonymization_status,
+            })
+
+        for pdf in pdf_files:
+            status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
+            data.append({
+                "file_id": pdf.id,
+                "file_type": "pdf",
+                "anonymizationStatus": status,
+            })
+
+        return data
