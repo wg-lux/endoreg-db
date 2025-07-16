@@ -100,10 +100,9 @@ from .views.sensitive_meta_views import (
 
 # Add missing anonymization overview imports
 from .views.anonymization_overview import (
-    AnonymizationOverviewView,
+    anonymization_status,
     start_anonymization,
-    get_anonymization_status,
-    set_current_for_validation
+    validate_anonymization
 )
 
 from .views.video_media_views import VideoMediaView
@@ -238,10 +237,11 @@ urlpatterns = [
     ),
     
     # URL patterns for anonymization overview
-    path('anonymization/items/overview/', AnonymizationOverviewView.as_view(), name='anonymization_items_overview'),
-    path('anonymization/<int:file_id>/current/', set_current_for_validation, name='set_current_for_validation'),
+    path('anonymization/items/overview/', anonymization_status, name='anonymization_items_overview'),
+    path('anonymization/<int:file_id>/current/', anonymization_status, name='set_current_for_validation'),
     path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
-    path('anonymization/<int:file_id>/status/', get_anonymization_status, name='get_anonymization_status'),
+    path('anonymization/<int:file_id>/status/', anonymization_status, name='get_anonymization_status'),
+    path('anonymization/<int:file_id>/validate/', validate_anonymization, name='validate_anonymization'),
     
 
     # URL patterns for ExaminationForm.vue API calls

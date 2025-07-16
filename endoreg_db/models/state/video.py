@@ -5,11 +5,21 @@ from django.db import models
 from .abstract import AbstractState
 from typing import TYPE_CHECKING, Optional
 import logging
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..media import VideoFile
+    
+
+class AnonymizationStatus(str, Enum):
+    NOT_STARTED             = "not_started"
+    EXTRACTING_FRAMES       = "extracting_frames"
+    PROCESSING_ANONYMIZING  = "processing_anonymization"
+    DONE                    = "done"
+    VALIDATED               = "validated"
+    FAILED                  = "failed"
 
 class AbstractVideoState(AbstractState):
     """
@@ -77,6 +87,7 @@ class VideoState(models.Model):
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
     anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
+    anonymization_status = AnonymizationStatus
     
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
@@ -114,7 +125,38 @@ class VideoState(models.Model):
             f"DateCreated={self.date_created.isoformat()}",
             f"DateModified={self.date_modified.isoformat()}"
         ]
+        
+        @property
+        def anonymization_status(self) -> AnonymizationStatus:
+            """
+            Fast, side‑effect‑free status resolution used by API & UI.
+            """
+            if self.anonymization_validated:
+                return AnonymizationStatus.VALIDATED
+            if self.sensitive_meta_processed:
+                return AnonymizationStatus.DONE
+            if self.frames_extracted and not self.anonymized:
+                return AnonymizationStatus.PROCESSING_ANONYMIZING
+            if self.was_created and not self.frames_extracted:
+                return AnonymizationStatus.EXTRACTING_FRAMES
+            if getattr(self, "processing_error", False):
+                return AnonymizationStatus.FAILED
+            return AnonymizationStatus.NOT_STARTED
+
+    # ---- Single‑responsibility mutators ---------------------------------
+    def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
+        self.sensitive_meta_processed = True
+        if save:
+            self.save(update_fields=["sensitive_meta_processed", "date_modified"])
+
+    def mark_anonymization_validated(self, *, save: bool = True) -> None:
+        self.anonymization_validated = True
+        if save:
+            self.save(update_fields=["anonymization_validated", "date_modified"])
         return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
+    
+        
+    
 
     class Meta:
         verbose_name = "Video Processing State"

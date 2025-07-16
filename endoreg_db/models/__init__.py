@@ -37,12 +37,6 @@ from .administration import (
     EmployeeQualification,
 )
 
-from .anonymization import (
-    AnonymousFrame,
-    FrameAnonymizationRequest,
-    AnonymizationTask,
-)
-    
 
 ####### Label ########
 from .label import (
@@ -171,6 +165,7 @@ from .state import (
     SensitiveMetaState,
     VideoState,
     LabelVideoSegmentState,
+    AnonymizationStatus,
 )
 
 __all__ = [
@@ -180,11 +175,6 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ModelType",
-    
-    # Anonymization
-    "FrameAnonymizationRequest",
-    "AnonymousFrame",
-    "AnonymizationTask",
 
     # Case
     "Case",
@@ -368,4 +358,5 @@ __all__ = [
     "SensitiveMetaState",
     "VideoState",
     "LabelVideoSegmentState",
+    "AnonymizationStatus",
 ]

@@ -83,6 +83,11 @@ if TYPE_CHECKING:
     )   
 class VideoQuerySet(models.QuerySet):
     def next_after(self, last_id=None):
+        if last_id is not None:
+            try:
+                last_id = int(last_id)
+            except (ValueError, TypeError):
+                return None
         q = self if last_id is None else self.filter(pk__gt=last_id)
         return q.order_by("pk").first()
 
