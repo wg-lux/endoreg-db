@@ -24,7 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "agl-report-reader>=0.4.0",
     "django-bootstrap5>=24.3",

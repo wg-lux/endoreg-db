@@ -40,6 +40,7 @@ from .administration import (
 from .anonymization import (
     AnonymousFrame,
     FrameAnonymizationRequest,
+    AnonymizationTask,
 )
     
 
@@ -183,6 +184,7 @@ __all__ = [
     # Anonymization
     "FrameAnonymizationRequest",
     "AnonymousFrame",
+    "AnonymizationTask",
 
     # Case
     "Case",

@@ -5,11 +5,11 @@ from django.http import FileResponse, Http404
 from rest_framework import viewsets, decorators, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from ..models import VideoFile, Label, LabelVideoSegment
 from ..serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
-from ..utils.permissions import DEBUG_PERMISSIONS, EnvironmentAwarePermission
-
+from ..utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 def _stream_video_file(vf, frontend_origin):
     """
@@ -330,3 +330,23 @@ class UpdateLabelSegmentsView(APIView):
             return Response({
                 "error": f"Failed to update segments: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+
+@api_view(['GET'])
+@permission_classes(DEBUG_PERMISSIONS)
+def rerun_segmentation(request, video_id):
+    """
+    Rerun segmentation for a specific video.
+    """
+    try:
+        video_file = VideoFile.objects.get(id=video_id)
+        video_file.pipe_1()
+        video_file.test_after_pipe_1()
+        return Response({'status': 'success', 'message': 'Segmentation rerun successfully'})
+    except VideoFile.DoesNotExist:
+        return Response({'status': 'error', 'message': 'Video file not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in rerun_segmentation: {e}")
+        return Response({'status': 'error', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

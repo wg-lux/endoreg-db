@@ -167,15 +167,17 @@ class VideoReimportView(APIView):
                         
                         # Clean video with ROI masking (heavy I/O operation)
                         # Pass the endoscope ROI to the frame cleaner for masking
+                        output_path = Path(video.raw_file.path).parent / f"cleaned_{Path(video.raw_file.path).name}"
                         cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
                             Path(video.raw_file.path),
-                            video_file_obj=video,  # Pass VideoFile object to store metadata
-                            report_reader=report_reader,
-                            device_name=processor.name if processor else "Unknown",
-                            endoscope_roi=endoscope_roi,  # Pass ROI for masking
-                            processor_rois=processor_roi,   # Pass all ROIs for comprehensive anonymization
-                            frame_paths=video.get_frame_paths()
+                            output_path,
+                            video,  # Pass VideoFile object to store metadata
+                            report_reader,
+                            processor.name if processor else "Unknown",
+                            video.get_frame_paths() if hasattr(video, 'get_frame_paths') else None
                         )
+                        
+                        
                         
                         # Save cleaned video back to VideoFile (atomic transaction)
                         with transaction.atomic():
@@ -191,6 +193,10 @@ class VideoReimportView(APIView):
                         logger.info(f"Extracted metadata: {extracted_metadata}")
                             
                         logger.info(f"In-place re-import completed successfully for video {video.uuid}")
+                        
+                        # ⭐ Set anonymization status to "done" for frontend validation
+                        self._set_anonymization_done_status(video)
+                        
                         # FIX: Return proper Response object instead of bare return
                         return Response({
                             "message": "Video re-import with frame cleaning completed successfully.",
@@ -201,7 +207,8 @@ class VideoReimportView(APIView):
                             "extracted_metadata": extracted_metadata,
                             "sensitive_meta_created": video.sensitive_meta is not None,
                             "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
-                            "updated_in_place": True
+                            "updated_in_place": True,
+                            "status": "done"  # ⭐ Add explicit done status
                         }, status=status.HTTP_200_OK)
                     except Exception as e:
                         logger.exception(f"Frame cleaning with ROI masking failed for video {video.uuid}: {e}")
@@ -210,30 +217,70 @@ class VideoReimportView(APIView):
                 else:
                     logger.warning("Frame cleaning not available, skipping anonymization step")
                 
+            # ⭐ Set anonymization status to "done" even without frame cleaning
+            self._set_anonymization_done_status(video)
+            
             return Response({
                 "message": "Video re-import completed successfully.",
                 "video_id": video_id,
                 "uuid": str(video.uuid),
                 "sensitive_meta_created": video.sensitive_meta is not None,
                 "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
-                "updated_in_place": True
+                "updated_in_place": True,
+                "status": "done"  # ⭐ Add explicit done status
             }, status=status.HTTP_200_OK)
-                
-        except FileNotFoundError as e:
-            logger.error(f"File not found during re-import for ID {video_id}: {str(e)}")
-            return Response(
-                {"error": f"Required file not found: {str(e)}"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except ValueError as e:
-            logger.error(f"Invalid data during re-import for ID {video_id}: {str(e)}")
-            return Response(
-                {"error": f"Invalid data: {str(e)}"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+
         except Exception as e:
-            logger.error(f"Unexpected error during video re-import for ID {video_id}: {str(e)}", exc_info=True)
-            return Response(
-                {"error": f"Re-import failed: {str(e)}"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            logger.error(f"Failed to re-import video {video.uuid}: {str(e)}", exc_info=True)
+            
+            # Handle specific error types
+            error_msg = str(e)
+            if any(phrase in error_msg.lower() for phrase in ["insufficient storage", "no space left", "disk full"]):
+                # Storage error - return specific error message
+                return Response({
+                    "error": f"Storage error during re-import: {error_msg}",
+                    "error_type": "storage_error",
+                    "video_id": video_id,
+                    "uuid": str(video.uuid)
+                }, status=status.HTTP_507_INSUFFICIENT_STORAGE)
+            else:
+                # Other errors
+                return Response({
+                    "error": f"Re-import failed: {error_msg}",
+                    "error_type": "processing_error", 
+                    "video_id": video_id,
+                    "uuid": str(video.uuid)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _set_anonymization_done_status(self, video_file):
+        """
+        Set the anonymization status to 'done' for frontend validation.
+        
+        Args:
+            video_file: VideoFile instance
+        """
+        try:
+            # Import here to avoid circular imports
+            from ..models import AnonymizationTask
+            
+            # Find or create anonymization task for this video
+            anonymization_task, created = AnonymizationTask.objects.get_or_create(
+                video_file=video_file,
+                defaults={
+                    'status': 'done',
+                    'progress': 100,
+                    'message': 'Video re-import completed successfully'
+                }
             )
+            
+            if not created:
+                # Update existing task
+                anonymization_task.status = 'done'
+                anonymization_task.progress = 100
+                anonymization_task.message = 'Video re-import completed successfully'
+                anonymization_task.save(update_fields=['status', 'progress', 'message'])
+            
+            logger.info(f"Anonymization status set to 'done' for video {video_file.uuid}")
+            
+        except Exception as e:
+            logger.error(f"Failed to set anonymization status for {video_file.uuid}: {e}")

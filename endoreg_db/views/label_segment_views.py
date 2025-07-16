@@ -299,3 +299,4 @@ def video_segments_by_label_name_view(request, video_id, label_name):
             {'error': f'Internal server error: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+        

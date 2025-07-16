@@ -13,19 +13,10 @@ from django.db.models import Prefetch, QuerySet
 from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
 from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
-from lx_anonymizer import FrameCleaner, ReportReader
-
-
-# Import anonymization functionality
-try:
-    from endoreg_db.models.media.video.video_file_anonymize import _anonymize
-except ImportError:
-    _anonymize = None
+from endoreg_db.services.video_import import import_and_anonymize
+from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
-
-# DEBUG: Remove in production
-DEBUG_PERMISSIONS = [AllowAny]
 
 
 class NoPagination(PageNumberPagination):
@@ -79,8 +70,6 @@ class AnonymizationOverviewView(ListAPIView):
 
 
 
-
-
 @api_view(['GET', 'POST', 'PUT'])
 @permission_classes(DEBUG_PERMISSIONS)
 def set_current_for_validation(request, file_id):
@@ -109,103 +98,6 @@ def set_current_for_validation(request, file_id):
     return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
 
 
-@api_view(['POST'])
-@permission_classes(DEBUG_PERMISSIONS)
-def start_anonymization(request, file_id):
-    """
-    Start anonymization process for a file
-    """
-    try:
-        # Try to find the file in VideoFile first
-        try:
-            video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
-            
-            # For videos, we need to ensure the complete pipeline runs
-            state = video_file.get_or_create_state()
-            
-            if state.anonymized:
-                return JsonResponse({
-                    'status': 'success', 
-                    'message': 'Video is already anonymized'
-                })
-            
-            # Check if we need to run Pipe 1 first (frame extraction + AI processing)
-            if not state.frames_extracted or not state.initial_prediction_completed:
-                logger.info(f"Running Pipe 1 for video {video_file.uuid}")
-                
-                model_name = "image_multilabel_classification_colonoscopy_default"
-                success = video_file.pipe_1(
-                    model_name=model_name,
-                    delete_frames_after=True,
-                    ocr_frame_fraction=0.01,
-                    ocr_cap=5
-                )
-                
-                if not success:
-                    return JsonResponse({
-                        'status': 'error',
-                        'message': 'Pipe 1 processing failed'
-                    }, status=500)
-                
-                # Simulate user validation (test_after_pipe_1) for automatic processing
-                validation_success = video_file.test_after_pipe_1()
-                if not validation_success:
-                    return JsonResponse({
-                        'status': 'error',
-                        'message': 'Validation simulation failed'
-                    }, status=500)
-            
-            logger.info(f"Running Pipe 2 for video {video_file.uuid}")
-            success = video_file.pipe_2()
-            
-            if success:
-                return JsonResponse({
-                    'status': 'success', 
-                    'message': 'Video anonymization completed successfully'
-                })
-            else:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Video anonymization failed'
-                }, status=500)
-                
-        except VideoFile.DoesNotExist:
-            pass
-        
-        # Try to find the file in RawPdfFile
-        try:
-            pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
-            
-            # For PDFs, anonymization means having anonymized text
-            if pdf_file.anonymized_text and pdf_file.anonymized_text.strip():
-                return JsonResponse({
-                    'status': 'success', 
-                    'message': 'PDF is already anonymized'
-                })
-                
-            logger.info(f"Starting PDF anonymization for file {pdf_file.id}")
-            report_reader = ReportReader(pdf_file.file.path)
-            
-            report_reader.process_report(
-                pdf_path=pdf_file.file.path,
-            )
-            
-            # For now, we'll just mark it as needing manual anonymization
-            return JsonResponse({
-                'status': 'success', 
-                'message': 'PDF anonymization initiated - please complete anonymization manually'
-            })
-            
-        except RawPdfFile.DoesNotExist:
-            pass
-        
-        return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
-        
-    except (ValueError, TypeError, AttributeError) as e:
-        logger.error(f"Error in start_anonymization: {e}")
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-
-
 @api_view(['GET'])
 @permission_classes(DEBUG_PERMISSIONS)
 def get_anonymization_status(request, file_id):
@@ -217,13 +109,19 @@ def get_anonymization_status(request, file_id):
         try:
             video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
             
-            # Determine anonymization status based on video state
             s = video_file.state
+
+            if video_file.sensitive_meta:
+                s.sensitive_meta_processed = True
+            
+                
+            
+            # Determine anonymization status based on video state
             if s:
                 # ---- finished states ----------------------------------------
                 if s.anonymization_validated:
                     anonymization_status = 'validated'
-                elif s.anonymized:
+                elif s.sensitive_meta_processed:
                     anonymization_status = 'done'
                 # ---- still running ------------------------------------------
                 elif s.frames_extracted and not s.anonymized:
@@ -268,3 +166,65 @@ def get_anonymization_status(request, file_id):
     except (ValueError, TypeError, AttributeError) as e:
         logger.error(f"Error in get_anonymization_status: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    
+@api_view(['POST'])
+@permission_classes(DEBUG_PERMISSIONS)
+def start_anonymization(request, file_id):
+    """
+    Start anonymization for a file
+    """
+    try:
+        # Try to find the file in VideoFile first
+        try:
+            video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
+            import_and_anonymize(video_file.get_raw_file_path, video_file.center, video_file.processor)
+            
+            return JsonResponse({'status': 'success', 'message': 'Anonymization started for video file'})
+        except Exception as e:
+            pass
+        
+        # Try to find the file in RawPdfFile
+        try:
+            pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
+            pdf_file.sensitive_meta.anonymization_started = True  # Mark as anonymization started
+            pdf_file.sensitive_meta.save()
+            return JsonResponse({'status': 'success', 'message': 'Anonymization started for PDF file'})
+        except RawPdfFile.DoesNotExist:
+            pass
+        
+        return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
+    except (ValueError, TypeError, AttributeError) as e:
+        logger.error(f"Error in start_anonymization: {e}")
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+@api_view(['POST'])
+@permission_classes(DEBUG_PERMISSIONS)
+def validate_anonymization(request, file_id):
+    """
+    Validate anonymization for a file
+    """
+    if request:
+        try:
+            # Try to find the file in VideoFile first
+            try:
+                video_file = VideoFile.objects.select_related('state', 'sensitive_meta').get(id=file_id)
+                video_file.state.anonymization_validated = True
+                video_file.state.save()
+                return JsonResponse({'status': 'success', 'message': 'Anonymization validated for video file'})
+            except VideoFile.DoesNotExist:
+                pass
+            
+            # Try to find the file in RawPdfFile
+            try:
+                pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
+                pdf_file.sensitive_meta.anonymization_validated = True
+                pdf_file.sensitive_meta.save()
+                return JsonResponse({'status': 'success', 'message': 'Anonymization validated for PDF file'})
+            except RawPdfFile.DoesNotExist:
+                pass
+            
+            return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Error in validate_anonymization: {e}")
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

@@ -1,6 +1,7 @@
 from django.http import FileResponse, Http404
 import mimetypes
 import os
+import logging
 from ..models import RawPdfFile
 from ..serializers._old.raw_pdf_meta_validation import PDFFileForMetaSerializer, SensitiveMetaUpdateSerializer
 from rest_framework.views import APIView
@@ -9,6 +10,9 @@ from rest_framework import status
 from ..models import SensitiveMeta
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.utils.decorators import method_decorator
+from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 class PDFFileForMetaView(APIView):
     """
@@ -85,13 +89,15 @@ class PDFFileForMetaView(APIView):
 class UpdateSensitiveMetaView(APIView):
     """
     API endpoint to update patient details in the SensitiveMeta table.
-    Handles partial updates (only edited fields).
+    Handles partial updates (only edited fields) and raw file deletion after validation acceptance.
     """
 
+    @transaction.atomic
     def patch(self, request, *args, **kwargs):
         """
         Updates the provided fields for a specific patient record.
         Only updates fields that are sent in the request.
+        Automatically deletes raw PDF files when validation is accepted.
         """
         sensitive_meta_id = request.data.get("sensitive_meta_id")  # Required field
 
@@ -103,12 +109,63 @@ class UpdateSensitiveMetaView(APIView):
         except SensitiveMeta.DoesNotExist:
             return Response({"error": "Patient record not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Check if this is a validation acceptance (is_verified being set to True)
+        is_accepting_validation = request.data.get("is_verified", False)
+        delete_raw_files = request.data.get("delete_raw_files", False)
+        
+        # If user is accepting validation, automatically set delete_raw_files to True
+        if is_accepting_validation:
+            delete_raw_files = True
+            logger.info(f"Validation accepted for PDF SensitiveMeta {sensitive_meta_id}, marking raw files for deletion")
+
         # Serialize the request data with partial=True to allow partial updates
         serializer = SensitiveMetaUpdateSerializer(sensitive_meta, data=request.data, partial=True)
 
         if serializer.is_valid():
-            serializer.save()
+            updated_sm = serializer.save()
+            
+            # Handle raw file deletion if requested or if validation was accepted
+            if delete_raw_files and updated_sm.is_verified:
+                try:
+                    # Find associated PDF file
+                    pdf_file = RawPdfFile.objects.filter(sensitive_meta=updated_sm).first()
+                    if pdf_file:
+                        self._schedule_raw_file_deletion(pdf_file)
+                        logger.info(f"Scheduled raw file deletion for PDF {pdf_file.id}")
+                    else:
+                        logger.warning(f"No PDF file found for SensitiveMeta {sensitive_meta_id}")
+                except Exception as e:
+                    logger.error(f"Error scheduling raw file deletion for PDF SensitiveMeta {sensitive_meta_id}: {e}")
+                    # Don't fail the entire request if deletion scheduling fails
+            
             return Response({"message": "Patient information updated successfully.", "updated_data": serializer.data},
                             status=status.HTTP_200_OK)
         
         return Response({"error": "Invalid data.", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _schedule_raw_file_deletion(self, pdf_file):
+        """
+        Schedule deletion of raw PDF file after validation acceptance.
+        """
+        try:
+            def cleanup_raw_files():
+                """Cleanup function to be called after transaction commit"""
+                try:
+                    if pdf_file.file and os.path.exists(pdf_file.file.path):
+                        logger.info(f"Deleting raw PDF file: {pdf_file.file.path}")
+                        os.remove(pdf_file.file.path)
+                        pdf_file.file = None
+                        pdf_file.save()
+                        logger.info(f"Successfully deleted raw PDF file {pdf_file.id}")
+                    else:
+                        logger.info(f"Raw PDF file already deleted or not found for PDF {pdf_file.id}")
+                        
+                except Exception as e:
+                    logger.error(f"Error during raw file cleanup for PDF {pdf_file.id}: {e}")
+            
+            # Schedule cleanup after transaction commits
+            transaction.on_commit(cleanup_raw_files)
+            
+        except Exception as e:
+            logger.error(f"Error scheduling raw file deletion for PDF {pdf_file.id}: {e}")
+            raise
