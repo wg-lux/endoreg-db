@@ -5,11 +5,10 @@ Diese Datei enthält Hilfsfunktionen für die Frame-Anonymisierung,
 einschließlich Bildverarbeitung, Pfad-Management und Sicherheitsfunktionen.
 """
 
-import os
 import hashlib
 import secrets
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 import logging
 

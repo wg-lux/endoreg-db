@@ -8,8 +8,6 @@ This module provides Celery tasks for:
 - Progress tracking and status updates
 """
 
-import os
-import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from celery import shared_task

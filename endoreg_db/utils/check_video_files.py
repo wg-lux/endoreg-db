@@ -6,10 +6,20 @@ Simple video file existence checker and path corrector for VideoFile records.
 import os
 import sys
 from pathlib import Path
+import argparse
 
-# Add Django setup (simplified)
-sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dev.dev_settings')
+# Parse command-line arguments and environment variables for configuration
+parser = argparse.ArgumentParser(description="Simple video file existence checker and path corrector for VideoFile records.")
+parser.add_argument('--django-base', type=str, default=os.environ.get('ENDOREG_DJANGO_PROJECT_PATH', str(Path(__file__).resolve().parent.parent.parent)),
+                    help='Path to the Django project base (default: env ENDOREG_DJANGO_PROJECT_PATH or project root)')
+parser.add_argument('--django-settings', type=str, default=os.environ.get('DJANGO_SETTINGS_MODULE', 'dev.dev_settings'),
+                    help='Django settings module (default: env DJANGO_SETTINGS_MODULE or dev.dev_settings)')
+parser.add_argument('--storage-dir', type=str, default=os.environ.get('ENDOREG_STORAGE_DIR', './storage'),
+                    help='Path to the storage directory (default: ./storage or $ENDOREG_STORAGE_DIR)')
+args, unknown = parser.parse_known_args()
+
+sys.path.insert(0, args.django_base)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', args.django_settings)
 
 try:
     import django
@@ -22,7 +32,7 @@ except Exception as e:
 
 def find_video_files():
     """Find all video files in storage directory."""
-    storage_dir = Path('/home/admin/test/lx-annotate/storage')
+    storage_dir = Path(args.storage_dir)
     video_files = []
     
     for pattern in ['**/*.mp4', '**/*.avi', '**/*.mov', '**/*.mkv']:
@@ -121,7 +131,7 @@ def main():
                 print(f"   {matching_files[0]}")
                 print(f"\n🐍 Django command to fix:")
                 print(f"   video = VideoFile.objects.get(pk=5)")
-                print(f"   video.raw_file.name = '{matching_files[0].relative_to(Path('/home/admin/test/lx-annotate/storage'))}'")
+                print(f"   video.raw_file.name = '{matching_files[0].relative_to(Path(args.storage_dir))}'")
                 print(f"   video.save()")
             else:
                 print(f"\n❌ No files found matching UUID {uuid_str}")
