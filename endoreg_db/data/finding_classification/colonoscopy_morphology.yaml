@@ -1,7 +1,10 @@
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_size_categorical"
-    classification_type: "colon_lesion_size"
+    classification_types: [
+      "colon_lesion_size",
+      "morphology"
+    ]
     name_de: "Größenklassifikation Kolonläsion (kategorisch)"
     name_en: "Colon Lesion Size Classification (categorical)"
     examinations: [
@@ -14,11 +17,20 @@
       "ulcer",
       "scar"
     ]
+    choices: [
+      "colon_lesion_size_categorical_diminutive",
+      "colon_lesion_size_categorical_small",
+      "colon_lesion_size_categorical_medium",
+      "colon_lesion_size_categorical_large"
+    ]
 
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_size_mm"
-    classification_type: "colon_lesion_size"
+    classification_types: [
+      "colon_lesion_size",
+      "morphology"
+    ]
     name_de: "Größenklassifikation Kolonläsion (numerisch)"
     name_en: "Colon Lesion Size Classification (numerical)"
     examinations: [
@@ -31,11 +43,17 @@
       "ulcer",
       "scar"
     ]
+    choices: [
+      "colon_lesion_size_oval_mm"
+    ]
 
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_surface_intact_default"
-    classification_type: "colon_lesion_surface_intact"
+    classification_types: [
+      "colon_lesion_surface_intact",
+      "morphology"
+    ]
     name_de: "Oberflächenklassifikation Kolonläsion"
     name_en: "Colon Lesion Surface Classification"
     examinations: [
@@ -44,11 +62,19 @@
     findings: [
       "colon_polyp",
     ]
+    choices: [
+      "colon_lesion_surface_intact",
+      "colon_lesion_surface_eroded",
+      "colon_lesion_surface_ulcerated"
+    ]
 
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_planarity_default"
-    classification_type: "colon_lesion_planarity"
+    classification_types: [
+      "colon_lesion_planarity",
+      "morphology"
+    ]
     name_de: "Planaritätsklassifikation Kolonläsion"
     name_en: "Colon Lesion Planarity Classification"
     examinations: [
@@ -57,24 +83,42 @@
     findings: [
       "colon_polyp",
     ]
+    choices: [
+      "colon_lesion_planarity_flat",
+      "colon_lesion_planarity_flat_elevated",
+      "colon_lesion_planarity_sessile",
+      "colon_lesion_planarity_pedunculated",
+      "colon_lesion_planarity_excavated",
+      "colon_lesion_planarity_unknown"
+    ]
 
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_circularity_default"
     name_de: "Kolonläsion - Zirkularität"
     name_en: "Colon lesion - circularity"
-    classification_type: "colon_lesion_circularity"    
+    classification_types: [
+      "colon_lesion_circularity",
+      "morphology"
+    ]    
     examinations: [
       "colonoscopy"
     ]
     findings: [
       "colon_polyp",
     ]
+    choices: [
+      "colon_lesion_circularity_false",
+      "colon_lesion_circularity_true"
+    ]
 
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_nice"
-    classification_type: "colon_lesion_advanced_imaging"
+    classification_types: [
+      "colon_lesion_advanced_imaging",
+      "morphology"
+    ]
     name_de: "Kolonläsion - NICE"
     name_en: "Colon lesion - NICE"
     examinations: [
@@ -83,11 +127,19 @@
     findings: [
       "colon_polyp",
     ]
+    choices: [
+      "colon_lesion_NICE_type_1",
+      "colon_lesion_NICE_type_2",
+      "colon_lesion_NICE_type_3"
+    ]
 
 - model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_paris"
-    classification_type: "colon_lesion_shape"
+    classification_types: [
+      "colon_lesion_shape",
+      "morphology"
+    ]
     name_de: "Formklassifikation Kolonläsion"
     name_en: "Colon Lesion Shape Classification"
     examinations: [
@@ -95,4 +147,14 @@
     ]
     findings: [
       "colon_polyp",
+    ]
+    choices: [
+      "colon_paris_Is",
+      "colon_paris_Ip",
+      "colon_paris_IIa",
+      "colon_paris_IIb",
+      "colon_paris_IIc",
+      "colon_paris_III",
+      "colon_paris_IIa_IIc",
+      "colon_paris_IIb_IIc"
     ]

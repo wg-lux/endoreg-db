@@ -44,6 +44,11 @@ class FindingClassification(models.Model):
         to=FindingClassificationType, 
         # on_delete=models.CASCADE
     )
+    choices = models.ManyToManyField(
+        'FindingClassificationChoice', 
+        related_name='classifications', 
+        blank=True
+    )
 
     findings = models.ManyToManyField('Finding', blank=True, related_name='finding_classifications')
     examinations = models.ManyToManyField('Examination', blank=True, related_name='finding_classifications')
@@ -59,7 +64,7 @@ class FindingClassification(models.Model):
         from endoreg_db.models import (
             Finding, Examination, FindingType, PatientFindingClassification
         )
-        classification_type: models.ForeignKey[FindingClassificationType]
+        classification_types: models.ManyToManyField[FindingClassificationType]
         findings: models.QuerySet[Finding]
         examinations: models.QuerySet[Examination]
         finding_types: models.QuerySet[FindingType]
@@ -93,10 +98,10 @@ class FindingClassificationChoice(models.Model):
     name_de = models.CharField(max_length=255, blank=True)
     name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
-    classifications = models.ManyToManyField(
-        "FindingClassification", 
-        related_name='choices'
-    )
+    # classifications = models.ManyToManyField(
+    #     "FindingClassification", 
+    #     related_name='choices'
+    # )
     
     subcategories = models.JSONField(
         default = dict

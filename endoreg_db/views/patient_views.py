@@ -20,27 +20,6 @@ def start_examination(request):
 
 
 #need to implement one with json data after tesing whethe rthis works or not
-"""def get_location_choices(request, location_id):
-   
-    try:
-        # Ensure the location exists
-        location = FindingLocationClassification.objects.get(id=location_id)
-        # Get only choices related to the selected location classification
-        #location_choices = FindingLocationClassificationChoice.objects.filter(location_classification=location)
-        #its many to may relation so
-        location_choices = location.choices.all()
-        
-    except ObjectDoesNotExist:
-        location_choices = []
-
-    # Get previously selected values to retain them after reloading
-    selected_location = int(location_id) if location_id else None
-
-    return render(request, 'admin/patient_finding_intervention.html', {
-        "location_choices": location_choices,  # Pass updated choices to the template
-        "selected_location": location_id,  # Keep previous selection
-    })
-"""
 
 class PatientViewSet(viewsets.ModelViewSet):
     """API endpoint for managing patients."""

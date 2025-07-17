@@ -3,7 +3,6 @@
     name: "colon_lesion_circularity_false"
     name_de: "Kolonläsion - Zirkularität"
     name_en: "Colon lesion - circularity"
-    classification: "colon_lesion_circularity_default"
     description: "Category for non-circular lesions"
 
 - model: endoreg_db.finding_morphology_classification_choice
@@ -11,7 +10,6 @@
     name: "colon_lesion_circularity_true"
     name_de: "Kolonläsion - Zirkularität"
     name_en: "Colon lesion - circularity"
-    classification: "colon_lesion_circularity_default"
     description: "Category for circular lesions"
     numerical_descriptors:
       length:
