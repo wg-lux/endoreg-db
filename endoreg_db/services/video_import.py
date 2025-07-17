@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING, Union
 from django.core.files.base import ContentFile
 from django.db import transaction
 from endoreg_db.models import VideoFile, SensitiveMeta
+from endoreg_db.utils.paths import STORAGE_DIR, RAW_FRAME_DIR
 
 try:
-    STORAGE_DIR = os.getenv("STORAGE_DIR")
     if not STORAGE_DIR:
         STORAGE_DIR = Path(__file__).parent.parent.parent.parent / "data" / "videos"    
 except KeyError:
@@ -205,7 +205,7 @@ def import_and_anonymize(
             try:
                 if video_file_obj.video_meta and video_file_obj.video_meta.processor:
                     processor = video_file_obj.video_meta.processor
-                    
+                    video_meta = video_file_obj.video_meta
                     # Get the endoscope ROI for masking
                     endoscope_roi = processor.get_roi_endoscope_image()
                     
@@ -243,14 +243,15 @@ def import_and_anonymize(
             hash = f"{video_file_obj.processed_video_hash}"  # Fix: Correct f-string syntax
             frame_paths = video_file_obj.get_frame_paths()
             path = Path(video_file_obj.raw_file.path)
+            device_name=processor.name
+            tmp_dir=RAW_FRAME_DIR  
             cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
                 path,
-                report_reader,
-                processor_name,
-                video_file_obj,  # Pass VideoFile object to store metadata
-                endoscope_roi,  # Pass ROI for masking
-                processor_roi,   # Pass all ROIs for comprehensive anonymization
-                frame_paths,
+                video_file_obj,
+                tmp_dir, 
+                device_name,# Use default temp directory
+                endoscope_roi,
+                processor_roi, 
                 Path(STORAGE_DIR) / f"{hash}.mp4"  # Fix: Ensure Path object
             )
             
