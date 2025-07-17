@@ -104,8 +104,8 @@ class FindingClassificationChoice(models.Model):
         return (self.name,)
     
     def __str__(self):
-        _str = f"{self.name} ({self.classifications})"
+        classifications_names = ", ".join([c.name for c in self.classifications.all()])
+        _str = f"{self.name} ({classifications_names})"
         return _str
-
     
         

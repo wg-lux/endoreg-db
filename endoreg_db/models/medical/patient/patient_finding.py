@@ -172,7 +172,8 @@ class PatientFinding(models.Model):
     def add_classification(
             self,
             classification_id,
-            classification_choice_id, user=None,
+            classification_choice_id,
+            user=None,
         ) -> "PatientFindingClassification":
         """Adds a validated classification choice to this patient finding."""
         from .patient_finding_classification import PatientFindingClassification
@@ -186,7 +187,6 @@ class PatientFinding(models.Model):
                 raise ValidationError(
                     f'Classification Choice {classification_choice_id} gehört nicht zu Classification {classification_id}'
                 )
-            
 
             existing = self.classifications.filter(
                 classification=classification,
@@ -196,7 +196,7 @@ class PatientFinding(models.Model):
 
             if existing:
                 return existing
-            
+
             patient_finding_classification = PatientFindingClassification.objects.create(
                 finding=self,
                 classification_id=classification_id,
@@ -204,10 +204,9 @@ class PatientFinding(models.Model):
             )
 
             return patient_finding_classification
-        
+
         except FindingClassification.DoesNotExist:
             raise ValidationError(f'Classification {classification_id} nicht gefunden')
-
 
     # Verbesserte Add-Methoden mit Validierung
     def add_location(self, location_classification_id, location_choice_id, user=None) -> "PatientFindingLocation":

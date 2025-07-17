@@ -29,17 +29,22 @@ class AnonymizationOverviewAPITest(TestCase):
             patient_first_name="Video",
             patient_last_name="Patient", 
             patient_dob="1990-01-01",
-            examination_date="2024-01-01",
+            examination_date="2024-01-01"
+        )
+        # Create SensitiveMetaState to set verification status
+        from endoreg_db.models import SensitiveMetaState
+        SensitiveMetaState.objects.create(
+            sensitive_meta=self.video_meta,
             is_verified=True
         )
-        
+
         self.pdf_meta = SensitiveMeta.objects.create(
             patient_first_name="PDF", 
             patient_last_name="Patient",
             patient_dob="1985-05-15",
-            examination_date="2024-02-01",
-            is_verified=False
+            examination_date="2024-02-01"
         )
+        # No SensitiveMetaState means is_verified will be False by default
     
     def test_overview_empty_database(self):
         """Test overview endpoint with no files."""
@@ -60,7 +65,7 @@ class AnonymizationOverviewAPITest(TestCase):
         
         # Create video state - anonymized
         VideoState.objects.create(
-            video=video,
+            video_file=video,
             anonymized=True,
             processing_error=False,
             frames_extracted=True

@@ -63,7 +63,11 @@ class Command(BaseCommand):
         self.force = options['force']
         self.max_age_days = options['max_age_days']
         self.emergency_threshold = options['emergency_threshold']
-        
+
+        # Validate emergency_threshold range
+        if not (0 <= self.emergency_threshold <= 100):
+            raise CommandError("The --emergency-threshold value must be between 0 and 100 (inclusive).")
+
         if self.dry_run:
             self.stdout.write(self.style.WARNING('DRY RUN MODE - No files will be deleted'))
         
