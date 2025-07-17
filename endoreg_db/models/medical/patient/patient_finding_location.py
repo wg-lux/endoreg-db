@@ -3,22 +3,22 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..finding import (
-        FindingLocationClassification,
-        FindingLocationClassificationChoice,
+        FindingClassification,
+        FindingClassificationChoice,
     )
     from .patient_finding import PatientFinding
 
 class PatientFindingLocation(models.Model):
     finding = models.ForeignKey('PatientFinding', on_delete=models.CASCADE, related_name='locations')
-    location_classification = models.ForeignKey('FindingLocationClassification', on_delete=models.CASCADE, related_name='patient_finding_locations')
-    location_choice = models.ForeignKey('FindingLocationClassificationChoice', on_delete=models.CASCADE, related_name='patient_finding_locations')
+    location_classification = models.ForeignKey('FindingClassification', on_delete=models.CASCADE, related_name='patient_finding_locations')
+    location_choice = models.ForeignKey('FindingClassificationChoice', on_delete=models.CASCADE, related_name='patient_finding_locations')
     subcategories = models.JSONField(blank=True, null=True)
     numerical_descriptors = models.JSONField(blank=True, null=True)
 
     if TYPE_CHECKING:
         patient_finding: "PatientFinding"
-        location_classification: "FindingLocationClassification"
-        location_choice: "FindingLocationClassificationChoice"
+        location_classification: "FindingClassification"
+        location_choice: "FindingClassificationChoice"
         subcategories: dict
         numerical_descriptors: dict
 

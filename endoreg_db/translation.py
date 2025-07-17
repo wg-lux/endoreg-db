@@ -8,10 +8,8 @@ from modeltranslation.decorators import register
 from endoreg_db.models import (
     Examination,
     Finding,
-    FindingLocationClassification,
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassification,
-    FindingMorphologyClassificationChoice,
+    FindingClassification,
+    FindingClassificationChoice,
     FindingIntervention
 )
 
@@ -30,29 +28,15 @@ class FindingTranslationOptions(TranslationOptions):
     fallback_languages = {'default': ('en', 'de')}
 
 
-@register(FindingLocationClassification)
-class FindingLocationClassificationTranslationOptions(TranslationOptions):
+@register(FindingClassification)
+class FindingClassificationTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
 
 
-@register(FindingLocationClassificationChoice)
-class FindingLocationChoiceTranslationOptions(TranslationOptions):
-    fields = ('name', 'description')
-    required_languages = ('de', 'en')
-    fallback_languages = {'default': ('en', 'de')}
-
-
-@register(FindingMorphologyClassification)
-class FindingMorphologyClassificationTranslationOptions(TranslationOptions):
-    fields = ('name', 'description')
-    required_languages = ('de', 'en')
-    fallback_languages = {'default': ('en', 'de')}
-
-
-@register(FindingMorphologyClassificationChoice)
-class FindingMorphologyChoiceTranslationOptions(TranslationOptions):
+@register(FindingClassificationChoice)
+class FindingClassificationChoiceTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
@@ -139,9 +123,8 @@ class TranslationMigrationHelper:
     def migrate_all_models():
         """Migriere alle Modelle mit Übersetzungen"""
         models_to_migrate = [
-            'Examination', 'Finding', 'FindingLocationClassification',
-            'FindingLocationChoice', 'FindingMorphologyClassification', 
-            'FindingMorphologyChoice', 'Intervention'
+            'Examination', 'Finding', 'FindingClassification', 
+            'FindingClassificationChoice', 'Intervention'
         ]
         
         for model_name in models_to_migrate:

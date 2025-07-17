@@ -28,7 +28,7 @@ MODEL_0 = FindingType
 MODEL_1 = Finding
 MODEL_2 = FindingLocationClassificationChoice
 MODEL_3 = FindingLocationClassification
-MODEL_4 = FindingMorphologyClassificationType
+MODEL_4 = FindingClassificationType
 MODEL_5 = FindingMorphologyClassification
 MODEL_6 = FindingMorphologyClassificationChoice
 MODEL_7 = FindingInterventionType
@@ -125,7 +125,7 @@ IMPORT_METADATA = {
             "examinations",
         ],
         "foreign_key_models": [
-            FindingMorphologyClassificationType,
+            FindingClassificationType,
             Finding,
             Examination,
         ] 

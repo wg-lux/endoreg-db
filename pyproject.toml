@@ -80,6 +80,7 @@ dependencies = [
     "moviepy==2.2.1",
     "celery>=5.5.3",
     "python-magic>=0.4.27",
+    "django-modeltranslation>=0.19.16",
 ]
 
 [project.urls]

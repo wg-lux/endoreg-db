@@ -26,32 +26,41 @@ from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
 from .views.examination_views import (
-    ExaminationViewSet,
-    VideoExaminationViewSet,  # NEW: Add the VideoExaminationViewSet
     get_morphology_classification_choices_for_exam,
-    get_location_classification_choices_for_exam,
-    get_interventions_for_exam,
     get_instruments_for_exam,
     # New imports for restructured frontend
-    get_location_classifications_for_exam,
-    get_findings_for_exam,
-    get_location_choices_for_classification,
-    get_interventions_for_finding,
     # Import for video examinations
-    get_examinations_for_video,
     # NEW: Add the missing API endpoints for ExaminationForm.vue
-    get_findings_for_examination,
+    get_morphology_classifications_for_finding,
+    get_choices_for_morphology_classification,
+)
+
+# Modularized examination endpoints
+from .views.examination_views.examination import ExaminationViewSet
+from .views.examination_views.video import VideoExaminationViewSet, get_examinations_for_video
+from .views.examination_views.classification import (
+    get_location_classifications_for_exam,
+    get_morphology_classifications_for_exam,
+    get_location_choices_for_classification,
+    get_morphology_choices_for_classification,
     get_location_classifications_for_finding,
     get_morphology_classifications_for_finding,
     get_choices_for_location_classification,
     get_choices_for_morphology_classification,
 )
+from .views.examination_views.finding import (
+    get_findings_for_exam,
+    get_findings_for_examination,
+)
+from .views.examination_views.intervention import (
+    get_interventions_for_finding,
+    get_interventions_for_exam,
+)
 
 # Add new imports for missing endpoints
 from .views.finding_views import FindingViewSet
 from .views.classification_views import (
-    LocationClassificationViewSet,
-    MorphologyClassificationViewSet
+    ClassificationViewSet
 )
 from .views.patient_finding_views import (
     PatientFindingViewSet,
@@ -125,8 +134,7 @@ router.register(r'examinations', ExaminationViewSet)
 router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
 # Add new router registrations
 router.register(r'findings', FindingViewSet)
-router.register(r'location-classifications', LocationClassificationViewSet)
-router.register(r'morphology-classifications', MorphologyClassificationViewSet)
+router.register(r'classifications', ClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
 router.register(r'patient-examinations', PatientExaminationViewSet)
 
@@ -223,14 +231,19 @@ urlpatterns = [
         name='get_location_classifications_for_exam'
     ),
     path(
-        'examination/<int:exam_id>/findings/',
-        get_findings_for_exam,
-        name='get_findings_for_exam'
+        'examination/<int:exam_id>/morphology-classifications/',
+        get_morphology_classifications_for_exam,
+        name='get_morphology_classifications_for_exam'
     ),
     path(
         'examination/<int:exam_id>/location-classification/<int:location_classification_id>/choices/',
         get_location_choices_for_classification,
         name='get_location_choices_for_classification'
+    ),
+    path(
+        'examination/<int:exam_id>/morphology-classification/<int:morphology_classification_id>/choices/',
+        get_morphology_choices_for_classification,
+        name='get_morphology_choices_for_classification'
     ),
     path(
         'examination/<int:exam_id>/finding/<int:finding_id>/interventions/',
@@ -279,11 +292,11 @@ urlpatterns = [
         get_morphology_classification_choices_for_exam,
         name='get_morphology_classification_choices_for_exam'
     ),
-    path(
-        'examination/<int:exam_id>/location-classification-choices/',
-        get_location_classification_choices_for_exam,
-        name='get_location_classification_choices_for_exam'
-    ),
+    # path(
+    #     'examination/<int:exam_id>/location-classification-choices/',
+    #     get_location_classification_choices_for_exam,
+    #     name='get_location_classification_choices_for_exam'
+    # ),
     path(
         'examination/<int:exam_id>/interventions/',
         get_interventions_for_exam,

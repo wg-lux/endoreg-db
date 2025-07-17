@@ -40,11 +40,18 @@ class FindingClassification(models.Model):
     name_de = models.CharField(max_length=255, blank=True)
     name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
-    classification_type = models.ForeignKey(FindingClassificationType, on_delete=models.CASCADE)
+    classification_types = models.ManyToManyField(
+        FindingClassificationType, 
+        # on_delete=models.CASCADE
+    )
 
     findings = models.ManyToManyField('Finding', blank=True, related_name='finding_classifications')
     examinations = models.ManyToManyField('Examination', blank=True, related_name='finding_classifications')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='finding_classifications')
+
+    # Add extra description fields for compatibility
+    description_de = models.TextField(blank=True, null=True)
+    description_en = models.TextField(blank=True, null=True)
 
     objects = FindingClassificationManager()
 
@@ -68,6 +75,14 @@ class FindingClassification(models.Model):
     def get_choices(self):
         return self.choices.all()
 
+    @property
+    def is_morphology(self):
+        return self.classification_types.filter(name__iexact="morphology").exists()
+
+    @property
+    def is_location(self):
+        return self.classification_types.filter(name__iexact="location").exists()
+
 
 class FindingClassificationChoiceManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -90,6 +105,10 @@ class FindingClassificationChoice(models.Model):
     numerical_descriptors = models.JSONField(
         default = dict
     )
+
+    # Extra description fields for compatibility
+    description_de = models.TextField(blank=True, null=True)
+    description_en = models.TextField(blank=True, null=True)
 
     objects = FindingClassificationChoiceManager()
 

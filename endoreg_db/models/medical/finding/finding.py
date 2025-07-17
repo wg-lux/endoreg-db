@@ -38,13 +38,13 @@ class Finding(models.Model):
     )
 
     required_morphology_classification_types = models.ManyToManyField(
-        'FindingMorphologyClassificationType',
+        'FindingClassificationType',
         blank=True,
         related_name='required_by_findings'
     )
 
     optional_morphology_classification_types = models.ManyToManyField(
-        'FindingMorphologyClassificationType',
+        'FindingClassificationType',
         blank=True,
         related_name='optional_for_findings'
     )
@@ -53,20 +53,21 @@ class Finding(models.Model):
 
     if TYPE_CHECKING:
         from endoreg_db.models import (
-            Examination, FindingType, FindingIntervention, FindingMorphologyClassificationType,
-            FindingMorphologyClassification, FindingLocationClassification,
-            FindingClassificationType, FindingClassification, FindingLocationClassificationChoice,
+            Examination, FindingType, FindingIntervention, FindingClassificationType,
+            FindingClassification,
             PatientFindingClassification
         )
     
         finding_classifications: models.QuerySet['FindingClassification']
         examinations: models.QuerySet[Examination]
-        morphology_classifications: models.QuerySet['FindingMorphologyClassification']
-        location_classifications: models.QuerySet['FindingLocationClassification']
+        required_classifications: models.QuerySet['FindingClassification']
+        available_classifications: models.QuerySet['FindingClassification']
+        required_classification_types: models.QuerySet['FindingClassificationType']
+        available_classification_types: models.QuerySet['FindingClassificationType']
+        morphology_classifications: models.QuerySet['FindingClassification'] # To be deprecated
+        location_classifications: models.QuerySet['FindingClassification'] # To be deprecated
         finding_types: models.QuerySet[FindingType]
         finding_interventions: models.QuerySet[FindingIntervention]
-        required_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
-        optional_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
         
     def natural_key(self):
         return (self.name,)
@@ -78,49 +79,20 @@ class Finding(models.Model):
         return self.finding_types.all()
     
     def get_location_classifications(self):
-        from endoreg_db.models import FindingLocationClassification
-        # FindingLocationClassification is a class with a many-to-many relationship to Finding
-        # related name is location_classifications
+        """
+        Returns all FindingClassification objects of type 'location' linked to this finding.
+        """
+        return self.finding_classifications.filter(classification_types__name__iexact="location")
 
-        location_classifications:FindingLocationClassification = self.location_classifications.all()
-        
-        return location_classifications 
-    
     def get_morphology_classifications(self):
-        from endoreg_db.models import FindingMorphologyClassification
-        # Get morphology classifications through the classification types
-        # Since Finding has relationships to FindingMorphologyClassificationType,
-        # we need to get the classifications through these types
-        
-        # Get all required and optional morphology classification types for this finding
-        required_types = self.required_morphology_classification_types.all()
-        optional_types = self.optional_morphology_classification_types.all()
-        
-        # Combine both sets of types
-        all_types = list(required_types) + list(optional_types)
-        
-        # Get all morphology classifications that belong to these types
-        morphology_classifications = []
-        for classification_type in all_types:
-            # Get all classifications of this type
-            classifications = FindingMorphologyClassification.objects.filter(
-                classification_type=classification_type
-            )
-            morphology_classifications.extend(classifications)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_classifications = []
-        for classification in morphology_classifications:
-            if classification.id not in seen:
-                seen.add(classification.id)
-                unique_classifications.append(classification)
-                
-        return unique_classifications
+        """
+        Returns all FindingClassification objects of type 'morphology' linked to this finding.
+        """
+        return self.finding_classifications.filter(classification_types__name__iexact="morphology")
     
     def get_required_morphology_classification_types(self):
-        from endoreg_db.models import FindingMorphologyClassificationType
-        finding_morphology_classification_types:List[FindingMorphologyClassificationType] = [
+        from endoreg_db.models import FindingClassificationType
+        finding_morphology_classification_types:List[FindingClassificationType] = [
             _ for _ in self.required_morphology_classification_types.all()
         ]
         return finding_morphology_classification_types

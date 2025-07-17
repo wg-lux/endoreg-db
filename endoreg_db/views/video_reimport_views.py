@@ -126,7 +126,7 @@ class VideoReimportView(APIView):
                         logger.info("Starting frame-level anonymization with processor ROI masking...")
                         
                         # Get processor ROI information for masking
-                        processor_roi = None
+                        _processor_roi = None
                         endoscope_roi = None
                         
                         try:
@@ -137,7 +137,7 @@ class VideoReimportView(APIView):
                                 endoscope_roi = processor.get_roi_endoscope_image()
                                 
                                 # Get all processor ROIs for comprehensive masking
-                                processor_roi = {
+                                _processor_roi = {
                                     'endoscope_image': endoscope_roi,
                                     'patient_first_name': processor.get_roi_patient_first_name(),
                                     'patient_last_name': processor.get_roi_patient_last_name(),

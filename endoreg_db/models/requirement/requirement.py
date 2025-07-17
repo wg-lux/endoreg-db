@@ -16,11 +16,9 @@ if TYPE_CHECKING:
         ExaminationIndication,
         Finding,
         FindingIntervention,
-        FindingLocationClassification,
-        FindingLocationClassificationChoice,
-        FindingMorphologyClassification,
-        FindingMorphologyClassificationChoice,
-        FindingMorphologyClassificationType,
+        FindingClassification,
+        FindingClassificationChoice,
+        FindingClassificationType,
         LabValue,
         Medication,
         MedicationIndication,
@@ -216,14 +214,8 @@ class Requirement(models.Model):
         related_name="required_in",
     )
 
-    finding_morphology_classification_choices = models.ManyToManyField(
-        "FindingMorphologyClassificationChoice",
-        blank=True,
-        related_name="required_in",
-    )
-
-    finding_location_classification_choices = models.ManyToManyField(
-        "FindingLocationClassificationChoice",
+    finding_classification_choices = models.ManyToManyField(
+        "FindingClassificationChoice",
         blank=True,
         related_name="required_in",
     )
@@ -275,12 +267,7 @@ class Requirement(models.Model):
         disease_classification_choices: models.QuerySet[DiseaseClassificationChoice]
         events: models.QuerySet[Event]
         findings: models.QuerySet[Finding]
-        finding_morphology_classification_choices: models.QuerySet[
-            FindingMorphologyClassificationChoice
-        ]
-        finding_location_classification_choices: models.QuerySet[
-            FindingLocationClassificationChoice
-        ]
+        finding_classification_choices: models.QuerySet[FindingClassificationChoice]
         finding_interventions: models.QuerySet[FindingIntervention]
         medications: models.QuerySet[Medication]
         medication_indications: models.QuerySet[MedicationIndication]
@@ -311,11 +298,9 @@ class Requirement(models.Model):
         "ExaminationIndication",
         "Finding",
         "FindingIntervention",
-        "FindingLocationClassification",
-        "FindingLocationClassificationChoice",
-        "FindingMorphologyClassification",
-        "FindingMorphologyClassificationChoice",
-        "FindingMorphologyClassificationType",
+        "FindingClassification",
+        "FindingClassificationChoice",
+        "FindingClassificationType",
         "LabValue",
         "Medication",
         "MedicationIndication",
@@ -359,11 +344,8 @@ class Requirement(models.Model):
             disease_classification_choices=[_ for _ in self.disease_classification_choices.all() if _ is not None],
             events=[_ for _ in self.events.all() if _ is not None],
             findings=[_ for _ in self.findings.all() if _ is not None],
-            finding_morphology_classification_choices=[
-                _ for _ in self.finding_morphology_classification_choices.all() if _ is not None
-            ],
-            finding_location_classification_choices=[
-                _ for _ in self.finding_location_classification_choices.all() if _ is not None
+            finding_classification_choices=[
+                _ for _ in self.finding_classification_choices.all() if _ is not None
             ],
             finding_interventions=[_ for _ in self.finding_interventions.all() if _ is not None],
             medications=[_ for _ in self.medications.all() if _ is not None],

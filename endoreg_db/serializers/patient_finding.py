@@ -6,8 +6,6 @@ from endoreg_db.models import (
     PatientFindingMorphology,
     PatientFindingIntervention,
     Finding,
-    FindingLocationClassification,
-    FindingMorphologyClassification
 )
 
 

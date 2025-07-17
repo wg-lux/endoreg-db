@@ -9,13 +9,11 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
-from ..models import (
-    Patient, 
-    FindingLocationClassification, 
-    FindingMorphologyClassification, 
-    FindingMorphologyClassificationType
-)
+from ..models import Patient
 from ..serializers import PatientSerializer
+from endoreg_db.models import (
+    FindingClassification, FindingClassificationChoice
+)
 
 
 @staff_member_required
@@ -123,10 +121,10 @@ def get_location_choices(request, location_id):
     Fetch location choices dynamically based on the selected FindingLocationClassification (Location).
     """
     try:
-        location = FindingLocationClassification.objects.get(id=location_id)
+        location = FindingClassification.objects.get(id=location_id)
         location_choices = location.choices.all()
         data = [{"id": choice.id, "name": choice.name} for choice in location_choices]
-    except FindingLocationClassification.DoesNotExist:
+    except FindingClassification.DoesNotExist:
         data = []
 
     return JsonResponse({"location_choices": data})
@@ -138,10 +136,10 @@ def get_morphology_choices(request, morphology_id):
     """
     try:
         # Find the selected Morphology Classification
-        morphology_classification = FindingMorphologyClassification.objects.get(id=morphology_id)
+        morphology_classification = FindingClassification.objects.get(id=morphology_id)
 
-        # Fetch choices from FindingMorphologyClassificationType using classification_type_id
-        morphology_choices = FindingMorphologyClassificationType.objects.filter(
+        # Fetch choices from FindingClassificationType using classification_type_id
+        morphology_choices = FindingClassification.objects.filter(
             id=morphology_classification.classification_type_id
         )
 

@@ -23,7 +23,7 @@ class Organ(models.Model):
     description_en = models.TextField(blank=True, null=True)
 
     location_choices = models.ManyToManyField(
-        'FindingLocationClassificationChoice', 
+        'FindingClassificationChoice', 
         blank=True, related_name='organs'
     )
 

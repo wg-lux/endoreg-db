@@ -15,8 +15,7 @@ from endoreg_db.models import (
     PatientFinding, 
     Examination,
     Finding,
-    FindingLocationClassification,
-    FindingMorphologyClassification
+    FindingClassification
 )
 from ...serializers.patient_finding import (
     PatientFindingLocationSerializer,
@@ -223,7 +222,7 @@ class OptimizedPatientFindingViewSet(viewsets.ModelViewSet):
             )
         
         try:
-            location_classification = FindingLocationClassification.objects.get(
+            location_classification = FindingClassification.objects.get(
                 id=location_classification_id
             )
             
@@ -240,7 +239,7 @@ class OptimizedPatientFindingViewSet(viewsets.ModelViewSet):
             serializer = PatientFindingLocationSerializer(location)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
             
-        except FindingLocationClassification.DoesNotExist:
+        except FindingClassification.DoesNotExist:
             return Response(
                 {'error': 'location_classification nicht gefunden'},
                 status=status.HTTP_404_NOT_FOUND

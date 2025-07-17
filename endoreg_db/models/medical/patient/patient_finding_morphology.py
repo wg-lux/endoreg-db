@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, Dict
 # Corrected imports for type hints
 if TYPE_CHECKING:
     from ..finding import (
-        FindingMorphologyClassification, # Corrected
-        FindingMorphologyClassificationChoice, # Corrected
+        FindingClassification,
+        FindingClassificationChoice,
     )
     from .patient_finding import PatientFinding
 
@@ -20,18 +20,18 @@ class PatientFindingMorphology(models.Model):
         'PatientFinding', on_delete=models.CASCADE, related_name='morphologies'
     )
     morphology_classification = models.ForeignKey(
-        'FindingMorphologyClassification', on_delete=models.CASCADE, related_name='patient_finding_morphologies'
+        'FindingClassification', on_delete=models.CASCADE, related_name='patient_finding_morphologies'
     ) 
     morphology_choice = models.ForeignKey(
-        'FindingMorphologyClassificationChoice', on_delete=models.CASCADE, related_name='patient_finding_morphologies'
+        'FindingClassificationChoice', on_delete=models.CASCADE, related_name='patient_finding_morphologies'
     )
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
 
     if TYPE_CHECKING:
         patient_finding: "PatientFinding" # Corrected name
-        morphology_classification: "FindingMorphologyClassification" # Corrected type
-        morphology_choice: "FindingMorphologyClassificationChoice" # Corrected type
+        morphology_classification: "FindingClassification" # Corrected type
+        morphology_choice: "FindingClassificationChoice" # Corrected type
         subcategories: Dict[str, Dict[str, str]]  # Corrected type
         numerical_descriptors: Dict[str, Dict[str, str]]  # Corrected type
 
@@ -75,14 +75,10 @@ class PatientFindingMorphology(models.Model):
             raise ValueError("morphology_choice must be in morphology_classification.choices")
 
         if not self.subcategories:
-            self.subcategories = self.morphology_choice.subcategories
-            if not self.subcategories:
-                self.subcategories = {}
+            self.subcategories = self.morphology_choice.subcategories or {}
 
         if not self.numerical_descriptors:
-            self.numerical_descriptors = self.morphology_choice.numerical_descriptors
-            if not self.numerical_descriptors:
-                self.numerical_descriptors = {}
+            self.numerical_descriptors = self.morphology_choice.numerical_descriptors or {}
                 
 
         super().save(*args, **kwargs)

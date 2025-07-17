@@ -2,55 +2,34 @@ from rest_framework import serializers
 from endoreg_db.models import (
     Examination,
     Finding,
-    FindingLocationClassification,
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassification,
-    FindingMorphologyClassificationChoice,
+    FindingClassification,
+    FindingClassificationChoice,
 )
 
-class FindingLocationClassificationChoiceSerializer(serializers.ModelSerializer):
+class FindingClassificationChoiceSerializer(serializers.ModelSerializer):
     class Meta:
-        model = FindingLocationClassificationChoice
+        model = FindingClassificationChoice
         fields = [
             'id', 'name', 'name_de', 'name_en', 'description', 'subcategories', 'numerical_descriptors'
         ]
 
-class FindingLocationClassificationSerializer(serializers.ModelSerializer):
-    choices = FindingLocationClassificationChoiceSerializer(many=True, read_only=True)
+class FindingClassificationSerializer(serializers.ModelSerializer):
+    choices = FindingClassificationChoiceSerializer(many=True, read_only=True)
 
     class Meta:
-        model = FindingLocationClassification
+        model = FindingClassification
         fields = [
-            'id', 'name', 'name_de', 'name_en', 'description', 'choices'
-        ]
-
-class FindingMorphologyClassificationChoiceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = FindingMorphologyClassificationChoice
-        fields = [
-            'id', 'name', 'name_de', 'name_en', 'description', 'subcategories', 'numerical_descriptors', 'classification'
-        ]
-
-class FindingMorphologyClassificationSerializer(serializers.ModelSerializer):
-    choices = FindingMorphologyClassificationChoiceSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = FindingMorphologyClassification
-        fields = [
-            'id', 'name', 'name_de', 'name_en', 'description', 'classification_type', 'choices'
+            'id', 'name', 'name_de', 'name_en', 'description', 'choices', 'classification_types'
         ]
 
 class FindingSerializer(serializers.ModelSerializer):
-    optional_location_classifications = FindingLocationClassificationSerializer(many=True, read_only=True)
-    required_location_classifications = FindingLocationClassificationSerializer(many=True, read_only=True)
-    optional_morphology_classifications = FindingMorphologyClassificationSerializer(many=True, read_only=True)
-    required_morphology_classifications = FindingMorphologyClassificationSerializer(many=True, read_only=True)
+    # You may want to filter by type in the view or add custom fields for required/optional, if needed
+    classifications = FindingClassificationSerializer(many=True, read_only=True, source='finding_classifications')
 
     class Meta:
         model = Finding
         fields = [
-            'id', 'name', 'name_de', 'name_en', 'description', 'optional_location_classifications', 'required_location_classifications',
-            'optional_morphology_classifications', 'required_morphology_classifications'
+            'id', 'name', 'name_de', 'name_en', 'description', 'classifications'
         ]
 
 class ExaminationSerializer(serializers.ModelSerializer):

@@ -212,77 +212,59 @@ class PatientFinding(models.Model):
     def add_location(self, location_classification_id, location_choice_id, user=None) -> "PatientFindingLocation":
         """Adds a validated location choice to this patient finding."""
         from .patient_finding_location import PatientFindingLocation
-        from ..finding import FindingLocationClassification
-        
+        from ..finding import FindingClassification
         try:
-            location_classification = FindingLocationClassification.objects.get(
-                id=location_classification_id
+            location_classification = FindingClassification.objects.get(
+                id=location_classification_id, classification_types__name__iexact="location"
             )
-            
-            # Validiere dass Choice zur Classification gehört
             if not location_classification.choices.filter(id=location_choice_id).exists():
                 raise ValidationError(
                     f'Location Choice {location_choice_id} gehört nicht zu Classification {location_classification_id}'
                 )
-            
-            # Prüfe ob Location bereits existiert
             existing = self.locations.filter(
                 location_classification_id=location_classification_id,
                 location_choice_id=location_choice_id,
                 is_active=True
             ).first()
-            
             if existing:
                 return existing
-            
             patient_finding_location = PatientFindingLocation.objects.create(
                 finding=self,
                 location_classification_id=location_classification_id,
                 location_choice_id=location_choice_id,
                 created_by=user
             )
-            
             return patient_finding_location
-            
-        except FindingLocationClassification.DoesNotExist:
+        except FindingClassification.DoesNotExist:
             raise ValidationError(f'Location Classification {location_classification_id} nicht gefunden')
 
     def add_morphology(self, morphology_classification_id, morphology_choice_id, user=None):
         """Adds a validated morphology choice to this patient finding."""
         from .patient_finding_morphology import PatientFindingMorphology
-        from ..finding import FindingMorphologyClassification
-        
+        from ..finding import FindingClassification
         try:
-            morphology_classification = FindingMorphologyClassification.objects.get(
-                id=morphology_classification_id
+            morphology_classification = FindingClassification.objects.get(
+                id=morphology_classification_id, classification_types__name__iexact="morphology"
             )
-            
-            # Validiere dass Choice zur Classification gehört
             if not morphology_classification.choices.filter(id=morphology_choice_id).exists():
                 raise ValidationError(
                     f'Morphology Choice {morphology_choice_id} gehört nicht zu Classification {morphology_classification_id}'
                 )
-            
-            # Prüfe Duplikate
             existing = self.morphologies.filter(
                 morphology_classification_id=morphology_classification_id,
                 morphology_choice_id=morphology_choice_id,
                 is_active=True
             ).first()
-            
             if existing:
                 return existing
-            
             patient_finding_morphology = PatientFindingMorphology.objects.create(
                 finding=self,
                 morphology_classification_id=morphology_classification_id,
                 morphology_choice_id=morphology_choice_id,
                 created_by=user
             )
-            
             return patient_finding_morphology
-            
-        except FindingMorphologyClassification.DoesNotExist:
+        except FindingClassification.DoesNotExist:
             raise ValidationError(f'Morphology Classification {morphology_classification_id} nicht gefunden')
 
     def add_intervention(self, intervention_id, state="pending", date=None, user=None):

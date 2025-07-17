@@ -7,8 +7,7 @@ from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models.medical.patient.patient_finding_location import PatientFindingLocation
 from endoreg_db.models.medical.patient.patient_finding_morphology import PatientFindingMorphology
 from endoreg_db.models import (
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassificationChoice
+    FindingClassificationChoice
 )
 from rest_framework import serializers
 
@@ -50,8 +49,8 @@ def create_patient_finding_location(request):
             )
         
         try:
-            choice = FindingLocationClassificationChoice.objects.get(id=choice_id)
-        except FindingLocationClassificationChoice.DoesNotExist:
+            choice = FindingClassificationChoice.objects.get(id=choice_id)
+        except FindingClassificationChoice.DoesNotExist:
             return Response(
                 {'detail': f'LocationClassificationChoice with id {choice_id} not found'}, 
                 status=status.HTTP_404_NOT_FOUND
@@ -104,8 +103,8 @@ def create_patient_finding_morphology(request):
             )
         
         try:
-            choice = FindingMorphologyClassificationChoice.objects.get(id=choice_id)
-        except FindingMorphologyClassificationChoice.DoesNotExist:
+            choice = FindingClassificationChoice.objects.get(id=choice_id)
+        except FindingClassificationChoice.DoesNotExist:
             return Response(
                 {'detail': f'MorphologyClassificationChoice with id {choice_id} not found'}, 
                 status=status.HTTP_404_NOT_FOUND
