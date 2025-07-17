@@ -18,35 +18,10 @@ class Finding(models.Model):
     examinations = models.ManyToManyField('Examination', blank=True, related_name='findings')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='findings')
 
-
     finding_interventions = models.ManyToManyField(
         'FindingIntervention',
         blank=True,
         related_name='findings'
-    )
-
-    causing_finding_interventions = models.ManyToManyField(
-        'FindingIntervention',
-        blank=True,
-        related_name='causing_findings'
-    )
-
-    opt_causing_finding_interventions = models.ManyToManyField(
-        'FindingIntervention',
-        blank=True,
-        related_name='opt_causing_findings'
-    )
-
-    required_morphology_classification_types = models.ManyToManyField(
-        'FindingClassificationType',
-        blank=True,
-        related_name='required_by_findings'
-    )
-
-    optional_morphology_classification_types = models.ManyToManyField(
-        'FindingClassificationType',
-        blank=True,
-        related_name='optional_for_findings'
     )
 
     objects = FindingManager()
@@ -60,12 +35,7 @@ class Finding(models.Model):
     
         finding_classifications: models.QuerySet['FindingClassification']
         examinations: models.QuerySet[Examination]
-        required_classifications: models.QuerySet['FindingClassification']
-        available_classifications: models.QuerySet['FindingClassification']
-        required_classification_types: models.QuerySet['FindingClassificationType'] # Logic not yet implemented, in future we want at least one classification of each type for this finding
-        available_classification_types: models.QuerySet['FindingClassificationType']
-        morphology_classifications: models.QuerySet['FindingClassification'] # To be deprecated
-        location_classifications: models.QuerySet['FindingClassification'] # To be deprecated
+        finding_classifications: models.QuerySet['FindingClassification']
         finding_types: models.QuerySet[FindingType]
         finding_interventions: models.QuerySet[FindingIntervention]
         
@@ -90,10 +60,11 @@ class Finding(models.Model):
         """
         return self.finding_classifications.filter(classification_types__name__iexact="morphology")
     
-    def get_required_morphology_classification_types(self):
-        from endoreg_db.models import FindingClassificationType
-        finding_morphology_classification_types:List[FindingClassificationType] = [
-            _ for _ in self.required_morphology_classification_types.all()
-        ]
-        return finding_morphology_classification_types
+    ## Deprecate?
+    # def get_required_morphology_classification_types(self):
+    #     from endoreg_db.models import FindingClassificationType
+    #     finding_morphology_classification_types:List[FindingClassificationType] = [
+    #         _ for _ in self.required_morphology_classification_types.all()
+    #     ]
+    #     return finding_morphology_classification_types
 

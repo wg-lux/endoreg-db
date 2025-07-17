@@ -40,8 +40,6 @@ IMPORT_METADATA = {
             "finding_types",
             "examinations",
             "finding_interventions",
-            "causing_finding_interventions",
-            "opt_causing_finding_interventions",
         ], # e.g. ["intervention_types"]
         "foreign_key_models": [
             FindingType,

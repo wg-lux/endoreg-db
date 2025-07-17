@@ -1,11 +1,5 @@
 - model: endoreg_db.finding_classification_type
   fields:
-    name: "bowel_prep"
-    name_de: "Darmvorbereitung"
-    name_en: "Bowel Preparation"
-
-- model: endoreg_db.finding_classification_type
-  fields:
     name: "location"
     name_de: "Lokalisation"
     name_en: "Location"
@@ -15,6 +9,13 @@
     name: "morphology"
     name_de: "Morphologie"
     name_en: "Morphology"
+
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "bowel_prep"
+    name_de: "Darmvorbereitung"
+    name_en: "Bowel Preparation"
 
 - model: endoreg_db.finding_classification_type
   fields:
