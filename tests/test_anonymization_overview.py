@@ -215,17 +215,26 @@ class AnonymizationOverviewAPITest(TestCase):
         # Video with verified sensitive meta
         verified_meta = SensitiveMeta.objects.create(
             patient_first_name="Verified",
-            patient_last_name="Patient",
+            patient_last_name="Patient"
+        )
+        # Create SensitiveMetaState to set verified
+        from endoreg_db.models import SensitiveMetaState
+        SensitiveMetaState.objects.create(
+            sensitive_meta=verified_meta,
             is_verified=True
         )
-        
+
         # Video with unverified sensitive meta
         unverified_meta = SensitiveMeta.objects.create(
             patient_first_name="Unverified", 
-            patient_last_name="Patient",
+            patient_last_name="Patient"
+        )
+        # Create SensitiveMetaState to set unverified
+        SensitiveMetaState.objects.create(
+            sensitive_meta=unverified_meta,
             is_verified=False
         )
-        
+
         # Create videos
         video_verified = VideoFile.objects.create(
             original_file_name="video_verified.mp4",

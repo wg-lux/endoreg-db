@@ -6,6 +6,7 @@ from django.db import transaction
 from endoreg_db.models import VideoFile
 from pathlib import Path
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,12 @@ class Command(BaseCommand):
             action='store_true',
             help='Enable verbose output',
         )
+        parser.add_argument(
+            '--storage-dir',
+            type=str,
+            default=None,
+            help='Path to the storage directory (default: $ENDOREG_STORAGE_DIR or ./storage)'
+        )
 
     def handle(self, *args, **options):
         """Fix video file paths to match actual storage locations."""
@@ -36,7 +43,11 @@ class Command(BaseCommand):
         verbose = options['verbose']
         video_id = options.get('video_id')
 
-        storage_dir = Path('/home/admin/test/lx-annotate/storage')
+        # Determine storage_dir from argument, env, or fallback
+        storage_dir = options.get('storage_dir') or \
+            os.environ.get('ENDOREG_STORAGE_DIR') or \
+            './storage'
+        storage_dir = Path(storage_dir)
         
         # Find all actual video files
         actual_files = {}

@@ -72,15 +72,10 @@ class Command(BaseCommand):
             if options['test']:
                 self.stdout.write("Testing file watcher configuration...")
                 service = FileWatcherService()
-                if options['test']:
-                    self.stdout.write("Testing file watcher configuration...")
-                    service = FileWatcherService()
-                    try:
-                        service._validate_django_setup()
-                    except Exception as e:
-                        self.stdout.write(self.style.ERROR(f"❌ Validation failed: {e}"))
-                        return
-                    self.stdout.write(self.style.SUCCESS("✅ File watcher test passed"))
+                try:
+                    service._validate_django_setup()
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f"❌ Validation failed: {e}"))
                     return
                 self.stdout.write(self.style.SUCCESS("✅ File watcher test passed"))
                 return

@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from typing import Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)

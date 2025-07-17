@@ -501,20 +501,8 @@ class Command(BaseCommand):
             
             for video in processed_videos:
                 try:
-                    if video.processed_file and hasattr(video.processed_file, 'path'):
-                        processed_path = Path(video.processed_file.path)
-                        
-                        if processed_path.exists():
-                            file_size = processed_path.stat().st_size
-                            
-                            if not self.dry_run:
-                                processed_path.unlink()
-                                video.processed_file = None
-                                video.save(update_fields=['processed_file'])
-                                
-                            total_freed += file_size
-                            self.stdout.write(f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB")
-                            
+                    freed = self._cleanup_processed_video_file(video)
+                    total_freed += freed
                 except Exception as e:
                     logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
                     continue
@@ -524,6 +512,22 @@ class Command(BaseCommand):
         
         self.stdout.write(f"✅ Aggressive processed videos cleanup: {total_freed / (1024**3):.2f} GB freed")
         return total_freed
+
+    def _cleanup_processed_video_file(self, video):
+        """
+        Helper to clean up a single processed video file, update DB, and return freed size in bytes.
+        """
+        if video.processed_file and hasattr(video.processed_file, 'path'):
+            processed_path = Path(video.processed_file.path)
+            if processed_path.exists():
+                file_size = processed_path.stat().st_size
+                if not self.dry_run:
+                    processed_path.unlink()
+                    video.processed_file = None
+                    video.save(update_fields=['processed_file'])
+                self.stdout.write(f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB")
+                return file_size
+        return 0
 
     def display_cleanup_summary(self, before, after):
         """Display cleanup summary."""

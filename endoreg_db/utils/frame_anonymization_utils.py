@@ -277,12 +277,8 @@ def cleanup_expired_tokens():
             download_token_hash__isnull=False
         )
         
-        count = 0
-        for frame in expired_frames:
-            frame.download_token_hash = None
-            frame.download_expires_at = None
-            frame.save()
-            count += 1
+        count = expired_frames.count()
+        expired_frames.update(download_token_hash=None, download_expires_at=None)
         
         logger.info(f"Cleaned up {count} expired download tokens")
         return count

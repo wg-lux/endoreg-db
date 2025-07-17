@@ -1,6 +1,6 @@
 # endoreg_db/services/anonymization.py
 from django.db import transaction
-from endoreg_db.models import VideoFile, RawPdfFile, VideoState
+from endoreg_db.models import VideoFile, RawPdfFile
 from endoreg_db.services.video_import import import_and_anonymize   # existing func
 
 class AnonymizationService:
@@ -58,7 +58,7 @@ class AnonymizationService:
             return "video"
 
         pdf = RawPdfFile.objects.select_related("sensitive_meta").filter(pk=file_id).first()
-        if pdf:
+        if pdf and pdf.sensitive_meta:
             pdf.sensitive_meta.anonymization_validated = True
             pdf.sensitive_meta.save(update_fields=["anonymization_validated"])
             return "pdf"

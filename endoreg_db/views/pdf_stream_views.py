@@ -1,6 +1,5 @@
 import re
 import logging
-from wsgiref.util import FileWrapper
 from django.http import FileResponse, StreamingHttpResponse, Http404
 from rest_framework.views import APIView
 from ..utils.permissions import EnvironmentAwarePermission
@@ -82,22 +81,22 @@ class PDFStreamView(APIView):
                     chunk_size = end - start + 1
                     
                     try:
-                        with open(file_path, "rb") as file_handle:
-                            file_handle.seek(start)
-                            
-                            logger.debug(f"Serving PDF {pdf_id} range {start}-{end}/{file_size}")
-                            
-                            response = StreamingHttpResponse(
-                                ClosingFileWrapper(file_handle, blksize=8192),
-                                status=206,
-                                content_type="application/pdf",
-                            )
-                            response["Content-Length"] = str(chunk_size)
-                            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-                            response["Accept-Ranges"] = "bytes"
-                            response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
-                            
-                            return response
+                        file_handle = open(file_path, "rb")
+                        file_handle.seek(start)
+                        
+                        logger.debug(f"Serving PDF {pdf_id} range {start}-{end}/{file_size}")
+                        
+                        response = StreamingHttpResponse(
+                            ClosingFileWrapper(file_handle, blksize=8192),
+                            status=206,
+                            content_type="application/pdf",
+                        )
+                        response["Content-Length"] = str(chunk_size)
+                        response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+                        response["Accept-Ranges"] = "bytes"
+                        response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
+                        
+                        return response
                     except (OSError, IOError) as e:
                         logger.error(f"Error opening PDF file for range request: {e}")
                         raise Http404("Error accessing PDF file")
@@ -108,17 +107,17 @@ class PDFStreamView(APIView):
             logger.debug(f"Serving full PDF {pdf_id} ({file_size} bytes)")
             
             try:
-                with open(file_path, "rb") as file_handle:
-                    response = FileResponse(
-                        file_handle, 
-                        content_type="application/pdf"
-                    )
-                    response["Content-Length"] = str(file_size)
-                    response["Accept-Ranges"] = "bytes"
-                    response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
-                    
-                    # FileResponse will take ownership of file_handle and close it after response
-                    return response
+                file_handle = open(file_path, "rb")
+                response = FileResponse(
+                    file_handle, 
+                    content_type="application/pdf"
+                )
+                response["Content-Length"] = str(file_size)
+                response["Accept-Ranges"] = "bytes"
+                response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
+                
+                # FileResponse will take ownership of file_handle and close it after response
+                return response
             except (OSError, IOError) as e:
                 logger.error(f"Error opening PDF file: {e}")
                 raise Http404("Error accessing PDF file")

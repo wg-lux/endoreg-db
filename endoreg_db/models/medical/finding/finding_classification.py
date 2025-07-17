@@ -28,11 +28,13 @@ class FindingClassificationType(models.Model):
             _ for _ in finding.required_morphology_classification_types.all()
         ]
         return required_classification_types
-    
+
+
 class FindingClassificationManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-    
+
+
 class FindingClassification(models.Model):
     name = models.CharField(max_length=255, unique=True)
     name_de = models.CharField(max_length=255, blank=True)
@@ -57,17 +59,16 @@ class FindingClassification(models.Model):
         choices: models.QuerySet['FindingClassificationChoice']
         patient_finding_classifications: models.QuerySet['PatientFindingClassification']
 
-    
     def natural_key(self):
         return (self.name,)
-    
+
     def __str__(self):
         return str(self.name)
-    
+
     def get_choices(self):
-        choices: List[FindingClassificationChoice] = [_ for _ in self.choices.all()]
-        return choices
-    
+        return self.choices.all()
+
+
 class FindingClassificationChoiceManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
@@ -107,5 +108,4 @@ class FindingClassificationChoice(models.Model):
         classifications_names = ", ".join([c.name for c in self.classifications.all()])
         _str = f"{self.name} ({classifications_names})"
         return _str
-    
-        
+
