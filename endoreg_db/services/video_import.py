@@ -651,8 +651,6 @@ def anonymize(video_file_obj: "VideoFile", processor_name: str, just_anonymizati
     elif not frame_cleaning_available:
         logger.warning("Frame cleaning not available (lx_anonymizer not found)")
     
-    # Step 6: Signal completion to the anonymization tracking system
-    logger.info("Signaling import and anonymization completion to tracking system...")
     try:
         video_processing_complete = (
             video_file_obj.sensitive_meta is not None and
@@ -664,18 +662,6 @@ def anonymize(video_file_obj: "VideoFile", processor_name: str, just_anonymizati
         
         if video_processing_complete:
             logger.info(f"Video {video_file_obj.uuid} processing completed successfully - ready for validation")
-            
-            # Optional: Add a simple flag to track completion if the model supports it
-            # Check if the model has any completion tracking fields
-            completion_fields = []
-            for field_name in ['import_completed', 'processing_complete', 'ready_for_validation']:
-                if hasattr(video_file_obj, field_name):
-                    setattr(video_file_obj, field_name, True)
-                    completion_fields.append(field_name)
-                    
-            if completion_fields:
-                video_file_obj.save(update_fields=completion_fields)
-                logger.info(f"Updated completion flags: {completion_fields}")
         else:
             logger.warning(f"Video {video_file_obj.uuid} processing incomplete - missing required components")
             
