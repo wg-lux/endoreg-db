@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from django.db import transaction
 from django.core.files.base import ContentFile
-from ..models import VideoFile, SensitiveMeta, VideoState
+from ..models import VideoFile, SensitiveMeta
 from ..services.video_import import _ensure_default_patient_data, _ensure_frame_cleaning_available
 logger = logging.getLogger(__name__)
 

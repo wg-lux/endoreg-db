@@ -1,4 +1,3 @@
-import os
 import logging
 import subprocess
 from pathlib import Path
@@ -9,7 +8,6 @@ import shutil
 from ...exceptions import InsufficientStorageError, VideoProcessingError
 
 logger = logging.getLogger(__name__)
-
 
 class StreamingVideoProcessor:
     """

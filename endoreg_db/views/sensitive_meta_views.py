@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny  # Changed from IsAuthenticated for development
+# from rest_framework.permissions import AllowAny  # Changed from IsAuthenticated for development # not used in this file
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 import logging
@@ -331,14 +331,33 @@ class AvailableFilesListView(APIView):
             if file_type in ['all', 'pdf']:
                 pdf_queryset = RawPdfFile.objects.select_related('sensitive_meta').all()
                 total_pdfs = pdf_queryset.count()
+                # Validate limit and offset
+                limit_param = request.query_params.get('limit', 50)
+                offset_param = request.query_params.get('offset', 0)
+                try:
+                    limit = int(limit_param)
+                    offset = int(offset_param)
+                    if limit < 0 or offset < 0:
+                        raise ValueError("limit and offset must be non-negative integers")
+                except ValueError:
+                    return Response(
+                        {"error": "Invalid 'limit' or 'offset' parameter. Must be non-negative integers."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 paginated_pdfs = pdf_queryset[offset:offset + limit]
                 
                 pdf_list = []
                 for pdf in paginated_pdfs:
+                    # Safely handle missing file attribute
+                    file_name = 'Unknown'
+                    file_path = None
+                    if hasattr(pdf, 'file') and pdf.file:
+                        file_name = pdf.file.name.split('/')[-1]
+                        file_path = pdf.file.name
                     pdf_data = {
                         'id': pdf.id,
-                        'filename': pdf.file.name.split('/')[-1] if pdf.file else 'Unknown',
-                        'file_path': pdf.file.name if pdf.file else None,
+                        'filename': file_name,
+                        'file_path': file_path,
                         'sensitive_meta_id': pdf.sensitive_meta_id,
                         'anonymized_text': getattr(pdf, 'anonymized_text', None),
                         'created_at': pdf.created_at if hasattr(pdf, 'created_at') else None,
@@ -359,19 +378,37 @@ class AvailableFilesListView(APIView):
                 
                 response_data['pdfs'] = pdf_list
                 response_data['total_pdfs'] = total_pdfs
-            
             # Get Videos if requested
             if file_type in ['all', 'video']:
                 video_queryset = VideoFile.objects.select_related('sensitive_meta').all()
                 total_videos = video_queryset.count()
+                # Validate limit and offset (reuse above logic)
+                limit_param = request.query_params.get('limit', 50)
+                offset_param = request.query_params.get('offset', 0)
+                try:
+                    limit = int(limit_param)
+                    offset = int(offset_param)
+                    if limit < 0 or offset < 0:
+                        raise ValueError("limit and offset must be non-negative integers")
+                except ValueError:
+                    return Response(
+                        {"error": "Invalid 'limit' or 'offset' parameter. Must be non-negative integers."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 paginated_videos = video_queryset[offset:offset + limit]
                 
                 video_list = []
                 for video in paginated_videos:
+                    # Safely handle missing raw_file attribute
+                    file_name = 'Unknown'
+                    file_path = None
+                    if hasattr(video, 'raw_file') and video.raw_file:
+                        file_name = video.raw_file.name.split('/')[-1]
+                        file_path = video.raw_file.name
                     video_data = {
                         'id': video.id,
-                        'filename': video.raw_file.name.split('/')[-1] if video.raw_file else 'Unknown',
-                        'file_path': video.raw_file.name if video.raw_file else None,
+                        'filename': file_name,
+                        'file_path': file_path,
                         'sensitive_meta_id': video.sensitive_meta_id,
                         'created_at': video.created_at if hasattr(video, 'created_at') else None,
                         'patient_info': None

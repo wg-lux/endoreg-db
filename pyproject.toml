@@ -79,6 +79,7 @@ dependencies = [
     "decord==0.6.0",
     "moviepy==2.2.1",
     "celery>=5.5.3",
+    "python-magic>=0.4.27",
 ]
 
 [project.urls]

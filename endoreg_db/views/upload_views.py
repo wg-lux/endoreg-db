@@ -1,5 +1,4 @@
 import mimetypes
-from typing import Optional
 from django.http import Http404
 from django.urls import reverse
 from rest_framework import status
@@ -20,7 +19,6 @@ except ImportError:
 from endoreg_db.models.upload_job import UploadJob
 from endoreg_db.serializers.upload_job_serializers import (
     UploadJobStatusSerializer,
-    UploadCreateResponseSerializer
 )
 
 # Try to import celery task, but provide fallback

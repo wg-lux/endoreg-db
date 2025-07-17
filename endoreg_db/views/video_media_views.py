@@ -4,10 +4,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import os
-import json
 import logging
 from celery import current_app
-from django.conf import settings
 from django.db import transaction
 
 from ..models import VideoFile, SensitiveMeta
@@ -16,7 +14,6 @@ from .video_segmentation_views import _stream_video_file
 from ..utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
-
 
 class VideoMediaView(APIView):
     """
@@ -407,24 +404,41 @@ class VideoDownloadProcessedView(APIView):
     permission_classes = [EnvironmentAwarePermission]
     
     def get(self, request, pk):
-        video = get_object_or_404(VideoFile, pk=pk)
+        # Remove unused 'video' variable
         output_path = request.query_params.get('path')
-        
-        if not output_path or not os.path.exists(output_path):
+
+        # Define the allowed base directory for processed videos
+        processed_base_dir = os.path.abspath(os.getenv("PROCESSED_VIDEO_DIR", "/srv/processed_videos"))
+        if not output_path:
             return Response(
                 {"error": "Processed file not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
+
+        # Resolve the absolute path and check if it's within the allowed directory
+        abs_output_path = os.path.abspath(output_path)
+        if not abs_output_path.startswith(processed_base_dir + os.sep):
+            return Response(
+                {"error": "Invalid file path"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not os.path.exists(abs_output_path):
+            return Response(
+                {"error": "Processed file not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
         try:
             from django.http import FileResponse
-            response = FileResponse(
-                open(output_path, 'rb'),
-                content_type='video/mp4'
-            )
-            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(output_path)}"'
-            return response
-            
+            with open(abs_output_path, 'rb') as f:
+                response = FileResponse(
+                    f,
+                    content_type='video/mp4'
+                )
+                response['Content-Disposition'] = f'attachment; filename="{os.path.basename(abs_output_path)}"'
+                return response
+
         except Exception as e:
             return Response(
                 {"error": f"Failed to serve file: {str(e)}"},

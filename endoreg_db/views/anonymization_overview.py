@@ -64,4 +64,4 @@ def anonymization_current(request, file_id: int):
         "file_id": file_id,
         "sensitive_meta": [meta.to_dict() for meta in sensitive_meta],
     }
-    
+    return Response(data)
