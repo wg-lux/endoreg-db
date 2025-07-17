@@ -80,7 +80,7 @@ if TYPE_CHECKING:
         VideoState,
         ModelMeta,
         VideoImportMeta,
-    )   
+    ) 
 class VideoQuerySet(models.QuerySet):
     def next_after(self, last_id=None):
         if last_id is not None:

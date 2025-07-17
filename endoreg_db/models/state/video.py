@@ -125,6 +125,8 @@ class VideoState(models.Model):
             f"DateModified={self.date_modified.isoformat()}"
         ]
         
+        return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
+
     @property
     def anonymization_status(self) -> AnonymizationStatus:
         """
@@ -152,11 +154,7 @@ class VideoState(models.Model):
         self.anonymization_validated = True
         if save:
             self.save(update_fields=["anonymization_validated", "date_modified"])
-        return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
-    
         
-    
-
     class Meta:
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"
