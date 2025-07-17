@@ -22,14 +22,29 @@ def get_morphology_classification_choices_for_exam(request, exam_id):
     """
     exam = get_object_or_404(Examination, id=exam_id)
     findings = exam.get_available_findings()
-    all_classification_types = set()
+    all_classifications = set()
     for finding in findings:
-        all_classification_types.update(finding.required_morphology_classification_types.all())
-        all_classification_types.update(finding.optional_morphology_classification_types.all())
+        all_classifications.update(set(finding.get_morphology_classifications()))
     choices = FindingClassificationChoice.objects.filter(
-        classification__in=FindingClassification.objects.filter(
-            classification_type__in=list(all_classification_types)
-        )
+        classification__in=all_classifications
+    ).distinct()
+    return Response([{"id": c.id, "name": c.name} for c in choices])
+
+@api_view(["GET"])
+def get_location_classification_choices_for_exam(request, exam_id):
+    """
+    Retrieves distinct location classification choices for a specific examination.
+    
+    Returns a list of unique location classification choices associated with the required and optional location classification types of findings linked to the given examination.
+    """
+    
+    exam = get_object_or_404(Examination, id=exam_id)
+    findings = exam.get_available_findings()
+    all_classifications = set()
+    for finding in findings:
+        all_classifications.update(set(finding.get_location_classifications()))
+    choices = FindingClassificationChoice.objects.filter(
+        classification__in=all_classifications
     ).distinct()
     return Response([{"id": c.id, "name": c.name} for c in choices])
 

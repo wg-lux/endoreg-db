@@ -34,7 +34,10 @@ from .views.examination_views import (
 )
 
 # Modularized examination endpoints
-from .views.examination_views.examination import ExaminationViewSet
+from .views.examination_views.examination import (
+    ExaminationViewSet,
+    get_location_classification_choices_for_exam,
+)
 from .views.examination_views.video import VideoExaminationViewSet, get_examinations_for_video
 from .views.examination_views.classification import (
     get_location_classifications_for_exam,
@@ -289,11 +292,11 @@ urlpatterns = [
         get_morphology_classification_choices_for_exam,
         name='get_morphology_classification_choices_for_exam'
     ),
-    # path(
-    #     'examination/<int:exam_id>/location-classification-choices/',
-    #     get_location_classification_choices_for_exam,
-    #     name='get_location_classification_choices_for_exam'
-    # ),
+    path(
+        'examination/<int:exam_id>/location-classification-choices/',
+        get_location_classification_choices_for_exam,
+        name='get_location_classification_choices_for_exam'
+    ),
     path(
         'examination/<int:exam_id>/interventions/',
         get_interventions_for_exam,
