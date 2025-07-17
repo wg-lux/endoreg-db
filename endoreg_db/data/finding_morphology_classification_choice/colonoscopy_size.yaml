@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_size_categorical_diminutive"
     name_de: "Größenklassifikation Kolonläsion (kategorisch)"
@@ -6,7 +6,7 @@
     classification: "colon_lesion_size_categorical"
     description: "Diminutive (< 6 mm)"
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_size_categorical_small"
     name_de: "Größenklassifikation Kolonläsion (kategorisch)"
@@ -14,7 +14,7 @@
     classification: "colon_lesion_size_categorical"
     description: "Small (6 - 9 mm)"
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_size_categorical_medium"
     name_de: "Größenklassifikation Kolonläsion (kategorisch)"
@@ -22,7 +22,7 @@
     classification: "colon_lesion_size_categorical"
     description: "Medium (10 - 19 mm)"
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_size_categorical_large"
     name_de: "Größenklassifikation Kolonläsion (kategorisch)"
@@ -32,7 +32,7 @@
 
 ##########
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_size_oval_mm"
     name_de: "Formklassifikation Kolonläsion (kategorisch)"

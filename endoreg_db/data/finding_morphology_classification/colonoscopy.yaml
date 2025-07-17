@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_size_categorical"
     classification_type: "colon_lesion_size"
@@ -15,7 +15,7 @@
       "scar"
     ]
 
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_size_mm"
     classification_type: "colon_lesion_size"
@@ -32,7 +32,7 @@
       "scar"
     ]
 
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_surface_intact_default"
     classification_type: "colon_lesion_surface_intact"
@@ -45,7 +45,7 @@
       "colon_polyp",
     ]
 
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_planarity_default"
     classification_type: "colon_lesion_planarity"
@@ -58,7 +58,7 @@
       "colon_polyp",
     ]
 
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_circularity_default"
     name_de: "Kolonläsion - Zirkularität"
@@ -71,7 +71,7 @@
       "colon_polyp",
     ]
 
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_nice"
     classification_type: "colon_lesion_advanced_imaging"
@@ -84,7 +84,7 @@
       "colon_polyp",
     ]
 
-- model: endoreg_db.finding_morphology_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colon_lesion_paris"
     classification_type: "colon_lesion_shape"

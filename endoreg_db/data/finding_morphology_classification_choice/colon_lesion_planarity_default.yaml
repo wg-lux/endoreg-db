@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_planarity_flat"
     name_de: "Kolonläsion - Planarität flach"
@@ -6,7 +6,7 @@
     classification: "colon_lesion_planarity_default"
     description: "Category for flat lesions"
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_planarity_flat_elevated"  
     name_de: "Kolonläsion - Planarität flach-erhaben"
@@ -14,7 +14,7 @@
     classification: "colon_lesion_planarity_default"
     description: "Category for flat-elevated lesions (surface +/- 2 mm)"
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_planarity_sessile"
     name_de: "Kolonläsion - Planarität sessil"
@@ -22,7 +22,7 @@
     classification: "colon_lesion_planarity_default"
     description: "Category for sessile lesions (surface > 2 mm)"
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_planarity_pedunculated"
     name_de: "Kolonläsion - Planarität gestielt"
@@ -31,7 +31,7 @@
     description: "Category for pedunculated lesions (surface on a stalk)"
 
 # excavated
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_planarity_excavated"
     name_de: "Kolonläsion - Planarität exkaviert"
@@ -45,7 +45,7 @@
         default: "unspecified"
         required: true
 
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_planarity_unknown"
     name_de: "Kolonläsion - Planarität unbekannt"
@@ -53,4 +53,3 @@
     classification: "colon_lesion_planarity_default"
 
 
-    

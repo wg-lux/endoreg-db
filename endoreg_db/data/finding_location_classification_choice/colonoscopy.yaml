@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "terminal_ileum"
     name_de: "terminales Ileum"
@@ -17,7 +17,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "cecum"
     name_de: "Caecum"
@@ -40,7 +40,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "ascending_colon"
     name_de: "Colon ascendens"
@@ -61,7 +61,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "right_flexure"
     name_de: "Rechte Flexur"
@@ -84,7 +84,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "transverse_colon"
     name_de: "Colon transversum"
@@ -107,7 +107,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "descending_colon"
     name_de: "Colon descendens"
@@ -130,7 +130,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "sigmoid_colon"
     name_de: "Colon sigmoideum"
@@ -150,7 +150,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: true
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "rectum"
     name_de: "Rektum"
@@ -170,7 +170,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: true
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "anal_canal"
     name_de: "Analkanal"
@@ -193,7 +193,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: true
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "left_colon"
     name_de: "linkes Kolon"
@@ -216,7 +216,7 @@
         description: "Insertion depth of the colonoscope in cm (rectified)"
         required: false
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "right_colon"
     name_de: "rechtes Kolon"

@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_surface_intact"
     name_de: "Kolonläsion - Oberfläche intakt"
@@ -7,7 +7,7 @@
     description: "Category for intact lesion surfaces"
 
 # eroded
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_surface_eroded"
     name_de: "Kolonläsion - Oberfläche erodiert"
@@ -23,7 +23,7 @@
 
 
 # ulcerated
-- model: endoreg_db.finding_morphology_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colon_lesion_surface_ulcerated"
     name_de: "Kolonläsion - Oberfläche ulzeriert"

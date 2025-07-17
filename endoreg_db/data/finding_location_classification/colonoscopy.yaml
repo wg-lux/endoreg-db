@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_location_classification
+- model: endoreg_db.finding_classification
   fields:
     name: "colonoscopy_default"
     name_de: "Koloskopie Standard"
@@ -28,7 +28,7 @@
       "anal_canal"
     ]
 
-- model: endoreg_db.finding_location_classification_choice
+- model: endoreg_db.finding_classification_choice
   fields:
     name: "colonoscopy_coarse"
     name_de: "Koloskopie Grob"
