@@ -38,9 +38,13 @@ class ExaminationStatsView(APIView):
             
             recent_data = []
             for exam in recent_examinations:
+                patient = exam.patient
+                if not patient:
+                    logger.warning(f"Patient not found for examination ID {exam.id}")
+                    continue
                 recent_data.append({
                     'id': exam.id,
-                    'patient_name': exam.patient.get_full_name() if exam.patient else 'Unknown',
+                    'patient_name': f"{patient.first_name} {patient.last_name}".strip() if patient.first_name or patient.last_name else 'Unknown',
                     'examination_type': exam.examination.name if exam.examination else 'Unknown',
                     'date': exam.date_start.isoformat() if exam.date_start else None,
                 })
@@ -76,7 +80,7 @@ class VideoSegmentStatsView(APIView):
             total_segments = LabelVideoSegment.objects.count()
             total_videos = VideoFile.objects.count()
             videos_with_segments = VideoFile.objects.filter(
-                labelvideosegment__isnull=False
+                label_video_segments__isnull=False
             ).distinct().count()
             
             # Label-Verteilung
@@ -187,7 +191,7 @@ class GeneralStatsView(APIView):
             
             # System-Status
             videos_with_segments = VideoFile.objects.filter(
-                labelvideosegment__isnull=False
+                label_video_segments__isnull=False
             ).distinct().count()
             
             processing_completion = (videos_with_segments / total_videos * 100) if total_videos > 0 else 0

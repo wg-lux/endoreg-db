@@ -37,6 +37,7 @@ from .administration import (
     EmployeeQualification,
 )
 
+
 ####### Label ########
 from .label import (
     Label,
@@ -78,6 +79,10 @@ from .medical import (
     ExaminationTime,
     ExaminationTimeType,
     Finding,
+    PatientFindingClassification,
+    FindingClassificationType,
+    FindingClassification,
+    FindingClassificationChoice,
     FindingType,
     FindingLocationClassification,
     FindingLocationClassificationChoice,
@@ -160,6 +165,7 @@ from .state import (
     SensitiveMetaState,
     VideoState,
     LabelVideoSegmentState,
+    AnonymizationStatus,
 )
 
 __all__ = [
@@ -257,6 +263,10 @@ __all__ = [
     "ExaminationTimeType",
     # Finding
     "Finding",
+    "PatientFindingClassification",
+    "FindingClassificationType",
+    "FindingClassification",
+    "FindingClassificationChoice",
     "FindingType",
     "FindingLocationClassification",
     "FindingLocationClassificationChoice",
@@ -348,4 +358,5 @@ __all__ = [
     "SensitiveMetaState",
     "VideoState",
     "LabelVideoSegmentState",
+    "AnonymizationStatus",
 ]

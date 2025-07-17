@@ -80,10 +80,21 @@ if TYPE_CHECKING:
         VideoState,
         ModelMeta,
         VideoImportMeta,
-    )
+    )   
+class VideoQuerySet(models.QuerySet):
+    def next_after(self, last_id=None):
+        if last_id is not None:
+            try:
+                last_id = int(last_id)
+            except (ValueError, TypeError):
+                return None
+        q = self if last_id is None else self.filter(pk__gt=last_id)
+        return q.order_by("pk").first()
 
 class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    
+    objects = VideoQuerySet.as_manager()
 
     raw_file = models.FileField(
         upload_to=VIDEO_DIR.name,  # Use .name for relative path
@@ -249,6 +260,7 @@ class VideoFile(models.Model):
 
     predict_video = _predict_video_pipeline
     extract_text_from_frames = _extract_text_from_video_frames
+    
 
 
     @classmethod

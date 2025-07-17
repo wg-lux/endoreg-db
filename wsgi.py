@@ -13,4 +13,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'prod_settings')
 
 application = get_wsgi_application()
 application = WhiteNoise(application, root=os.path.join(os.path.dirname(__file__), 'staticfiles'))
-application.add_files(os.path.join(os.path.dirname(__file__), media_root_name)) # , prefix='data/')
+#application.add_files(os.path.join(os.path.dirname(__file__), media_root_name)) # , prefix='data/')
+application.add_files(os.path.join(os.path.dirname(__file__), media_root_name), prefix='/media/')
+
+media_root_path = str(MEDIA_ROOT)
+application.add_files(media_root_path)

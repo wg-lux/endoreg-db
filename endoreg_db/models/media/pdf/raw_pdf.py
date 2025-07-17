@@ -63,6 +63,7 @@ class RawPdfFile(models.Model):
     )
     text = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    anonymized = models.BooleanField(default=False, help_text="True if the PDF has been anonymized.")
 
     # Fields specific to RawPdfFile (keeping existing related_names)
     file = models.FileField(

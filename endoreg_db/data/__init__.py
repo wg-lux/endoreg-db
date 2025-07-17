@@ -52,6 +52,11 @@ FINDING_MORPGOLOGY_CLASSIFICATION_TYPE_DATA_DIR = (
 FINDING_INTERVETION_DATA_DIR = DATA_DIR / "finding_intervention"
 FINIDNG_INTERVENTION_TYPE_DATA_DIR = DATA_DIR / "finding_intervention_type"
 
+
+FINDING_CLASSIFICATION_TYPE_DATA_DIR = DATA_DIR / "finding_classification_type"
+FINDING_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_classification"
+FINDING_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_classification_choice"
+
 # Green Endoscopy Dashboard Stuffs
 CENTER_RESOURCE_DATA_DIR = DATA_DIR / "center_resource"
 CENTER_WASTE_DATA_DIR = DATA_DIR / "center_waste"

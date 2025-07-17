@@ -17,11 +17,12 @@ let
   modelDir = "${dataDir}/models";
   confDir = "./conf"; # Define confDir here
 
-  python = pkgs.python312Full;
-  # Explicitly define the uv package
+  # Pin to specific Python 3.12 version to match pyproject.toml
+  python = pkgs.python312;
   uvPackage = pkgs.uv;
+  
   buildInputs = with pkgs; [
-    python
+    python312
     stdenv.cc.cc
     tesseract
     glib
@@ -33,11 +34,10 @@ let
     libglvnd
   ];
   runtimePackages = with pkgs; [
-    cudaPackages.cuda_nvcc # Needed for runtime? Check dependencies
     stdenv.cc.cc
     ffmpeg-headless.bin
     tesseract
-    uvPackage # Add uvPackage to runtime packages if needed elsewhere, or just for devenv internal use
+    uvPackage
     libglvnd # Add libglvnd for libGL.so.1
     glib
     zlib
@@ -68,13 +68,16 @@ in
 
   env = {
     LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    # Force uv to use the Nix-provided Python - override any conflicts
+    UV_PYTHON = lib.mkForce "${python}/bin/python";
+    UV_PYTHON_DOWNLOADS = "never";
   };
 
   languages.python = {
     enable = true;
+    package = python;
     uv = {
       enable = true;
-      # Use the explicitly defined uv package
       package = uvPackage;
       sync.enable = true;
     };
