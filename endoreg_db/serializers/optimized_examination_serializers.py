@@ -23,13 +23,26 @@ class FindingClassificationSerializer(serializers.ModelSerializer):
         ]
 
 class FindingSerializer(serializers.ModelSerializer):
-    # You may want to filter by type in the view or add custom fields for required/optional, if needed
-    classifications = FindingClassificationSerializer(many=True, read_only=True, source='finding_classifications')
+    location_classifications = serializers.SerializerMethodField()
+    morphology_classifications = serializers.SerializerMethodField()
+
+    def get_location_classifications(self, obj):
+        classifications = obj.finding_classifications.filter(
+            classification_types__name__iexact="location"
+        )
+        return FindingClassificationSerializer(classifications, many=True).data
+
+    def get_morphology_classifications(self, obj):
+        classifications = obj.finding_classifications.filter(
+            classification_types__name__iexact="morphology"
+        )
+        return FindingClassificationSerializer(classifications, many=True).data
 
     class Meta:
         model = Finding
         fields = [
-            'id', 'name', 'name_de', 'name_en', 'description', 'classifications'
+            'id', 'name', 'name_de', 'name_en', 'description',
+            'classifications',
         ]
 
 class ExaminationSerializer(serializers.ModelSerializer):

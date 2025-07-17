@@ -55,6 +55,12 @@ def create_patient_finding_location(request):
                 {'detail': f'LocationClassificationChoice with id {choice_id} not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+        # Validate that the choice is for a location classification
+        if not choice.classification.classification_types.filter(name__iexact="location").exists():
+            return Response(
+                {'detail': f'Choice with id {choice_id} is not a location classification choice'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         # Create the relationship
         patient_finding_location = PatientFindingLocation.objects.create(

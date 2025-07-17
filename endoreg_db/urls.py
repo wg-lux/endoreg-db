@@ -31,8 +31,6 @@ from .views.examination_views import (
     # New imports for restructured frontend
     # Import for video examinations
     # NEW: Add the missing API endpoints for ExaminationForm.vue
-    get_morphology_classifications_for_finding,
-    get_choices_for_morphology_classification,
 )
 
 # Modularized examination endpoints
@@ -49,7 +47,6 @@ from .views.examination_views.classification import (
     get_choices_for_morphology_classification,
 )
 from .views.examination_views.finding import (
-    get_findings_for_exam,
     get_findings_for_examination,
 )
 from .views.examination_views.intervention import (

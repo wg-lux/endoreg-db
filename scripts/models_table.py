@@ -23,6 +23,7 @@ export_models = [    Examination,
     Finding, 
     FindingIntervention, 
     FindingClassification, FindingClassificationChoice,
+    FindingClassificationType,
     Disease, DiseaseClassification,
     Event, EventClassification,
     Medication, MedicationIndication

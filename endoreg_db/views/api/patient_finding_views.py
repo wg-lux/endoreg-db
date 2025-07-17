@@ -223,7 +223,8 @@ class OptimizedPatientFindingViewSet(viewsets.ModelViewSet):
         
         try:
             location_classification = FindingClassification.objects.get(
-                id=location_classification_id
+                id=location_classification_id,
+                classification_types__name__iexact='location'
             )
             
             # Prüfe ob Choice zur Classification gehört

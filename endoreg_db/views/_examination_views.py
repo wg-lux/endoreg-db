@@ -381,7 +381,10 @@ class VideoExaminationViewSet(viewsets.ModelViewSet):
                 
                 if data.get('morphologyClassificationId'):
                     try:
-                        FindingClassification.objects.get(id=data['morphologyClassificationId'])
+                        FindingClassification.objects.get(
+                            id=data['morphologyClassificationId'],
+                            classification_types__name__iexact="morphology"
+                        )
                     except FindingClassification.DoesNotExist:
                         return Response(
                             {'error': 'Morphology classification not found'}, 
