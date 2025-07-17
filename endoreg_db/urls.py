@@ -100,7 +100,7 @@ from .views.sensitive_meta_views import (
 
 # Add missing anonymization overview imports
 from .views.anonymization_overview import (
-    anonymization_overview,
+    AnonymizationOverviewView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
@@ -239,7 +239,7 @@ urlpatterns = [
     ),
     
     # URL patterns for anonymization overview
-    path('anonymization/items/overview/', anonymization_overview, name='anonymization_items_overview'),
+    path('anonymization/items/overview/', AnonymizationOverviewView.as_view(), name='anonymization_items_overview'),
     path('anonymization/<int:file_id>/current/', anonymization_current, name='set_current_for_validation'),
     path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
     path('anonymization/<int:file_id>/status/', anonymization_status, name='get_anonymization_status'),

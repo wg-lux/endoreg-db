@@ -39,16 +39,7 @@ class FileOverviewSerializer(serializers.Serializer):
             
             # ------- anonymization status using VideoState model
             vs = instance.state
-            if vs is None:
-                anonym_status = "not_started"
-            elif hasattr(vs, 'processing_error') and getattr(vs, 'processing_error', False):
-                anonym_status = "failed"
-            elif vs.anonymized:
-                anonym_status = "done"
-            elif vs.frames_extracted:
-                anonym_status = "processing"
-            else:
-                anonym_status = "not_started"
+            anonym_status = vs.anonymization_status
             
             # ------- annotation status (validated label segments)
             if instance.label_video_segments.filter(state__is_validated=True).exists():

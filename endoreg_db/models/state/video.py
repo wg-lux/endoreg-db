@@ -87,7 +87,6 @@ class VideoState(models.Model):
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
     anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
-    anonymization_status = AnonymizationStatus
     
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
@@ -126,22 +125,22 @@ class VideoState(models.Model):
             f"DateModified={self.date_modified.isoformat()}"
         ]
         
-        @property
-        def anonymization_status(self) -> AnonymizationStatus:
-            """
-            Fast, side‑effect‑free status resolution used by API & UI.
-            """
-            if self.anonymization_validated:
-                return AnonymizationStatus.VALIDATED
-            if self.sensitive_meta_processed:
-                return AnonymizationStatus.DONE
-            if self.frames_extracted and not self.anonymized:
-                return AnonymizationStatus.PROCESSING_ANONYMIZING
-            if self.was_created and not self.frames_extracted:
-                return AnonymizationStatus.EXTRACTING_FRAMES
-            if getattr(self, "processing_error", False):
-                return AnonymizationStatus.FAILED
-            return AnonymizationStatus.NOT_STARTED
+    @property
+    def anonymization_status(self) -> AnonymizationStatus:
+        """
+        Fast, side‑effect‑free status resolution used by API & UI.
+        """
+        if self.anonymization_validated:
+            return AnonymizationStatus.VALIDATED
+        if self.sensitive_meta_processed:
+            return AnonymizationStatus.DONE
+        if self.frames_extracted and not self.anonymized:
+            return AnonymizationStatus.PROCESSING_ANONYMIZING
+        if self.was_created and not self.frames_extracted:
+            return AnonymizationStatus.EXTRACTING_FRAMES
+        if getattr(self, "processing_error", False):
+            return AnonymizationStatus.FAILED
+        return AnonymizationStatus.NOT_STARTED
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:

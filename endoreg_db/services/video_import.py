@@ -275,8 +275,10 @@ def import_and_anonymize(
             
             video_file_obj.state.frames_extracted = True
             video_file_obj.state.frames_initialized = True
-            video_file_obj.state.video_meta_extracted = True
+            video_file_obj.state.sensitive_meta_processed = True
             video_file_obj.state.anonymized = True
+            video_file_obj.state.save()
+            video_file_obj.save()
             
             logger.info(f"Frame cleaning with ROI masking completed: {cleaned_video_path.name}")
             
@@ -287,6 +289,7 @@ def import_and_anonymize(
             # Don't raise - continue with unprocessed video
     elif not frame_cleaning_available:
         logger.warning("Frame cleaning not available (lx_anonymizer not found)")
+        
     
     # Step 6: Signal completion to the anonymization tracking system
     logger.info("Signaling import and anonymization completion to tracking system...")
@@ -446,6 +449,8 @@ def anonymize(video_file_obj: "VideoFile", processor_name: str, just_anonymizati
             video_file_obj.state.frames_initialized = True
             video_file_obj.state.video_meta_extracted = True
             video_file_obj.state.anonymized = True
+            video_file_obj.state.sensitive_meta_processed = True
+            video_file_obj.state.save()
             
             logger.info(f"Frame cleaning with ROI masking completed: {cleaned_video_path.name}")
             
