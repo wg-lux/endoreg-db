@@ -93,7 +93,7 @@ class Command(BaseCommand):
                         try:
                             current_path = Path(video.raw_file.path)
                             current_path_exists = current_path.exists()
-                        except:
+                        except (ValueError, AttributeError, OSError):
                             current_path_exists = False
                     
                     if not current_path_exists:

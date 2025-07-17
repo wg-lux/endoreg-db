@@ -5,9 +5,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
-from django.db.models import Sum, Count, Q
-from endoreg_db.models import VideoFile, AnonymizationTask
-from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.models import VideoFile
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +157,7 @@ class Command(BaseCommand):
         )
         
         self.stdout.write("\n" + "="*60)
-        self.stdout.write(status_color(f"💾 STORAGE STATUS"))
+        self.stdout.write(status_color("💾 STORAGE STATUS"))
         self.stdout.write("="*60)
         self.stdout.write(f"Total Space: {storage_info['total_gb']:.1f} GB")
         self.stdout.write(f"Used Space:  {storage_info['used_gb']:.1f} GB")

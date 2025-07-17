@@ -11,13 +11,16 @@ from django.core.management import BaseCommand
 from django.core.files.base import ContentFile
 from django.db import connection
 from pathlib import Path
-from endoreg_db.models import VideoFile, ModelMeta
+from endoreg_db.models import VideoFile
 from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
 # #FIXME
 # from endoreg_db.management.commands import validate_video
 
 from endoreg_db.utils.video.ffmpeg_wrapper import check_ffmpeg_availability # ADDED
+
+import logging
+logger = logging.getLogger(__name__)
 
 # Import frame cleaning functionality - simplified approach
 FRAME_CLEANING_AVAILABLE = False
@@ -39,14 +42,14 @@ try:
         from lx_anonymizer import FrameCleaner, ReportReader
         
         FRAME_CLEANING_AVAILABLE = True
-        print("DEBUG: Successfully imported lx_anonymizer modules")
+        logger.debug("Successfully imported lx_anonymizer modules")
         
         # Remove from path to avoid conflicts
         if str(lx_anonymizer_path) in sys.path:
             sys.path.remove(str(lx_anonymizer_path))
             
 except Exception as e:
-    print(f"DEBUG: Frame cleaning not available: {e}")
+    logger.debug(f"Frame cleaning not available: {e}")
     FRAME_CLEANING_AVAILABLE = False
 
 IMPORT_MODELS = [

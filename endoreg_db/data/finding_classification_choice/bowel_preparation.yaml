@@ -42,8 +42,7 @@
     name_de: "Inadäquat"
     name_en: "Inadequate"
     classifications:
-      - "bowel_prep_boston"
-      - "bowel_prep_boston_simplified"
+      - "bowel_prep_aronchick"
 
 - model: endoreg_db.finding_classification_choice
   fields:

@@ -51,11 +51,10 @@ def _pipe_2(video_file:"VideoFile") -> bool:
         with transaction.atomic():
             state: "VideoState" = video_file.get_or_create_state()
             anonymization_needed = not state.anonymized
-        
+            if anonymization_needed:
+                state.sensitive_meta_processed = False
 
         if anonymization_needed:
-            state.sensitive_meta_processed = False
-
             logger.info("Pipe 2: Video not anonymized. Anonymizing outside main DB transaction...")
             anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy I/O work
             if not anonymize_success:
@@ -72,11 +71,15 @@ def _pipe_2(video_file:"VideoFile") -> bool:
         else:
             logger.info("Pipe 2: Video already anonymized.")
         
-        state.sensitive_meta_processed = True
+        # state.sensitive_meta_processed = True  # Move this into the atomic block below
 
         # --- Part 3: Final DB operations (now in its own atomic transaction) ---
         with transaction.atomic():
             video_file.refresh_from_db() # Ensure we have the latest video_file state for these ops
+
+            # Set sensitive_meta_processed True atomically
+            state: "VideoState" = video_file.get_or_create_state()
+            state.sensitive_meta_processed = True
 
             # Delete Sensitive Meta Object
             if video_file.sensitive_meta:

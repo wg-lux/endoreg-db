@@ -157,12 +157,12 @@ class Command(BaseCommand):
         # Summary
         self.stdout.write("\n" + "="*50)
         if dry_run:
-            self.stdout.write(self.style.SUCCESS(f"DRY RUN SUMMARY:"))
+            self.stdout.write(self.style.SUCCESS("DRY RUN SUMMARY:"))
             self.stdout.write(f"Would create SensitiveMeta for: {created_count} videos")
             self.stdout.write(f"Would update incomplete data for: {fixed_count} videos")
             self.stdout.write(f"Total videos that would be fixed: {created_count + fixed_count}")
         else:
-            self.stdout.write(self.style.SUCCESS(f"REPAIR COMPLETED:"))
+            self.stdout.write(self.style.SUCCESS("REPAIR COMPLETED:"))
             self.stdout.write(f"Created SensitiveMeta for: {created_count} videos")
             self.stdout.write(f"Updated incomplete data for: {fixed_count} videos")
             self.stdout.write(f"Total videos fixed: {created_count + fixed_count}")

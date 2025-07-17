@@ -1,4 +1,3 @@
-# from random import choices
 from django.db import models
 from typing import TYPE_CHECKING, List
 

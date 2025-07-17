@@ -3,13 +3,12 @@ Unit tests for anonymization overview API endpoints.
 Tests the /api/anonymization/items/overview/ endpoint that returns
 FileItem interface data for videos and PDFs.
 """
-import pytest
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
-from endoreg_db.models import VideoFile, RawPdfFile, SensitiveMeta, Center
-from endoreg_db.models.media.video.video_file_state import VideoFileState
+from endoreg_db.models import VideoFile, RawPdfFile, SensitiveMeta, Center, VideoState
+# from endoreg_db.models.media.video.video_file_state import VideoState
 
 
 class AnonymizationOverviewAPITest(TestCase):
@@ -60,7 +59,7 @@ class AnonymizationOverviewAPITest(TestCase):
         )
         
         # Create video state - anonymized
-        VideoFileState.objects.create(
+        VideoState.objects.create(
             video=video,
             anonymized=True,
             processing_error=False,
@@ -116,7 +115,7 @@ class AnonymizationOverviewAPITest(TestCase):
             sensitive_meta=self.video_meta,
             center=self.center
         )
-        VideoFileState.objects.create(
+        VideoState.objects.create(
             video=video1,
             anonymized=False,
             processing_error=False,
@@ -130,7 +129,7 @@ class AnonymizationOverviewAPITest(TestCase):
             sensitive_meta=self.video_meta,
             center=self.center
         )
-        VideoFileState.objects.create(
+        VideoState.objects.create(
             video=video2,
             anonymized=False,
             processing_error=False,
@@ -144,7 +143,7 @@ class AnonymizationOverviewAPITest(TestCase):
             sensitive_meta=self.video_meta,
             center=self.center
         )
-        VideoFileState.objects.create(
+        VideoState.objects.create(
             video=video3,
             anonymized=False,
             processing_error=True,
@@ -158,7 +157,7 @@ class AnonymizationOverviewAPITest(TestCase):
             sensitive_meta=self.video_meta,
             center=self.center
         )
-        VideoFileState.objects.create(
+        VideoState.objects.create(
             video=video4,
             anonymized=True,
             processing_error=False,
