@@ -41,7 +41,7 @@ class FindingClassification(models.Model):
     name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     classification_types = models.ManyToManyField(
-        FindingClassificationType, 
+        to=FindingClassificationType, 
         # on_delete=models.CASCADE
     )
 

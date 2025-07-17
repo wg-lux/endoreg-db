@@ -62,7 +62,7 @@ class Finding(models.Model):
         examinations: models.QuerySet[Examination]
         required_classifications: models.QuerySet['FindingClassification']
         available_classifications: models.QuerySet['FindingClassification']
-        required_classification_types: models.QuerySet['FindingClassificationType']
+        required_classification_types: models.QuerySet['FindingClassificationType'] # Logic not yet implemented, in future we want at least one classification of each type for this finding
         available_classification_types: models.QuerySet['FindingClassificationType']
         morphology_classifications: models.QuerySet['FindingClassification'] # To be deprecated
         location_classifications: models.QuerySet['FindingClassification'] # To be deprecated
