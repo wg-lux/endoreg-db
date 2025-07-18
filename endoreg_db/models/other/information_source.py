@@ -40,8 +40,6 @@ class InformationSource(models.Model):
     objects = InformationSourceManager()
 
     name = models.CharField(max_length=100)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
 
     url = models.URLField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
@@ -77,4 +75,4 @@ class InformationSource(models.Model):
         This method returns the instance's name attribute converted explicitly to a string.
         """
         return str(self.name)
-    
+

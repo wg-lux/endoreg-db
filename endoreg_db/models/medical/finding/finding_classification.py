@@ -7,8 +7,6 @@ class FindingClassificationTypeManager(models.Manager):
     
 class FindingClassificationType(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     
     objects = FindingClassificationTypeManager()
@@ -37,8 +35,6 @@ class FindingClassificationManager(models.Manager):
 
 class FindingClassification(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     classification_types = models.ManyToManyField(
         to=FindingClassificationType, 
@@ -53,10 +49,6 @@ class FindingClassification(models.Model):
     findings = models.ManyToManyField('Finding', blank=True, related_name='finding_classifications')
     examinations = models.ManyToManyField('Examination', blank=True, related_name='finding_classifications')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='finding_classifications')
-
-    # Add extra description fields for compatibility
-    description_de = models.TextField(blank=True, null=True)
-    description_en = models.TextField(blank=True, null=True)
 
     objects = FindingClassificationManager()
 
@@ -95,8 +87,6 @@ class FindingClassificationChoiceManager(models.Manager):
     
 class FindingClassificationChoice(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     # classifications = models.ManyToManyField(
     #     "FindingClassification", 
@@ -110,10 +100,6 @@ class FindingClassificationChoice(models.Model):
     numerical_descriptors = models.JSONField(
         default = dict
     )
-
-    # Extra description fields for compatibility
-    description_de = models.TextField(blank=True, null=True)
-    description_en = models.TextField(blank=True, null=True)
 
     objects = FindingClassificationChoiceManager()
 

@@ -61,13 +61,13 @@ class PatientFindingClassification(models.Model):
 
         super().save(*args, **kwargs)
 
-    def get_subcategories(self):
+    def initialize_and_get_subcategories(self):
         """Returns the dictionary of subcategories, ensuring it's initialized."""
         if not self.subcategories:
             self.save()
         return self.subcategories
 
-    def get_numerical_descriptors(self):
+    def initialize_and_get_descriptors(self):
         """Returns the dictionary of numerical descriptors, ensuring it's initialized."""
         if not self.numerical_descriptors:
             self.save()

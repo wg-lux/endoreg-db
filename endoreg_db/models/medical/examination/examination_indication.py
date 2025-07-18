@@ -29,16 +29,12 @@ class ExaminationIndication(models.Model):
 
     Attributes:
         name (str): The unique name of the indication.
-        name_de (str): The German name of the indication.
-        name_en (str): The English name of the indication.
         classification (ForeignKey): The classification associated with the indication.
         examination (ForeignKey): The examination associated with the indication.
         expected_interventions (ManyToManyField): Expected interventions for this indication.
     """
 
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     classifications = models.ManyToManyField(
@@ -145,13 +141,9 @@ class ExaminationIndicationClassification(models.Model):
 
     Attributes:
         name (str): The unique name of the classification.
-        name_de (str): The German name of the classification.
-        name_en (str): The English name of the classification.
     """
 
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     examination = models.ForeignKey(
         "Examination",
@@ -221,16 +213,12 @@ class ExaminationIndicationClassificationChoice(models.Model):
 
     Attributes:
         name (str): The unique name of the choice.
-        name_de (str): The German name of the choice.
-        name_en (str): The English name of the choice.
         subcategories (JSONField): Subcategories associated with the choice.
         numerical_descriptors (JSONField): Numerical descriptors for the choice.
         classification (ForeignKey): The classification to which this choice belongs.
     """
 
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
     classification = models.ForeignKey(

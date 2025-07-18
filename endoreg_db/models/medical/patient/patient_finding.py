@@ -222,14 +222,14 @@ class PatientFinding(models.Model):
     @property
     def locations(self):
         classifications = self.classifications.filter(
-            is_location=True
+            classification__classification_types__name__iexact="location"
         )
         return classifications
-    
+
     @property
     def morphologies(self):
         classifications = self.classifications.filter(
-            is_morphology=True
+            classification__classification_types__name__iexact="morphology"
         )
         return classifications
 

@@ -10,11 +10,7 @@ class FindingManager(models.Manager):
 
 class Finding(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    description_de = models.TextField(blank=True, null=True)
-    description_en = models.TextField(blank=True, null=True)
     examinations = models.ManyToManyField('Examination', blank=True, related_name='findings')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='findings')
 
@@ -35,7 +31,6 @@ class Finding(models.Model):
     
         finding_classifications: models.QuerySet['FindingClassification']
         examinations: models.QuerySet[Examination]
-        finding_classifications: models.QuerySet['FindingClassification']
         finding_types: models.QuerySet[FindingType]
         finding_interventions: models.QuerySet[FindingIntervention]
         
@@ -59,12 +54,3 @@ class Finding(models.Model):
         Returns all FindingClassification objects of type 'morphology' linked to this finding.
         """
         return self.finding_classifications.filter(classification_types__name__iexact="morphology")
-    
-    ## Deprecate?
-    # def get_required_morphology_classification_types(self):
-    #     from endoreg_db.models import FindingClassificationType
-    #     finding_morphology_classification_types:List[FindingClassificationType] = [
-    #         _ for _ in self.required_morphology_classification_types.all()
-    #     ]
-    #     return finding_morphology_classification_types
-

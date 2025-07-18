@@ -6,7 +6,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 import logging
 from ...utils.permissions import DEBUG_PERMISSIONS
-from ...models import SensitiveMeta, SensitiveMetaState, RawPdfFile, VideoFile
+from ...models import SensitiveMeta, RawPdfFile, VideoFile
 from ...serializers.sensitive_meta_serializer import (
     SensitiveMetaDetailSerializer,
     SensitiveMetaUpdateSerializer,

@@ -21,17 +21,14 @@ class Examination(models.Model):
 
     Attributes:
         name (str): The unique name of the examination.
-        name_de (str): The German name of the examination.
-        name_en (str): The English name of the examination.
         examination_types (ManyToManyField): The types associated with the examination.
         date (DateField): The date of the examination.
         time (TimeField): The time of the examination.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     examination_types = models.ManyToManyField("ExaminationType", blank=True)
+    description = models.TextField(blank=True, null=True)
 
     objects = ExaminationManager()
 

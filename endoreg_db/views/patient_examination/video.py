@@ -12,7 +12,7 @@ from endoreg_db.models import (
 from django.db import transaction
 from django.utils import timezone
 import logging
-
+from rest_framework.decorators import api_view
 
 class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
     """
@@ -163,7 +163,7 @@ class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
             logger.error(f"Unexpected error deleting examination {examination_id}: {str(e)}")
             return Response({'error': 'Internal server error while deleting examination'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-from rest_framework.decorators import api_view
+
 @api_view(["GET"])
 def get_examinations_for_video(request, video_id):
     _video = get_object_or_404(VideoFile, id=video_id)

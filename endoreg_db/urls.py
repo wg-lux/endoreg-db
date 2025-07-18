@@ -66,7 +66,7 @@ from .views.patient_finding.patient_finding_views import (
     PatientFindingViewSet,
     create_patient_finding_classification
 )
-from .views.patient_examination import PatientExaminationViewSet
+# from .views.patient_examination import PatientExaminationViewSet
 
 # NEW: Import Stats Views
 from .views.misc.stats import (
@@ -135,7 +135,7 @@ router.register(r'video-examinations', VideoExaminationViewSet, basename='video-
 router.register(r'findings', FindingViewSet)
 router.register(r'classifications', ClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
-router.register(r'patient-examinations', PatientExaminationViewSet)
+# router.register(r'patient-examinations', PatientExaminationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  

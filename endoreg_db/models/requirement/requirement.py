@@ -62,13 +62,9 @@ class RequirementType(models.Model):
 
     Attributes:
         name (str): The name of the requirement type.
-        name_de (str): The German name of the requirement type.
-        name_en (str): The English name of the requirement type.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = RequirementTypeManager()
@@ -110,14 +106,10 @@ class Requirement(models.Model):
 
     Attributes:
         name (str): The name of the requirement.
-        name_de (str): The German name of the requirement.
-        name_en (str): The English name of the requirement.
         description (str): A description of the requirement.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     
     numeric_value = models.FloatField(

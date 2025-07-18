@@ -29,7 +29,7 @@ class PatientAdmin(admin.ModelAdmin):
 @admin.register(Examination)
 class ExaminationAdmin(admin.ModelAdmin):
     list_display = ("id", "name")
-    search_fields = ("name", "name_de", "name_en")
+    search_fields = ("name", )
     list_filter = ("name",)
     ordering = ("name",)
 

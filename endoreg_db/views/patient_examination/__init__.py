@@ -18,7 +18,6 @@ from .examination import (
 from ._video_backup import VideoExaminationViewSet
     
 from .finding import (
-    get_findings_for_exam,
     get_findings_for_examination,
 )
 

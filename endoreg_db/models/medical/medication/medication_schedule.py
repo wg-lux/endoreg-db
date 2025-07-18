@@ -1,7 +1,9 @@
 '''Model for the medication schedule.'''
-from typing import List
+from typing import List, TYPE_CHECKING
 from django.db import models
 
+if TYPE_CHECKING:
+    from endoreg_db.models import MedicationIntakeTime
 class MedicationScheduleManager(models.Manager):
     '''Manager for the medication schedule model.'''
     def get_by_natural_key(self, name):
@@ -10,9 +12,7 @@ class MedicationScheduleManager(models.Manager):
     
 class MedicationSchedule(models.Model):
     '''Model representing a medication schedule.'''
-    name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+    name = models.CharField(max_length=255) 
     description = models.TextField(blank=True, null=True)
     medication = models.ForeignKey("Medication", on_delete=models.CASCADE)
     unit = models.ForeignKey("Unit", on_delete=models.CASCADE)
