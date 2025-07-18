@@ -8,10 +8,10 @@ import logging
 from celery import current_app
 from django.db import transaction
 
-from ..models import VideoFile, SensitiveMeta
-from ..serializers.video_serializer import VideoDetailSer, SensitiveMetaUpdateSer
-from .video_segmentation_views import _stream_video_file
-from ..utils.permissions import EnvironmentAwarePermission
+from ...models import VideoFile, SensitiveMeta
+from ...serializers.video_serializer import VideoDetailSer, SensitiveMetaUpdateSer
+from .segmentation import _stream_video_file
+from ...utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,6 @@ class VideoMediaView(APIView):
             logger.error(f"Error scheduling raw file deletion for video {video_file.uuid}: {e}")
             raise
 
-
 class VideoCorrectionView(APIView):
     """
     GET /api/video-correction/{id}/ - Get video details for correction
@@ -160,7 +159,6 @@ class VideoCorrectionView(APIView):
         video = get_object_or_404(VideoFile, pk=pk)
         ser = VideoDetailSer(video, context={"request": request})
         return Response(ser.data, status=status.HTTP_200_OK)
-
 
 class VideoMetadataView(APIView):
     """
@@ -182,7 +180,6 @@ class VideoMetadataView(APIView):
         
         return Response(metadata, status=status.HTTP_200_OK)
 
-
 class VideoProcessingHistoryView(APIView):
     """
     GET /api/video-processing-history/{id}/ - Get processing history for a video
@@ -196,7 +193,6 @@ class VideoProcessingHistoryView(APIView):
         history = []
         
         return Response(history, status=status.HTTP_200_OK)
-
 
 class VideoAnalyzeView(APIView):
     """
@@ -242,7 +238,6 @@ class VideoAnalyzeView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
 class VideoApplyMaskView(APIView):
     """
     POST /api/video-apply-mask/{id}/ - Apply mask to video using streaming processing
@@ -281,7 +276,6 @@ class VideoApplyMaskView(APIView):
                 {"error": f"Failed to start masking task: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class VideoRemoveFramesView(APIView):
     """
@@ -322,7 +316,6 @@ class VideoRemoveFramesView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
 class VideoReprocessView(APIView):
     """
     POST /api/video-reprocess/{id}/ - Reprocess video with updated settings
@@ -353,7 +346,6 @@ class VideoReprocessView(APIView):
                 {"error": f"Failed to start reprocessing: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class TaskStatusView(APIView):
     """
@@ -395,7 +387,6 @@ class TaskStatusView(APIView):
                 {"error": f"Failed to get task status: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class VideoDownloadProcessedView(APIView):
     """

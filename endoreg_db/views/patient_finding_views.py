@@ -3,9 +3,10 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models import (
-    FindingClassificationChoice
+    PatientFinding,
+    FindingClassificationChoice,
+    PatientFindingClassification
 )
 from rest_framework import serializers
 
@@ -129,5 +130,59 @@ def create_patient_finding_morphology(request):
     except Exception as e:
         return Response(
             {'detail': f'Error creating patient finding morphology: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+@api_view(['POST'])
+def create_patient_finding_classification(request):
+    """
+    Create a patient finding classification relationship.
+    Expected payload: {
+        "patient_finding_id": 1,
+        "classification_choice_id": 2
+    }
+    """
+    try:
+        patient_finding_id = request.data.get('patient_finding_id')
+        choice_id = request.data.get('classification_choice_id')
+        
+        if not patient_finding_id or not choice_id:
+            return Response(
+                {'detail': 'patient_finding_id and classification_choice_id are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the objects
+        try:
+            patient_finding = PatientFinding.objects.get(id=patient_finding_id)
+        except PatientFinding.DoesNotExist:
+            return Response(
+                {'detail': f'PatientFinding with id {patient_finding_id} not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            choice = FindingClassificationChoice.objects.get(id=choice_id)
+        except FindingClassificationChoice.DoesNotExist:
+            return Response(
+                {'detail': f'ClassificationChoice with id {choice_id} not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Create the relationship
+        patient_finding_classification = PatientFindingClassification.objects.create(
+            patient_finding=patient_finding,
+            classification_choice=choice
+        )
+        
+        return Response({
+            'id': patient_finding_classification.id,
+            'patient_finding_id': patient_finding.id,
+            'classification_choice_id': choice.id
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response(
+            {'detail': f'Error creating patient finding classification: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

@@ -7,9 +7,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
-from ..models import VideoFile, Label, LabelVideoSegment
-from ..serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
-from ..utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
+from ...models import VideoFile, Label, LabelVideoSegment
+from ...serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
+from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 def _stream_video_file(vf, frontend_origin):
     """
@@ -159,8 +159,6 @@ class VideoStreamView(APIView):
             logger.error(f"Unexpected error in VideoStreamView for video_id={video_id}: {str(e)}")
             raise Http404("Video streaming failed")
 
-
-
 class VideoLabelView(APIView):
     """
     API to fetch time segments (start & end times in seconds) for a specific label.
@@ -293,7 +291,6 @@ class VideoLabelView(APIView):
                 "error": f"Internal error: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class UpdateLabelSegmentsView(APIView):
     """
     API to update or create label segments for a video.
@@ -330,8 +327,7 @@ class UpdateLabelSegmentsView(APIView):
             return Response({
                 "error": f"Failed to update segments: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-
+           
 @api_view(['GET'])
 @permission_classes(DEBUG_PERMISSIONS)
 def rerun_segmentation(request, video_id):

@@ -5,10 +5,9 @@ import logging
 from pathlib import Path
 from django.db import transaction
 from django.core.files.base import ContentFile
-from ..models import VideoFile, SensitiveMeta
-from ..services.video_import import _ensure_default_patient_data, _ensure_frame_cleaning_available
+from ...models import VideoFile, SensitiveMeta
+from ...services.video_import import _ensure_default_patient_data, _ensure_frame_cleaning_available
 logger = logging.getLogger(__name__)
-
 
 class VideoReimportView(APIView):
     """
@@ -261,7 +260,7 @@ class VideoReimportView(APIView):
         """
         try:
             # Import here to avoid circular imports
-            from ..models import AnonymizationTask
+            from ...models import AnonymizationTask
             
             # Find or create anonymization task for this video
             anonymization_task, created = AnonymizationTask.objects.get_or_create(

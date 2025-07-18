@@ -1,4 +1,4 @@
-from .views.csrf import csrf_token_view
+from .views.misc.csrf import csrf_token_view
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
@@ -20,12 +20,12 @@ from .views.Frames_NICE_and_PARIS_classifications_views import (
 # endoreg_db_production/endoreg_db/urls.py
 from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
-from .views.video_segmentation_views import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
-from .views.views_for_timeline import video_timeline_view
+from .views.video.segmentation import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
+from .views.video.timeline import video_timeline_view
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
-from .views.examination_views import (
+from .views.patient_examination_views import (
     get_morphology_classification_choices_for_exam,
     get_instruments_for_exam,
     # New imports for restructured frontend
@@ -34,12 +34,12 @@ from .views.examination_views import (
 )
 
 # Modularized examination endpoints
-from .views.examination_views.examination import (
+from .views.patient_examination_views.examination import (
     ExaminationViewSet,
     get_location_classification_choices_for_exam,
 )
-from .views.examination_views import VideoExaminationViewSet, get_examinations_for_video
-from .views.examination_views.classification import (
+from .views.patient_examination_views import VideoExaminationViewSet, get_examinations_for_video
+from .views.patient_examination_views.classification import (
     get_location_classifications_for_exam,
     get_morphology_classifications_for_exam,
     get_location_choices_for_classification,
@@ -49,10 +49,10 @@ from .views.examination_views.classification import (
     get_choices_for_location_classification,
     get_choices_for_morphology_classification,
 )
-from .views.examination_views.finding import (
+from .views.patient_examination_views.finding import (
     get_findings_for_examination,
 )
-from .views.examination_views.intervention import (
+from .views.patient_examination_views.intervention import (
     get_interventions_for_finding,
     get_interventions_for_exam,
 )
@@ -64,8 +64,7 @@ from .views.classification_views import (
 )
 from .views.patient_finding_views import (
     PatientFindingViewSet,
-    create_patient_finding_location,
-    create_patient_finding_morphology
+    create_patient_finding_classification
 )
 from .views.patient_examination_views import PatientExaminationViewSet
 
@@ -116,9 +115,9 @@ from .views.anonymization_overview import (
     validate_anonymization
 )
 
-from .views.video_media_views import VideoMediaView
+from .views.video.media import VideoMediaView
 
-from .views.video_reimport_views import VideoReimportView
+from .views.video.reimport import VideoReimportView
 
 from .views.pdf_stream_views import PDFStreamView
 
@@ -225,31 +224,32 @@ urlpatterns = [
     path('examinations/list/', ExaminationListView.as_view(), name='examination_list'),
     
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
-    path(
-        'examination/<int:exam_id>/location-classifications/',
-        get_location_classifications_for_exam,
-        name='get_location_classifications_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/morphology-classifications/',
-        get_morphology_classifications_for_exam,
-        name='get_morphology_classifications_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/location-classification/<int:location_classification_id>/choices/',
-        get_location_choices_for_classification,
-        name='get_location_choices_for_classification'
-    ),
-    path(
-        'examination/<int:exam_id>/morphology-classification/<int:morphology_classification_id>/choices/',
-        get_morphology_choices_for_classification,
-        name='get_morphology_choices_for_classification'
-    ),
-    path(
-        'examination/<int:exam_id>/finding/<int:finding_id>/interventions/',
-        get_interventions_for_finding,
-        name='get_interventions_for_finding'
-    ),
+    # path(
+    #     'examination/<int:exam_id>/classifications/',
+    #     get_classifications_for_exam,
+    #     name='get_location_classifications_for_exam'
+    # ),
+    # path(
+    #     'examination/<int:exam_id>/morphology-classifications/',
+    #     get_morphology_classifications_for_exam,
+    #     name='get_morphology_classifications_for_exam'
+    # ),
+    # # This Route will be deprecated as 
+    # path(
+    #     'examination/<int:exam_id>/location-classification/<int:location_classification_id>/choices/',
+    #     get_location_choices_for_classification,
+    #     name='get_location_choices_for_classification'
+    # ),
+    # path(
+    #     'examination/<int:exam_id>/morphology-classification/<int:morphology_classification_id>/choices/',
+    #     get_morphology_choices_for_classification,
+    #     name='get_morphology_choices_for_classification'
+    # ),
+    # path(
+    #     'examination/<int:exam_id>/finding/<int:finding_id>/interventions/',
+    #     get_interventions_for_finding,
+    #     name='get_interventions_for_finding'
+    # ),
     
     # URL patterns for anonymization overview
     path('anonymization/items/overview/', anonymization_overview, name='anonymization_items_overview'),
@@ -286,27 +286,6 @@ urlpatterns = [
         name='get_choices_for_morphology_classification'
     ),
 
-    # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
-    path(
-        'examination/<int:exam_id>/morphology-classification-choices/',
-        get_morphology_classification_choices_for_exam,
-        name='get_morphology_classification_choices_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/location-classification-choices/',
-        get_location_classification_choices_for_exam,
-        name='get_location_classification_choices_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/interventions/',
-        get_interventions_for_exam,
-        name='get_interventions_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/instruments/',
-        get_instruments_for_exam,
-        name='get_instruments_for_exam'
-    ),
     path('conf/', csrf_token_view, name='csrf_token'),
     
     
@@ -454,17 +433,17 @@ urlpatterns = [
 
     # ---------------------------------------------------------------------------------------
 
-    # PatientFinding related endpoints
-    path(
-        'patient-finding-locations/',
-        create_patient_finding_location,
-        name='create_patient_finding_location'
-    ),
-    path(
-        'patient-finding-morphologies/',
-        create_patient_finding_morphology,
-        name='create_patient_finding_morphology'
-    ),
+    # # PatientFinding related endpoints
+    # path(
+    #     'patient-finding-locations/',
+    #     create_patient_finding_location,
+    #     name='create_patient_finding_location'
+    # ),
+    # path(
+    #     'patient-finding-morphologies/',
+    #     create_patient_finding_morphology,
+    #     name='create_patient_finding_morphology'
+    # ),
 
     # ---------------------------------------------------------------------------------------
 
