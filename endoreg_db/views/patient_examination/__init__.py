@@ -50,7 +50,6 @@ __all__ = [
     "get_instruments_for_exam",
 
     # Finding-related views
-    "get_findings_for_exam",
     "get_findings_for_examination",
 
     # Intervention-related views

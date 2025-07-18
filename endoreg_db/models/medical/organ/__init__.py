@@ -18,6 +18,7 @@ class Organ(models.Model):
     name = models.CharField(max_length=100, unique=True) 
     description = models.TextField(blank=True, null=True)
 
+    # Deprecated
     location_choices = models.ManyToManyField(
         'FindingClassificationChoice', 
         blank=True, related_name='organs'

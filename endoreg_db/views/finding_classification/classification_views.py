@@ -23,6 +23,7 @@ class ClassificationViewSet(ReadOnlyModelViewSet):
         """
         try:
             classification = self.get_object()
+            assert isinstance(classification, FindingClassification), "Classification object is not valid"
             choices = classification.get_choices()
             
             result = []

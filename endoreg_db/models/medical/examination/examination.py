@@ -22,8 +22,6 @@ class Examination(models.Model):
     Attributes:
         name (str): The unique name of the examination.
         examination_types (ManyToManyField): The types associated with the examination.
-        date (DateField): The date of the examination.
-        time (TimeField): The time of the examination.
     """
 
     name = models.CharField(max_length=100, unique=True)

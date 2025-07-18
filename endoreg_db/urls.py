@@ -18,7 +18,7 @@ from .views.annotation.Frames_NICE_and_PARIS_classifications_views import (
     ClassificationStatusView
 )
 # endoreg_db_production/endoreg_db/urls.py
-from .views.auth.keycloak_views import keycloak_login, keycloak_callback, public_home
+from .views.auth.keycloak import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video.segmentation import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
 from .views.video.timeline import video_timeline_view
@@ -58,11 +58,11 @@ from .views.patient_examination.intervention import (
 )
 
 # Add new imports for missing endpoints
-from .views.finding.finding_views import FindingViewSet
+from .views.finding.base import FindingViewSet
 from .views.finding_classification.classification_views import (
     ClassificationViewSet
 )
-from .views.patient_finding.patient_finding_views import (
+from .views.patient_finding.base import (
     PatientFindingViewSet,
     create_patient_finding_classification
 )
@@ -92,7 +92,7 @@ from .views.misc.upload_views import (
 )
 
 # Add missing examination CRUD imports
-from .views.examination.examination_crud_views import (
+from .views.patient_examination.crud import (
     ExaminationCreateView,
     ExaminationDetailView,
     ExaminationListView
@@ -107,7 +107,7 @@ from .views.meta.sensitive_meta_views import (
 )
 
 # Add missing anonymization overview imports
-from .views.anonymization.anonymization_overview import (
+from .views.anonymization.overview import (
     anonymization_overview,
     anonymization_status,
     anonymization_current,

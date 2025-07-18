@@ -48,7 +48,7 @@ class EndoscopeTypeManager(models.Manager):
 class EndoscopeType(models.Model):
     objects = EndoscopeTypeManager()
 
-    name = models.CharField(max_length=255) 
+    name = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
         endoscopes: models.QuerySet["Endoscope"]

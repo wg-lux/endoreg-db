@@ -19,6 +19,8 @@ class FindingViewSet(ReadOnlyModelViewSet):
         """
         try:
             finding = self.get_object()
+            
+            assert isinstance(finding, Finding), "Finding object is not valid"
             location_classifications = finding.get_location_classifications()
             
             # Return with choices included
@@ -64,6 +66,7 @@ class FindingViewSet(ReadOnlyModelViewSet):
         """
         try:
             finding = self.get_object()
+            assert isinstance(finding, Finding), "Finding object is not valid"
             morphology_classifications = finding.get_morphology_classifications()
             
             # Return with choices included
