@@ -21,7 +21,7 @@ class ExaminationTranslationOptions(TranslationOptions):
     fallback_languages = {'default': ('en', 'de')}
 
 
-@register(Finding)
+@register(model_or_iterable=Finding)
 class FindingTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
