@@ -8,8 +8,6 @@ class Resource(models.Model):
     objects = ResourceManager()
 
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
 
     def natural_key(self):
         return (self.name,)

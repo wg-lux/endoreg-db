@@ -8,9 +8,7 @@ class EndoscopeManager(models.Manager):
 class Endoscope(models.Model):
     objects = EndoscopeManager()
 
-    name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+    name = models.CharField(max_length=255) 
     sn = models.CharField(max_length=255)
     center = models.ForeignKey(
         'Center',
@@ -50,9 +48,7 @@ class EndoscopeTypeManager(models.Manager):
 class EndoscopeType(models.Model):
     objects = EndoscopeTypeManager()
 
-    name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+    name = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
         endoscopes: models.QuerySet["Endoscope"]

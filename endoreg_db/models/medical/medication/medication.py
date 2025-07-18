@@ -10,9 +10,7 @@ class MedicationManager(models.Manager):
 
 class Medication(models.Model):
     '''Model representing a medication.'''
-    name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+    name = models.CharField(max_length=255, unique=True) 
     adapt_to_renal_function = models.BooleanField(default = False)
     adapt_to_hepatic_function = models.BooleanField(default=False)
     adapt_to_indication = models.BooleanField(default=False)

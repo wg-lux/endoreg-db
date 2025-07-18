@@ -1,9 +1,9 @@
-from .views.csrf import csrf_token_view
+from .views.misc.csrf import csrf_token_view
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from .views.patient_views import (
+from .views.patient.patient_views import (
     PatientViewSet,
     GenderViewSet,
     CenterViewSet,
@@ -11,65 +11,73 @@ from .views.patient_views import (
     get_location_choices,
     get_morphology_choices,     
 )
-from .views.Frames_NICE_and_PARIS_classifications_views import (
+from .views.annotation.Frames_NICE_and_PARIS_classifications_views import (
     ForNiceClassificationView, 
     ForParisClassificationView,
     BatchClassificationView,
     ClassificationStatusView
 )
 # endoreg_db_production/endoreg_db/urls.py
-from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
+from .views.auth.keycloak import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
-from .views.video_segmentation_views import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
-from .views.views_for_timeline import video_timeline_view
-from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
-from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
-from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
-from .views.examination_views import (
-    ExaminationViewSet,
-    VideoExaminationViewSet,  # NEW: Add the VideoExaminationViewSet
+from .views.video.segmentation import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
+from .views.video.timeline import video_timeline_view
+from .views.pdf.raw_pdf_meta_validation_views import PDFFileForMetaView
+from .views.pdf.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
+from .views.pdf.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
+from .views.patient_examination import (
     get_morphology_classification_choices_for_exam,
-    get_location_classification_choices_for_exam,
-    get_interventions_for_exam,
     get_instruments_for_exam,
     # New imports for restructured frontend
-    get_location_classifications_for_exam,
-    get_findings_for_exam,
-    get_location_choices_for_classification,
-    get_interventions_for_finding,
     # Import for video examinations
-    get_examinations_for_video,
     # NEW: Add the missing API endpoints for ExaminationForm.vue
-    get_findings_for_examination,
+)
+
+# Modularized examination endpoints
+from .views.patient_examination.examination import (
+    ExaminationViewSet,
+    get_location_classification_choices_for_exam,
+)
+from .views.patient_examination import VideoExaminationViewSet, get_examinations_for_video
+from .views.patient_examination.classification import (
+    get_location_classifications_for_exam,
+    get_morphology_classifications_for_exam,
+    get_location_choices_for_classification,
+    get_morphology_choices_for_classification,
     get_location_classifications_for_finding,
     get_morphology_classifications_for_finding,
     get_choices_for_location_classification,
     get_choices_for_morphology_classification,
 )
+from .views.patient_examination.finding import (
+    get_findings_for_examination,
+)
+from .views.patient_examination.intervention import (
+    get_interventions_for_finding,
+    get_interventions_for_exam,
+)
 
 # Add new imports for missing endpoints
-from .views.finding_views import FindingViewSet
-from .views.classification_views import (
-    LocationClassificationViewSet,
-    MorphologyClassificationViewSet
+from .views.finding.base import FindingViewSet
+from .views.finding_classification.classification_views import (
+    ClassificationViewSet
 )
-from .views.patient_finding_views import (
+from .views.patient_finding.base import (
     PatientFindingViewSet,
-    create_patient_finding_location,
-    create_patient_finding_morphology
+    create_patient_finding_classification
 )
-from .views.patient_examination_views import PatientExaminationViewSet
+# from .views.patient_examination import PatientExaminationViewSet
 
 # NEW: Import Stats Views
-from .views.stats_views import (
+from .views.misc.stats import (
     ExaminationStatsView,
     VideoSegmentStatsView,
     SensitiveMetaStatsView,
     GeneralStatsView
 )
 
-from .views.label_segment_views import video_segments_view, video_segment_detail_view
-from .views.report_service_views import (
+from .views.label_video_segment.label_segment_views import video_segments_view, video_segment_detail_view
+from .views.report.report_service_views import (
     ReportListView,
     ReportWithSecureUrlView,
     SecureFileUrlView, 
@@ -78,20 +86,20 @@ from .views.report_service_views import (
     validate_secure_url
 )
 
-from .views.upload_views import (
+from .views.misc.upload_views import (
     UploadFileView,
     UploadStatusView
 )
 
 # Add missing examination CRUD imports
-from .views.examination_crud_views import (
+from .views.patient_examination.crud import (
     ExaminationCreateView,
     ExaminationDetailView,
     ExaminationListView
 )
 
 # Add sensitive meta views import
-from .views.sensitive_meta_views import (
+from .views.meta.sensitive_meta_views import (
     SensitiveMetaDetailView,
     SensitiveMetaVerificationView,
     SensitiveMetaListView,
@@ -99,7 +107,7 @@ from .views.sensitive_meta_views import (
 )
 
 # Add missing anonymization overview imports
-from .views.anonymization_overview import (
+from .views.anonymization.overview import (
     anonymization_overview,
     anonymization_status,
     anonymization_current,
@@ -107,13 +115,13 @@ from .views.anonymization_overview import (
     validate_anonymization
 )
 
-from .views.video_media_views import VideoMediaView
+from .views.video.media import VideoMediaView
 
-from .views.video_reimport_views import VideoReimportView
+from .views.video.reimport import VideoReimportView
 
-from .views.pdf_stream_views import PDFStreamView
+from .views.pdf.pdf_stream_views import PDFStreamView
 
-from .views.annotation_views import create_annotation, update_annotation
+from .views.annotation.crud import create_annotation, update_annotation
 
 
 router = DefaultRouter()
@@ -125,10 +133,9 @@ router.register(r'examinations', ExaminationViewSet)
 router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
 # Add new router registrations
 router.register(r'findings', FindingViewSet)
-router.register(r'location-classifications', LocationClassificationViewSet)
-router.register(r'morphology-classifications', MorphologyClassificationViewSet)
+router.register(r'classifications', ClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
-router.register(r'patient-examinations', PatientExaminationViewSet)
+# router.register(r'patient-examinations', PatientExaminationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  
@@ -217,26 +224,32 @@ urlpatterns = [
     path('examinations/list/', ExaminationListView.as_view(), name='examination_list'),
     
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
-    path(
-        'examination/<int:exam_id>/location-classifications/',
-        get_location_classifications_for_exam,
-        name='get_location_classifications_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/findings/',
-        get_findings_for_exam,
-        name='get_findings_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/location-classification/<int:location_classification_id>/choices/',
-        get_location_choices_for_classification,
-        name='get_location_choices_for_classification'
-    ),
-    path(
-        'examination/<int:exam_id>/finding/<int:finding_id>/interventions/',
-        get_interventions_for_finding,
-        name='get_interventions_for_finding'
-    ),
+    # path(
+    #     'examination/<int:exam_id>/classifications/',
+    #     get_classifications_for_exam,
+    #     name='get_location_classifications_for_exam'
+    # ),
+    # path(
+    #     'examination/<int:exam_id>/morphology-classifications/',
+    #     get_morphology_classifications_for_exam,
+    #     name='get_morphology_classifications_for_exam'
+    # ),
+    # # This Route will be deprecated as 
+    # path(
+    #     'examination/<int:exam_id>/location-classification/<int:location_classification_id>/choices/',
+    #     get_location_choices_for_classification,
+    #     name='get_location_choices_for_classification'
+    # ),
+    # path(
+    #     'examination/<int:exam_id>/morphology-classification/<int:morphology_classification_id>/choices/',
+    #     get_morphology_choices_for_classification,
+    #     name='get_morphology_choices_for_classification'
+    # ),
+    # path(
+    #     'examination/<int:exam_id>/finding/<int:finding_id>/interventions/',
+    #     get_interventions_for_finding,
+    #     name='get_interventions_for_finding'
+    # ),
     
     # URL patterns for anonymization overview
     path('anonymization/items/overview/', anonymization_overview, name='anonymization_items_overview'),
@@ -273,27 +286,6 @@ urlpatterns = [
         name='get_choices_for_morphology_classification'
     ),
 
-    # EXISTING ENDPOINTS (KEEPING FOR BACKWARD COMPATIBILITY)
-    path(
-        'examination/<int:exam_id>/morphology-classification-choices/',
-        get_morphology_classification_choices_for_exam,
-        name='get_morphology_classification_choices_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/location-classification-choices/',
-        get_location_classification_choices_for_exam,
-        name='get_location_classification_choices_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/interventions/',
-        get_interventions_for_exam,
-        name='get_interventions_for_exam'
-    ),
-    path(
-        'examination/<int:exam_id>/instruments/',
-        get_instruments_for_exam,
-        name='get_instruments_for_exam'
-    ),
     path('conf/', csrf_token_view, name='csrf_token'),
     
     
@@ -441,17 +433,17 @@ urlpatterns = [
 
     # ---------------------------------------------------------------------------------------
 
-    # PatientFinding related endpoints
-    path(
-        'patient-finding-locations/',
-        create_patient_finding_location,
-        name='create_patient_finding_location'
-    ),
-    path(
-        'patient-finding-morphologies/',
-        create_patient_finding_morphology,
-        name='create_patient_finding_morphology'
-    ),
+    # # PatientFinding related endpoints
+    # path(
+    #     'patient-finding-locations/',
+    #     create_patient_finding_location,
+    #     name='create_patient_finding_location'
+    # ),
+    # path(
+    #     'patient-finding-morphologies/',
+    #     create_patient_finding_morphology,
+    #     name='create_patient_finding_morphology'
+    # ),
 
     # ---------------------------------------------------------------------------------------
 

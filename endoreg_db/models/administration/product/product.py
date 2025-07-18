@@ -19,8 +19,6 @@ class Product(models.Model):
     objects = ProductManager()
 
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
 
     transport_route = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
     product_group = models.ForeignKey(

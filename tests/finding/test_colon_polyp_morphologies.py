@@ -56,7 +56,7 @@ class ColonPolypMorphologyTest(TestCase):
         self.assertIsNotNone(colon_polyp_finding, "Colonoscopy should have a 'colon polyp' finding associated with it.")
         
         # get the morphology classifications for the colon polyp finding
-        colon_polyp_morphologies = colon_polyp_finding.morphology_classifications.all()
+        colon_polyp_morphologies = colon_polyp_finding.get_morphology_classifications()
         
         self.assertGreater(len(colon_polyp_morphologies), 0, "Colonoscopy should have morphology classifications for 'colon polyp' finding.")
         

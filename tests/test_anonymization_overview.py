@@ -236,14 +236,14 @@ class AnonymizationOverviewAPITest(TestCase):
         )
 
         # Create videos
-        video_verified = VideoFile.objects.create(
+        _video_verified = VideoFile.objects.create(
             original_file_name="video_verified.mp4",
             uploaded_at=timezone.now(),
             sensitive_meta=verified_meta,
             center=self.center
         )
         
-        video_unverified = VideoFile.objects.create(
+        _video_unverified = VideoFile.objects.create(
             original_file_name="video_unverified.mp4",
             uploaded_at=timezone.now(),
             sensitive_meta=unverified_meta,
@@ -251,13 +251,13 @@ class AnonymizationOverviewAPITest(TestCase):
         )
         
         # Create PDFs
-        pdf_verified = RawPdfFile.objects.create(
+        _pdf_verified = RawPdfFile.objects.create(
             file="reports/pdf_verified.pdf",
             created_at=timezone.now(),
             sensitive_meta=verified_meta
         )
         
-        pdf_unverified = RawPdfFile.objects.create(
+        _pdf_unverified = RawPdfFile.objects.create(
             file="reports/pdf_unverified.pdf", 
             created_at=timezone.now(),
             sensitive_meta=unverified_meta

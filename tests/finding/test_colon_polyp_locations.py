@@ -50,7 +50,7 @@ class ColonPolypLocationTest(TestCase):
         self.assertIsNotNone(colon_polyp_finding, "Colonoscopy should have a 'colon polyp' finding associated with it.")
         
         # get the polyp location classifications
-        colon_polyp_locations = colon_polyp_finding.location_classifications.all()
+        colon_polyp_locations = colon_polyp_finding.get_location_classifications()
 
         self.assertTrue(colon_polyp_locations.exists(), "Colonoscopy should have colon polyp locations associated with it.")
 

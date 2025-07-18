@@ -155,7 +155,7 @@ class Command(BaseCommand):
         self.stdout.write(f"❌ Errors/Missing files: {error_count} videos")
         
         if dry_run and fixed_count > 0:
-            self.stdout.write(f"\n💡 Run without --dry-run to apply changes")
+            self.stdout.write("\n💡 Run without --dry-run to apply changes")
         elif not dry_run and fixed_count > 0:
             self.stdout.write(f"\n🎉 Successfully fixed {fixed_count} video file paths!")
-            self.stdout.write(f"🔄 Restart your Django server to reload file paths")
+            self.stdout.write("🔄 Restart your Django server to reload file paths")

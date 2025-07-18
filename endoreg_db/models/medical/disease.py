@@ -28,8 +28,6 @@ class Disease(models.Model):
     Can define associated subcategories and numerical descriptors applicable to the disease itself.
     """
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
 
@@ -81,8 +79,6 @@ class DiseaseClassification(models.Model):
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
     """
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
 
     disease = models.ForeignKey(
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
@@ -138,8 +134,6 @@ class DiseaseClassificationChoice(models.Model):
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
     """
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
 
     disease_classification = models.ForeignKey(
         DiseaseClassification,

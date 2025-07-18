@@ -14,15 +14,11 @@ class ExaminationTime(models.Model):
 
     Attributes:
         name (str): The unique name of the examination time.
-        name_de (str): The German name of the examination time.
-        name_en (str): The English name of the examination time.
         start_time (TimeField): The starting time for the examination.
         end_time (TimeField): The ending time for the examination.
         time_types (ManyToManyField): The types associated with this examination time.
     """
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     start_time = models.TimeField(blank=True, null=True)
     time_types = models.ManyToManyField('ExaminationTimeType', blank=True)
     end_time = models.TimeField(blank=True, null=True)

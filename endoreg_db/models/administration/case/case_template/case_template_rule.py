@@ -10,13 +10,9 @@ class CaseTemplateRuleType(models.Model):
 
     Attributes:
         name (str): The name of the rule type.
-        name_de (str): The German name of the rule type.
-        name_en (str): The English name of the rule type.
         description (str): A description of the rule type.
     """
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = CaseTemplateRuleTypeManager()
@@ -52,8 +48,6 @@ class CaseTemplateRule(models.Model):
     Attributes:
         name (str): The name of the case template rule.
         description (str): A description of the case template rule.
-        name_de (str): The name of the case template rule in German.
-        name_en (str): The name of the case template rule in English.
         rule_type (CaseTemplateRuleType): The type of the rule.
         parent_model (str): The model on which the rule is applied.
         target_field (str): The field of the parent model on which the rule is applied.
@@ -79,8 +73,6 @@ class CaseTemplateRule(models.Model):
 
     """
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     description = models.TextField(blank=True, null=True)
     rule_type = models.ForeignKey(
         "CaseTemplateRuleType", on_delete=models.CASCADE
