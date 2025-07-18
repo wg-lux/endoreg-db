@@ -5,7 +5,7 @@ from rest_framework.permissions import AllowAny  # Changed from IsAuthenticated 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 import logging
-from ..utils.permissions import DEBUG_PERMISSIONS
+from ..utils.permissions import EnvironmentAwarePermission
 from ..models import SensitiveMeta, SensitiveMetaState, RawPdfFile, VideoFile
 from ..serializers.sensitive_meta_serializer import (
     SensitiveMetaDetailSerializer,
@@ -24,7 +24,7 @@ class SensitiveMetaDetailView(APIView):
     PATCH: Updates SensitiveMeta fields including verification state
     """
     
-    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
+    permission_classes = [EnvironmentAwarePermission]  # Changed from IsAuthenticated for development
 
     def get(self, request, sensitive_meta_id=None):
         """
@@ -159,7 +159,7 @@ class SensitiveMetaVerificationView(APIView):
     POST: Update verification flags (dob_verified, names_verified) for a SensitiveMeta
     """
     
-    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
+    permission_classes = [EnvironmentAwarePermission]  # Changed from IsAuthenticated for development
 
     @transaction.atomic
     def post(self, request):
@@ -220,7 +220,7 @@ class SensitiveMetaListView(APIView):
     GET: Returns paginated list of SensitiveMeta entries
     """
     
-    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
+    permission_classes = [EnvironmentAwarePermission]  # Changed from IsAuthenticated for development
 
     def get(self, request):
         """
@@ -300,7 +300,7 @@ class AvailableFilesListView(APIView):
     GET: Returns lists of available PDF and video files with their metadata
     """
     
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request):
         """

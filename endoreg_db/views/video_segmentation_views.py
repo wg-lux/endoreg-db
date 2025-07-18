@@ -9,14 +9,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from ..models import VideoFile, Label, LabelVideoSegment
 from ..serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
-from ..utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
+from ..utils.permissions import EnvironmentAwarePermission
 
 def _stream_video_file(vf, frontend_origin):
     """
     Helper to stream a video file with proper headers and CORS.
     Raises Http404 if file is missing.
     """
-    decorators.permission_classes = [EnvironmentAwarePermission]
     try:
         # Use active_file_path which handles both processed and raw files
         if hasattr(vf, 'active_file_path') and vf.active_file_path:
@@ -64,7 +63,7 @@ def _stream_video_file(vf, frontend_origin):
         logger.error(f"Unexpected error in _stream_video_file: {str(e)}")
         raise Http404("Video file cannot be streamed")
 
-
+@permission_classes([EnvironmentAwarePermission])
 class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     """
     /api/videos/          → list of metadata   (JSON)
@@ -73,7 +72,8 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = VideoFile.objects.all()
     serializer_class = VideoListSerializer   # for the list view
-    permission_classes = DEBUG_PERMISSIONS
+    decorators.permission_classes = [EnvironmentAwarePermission]
+
 
     def list(self, request, *args, **kwargs):
         """
@@ -125,7 +125,7 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
             raise Http404("Video streaming failed")
 
 
-# Neue separate View für Video-Streaming außerhalb des ViewSets
+@permission_classes([EnvironmentAwarePermission])
 class VideoStreamView(APIView):
     """
     Separate view for video streaming to avoid DRF content negotiation issues.
@@ -160,7 +160,7 @@ class VideoStreamView(APIView):
             raise Http404("Video streaming failed")
 
 
-
+@permission_classes([EnvironmentAwarePermission])
 class VideoLabelView(APIView):
     """
     API to fetch time segments (start & end times in seconds) for a specific label.
@@ -293,7 +293,7 @@ class VideoLabelView(APIView):
                 "error": f"Internal error: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
+@permission_classes([EnvironmentAwarePermission])
 class UpdateLabelSegmentsView(APIView):
     """
     API to update or create label segments for a video.
@@ -333,7 +333,7 @@ class UpdateLabelSegmentsView(APIView):
             
 
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes([EnvironmentAwarePermission])
 def rerun_segmentation(request, video_id):
     """
     Rerun segmentation for a specific video.

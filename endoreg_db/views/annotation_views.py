@@ -71,7 +71,7 @@ def update_annotation(request, annotation_id):
     # you'd retrieve from your annotation storage
     try:
         # This would be replaced with actual annotation retrieval
-        # annotation = get_object_or_404(Annotation, id=annotation_id)
+        #annotation = get_object_or_404(Annotation, id=annotation_id)
         
         with transaction.atomic():
             serializer = AnnotationSerializer(data=request.data, partial=True)

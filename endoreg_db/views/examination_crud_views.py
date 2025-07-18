@@ -6,7 +6,7 @@ import logging
 
 from ..models import PatientExamination, Patient, Examination
 from ..serializers.patient_examination import PatientExaminationSerializer
-from ..utils.permissions import DEBUG_PERMISSIONS
+from ..utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class ExaminationCreateView(generics.CreateAPIView):
     }
     """
     serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -73,7 +73,7 @@ class ExaminationDetailView(generics.RetrieveUpdateAPIView):
     """
     queryset = PatientExamination.objects.select_related('patient', 'examination')
     serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, *args, **kwargs):
         try:
@@ -133,7 +133,7 @@ class ExaminationListView(generics.ListAPIView):
     - offset: Pagination offset (default 0)
     """
     serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
 
     def get_queryset(self):
         queryset = PatientExamination.objects.select_related(

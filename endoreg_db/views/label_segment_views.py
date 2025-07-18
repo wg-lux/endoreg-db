@@ -9,7 +9,7 @@ import logging
 
 from ..models import VideoFile, LabelVideoSegment, Label
 from ..serializers.label_serializer import LabelVideoSegmentSerializer
-from ..utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS
+from ..utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_FPS = 30  # Consistent default FPS for all video segment calculations
 
 @api_view(['POST', 'GET'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes([EnvironmentAwarePermission])
 def video_segments_view(request):
     """
     Handles creation and retrieval of labeled video segments.
@@ -83,7 +83,7 @@ def video_segments_view(request):
         return Response(serializer.data)
 
 @api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes([EnvironmentAwarePermission])
 def video_segment_detail_view(request, segment_id):
     """
     Handles retrieval, update, and deletion of a single labeled video segment.
@@ -144,7 +144,7 @@ def video_segment_detail_view(request, segment_id):
             )
 
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS) #TODO: Uncomment this line if authentication is set up
+@permission_classes([EnvironmentAwarePermission]) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_id_view(request, video_id, label_id):
     """
     Retrieves all labeled segments for a given video and label by their IDs.
@@ -213,7 +213,7 @@ def video_segments_by_label_id_view(request, video_id, label_id):
         )
 
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS) #TODO: Uncomment this line if authentication is set up
+@permission_classes([EnvironmentAwarePermission]) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_name_view(request, video_id, label_name):
     """
     Retrieves labeled video segments for a given video and label name.

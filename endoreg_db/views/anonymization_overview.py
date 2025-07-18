@@ -2,10 +2,9 @@
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny    # or DEBUG_PERMISSIONS
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.services.anonymization import AnonymizationService
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
@@ -16,7 +15,7 @@ from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializ
 from django.http import JsonResponse
 import logging
 logger = logging.getLogger(__name__)
-PERMS = DEBUG_PERMISSIONS   # shorten
+PERMS = EnvironmentAwarePermission   # shorten
 
 # ---------- overview ----------------------------------------------------
 class NoPagination(PageNumberPagination):
@@ -30,17 +29,8 @@ class AnonymizationOverviewView(ListAPIView):
     Returns a flat list (Video + PDF) ordered by newest upload first.
     """
     serializer_class = FileOverviewSerializer
-    permission_classes = DEBUG_PERMISSIONS   
-    pagination_class = NoPagination
-
-class AnonymizationOverviewView(ListAPIView):
-    """
-    GET /api/anonymization/items/overview/
-    --------------------------------------
-    Returns a flat list (Video + PDF) ordered by newest upload first.
-    """
-    serializer_class = FileOverviewSerializer
-    permission_classes = DEBUG_PERMISSIONS   
+    permission_classes = [EnvironmentAwarePermission]
+    #   
     pagination_class = NoPagination
 
     def get_queryset(self):
@@ -101,7 +91,7 @@ def validate_anonymization(request, file_id: int):
 @api_view(['GET', 'POST', 'PUT'])
 
 
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes(EnvironmentAwarePermission)
 def anonymization_current(request, file_id):
     """
     Set current file for validation and return patient data

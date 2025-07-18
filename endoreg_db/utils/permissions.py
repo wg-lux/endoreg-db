@@ -122,8 +122,6 @@ class EnvironmentAwarePermission:
         return self.has_permission(request, view)
 
 
-# Convenience constants for common use cases
-DEBUG_PERMISSIONS = [AllowAny] if getattr(settings, 'DEBUG', False) else [IsAuthenticated]
 ALWAYS_AUTH_PERMISSIONS = [IsAuthenticated]
 ALWAYS_PUBLIC_PERMISSIONS = [AllowAny]
 

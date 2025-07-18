@@ -32,14 +32,11 @@ from .views.examination_views import (
     get_location_classification_choices_for_exam,
     get_interventions_for_exam,
     get_instruments_for_exam,
-    # New imports for restructured frontend
     get_location_classifications_for_exam,
     get_findings_for_exam,
     get_location_choices_for_classification,
     get_interventions_for_finding,
-    # Import for video examinations
     get_examinations_for_video,
-    # NEW: Add the missing API endpoints for ExaminationForm.vue
     get_findings_for_examination,
     get_location_classifications_for_finding,
     get_morphology_classifications_for_finding,
@@ -83,7 +80,6 @@ from .views.upload_views import (
     UploadStatusView
 )
 
-# Add missing examination CRUD imports
 from .views.examination_crud_views import (
     ExaminationCreateView,
     ExaminationDetailView,
@@ -205,9 +201,10 @@ urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
+    
+    
     path('examinations/', ExaminationViewSet.as_view({'get': 'list'}), name='examination-list'),
     
-    # NEW: Examination CRUD endpoints for SimpleExaminationForm
     # POST /api/examinations/create/ - Create new examination
     # GET /api/examinations/{id}/ - Get examination details
     # PATCH /api/examinations/{id}/ - Update examination
