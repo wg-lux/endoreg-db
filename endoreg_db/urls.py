@@ -450,11 +450,6 @@ urlpatterns = [
         name='create_patient_finding_morphology'
     ),
 
-    # ---------------------------------------------------------------------------------------
-
-    #this is for, to test the timeline
-    #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
-    path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
 
     # ---------------------------------------------------------------------------------------
     # STATISTICS API ENDPOINTS

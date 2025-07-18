@@ -8,7 +8,7 @@ from pathlib import Path
 from endoreg_db.models import VideoFile, ModelMeta
 from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
-from endoreg_db.serializers._old.Frames_NICE_and_PARIS_classifications import (
+from endoreg_db.serializers.Frames_NICE_and_PARIS_classifications import (
     ForNiceClassificationSerializer,
     ForParisClassificationSerializer
 )
