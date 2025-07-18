@@ -1,4 +1,4 @@
-name: 🏷️ Label Request
+name: Label Request
 description: Suggest a new label for this project
 title: "[Label Request] "
 labels: ["label-request"]
@@ -8,24 +8,24 @@ body:
   - type: markdown
     attributes:
       value: |
-        📌 **Always link the main label changelog issue**:  
-        [Label Reference & Change Log #102](https://github.com/wg-lux/endoreg-db/issues/102)
+         **Main label changelog issue**:  
+        [List of current and previous issues](https://github.com/wg-lux/endoreg-db/issues/102)
 
         Please fill out the fields below to request a new label.
 
   - type: input
     id: label_name
     attributes:
-      label: 🏷️ Label Name
+      label: 🏷 Label Name
       description: What should the new label be called?
-      placeholder: e.g. urgent, needs-review
+      placeholder: e.g. polyp
     validations:
       required: true
 
   - type: textarea
     id: description
     attributes:
-      label: 📄 Description
+      label:  Description
       description: What does this label mean? What is its purpose?
       placeholder: Describe what this label should represent
     validations:
@@ -34,7 +34,7 @@ body:
   - type: textarea
     id: importance
     attributes:
-      label: 💡 Why is this label important?
+      label: Why is this label important?
       description: Why do you think we need this label?
       placeholder: Explain its value and how it helps the project
     validations:
@@ -43,20 +43,20 @@ body:
   - type: textarea
     id: interactions
     attributes:
-      label: 🔁 Redundancy or Interactions
+      label:  Redundancy or Interactions
       description: Does it conflict with or duplicate any existing labels?
-      placeholder: Mention overlaps with labels like high-priority, etc.
+      placeholder: New label, revising previous label etc.
 
   - type: input
     id: labelsets
     attributes:
-      label: 📦 Labelsets
+      label: Labelsets
       description: Which labelsets should include this label?
-      placeholder: e.g. triage, meta, workflow
+      placeholder: Instrument
 
   - type: textarea
     id: related_label
     attributes:
-      label: 🔧 Related to an existing label?
+      label:  Related to an existing label?
       description: Is this improving or modifying an existing label?
       placeholder: Name the label it's related to or replacing
