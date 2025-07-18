@@ -6,7 +6,7 @@ the DEBUG setting and other environment configurations.
 """
 
 from django.conf import settings
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.decorators import permission_classes as drf_permission_classes
 from functools import wraps
 import logging
@@ -89,7 +89,7 @@ def get_auth_required():
     return not getattr(settings, 'DEBUG', False)
 
 
-class EnvironmentAwarePermission:
+class EnvironmentAwarePermission(BasePermission):
     """
     Custom permission class that can be used directly in DRF views.
     """

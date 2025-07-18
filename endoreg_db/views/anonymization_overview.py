@@ -15,7 +15,7 @@ from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializ
 from django.http import JsonResponse
 import logging
 logger = logging.getLogger(__name__)
-PERMS = EnvironmentAwarePermission   # shorten
+PERMS = [EnvironmentAwarePermission]
 
 # ---------- overview ----------------------------------------------------
 class NoPagination(PageNumberPagination):
@@ -91,7 +91,7 @@ def validate_anonymization(request, file_id: int):
 @api_view(['GET', 'POST', 'PUT'])
 
 
-@permission_classes(EnvironmentAwarePermission)
+@permission_classes(PERMS)
 def anonymization_current(request, file_id):
     """
     Set current file for validation and return patient data

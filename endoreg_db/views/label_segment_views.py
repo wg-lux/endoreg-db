@@ -1,7 +1,6 @@
 from re import DEBUG
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
@@ -12,12 +11,13 @@ from ..serializers.label_serializer import LabelVideoSegmentSerializer
 from ..utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
+PERMS = [EnvironmentAwarePermission]
 
 #TODO move DEFAULT_FPS to settings and fetch from environment with a sensible default
 DEFAULT_FPS = 30  # Consistent default FPS for all video segment calculations
 
-@api_view(['POST', 'GET'])
 @permission_classes([EnvironmentAwarePermission])
+@api_view(['POST', 'GET'])
 def video_segments_view(request):
     """
     Handles creation and retrieval of labeled video segments.
@@ -83,7 +83,7 @@ def video_segments_view(request):
         return Response(serializer.data)
 
 @api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes(PERMS)
 def video_segment_detail_view(request, segment_id):
     """
     Handles retrieval, update, and deletion of a single labeled video segment.
@@ -144,7 +144,7 @@ def video_segment_detail_view(request, segment_id):
             )
 
 @api_view(['GET'])
-@permission_classes([EnvironmentAwarePermission]) #TODO: Uncomment this line if authentication is set up
+@permission_classes(PERMS) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_id_view(request, video_id, label_id):
     """
     Retrieves all labeled segments for a given video and label by their IDs.
@@ -213,7 +213,7 @@ def video_segments_by_label_id_view(request, video_id, label_id):
         )
 
 @api_view(['GET'])
-@permission_classes([EnvironmentAwarePermission]) #TODO: Uncomment this line if authentication is set up
+@permission_classes(PERMS) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_name_view(request, video_id, label_name):
     """
     Retrieves labeled video segments for a given video and label name.

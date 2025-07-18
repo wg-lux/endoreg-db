@@ -10,7 +10,6 @@ from rest_framework.permissions import AllowAny
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-# Try to import python-magic, but provide fallback if not available
 try:
     import magic
     MAGIC_AVAILABLE = True

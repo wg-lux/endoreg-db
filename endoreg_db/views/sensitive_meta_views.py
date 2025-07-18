@@ -337,7 +337,7 @@ class AvailableFilesListView(APIView):
                 for pdf in paginated_pdfs:
                     pdf_data = {
                         'id': pdf.id,
-                        'filename': pdf.file.name.split('/')[-1] if pdf.file else 'Unknown',
+                        'filename': pdf.file.name.split('/')[-1] if pdf.file and pdf.file.name else 'Unknown',
                         'file_path': pdf.file.name if pdf.file else None,
                         'sensitive_meta_id': pdf.sensitive_meta_id,
                         'anonymized_text': getattr(pdf, 'anonymized_text', None),
@@ -370,7 +370,7 @@ class AvailableFilesListView(APIView):
                 for video in paginated_videos:
                     video_data = {
                         'id': video.id,
-                        'filename': video.raw_file.name.split('/')[-1] if video.raw_file else 'Unknown',
+                        'filename': video.raw_file.name.split('/')[-1] if video.raw_file and video.raw_file.name else 'Unknown',
                         'file_path': video.raw_file.name if video.raw_file else None,
                         'sensitive_meta_id': video.sensitive_meta_id,
                         'created_at': video.created_at if hasattr(video, 'created_at') else None,
