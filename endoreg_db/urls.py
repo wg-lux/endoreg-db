@@ -366,7 +366,7 @@ urlpatterns = [
     # Example frontend usage:
     #     const url = lastId ? `http://localhost:8000/pdf/anony_text/?last_id=${lastId}` 
     #                        : "http://localhost:8000/pdf/anony_text/";
-    path("pdf/anony_text/", RawPdfAnonyTextView.as_view(), name="pdf_anony_text"),  
+    path("pdf/anony_text/", d.as_view(), name="pdf_anony_text"),  
 
     #  API Endpoint for Updating the `anonymized_text` Field in `RawPdfFile`
     # - This endpoint is called when the user edits the anonymized text and clicks **Save**.
