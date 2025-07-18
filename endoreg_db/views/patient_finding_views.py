@@ -1,6 +1,6 @@
 # endoreg_db/views/patient_finding_views.py
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
@@ -11,6 +11,7 @@ from endoreg_db.models import (
     FindingMorphologyClassificationChoice
 )
 from rest_framework import serializers
+from ..utils.permissions import EnvironmentAwarePermission
 
 class PatientFindingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,6 +23,7 @@ class PatientFindingViewSet(ModelViewSet):
     serializer_class = PatientFindingSerializer
 
 @api_view(['POST'])
+@permission_classes([EnvironmentAwarePermission])
 def create_patient_finding_location(request):
     """
     Create a patient finding location relationship.
@@ -76,6 +78,7 @@ def create_patient_finding_location(request):
         )
 
 @api_view(['POST'])
+@permission_classes([EnvironmentAwarePermission])
 def create_patient_finding_morphology(request):
     """
     Create a patient finding morphology relationship.
