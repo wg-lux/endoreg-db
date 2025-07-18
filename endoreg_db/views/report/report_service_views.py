@@ -13,7 +13,7 @@ from pathlib import Path
 import logging
 
 from ...models import RawPdfFile
-from ...serializers.report_service_serializers import (
+from ...serializers.report.base import (
     ReportDataSerializer, 
     SecureFileUrlSerializer,
     ReportListSerializer

@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from endoreg_db.models import Finding
-from ...serializers.optimized_examination_serializers import FindingSerializer
+from ...serializers.examination.optimized_examination_serializers import FindingSerializer
 
 class FindingViewSet(ReadOnlyModelViewSet):
     queryset = Finding.objects.all()

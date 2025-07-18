@@ -3,7 +3,7 @@ from django.db import transaction
 from typing import Dict, Any
 import logging
 
-from ..models import SensitiveMeta, SensitiveMetaState, Center, Gender
+from ...models import SensitiveMeta, SensitiveMetaState, Center, Gender
 
 logger = logging.getLogger(__name__)
 

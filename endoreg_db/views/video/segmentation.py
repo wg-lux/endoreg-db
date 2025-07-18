@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
 from ...models import VideoFile, Label, LabelVideoSegment
-from ...serializers.video_segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
+from ...serializers.video.segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
 from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 def _stream_video_file(vf, frontend_origin):

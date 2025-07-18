@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 import logging
 from ...utils.permissions import DEBUG_PERMISSIONS
 from ...models import SensitiveMeta, RawPdfFile, VideoFile
-from ...serializers.sensitive_meta_serializer import (
+from ...serializers.meta.sensitive_meta_serializer import (
     SensitiveMetaDetailSerializer,
     SensitiveMetaUpdateSerializer,
     SensitiveMetaVerificationSerializer

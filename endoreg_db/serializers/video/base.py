@@ -2,7 +2,7 @@ from rest_framework import serializers
 from endoreg_db.models import VideoFile, VideoImportMeta, LabelVideoSegment, VideoMeta, SensitiveMeta
 from django.conf import settings
 from pathlib import Path
-from ..utils.calc_duration_seconds import _calc_duration
+from ...utils.calc_duration_seconds import _calc_duration
 
 class VideoMetaSerializer(serializers.ModelSerializer):
     """Serializer for nested VideoMeta representation."""

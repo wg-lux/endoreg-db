@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from endoreg_db.models import (
     FindingClassification,
 )
-from ...serializers.optimized_examination_serializers import (
+from ...serializers.examination.optimized_examination_serializers import (
     FindingClassificationSerializer,
 )
 

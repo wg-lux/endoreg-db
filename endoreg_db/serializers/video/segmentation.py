@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from ..models import VideoFile, Label, LabelVideoSegment, VideoPredictionMeta # Added VideoPredictionMeta
+from ...models import VideoFile, Label, LabelVideoSegment, VideoPredictionMeta # Added VideoPredictionMeta
 import cv2
 from django.db import transaction
 

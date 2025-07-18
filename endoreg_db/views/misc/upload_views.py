@@ -17,7 +17,7 @@ except ImportError:
     MAGIC_AVAILABLE = False
 
 from endoreg_db.models.upload_job import UploadJob
-from endoreg_db.serializers.upload_job_serializers import (
+from endoreg_db.serializers.misc.upload_job import (
     UploadJobStatusSerializer,
 )
 

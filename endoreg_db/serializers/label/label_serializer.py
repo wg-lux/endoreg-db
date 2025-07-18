@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.core.exceptions import ObjectDoesNotExist
-from ..models import LabelVideoSegment, VideoFile, Label, InformationSource, VideoSegmentationLabel
+from ...models import LabelVideoSegment, VideoFile, Label, InformationSource, VideoSegmentationLabel
 import logging
 
 logger = logging.getLogger(__name__)

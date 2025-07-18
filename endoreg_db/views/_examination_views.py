@@ -14,7 +14,7 @@ from endoreg_db.models import (
     FindingIntervention,
     Finding
 )
-from ..serializers.optimized_examination_serializers import (
+from ..serializers.examination.optimized_examination_serializers import (
     ExaminationSerializer as OptimizedExaminationSerializer,
     FindingSerializer as OptimizedFindingSerializer,
 )

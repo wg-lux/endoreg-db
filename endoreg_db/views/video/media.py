@@ -9,7 +9,7 @@ from celery import current_app
 from django.db import transaction
 
 from ...models import VideoFile, SensitiveMeta
-from ...serializers.video_serializer import VideoDetailSer, SensitiveMetaUpdateSer
+from ...serializers.video.base import VideoDetailSer, SensitiveMetaUpdateSer
 from .segmentation import _stream_video_file
 from ...utils.permissions import EnvironmentAwarePermission
 

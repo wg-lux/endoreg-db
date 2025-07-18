@@ -3,7 +3,7 @@ from django.utils import timezone
 from datetime import timedelta
 import uuid
 from pathlib import Path
-from ..models import RawPdfFile, SensitiveMeta
+from ...models import RawPdfFile, SensitiveMeta
 
 class SecureFileUrlSerializer(serializers.Serializer):
     """
