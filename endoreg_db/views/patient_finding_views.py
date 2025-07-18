@@ -4,8 +4,6 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
-from endoreg_db.models.medical.patient.patient_finding_location import PatientFindingLocation
-from endoreg_db.models.medical.patient.patient_finding_morphology import PatientFindingMorphology
 from endoreg_db.models import (
     FindingClassificationChoice
 )

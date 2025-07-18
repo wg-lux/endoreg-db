@@ -91,8 +91,6 @@ from .medical import (
     PatientExaminationIndication,
     PatientExamination,
     PatientFinding,
-    PatientFindingLocation,
-    PatientFindingMorphology,
     PatientFindingIntervention,
     PatientLabSample,
     PatientLabSampleType,
@@ -258,7 +256,6 @@ __all__ = [
     "ExaminationTimeType",
     # Finding
     "Finding",
-    "PatientFindingClassification",
     "FindingClassificationType",
     "FindingClassification",
     "FindingClassificationChoice",
@@ -275,9 +272,8 @@ __all__ = [
     "PatientExamination",
     ## Finding
     "PatientFinding",
-    "PatientFindingLocation",
-    "PatientFindingMorphology",
     "PatientFindingIntervention",
+    "PatientFindingClassification",
     ## Laboratory
     "PatientLabSample",
     "PatientLabSampleType",

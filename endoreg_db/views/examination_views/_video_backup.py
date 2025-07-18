@@ -1,22 +1,15 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from endoreg_db.models import (
-    Examination,
-    VideoFile,
-    Finding,
-    FindingClassification,
-    PatientExamination, PatientFinding, PatientFindingClassification,
-    PatientFindingIntervention,
-)
+from endoreg_db.models import Examination, VideoFile, Finding, FindingClassification
 from django.db import transaction
 from django.utils import timezone
 import logging
 
 
-class VideoPatientExaminationViewSet(viewsets.ModelViewSet):
+class VideoExaminationViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for PatientExamination CRUD operations in the context of video files
+    ViewSet for Video Examination CRUD operations
     Handles POST and PATCH for video examinations at timestamps
     """
     def get_queryset(self):

@@ -3,19 +3,15 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from typing import TYPE_CHECKING
 
-from endoreg_db.models.medical.patient.patient_finding_location import PatientFindingLocation
-
 if TYPE_CHECKING:
-    from .patient_examination import PatientExamination
-    from ..finding import (
+    from endoreg_db.models import (
+        PatientExamination,
         Finding,
+        PatientFindingIntervention,
+        PatientFindingClassification,
+        LabelVideoSegment,
     )
-    from .patient_finding_location import PatientFindingLocation
-    from .patient_finding_morphology import PatientFindingMorphology
-    from .patient_finding_intervention import PatientFindingIntervention
-    from .patient_finding_classification import PatientFindingClassification
-
-import random
+    
 class PatientFinding(models.Model):
     patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')
     finding = models.ForeignKey('Finding', on_delete=models.CASCADE, related_name='finding_patient_findings')
@@ -35,9 +31,8 @@ class PatientFinding(models.Model):
         patient_examination: "PatientExamination"
         finding: "Finding"
         classifications: models.QuerySet["PatientFindingClassification"]
-        locations: models.QuerySet["PatientFindingLocation"]
-        morphologies: models.QuerySet["PatientFindingMorphology"]
         interventions: models.QuerySet["PatientFindingIntervention"]
+        video_segments: models.QuerySet["LabelVideoSegment"]
 
     class Meta:
         verbose_name = 'Patient Finding'
@@ -97,9 +92,6 @@ class PatientFinding(models.Model):
         if self.finding and self.patient_examination:
             self._validate_required_findings()
     
-    '''def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)'''
     # This avoids validation errors on partial updates 
     def save(self, *args, **kwargs):
         if not kwargs.get('update_fields'):
@@ -152,18 +144,6 @@ class PatientFinding(models.Model):
             except ValidationError as e:
                 raise ValidationError(f'Reaktivierung nicht möglich: {e}')
 
-    # Optimierte Query-Methoden
-    def get_locations(self):
-        """Returns all active location choices that are associated with this patient finding."""
-        return self.locations.filter(is_active=True).select_related(
-            'location_classification', 'location_choice'
-        )
-    
-    def get_morphologies(self):
-        """Returns all active morphology choices that are associated with this patient finding."""
-        return self.morphologies.filter(is_active=True).select_related(
-            'morphology_classification', 'morphology_choice'
-        )
 
     def get_interventions(self):
         """Returns all active interventions that are associated with this patient finding."""
@@ -208,65 +188,6 @@ class PatientFinding(models.Model):
         except FindingClassification.DoesNotExist:
             raise ValidationError(f'Classification {classification_id} nicht gefunden')
 
-    # Verbesserte Add-Methoden mit Validierung
-    def add_location(self, location_classification_id, location_choice_id, user=None) -> "PatientFindingLocation":
-        """Adds a validated location choice to this patient finding."""
-        from .patient_finding_location import PatientFindingLocation
-        from ..finding import FindingClassification
-        try:
-            location_classification = FindingClassification.objects.get(
-                id=location_classification_id, classification_types__name__iexact="location"
-            )
-            if not location_classification.choices.filter(id=location_choice_id).exists():
-                raise ValidationError(
-                    f'Location Choice {location_choice_id} gehört nicht zu Classification {location_classification_id}'
-                )
-            existing = self.locations.filter(
-                location_classification_id=location_classification_id,
-                location_choice_id=location_choice_id,
-                is_active=True
-            ).first()
-            if existing:
-                return existing
-            patient_finding_location = PatientFindingLocation.objects.create(
-                finding=self,
-                location_classification_id=location_classification_id,
-                location_choice_id=location_choice_id,
-                created_by=user
-            )
-            return patient_finding_location
-        except FindingClassification.DoesNotExist:
-            raise ValidationError(f'Location Classification {location_classification_id} nicht gefunden')
-
-    def add_morphology(self, morphology_classification_id, morphology_choice_id, user=None):
-        """Adds a validated morphology choice to this patient finding."""
-        from .patient_finding_morphology import PatientFindingMorphology
-        from ..finding import FindingClassification
-        try:
-            morphology_classification = FindingClassification.objects.get(
-                id=morphology_classification_id, classification_types__name__iexact="morphology"
-            )
-            if not morphology_classification.choices.filter(id=morphology_choice_id).exists():
-                raise ValidationError(
-                    f'Morphology Choice {morphology_choice_id} gehört nicht zu Classification {morphology_classification_id}'
-                )
-            existing = self.morphologies.filter(
-                morphology_classification_id=morphology_classification_id,
-                morphology_choice_id=morphology_choice_id,
-                is_active=True
-            ).first()
-            if existing:
-                return existing
-            patient_finding_morphology = PatientFindingMorphology.objects.create(
-                finding=self,
-                morphology_classification_id=morphology_classification_id,
-                morphology_choice_id=morphology_choice_id,
-                created_by=user
-            )
-            return patient_finding_morphology
-        except FindingClassification.DoesNotExist:
-            raise ValidationError(f'Morphology Classification {morphology_classification_id} nicht gefunden')
-
     def add_intervention(self, intervention_id, state="pending", date=None, user=None):
         """Adds a validated intervention to this patient finding."""
         from .patient_finding_intervention import PatientFindingIntervention
@@ -288,34 +209,30 @@ class PatientFinding(models.Model):
         except FindingIntervention.DoesNotExist:
             raise ValidationError(f'Intervention {intervention_id} nicht gefunden')
 
-    # Legacy Methoden für Backward Compatibility (deprecated)
-    def add_morphology_choice(self, morphology_choice, morphology_classification):
-        """DEPRECATED: Use add_morphology() instead"""
-        import warnings
-        warnings.warn("add_morphology_choice is deprecated, use add_morphology", DeprecationWarning)
-        return self.add_morphology(morphology_classification.id, morphology_choice.id)
-
-    def add_location_choice(self, location_choice, location_classification):
-        """DEPRECATED: Use add_location() instead"""
-        import warnings
-        warnings.warn("add_location_choice is deprecated, use add_location", DeprecationWarning)
-        return self.add_location(location_classification.id, location_choice.id)
-
-    def set_random_location(self, location_classification):
-        """Sets a random location for this finding based on the location classification."""
-        location_choices = location_classification.choices.all()
-        if not location_choices.exists():
-            raise ValidationError(f'Keine Choices für Location Classification {location_classification.name}')
-            
-        location_choice = random.choice(location_choices)
-        return self.add_location(location_classification.id, location_choice.id)
-
     def add_video_segment(self, video_segment):
         """Add video segment to finding"""
         self.video_segments.add(video_segment)
         return video_segment
 
     # Manager für active/inactive Objekte
+    @property
+    def active_classifications(self):
+        return self.classifications.filter(is_active=True)
+    
+    @property
+    def locations(self):
+        classifications = self.classifications.filter(
+            is_location=True
+        )
+        return classifications
+    
+    @property
+    def morphologies(self):
+        classifications = self.classifications.filter(
+            is_morphology=True
+        )
+        return classifications
+
     @property
     def active_locations(self):
         return self.locations.filter(is_active=True)

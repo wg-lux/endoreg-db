@@ -14,6 +14,8 @@ from .examination import (
     get_morphology_classification_choices_for_exam,
     get_instruments_for_exam,
 )
+
+from ._video_backup import VideoExaminationViewSet
     
 from .finding import (
     get_findings_for_exam,
@@ -26,7 +28,7 @@ from .intervention import (
 )
 
 from .video import (
-    VideoExaminationViewSet,
+    # VideoExaminationViewSet,
     get_examinations_for_video,
 )
 

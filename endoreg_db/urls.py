@@ -38,7 +38,7 @@ from .views.examination_views.examination import (
     ExaminationViewSet,
     get_location_classification_choices_for_exam,
 )
-from .views.examination_views.video import VideoExaminationViewSet, get_examinations_for_video
+from .views.examination_views import VideoExaminationViewSet, get_examinations_for_video
 from .views.examination_views.classification import (
     get_location_classifications_for_exam,
     get_morphology_classifications_for_exam,
