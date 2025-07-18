@@ -88,7 +88,7 @@ class VideoReimportView(APIView):
                 
                 # Run Pipe 1 for OCR and AI processing
                 logger.info(f"Starting Pipe 1 processing for {video.uuid}")
-                '''
+            
                 try:
                     success = video.pipe_1(
                         model_name="image_multilabel_classification_colonoscopy_default",
@@ -109,7 +109,7 @@ class VideoReimportView(APIView):
                         {"error": "OCR and AI processing failed during re-import."}, 
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
-                '''
+                
                 logger.info(f"Pipe 1 processing completed for {video.uuid}")
                 
                 # Ensure minimum patient data is available
