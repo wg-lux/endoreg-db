@@ -155,34 +155,36 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_center_name(self, value):
-        """Validate center exists."""
+        """Validate center exists and return the instance."""
         if value:
             try:
-                Center.objects.get_by_natural_key(value)
-                return value
+                # Return the instance to avoid double query in update()
+                return Center.objects.get_by_natural_key(value)
             except Center.DoesNotExist:
                 raise serializers.ValidationError(f"Center '{value}' does not exist.")
         return value
 
     def validate_patient_gender_name(self, value):
-        """Validate gender exists."""
+        """Validate gender exists and return the instance."""
         if value:
             try:
-                Gender.objects.get(name=value)
-                return value
+                # Return the instance to avoid double query in update()
+                return Gender.objects.get(name=value)
             except Gender.DoesNotExist:
                 raise serializers.ValidationError(f"Gender '{value}' does not exist.")
         return value
 
     def validate(self, data):
         """Custom validation for the entire data set."""
-        # Ensure names are not empty if provided
-        if 'patient_first_name' in data and not data['patient_first_name'].strip():
+        # Guard against None values before calling strip()
+        first_name = data.get('patient_first_name')
+        if first_name is not None and not first_name.strip():
             raise serializers.ValidationError({
                 'patient_first_name': 'First name cannot be empty.'
             })
         
-        if 'patient_last_name' in data and not data['patient_last_name'].strip():
+        last_name = data.get('patient_last_name')
+        if last_name is not None and not last_name.strip():
             raise serializers.ValidationError({
                 'patient_last_name': 'Last name cannot be empty.'
             })
@@ -199,43 +201,33 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         dob_verified = validated_data.pop('dob_verified', None)
         names_verified = validated_data.pop('names_verified', None)
         
-        # Extract and handle center update
-        center_name = validated_data.pop('center_name', None)
-        if center_name:
-            try:
-                center = Center.objects.get_by_natural_key(center_name)
-                instance.center = center
-            except Center.DoesNotExist:
-                logger.error(f"Center '{center_name}' not found during update")
-        
-        # Extract and handle gender update
-        patient_gender_name = validated_data.pop('patient_gender_name', None)
-        if patient_gender_name:
-            try:
-                gender = Gender.objects.get(name=patient_gender_name)
-                instance.patient_gender = gender
-            except Gender.DoesNotExist:
-                logger.error(f"Gender '{patient_gender_name}' not found during update")
+        # -- center -------------------------------------------------
+        center = validated_data.pop('center_name', None)
+        if isinstance(center, Center):          # returned by validate_center_name
+            instance.center = center
 
-        # Update regular fields using the model's update_from_dict method
+        # -- gender -------------------------------------------------
+        gender = validated_data.pop('patient_gender_name', None)
+        if isinstance(gender, Gender):          # returned by validate_patient_gender_name
+            instance.patient_gender = gender
+
+        # -- ordinary fields ---------------------------------------
         if validated_data:
-            instance.update_from_dict(validated_data)
-        
-        # Update verification state if provided
+            instance.update_from_dict(validated_data)   # should NOT call save()
+
+        # -- verification state ------------------------------------
         if dob_verified is not None or names_verified is not None:
-            # Ensure state exists
             state = instance.get_or_create_state()
-            
             if dob_verified is not None:
                 state.dob_verified = dob_verified
                 logger.info(f"Updated DOB verification for SensitiveMeta {instance.pk}: {dob_verified}")
-            
             if names_verified is not None:
                 state.names_verified = names_verified
                 logger.info(f"Updated names verification for SensitiveMeta {instance.pk}: {names_verified}")
-            
             state.save()
 
+        # -- finally persist the model itself ----------------------
+        instance.save()
         return instance
 
 
@@ -257,14 +249,16 @@ class SensitiveMetaVerificationSerializer(serializers.Serializer):
         except SensitiveMeta.DoesNotExist:
             raise serializers.ValidationError(f"SensitiveMeta with ID {value} does not exist.")
 
+    @transaction.atomic
     def save(self):
-        """Update verification state for the specified SensitiveMeta."""
+        """Update verification state for the specified SensitiveMeta with proper locking."""
         sensitive_meta_id = self.validated_data['sensitive_meta_id']
         dob_verified = self.validated_data.get('dob_verified')
         names_verified = self.validated_data.get('names_verified')
         
         try:
-            sensitive_meta = SensitiveMeta.objects.get(id=sensitive_meta_id)
+            # Use select_for_update for strong consistency in concurrent environments
+            sensitive_meta = SensitiveMeta.objects.select_for_update().get(id=sensitive_meta_id)
             state = sensitive_meta.get_or_create_state()
             
             if dob_verified is not None:
@@ -275,9 +269,14 @@ class SensitiveMetaVerificationSerializer(serializers.Serializer):
             
             state.save()
             
-            logger.info(f"Updated verification state for SensitiveMeta {sensitive_meta_id}")
+            # Only log the ID to avoid potential PII leakage
+            logger.info(f"Updated verification state for SensitiveMeta ID {sensitive_meta_id}")
             return state
             
+        except SensitiveMeta.DoesNotExist:
+            logger.error(f"SensitiveMeta ID {sensitive_meta_id} not found during verification update")
+            raise serializers.ValidationError(f"SensitiveMeta with ID {sensitive_meta_id} does not exist.")
         except Exception as e:
-            logger.error(f"Error updating verification state: {e}")
-            raise serializers.ValidationError(f"Failed to update verification state: {e}")
+            # Log the exception class but not the full details to avoid PII leakage
+            logger.error(f"Error updating verification state for ID {sensitive_meta_id}: {type(e).__name__}")
+            raise serializers.ValidationError("Failed to update verification state.")

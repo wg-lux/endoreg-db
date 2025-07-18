@@ -21,7 +21,6 @@ from .views.Frames_NICE_and_PARIS_classifications_views import (
 from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video_segmentation_views import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
-from .views.views_for_timeline import video_timeline_view
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
@@ -366,7 +365,7 @@ urlpatterns = [
     # Example frontend usage:
     #     const url = lastId ? `http://localhost:8000/pdf/anony_text/?last_id=${lastId}` 
     #                        : "http://localhost:8000/pdf/anony_text/";
-    path("pdf/anony_text/", d.as_view(), name="pdf_anony_text"),  
+    path("pdf/anony_text/", RawPdfAnonyTextView.as_view(), name="pdf_anony_text"),  
 
     #  API Endpoint for Updating the `anonymized_text` Field in `RawPdfFile`
     # - This endpoint is called when the user edits the anonymized text and clicks **Save**.

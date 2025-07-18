@@ -4,7 +4,6 @@ Video import service module.
 Provides high-level functions for importing and anonymizing video files,
 combining VideoFile creation with frame-level anonymization.
 """
-import os
 from datetime import date
 import logging
 import sys
@@ -12,8 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Union
 from django.core.files.base import ContentFile
 from django.db import transaction
-from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, RAW_FRAME_DIR
+from importlib import resources
+from endoreg_db.models import VideoFile, SensitiveMeta
 
 try:
     if not STORAGE_DIR:
@@ -36,9 +36,6 @@ def _ensure_frame_cleaning_available():
         Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
     """
     try:
-        # Check if we can find the lx-anonymizer directory
-        current_file = Path(__file__)
-        from importlib import resources
         lx_anonymizer_path = resources.files("lx_anonymizer")
         
         if lx_anonymizer_path.exists():
@@ -92,6 +89,13 @@ def _ensure_default_patient_data(video_file: "VideoFile") -> None:
             logger.info(f"Created default SensitiveMeta for video {video_file.uuid}")
         except Exception as e:
             logger.error(f"Failed to create default SensitiveMeta for video {video_file.uuid}: {e}")
+        
+        if video_file.sensitive_meta is None:
+        # --- create and attach ---
+            video_file.sensitive_meta = sensitive_meta
+            video_file.save(update_fields=["sensitive_meta"])
+            logger.info("Created default SensitiveMeta for %s", video_file.uuid)
+            return
             
     else:
         # Update existing SensitiveMeta with missing fields
