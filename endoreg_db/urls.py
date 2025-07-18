@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from .views.patient_views import (
+from .views.patient.patient_views import (
     PatientViewSet,
     GenderViewSet,
     CenterViewSet,
@@ -11,21 +11,21 @@ from .views.patient_views import (
     get_location_choices,
     get_morphology_choices,     
 )
-from .views.Frames_NICE_and_PARIS_classifications_views import (
+from .views.annotation.Frames_NICE_and_PARIS_classifications_views import (
     ForNiceClassificationView, 
     ForParisClassificationView,
     BatchClassificationView,
     ClassificationStatusView
 )
 # endoreg_db_production/endoreg_db/urls.py
-from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
+from .views.auth.keycloak_views import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video.segmentation import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
 from .views.video.timeline import video_timeline_view
-from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
-from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
-from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
-from .views.patient_examination_views import (
+from .views.pdf.raw_pdf_meta_validation_views import PDFFileForMetaView
+from .views.pdf.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
+from .views.pdf.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
+from .views.patient_examination import (
     get_morphology_classification_choices_for_exam,
     get_instruments_for_exam,
     # New imports for restructured frontend
@@ -34,12 +34,12 @@ from .views.patient_examination_views import (
 )
 
 # Modularized examination endpoints
-from .views.patient_examination_views.examination import (
+from .views.patient_examination.examination import (
     ExaminationViewSet,
     get_location_classification_choices_for_exam,
 )
-from .views.patient_examination_views import VideoExaminationViewSet, get_examinations_for_video
-from .views.patient_examination_views.classification import (
+from .views.patient_examination import VideoExaminationViewSet, get_examinations_for_video
+from .views.patient_examination.classification import (
     get_location_classifications_for_exam,
     get_morphology_classifications_for_exam,
     get_location_choices_for_classification,
@@ -49,35 +49,35 @@ from .views.patient_examination_views.classification import (
     get_choices_for_location_classification,
     get_choices_for_morphology_classification,
 )
-from .views.patient_examination_views.finding import (
+from .views.patient_examination.finding import (
     get_findings_for_examination,
 )
-from .views.patient_examination_views.intervention import (
+from .views.patient_examination.intervention import (
     get_interventions_for_finding,
     get_interventions_for_exam,
 )
 
 # Add new imports for missing endpoints
-from .views.finding_views import FindingViewSet
-from .views.classification_views import (
+from .views.finding.finding_views import FindingViewSet
+from .views.finding_classification.classification_views import (
     ClassificationViewSet
 )
-from .views.patient_finding_views import (
+from .views.patient_finding.patient_finding_views import (
     PatientFindingViewSet,
     create_patient_finding_classification
 )
-from .views.patient_examination_views import PatientExaminationViewSet
+from .views.patient_examination import PatientExaminationViewSet
 
 # NEW: Import Stats Views
-from .views.stats_views import (
+from .views.misc.stats import (
     ExaminationStatsView,
     VideoSegmentStatsView,
     SensitiveMetaStatsView,
     GeneralStatsView
 )
 
-from .views.label_segment_views import video_segments_view, video_segment_detail_view
-from .views.report_service_views import (
+from .views.label_video_segment.label_segment_views import video_segments_view, video_segment_detail_view
+from .views.report.report_service_views import (
     ReportListView,
     ReportWithSecureUrlView,
     SecureFileUrlView, 
@@ -86,20 +86,20 @@ from .views.report_service_views import (
     validate_secure_url
 )
 
-from .views.upload_views import (
+from .views.misc.upload_views import (
     UploadFileView,
     UploadStatusView
 )
 
 # Add missing examination CRUD imports
-from .views.examination_crud_views import (
+from .views.examination.examination_crud_views import (
     ExaminationCreateView,
     ExaminationDetailView,
     ExaminationListView
 )
 
 # Add sensitive meta views import
-from .views.sensitive_meta_views import (
+from .views.meta.sensitive_meta_views import (
     SensitiveMetaDetailView,
     SensitiveMetaVerificationView,
     SensitiveMetaListView,
@@ -107,7 +107,7 @@ from .views.sensitive_meta_views import (
 )
 
 # Add missing anonymization overview imports
-from .views.anonymization_overview import (
+from .views.anonymization.anonymization_overview import (
     anonymization_overview,
     anonymization_status,
     anonymization_current,
@@ -119,9 +119,9 @@ from .views.video.media import VideoMediaView
 
 from .views.video.reimport import VideoReimportView
 
-from .views.pdf_stream_views import PDFStreamView
+from .views.pdf.pdf_stream_views import PDFStreamView
 
-from .views.annotation_views import create_annotation, update_annotation
+from .views.annotation.crud import create_annotation, update_annotation
 
 
 router = DefaultRouter()

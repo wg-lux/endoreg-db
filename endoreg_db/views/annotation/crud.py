@@ -5,8 +5,8 @@ from rest_framework.response import Response
 from django.db import transaction
 import logging
 
-from ..serializers.annotation_serializers import AnnotationSerializer
-from ..services.segment_sync import create_user_segment_from_annotation
+from ...serializers.annotation_serializers import AnnotationSerializer
+from ...services.segment_sync import create_user_segment_from_annotation
 
 logger = logging.getLogger(__name__)
 

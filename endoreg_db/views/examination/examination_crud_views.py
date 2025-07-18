@@ -4,9 +4,9 @@ from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 import logging
 
-from ..models import PatientExamination, Patient, Examination
-from ..serializers.patient_examination import PatientExaminationSerializer
-from ..utils.permissions import DEBUG_PERMISSIONS
+from ...models import PatientExamination, Patient, Examination
+from ...serializers.patient_examination import PatientExaminationSerializer
+from ...utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 

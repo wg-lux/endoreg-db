@@ -6,9 +6,9 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 import logging
 
-from ..models import VideoFile, LabelVideoSegment, Label
-from ..serializers.label_serializer import LabelVideoSegmentSerializer
-from ..utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS
+from ...models import VideoFile, LabelVideoSegment, Label
+from ...serializers.label_serializer import LabelVideoSegmentSerializer
+from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 

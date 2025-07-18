@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from endoreg_db.models import VideoFile
-from ..serializers._old.Frames_NICE_and_PARIS_classifications import (
+from ...serializers._old.Frames_NICE_and_PARIS_classifications import (
     ForNiceClassificationSerializer,
     ForParisClassificationSerializer
 )

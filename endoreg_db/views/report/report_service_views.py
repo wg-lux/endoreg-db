@@ -12,8 +12,8 @@ from datetime import timedelta
 from pathlib import Path
 import logging
 
-from ..models import RawPdfFile
-from ..serializers.report_service_serializers import (
+from ...models import RawPdfFile
+from ...serializers.report_service_serializers import (
     ReportDataSerializer, 
     SecureFileUrlSerializer,
     ReportListSerializer

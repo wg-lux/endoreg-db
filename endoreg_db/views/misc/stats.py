@@ -4,11 +4,11 @@ from rest_framework import status
 from django.db.models import Count, Q
 import logging
 
-from ..models import (
+from ...models import (
     VideoFile, LabelVideoSegment, Examination, 
     SensitiveMeta, PatientExamination
 )
-from ..utils.permissions import DEBUG_PERMISSIONS
+from ...utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 

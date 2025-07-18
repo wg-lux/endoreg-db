@@ -4,8 +4,8 @@ from rest_framework import status
 from django.http import FileResponse, Http404
 import os
 import mimetypes
-from ..models import RawPdfFile
-from ..serializers._old.raw_pdf_anony_text_validation import RawPdfAnonyTextSerializer
+from ...models import RawPdfFile
+from ...serializers._old.raw_pdf_anony_text_validation import RawPdfAnonyTextSerializer
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.utils.decorators import method_decorator
 

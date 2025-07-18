@@ -2,12 +2,12 @@ from django.http import FileResponse, Http404
 import mimetypes
 import os
 import logging
-from ..models import RawPdfFile
-from ..serializers._old.raw_pdf_meta_validation import PDFFileForMetaSerializer, SensitiveMetaUpdateSerializer
+from ...models import RawPdfFile
+from ...serializers._old.raw_pdf_meta_validation import PDFFileForMetaSerializer, SensitiveMetaUpdateSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from ..models import SensitiveMeta
+from ...models import SensitiveMeta
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.utils.decorators import method_decorator
 from django.db import transaction

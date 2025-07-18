@@ -2,7 +2,7 @@ import re
 import logging
 from django.http import FileResponse, StreamingHttpResponse, Http404
 from rest_framework.views import APIView
-from ..utils.permissions import EnvironmentAwarePermission
+from ...utils.permissions import EnvironmentAwarePermission
 from endoreg_db.models import RawPdfFile
 import os
 from django.views.decorators.clickjacking import xframe_options_exempt
