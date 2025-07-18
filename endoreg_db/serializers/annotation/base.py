@@ -59,6 +59,7 @@ class AnnotationSerializer(serializers.Serializer):
         
         return data
     
+    #@maxhild we need to verify if this is the right place for these methods, if so we should implement them here
     def create(self, validated_data):
         """
         Create annotation data structure.
