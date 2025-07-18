@@ -6,8 +6,8 @@ labels: label-request
 assignees: ''
 ---
 
- **Always link the main label changelog issue**:  
-[Label Reference & Change Log #102](https://github.com/wg-lux/endoreg-db/issues/102)
+ **Main label changelog**:  
+[List of current and previous labels](https://github.com/wg-lux/endoreg-db/issues/102)
 
 ---
 
