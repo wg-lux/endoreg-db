@@ -72,16 +72,3 @@ class PatientSerializer(serializers.ModelSerializer):
         except Exception as e:
             raise serializers.ValidationError(f"Fehler beim Aktualisieren des Patienten: {str(e)}")
 
-class GenderSerializer(serializers.ModelSerializer):
-    """Serializer für Gender-Modell"""
-    class Meta:
-        model = Gender
-        fields = ['id', 'name', 'name_de', 'name_en', 'abbreviation', 'description']
-        read_only_fields = ['id']
-
-class CenterSerializer(serializers.ModelSerializer):
-    """Serializer für Center-Modell"""
-    class Meta:
-        model = Center
-        fields = ['id', 'name', 'name_de', 'name_en']
-        read_only_fields = ['id']

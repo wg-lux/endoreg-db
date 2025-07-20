@@ -7,8 +7,14 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import status
+
+from ...serializers.label_video_segment.label_video_segment_update import LabelSegmentUpdateSerializer
+
+from ...serializers.label.label import LabelSerializer
+
+from ...serializers.video.video_file_list import VideoFileListSerializer
 from ...models import VideoFile, Label, LabelVideoSegment
-from ...serializers.video.segmentation import VideoFileSerializer, VideoListSerializer, LabelSerializer, LabelSegmentUpdateSerializer
+from ...serializers.video.segmentation import VideoFileSerializer
 from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 def _stream_video_file(vf, frontend_origin):
@@ -72,7 +78,7 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     /videos/<id>/stream/  → raw file          (FileResponse, range-aware)
     """
     queryset = VideoFile.objects.all()
-    serializer_class = VideoListSerializer   # for the list view
+    serializer_class = VideoFileListSerializer   # for the list view
     permission_classes = DEBUG_PERMISSIONS
 
     def list(self, request, *args, **kwargs):
@@ -84,7 +90,7 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
         videos = VideoFile.objects.all()
         labels = Label.objects.all()
 
-        video_serializer = VideoListSerializer(videos, many=True)
+        video_serializer = VideoFileListSerializer(videos, many=True)
         label_serializer = LabelSerializer(labels, many=True)
 
         return Response({

@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from ...models import Gender
-from ...serializers.patient import GenderSerializer
+from ...serializers.administration import GenderSerializer
 
 
 class GenderViewSet(viewsets.ReadOnlyModelViewSet):

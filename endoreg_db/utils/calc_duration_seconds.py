@@ -1,17 +1,26 @@
-import cv2
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from endoreg_db.models import VideoFile
 
 
-def _calc_duration(self, obj):
+def _calc_duration_vf(obj:"VideoFile") -> float:
     """
-    Calculate duration using OpenCV if not already set.
+    Calculate duration of a VideoFile.
     """
     if not obj.raw_file:
         return None
-    cap = cv2.VideoCapture(str(obj.raw_file.path))
-    if not cap.isOpened():
-        return None
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = frame_count / fps if fps > 0 else 0
-    cap.release()
-    return duration
+
+    assert obj.ffmpeg_meta is not None, "FFMpegMeta should not be None after initialization."
+
+    fps = obj.get_fps()
+    frame_count = obj.frame_count #TODO similar implementation as in get_fps
+
+    duration = frame_count / fps if fps > 0 else -1
+    if duration > 0:
+        return duration
+    else:
+        raise ValueError(
+            f"Invalid duration calculated for video {obj.uuid}: {duration}. "
+            "Ensure the video file is valid and accessible."
+        )

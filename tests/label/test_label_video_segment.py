@@ -8,6 +8,7 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
 )
 
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 
 import logging
@@ -257,6 +258,59 @@ class LabelVideoSegmentModelTest(TestCase):
             label=self.segment.label
         )
         self.assertQuerySetEqual(segment_annotations.order_by('pk'), manual_annotations.order_by('pk'))
+
+    def test_lvs_serializer_base(self) -> None:
+        """
+        Test serialization of the LabelVideoSegment.
+        Tests whether the following fields are present in the serialized data:
+        - id
+        - video_id
+        - label_id
+        - start_frame_number
+        - end_frame_number
+        """
+        serializer = LabelVideoSegmentSerializer(instance=self.segment)
+        
+        data = serializer.to_representation(self.segment)
+
+        # data =serializer.validate(serializer.data)
+
+        self.assertIn('id', data)
+        self.assertIn('video_id', data)
+        self.assertIn('label_id', data)
+        self.assertIn('start_frame_number', data)
+        self.assertIn('end_frame_number', data)
+
+        label = self.segment.label
+
+        self.assertEqual(data['label_id'], label.pk)
+
+    def test_lvs_serializer_create_method(self) -> None:
+        """
+        Test creating a new LabelVideoSegment using the serializer.
+        Tests whether the serializer can create a new segment with the correct fields.
+        """
+        label = Label.objects.first()
+        label_id = label.pk
+        data = {
+            'video_id': self.video_file.pk,
+            'label_id': label_id,
+            'start_time': 0,
+            'end_time': 10
+        }
+        
+        serializer = LabelVideoSegmentSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        segment = serializer.create(serializer.validated_data)
+        print(f"Created segment: {segment}")
+        self.assertIsNotNone(segment)
+        self.assertIsInstance(segment, LabelVideoSegment)
+        self.assertIsInstance(segment.video_file, VideoFile)
+        self.assertIsInstance(segment.label, Label)
+        self.assertIsInstance(segment.source, InformationSource)
+        self.assertIsInstance(segment.start_frame_number, int)
+        self.assertIsInstance(segment.end_frame_number, int)
 
     def tearDown(self):
         if hasattr(self, 'video_file') and self.video_file:

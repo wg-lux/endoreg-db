@@ -1,10 +1,10 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+# from rest_framework.permissions import IsAuthenticated #TODO change in production
 from django.db import transaction
 import logging
 
-from ...models import PatientExamination, Patient, Examination
+from ...models import PatientExamination
 from ...serializers.patient_examination import PatientExaminationSerializer
 from ...utils.permissions import DEBUG_PERMISSIONS
 

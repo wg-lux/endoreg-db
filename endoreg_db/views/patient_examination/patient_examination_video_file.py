@@ -4,8 +4,12 @@ from endoreg_db.models import (
     FindingClassificationChoice,
     FindingClassification
 )
-from ...serializers.examination.optimized_examination_serializers import ExaminationSerializer as OptimizedExaminationSerializer
+from ...serializers.examination import ExaminationSerializer
 
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
+
+__all__ = [
+    
+]

@@ -9,7 +9,7 @@ from celery import current_app
 from django.db import transaction
 
 from ...models import VideoFile, SensitiveMeta
-from ...serializers.video.base import VideoDetailSer, SensitiveMetaUpdateSer
+from ...serializers.video.video_file import VideoDetailSerializer, SensitiveMetaUpdateSerializer
 from .segmentation import _stream_video_file
 from ...utils.permissions import EnvironmentAwarePermission
 
@@ -54,7 +54,7 @@ class VideoMediaView(APIView):
             if not vf:
                 return Response({"error": "No more videos"}, status=404)
 
-        ser = VideoDetailSer(vf, context={"request": request})
+        ser = VideoDetailSerializer(vf, context={"request": request})
         return Response(ser.data, status=status.HTTP_200_OK)
 
     # ---------- PATCH ----------
@@ -85,7 +85,7 @@ class VideoMediaView(APIView):
             delete_raw_files = True
             logger.info(f"Validation accepted for SensitiveMeta {sm_id}, marking raw files for deletion")
         
-        ser = SensitiveMetaUpdateSer(sm, data=request.data, partial=True)
+        ser = SensitiveMetaUpdateSerializer(sm, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         updated_sm = ser.save()
         
@@ -157,7 +157,7 @@ class VideoCorrectionView(APIView):
     
     def get(self, request, pk):
         video = get_object_or_404(VideoFile, pk=pk)
-        ser = VideoDetailSer(video, context={"request": request})
+        ser = VideoDetailSerializer(video, context={"request": request})
         return Response(ser.data, status=status.HTTP_200_OK)
 
 class VideoMetadataView(APIView):

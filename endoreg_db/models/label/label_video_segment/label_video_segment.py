@@ -82,6 +82,31 @@ class LabelVideoSegment(models.Model):
         ]
 
     @property
+    def start_time(self) -> float:
+        """Calculates the start time in seconds based on the start frame number."""
+        video_obj = self.get_video()
+        fps = video_obj.get_fps()
+        if fps is None or fps <= 0:
+            logger.warning("Invalid FPS for video %s. Cannot calculate start time.", video_obj)
+            raise ValueError("Invalid FPS for video.")
+        return self.start_frame_number / fps
+    
+    @property
+    def end_time(self) -> float:
+        """Calculates the end time in seconds based on the end frame number."""
+        video_obj = self.get_video()
+        fps = video_obj.get_fps()
+        if fps is None or fps <= 0:
+            logger.warning("Invalid FPS for video %s. Cannot calculate end time.", video_obj)
+            raise ValueError("Invalid FPS for video.")
+        return self.end_frame_number / fps
+
+    @property
+    def segment_duration(self) -> float:
+        """Calculates the duration of the segment in seconds."""
+        return self.end_time - self.start_time
+
+    @property
     def is_validated(self) -> bool:
         """Checks validation status via the related state object."""
         try:

@@ -122,30 +122,3 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
             return instance
         except Exception as e:
             raise serializers.ValidationError(f"Fehler beim Aktualisieren der Patientenuntersuchung: {str(e)}")
-
-
-# Vereinfachte Serializer für Dropdown-Listen
-class PatientDropdownSerializer(serializers.ModelSerializer):
-    """Serializer für Patient-Dropdown"""
-    display_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Patient
-        fields = ['id', 'patient_hash', 'first_name', 'last_name', 'display_name', 'dob']
-    
-    def get_display_name(self, obj):
-        """Gibt eine benutzerfreundliche Anzeige für den Patienten zurück"""
-        return f"{obj.first_name} {obj.last_name} ({obj.patient_hash[:8]}...)"
-
-
-class ExaminationDropdownSerializer(serializers.ModelSerializer):
-    """Serializer für Examination-Dropdown"""
-    display_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Examination
-        fields = ['id', 'name', 'name_de', 'name_en', 'display_name']
-    
-    def get_display_name(self, obj):
-        """Gibt eine benutzerfreundliche Anzeige für die Untersuchung zurück"""
-        return obj.name_de if obj.name_de else obj.name

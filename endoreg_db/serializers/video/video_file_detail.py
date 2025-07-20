@@ -1,24 +1,13 @@
 from rest_framework import serializers
-from endoreg_db.models import VideoFile, VideoImportMeta, LabelVideoSegment, VideoMeta, SensitiveMeta
+from endoreg_db.models import LabelVideoSegment, SensitiveMeta
 from django.conf import settings
 from pathlib import Path
+
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
 from ...utils.calc_duration_seconds import _calc_duration
 
-class VideoMetaSerializer(serializers.ModelSerializer):
-    """Serializer for nested VideoMeta representation."""
-    class Meta:
-        model = VideoMeta
-        # Include fields relevant for export, adjust as needed
-        fields = "__all__"
-
-
-class VideoBriefSer(serializers.ModelSerializer):
-    class Meta:
-        model  = VideoFile
-        fields = ["id", "original_file_name", "sensitive_meta_id"]  # for tables/overview
-
-
-class VideoDetailSer(VideoBriefSer):
+class VideoDetailSerializer(VideoBriefSerializer):
     # pull selected fields from SensitiveMeta (READ-ONLY) - using SerializerMethodField to handle datetime->date conversion
     patient_first_name = serializers.CharField(source="sensitive_meta.patient_first_name", read_only=True)
     patient_last_name  = serializers.CharField(source="sensitive_meta.patient_last_name",  read_only=True)
@@ -30,8 +19,8 @@ class VideoDetailSer(VideoBriefSer):
     duration    = serializers.SerializerMethodField()
     video_url   = serializers.SerializerMethodField()
 
-    class Meta(VideoBriefSer.Meta):
-        fields = VideoBriefSer.Meta.fields + [
+    class Meta(VideoBriefSerializer.Meta):
+        fields = VideoBriefSerializer.Meta.fields + [
             "file", "full_path", "video_url",
             "patient_first_name", "patient_last_name",
             "patient_dob", "examination_date",
@@ -49,9 +38,11 @@ class VideoDetailSer(VideoBriefSer):
 
     def get_video_url(self, obj):
         request = self.context.get("request")
+        #TODO remove hardcoded path here 
         return request.build_absolute_uri(f"/api/media/videos/{obj.pk}/") if request else None
     
-    def get_duration(self, obj):
+    def get_duration(self, obj:VideoFile):
+        obj.duration
         return obj.duration or _calc_duration(self, obj)
     
     def get_patient_dob(self, obj):
@@ -69,28 +60,3 @@ class VideoDetailSer(VideoBriefSer):
             exam_date = obj.sensitive_meta.examination_date
             return exam_date.date() if hasattr(exam_date, 'date') else exam_date
         return None
-
-class SensitiveMetaUpdateSer(serializers.ModelSerializer):
-    sensitive_meta_id = serializers.IntegerField(write_only=True)
-
-    class Meta:
-        model  = SensitiveMeta
-        fields = ["sensitive_meta_id", "patient_first_name",
-                  "patient_last_name", "patient_dob", "examination_date"]
-
-
-class VideoFileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = VideoFile
-        fields = "__all__"
-
-class VideoImportMetaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = VideoImportMeta
-        fields = "__all__"
-
-
-class LabelVideoSegmentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LabelVideoSegment
-        fields = "__all__"

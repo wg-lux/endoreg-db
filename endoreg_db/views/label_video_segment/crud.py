@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django.db import transaction
 import logging
 
-from ...serializers.annotation.base import AnnotationSerializer
+from ...serializers.label_video_segment.label_video_segment_annotation import LabelVideoSegmentAnnotationSerializer
 from ...services.segment_sync import create_user_segment_from_annotation
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ def create_annotation(request):
     logger.info(f"Creating annotation with data: {request.data}")
     
     with transaction.atomic():
-        serializer = AnnotationSerializer(data=request.data)
+        serializer = LabelVideoSegmentAnnotationSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 annotation = serializer.save()
@@ -36,7 +36,7 @@ def create_annotation(request):
                         annotation['metadata'] = metadata
                         
                         # Update the annotation with new segment ID
-                        serializer = AnnotationSerializer(instance=annotation, data={'metadata': metadata}, partial=True)
+                        serializer = LabelVideoSegmentAnnotationSerializer(instance=annotation, data={'metadata': metadata}, partial=True)
                         if serializer.is_valid():
                             annotation = serializer.save()
                 
@@ -73,7 +73,7 @@ def update_annotation(request, annotation_id):
         # annotation = get_object_or_404(Annotation, id=annotation_id)
         
         with transaction.atomic():
-            serializer = AnnotationSerializer(data=request.data, partial=True)
+            serializer = LabelVideoSegmentAnnotationSerializer(data=request.data, partial=True)
             if serializer.is_valid():
                 try:
                     annotation = serializer.save()

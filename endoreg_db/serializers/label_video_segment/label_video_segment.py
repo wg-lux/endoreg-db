@@ -5,21 +5,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     """Serializer for creating and retrieving LabelVideoSegment instances."""
     
     # Additional fields for convenience - matching frontend expectations
-    start_time = serializers.FloatField(required=False, help_text="Start time in seconds")
-    end_time = serializers.FloatField(required=False, help_text="End time in seconds")
-    
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
+
     # Input fields (write_only for creation)
     video_id = serializers.IntegerField(write_only=True, required=True, help_text="Video file ID")
     label_id = serializers.IntegerField(write_only=True, required=False, allow_null=True, help_text="Label ID")
     
     # Add support for label names (both Label and VideoSegmentationLabel)
-    label_name = serializers.CharField(required=False, allow_null=True, help_text="Label name (supports both Label and VideoSegmentationLabel names)")
-    
+    label_name = serializers.SerializerMethodField()
+    label_display = serializers.SerializerMethodField()
+       
     # Read-only fields for response
     video_name = serializers.SerializerMethodField(read_only=True)
     
@@ -27,6 +27,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         model = LabelVideoSegment
         fields = [
             'id',
+            "video_file",  # Changed from video_id to video_file
+            "label",       # Changed from label_id to label
             'start_frame_number',
             'end_frame_number',
             'start_time',
@@ -35,6 +37,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             'label_id',
             'label_name',
             'video_name',
+            "label_display", 
         ]
         read_only_fields = ['id', 'video_name']
         extra_kwargs = {
@@ -42,58 +45,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             'end_frame_number': {'required': False},
         }
     
-    def get_video_name(self, obj):
-        """
-        Returns the display name of the associated video file.
-        
-        If the video file has an `original_file_name`, it is returned; otherwise, a fallback name using the video ID is provided. Returns 'Unknown Video' if the video file is inaccessible.
-        """
-        try:
-            video = obj.video_file
-            return getattr(video, 'original_file_name', f'Video {video.id}')
-        except (AttributeError, ObjectDoesNotExist):
-            return 'Unknown Video'
-    
-    def get_or_create_label_from_name(self, label_name):
-        """
-        Retrieves or creates a Label instance based on the provided label name.
-        
-        If a Label with the given name exists, it is returned. If not, attempts to find a VideoSegmentationLabel with the same name and creates a new Label using its details. If neither exists, creates a new Label with a manual creation description. Returns None if no label name is provided.
-        """
-        if not label_name:
-            return None
-            
-        # First, try to find an existing Label with this name
-        try:
-            label = Label.objects.get(name=label_name)
-            logger.info("Found existing Label: %s", label_name)
-            return label
-        except ObjectDoesNotExist:
-            pass
-        
-        # Next, try to find a VideoSegmentationLabel and create corresponding Label
-        try:
-            video_seg_label = VideoSegmentationLabel.objects.get(name=label_name)
-            
-            # Create a new Label based on the VideoSegmentationLabel
-            label = Label.objects.create(
-                name=video_seg_label.name,
-                description=getattr(video_seg_label, 'description', f'Label created from VideoSegmentationLabel: {video_seg_label.name}')
-            )
-            logger.info("Created new Label '%s' from VideoSegmentationLabel", label_name)
-            return label
-            
-        except ObjectDoesNotExist:
-            pass
-        
-        # If neither exists, create a new Label
-        label = Label.objects.create(
-            name=label_name,
-            description=f'Manually created label: {label_name}'
-        )
-        logger.info("Created new Label: %s", label_name)
-        return label
-    
+
     def validate(self, attrs):
         """
         Validates input data for a video segment, ensuring either time or frame information is provided and logically consistent.
@@ -164,25 +116,29 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 except ObjectDoesNotExist as exc:
                     raise serializers.ValidationError(f"Label with id {label_id} does not exist") from exc
             elif label_name:
-                label = self.get_or_create_label_from_name(label_name)
+                label = Label.get_or_create_from_name(label_name)
+
+            else:
+                raise serializers.ValidationError("Either label_id or label_name must be provided")
             
-            # Calculate frame numbers from time if provided and not already set
-            # Fix: Ensure fps is properly converted to numeric type
-            fps_raw = getattr(video_file, 'fps', 30)  # Default to 30 fps if not available
+
+            fps_raw = video_file.get_fps()  # Default to 30 fps if not available
             
+            assert fps_raw is not None, "Video file must have a defined FPS"
+
             try:
                 if isinstance(fps_raw, str):
                     fps = float(fps_raw)
                 elif isinstance(fps_raw, (int, float)):
                     fps = float(fps_raw)
                 else:
-                    fps = 30.0  # Default fallback
+                    raise serializers.ValidationError("Invalid FPS format in video file")
+                    # fps = 30.0  # Default fallback
             except (ValueError, TypeError):
                 fps = 30.0  # Default fallback if conversion fails
             
-            # Ensure fps is positive
             if fps <= 0:
-                fps = 30.0
+                raise ValueError("FPS must be a positive number")
             
             if start_time is not None and 'start_frame_number' not in validated_data:
                 validated_data['start_frame_number'] = int(start_time * fps)
@@ -311,34 +267,72 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         data = super().to_representation(instance)
         
+        video_file = instance.video_file
+        assert video_file is not None, "Video file must be associated with the segment"
+        assert isinstance(video_file, VideoFile), "Expected video_file to be an instance of VideoFile"
         # Add calculated time fields for frontend compatibility
-        try:
-            fps_raw = getattr(instance.video_file, 'fps', 30)
-            
-            # Robust FPS conversion matching create/update methods
-            try:
-                if isinstance(fps_raw, str):
-                    fps = float(fps_raw)
-                elif isinstance(fps_raw, (int, float)):
-                    fps = float(fps_raw)
-                else:
-                    fps = 30.0
-            except (ValueError, TypeError):
-                fps = 30.0
-            
-            if fps <= 0:
-                fps = 30.0
-            
-            data['start_time'] = instance.start_frame_number / fps
-            data['end_time'] = instance.end_frame_number / fps
-        except (AttributeError, ZeroDivisionError):
-            data['start_time'] = 0
-            data['end_time'] = 0
+        
+        data['start_time'] = video_file.frame_number_to_s(instance.start_frame_number)
+        data['end_time'] = video_file.frame_number_to_s(instance.end_frame_number)
         
         # Ensure label_name is always present in response
         if instance.label:
             data['label_name'] = instance.label.name
         else:
             data['label_name'] = None
-        
+
+        # Explicitly add video_id and label_id to the output
+        data['video_id'] = instance.video_file.id if instance.video_file else None
+        data['label_id'] = instance.label.id if instance.label else None
+
         return data
+    
+    def get_label_name(self, obj):
+        """Get the actual label name from the related Label model"""
+        if obj.label:
+            return obj.label.name
+        return "unknown"
+    
+    def get_label_display(self, obj):
+        """Get the German translation for display"""
+        if not obj.label:
+            return "Unbekannt"
+            
+        label_name = obj.label.name
+        translations = {
+            'appendix': 'Appendix',
+            'blood': 'Blut',
+            'diverticule': 'Divertikel',
+            'grasper': 'Greifer',
+            'ileocaecalvalve': 'Ileozäkalklappe',
+            'ileum': 'Ileum',
+            'low_quality': 'Niedrige Bildqualität',
+            'nbi': 'Narrow Band Imaging',
+            'needle': 'Nadel',
+            'outside': 'Außerhalb',
+            'polyp': 'Polyp',
+            'snare': 'Snare',
+            'water_jet': 'Wasserstrahl',
+            'wound': 'Wunde'
+        }
+        return translations.get(label_name, label_name)
+    
+    def get_video_name(self, obj):
+        """
+        Returns the display name of the associated video file.
+        
+        If the video file has an `original_file_name`, it is returned; otherwise, a fallback name using the video ID is provided. Returns 'Unknown Video' if the video file is inaccessible.
+        """
+        try:
+            video = obj.video_file
+            return getattr(video, 'original_file_name', f'Video {video.id}')
+        except (AttributeError, ObjectDoesNotExist):
+            return 'Unknown Video'
+ 
+    def get_start_time(self, obj:LabelVideoSegment):
+        """Convert start frame to time in seconds"""
+        return obj.start_time
+    
+    def get_end_time(self, obj):
+        """Convert end frame to time in seconds"""
+        return obj.end_time

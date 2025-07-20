@@ -12,10 +12,12 @@ from datetime import timedelta
 from pathlib import Path
 import logging
 
+from ...serializers.report.report import ReportDataSerializer
+
+from ...serializers.report.secure_file_url import SecureFileUrlSerializer
+
 from ...models import RawPdfFile
-from ...serializers.report.base import (
-    ReportDataSerializer, 
-    SecureFileUrlSerializer,
+from ...serializers.report.report_list import (
     ReportListSerializer
 )
 

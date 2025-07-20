@@ -5,7 +5,8 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework import status
 from django.contrib.auth.models import User
-from endoreg_db.models import VideoFile, Label, LabelVideoSegment
+from endoreg_db.models import VideoFile, Label, LabelVideoSegment, Center
+from endoreg_db.models.label.label_type import LabelType
 
 
 @pytest.mark.django_db
@@ -21,16 +22,27 @@ class TestLabelVideoSegmentCRUD:
             username='testuser', 
             password='testpass'
         )
+
+        self.center = Center.objects.create(
+            name='Test Center',
+        )
+
+        self.label_type = LabelType.objects.create(
+            name='Test Label Type',
+            description='A test label type for video segments'
+        )
         
         # Test-Daten erstellen
         self.video = VideoFile.objects.create(
-            original_filename='test_video.mp4',
-            fps=25.0
+            original_file_name='test_video.mp4',
+            fps=25.0, 
+            center=self.center,
         )
         
         self.label = Label.objects.create(
             name='Polyp',
-            description='Test polyp label'
+            description='Test polyp label',
+            label_type=self.label_type,
         )
     
     def test_create_segment_success(self):

@@ -8,6 +8,6 @@ class FindingClassificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = FindingClassification
         fields = [
-            'id', 'name', 'name_de', 'name_en', 'description', 'choices', 'classification_types'
+            'id', 'name', 'description', 'choices', 'classification_types'
         ]
     

@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class AnnotationSerializer(serializers.Serializer):
+class LabelVideoSegmentAnnotationSerializer(serializers.Serializer):
     """
     Serializer for annotation data.
     Handles segment annotations with metadata including segmentId.

@@ -7,7 +7,7 @@ from django.db import transaction
 import logging
 
 from ...models import VideoFile, LabelVideoSegment, Label
-from ...serializers.label.label_serializer import LabelVideoSegmentSerializer
+from ...serializers.label_video_segment.label_video_segment import LabelVideoSegmentSerializer
 from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)

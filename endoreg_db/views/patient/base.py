@@ -9,7 +9,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 
 from ...models import Patient, Gender, Center
-from ...serializers.patient import PatientSerializer, GenderSerializer, CenterSerializer
+from ...serializers.patient import PatientSerializer
+from ...serializers.administration import GenderSerializer, CenterSerializer
 from endoreg_db.models import (
     FindingClassification
 )

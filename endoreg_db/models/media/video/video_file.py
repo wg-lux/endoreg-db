@@ -9,7 +9,7 @@ from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db.models import F
-
+from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
@@ -80,6 +80,7 @@ if TYPE_CHECKING:
         VideoState,
         ModelMeta,
         VideoImportMeta,
+        FFMpegMeta,
     )   
 class VideoQuerySet(models.QuerySet):
     def next_after(self, last_id=None):
@@ -176,6 +177,22 @@ class VideoFile(models.Model):
         ai_model_meta: "ModelMeta"
         import_meta: "VideoImportMeta"
 
+
+    @property
+    def ffmpeg_meta(self) -> "FFMpegMeta":
+        """
+        Returns the FFMpegMeta instance associated with this VideoFile.
+        This is a convenience property to access the video metadata.
+        """
+        if self.video_meta is not None:
+            return self.video_meta.ffmpeg_meta
+        else:
+            self.initialize_video_specs()
+            ffmpeg_meta = self.video_meta.ffmpeg_meta if self.video_meta else None
+            assert isinstance(ffmpeg_meta, FFMpegMeta), "Expected FFMpegMeta instance."
+            return ffmpeg_meta
+
+
     @property
     def active_file_url(self) -> str:
         _file = self.active_file
@@ -206,6 +223,7 @@ class VideoFile(models.Model):
     get_frames = _get_frames
     get_frame = _get_frame
     get_frame_range = _get_frame_range
+    get_duration = _calc_duration_vf
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
 
@@ -277,6 +295,7 @@ class VideoFile(models.Model):
     @property
     def has_raw(self) -> bool:
         return bool(self.raw_file and self.raw_file.name)
+    
 
     @property
     def active_file(self) -> File:
@@ -288,21 +307,14 @@ class VideoFile(models.Model):
             raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
 
     @property
-    def active_file_path(self) -> Optional[Path]:
+    def active_file_path(self) -> Path:
         active = self.active_file
-        try:
-            if active == self.processed_file:
-                return _get_processed_file_path(self)
-            elif active == self.raw_file:
-                return _get_raw_file_path(self)
-            else:
-                return None
-        except Exception as e:
-            logger.warning("Could not get path for active file of VideoFile %s: %s", self.uuid, e, exc_info=True)
-            return None
-
-
-
+        if active == self.processed_file:
+            return _get_processed_file_path(self)
+        elif active == self.raw_file:
+            return _get_raw_file_path(self)
+        else:
+            raise ValueError("No active file path available. VideoFile has neither raw nor processed file.")
 
 
     @classmethod
@@ -439,3 +451,18 @@ class VideoFile(models.Model):
             .count()                                  # run a fast COUNT(*) on the filtered set
         )
 
+
+    def frame_number_to_s(self, frame_number: int) -> float:
+        """
+        Converts a frame number to its corresponding time in seconds.
+        
+        Args:
+            frame_number: The frame number to convert.
+        
+        Returns:
+            The time in seconds corresponding to the given frame number.
+        """
+        fps = self.get_fps()
+        if fps is None or fps <= 0:
+            raise ValueError("FPS must be set and greater than zero.")
+        return frame_number / self.fps

@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from ..video_file import VideoFile
 
 logger = logging.getLogger(__name__)
-def _get_fps(video: "VideoFile") -> Optional[float]:
+def _get_fps(video: "VideoFile") -> float:
     """Gets the FPS, trying instance, VideoMeta, and finally direct file access."""
     from .video_meta import _update_video_meta
     if video.fps is not None:
@@ -66,6 +66,7 @@ def _get_fps(video: "VideoFile") -> Optional[float]:
         except Exception as e:
             logger.error("Error getting FPS directly from file %s: %s", video.raw_file.name if video.has_raw else 'N/A', e)
 
-        logger.warning("Could not determine FPS for video %s.", video.uuid)
-
-        return None
+        raise ValueError(
+            f"Could not determine FPS for video {video.uuid}. "
+            "Ensure the video file is valid and accessible."
+        )
