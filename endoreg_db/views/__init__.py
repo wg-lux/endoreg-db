@@ -18,6 +18,7 @@ from .auth import (
 )
 
 from .examination import (
+    ExaminationManifestCache,
     ExaminationViewSet,
 
     get_classification_choices_for_examination,
@@ -50,6 +51,15 @@ from .label_video_segment import (
     update_lvs_from_annotation
 )
 
+from .meta import (
+    AvailableFilesListView,
+    SensitiveMetaDetailView,
+    SensitiveMetaListView,
+    SensitiveMetaVerificationView
+)
+
+from .patient import PatientViewSet
+
 from .patient_examination import (
     ExaminationCreateView,
     PatientExaminationDetailView,
@@ -57,6 +67,23 @@ from .patient_examination import (
     PatientExaminationViewSet,
 )
 
+from .patient_finding import (
+    PatientFindingViewSet,
+    OptimizedPatientFindingViewSet
+)
+
+from .patient_finding_classification import (
+    create_patient_finding_classification,
+)
+
+from .pdf import (
+    ClosingFileWrapper,
+    PDFStreamView,
+    RawPdfAnonyTextSerializer,
+    RawPdfAnonyTextView,
+    PDFFileForMetaView,
+    UpdateSensitiveMetaView,
+)
 
 __all__ = [
     # Anonymization views
@@ -73,6 +100,7 @@ __all__ = [
     "public_home",
 
     # Examination views
+    "ExaminationManifestCache",
     'ExaminationViewSet',
 
     'get_classification_choices_for_examination',
@@ -103,5 +131,36 @@ __all__ = [
     'video_segments_by_label_name_view',
     'video_segment_detail_view',
     'video_segments_view',
-    'update_lvs_from_annotation'
+    'update_lvs_from_annotation',
+
+    # Meta Views
+    "AvailableFilesListView",
+    "SensitiveMetaDetailView",
+    "SensitiveMetaListView",
+    "SensitiveMetaVerificationView",
+
+    # Patient Views
+    "PatientViewSet",
+
+    # Patient Examination Views
+    "ExaminationCreateView",
+    "PatientExaminationDetailView",
+    "PatientExaminationListView",
+    "PatientExaminationViewSet",
+
+    # Patient Finding Views
+    "PatientFindingViewSet",
+    "OptimizedPatientFindingViewSet",
+
+    # Patient Finding Classification Views
+    "create_patient_finding_classification",
+
+    # PDF
+    "ClosingFileWrapper",
+    "PDFStreamView",
+    "RawPdfAnonyTextSerializer",
+    "RawPdfAnonyTextView",
+    "PDFFileForMetaView",
+    "UpdateSensitiveMetaView",
+
 ]

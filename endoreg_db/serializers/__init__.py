@@ -52,6 +52,7 @@ from .patient_examination import (
 )
 
 from .patient_finding import (
+    PatientFindingSerializer,
     PatientFindingClassificationSerializer,
     PatientFindingDetailSerializer,
     PatientFindingInterventionSerializer,
@@ -113,6 +114,7 @@ __all__ = [
     "PatientExaminationSerializer",
 
     # Patient Finding
+    "PatientFindingSerializer",
     "PatientFindingClassificationSerializer",
     "PatientFindingDetailSerializer",
     "PatientFindingInterventionSerializer",

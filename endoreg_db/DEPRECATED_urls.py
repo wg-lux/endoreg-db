@@ -1,3 +1,7 @@
+from .views.patient_finding.patient_finding import PatientFindingViewSet
+from .views.meta.sensitive_meta_list import SensitiveMetaListView
+from .views.meta.sensitive_meta_verification import SensitiveMetaVerificationView
+from .views.meta.sensitive_meta_detail import SensitiveMetaDetailView
 from .views.label_video_segment.label_video_segment import video_segments_view
 from .views.label_video_segment.create_lvs_from_annotation import create_video_segment_annotation
 from .views.examination.get_interventions import get_interventions_for_examination
@@ -10,7 +14,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from .views.patient.base import (
+from .views.patient.patient import (
     PatientViewSet,
     GenderViewSet,
     start_examination,     
@@ -66,7 +70,6 @@ from .views.finding_classification.finding_classification import (
     FindingClassificationViewSet
 )
 from .views.patient_finding.base import (
-    PatientFindingViewSet,
     create_patient_finding_classification
 )
 # from .views.patient_examination import PatientExaminationViewSet
@@ -100,10 +103,7 @@ from .views.patient_examination.patient_examination_create import (
 )
 
 # Add sensitive meta views import
-from .views.meta.sensitive_meta_views import (
-    SensitiveMetaDetailView,
-    SensitiveMetaVerificationView,
-    SensitiveMetaListView,
+from .views.meta.available_files_list import (
     AvailableFilesListView
 )
 

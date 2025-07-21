@@ -1,9 +1,11 @@
+from .center import CenterViewSet
 from .csrf import csrf_token_view
 from .gender import GenderViewSet
 from .stats import (
     ExaminationStatsView,
     VideoSegmentStatsView,
     SensitiveMetaStatsView,
+    GeneralStatsView,
 )
 from .translation import (
     ExaminationTranslationOptions,
@@ -22,6 +24,7 @@ from .upload_views import (
 )
 
 __all__ = [
+    "CenterViewSet",
     'csrf_token_view',
 
     # Gender view
@@ -31,6 +34,7 @@ __all__ = [
     'ExaminationStatsView',
     'VideoSegmentStatsView',
     'SensitiveMetaStatsView',
+    "GeneralStatsView",
 
     # Translation options
     'ExaminationTranslationOptions',

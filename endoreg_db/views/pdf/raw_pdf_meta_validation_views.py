@@ -84,8 +84,6 @@ class PDFFileForMetaView(APIView):
         except Exception as e:
             return Response({"error": f"Internal error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-
 class UpdateSensitiveMetaView(APIView):
     """
     API endpoint to update patient details in the SensitiveMeta table.

@@ -15,8 +15,7 @@ def start_examination(request):
     return render(request, 'admin/start_examination.html')  # Loads the simple HTML page
 
 
-#need to implement one with json data after tesing whethe rthis works or not
-
+#TODO Review this view
 class PatientViewSet(viewsets.ModelViewSet):
     """API endpoint for managing patients."""
     queryset = Patient.objects.all()

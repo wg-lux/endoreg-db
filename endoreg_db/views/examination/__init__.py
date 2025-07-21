@@ -1,3 +1,4 @@
+from examination_manifest_cache import ExaminationManifestCache
 from .examination import ExaminationViewSet
 from .get_finding_classification_choices import (
     get_classification_choices_for_examination,
@@ -15,6 +16,7 @@ from .get_interventions import get_interventions_for_examination
 
 
 __all__ = [
+    "ExaminationManifestCache",
     'ExaminationViewSet',
 
     'get_classification_choices_for_examination',
