@@ -1,9 +1,14 @@
-from .views.misc.csrf import csrf_token_view
+from endoreg_db.views.misc.csrf import csrf_token_view
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 
+from .patient import (
+    Patient
+)
+
+from .classification import url_patterns as classification_url_patterns
 
 router = DefaultRouter()
 router.register(r'patients', PatientViewSet)
@@ -18,9 +23,13 @@ router.register(r'classifications', ClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
 # router.register(r'patient-examinations', PatientExaminationViewSet)
 
+api_urls = []
+api_urls += classification_url_patterns
+
 urlpatterns = [
     path('', include(router.urls)),  
-    path('api/', include([
+    path('api/', include(
+        classification_url_patterns + [
         # Annotation CRUD endpoints (Segmentation)
         path('annotations/', create_annotation, name='create_annotation'),
         path('annotations/<int:annotation_id>/', update_annotation, name='update_annotation'),
@@ -33,41 +42,7 @@ urlpatterns = [
         # Upload endpoints
         path('upload/', UploadFileView.as_view(), name='video_upload'),
         path('upload/<uuid:id>/status', UploadStatusView.as_view(), name='upload_status'),
-        # ---------------------------------------------------------------------------------------
-        # CLASSIFICATION API ENDPOINTS
-        #
-        # Diese Endpunkte führen automatische Polyp-Klassifikationen durch:
-        # - NICE: Für digitale Chromoendoskopie/NBI-basierte Klassifikation
-        # - PARIS: Für Standard-Weißlicht-Klassifikation
-        # 
-        # Diese APIs sind für Backend-Verarbeitung gedacht und werden typischerweise
-        # nach dem Import eines Videos automatisch aufgerufen.
-        # ---------------------------------------------------------------------------------------
-        
-        # NICE Classification API
-        # POST /api/classifications/nice/
-        # Body: {"video_ids": [1, 2, 3]} oder leerer Body für alle Videos
-        # Führt NICE-Klassifikation für spezifizierte Videos durch
-        path('classifications/nice/', ForNiceClassificationView.as_view(), name='nice_classification'),
-        
-        # PARIS Classification API  
-        # POST /api/classifications/paris/
-        # Body: {"video_ids": [1, 2, 3]} oder leerer Body für alle Videos
-        # Führt PARIS-Klassifikation für spezifizierte Videos durch
-        path('classifications/paris/', ForParisClassificationView.as_view(), name='paris_classification'),
-        
-        # Batch Classification API (beide Typen)
-        # POST /api/classifications/batch/
-        # Body: {"video_ids": [1, 2, 3], "types": ["nice", "paris"]}
-        # Führt beide Klassifikationstypen für spezifizierte Videos durch
-        path('classifications/batch/', BatchClassificationView.as_view(), name='batch_classification'),
-        
-        # Classification Status API
-        # GET /api/classifications/status/<video_id>/
-        # Gibt den Status der Klassifikationen für ein Video zurück
-        path('classifications/status/<int:video_id>/', ClassificationStatusView.as_view(), name='classification_status'),
-        
-        # ---------------------------------------------------------------------------------------
+
 
         # ORIGINAL ENDPOINTS USED BY SimpleExaminationForm - KEEPING FOR COMPATIBILITY
         path('start-examination/', start_examination, name="start_examination"),
@@ -75,14 +50,7 @@ urlpatterns = [
         path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
         path('examinations/', ExaminationViewSet.as_view({'get': 'list'}), name='examination-list'),
         
-        # NEW: Examination CRUD endpoints for SimpleExaminationForm
-        # POST /api/examinations/create/ - Create new examination
-        # GET /api/examinations/{id}/ - Get examination details
-        # PATCH /api/examinations/{id}/ - Update examination
-        # GET /api/examinations/list/ - List examinations with filtering
-        path('examinations/create/', ExaminationCreateView.as_view(), name='examination_create'),
-        path('examinations/<int:pk>/', ExaminationDetailView.as_view(), name='examination_detail'),
-        path('examinations/list/', ExaminationListView.as_view(), name='examination_list'),
+
         
         # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
         # path(

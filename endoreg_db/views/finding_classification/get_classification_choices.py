@@ -5,7 +5,6 @@ from endoreg_db.models import FindingClassification
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-
 @require_GET
 def get_classification_choices(self, request, classification_id):
     """
@@ -46,3 +45,5 @@ def get_morphology_choices(request, morphology_id):
 
     # Fetch morphology choices using the new method
     return get_classification_choices(request, morphology_id)
+
+

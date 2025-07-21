@@ -1,3 +1,8 @@
+from .views.label_video_segment.label_video_segment import video_segments_view
+from .views.label_video_segment.create_lvs_from_annotation import create_video_segment_annotation
+from .views.examination.get_interventions import get_interventions_for_examination
+from .views.patient_examination.patient_examination_list import PatientExaminationListView
+from .views.patient_examination.patient_examination_detail import PatientExaminationDetailView
 from .views.finding_classification.get_classification_choices import get_location_choices, get_morphology_choices
 from .views.misc.center import CenterViewSet
 from .views.misc.csrf import csrf_token_view
@@ -51,15 +56,14 @@ from .views.patient_examination.classification import (
 from .views.patient_examination.finding import (
     get_findings_for_examination,
 )
-from .views.patient_examination.intervention import (
+from .views.finding.get_interventions import (
     get_interventions_for_finding,
-    get_interventions_for_exam,
 )
 
 # Add new imports for missing endpoints
-from .views.finding.base import FindingViewSet
-from .views.finding_classification.base import (
-    ClassificationViewSet
+from .views.finding.finding import FindingViewSet
+from .views.finding_classification.finding_classification import (
+    FindingClassificationViewSet
 )
 from .views.patient_finding.base import (
     PatientFindingViewSet,
@@ -75,7 +79,7 @@ from .views.misc.stats import (
     GeneralStatsView
 )
 
-from .views.label_video_segment.label_segment_views import video_segments_view, video_segment_detail_view
+from .views.label_video_segment.label_video_segment_detail import video_segment_detail_view
 from .views.report.report_service_views import (
     ReportListView,
     ReportWithSecureUrlView,
@@ -91,10 +95,8 @@ from .views.misc.upload_views import (
 )
 
 # Add missing examination CRUD imports
-from .views.patient_examination.crud import (
-    ExaminationCreateView,
-    ExaminationDetailView,
-    ExaminationListView
+from .views.patient_examination.patient_examination_create import (
+    ExaminationCreateView
 )
 
 # Add sensitive meta views import
@@ -120,7 +122,7 @@ from .views.video.reimport import VideoReimportView
 
 from .views.pdf.pdf_stream_views import PDFStreamView
 
-from .views.label_video_segment.crud import create_annotation, update_annotation
+from .views.label_video_segment.update_lvs_from_annotation import update_lvs_from_annotation
 
 
 router = DefaultRouter()
@@ -132,7 +134,7 @@ router.register(r'examinations', ExaminationViewSet)
 router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
 # Add new router registrations
 router.register(r'findings', FindingViewSet)
-router.register(r'classifications', ClassificationViewSet)
+router.register(r'classifications', FindingClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
 # router.register(r'patient-examinations', PatientExaminationViewSet)
 
@@ -140,8 +142,8 @@ urlpatterns = [
     path('', include(router.urls)),  
     path('api/', include([
         # Annotation CRUD endpoints (Segmentation)
-        path('annotations/', create_annotation, name='create_annotation'),
-        path('annotations/<int:annotation_id>/', update_annotation, name='update_annotation'),
+        path('annotations/', create_video_segment_annotation, name='create_annotation'),
+        path('annotations/<int:annotation_id>/', update_lvs_from_annotation, name='update_annotation'),
         path('save-anonymization-annotation-pdf/<int:annotation_id>/', UpdateAnonymizedTextView.as_view(), name='save_anonymization_annotation'),
         path('save-anonymization-annotation-video/<int:annotation_id>/', SensitiveMetaDetailView.as_view(), name='save_anonymization_annotation_video'),
         # Label Video Segment API endpoints
@@ -199,8 +201,8 @@ urlpatterns = [
         # PATCH /api/examinations/{id}/ - Update examination
         # GET /api/examinations/list/ - List examinations with filtering
         path('examinations/create/', ExaminationCreateView.as_view(), name='examination_create'),
-        path('examinations/<int:pk>/', ExaminationDetailView.as_view(), name='examination_detail'),
-        path('examinations/list/', ExaminationListView.as_view(), name='examination_list'),
+        path('examinations/<int:pk>/', PatientExaminationDetailView.as_view(), name='examination_detail'),
+        path('examinations/list/', PatientExaminationListView.as_view(), name='examination_list'),
         
         # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
         # path(
@@ -535,8 +537,8 @@ urlpatterns = [
     # PATCH /api/examinations/{id}/ - Update examination
     # GET /api/examinations/list/ - List examinations with filtering
     path('examinations/create/', ExaminationCreateView.as_view(), name='examination_create'),
-    path('examinations/<int:pk>/', ExaminationDetailView.as_view(), name='examination_detail'),
-    path('examinations/list/', ExaminationListView.as_view(), name='examination_list'),
+    path('examinations/<int:pk>/', PatientExaminationDetailView.as_view(), name='examination_detail'),
+    path('examinations/list/', PatientExaminationListView.as_view(), name='examination_list'),
     
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     # path(

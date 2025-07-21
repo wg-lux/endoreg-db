@@ -11,7 +11,7 @@ from ...serializers.finding_classification import (
     FindingClassificationChoiceSerializer,
 )
 
-class ClassificationViewSet(ReadOnlyModelViewSet):
+class FindingClassificationViewSet(ReadOnlyModelViewSet):
     queryset = FindingClassification.objects.all()
     serializer_class = FindingClassificationSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]

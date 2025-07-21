@@ -10,6 +10,7 @@ class TaskStatusView(APIView):
     """
     GET /api/task-status/{task_id}/ - Get status of async task
     """
+    #TODO refactor, this should be specified as video task status or moved to a more appropriate module
     permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, task_id):

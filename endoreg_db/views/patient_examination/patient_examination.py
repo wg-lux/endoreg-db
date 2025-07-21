@@ -4,9 +4,9 @@ from rest_framework.response import Response
 from endoreg_db.models import PatientExamination, Patient, Examination
 from endoreg_db.serializers.patient.patient_dropdown import PatientDropdownSerializer
 from endoreg_db.serializers.patient_examination import (
-    PatientExaminationSerializer, 
-    ExaminationDropdownSerializer
+    PatientExaminationSerializer,
 )
+from endoreg_db.serializers.examination import ExaminationDropdownSerializer
 
 class PatientExaminationViewSet(viewsets.ModelViewSet):
     """
