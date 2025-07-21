@@ -7,6 +7,10 @@ from .stats import (
     SensitiveMetaStatsView,
     GeneralStatsView,
 )
+from .secure_file_url_view import SecureFileUrlView
+from .secure_file_serving_view import SecureFileServingView
+from .secure_url_validate import validate_secure_url
+
 from .translation import (
     ExaminationTranslationOptions,
     FindingTranslationOptions,
@@ -35,6 +39,11 @@ __all__ = [
     'VideoSegmentStatsView',
     'SensitiveMetaStatsView',
     "GeneralStatsView",
+
+    # Secure File / URL views
+    "SecureFileUrlView",
+    "SecureFileServingView",
+    "validate_secure_url",
 
     # Translation options
     'ExaminationTranslationOptions',

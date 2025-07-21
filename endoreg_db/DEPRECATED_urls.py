@@ -1,3 +1,8 @@
+from .views.meta.report_meta import ReportFileMetadataView
+from .views.report.report_list import ReportListView
+from .views.report.report_with_secure_url import ReportWithSecureUrlView
+from .views.misc.secure_file_url_view import SecureFileUrlView
+from .views.misc.secure_url_validate import validate_secure_url
 from .views.patient_finding.patient_finding import PatientFindingViewSet
 from .views.meta.sensitive_meta_list import SensitiveMetaListView
 from .views.meta.sensitive_meta_verification import SensitiveMetaVerificationView
@@ -83,13 +88,8 @@ from .views.misc.stats import (
 )
 
 from .views.label_video_segment.label_video_segment_detail import video_segment_detail_view
-from .views.report.report_service_views import (
-    ReportListView,
-    ReportWithSecureUrlView,
-    SecureFileUrlView, 
-    ReportFileMetadataView,
-    SecureFileServingView,
-    validate_secure_url
+from .views.misc.secure_file_serving_view import (
+    SecureFileServingView
 )
 
 from .views.misc.upload_views import (
