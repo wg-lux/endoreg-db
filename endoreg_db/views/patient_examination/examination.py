@@ -2,7 +2,6 @@ from rest_framework.viewsets import ModelViewSet
 from endoreg_db.models import (
     Examination,
     FindingClassificationChoice,
-    FindingClassification
 )
 from ...serializers.examination import ExaminationSerializer
 

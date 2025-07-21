@@ -173,18 +173,13 @@ def create_patient_finding_classification(request):
             )
 
         try:
-            classification = FindingClassification.objects.get(id=classification_id)
+            FindingClassification.objects.get(id=classification_id)
         except FindingClassification.DoesNotExist:
             return Response(
                 {'detail': f'Classification with id {classification_id} not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-        patient_finding.add_classification(classification_id = classification_id, choice_id = choice_id)
-        # Create the relationship
-        patient_finding_classification = PatientFindingClassification.objects.create(
-            patient_finding=patient_finding,
-            classification_choice=choice
-        )
+        patient_finding_classification = patient_finding.add_classification(classification_id = classification_id, choice_id = choice_id)
         
         return Response({
             'id': patient_finding_classification.id,

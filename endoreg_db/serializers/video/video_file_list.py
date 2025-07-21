@@ -1,3 +1,4 @@
+from typing import Literal
 from endoreg_db.models import VideoFile
 
 
@@ -19,22 +20,21 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         model = VideoFile
         fields = ["id", "original_file_name", "status", "assignedUser", "anonymized"]
 
-    def get_status(self, obj):
+    def get_status(self, obj:VideoFile) -> Literal['completed'] | Literal['in_progress'] | Literal['available']:
         """
         Returns the processing status of a video as 'completed', 'in_progress', or 'available'.
         """
         try:
-            state = getattr(obj, 'state', None)
-            if state:
-                if state.anonymized:
-                    return 'completed'
-                elif state.frames_extracted:
-                    return 'in_progress'
-                else:
-                    return 'available'
+            state = obj.state
+            if not state:
+                return 'available'
+            if state.anonymized:
+                return 'completed'
+            if state.frames_extracted:
+                return 'in_progress'
             return 'available'
-        except Exception:
-            return 'available'
+        except Exception as _e:
+            raise ValueError("Video state should not be None") from _e
 
     def get_assignedUser(self, obj):
         """

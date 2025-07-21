@@ -5,5 +5,5 @@ class CenterSerializer(serializers.ModelSerializer):
     """Serializer für Center-Modell"""
     class Meta:
         model = Center
-        fields = ['id', 'name', 'name_de', 'name_en']
+        fields = ['id', 'name',]
         read_only_fields = ['id']

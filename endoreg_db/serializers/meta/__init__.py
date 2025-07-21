@@ -14,6 +14,6 @@ __all__ = [
     "ReportMetaSerializer",
     "SensitiveMetaDetailSerializer",
     "SensitiveMetaUpdateSerializer",
-    "SensitiveMetaVerificationSerializer"
+    "SensitiveMetaVerificationSerializer",
     "VideoMetaSerializer",
 ]

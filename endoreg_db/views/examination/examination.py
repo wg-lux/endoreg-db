@@ -1,10 +1,12 @@
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.response import Response
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 from endoreg_db.models import (
     Examination
 )
-from endoreg_db.serializers import ExaminationSerializer
+from endoreg_db.serializers import ExaminationSerializer, FindingSerializer
 
 class ExaminationViewSet(ReadOnlyModelViewSet):
     """
@@ -14,13 +16,14 @@ class ExaminationViewSet(ReadOnlyModelViewSet):
     serializer_class = ExaminationSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
 
-    def get_serializer_class(self):
-        """
-        Returns the serializer class based on the request.
-        """
-        if self.request.query_params.get('optimized', 'false').lower() == 'true':
-            return OptimizedExaminationSerializer
-        return ExaminationSerializer
+    # Deprecated: we only use the ExaminationSerializer for now
+    # def get_serializer_class(self):
+    #     """
+    #     Returns the serializer class based on the request.
+    #     """
+    #     if self.request.query_params.get('optimized', 'false').lower() == 'true':
+    #         return OptimizedExaminationSerializer
+    #     return ExaminationSerializer
 
     @action(detail=True, methods=['get'])
     def findings(self, request, pk=None):

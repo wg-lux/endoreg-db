@@ -14,5 +14,6 @@ class PatientDropdownSerializer(serializers.ModelSerializer):
 
     def get_display_name(self, obj):
         """Gibt eine benutzerfreundliche Anzeige für den Patienten zurück"""
-        return f"{obj.first_name} {obj.last_name} ({obj.patient_hash[:8]}...)"
-    
+        patient_hash = obj.patient_hash
+        hash_display = f"({patient_hash[:8]}...)" if patient_hash else "(No Hash)"
+        return f"{obj.first_name} {obj.last_name} {hash_display}"

@@ -465,4 +465,4 @@ class VideoFile(models.Model):
         fps = self.get_fps()
         if fps is None or fps <= 0:
             raise ValueError("FPS must be set and greater than zero.")
-        return frame_number / self.fps
+        return frame_number / fps

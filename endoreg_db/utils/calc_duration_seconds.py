@@ -8,8 +8,6 @@ def _calc_duration_vf(obj:"VideoFile") -> float:
     """
     Calculate duration of a VideoFile.
     """
-    if not obj.raw_file:
-        return None
 
     assert obj.ffmpeg_meta is not None, "FFMpegMeta should not be None after initialization."
 

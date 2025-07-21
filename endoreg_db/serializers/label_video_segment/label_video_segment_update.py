@@ -1,10 +1,8 @@
-from endoreg_db.models import LabelVideoSegment, VideoPredictionMeta
-from endoreg_db.serializers.video.segmentation import LabelSegmentSerializer
-
-
 from django.db import transaction
 from rest_framework import serializers
 
+from endoreg_db.models import LabelVideoSegment, VideoPredictionMeta
+from endoreg_db.serializers.label_video_segment import LabelVideoSegmentSerializer
 
 class LabelSegmentUpdateSerializer(serializers.Serializer):
     """
@@ -86,25 +84,13 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         }
 
         # Prepare lists for batch processing
-        updated_segments = []  # Stores segments that need to be updated
-        new_entries = []  # Stores segments that need to be created
-        existing_keys = set(
-            existing_segments_dict.keys()
-        )  # Existing database segment keys
-        new_keys = set(
-            (float(seg["start_frame_number"]), float(seg["end_frame_number"]))
-            for seg in new_segments
-        )  # New frontend segment keys
-
-        # Start a transaction to ensure database consistency
-        updated_segments = []
+        # Initialize sets to track updates and new entries
+        updated_segments = set()
         new_entries = []
-        existing_keys = set(existing_segments_dict.keys())
-        new_keys = set(
-            (float(seg["start_frame_number"]), float(seg["end_frame_number"]))
-            for seg in new_segments
-        )
+        existing_keys = set()
+        new_keys = set()
 
+        # Iterate through the validated data to update or create label video segments
         print(f" Before Update: Found {existing_segments.count()} existing segments.")
         print(f" New Segments Received: {len(new_segments)}")
         print(f" Using prediction_meta_id: {prediction_meta_id}")
@@ -126,7 +112,7 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
                     ).first()
 
                     if existing_segment:
-                        # If a segment with the same start_frame exists but the end_frame is different, update it
+                        # If a segment with the same_start_frame exists but the end_frame is different, update it
                         if float(existing_segment.end_frame_number) != end_frame:
                             existing_segment.end_frame_number = end_frame
                             existing_segment.save()
@@ -174,9 +160,9 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
         )
 
         return {
-            "updated_segments": LabelSegmentSerializer(
+            "updated_segments": LabelVideoSegmentSerializer(
                 updated_segments, many=True
             ).data,
-            "new_segments": LabelSegmentSerializer(new_entries, many=True).data,
+            "new_segments": LabelVideoSegmentSerializer(new_entries, many=True).data,
             "deleted_segments": deleted_count,
         }

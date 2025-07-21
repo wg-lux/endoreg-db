@@ -1,7 +1,7 @@
 from endoreg_db.models import RawPdfFile
 from endoreg_db.serializers.meta.report_meta import ReportMetaSerializer
 from endoreg_db.serializers.report.secure_file_url import SecureFileUrlSerializer
-
+from endoreg_db.serializers.report.mixins import ReportStatusMixin
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -12,7 +12,7 @@ from datetime import timedelta
 from pathlib import Path
 
 
-class ReportDataSerializer(serializers.ModelSerializer):
+class ReportDataSerializer(ReportStatusMixin, serializers.ModelSerializer):
     """
     Hauptserializer für Report-Daten mit sicherer URL
     """
@@ -30,15 +30,6 @@ class ReportDataSerializer(serializers.ModelSerializer):
             'id', 'anonymized_text', 'status', 'report_meta',
             'secure_file_url', 'file_type', 'created_at', 'updated_at'
         ]
-
-    def get_status(self, obj):
-        """Ermittelt den Status basierend auf Verarbeitungsstatus"""
-        if hasattr(obj, 'state_report_processed') and obj.state_report_processed:
-            return 'approved'
-        elif hasattr(obj, 'state_report_processing_required') and obj.state_report_processing_required:
-            return 'pending'
-        else:
-            return 'pending'  # Default status
 
     def get_updated_at(self, obj):
         """Simuliert updated_at basierend auf created_at"""
@@ -91,5 +82,3 @@ class ReportDataSerializer(serializers.ModelSerializer):
             'original_filename': Path(instance.file.name).name if instance.file else 'unknown',
             'file_size': file_size
         }
-
-

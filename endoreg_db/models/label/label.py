@@ -26,7 +26,7 @@ class Label(models.Model):
 
     name = models.CharField(max_length=255)
     label_type = models.ForeignKey(
-        "LabelType", on_delete=models.CASCADE, related_name="labels"
+        "LabelType", on_delete=models.CASCADE, related_name="labels", blank=True, null=True
     )
     description = models.TextField(blank=True, null=True)
 
@@ -76,4 +76,5 @@ class Label(models.Model):
         """
         label, _created = cls.objects.get_or_create(name=name)
         return label
+
 

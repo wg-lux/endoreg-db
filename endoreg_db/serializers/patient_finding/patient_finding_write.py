@@ -23,14 +23,13 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
-        locations_data = validated_data.pop('locations', [])
-        morphologies_data = validated_data.pop('morphologies', [])
+        classifications_data = validated_data.pop('classifications', [])
         interventions_data = validated_data.pop('interventions', [])
 
         patient_finding = PatientFinding.objects.create(**validated_data)
 
         # Erstelle verschachtelte Objekte
-        self._create_nested_objects(patient_finding, locations_data, morphologies_data, interventions_data)
+        self._create_nested_objects(patient_finding, classifications_data, interventions_data)
 
         return patient_finding
 
@@ -54,18 +53,19 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
 
         return instance
 
-    def _create_nested_objects(self, patient_finding, locations_data, morphologies_data, interventions_data):
+    def _create_nested_objects(self, patient_finding, classifications_data, interventions_data):
         """Hilfsmethode für verschachtelte Objekterstellung"""
-        self._create_classifications(patient_finding, locations_data)
+        self._create_classifications(patient_finding, classifications_data)
         self._create_interventions(patient_finding, interventions_data)
 
     def _create_classifications(self, patient_finding, classifications_data):
         for classification_data in classifications_data:
-            PatientFindingClassificationSerializer.create(
-                PatientFindingClassificationSerializer(),
-                validated_data=classification_data,
-                instance=patient_finding
-            )
+            serializer = PatientFindingClassificationSerializer(data=classification_data, context={'patient_finding': patient_finding})
+            if serializer.is_valid():
+                serializer.save(patient_finding=patient_finding)
+            else:
+                # Handle validation errors
+                print(serializer.errors)  # Or raise an exception
 
     def _create_interventions(self, patient_finding, interventions_data):
         for intervention_data in interventions_data:
@@ -75,7 +75,6 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
             )
 
     def validate(self, data):
-        """Geschäftslogik-Validierung"""
         patient_examination = data.get('patient_examination')
         finding = data.get('finding')
 

@@ -94,6 +94,7 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
                 instance.center = center
             except Center.DoesNotExist:
                 logger.error(f"Center '{center_name}' not found during update")
+                raise serializers.ValidationError(f"Center '{center_name}' does not exist.")
         
         # Extract and handle gender update
         patient_gender_name = validated_data.pop('patient_gender_name', None)
@@ -103,6 +104,7 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
                 instance.patient_gender = gender
             except Gender.DoesNotExist:
                 logger.error(f"Gender '{patient_gender_name}' not found during update")
+                raise serializers.ValidationError(f"Gender '{patient_gender_name}' does not exist.")
 
         # Update regular fields using the model's update_from_dict method
         if validated_data:

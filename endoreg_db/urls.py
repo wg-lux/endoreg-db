@@ -1,3 +1,5 @@
+from .views.finding_classification.get_classification_choices import get_location_choices, get_morphology_choices
+from .views.misc.center import CenterViewSet
 from .views.misc.csrf import csrf_token_view
 from django.urls import path, include
 from django.conf import settings
@@ -6,17 +8,14 @@ from rest_framework.routers import DefaultRouter
 from .views.patient.base import (
     PatientViewSet,
     GenderViewSet,
-    CenterViewSet,
-    start_examination,
-    get_location_choices,
-    get_morphology_choices,     
+    start_examination,     
 )
-from .views.annotation.Frames_NICE_and_PARIS_classifications_views import (
-    ForNiceClassificationView, 
-    ForParisClassificationView,
-    BatchClassificationView,
-    ClassificationStatusView
-)
+# from .views.annotation.Frames_NICE_and_PARIS_classifications_views import (
+#     ForNiceClassificationView, 
+#     ForParisClassificationView,
+#     BatchClassificationView,
+#     ClassificationStatusView
+# )
 # endoreg_db_production/endoreg_db/urls.py
 from .views.auth.keycloak import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here

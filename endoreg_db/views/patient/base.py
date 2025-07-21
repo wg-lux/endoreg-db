@@ -1,19 +1,14 @@
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET
 from django.db import transaction
 
 from rest_framework import viewsets, status, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-from ...models import Patient, Gender, Center
-from ...serializers.patient import PatientSerializer
-from ...serializers.administration import GenderSerializer, CenterSerializer
-from endoreg_db.models import (
-    FindingClassification
-)
+
+from endoreg_db.models import Patient
+from endoreg_db.serializers.patient import PatientSerializer
 
 @staff_member_required  # Ensures only staff members can access the page
 def start_examination(request):
@@ -152,38 +147,3 @@ class PatientViewSet(viewsets.ModelViewSet):
         count = Patient.objects.count()
         return Response({"count": count})
 
-class GenderViewSet(viewsets.ReadOnlyModelViewSet):
-    """API endpoint für Gender-Optionen (nur lesend)"""
-    queryset = Gender.objects.all()
-    serializer_class = GenderSerializer
-    #permission_classes = [IsAuthenticatedOrReadOnly]
-
-class CenterViewSet(viewsets.ReadOnlyModelViewSet):
-    """API endpoint für Center-Optionen (nur lesend)"""
-    queryset = Center.objects.all()
-    serializer_class = CenterSerializer
-    #permission_classes = [IsAuthenticatedOrReadOnly]
-
-@require_GET
-def get_location_choices(request, location_id):
-    """Fetch location choices dynamically based on FindingClassification (location type)."""
-    try:
-        location = FindingClassification.objects.get(id=location_id, classification_types__name__iexact="location")
-        location_choices = location.get_choices()
-        data = [{"id": choice.id, "name": choice.name} for choice in location_choices]
-        return JsonResponse({"location_choices": data})
-    except FindingClassification.DoesNotExist:
-        return JsonResponse({"error": "Location classification not found", "location_choices": []}, status=404)
-
-@require_GET
-def get_morphology_choices(request, morphology_id):
-    """Fetch morphology choices dynamically based on FindingClassification (morphology type)."""
-    try:
-        morphology_classification = FindingClassification.objects.get(id=morphology_id, classification_types__name__iexact="morphology")
-        morphology_choices = morphology_classification.get_choices()
-        data = [{"id": choice.id, "name": choice.name} for choice in morphology_choices]
-        return JsonResponse({"morphology_choices": data})
-    except FindingClassification.DoesNotExist:
-        return JsonResponse({"error": "Morphology classification not found", "morphology_choices": []}, status=404)
-    except Exception as _e:
-        return JsonResponse({"error": "Internal server error", "morphology_choices": []}, status=500)

@@ -84,21 +84,17 @@ class LabelVideoSegment(models.Model):
     @property
     def start_time(self) -> float:
         """Calculates the start time in seconds based on the start frame number."""
-        video_obj = self.get_video()
-        fps = video_obj.get_fps()
-        if fps is None or fps <= 0:
-            logger.warning("Invalid FPS for video %s. Cannot calculate start time.", video_obj)
-            raise ValueError("Invalid FPS for video.")
+        fps = self._get_fps_safe()
+        if fps == 0.0:
+            return 0.0
         return self.start_frame_number / fps
     
     @property
     def end_time(self) -> float:
         """Calculates the end time in seconds based on the end frame number."""
-        video_obj = self.get_video()
-        fps = video_obj.get_fps()
-        if fps is None or fps <= 0:
-            logger.warning("Invalid FPS for video %s. Cannot calculate end time.", video_obj)
-            raise ValueError("Invalid FPS for video.")
+        fps = self._get_fps_safe()
+        if fps == 0.0:
+            return 0.0
         return self.end_frame_number / fps
 
     @property
@@ -362,3 +358,10 @@ class LabelVideoSegment(models.Model):
             logger.info("Bulk creation complete.")
         else:
             logger.info("No new annotations needed for segment %s.", self.id)
+
+    def _get_fps_safe(self):
+        """Helper method to safely retrieve FPS, returning 0.0 if unavailable or invalid."""
+        video_obj = self.get_video()
+        if video_obj is None or video_obj.get_fps() is None:
+            return 0.0
+        return video_obj.get_fps()

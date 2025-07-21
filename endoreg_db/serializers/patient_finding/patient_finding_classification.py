@@ -11,7 +11,7 @@ class PatientFindingClassificationSerializer(serializers.ModelSerializer, Transl
     classification_name = serializers.SerializerMethodField()
     classification_choice_name = serializers.SerializerMethodField()
     class Meta:
-        model = Finding
+        model = PatientFindingClassification
         fields = ['id', 'classification', 'classification_name', 'classification_choice_name']
 
     def get_classification_name(self, obj:PatientFindingClassification):

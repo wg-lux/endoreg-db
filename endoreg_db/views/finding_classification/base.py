@@ -1,4 +1,4 @@
-# endoreg_db/views/classification_views.py
+# endoreg_db/views/finding_classification/base.py
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.decorators import action
@@ -6,8 +6,9 @@ from rest_framework.response import Response
 from endoreg_db.models import (
     FindingClassification,
 )
-from ...serializers.finding import (
+from ...serializers.finding_classification import (
     FindingClassificationSerializer,
+    FindingClassificationChoiceSerializer,
 )
 
 class ClassificationViewSet(ReadOnlyModelViewSet):
@@ -19,27 +20,18 @@ class ClassificationViewSet(ReadOnlyModelViewSet):
     def choices(self, request, pk=None):
         """
         Get choices for a specific location classification.
-        Called by: GET /api/location-classifications/{id}/choices/
+        Called by: GET /api/finding-classifications/{id}/choices/
         """
         try:
             classification = self.get_object()
-            assert isinstance(classification, FindingClassification), "Classification object is not valid"
             choices = classification.get_choices()
             
-            result = []
-            for choice in choices:
-                result.append({
-                    'id': choice.id,
-                    'name': choice.name,
-                    'name_de': getattr(choice, 'name_de', ''),
-                    'name_en': getattr(choice, 'name_en', ''),
-                    'description': getattr(choice, 'description', ''),
-                    'description_de': getattr(choice, 'description_de', ''),
-                    'description_en': getattr(choice, 'description_en', ''),
-                    'classificationId': classification.id
-                })
-            
-            return Response(result)
+            serializer = FindingClassificationChoiceSerializer(choices, many=True)
+            return Response(serializer.data)
+        except FindingClassification.DoesNotExist:
+            return Response({'error': 'Classification not found'}, status=404)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
         except Exception as e:
             return Response({'error': str(e)}, status=500)
 

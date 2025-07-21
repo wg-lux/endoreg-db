@@ -1,11 +1,10 @@
 from rest_framework import serializers
-from endoreg_db.models import LabelVideoSegment, SensitiveMeta
 from django.conf import settings
 from pathlib import Path
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
-from ...utils.calc_duration_seconds import _calc_duration
+from ...utils.calc_duration_seconds import _calc_duration_vf
 
 class VideoDetailSerializer(VideoBriefSerializer):
     # pull selected fields from SensitiveMeta (READ-ONLY) - using SerializerMethodField to handle datetime->date conversion
@@ -42,8 +41,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
         return request.build_absolute_uri(f"/api/media/videos/{obj.pk}/") if request else None
     
     def get_duration(self, obj:VideoFile):
-        obj.duration
-        return obj.duration or _calc_duration(self, obj)
+        return obj.duration or _calc_duration_vf(self, obj)
     
     def get_patient_dob(self, obj):
         """Extract date from datetime field, handling timezone properly."""

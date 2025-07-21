@@ -9,7 +9,8 @@ from celery import current_app
 from django.db import transaction
 
 from ...models import VideoFile, SensitiveMeta
-from ...serializers.video.video_file_detail import VideoDetailSerializer, SensitiveMetaUpdateSerializer
+from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
+from endoreg_db.serializers import SensitiveMetaUpdateSerializer
 from .segmentation import _stream_video_file
 from ...utils.permissions import EnvironmentAwarePermission
 

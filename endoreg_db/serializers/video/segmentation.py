@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from ...models import VideoFile, LabelVideoSegment # Added VideoPredictionMeta
+from ...models import VideoFile # Added VideoPredictionMeta
 import cv2
 
 # from django.conf import settings
@@ -183,12 +183,8 @@ class VideoFileSerializer(serializers.ModelSerializer):
             else 50
         )
 
-        print("here is fps::::::::::::::::::.-----------::::::", fps)
         sequences = self.get_sequences(obj)  # Fetch sequence data
-
-
         frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model
-
         time_segments = {}  # Dictionary to store converted times and frame predictions
 
         for label, frame_ranges in sequences.items():
