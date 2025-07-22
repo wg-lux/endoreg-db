@@ -1,15 +1,13 @@
 from endoreg_db.models import RawPdfFile
-from endoreg_db.views.report.report_service_views import logger
-
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-
 from pathlib import Path
+import logging
 
+logger = logging.getLogger(__name__)
 
 class ReportFileMetadataView(APIView):
     """

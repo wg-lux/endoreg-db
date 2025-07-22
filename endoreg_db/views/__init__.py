@@ -34,7 +34,12 @@ from .examination import (
     get_interventions_for_examination,
 )
 
-from .finding import get_interventions_for_finding, FindingViewSet
+from .finding import (
+    get_interventions_for_finding,
+    get_classifications_for_finding,
+    FindingViewSet
+)
+
 from .finding_classification import (
     FindingClassificationViewSet,
     get_classification_choices,
@@ -55,7 +60,8 @@ from .meta import (
     AvailableFilesListView,
     SensitiveMetaDetailView,
     SensitiveMetaListView,
-    SensitiveMetaVerificationView
+    SensitiveMetaVerificationView,
+    ReportFileMetadataView,
 )
 
 from .misc import (
@@ -103,7 +109,7 @@ from .patient_finding_classification import (
 from .pdf import (
     ClosingFileWrapper,
     PDFStreamView,
-    RawPdfAnonyTextSerializer,
+    UpdateAnonymizedTextView,
     RawPdfAnonyTextView,
     PDFFileForMetaView,
     UpdateSensitiveMetaView,
@@ -168,6 +174,7 @@ __all__ = [
     # Finding Views
     "FindingViewSet",
     "get_interventions_for_finding",
+    "get_classifications_for_finding",
 
     # Finding Classification Views
     "FindingClassificationViewSet",
@@ -188,6 +195,7 @@ __all__ = [
     "SensitiveMetaDetailView",
     "SensitiveMetaListView",
     "SensitiveMetaVerificationView",
+    "ReportFileMetadataView",
 
     # Misc
     "CenterViewSet",
@@ -231,7 +239,7 @@ __all__ = [
     # PDF
     "ClosingFileWrapper",
     "PDFStreamView",
-    "RawPdfAnonyTextSerializer",
+    "UpdateAnonymizedTextView",
     "RawPdfAnonyTextView",
     "PDFFileForMetaView",
     "UpdateSensitiveMetaView",

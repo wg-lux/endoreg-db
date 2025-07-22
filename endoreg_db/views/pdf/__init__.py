@@ -5,7 +5,7 @@ from .pdf_stream_views import (
 )
 
 from .raw_pdf_anony_text_validation_views import (
-    RawPdfAnonyTextSerializer,
+    UpdateAnonymizedTextView,
     RawPdfAnonyTextView,
 )
 
@@ -17,7 +17,7 @@ from .raw_pdf_meta_validation_views import (
 __all__ = [
     "ClosingFileWrapper",
     "PDFStreamView",
-    "RawPdfAnonyTextSerializer",
+    "UpdateAnonymizedTextView",
     "RawPdfAnonyTextView",
     "PDFFileForMetaView",
     "UpdateSensitiveMetaView",
