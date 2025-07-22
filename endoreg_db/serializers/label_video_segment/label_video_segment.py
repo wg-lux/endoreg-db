@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.core.exceptions import ObjectDoesNotExist
-from ...models import LabelVideoSegment, VideoFile, Label, InformationSource, VideoSegmentationLabel
+from ...models import LabelVideoSegment, VideoFile, Label, InformationSource
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     label_id = serializers.IntegerField(write_only=True, required=False, allow_null=True, help_text="Label ID")
     
     # Add support for label names (both Label and VideoSegmentationLabel)
-    label_name = serializers.SerializerMethodField()
+    label_name = serializers.CharField(write_only=True, required=False, allow_null=True, help_text="Label name")
     label_display = serializers.SerializerMethodField()
        
     # Read-only fields for response
@@ -43,8 +43,14 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'start_frame_number': {'required': False},
             'end_frame_number': {'required': False},
+            'video_file': {'required': False},  # Make video_file optional
         }
     
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if hasattr(self, 'initial_data'):
+            logger.debug(f"Serializer initialized with data: {self.initial_data}")
 
     def validate(self, attrs):
         """
@@ -52,47 +58,54 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         
         Checks that either start/end times or start/end frame numbers are present, and that start values are non-negative and end values are greater than start values. Allows segments without labels.
         """
+        logger.debug("Validation started")
+        logger.debug(f"Initial data: {self.initial_data}")
+        logger.debug(f"Attributes before validation: {attrs}")
+
         # Check if we have either time or frame data
-        has_time_data = 'start_time' in attrs and 'end_time' in attrs
+        has_time_data = 'start_time' in self.initial_data and 'end_time' in self.initial_data
         has_frame_data = 'start_frame_number' in attrs and 'end_frame_number' in attrs
-        
+
+        # PATCH: Copy start_time/end_time from initial_data to attrs if present
+        if has_time_data:
+            attrs['start_time'] = float(self.initial_data['start_time'])
+            attrs['end_time'] = float(self.initial_data['end_time'])
+
         if not has_time_data and not has_frame_data:
             raise serializers.ValidationError(
                 "Either start_time/end_time or start_frame_number/end_frame_number must be provided"
             )
-        
+
         # Validate that we have either label_id or label_name
         label_id = attrs.get('label_id')
         label_name = attrs.get('label_name')
-        
+
         if not label_id and not label_name:
-            # Allow null labels for segments without specific labels
             logger.info("Creating segment without label")
-        
+
         # Validate time data if provided
+        start_time = attrs.get('start_time')
+        end_time = attrs.get('end_time')
+
         if has_time_data:
-            if attrs['start_time'] < 0:
+            if start_time is not None and float(start_time) < 0:
                 raise serializers.ValidationError("start_time must be non-negative")
-            if attrs['end_time'] <= attrs['start_time']:
+            if end_time is not None and float(end_time) <= float(start_time):
                 raise serializers.ValidationError("end_time must be greater than start_time")
-        
+
         # Validate frame data if provided
         if has_frame_data:
             if attrs['start_frame_number'] < 0:
                 raise serializers.ValidationError("start_frame_number must be non-negative")
             if attrs['end_frame_number'] <= attrs['start_frame_number']:
                 raise serializers.ValidationError("end_frame_number must be greater than start_frame_number")
-        
+
+        logger.debug(f"Attributes after validation: {attrs}")
         return attrs
     
     def create(self, validated_data):
         """
         Creates a new LabelVideoSegment instance using validated input data.
-        
-        Associates the segment with a specified video file and label, supporting label assignment by ID or by name (creating a new label if necessary). Converts provided start and end times to frame numbers based on the video's FPS if frame numbers are not directly supplied. Ensures required frame data is present and links the segment to a default manual annotation information source. Raises a validation error if referenced video or label does not exist, or if frame data cannot be determined.
-        
-        Returns:
-            The created LabelVideoSegment instance.
         """
         try:
             # Extract convenience fields
@@ -101,13 +114,13 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             label_name = validated_data.pop('label_name', None)
             start_time = validated_data.pop('start_time', None)
             end_time = validated_data.pop('end_time', None)
-            
+
             # Get the video file
             try:
                 video_file = VideoFile.objects.get(id=video_id)
             except ObjectDoesNotExist as exc:
                 raise serializers.ValidationError(f"VideoFile with id {video_id} does not exist") from exc
-            
+
             # Determine the label to use
             label = None
             if label_id:
@@ -116,40 +129,34 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 except ObjectDoesNotExist as exc:
                     raise serializers.ValidationError(f"Label with id {label_id} does not exist") from exc
             elif label_name:
-                label = Label.get_or_create_from_name(label_name)
-
+                label, _ = Label.get_or_create_from_name(label_name)
+                if not label:
+                    raise serializers.ValidationError(f"Failed to create or retrieve label with name {label_name}")
             else:
                 raise serializers.ValidationError("Either label_id or label_name must be provided")
-            
 
-            fps_raw = video_file.get_fps()  # Default to 30 fps if not available
-            
-            assert fps_raw is not None, "Video file must have a defined FPS"
+            # Get FPS from the video file
+            fps_raw = video_file.get_fps()
+            if fps_raw is None:
+                raise serializers.ValidationError("Video file must have a defined FPS")
 
             try:
-                if isinstance(fps_raw, str):
-                    fps = float(fps_raw)
-                elif isinstance(fps_raw, (int, float)):
-                    fps = float(fps_raw)
-                else:
-                    raise serializers.ValidationError("Invalid FPS format in video file")
-                    # fps = 30.0  # Default fallback
+                fps = float(fps_raw)
+                if fps <= 0:
+                    raise ValueError("FPS must be a positive number")
             except (ValueError, TypeError):
-                fps = 30.0  # Default fallback if conversion fails
-            
-            if fps <= 0:
-                raise ValueError("FPS must be a positive number")
-            
-            if start_time is not None and 'start_frame_number' not in validated_data:
-                validated_data['start_frame_number'] = int(start_time * fps)
-            
-            if end_time is not None and 'end_frame_number' not in validated_data:
-                validated_data['end_frame_number'] = int(end_time * fps)
-            
+                raise serializers.ValidationError("Invalid FPS format in video file")
+
+            # Convert start_time and end_time to frame numbers if provided
+            if start_time is not None:
+                validated_data['start_frame_number'] = int(float(start_time) * fps)
+            if end_time is not None:
+                validated_data['end_frame_number'] = int(float(end_time) * fps)
+
             # Ensure we have frame numbers
             if 'start_frame_number' not in validated_data or 'end_frame_number' not in validated_data:
                 raise serializers.ValidationError("Could not determine frame numbers from provided data")
-            
+
             # Get or create a default information source for manual annotations
             source, _ = InformationSource.objects.get_or_create(
                 name='Manual Annotation',
@@ -157,7 +164,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                     'description': 'Manually created label segments via web interface',
                 }
             )
-            
+
             # Create the segment directly
             segment = LabelVideoSegment(
                 video_file=video_file,
@@ -168,13 +175,16 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 prediction_meta=None  # No prediction meta for manual annotations
             )
             segment.save()
-            
-            logger.info("Created new video segment: %s for video %s with label %s", 
-                       segment.pk, video_id, label.name if label else 'None')
+
+            logger.info("Created new video segment: %s for video %s with label %s",
+                        segment.pk, video_id, label.name if label else 'None')
             return segment
-            
+
+        except serializers.ValidationError as e:
+            logger.error("Validation error while creating video segment: %s", str(e))
+            raise
         except Exception as e:
-            logger.error("Error creating video segment: %s", str(e))
+            logger.error("Unexpected error while creating video segment: %s", str(e))
             raise serializers.ValidationError(f"Failed to create segment: {str(e)}")
     
     def update(self, instance, validated_data):
@@ -336,3 +346,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     def get_end_time(self, obj):
         """Convert end frame to time in seconds"""
         return obj.end_time
+    
+    def is_valid(self, raise_exception=False):
+        logger.debug("Starting validation")
+        result = super().is_valid(raise_exception=raise_exception)
+        if not result:
+            logger.debug(f"Validation errors: {self.errors}")
+        return result

@@ -75,6 +75,6 @@ class Label(models.Model):
             Label: The label instance.
         """
         label, _created = cls.objects.get_or_create(name=name)
-        return label
+        return label, _created
 
 
