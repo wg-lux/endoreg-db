@@ -1,7 +1,5 @@
 from endoreg_db.models import Label, LabelVideoSegment, VideoFile
 from endoreg_db.serializers.label_video_segment.label_video_segment import LabelVideoSegmentSerializer
-from endoreg_db.views.label_video_segment.label_segment_views import logger
-
 
 from django.db import transaction
 from rest_framework import status
@@ -9,6 +7,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+import logging
+logger = logging.getLogger(__name__)
 
 @api_view(['POST', 'GET'])
 @permission_classes(DEBUG_PERMISSIONS)

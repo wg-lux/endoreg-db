@@ -139,6 +139,7 @@ from .video import (
     UpdateLabelSegmentsView,
     rerun_segmentation,
     video_timeline_view,
+    VideoExaminationViewSet,
 )
 
 __all__ = [
@@ -267,4 +268,5 @@ __all__ = [
     'UpdateLabelSegmentsView',
     'rerun_segmentation',
     'video_timeline_view',
+    "VideoExaminationViewSet",
 ]

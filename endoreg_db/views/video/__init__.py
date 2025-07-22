@@ -29,6 +29,8 @@ from .timeline import (
     video_timeline_view
 )
 
+from .video_examination_viewset import VideoExaminationViewSet
+
 __all__ = [
     # Media views
     'VideoMediaView',
@@ -54,4 +56,7 @@ __all__ = [
 
     # Timeline views
     'video_timeline_view',
+
+    # Video Examination ViewSet
+    "VideoExaminationViewSet",
 ]

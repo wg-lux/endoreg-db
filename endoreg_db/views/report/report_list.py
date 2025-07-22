@@ -1,7 +1,5 @@
 from endoreg_db.models import RawPdfFile
 from endoreg_db.serializers.report.report_list import ReportListSerializer
-from endoreg_db.views.report.report_service_views import logger
-
 
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -9,6 +7,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+import logging
+logger = logging.getLogger(__name__)
 
 class ReportListView(APIView):
     """

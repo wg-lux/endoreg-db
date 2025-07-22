@@ -5,15 +5,15 @@ from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 
 from endoreg_db.views import (
-     PatientViewSet,
-     GenderViewSet,
-     CenterViewSet,
-     VideoViewSet,
-     ExaminationViewSet,
-     VideoExaminationViewSet,# TODO
-     FindingViewSet,
-     FindingClassificationViewSet, 
-     PatientFindingViewSet,
+    PatientViewSet,
+    GenderViewSet,
+    CenterViewSet,
+    VideoViewSet,
+    ExaminationViewSet,
+    VideoExaminationViewSet,
+    FindingViewSet,
+    FindingClassificationViewSet, 
+    PatientFindingViewSet,
 )
 
 from .anonymization import url_patterns as anonymization_url_patterns
@@ -59,7 +59,9 @@ router.register(r'patient-findings', PatientFindingViewSet)
 urlpatterns = [
     path('', include(router.urls)),  
     path('api/', include(
-        classification_url_patterns + []
+        classification_url_patterns + 
+        api_urls +
+        []
      ))
 ]
 

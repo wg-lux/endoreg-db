@@ -59,8 +59,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         Checks that either start/end times or start/end frame numbers are present, and that start values are non-negative and end values are greater than start values. Allows segments without labels.
         """
         logger.debug("Validation started")
-        logger.debug(f"Initial data: {self.initial_data}")
-        logger.debug(f"Attributes before validation: {attrs}")
+        # Avoid logging full objects that may raise errors
+        video_id = attrs.get('video_id') or self.initial_data.get('video_id') or self.initial_data.get('video_file')
+        label_id = attrs.get('label_id') or self.initial_data.get('label_id') or self.initial_data.get('label')
+        logger.debug(f"Validating video segment: video_id={video_id}, label_id={label_id}, attrs={ {k: v for k, v in attrs.items() if k not in ['video_file', 'label']} }")
 
         # Check if we have either time or frame data
         has_time_data = 'start_time' in self.initial_data and 'end_time' in self.initial_data
@@ -353,3 +355,15 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         if not result:
             logger.debug(f"Validation errors: {self.errors}")
         return result
+    
+    def to_internal_value(self, data):
+        """
+        Accept both video_id/label_id and video_file/label for input data.
+        """
+        # Map video_file to video_id if present
+        if 'video_file' in data and 'video_id' not in data:
+            data['video_id'] = data['video_file']
+        # Map label to label_id if present
+        if 'label' in data and 'label_id' not in data:
+            data['label_id'] = data['label']
+        return super().to_internal_value(data)

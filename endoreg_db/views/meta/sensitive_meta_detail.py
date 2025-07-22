@@ -1,5 +1,5 @@
 from endoreg_db.models import SensitiveMeta
-from endoreg_db.serializers.meta.sensitive_meta_detail import SensitiveMetaDetailSerializer, SensitiveMetaUpdateSerializer
+from endoreg_db.serializers import SensitiveMetaDetailSerializer, SensitiveMetaUpdateSerializer
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404

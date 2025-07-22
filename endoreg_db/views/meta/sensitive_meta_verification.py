@@ -1,5 +1,5 @@
 from endoreg_db.models import SensitiveMeta
-from endoreg_db.serializers.meta.sensitive_meta_detail import SensitiveMetaDetailSerializer, SensitiveMetaVerificationSerializer
+from endoreg_db.serializers.meta import SensitiveMetaDetailSerializer, SensitiveMetaVerificationSerializer
 
 from django.db import transaction
 from rest_framework import status

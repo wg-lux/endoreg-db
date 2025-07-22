@@ -1,4 +1,4 @@
-from examination_manifest_cache import ExaminationManifestCache
+from .examination_manifest_cache import ExaminationManifestCache
 from .examination import ExaminationViewSet
 from .get_finding_classification_choices import (
     get_classification_choices_for_examination,

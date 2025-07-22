@@ -2,7 +2,6 @@ from endoreg_db.models import SensitiveMeta, VideoFile
 from endoreg_db.serializers import SensitiveMetaUpdateSerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.video.media import logger
 from endoreg_db.views.video.segmentation import _stream_video_file
 
 
@@ -14,7 +13,9 @@ from rest_framework.views import APIView
 
 
 import os
-import shutil
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 class VideoMediaView(APIView):
