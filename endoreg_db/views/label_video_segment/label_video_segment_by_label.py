@@ -1,5 +1,6 @@
 from endoreg_db.models import Label, LabelVideoSegment, VideoFile
 from django.shortcuts import get_object_or_404
+from django.http import Http404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -63,7 +64,8 @@ def video_segments_by_label_id_view(request, video_id, label_id):
             }
 
         return Response(response_data)
-
+    except Http404 as e:
+        return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
     except VideoFile.DoesNotExist:
         return Response(
             {'error': f'Video with id {video_id} not found'},
@@ -157,7 +159,8 @@ def video_segments_by_label_name_view(request, video_id, label_name):
             }
 
         return Response(response_data)
-
+    except Http404 as e:
+        return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
     except VideoFile.DoesNotExist:
         return Response(
             {'error': f'Video with id {video_id} not found'},

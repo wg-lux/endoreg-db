@@ -46,8 +46,8 @@ DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_d
 DEFAULT_GENDER = "unknown"
 
 def get_information_source_prediction():
-    from .data_loader import load_information_source
-    load_information_source()
+    from .data_loader import load_information_source_data
+    load_information_source_data()
     source = InformationSource.objects.get(name="prediction")
     assert isinstance(source, InformationSource), "No InformationSource found in the database."
     return source
@@ -283,7 +283,7 @@ def get_default_video_file():
     from .data_loader import (
         load_disease_data,
         load_event_data,
-        load_information_source,
+        load_information_source_data,
         load_examination_data,
         load_center_data,
         load_endoscope_data,
@@ -293,7 +293,7 @@ def get_default_video_file():
     
     load_disease_data()
     load_event_data()
-    load_information_source()
+    load_information_source_data()
     load_examination_data()
     load_center_data()
     load_endoscope_data()
@@ -303,16 +303,12 @@ def get_default_video_file():
         examination_alias='egd', is_anonymous=False
     )
 
-    video_file = VideoFile.create_from_file(
+    video_file = VideoFile.create_from_file_initialized(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests
         processor_name = DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
     )
 
-    # Ensure video metadata is loaded, including frame_count and frames are initialized
-    if video_file:
-        video_file.initialize() # This calls initialize_video_specs, set_frame_dir, get_or_create_state, and initialize_frames
-        video_file.save() # Save the updated metadata and initialized frames
-
+  
     return video_file

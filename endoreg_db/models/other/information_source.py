@@ -52,7 +52,8 @@ class InformationSource(models.Model):
     #     related_name="information_sources",
     #     blank=True,
     # )
-    # information_source_types: models.QuerySet["InformationSourceType"]
+    information_source_types: models.ManyToManyRel
+    
     class Meta:
         verbose_name = "Information Source"
         verbose_name_plural = "Information Sources"
@@ -111,6 +112,44 @@ class InformationSourceType(models.Model):
         verbose_name_plural = "Information Source Types"
 
     # information_sources: models.QuerySet["InformationSource"]
+
+    @classmethod
+    def get_prediction_type(cls):
+        """
+        Retrieves the prediction information source type.
+        
+        This class method queries the InformationSourceType model for an entry with the name
+        "prediction" using Django's ORM and asserts that the retrieved object is valid.
+        It returns the matching InformationSourceType instance.
+        
+        Returns:
+            InformationSourceType: The InformationSourceType object with name "prediction".
+        
+        Raises:
+            AssertionError: If no prediction information source type is found.
+        """
+        _type = cls.objects.get(name="prediction")
+        assert _type, "No prediction information source type found"
+        return _type
+    
+    @classmethod
+    def get_manual_annotation_type(cls):
+        """
+        Retrieves the manual annotation information source type.
+        
+        This class method queries the InformationSourceType model for an entry with the name
+        "manual_annotation" using Django's ORM and asserts that the retrieved object is valid.
+        It returns the matching InformationSourceType instance.
+        
+        Returns:
+            InformationSourceType: The InformationSourceType object with name "manual_annotation".
+        
+        Raises:
+            AssertionError: If no manual annotation information source type is found.
+        """
+        _type = cls.objects.get(name="annotation")
+        assert _type, "No manual annotation information source type found"
+        return _type
 
     def natural_key(self):
         """

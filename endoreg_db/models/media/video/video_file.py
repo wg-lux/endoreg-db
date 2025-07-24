@@ -370,10 +370,13 @@ class VideoFile(models.Model):
         self.set_frame_dir()
 
         # Create a new state if it doesn't exist
-        self.get_or_create_state()
+        self.state = self.get_or_create_state()
 
+        self.sensitive_meta = self.get_or_create_sensitive_meta()
+        self.save()
         # Initialize frames based on the video specs
         self.initialize_frames()
+
 
         return self
 
@@ -385,7 +388,6 @@ class VideoFile(models.Model):
 
     def save(self, *args, **kwargs):
         # Ensure state exists or is created before the main save operation
-        self.get_or_create_state()
         # Now call the original save method
         super().save(*args, **kwargs)
 
@@ -398,6 +400,15 @@ class VideoFile(models.Model):
             self.state = VideoState.objects.create()
         return self.state
     
+    def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
+        """
+        Gets the related SensitiveMeta instance, creating one if it doesn't exist.
+        Does not save the VideoFile instance itself.
+        """
+        from endoreg_db.models import SensitiveMeta
+        if self.sensitive_meta is None:
+            self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
+        return self.sensitive_meta
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
         """

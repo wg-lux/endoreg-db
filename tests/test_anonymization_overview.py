@@ -7,45 +7,38 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
-from endoreg_db.models import VideoFile, RawPdfFile, SensitiveMeta, Center, VideoState
+from endoreg_db.models import VideoFile, RawPdfFile, SensitiveMeta, Center, VideoState, SensitiveMetaState
 # from endoreg_db.models.media.video.video_file_state import VideoState
-
+from .helpers.data_loader import load_base_db_data
+from .helpers.default_objects import (
+    get_default_center, get_default_egd_pdf, get_default_video_file
+)
 
 class AnonymizationOverviewAPITest(TestCase):
     """Test cases for anonymization overview API."""
     
     def setUp(self):
         """Set up test data."""
+        load_base_db_data()
         self.client = APIClient()
         
         # Create test center
-        self.center = Center.objects.create(
-            name="test_center",
-            display_name="Test Center"
-        )
+        self.center = get_default_center()
+        self.raw_pdf = get_default_egd_pdf()
+        self.video = get_default_video_file()
         
-        # Create test sensitive meta objects
-        self.video_meta = SensitiveMeta.objects.create(
-            patient_first_name="Video",
-            patient_last_name="Patient", 
-            patient_dob="1990-01-01",
-            examination_date="2024-01-01"
-        )
-        # Create SensitiveMetaState to set verification status
-        from endoreg_db.models import SensitiveMetaState
-        SensitiveMetaState.objects.create(
-            sensitive_meta=self.video_meta,
-            is_verified=True
-        )
+        
+    def test_video_sm_creation(self):
+        """Test creation of SensitiveMeta for video."""
+        video = self.video
+        video_sm = video.sensitive_meta
+        self.assertIsNotNone(video_sm, "SensitiveMeta for video should be created")
+        self.assertIsInstance(video_sm, SensitiveMeta, "SensitiveMeta should be an instance of SensitiveMeta model")
+        self.assertIsInstance(video_sm.state, SensitiveMetaState, "SensitiveMeta should have a state")
+        self.assertIsInstance(video.state, VideoState, "VideoFile should have a VideoState")
+        self.assertEqual(video_sm.center, self.center, "SensitiveMeta should be linked to the correct center")
 
-        self.pdf_meta = SensitiveMeta.objects.create(
-            patient_first_name="PDF", 
-            patient_last_name="Patient",
-            patient_dob="1985-05-15",
-            examination_date="2024-02-01"
-        )
-        # No SensitiveMetaState means is_verified will be False by default
-    
+
     def test_overview_empty_database(self):
         """Test overview endpoint with no files."""
         response = self.client.get('/api/anonymization/items/overview/')
@@ -59,7 +52,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video = VideoFile.objects.create(
             original_file_name="test_video.mp4",
             uploaded_at=timezone.datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-            sensitive_meta=self.video_meta,
+            sensitive_meta=self.video_sm,
             center=self.center
         )
         
@@ -117,7 +110,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video1 = VideoFile.objects.create(
             original_file_name="video_not_started.mp4",
             uploaded_at=base_time,
-            sensitive_meta=self.video_meta,
+            sensitive_meta=self.video_sm,
             center=self.center
         )
         VideoState.objects.create(
@@ -131,7 +124,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video2 = VideoFile.objects.create(
             original_file_name="video_processing.mp4", 
             uploaded_at=base_time,
-            sensitive_meta=self.video_meta,
+            sensitive_meta=self.video_sm,
             center=self.center
         )
         VideoState.objects.create(
@@ -145,7 +138,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video3 = VideoFile.objects.create(
             original_file_name="video_failed.mp4",
             uploaded_at=base_time,
-            sensitive_meta=self.video_meta,
+            sensitive_meta=self.video_sm,
             center=self.center
         )
         VideoState.objects.create(
@@ -159,7 +152,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video4 = VideoFile.objects.create(
             original_file_name="video_done.mp4",
             uploaded_at=base_time,
-            sensitive_meta=self.video_meta,
+            sensitive_meta=self.video_sm,
             center=self.center
         )
         VideoState.objects.create(
@@ -281,7 +274,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video = VideoFile.objects.create(
             original_file_name="test_video.mp4",
             uploaded_at=timezone.now(),
-            sensitive_meta=self.video_meta,
+            sensitive_meta=self.video_sm,
             center=self.center
         )
         
@@ -291,7 +284,7 @@ class AnonymizationOverviewAPITest(TestCase):
         data = response.data
         
         self.assertEqual(data['id'], video.id)
-        self.assertEqual(data['sensitiveMetaId'], self.video_meta.id)
+        self.assertEqual(data['sensitiveMetaId'], self.video_sm.id)
         self.assertEqual(data['text'], '')  # Videos don't have text
         self.assertEqual(data['anonymizedText'], '')
         self.assertIsNotNone(data['reportMeta'])

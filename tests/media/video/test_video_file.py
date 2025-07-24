@@ -23,7 +23,7 @@ from ...helpers.default_objects import get_default_center
 from ...helpers.data_loader import (
     load_disease_data,
     load_event_data,
-    load_information_source,
+    load_information_source_data,
     load_examination_data,
     load_center_data,
     load_endoscope_data,
@@ -38,7 +38,7 @@ class VideoFileModelTest(TestCase):
     def setUp(self):
         load_disease_data()
         load_event_data()
-        load_information_source()
+        load_information_source_data()
         load_examination_data()
         load_center_data()
         load_endoscope_data()
