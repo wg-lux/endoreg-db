@@ -236,8 +236,10 @@ class TestLabelVideoSegmentCRUD:
             "start_frame_number": 100,
             "end_frame_number": 50  # Ende vor Start - sollte Fehler verursachen
         }
-        
         response = self.client.post("/api/video-segments/", data, format="json")
-        
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "error" in response.data
+        # Accept DRF error dict inside 'details' key
+        assert "non_field_errors" in response.data.get("details", {})
+        # Optionally check error message
+        error_msgs = response.data["details"]["non_field_errors"]
+        assert any("end_frame_number must be greater than start_frame_number" in str(msg) for msg in error_msgs)

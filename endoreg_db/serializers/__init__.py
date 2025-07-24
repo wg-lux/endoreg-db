@@ -19,6 +19,11 @@ from .finding_classification import (
     FindingClassificationSerializer
 )
 
+from .label import (
+    LabelSerializer,
+    ImageClassificationAnnotationSerializer
+)
+
 from .label_video_segment import (
     LabelVideoSegmentSerializer,
     LabelVideoSegmentAnnotationSerializer,
@@ -85,6 +90,9 @@ __all__ = [
     'FindingSerializer',
     'FindingClassificationSerializer',
     "FindingClassificationChoiceSerializer",
+
+    "LabelSerializer",
+    "ImageClassificationAnnotationSerializer",
 
     # LabelVideoSegment
     "LabelVideoSegmentSerializer",

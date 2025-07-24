@@ -77,7 +77,7 @@ def _create(self:"LabelVideoSegmentSerializer", validated_data):
         )
 
         # Create the segment directly
-        segment = LabelVideoSegment(
+        segment = LabelVideoSegment.safe_create(
             video_file=video_file,
             label=label,
             source=source,

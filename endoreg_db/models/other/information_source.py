@@ -47,7 +47,12 @@ class InformationSource(models.Model):
     date_created = models.DateField(auto_now_add=True)
     date_modified = models.DateField(auto_now=True)
     abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
-
+    # information_source_types = models.ManyToManyField(
+    #     "InformationSourceType",
+    #     related_name="information_sources",
+    #     blank=True,
+    # )
+    # information_source_types: models.QuerySet["InformationSourceType"]
     class Meta:
         verbose_name = "Information Source"
         verbose_name_plural = "Information Sources"
@@ -76,3 +81,50 @@ class InformationSource(models.Model):
         """
         return str(self.name)
 
+class InformationSourceTypeManager(models.Manager):
+    def get_by_natural_key(self, name):
+        """
+        Retrieves a model instance using its natural key.
+        
+        Args:
+            name: The natural key value corresponding to the model's 'name' field.
+        
+        Returns:
+            The model instance that matches the provided natural key.
+        """
+        return self.get(name=name)
+    
+class InformationSourceType(models.Model):
+    objects = InformationSourceTypeManager()
+
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
+
+    information_sources = models.ManyToManyField(
+        InformationSource,
+        related_name="information_source_types",
+        blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Information Source Type"
+        verbose_name_plural = "Information Source Types"
+
+    # information_sources: models.QuerySet["InformationSource"]
+
+    def natural_key(self):
+        """
+        Returns the natural key tuple for the information source type.
+        
+        The tuple contains the object's name, which uniquely identifies it for 
+        serialization and natural key lookup.
+        """
+        return (self.name,)
+
+    def __str__(self):
+        """
+        Return the string representation of the InformationSourceType instance.
+        
+        This method returns the instance's name attribute converted explicitly to a string.
+        """
+        return str(self.name)

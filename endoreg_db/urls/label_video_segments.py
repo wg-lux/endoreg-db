@@ -6,10 +6,15 @@ from endoreg_db.views import (
     SensitiveMetaDetailView,
     video_segments_view,
     video_segment_detail_view,
-
+    get_lvs_by_name_and_video_id
 )
 
 url_patterns = [
+    path(
+        "lvs/by-label-name/<str:label_name>/by-video-id/<int:video_id>/",
+        get_lvs_by_name_and_video_id,
+        name='get_lvs_by_name_and_video_id'
+    ),
     path(
         'annotations/',
         create_video_segment_annotation,

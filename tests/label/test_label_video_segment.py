@@ -47,9 +47,7 @@ class LabelVideoSegmentModelTest(TestCase):
 
         self.start_frame = 10
         self.end_frame = min(self.start_frame + 20, self.video_file.frame_count)
-        if self.start_frame >= self.end_frame:
-            self.skipTest(f"Video frame count ({self.video_file.frame_count}) too small for test segment range [{self.start_frame}, {self.end_frame}).")
-
+        self.assertLess(self.start_frame, self.end_frame+1, "Start frame must be less than end frame")
         self.segment = LabelVideoSegment.create_from_video(
             source=self.video_file,
             prediction_meta=self.prediction_meta,
@@ -162,8 +160,12 @@ class LabelVideoSegmentModelTest(TestCase):
         Verifies that the serializer validates the input data, successfully creates a segment, and assigns a Label instance to the segment.
         """
         v = self.video_file
-        data = {"video_id": v.id, "label_name": "appendix",
-                "start_time": 0, "end_time": 1}
+        data = {
+            "video_id": v.id, 
+            "label_name": "appendix",
+            "start_time": self.start_frame / v.fps, 
+            "end_time": self.end_frame / v.fps
+        }
         s = LabelVideoSegmentSerializer(data=data)
         assert s.is_valid(), s.errors
         segment = s.save()
@@ -244,11 +246,11 @@ class LabelVideoSegmentModelTest(TestCase):
 
     def test_get_annotations(self):
         """Test retrieving annotations associated with the segment."""
-        self.assertEqual(self.segment.get_annotations().count(), 0)
+        self.assertEqual(self.segment.all_frame_annotations.count(), 0)
 
         self.segment.generate_annotations()
 
-        segment_annotations = self.segment.get_annotations()
+        segment_annotations = self.segment.all_frame_annotations
         self.assertEqual(segment_annotations.count(), self.segment_frame_count)
 
         manual_annotations = ImageClassificationAnnotation.objects.filter(
@@ -292,11 +294,12 @@ class LabelVideoSegmentModelTest(TestCase):
         """
         label = Label.objects.first()
         label_id = label.pk
+        frame_count = self.video_file.frame_count
         data = {
             'video_id': self.video_file.pk,
             'label_id': label_id,
             'start_time': 0,
-            'end_time': 10
+            'end_time': frame_count / self.video_file.fps,
         }
         
         serializer = LabelVideoSegmentSerializer(data=data)
@@ -311,6 +314,27 @@ class LabelVideoSegmentModelTest(TestCase):
         self.assertIsInstance(segment.source, InformationSource)
         self.assertIsInstance(segment.start_frame_number, int)
         self.assertIsInstance(segment.end_frame_number, int)
+
+    def test_lvs_serializer_create_method_exceed_frame_limit(self) -> None:
+        """
+        Test that creating a new LabelVideoSegment with end_frame_number exceeding video frame count raises ValidationError.
+        """
+        from rest_framework import serializers
+        label = Label.objects.first()
+        label_id = label.pk
+        frame_count = self.video_file.frame_count + 10  # Intentionally exceed frame count
+        data = {
+            'video_id': self.video_file.pk,
+            'label_id': label_id,
+            'start_time': 0,
+            'end_time': frame_count / self.video_file.fps,
+        }
+        serializer = LabelVideoSegmentSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        # Expect DRF ValidationError, not ValueError
+        with self.assertRaises(serializers.ValidationError) as cm:
+            serializer.create(serializer.validated_data)
+        self.assertIn("exceeds video frame count", str(cm.exception))
 
     def tearDown(self):
         if hasattr(self, 'video_file') and self.video_file:
