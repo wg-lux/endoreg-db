@@ -23,10 +23,6 @@
         "colon_lesion_eftr",
         "colon_lesion_clip",
       ]
-
-    causing_finding_interventions: []
-    opt_causing_finding_interventions: []
-
     examinations: ["colonoscopy"]
 
     finding_types: ["macroscopic"]
@@ -37,10 +33,6 @@
     name_de: "Postinterventionelle Wunde"
 
     finding_interventions: ["colon_lesion_clip"]
-
-    causing_finding_interventions: ["colon_lesion_polypectomy_cold_snare"]
-
-    opt_causing_finding_interventions: []
 
     examinations: ["colonoscopy"]
 
@@ -53,8 +45,6 @@
     name_en: "Tumor"
 
     finding_interventions: []
-    causing_finding_interventions: []
-    opt_causing_finding_interventions: []
 
     examinations:
       [
@@ -74,8 +64,6 @@
     name_de: "Entzündung"
     name_en: "Inflammation"
     finding_interventions: []
-    causing_finding_interventions: []
-    opt_causing_finding_interventions: []
     examinations:
       [
         "colonoscopy",
@@ -93,8 +81,6 @@
     name_de: "Erosion"
     name_en: "Erosion"
     finding_interventions: []
-    causing_finding_interventions: []
-    opt_causing_finding_interventions: []
     examinations:
       [
         "colonoscopy",
@@ -113,8 +99,7 @@
     name_de: "Ulcus"
     name_en: "Ulcer"
     finding_interventions: []
-    causing_finding_interventions: []
-    opt_causing_finding_interventions: []
+
     examinations:
       [
         "colonoscopy",
@@ -133,9 +118,7 @@
     name_de: "Narbe"
     name_en: "Scar"
     finding_interventions: []
-    causing_finding_interventions: []
-    opt_causing_finding_interventions: ["colon_lesion_polypectomy_cold_snare"]
-
+   
     examinations:
       [
         "colonoscopy",

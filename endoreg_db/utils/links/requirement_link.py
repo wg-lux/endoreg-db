@@ -10,8 +10,7 @@ from endoreg_db.models import (
     PatientFinding,
     Finding, 
     FindingIntervention, 
-    FindingLocationClassificationChoice, 
-    FindingMorphologyClassificationChoice, 
+    FindingClassificationChoice, 
     LabValue,
     PatientLabValue,
     PatientLabSample,
@@ -65,8 +64,7 @@ class RequirementLinks(BaseModel):
     patient_events: List["PatientEvent"] = []
     patient_findings: List["PatientFinding"] = []
     findings: List["Finding"] = []
-    finding_morphology_classification_choices: List["FindingMorphologyClassificationChoice"] = []
-    finding_location_classification_choices: List["FindingLocationClassificationChoice"] = []
+    finding_classification_choices: List["FindingClassificationChoice"] = []
     finding_interventions: List["FindingIntervention"] = []
     patient_lab_sample_types: List["PatientLabSampleType"] = []
     patient_medications: List["PatientMedication"] = [] # Added
@@ -187,8 +185,7 @@ class RequirementLinks(BaseModel):
                f"patient_events={len(self.patient_events)}, " \
                f"findings={len(self.findings)}, " \
                f"patient_findings={len(self.patient_findings)}, " \
-               f"finding_morphology_classification_choices={len(self.finding_morphology_classification_choices)}, " \
-               f"finding_location_classification_choices={len(self.finding_location_classification_choices)}, " \
+               f"finding_classification_choices={len(self.finding_classification_choices)}, " \
                f"finding_interventions={len(self.finding_interventions)}, " \
                f"patient_medications={len(self.patient_medications)}, " \
                f"patient_medication_schedules={len(self.patient_medication_schedules)}, " \

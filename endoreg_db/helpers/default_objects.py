@@ -346,7 +346,7 @@ def get_default_video_file():
         examination_alias='egd', is_anonymous=False
     )
 
-    video_file = VideoFile.create_from_file(
+    video_file = VideoFile.create_from_file_initialized(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests

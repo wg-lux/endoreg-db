@@ -6,12 +6,8 @@ class FindingTypeManager(models.Manager):
         return self.get(name=name)
     
 class FindingType(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
+    name = models.CharField(max_length=100, unique=True) 
     description = models.TextField(blank=True, null=True)
-    description_de = models.TextField(blank=True, null=True)
-    description_en = models.TextField(blank=True, null=True)
 
     objects = FindingTypeManager()
 

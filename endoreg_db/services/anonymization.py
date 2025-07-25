@@ -15,16 +15,16 @@ class AnonymizationService:
         vf = VideoFile.objects.select_related("state", "sensitive_meta").filter(pk=file_id).first()
         if vf:
             return {
-                "type": "video",
-                "status": vf.state.anonymization_status,
+                "mediaType": "video",
+                "anonymizationStatus": vf.state.anonymization_status,
             }
 
         pdf = RawPdfFile.objects.select_related("sensitive_meta").filter(pk=file_id).first()
         if pdf:
             status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
             return {
-                "type": "pdf",
-                "status": status,
+                "mediaType": "pdf",
+                "status": pdf.state.anonymization_status,
             }
         return None
 
@@ -76,17 +76,21 @@ class AnonymizationService:
         data = []
         for vf in video_files:
             data.append({
-                "file_id": vf.id,
-                "file_type": "video",
+                "id": vf.id,
+                "mediaType": "video",
                 "anonymizationStatus": vf.state.anonymization_status,
+                "createdAt": vf.date_created,
+                "updatedAt": vf.date_modified,
             })
 
         for pdf in pdf_files:
             status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
             data.append({
-                "file_id": pdf.id,
-                "file_type": "pdf",
+                "id": pdf.id,
+                "mediaType": "pdf",
                 "anonymizationStatus": status,
+                "createdAt": pdf.date_created,
+                "updatedAt": pdf.date_modified,
             })
 
         return data

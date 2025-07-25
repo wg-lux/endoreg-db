@@ -43,8 +43,6 @@ class AiModel(models.Model):
     and associated label sets and meta information.
 
         name (str): Unique name of the AI model.
-        name_de (str): Optional German name of the AI model.
-        name_en (str): Optional English name of the AI model.
         description (str): Optional detailed description of the AI model.
         model_type (str): Optional type/category of the AI model.
         model_subtype (str): Optional subtype within the broader model type.
@@ -54,8 +52,7 @@ class AiModel(models.Model):
     objects = AiModelManager()
 
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+
     description = models.TextField(blank=True, null=True)
     model_type:Optional[models.ForeignKey[Union["ModelType", None]]] = models.ForeignKey(
         "ModelType",

@@ -38,7 +38,7 @@ def load_base_db_data():
     """
     call_command("load_base_db_data", )
 
-def load_information_source():
+def load_information_source_data():
     """Load Information Source Data"""
     call_command("load_information_source", )
 
@@ -117,7 +117,7 @@ def load_green_endoscopy_wuerzburg_data():
 def load_data():
     """Load all data in correct order"""
     
-    load_information_source()
+    load_information_source_data()
     load_risk_data()
     load_center_data()
     load_endoscope_data()

@@ -36,6 +36,34 @@ class Frame(models.Model):
         """Returns the absolute path to the frame file."""
         base_dir = self.video.get_frame_dir_path()
         return base_dir / self.relative_path
+    
+    @property
+    def predictions(self) -> models.QuerySet["ImageClassificationAnnotation"]:
+        """Returns all image_classification_annotations with an "informations_source"
+        which has a link to a "information_source_type" named "prediction"
+        """
+        return self.image_classification_annotations.filter(
+            information_source__information_source_types__name="prediction"
+        )
+    
+    @property
+    def manual_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
+        """Returns all image_classification_annotations with an "informations_source"
+        which has a link to a "information_source_type" named "manual_annotation"
+        """
+        return self.image_classification_annotations.filter(
+            information_source__information_source_types__name="manual_annotation"
+        )
+
+    @property
+    def has_predictions(self) -> bool:
+        """Checks if the frame has any predictions."""
+        return self.predictions.exists()
+    
+    @property
+    def has_manual_annotations(self) -> bool:
+        """Checks if the frame has any annotations."""
+        return self.image_classification_annotations.exists()
 
     def get_image(self) -> Optional[np.ndarray]:
         """Reads and returns the frame image using OpenCV."""
@@ -57,3 +85,4 @@ class Frame(models.Model):
 
     def get_classification_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
         return self.image_classification_annotations.all()
+    

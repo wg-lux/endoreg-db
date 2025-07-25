@@ -1,0 +1,17 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_NICE_type_1"
+    name_de: "Kolonläsion - NICE Typ 1"
+    name_en: "Colon lesion - NICE type 1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_NICE_type_2"
+    name_de: "Kolonläsion - NICE Typ 2"
+    name_en: "Colon lesion - NICE type 2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_NICE_type_3"
+    name_de: "Kolonläsion - NICE Typ 3"
+    name_en: "Colon lesion - NICE type 3"

@@ -297,12 +297,8 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
             ))
 
         video.save(update_fields=update_fields)
-
-        state.anonymized = True
-        state.save(update_fields=['anonymized'])
-        logger.info("Set state.anonymized to True for video %s", video.uuid)
-
-        logger.info("Successfully anonymized video %s. Processed hash: %s", video.uuid, new_processed_hash)
+        video.state.mark_anonymized(save=True)
+        video.refresh_from_db()
         return True
 
     except Exception as e:

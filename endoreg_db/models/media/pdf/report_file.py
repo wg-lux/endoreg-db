@@ -25,8 +25,6 @@ class DocumentType(models.Model):
     Represents the type of a document.
     """
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, unique=True)
-    name_en = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
 
     objects = DocumentTypeManager()

@@ -15,8 +15,6 @@ class CaseTemplateType(models.Model):
 
     """
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = CaseTemplateTypeManager()

@@ -10,9 +10,7 @@ class MedicationIntakeTimeManager(models.Manager):
     
 class MedicationIntakeTime(models.Model):
     '''Model representing a medication intake time.'''
-    name = models.CharField(max_length=255, unique=True)  # Made unique=True
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+    name = models.CharField(max_length=255, unique=True)  # Made unique=True 
     repeats = models.CharField(max_length=20, default = "daily")
     time = models.TimeField()
 

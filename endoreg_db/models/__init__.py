@@ -84,11 +84,6 @@ from .medical import (
     FindingClassification,
     FindingClassificationChoice,
     FindingType,
-    FindingLocationClassification,
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassificationType,
-    FindingMorphologyClassificationChoice,
-    FindingMorphologyClassification,
     FindingIntervention,
     FindingInterventionType,
     PatientDisease,
@@ -96,8 +91,6 @@ from .medical import (
     PatientExaminationIndication,
     PatientExamination,
     PatientFinding,
-    PatientFindingLocation,
-    PatientFindingMorphology,
     PatientFindingIntervention,
     PatientLabSample,
     PatientLabSampleType,
@@ -142,6 +135,7 @@ from .other import (
     DateValueDistribution,
     Gender,
     InformationSource,
+    InformationSourceType,
     Unit,
     EmissionFactor,
 )
@@ -166,6 +160,7 @@ from .state import (
     VideoState,
     LabelVideoSegmentState,
     AnonymizationStatus,
+    RawPdfState,
 )
 
 __all__ = [
@@ -263,16 +258,10 @@ __all__ = [
     "ExaminationTimeType",
     # Finding
     "Finding",
-    "PatientFindingClassification",
     "FindingClassificationType",
     "FindingClassification",
     "FindingClassificationChoice",
     "FindingType",
-    "FindingLocationClassification",
-    "FindingLocationClassificationChoice",
-    "FindingMorphologyClassificationType",
-    "FindingMorphologyClassificationChoice",
-    "FindingMorphologyClassification",
     "FindingIntervention",
     "FindingInterventionType",
     # Patient
@@ -285,9 +274,8 @@ __all__ = [
     "PatientExamination",
     ## Finding
     "PatientFinding",
-    "PatientFindingLocation",
-    "PatientFindingMorphology",
     "PatientFindingIntervention",
+    "PatientFindingClassification",
     ## Laboratory
     "PatientLabSample",
     "PatientLabSampleType",
@@ -337,6 +325,7 @@ __all__ = [
     'DateValueDistribution',
     "Gender",
     "InformationSource",
+    "InformationSourceType",
     "Unit",
     "EmissionFactor",
 
@@ -359,4 +348,5 @@ __all__ = [
     "VideoState",
     "LabelVideoSegmentState",
     "AnonymizationStatus",
+    "RawPdfState",
 ]

@@ -678,6 +678,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-modeltranslation"
+version = "0.19.16"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4e/31/111be1615706b4da9e3a834dd559f910ecc66847bf88660cd445260ee95a/django_modeltranslation-0.19.16.tar.gz", hash = "sha256:b0d51f2a5c6a1e2f1a8b8504d142a83f83bcb8649baaa128d9fdb9b6b413164d", size = 77714, upload-time = "2025-07-13T09:05:24.428Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/dc/b9991b774cb8f16ceafaa9f45a354505ab5524cdc7ccc6527945859319a9/django_modeltranslation-0.19.16-py3-none-any.whl", hash = "sha256:d10b0bf221791ce2b0bc4299d061fc02ea34aae0d7091e65c865b6753e7f5cb0", size = 93405, upload-time = "2025-07-13T09:05:22.574Z" },
+]
+
+[[package]]
 name = "django-tinymce"
 version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -776,6 +788,7 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "django-extensions" },
     { name = "django-filter" },
+    { name = "django-modeltranslation" },
     { name = "djangorestframework" },
     { name = "dotenv" },
     { name = "faker" },
@@ -833,6 +846,7 @@ requires-dist = [
     { name = "django-cors-headers", specifier = ">=4.7.0" },
     { name = "django-extensions", specifier = ">=3.2.3" },
     { name = "django-filter", specifier = ">=25.1" },
+    { name = "django-modeltranslation", specifier = ">=0.19.16" },
     { name = "djangorestframework", specifier = ">=3.15.2" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "faker", specifier = ">=32.1.0" },

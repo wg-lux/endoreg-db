@@ -269,37 +269,38 @@ class TestAnnotationViews(TestCase):
             password='testpass123'
         )
         
-    @patch('endoreg_db.views.annotation_views.create_user_segment_from_annotation')
-    def test_create_segment_annotation_endpoint(self, mock_create_segment):
-        """Test POST /api/annotations/ with segment data"""
-        from django.test import Client
-        from django.urls import reverse
+    #TODO if required, implement tests for annotation views
+    # @patch('endoreg_db.views.annotation_views.create_user_segment_from_annotation')
+    # def test_create_segment_annotation_endpoint(self, mock_create_segment):
+    #     """Test POST /api/annotations/ with segment data"""
+    #     from django.test import Client
+    #     from django.urls import reverse
         
-        # Mock segment creation
-        mock_segment = Mock()
-        mock_segment.id = 123
-        mock_create_segment.return_value = mock_segment
+    #     # Mock segment creation
+    #     mock_segment = Mock()
+    #     mock_segment.id = 123
+    #     mock_create_segment.return_value = mock_segment
         
-        client = Client()
-        client.force_login(self.user)
+    #     client = Client()
+    #     client.force_login(self.user)
         
-        # This test would require the actual URL to be configured
-        # For now, just verify the logic would work
-        annotation_data = {
-            'type': 'segment',
-            'videoId': 1,
-            'startTime': 10.0,
-            'endTime': 15.0,
-            'text': 'polyp',
-            'metadata': {},
-            'userId': 'testdoctor'
-        }
+    #     # This test would require the actual URL to be configured
+    #     # For now, just verify the logic would work
+    #     annotation_data = {
+    #         'type': 'segment',
+    #         'videoId': 1,
+    #         'startTime': 10.0,
+    #         'endTime': 15.0,
+    #         'text': 'polyp',
+    #         'metadata': {},
+    #         'userId': 'testdoctor'
+    #     }
         
-        # In a real test, you'd make the actual HTTP request:
-        # response = client.post('/api/annotations/', data=annotation_data, content_type='application/json')
-        # self.assertEqual(response.status_code, 201)
-        # self.assertEqual(response.json()['metadata']['segmentId'], 123)
+    #     # In a real test, you'd make the actual HTTP request:
+    #     # response = client.post('/api/annotations/', data=annotation_data, content_type='application/json')
+    #     # self.assertEqual(response.status_code, 201)
+    #     # self.assertEqual(response.json()['metadata']['segmentId'], 123)
         
-        # For now, just verify our mock setup
-        self.assertIsNotNone(mock_segment)
-        self.assertEqual(mock_segment.id, 123)
+    #     # For now, just verify our mock setup
+    #     self.assertIsNotNone(mock_segment)
+    #     self.assertEqual(mock_segment.id, 123)

@@ -28,14 +28,10 @@ class RequirementOperator(models.Model):
 
     Attributes:
         name (str): The name of the requirement operator.
-        name_de (str): The German name of the requirement operator.
-        name_en (str): The English name of the requirement operator.
         description (str): A description of the requirement operator.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     evaluation_function_name = models.CharField(max_length=255, blank=True, null=True) # Added field
 

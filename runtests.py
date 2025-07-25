@@ -32,7 +32,8 @@ if __name__ == "__main__":
         for dir_name in args.dirs:
             # Handle potential nested paths like "media/video"
             dir_path = tests_dir / dir_name
-            if dir_path.is_dir():
+            module_path = tests_dir / (dir_name + ".py")
+            if dir_path.is_dir() or module_path.is_file():
                 # Convert path separator to module separator for the label
                 test_label = f"tests.{dir_name.replace(os.sep, '.')}"
                 test_labels.append(test_label)

@@ -1,0 +1,8 @@
+- model: endoreg_db.InformationSourceType
+  fields:
+    name: "annotation"
+
+- model: endoreg_db.InformationSourceType
+  fields:
+    name: "prediction"
+    

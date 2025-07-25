@@ -18,11 +18,6 @@ from .finding import (
     FindingClassification,
     FindingClassificationChoice,
     FindingType,
-    FindingLocationClassification,
-    FindingLocationClassificationChoice,
-    FindingMorphologyClassificationType,
-    FindingMorphologyClassificationChoice,
-    FindingMorphologyClassification,
     FindingIntervention,
     FindingInterventionType,
 )
@@ -31,8 +26,6 @@ from .patient import (
     PatientExamination,
     PatientFinding,
     PatientFindingClassification,
-    PatientFindingLocation,
-    PatientFindingMorphology,
     PatientFindingIntervention,
     PatientDisease,
     PatientEvent,
@@ -98,15 +91,10 @@ __all__ = [
     
     # Finding
     "Finding",
-    "PatientFindingClassification",
     "FindingClassificationType",
     "FindingClassification",
     "FindingClassificationChoice",
     "FindingType",
-    "FindingLocationClassification",
-    "FindingLocationClassificationChoice",
-    "FindingMorphologyClassificationType",
-    "FindingMorphologyClassificationChoice",
     "FindingMorphologyClassification",
     "FindingIntervention",
     "FindingInterventionType",
@@ -121,8 +109,7 @@ __all__ = [
     "PatientExamination",
     ## Finding
     "PatientFinding",
-    "PatientFindingLocation",
-    "PatientFindingMorphology",
+    "PatientFindingClassification",
     "PatientFindingIntervention",
     ## Laboratory
     "PatientLabSample",
