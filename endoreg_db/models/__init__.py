@@ -160,6 +160,7 @@ from .state import (
     VideoState,
     LabelVideoSegmentState,
     AnonymizationStatus,
+    RawPdfState,
 )
 
 __all__ = [
@@ -347,4 +348,5 @@ __all__ = [
     "VideoState",
     "LabelVideoSegmentState",
     "AnonymizationStatus",
+    "RawPdfState",
 ]

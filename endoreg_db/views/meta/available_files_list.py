@@ -75,7 +75,7 @@ class AvailableFilesListView(APIView):
                         'file_path': file_path,
                         'sensitive_meta_id': pdf.sensitive_meta_id,
                         'anonymized_text': getattr(pdf, 'anonymized_text', None),
-                        'created_at': pdf.created_at if hasattr(pdf, 'created_at') else None,
+                        'created_at': pdf.date_created if hasattr(pdf, 'created_at') else None,
                         'patient_info': None
                     }
 

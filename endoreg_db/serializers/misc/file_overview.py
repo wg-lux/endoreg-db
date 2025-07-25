@@ -121,7 +121,7 @@ class FileOverviewSerializer(serializers.Serializer):
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
-            created_at = instance.created_at
+            created_at = instance.date_created
             filename = instance.file.name.split("/")[-1] if instance.file else "unknown"
             # Check anonymized_text field
             anonym_status = "done" if (instance.anonymized_text and instance.anonymized_text.strip()) else "not_started"

@@ -227,6 +227,95 @@ class VideoFile(models.Model):
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
 
+    def mark_sensitive_meta_verified(self):
+        """
+        Marks the sensitive metadata as verified.
+        This method should be called after the sensitive metadata has been verified.
+        """
+        sm = self.sensitive_meta
+        sm.mark_dob_verified()
+        sm.mark_names_verified()
+
+    def mark_anonymized(self):
+        """
+        Sets the state of the video file to 'anonymized'.
+        This method should be called after the video has been anonymized.
+        """
+        state = self.state
+        state.mark_anonymized()
+        logger.debug(f"Video {self.uuid} state set to anonymized.")
+        self.refresh_from_db()
+
+    def mark_anonymization_validated(self):
+        """
+        Sets the state of the video file to 'anonymization validated'.
+        This method should be called after the anonymization process has been validated.
+        """
+        state = self.state
+        state.mark_anonymization_validated()
+        logger.debug(f"Video {self.uuid} state set to anonymization validated.")
+        self.refresh_from_db()
+    
+    def mark_sensitive_meta_processed(self):
+        """
+        Sets the state of the video file to 'sensitive meta processed'.
+        This method should be called after the sensitive metadata has been processed.
+        """
+        state = self.state
+        state.mark_sensitive_meta_processed()
+        logger.debug(f"Video {self.uuid} state set to sensitive meta processed.")
+        self.refresh_from_db()
+    
+    def mark_frames_extracted(self):
+        """
+        Marks the video file as having frames extracted.
+        This method should be called after the frames have been successfully extracted.
+        """
+        state = self.state
+        state.mark_frames_extracted()
+        logger.debug(f"Video {self.uuid} marked as having frames extracted.")
+        self.refresh_from_db()
+
+    def mark_frames_not_extracted(self):
+        """
+        Marks the video file as not having frames extracted.
+        This method should be called if frame extraction fails or is not performed.
+        """
+        state = self.state
+        state.mark_frames_extracted()
+        logger.debug(f"Video {self.uuid} marked as not having frames extracted.")
+        self.refresh_from_db()
+
+    def mark_video_meta_extracted(self):
+        """
+        Marks the video file as having video metadata extracted.
+        This method should be called after the video metadata has been successfully extracted.
+        """
+        state = self.state
+        state.mark_video_meta_extracted()
+        logger.debug(f"Video {self.uuid} state set to video meta extracted.")
+        self.refresh_from_db()
+
+    def mark_text_meta_extracted(self):
+        """
+        Marks the video file as having text metadata extracted.
+        This method should be called after the text metadata has been successfully extracted.
+        """
+        state = self.state
+        state.mark_text_meta_extracted()
+        logger.debug(f"Video {self.uuid} state set to text meta extracted.")
+        self.refresh_from_db()
+
+    def mark_initial_prediction_completed(self):
+        """
+        Marks the video file as having initial AI predictions completed.
+        This method should be called after the initial AI predictions have been successfully made.
+        """
+        state = self.state
+        state.mark_initial_prediction_completed()
+        logger.debug(f"Video {self.uuid} state set to initial prediction completed.")
+        self.refresh_from_db()
+
     # Define new methods that call the helper functions
     def extract_specific_frame_range(self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs) -> bool:
         """

@@ -10,7 +10,7 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ..media import VideoFile
+    from ..media import RawPdfFile
     
 
 class AnonymizationStatus(str, Enum):
@@ -21,28 +21,17 @@ class AnonymizationStatus(str, Enum):
     VALIDATED               = "validated"
     FAILED                  = "failed"
 
-class VideoState(models.Model):
+
+class RawPdfState(models.Model):
     """
-    Tracks the processing state of a VideoFile instance.
+    Tracks the processing state of a RawPdfFile instance.
     Uses BooleanFields for clear, distinct states.
     """
-    # Frame related states
-    if TYPE_CHECKING:
-        video_file: Optional["VideoFile"]
-        
-    frames_extracted = models.BooleanField(default=False, help_text="True if raw frames have been extracted to files.")
-    frames_initialized = models.BooleanField(default=False, help_text="True if Frame DB objects have been created.")
-    frame_count = models.PositiveIntegerField(null=True, blank=True, help_text="Number of frames extracted/initialized.")
-
-    # Metadata related states
-    video_meta_extracted = models.BooleanField(default=False, help_text="True if VideoMeta (technical specs) has been extracted.")
     text_meta_extracted = models.BooleanField(default=False, help_text="True if text metadata (OCR) has been extracted.")
 
     # AI / Annotation related states
     initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
-    lvs_created = models.BooleanField(default=False, help_text="True if LabelVideoSegments have been created from predictions.")
-    frame_annotations_generated = models.BooleanField(default=False, help_text="True if frame-level annotations have been generated from segments.")
-    
+
     # Processing state
     sensitive_meta_processed = models.BooleanField(default=False, help_text="True if the video has been fully processed, meaning a anonymized person was created.")
 
@@ -55,39 +44,28 @@ class VideoState(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
     
-    # Segment Annotation State
-    segment_annotations_created = models.BooleanField(default=False, help_text="True if segment annotations have been created from LabelVideoSegments.")
-    segment_annotations_validated = models.BooleanField(default=False, help_text="True if segment annotations have been validated.")
-    
     was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
+
+    if TYPE_CHECKING:
+        raw_pdf_file: "RawPdfFile"
 
     def __str__(self):
         # Find the related VideoFile's UUID if possible
-        video_uuid = "Unknown"
         try:
-            # Access the related VideoFile via the reverse relation 'video_file'
-            if hasattr(self, 'video_file') and self.video_file:
-                video_uuid = self.video_file.uuid
+            uuid = self.raw_pdf_file.id
         except Exception:
-            pass # Ignore errors if relation doesn't exist or causes issues
+            uuid = None
 
         states = [
-            f"FramesExtracted={self.frames_extracted}",
-            f"FramesInit={self.frames_initialized}",
-            f"VideoMetaExtracted={self.video_meta_extracted}",
             f"TextMetaExtracted={self.text_meta_extracted}",
             f"PredictionDone={self.initial_prediction_completed}",
-            f"LvsCreated={self.lvs_created}",
             f"Anonymized={self.anonymized}",
             f"AnonymizationValidated={self.anonymization_validated}",
             f"SensitiveMetaProcessed={self.sensitive_meta_processed}",
-            f"FrameCount={self.frame_count}" if self.frame_count is not None else "FrameCount=None",
-            f"SegmentAnnotationsCreated={self.segment_annotations_created}",
-            f"SegmentAnnotationsValidated={self.segment_annotations_validated}",
             f"DateCreated={self.date_created.isoformat()}",
             f"DateModified={self.date_modified.isoformat()}"
         ]
-        return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
+        return f"RawPdfState(Pdf:{uuid}): {', '.join(states)}"
 
     @property
     def anonymization_status(self) -> AnonymizationStatus:
@@ -98,9 +76,9 @@ class VideoState(models.Model):
             return AnonymizationStatus.VALIDATED
         if self.sensitive_meta_processed:
             return AnonymizationStatus.DONE
-        if self.frames_extracted and not self.anonymized:
+        if not self.anonymized:
             return AnonymizationStatus.PROCESSING_ANONYMIZING
-        if self.was_created and not self.frames_extracted:
+        if self.was_created:
             return AnonymizationStatus.EXTRACTING_FRAMES
         if getattr(self, "processing_error", False):
             return AnonymizationStatus.FAILED
@@ -117,16 +95,6 @@ class VideoState(models.Model):
         if save:
             self.save(update_fields=["anonymization_validated", "date_modified"])
 
-    def mark_frames_extracted(self, *, save: bool = True) -> None:
-        self.frames_extracted = True
-        if save:
-            self.save(update_fields=["frames_extracted", "date_modified"])
-
-    def mark_frames_not_extracted(self, *, save: bool = True) -> None:
-        self.frames_extracted = False
-        if save:
-            self.save(update_fields=["frames_extracted", "date_modified"])
-
     def mark_anonymized(self, *, save: bool = True) -> None:
         self.anonymized = True
         if save:
@@ -137,10 +105,10 @@ class VideoState(models.Model):
         if save:
             self.save(update_fields=["initial_prediction_completed", "date_modified"])
 
-    def mark_video_meta_extracted(self, *, save: bool = True) -> None:
+    def mark_pdf_meta_extracted(self, *, save: bool = True) -> None:
         self.video_meta_extracted = True
         if save:
-            self.save(update_fields=["video_meta_extracted", "date_modified"])
+            self.save(update_fields=["pdf_meta_extracted", "date_modified"])
 
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
         self.text_meta_extracted = True
@@ -150,7 +118,7 @@ class VideoState(models.Model):
     
 
     class Meta:
-        verbose_name = "Video Processing State"
-        verbose_name_plural = "Video Processing States"
+        verbose_name = "Raw PDF Processing State"
+        verbose_name_plural = "Raw PDF Processing States"
 
 

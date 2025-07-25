@@ -31,6 +31,15 @@ class SensitiveMetaState(AbstractState):
         """
         return self.dob_verified and self.names_verified
 
+    def mark_dob_verified(self):
+        """Mark the date of birth as verified."""
+        self.dob_verified = True
+        self.save(update_fields=["dob_verified"])
+
+    def mark_names_verified(self):
+        """Mark the names as verified."""
+        self.names_verified = True
+        self.save(update_fields=["names_verified"])
     class Meta:
         verbose_name = "Sensitive Meta State"
         verbose_name_plural = "Sensitive Meta States"

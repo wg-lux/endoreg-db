@@ -18,6 +18,7 @@ class VideoSegmentationViewTests(TestCase):
     """Test video segmentation API endpoints."""
 
     def setUp(self):
+        load_base_db_data()
         self.client = APIClient()
         test_data = setup_realistic_test_data()
         self.video:VideoFile = test_data["video"]
@@ -318,6 +319,7 @@ class VideoSegmentationIntegrationTests(TestCase):
     
     def setUp(self):
         """Set up integration test environment."""
+        load_base_db_data()
         self.client = APIClient()
         test_data = setup_realistic_test_data()
         self.video = test_data["video"]

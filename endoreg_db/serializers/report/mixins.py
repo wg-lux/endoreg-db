@@ -21,7 +21,7 @@ class ReportStatusMixin:
 
     def get_updated_at(self, obj:"RawPdfFile") -> "timezone.datetime":
         """Simuliert updated_at basierend auf created_at"""
-        return obj.created_at if obj.created_at else timezone.now()
+        return obj.date_created if obj.date_created else timezone.now()
 
     def get_file_type(self, obj:"RawPdfFile"    ) -> "str":
         """Ermittelt den Dateityp basierend auf der Dateiendung"""

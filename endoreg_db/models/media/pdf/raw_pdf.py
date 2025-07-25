@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from ...medical.patient import PatientExamination
     from ...administration import Center
     from ...metadata.pdf_meta import PdfType
+    from ...state import RawPdfState
 from ...metadata import SensitiveMeta
 
 # setup logging to pdf_import.log
@@ -62,7 +63,8 @@ class RawPdfFile(models.Model):
         null=True,
     )
     text = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
     anonymized = models.BooleanField(default=False, help_text="True if the PDF has been anonymized.")
 
     # Fields specific to RawPdfFile (keeping existing related_names)
@@ -70,6 +72,14 @@ class RawPdfFile(models.Model):
         # Use the relative path from the specific PDF_DIR
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
+    )
+
+    state = models.OneToOneField(
+        "RawPdfState",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="raw_pdf_file",
     )
 
     @property
@@ -111,6 +121,7 @@ class RawPdfFile(models.Model):
         center: "Center"
         anonym_examination_report: "AnonymExaminationReport"
         sensitive_meta: "SensitiveMeta"
+        state: "RawPdfState"
 
     def __str__(self):
         str_repr = f"{self.pdf_hash} ({self.pdf_type}, {self.center})"
@@ -139,6 +150,22 @@ class RawPdfFile(models.Model):
                     logger.error("Error removing file %s: %s", file_path, e)
             else:
                 logger.warning("File path %s not found for deletion.", file_path_str)
+
+    @classmethod
+    def create_from_file_initialized(
+        cls,
+        file_path: Path,
+        center_name: str,
+        delete_source: bool = True,
+    ):
+        raw_pdf = cls.create_from_file(
+            file_path=file_path,
+            center_name=center_name,    
+            delete_source=delete_source,
+        )
+        _state = raw_pdf.get_or_create_state()
+
+        return raw_pdf
 
     @classmethod
     def create_from_file(
@@ -243,6 +270,7 @@ class RawPdfFile(models.Model):
             except OSError as e:
                 logger.error("Error deleting source file %s: %s", file_path, e)
 
+        raw_pdf.save()
         return raw_pdf
 
     def save(self, *args, **kwargs):
@@ -290,6 +318,25 @@ class RawPdfFile(models.Model):
             self.examiner = self.sensitive_meta.pseudo_examiner
 
         super().save(*args, **kwargs)
+
+    def get_or_create_state(self) -> "RawPdfState":
+        """
+        Get or create the RawPdfState for this RawPdfFile.
+        If it doesn't exist, create a new one with default values.
+        """
+        from endoreg_db.models.state import RawPdfState
+
+        if self.state:
+            return self.state
+
+        state, created = RawPdfState.objects.get_or_create()
+        self.state = state
+        if created:
+            logger.info("Created new RawPdfState for RawPdfFile %s", self.pk)
+            self.save(update_fields=["state"])  # Save the RawPdfFile to link the state
+        else:
+            logger.debug("Retrieved existing RawPdfState for RawPdfFile %s", self.pk)
+        return state
 
     def verify_existing_file(self, fallback_file):
         # This method might still be useful if called explicitly, but create_from_file now handles restoration
