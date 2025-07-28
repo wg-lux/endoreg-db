@@ -27,8 +27,15 @@ class LabelVideoSegmentAnnotationSerializer(serializers.Serializer):
     
     def validate(self, data):
         """
-        Validate annotation data.
-        For segment annotations, ensure startTime and endTime are provided.
+        Validates annotation data, enforcing required fields and value constraints for segment annotations.
+        
+        For annotations of type 'segment', ensures both `startTime` and `endTime` are present and that `startTime` is less than `endTime`. If `metadata.segmentId` is provided, verifies it is a valid integer.
+        
+        Raises:
+            serializers.ValidationError: If validation fails.
+            
+        Returns:
+            dict: The validated annotation data.
         """
         annotation_type = data.get('type')
         
@@ -62,8 +69,12 @@ class LabelVideoSegmentAnnotationSerializer(serializers.Serializer):
     #@maxhild we need to verify if this is the right place for these methods, if so we should implement them here
     def create(self, validated_data):
         """
-        Create annotation data structure.
-        In a real implementation, this would save to a database or storage system.
+        Assigns a unique ID to the annotation data and returns the updated data dictionary.
+        
+        In this simulated implementation, the method mimics creating a new annotation by incrementing an internal counter for the ID. No data is persisted to a database or external storage.
+         
+        Returns:
+            dict: The annotation data with an assigned unique ID.
         """
         # Simulate creating an annotation with an ID
         validated_data['id'] = getattr(self, '_next_id', 1)

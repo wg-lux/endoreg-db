@@ -84,6 +84,9 @@ class RawPdfFile(models.Model):
 
     @property
     def file_url(self):
+        """
+        Returns the URL of the stored PDF file if available; otherwise, returns None.
+        """
         return self.file.url if self.file else None 
 
     patient = models.ForeignKey(
@@ -124,10 +127,18 @@ class RawPdfFile(models.Model):
         state: "RawPdfState"
 
     def __str__(self):
+        """
+        Return a string representation of the RawPdfFile, including its PDF hash, type, and center.
+        """
         str_repr = f"{self.pdf_hash} ({self.pdf_type}, {self.center})"
         return str_repr
 
     def delete(self, *args, **kwargs):
+        """
+        Deletes the RawPdfFile instance from the database and removes the associated file from storage if it exists.
+        
+        This method ensures that the physical PDF file is deleted from the file system after the database record is removed. Logs warnings or errors if the file cannot be found or deleted.
+        """
         file_path_str = None
         # Store path before super().delete() invalidates self.file
         if self.file:
@@ -158,6 +169,17 @@ class RawPdfFile(models.Model):
         center_name: str,
         delete_source: bool = True,
     ):
+        """
+        Creates a RawPdfFile instance from a file and center name, ensuring an associated RawPdfState exists.
+        
+        Parameters:
+            file_path (Path): Path to the source PDF file.
+            center_name (str): Name of the center to associate with the PDF.
+            delete_source (bool): Whether to delete the source file after processing. Defaults to True.
+        
+        Returns:
+            RawPdfFile: The created or retrieved RawPdfFile instance with an associated RawPdfState.
+        """
         raw_pdf = cls.create_from_file(
             file_path=file_path,
             center_name=center_name,    
@@ -175,6 +197,26 @@ class RawPdfFile(models.Model):
         save=True,  # Parameter kept for compatibility, but save now happens internally
         delete_source=True,
     ):
+        """
+        Creates or retrieves a RawPdfFile instance from a given PDF file path and center name.
+        
+        If a RawPdfFile with the same PDF hash already exists, verifies the file exists in storage and restores it if missing. Otherwise, creates a new RawPdfFile, assigns the file, and saves it to storage. Optionally deletes the source file after processing.
+        
+        Parameters:
+            file_path (Path): Path to the source PDF file.
+            center_name (str): Name of the center to associate with the file.
+            save (bool, optional): Deprecated; saving occurs internally.
+            delete_source (bool, optional): Whether to delete the source file after processing (default True).
+        
+        Returns:
+            RawPdfFile: The created or retrieved RawPdfFile instance.
+        
+        Raises:
+            FileNotFoundError: If the source file does not exist.
+            Center.DoesNotExist: If the specified center is not found.
+            ValueError: If the PDF hash cannot be calculated.
+            IOError: If the file fails to save to storage.
+        """
         from endoreg_db.models.administration import Center
 
         if not file_path.exists():
@@ -276,6 +318,11 @@ class RawPdfFile(models.Model):
     def save(self, *args, **kwargs):
         # Ensure hash is calculated before the first save if possible and not already set
         # This is primarily a fallback if instance created manually without using create_from_file
+        """
+        Saves the RawPdfFile instance, ensuring the PDF hash is set and related fields are derived from metadata.
+        
+        If the PDF hash is missing, attempts to calculate it from the file before saving. Validates that the file has a `.pdf` extension. If related fields such as patient, examination, center, or examiner are unset but available in the associated sensitive metadata, they are populated accordingly before saving.
+        """
         if not self.pk and not self.pdf_hash and self.file:
             try:
                 # Read from the file object before it's saved by storage
@@ -321,8 +368,10 @@ class RawPdfFile(models.Model):
 
     def get_or_create_state(self) -> "RawPdfState":
         """
-        Get or create the RawPdfState for this RawPdfFile.
-        If it doesn't exist, create a new one with default values.
+        Retrieve the associated RawPdfState for this RawPdfFile, creating and linking a new one if none exists.
+        
+        Returns:
+            RawPdfState: The existing or newly created RawPdfState instance linked to this RawPdfFile.
         """
         from endoreg_db.models.state import RawPdfState
 
@@ -340,6 +389,12 @@ class RawPdfFile(models.Model):
     def verify_existing_file(self, fallback_file):
         # This method might still be useful if called explicitly, but create_from_file now handles restoration
         # Ensure fallback_file is a Path object.
+        """
+        Checks if the stored PDF file exists in storage and attempts to restore it from a fallback file path if missing.
+        
+        Parameters:
+            fallback_file: Path or string representing the fallback file location to restore from if the stored file is missing.
+        """
         if not isinstance(fallback_file, Path):
             fallback_file = Path(fallback_file)
 

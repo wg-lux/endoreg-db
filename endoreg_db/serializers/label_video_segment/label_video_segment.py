@@ -95,22 +95,20 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     
 
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the serializer and log the initial input data if available.
+        """
         super().__init__(*args, **kwargs)
         if hasattr(self, 'initial_data'):
             logger.debug(f"Serializer initialized with data: {self.initial_data}")
 
 
     def get_time_segments(self, obj: LabelVideoSegment) -> List[dict]:
-        '''
-        Returns front end optimized lvs time segments.
-        This method should return a list of dictionaries containing the following fields:
-        - segment_id: The ID of the segment
-        - segment_start: start frame number
-        - segment_end: end frame number
-        - start_time: start time in seconds
-        - end_time: end time in seconds
-        - frames: A list of frame ids within the segment
-        '''
+        """
+        Return a dictionary representing the video segment with detailed frame-level annotation data for frontend use.
+        
+        The returned dictionary includes segment metadata (ID, frame range, start/end times) and a list of frames within the segment. Each frame entry contains its filename, file path, all classification annotations, predictions, manual annotations, and frame ID.
+        """
         frames = obj.frames
         time_segments = {
             
@@ -139,31 +137,55 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             time_segments["frames"].append(frame_data)
         return time_segments
     def get_label_name(self, obj):# -> Any | Literal['unknown']:
-        """Get the actual label name from the related Label model"""
+        """
+        Return the name of the label associated with the segment, or "unknown" if no label is set.
+        """
         if obj.label:
             return obj.label.name
         return "unknown"
     
     def get_manual_frame_annotations(self, obj:LabelVideoSegment):
         """
+        Return serialized manual frame annotations for the given video segment.
+        
+        Parameters:
+            obj (LabelVideoSegment): The video segment instance whose manual frame annotations are to be serialized.
+        
+        Returns:
+            list: A list of serialized manual frame annotation data.
         """
         return ImageClassificationAnnotationSerializer(obj.manual_frame_annotations, many=True).data
     
     def get_frame_predictions(self, obj:LabelVideoSegment) -> List[dict]:
         """
+        Return serialized frame prediction annotations for the given video segment.
+        
+        Parameters:
+            obj (LabelVideoSegment): The video segment instance whose frame predictions are to be serialized.
+        
+        Returns:
+            List[dict]: A list of serialized frame prediction annotation data.
         """
         return ImageClassificationAnnotationSerializer(obj.frame_predictions, many=True).data
     
     def get_all_annotations(self, obj:LabelVideoSegment):
         """
-        Returns all annotations associated with the frames in this segment.
-
-        Currently, this method is not included in the serializer's fields, but it can be used to retrieve all annotations for the segment.
+        Retrieve all image classification annotations for every frame in the given video segment.
+        
+        Parameters:
+            obj (LabelVideoSegment): The video segment instance whose frame annotations are to be retrieved.
+        
+        Returns:
+            list: A list of serialized image classification annotations for all frames in the segment.
         """
         return ImageClassificationAnnotationSerializer(obj.all_frame_annotations, many=True).data
 
     def get_label_display(self, obj:LabelVideoSegment):
-        """Get the German translation for display"""
+        """
+        Return the German translation of the label name for display purposes.
+        
+        If the segment has no label, returns "Unbekannt". If a translation is not available, returns the original label name.
+        """
         if not obj.label:
             return "Unbekannt"
             
@@ -189,9 +211,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     
     def get_video_name(self, obj):
         """
-        Returns the display name of the associated video file.
+        Return the display name of the video file associated with the segment.
         
-        If the video file has an `original_file_name`, it is returned; otherwise, a fallback name using the video ID is provided. Returns 'Unknown Video' if the video file is inaccessible.
+        If the video file has an `original_file_name`, it is returned; otherwise, a fallback name using the video ID is provided. Returns "Unknown Video" if the video file is inaccessible.
         """
         try:
             video = obj.video_file
@@ -200,14 +222,27 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             return 'Unknown Video'
  
     def get_start_time(self, obj:LabelVideoSegment):
-        """Convert start frame to time in seconds"""
+        """
+        Return the start time of the video segment in seconds.
+        """
         return obj.start_time
     
     def get_end_time(self, obj):
-        """Convert end frame to time in seconds"""
+        """
+        Return the end time of the video segment in seconds.
+        """
         return obj.end_time
     
     def is_valid(self, raise_exception=False):
+        """
+        Validates the serializer input data and logs the validation process.
+        
+        Parameters:
+            raise_exception (bool): If True, raises a ValidationError on failure.
+        
+        Returns:
+            bool: True if the data is valid, False otherwise.
+        """
         logger.debug("Starting validation")
         result = super().is_valid(raise_exception=raise_exception)
         if not result:
@@ -216,9 +251,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         """
-        Accept both video_id/label_id and video_file/label for input data.
-        Always map label to label_id and video_file to video_id if present.
-        Also map video_id to video_file and label_id to label for model creation.
+        Normalizes input data by mapping between `video_id`/`label_id` and `video_file`/`label` keys to ensure consistent internal representation for model creation and validation.
+        
+        This allows the serializer to accept either set of keys and internally synchronize them before further processing.
         """
         #TODO @coderabbitai create an issue for @Hamzaukw 
         # we need to ensure consistent naming across serializers
@@ -238,8 +273,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         """
-        Returns a JSON-compatible representation of the label video segment, including calculated start and end times in seconds and the label name.
-        Adds `start_time` and `end_time` fields by converting frame numbers to seconds using the video's FPS, defaulting to zero if unavailable. Ensures `label_name` is always included in the output.
+        Return a JSON-compatible representation of a label video segment with calculated start and end times in seconds, label name, and explicit video and label IDs.
+        
+        Raises:
+            ValueError: If the segment is not associated with a video file.
+            TypeError: If the associated video file is not a VideoFile instance.
         """
         data = super().to_representation(instance)
         video_file = instance.video_file

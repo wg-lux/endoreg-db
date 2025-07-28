@@ -13,8 +13,14 @@ class SecureFileUrlSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         # Nicht implementiert, da nur für Ausgabe verwendet
+        """
+        Raises NotImplementedError to indicate that instance creation is not supported for this serializer.
+        """
         raise NotImplementedError("SecureFileUrlSerializer ist nur für Ausgabe gedacht")
 
     def update(self, instance, validated_data):
         # Nicht implementiert, da nur für Ausgabe verwendet  
+        """
+        Raises NotImplementedError to indicate that updating is not supported, as this serializer is intended for output only.
+        """
         raise NotImplementedError("SecureFileUrlSerializer ist nur für Ausgabe gedacht")

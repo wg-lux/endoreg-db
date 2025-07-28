@@ -22,7 +22,13 @@ class VideoFileListSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj:VideoFile) -> Literal['completed'] | Literal['in_progress'] | Literal['available']:
         """
-        Returns the processing status of a video as 'completed', 'in_progress', or 'available'.
+        Determine the processing status of a video file as 'completed', 'in_progress', or 'available'.
+        
+        Returns:
+            str: The video's status based on its processing state.
+            
+        Raises:
+            ValueError: If the video's state cannot be accessed.
         """
         try:
             state = obj.state
@@ -38,14 +44,19 @@ class VideoFileListSerializer(serializers.ModelSerializer):
 
     def get_assignedUser(self, obj):
         """
-        Get assigned user for the video
+        Returns the user assigned to the video, or None if no user is assigned.
+        
+        Currently always returns None as user assignment is not implemented.
         """
         # For now return None, can be extended when user assignment is implemented
         return None
 
     def get_anonymized(self, obj):
         """
-        Check if video is anonymized - returns boolean instead of status string
+        Determine whether the video has been anonymized.
+        
+        Returns:
+            bool: True if the video's state indicates it is anonymized; False otherwise or if state information is unavailable.
         """
         try:
             state = getattr(obj, 'state', None)

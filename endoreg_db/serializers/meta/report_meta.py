@@ -23,14 +23,30 @@ class ReportMetaSerializer(serializers.ModelSerializer):
         ]
 
     def get_created_at(self, obj):
-        """Holt created_at vom SensitiveMeta Model oder nutzt einen Fallback"""
+        """
+        Retrieve the `created_at` timestamp from the SensitiveMeta instance, or return the current time if unavailable.
+        
+        Parameters:
+            obj: The SensitiveMeta instance being serialized.
+        
+        Returns:
+            datetime: The `created_at` timestamp, or the current time as a fallback.
+        """
         if hasattr(obj, 'created_at') and obj.created_at:
             return obj.created_at
         # Fallback wenn SensitiveMeta kein created_at hat
         return timezone.now()
 
     def get_updated_at(self, obj):
-        """Holt updated_at vom SensitiveMeta Model oder nutzt einen Fallback"""
+        """
+        Return the `updated_at` timestamp from the SensitiveMeta instance, or fall back to the `created_at` timestamp if `updated_at` is missing or null.
+        
+        Parameters:
+            obj: The SensitiveMeta instance being serialized.
+        
+        Returns:
+            A datetime representing when the instance was last updated, or created if no update timestamp is available.
+        """
         if hasattr(obj, 'updated_at') and obj.updated_at:
             return obj.updated_at
         # Fallback wenn SensitiveMeta kein updated_at hat  

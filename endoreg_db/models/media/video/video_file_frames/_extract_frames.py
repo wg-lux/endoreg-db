@@ -20,16 +20,23 @@ def _extract_frames(
     verbose=False,
 ) -> bool:
     """
-    Extracts frames from the raw video file using ffmpeg, updates Frame objects'
-    is_extracted flag, and updates relevant VideoState fields.
-    Assumes Frame objects may already exist (created by _initialize_frames).
-
+    Extract frames from a raw video file, update frame extraction status in the database, and manage related file system operations.
+    
+    This function checks for existing extracted frames and skips extraction if appropriate, unless overwriting is requested. It handles deletion of existing frames when overwriting, invokes ffmpeg to extract frames, parses extracted frame numbers, updates corresponding database records, and manages video extraction state. Robust error handling ensures cleanup and state rollback on failure.
+    
+    Parameters:
+        video (VideoFile): The video object from which frames are to be extracted.
+        quality (int, optional): Quality parameter for ffmpeg extraction. Defaults to 2.
+        overwrite (bool, optional): Whether to overwrite existing extracted frames. Defaults to False.
+        ext (str, optional): File extension for extracted frames. Defaults to "jpg".
+    
     Returns:
-        bool: True if extraction and update were successful.
+        bool: True if extraction and updates succeed.
+    
     Raises:
         FileNotFoundError: If the raw video file is missing.
-        RuntimeError: If frame extraction or update fails for other reasons.
-        ValueError: If frame directory cannot be determined.
+        RuntimeError: If extraction or database update fails.
+        ValueError: If the frame directory path cannot be determined.
     """
     from ._delete_frames import _delete_frames
     from endoreg_db.models.media.frame import Frame

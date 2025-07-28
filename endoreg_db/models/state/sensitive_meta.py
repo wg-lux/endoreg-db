@@ -24,20 +24,21 @@ class SensitiveMetaState(AbstractState):
     @property
     def is_verified(self) -> bool:
         """
-        Check if the state is verified.
-
-        Returns:
-            bool: True if the state is verified, False otherwise.
+        Return True if both date of birth and names have been verified; otherwise, return False.
         """
         return self.dob_verified and self.names_verified
 
     def mark_dob_verified(self):
-        """Mark the date of birth as verified."""
+        """
+        Set the date of birth verification status to True and persist the change to the database.
+        """
         self.dob_verified = True
         self.save(update_fields=["dob_verified"])
 
     def mark_names_verified(self):
-        """Mark the names as verified."""
+        """
+        Mark the names as verified and persist the change to the database.
+        """
         self.names_verified = True
         self.save(update_fields=["names_verified"])
     class Meta:

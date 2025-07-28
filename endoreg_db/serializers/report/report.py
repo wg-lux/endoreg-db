@@ -32,17 +32,29 @@ class ReportDataSerializer(ReportStatusMixin, serializers.ModelSerializer):
         ]
 
     def get_updated_at(self, obj):
-        """Simuliert updated_at basierend auf created_at"""
+        """
+        Return the updated timestamp for the object, using `created_at` if available or the current time otherwise.
+        """
         return obj.created_at if obj.created_at else timezone.now()
 
     def get_file_type(self, obj):
-        """Ermittelt den Dateityp basierend auf der Dateiendung"""
+        """
+        Return the file extension of the associated file in lowercase, or 'unknown' if no file is present.
+        
+        Parameters:
+            obj: The object instance containing the file.
+        
+        Returns:
+            str: The file extension without the leading dot, or 'unknown' if the file is missing.
+        """
         if obj.file:
             return Path(obj.file.name).suffix.lower().lstrip('.')
         return 'unknown'
 
     def to_representation(self, instance):
-        """Fügt sichere URL hinzu wenn angefordert"""
+        """
+        Returns the serialized representation of the instance, including a secure file URL if a file exists and a request context is available.
+        """
         data = super().to_representation(instance)
 
         # Sichere URL generieren wenn file vorhanden
@@ -56,7 +68,16 @@ class ReportDataSerializer(ReportStatusMixin, serializers.ModelSerializer):
         return data
 
     def _generate_secure_url(self, instance, request):
-        """Generiert eine sichere URL mit Ablaufzeit"""
+        """
+        Generate a secure URL for downloading the file associated with the given instance, including an expiration time and file metadata.
+        
+        Parameters:
+            instance: The model instance containing the file.
+            request: The HTTP request object used to build the absolute URL.
+        
+        Returns:
+            dict: A dictionary containing the secure URL, expiration timestamp, file type, original filename, and file size in bytes.
+        """
         # Token für sichere URL generieren
         token = str(uuid.uuid4())
         expires_at = timezone.now() + timedelta(hours=2)  # 2 Stunden gültig

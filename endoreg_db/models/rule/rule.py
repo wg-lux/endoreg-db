@@ -18,4 +18,10 @@ class Rule(models.Model):
         verbose_name_plural = 'Rules'
 
     def natural_key(self):
+        """
+        Return a tuple representing the natural key for this Rule instance.
+        
+        Returns:
+            tuple: A one-element tuple containing the Rule's unique name.
+        """
         return (self.name,)

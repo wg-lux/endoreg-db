@@ -16,7 +16,12 @@ class SensitiveMetaVerificationSerializer(serializers.Serializer):
     names_verified = serializers.BooleanField(required=False)
     
     def validate_sensitive_meta_id(self, value):
-        """Ensure SensitiveMeta exists."""
+        """
+        Validates that a SensitiveMeta object with the given ID exists.
+        
+        Raises:
+            ValidationError: If no SensitiveMeta object is found with the specified ID.
+        """
         try:
             SensitiveMeta.objects.get(id=value)
             return value
@@ -24,7 +29,17 @@ class SensitiveMetaVerificationSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"SensitiveMeta with ID {value} does not exist.")
 
     def save(self):
-        """Update verification state for the specified SensitiveMeta."""
+        """
+        Updates the verification state for a specified SensitiveMeta instance.
+        
+        Retrieves the SensitiveMeta object by its ID, obtains or creates its verification state, updates the `dob_verified` and `names_verified` fields if provided, and saves the changes.
+        
+        Returns:
+            The updated verification state object.
+        
+        Raises:
+            ValidationError: If the SensitiveMeta does not exist or an error occurs during the update.
+        """
         sensitive_meta_id = self.validated_data['sensitive_meta_id']
         dob_verified = self.validated_data.get('dob_verified')
         names_verified = self.validated_data.get('names_verified')

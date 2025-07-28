@@ -26,4 +26,13 @@ class PatientFindingListSerializer(serializers.ModelSerializer, TranslatableFiel
         ]
 
     def get_finding_name(self, obj):
+        """
+        Return the localized name of the finding associated with the given PatientFinding instance.
+        
+        Parameters:
+            obj: The PatientFinding instance for which to retrieve the localized finding name.
+        
+        Returns:
+            str: The localized name of the related finding.
+        """
         return self.get_localized_name(obj.finding)

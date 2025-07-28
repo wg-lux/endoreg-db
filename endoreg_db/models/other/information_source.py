@@ -5,17 +5,10 @@ if TYPE_CHECKING:
 
 def get_prediction_information_source():
     """
-    Retrieve the prediction information source.
-    
-    This function queries the InformationSource model for an entry with the name
-    "prediction" using Django's ORM and asserts that the retrieved object is valid.
-    It returns the matching InformationSource instance.
-    
-    Returns:
-        InformationSource: The InformationSource object with name "prediction".
+    Returns the InformationSource instance with the name "prediction".
     
     Raises:
-        AssertionError: If no prediction information source is found.
+        AssertionError: If no InformationSource with the name "prediction" exists.
     """
     _source = InformationSource.objects.get(name="prediction")
 
@@ -74,22 +67,20 @@ class InformationSource(models.Model):
 
     def __str__(self):
         """
-        Return the string representation of the InformationSource instance.
-        
-        This method returns the instance's name attribute converted explicitly to a string.
+        Return the name of the InformationSource as its string representation.
         """
         return str(self.name)
 
 class InformationSourceTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         """
-        Retrieves a model instance using its natural key.
+        Retrieve an instance of the model by its natural key, which is the 'name' field.
         
-        Args:
-            name: The natural key value corresponding to the model's 'name' field.
+        Parameters:
+            name (str): The value of the 'name' field to look up.
         
         Returns:
-            The model instance that matches the provided natural key.
+            The model instance with the specified name.
         """
         return self.get(name=name)
     
@@ -114,10 +105,14 @@ class InformationSourceType(models.Model):
     @classmethod
     def get_prediction_type(cls) -> "InformationSourceType":
         """
-        Returns the 'prediction' information source type.
-
+        Return the InformationSourceType instance with the name "prediction".
+        
+        Returns:
+            InformationSourceType: The instance representing the "prediction" information source type.
+        
         Raises:
-            cls.DoesNotExist: If the 'prediction' type is not found.
+            InformationSourceType.DoesNotExist: If no such instance exists.
+
         """
         try:
             return cls.objects.get(name="prediction")
@@ -130,10 +125,15 @@ class InformationSourceType(models.Model):
     @classmethod
     def get_manual_annotation_type(cls) -> "InformationSourceType":
         """
-        Returns the 'manual_annotation' information source type.
 
+        Return the InformationSourceType instance representing manual annotation.
+        
+        Returns:
+            InformationSourceType: The instance with name "annotation".
+        
         Raises:
-            cls.DoesNotExist: If the 'manual_annotation' type is not found.
+            AssertionError: If no InformationSourceType with name "annotation" exists.
+
         """
         try:
             return cls.objects.get(name="manual_annotation")
@@ -143,19 +143,15 @@ class InformationSourceType(models.Model):
                 "Please check your data fixtures or initial data migrations."
             ) from e
 
+
     def natural_key(self):
         """
-        Returns the natural key tuple for the information source type.
-        
-        The tuple contains the object's name, which uniquely identifies it for 
-        serialization and natural key lookup.
+        Return a tuple containing the name of the information source type for natural key serialization.
         """
         return (self.name,)
 
     def __str__(self):
         """
-        Return the string representation of the InformationSourceType instance.
-        
-        This method returns the instance's name attribute converted explicitly to a string.
+        Return the name of the InformationSourceType as its string representation.
         """
         return str(self.name)

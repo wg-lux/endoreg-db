@@ -23,7 +23,15 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
     def to_representation(self, instance):
         """
-        Handles both VideoFile and RawPdfFile instances.
+        Serialize a VideoFile or RawPdfFile instance into a structured dictionary for validation workflows.
+        
+        Depending on the instance type, constructs a dictionary containing identifiers, sensitive metadata, text summaries, anonymized text, processing status, and error flag. For VideoFile instances, generates a text summary from associated sensitive metadata and anonymizes personal identifiers. For RawPdfFile instances, uses the instance's text fields directly. Raises a TypeError if the instance is neither type.
+        
+        Parameters:
+            instance: A VideoFile or RawPdfFile model instance to serialize.
+        
+        Returns:
+            dict: A structured representation of the instance suitable for Pinia store consumption.
         """
         if isinstance(instance, VideoFile):
             # For videos, we don't have text content in the traditional sense
@@ -85,7 +93,12 @@ class VoPPatientDataSerializer(serializers.Serializer):
             raise TypeError(f"Unsupported instance for PatientDataSerializer: {type(instance)}")
 
     def _serialize_sensitive_meta(self, sensitive_meta):
-        """Helper method to serialize SensitiveMeta to match the expected format"""
+        """
+        Serialize a SensitiveMeta object into a dictionary with patient and examination details.
+        
+        Returns:
+            dict or None: A dictionary containing patient and examination metadata fields, or None if sensitive_meta is not provided.
+        """
         if not sensitive_meta:
             return None
 

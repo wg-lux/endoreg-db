@@ -25,7 +25,18 @@ class FileOverviewSerializer(serializers.Serializer):
     # --- converting DB objects to that shape -----------------------
     def to_representation(self, instance):
         """
-        Handles both VideoFile and RawPdfFile instances.
+        Return a unified dictionary representation of either a VideoFile or RawPdfFile instance for front-end use.
+        
+        For VideoFile instances, extracts and structures metadata such as patient, examination, equipment, and examiner information, and generates an anonymized version of the text by replacing sensitive fields with placeholders. For RawPdfFile instances, extracts text and anonymized text directly and determines statuses based on available fields.
+        
+        Parameters:
+            instance: A VideoFile or RawPdfFile object to be serialized.
+        
+        Returns:
+            dict: A normalized dictionary containing id, filename, mediaType, anonymizationStatus, annotationStatus, createdAt, text, and anonymizedText fields.
+        
+        Raises:
+            TypeError: If the instance is not a VideoFile or RawPdfFile.
         """
         text = ""
         anonym_text = ""

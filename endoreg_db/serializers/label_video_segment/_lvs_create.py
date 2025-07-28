@@ -15,12 +15,22 @@ if TYPE_CHECKING:
     from endoreg_db.serializers import LabelVideoSegmentSerializer
 
 def _get_video_file(self, video_id):
+    """
+    Retrieve a VideoFile instance by its ID.
+    
+    Raises a serializers.ValidationError if the VideoFile does not exist.
+    """
     try:
         return VideoFile.objects.get(id=video_id)
     except ObjectDoesNotExist as exc:
         raise serializers.ValidationError(f"VideoFile with id {video_id} does not exist") from exc
 
 def _get_label(self, label_id, label_name):
+    """
+    Retrieve a Label instance by ID or name, creating it if necessary.
+    
+    Raises a ValidationError if the label cannot be found, created, or if neither identifier is provided.
+    """
     if label_id:
         try:
             return Label.objects.get(id=label_id)
@@ -35,6 +45,14 @@ def _get_label(self, label_id, label_name):
         raise serializers.ValidationError("Either label_id or label_name must be provided")
 
 def _validate_fps(self, video_file):
+    """
+    Validate and return the frames per second (FPS) value from a video file.
+    
+    Raises a validation error if the FPS is missing, not a positive number, or cannot be converted to a float.
+    
+    Returns:
+        float: The validated FPS value.
+    """
     fps_raw = video_file.get_fps()
     if fps_raw is None:
         raise serializers.ValidationError("Video file must have a defined FPS")
@@ -47,6 +65,19 @@ def _validate_fps(self, video_file):
     return fps
 
 def _calculate_frame_numbers(self, validated_data, fps):
+    """
+    Convert start and end times in the input data to corresponding frame numbers using the provided FPS value.
+    
+    Parameters:
+        validated_data (dict): Input data containing 'start_time' and 'end_time' keys.
+        fps (float): Frames per second of the video.
+    
+    Returns:
+        dict: The input data dictionary updated with 'start_frame_number' and 'end_frame_number' keys.
+    
+    Raises:
+        serializers.ValidationError: If frame numbers cannot be determined from the provided data.
+    """
     if validated_data.get('start_time') is not None:
         validated_data['start_frame_number'] = int(float(validated_data['start_time']) * fps)
     if validated_data.get('end_time') is not None:
@@ -56,6 +87,12 @@ def _calculate_frame_numbers(self, validated_data, fps):
     return validated_data
 
 def _get_information_source(self):
+    """
+    Retrieve or create the information source for manual annotation.
+    
+    Returns:
+        InformationSource: The source object representing manual annotation.
+    """
     source, _ = InformationSource.objects.get_or_create(
         name='Manual Annotation',
         defaults={
@@ -66,7 +103,12 @@ def _get_information_source(self):
 
 def _create(self:"LabelVideoSegmentSerializer", validated_data):
     """
-    Creates a new LabelVideoSegment instance using validated input data.
+    Create and persist a new LabelVideoSegment instance from validated input data.
+    
+    This method extracts relevant fields from the input, retrieves or creates related objects (video file, label, information source), validates video FPS, calculates frame numbers from time values, and creates a new LabelVideoSegment. Raises a validation error if required data is missing or invalid, or if creation fails.
+    
+    Returns:
+        LabelVideoSegment: The newly created and saved segment instance.
     """
     try:
         # Extract convenience fields

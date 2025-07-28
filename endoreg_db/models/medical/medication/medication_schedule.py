@@ -7,7 +7,15 @@ if TYPE_CHECKING:
 class MedicationScheduleManager(models.Manager):
     '''Manager for the medication schedule model.'''
     def get_by_natural_key(self, name):
-        '''Retrieve a medication schedule by its natural key.'''
+        """
+        Retrieve a MedicationSchedule instance by its name.
+        
+        Parameters:
+            name (str): The name of the medication schedule to retrieve.
+        
+        Returns:
+            MedicationSchedule: The matching medication schedule instance.
+        """
         return self.get(name=name)
     
 class MedicationSchedule(models.Model):

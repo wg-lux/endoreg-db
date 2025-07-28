@@ -70,9 +70,9 @@ def _update(instance: "LabelVideoSegment", validated_data: Dict[str, Any]) -> "L
 
 def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
     """
-    Updates a LabelVideoSegment instance with new data.
+    Update a LabelVideoSegment instance with new validated data.
     
-    Handles updates to the associated video file, label (by ID or name), and segment boundaries (by time or frame number). Converts provided start and end times to frame numbers using the video's FPS. Raises a validation error if referenced video or label does not exist or if an error occurs during the update.
+    This method updates the associated video file, label (by ID or name), and segment boundaries (start and end times converted to frame numbers based on the video's FPS). If the referenced video or label does not exist, or if any error occurs during the update, a validation error is raised.
     
     Returns:
         The updated LabelVideoSegment instance.
@@ -107,6 +107,14 @@ def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
             else:
                 instance.label = None
         
+        def _get_valid_fps(video_file):
+            """
+            Extract and validate the frames-per-second (FPS) value from a video file object.
+            
+            Returns:
+                float: The FPS value as a positive float. Defaults to 30.0 if missing, invalid, or non-positive.
+            """
+
         # Convert time to frame numbers if provided
         if start_time is not None:
             fps = _validate_fps(instance.video_file)

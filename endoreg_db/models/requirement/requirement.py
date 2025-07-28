@@ -308,9 +308,9 @@ class Requirement(models.Model):
         "PatientMedicationSchedule", # Added PatientMedicationSchedule
     ]]:
         """
-        Returns a list of model classes expected as input based on the requirement's linked types.
+        Return the list of model classes that are expected as input for evaluating this requirement.
         
-        The returned list corresponds to the model classes mapped from the names of all associated requirement types.
+        The returned models correspond to the requirement types linked to this requirement, mapped via the internal data model dictionary.
         """
         req_types = self.requirement_types.all()
         req_type_names = [_.name for _ in req_types]
@@ -321,9 +321,9 @@ class Requirement(models.Model):
     @property
     def links(self) -> "RequirementLinks":
         """
-        Aggregates and returns all related model instances as a RequirementLinks object.
+        Return a RequirementLinks object containing all non-null related model instances for this requirement.
         
-        The returned RequirementLinks contains lists of all non-null related objects from the requirement\\'s many-to-many fields, providing a structured view of its associations.
+        The returned object provides structured access to all associated entities, such as examinations, diseases, findings, classifications, interventions, medications, and related choices, aggregated from the requirement's many-to-many fields.
         """
         models_dict = RequirementLinks(
             # requirement_types=self.requirement_types.all(),

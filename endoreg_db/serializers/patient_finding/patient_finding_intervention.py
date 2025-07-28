@@ -14,4 +14,13 @@ class PatientFindingInterventionSerializer(serializers.ModelSerializer, Translat
         fields = ['id', 'intervention', 'intervention_name', 'state']
 
     def get_intervention_name(self, obj):
+        """
+        Return the localized name of the intervention associated with the given object.
+        
+        Parameters:
+            obj: The object containing the intervention to be localized.
+        
+        Returns:
+            str: The localized name of the intervention.
+        """
         return self.get_localized_name(obj.intervention)

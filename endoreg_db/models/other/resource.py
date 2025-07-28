@@ -10,6 +10,12 @@ class Resource(models.Model):
     name = models.CharField(max_length=255)
 
     def natural_key(self):
+        """
+        Return a tuple representing the natural key for this resource instance.
+        
+        Returns:
+            tuple: A one-element tuple containing the resource's name.
+        """
         return (self.name,)
     
     def __str__(self):

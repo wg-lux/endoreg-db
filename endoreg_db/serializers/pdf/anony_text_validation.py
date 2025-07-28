@@ -72,7 +72,12 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """
-        Updates only `anonymized_text` without modifying other fields.
+        Update the `anonymized_text` field of a RawPdfFile instance with validated data.
+        
+        Only the `anonymized_text` field is modified; all other fields remain unchanged.
+        
+        Returns:
+            The updated RawPdfFile instance.
         """
         instance.anonymized_text = validated_data.get('anonymized_text', instance.anonymized_text)
         instance.save()

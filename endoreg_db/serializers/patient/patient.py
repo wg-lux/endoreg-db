@@ -63,7 +63,19 @@ class PatientSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Fehler beim Erstellen des Patienten: {str(e)}")
 
     def update(self, instance, validated_data):
-        """Aktualisiert einen bestehenden Patienten"""
+        """
+        Update an existing Patient instance with validated data.
+        
+        Parameters:
+            instance (Patient): The Patient instance to update.
+            validated_data (dict): Dictionary of validated data to update the instance with.
+        
+        Returns:
+            Patient: The updated Patient instance.
+        
+        Raises:
+            ValidationError: If an error occurs during the update process.
+        """
         try:
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)

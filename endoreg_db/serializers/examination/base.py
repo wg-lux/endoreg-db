@@ -21,9 +21,13 @@ class ExaminationSerializer(serializers.ModelSerializer):
 
     def get_findings(self, obj:Examination):
         """
-        Retrieves all findings associated with the examination.
+        Return a list of serialized findings associated with the given examination.
+        
+        Parameters:
+            obj (Examination): The examination instance for which to retrieve findings.
+        
         Returns:
-            list: A list of serialized findings related to the examination.
+            list: Serialized data for all findings available to the examination.
         """
         from ..finding import FindingSerializer
         findings = obj.get_available_findings()
@@ -31,8 +35,12 @@ class ExaminationSerializer(serializers.ModelSerializer):
 
     def get_examination_types(self, obj:Examination):
         """
-        Retrieves all examination types associated with the examination.
+        Return a list of serialized examination types associated with the given examination.
+        
+        Parameters:
+            obj (Examination): The examination instance for which to retrieve examination types.
+        
         Returns:
-            list: A list of serialized examination types related to the examination.
+            list: Serialized data for each related examination type.
         """
         return ExaminationTypeSerializer(obj.examination_types.all(), many=True).data

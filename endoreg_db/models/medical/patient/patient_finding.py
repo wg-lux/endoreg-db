@@ -77,7 +77,11 @@ class PatientFinding(models.Model):
         return f"{self.patient_examination} - {self.finding}{status}"
 
     def clean(self):
-        """Model-Level Validierung für Geschäftslogik"""
+        """
+        Validates the patient finding against business rules before saving.
+        
+        Ensures that the selected finding is allowed for the associated examination and that all required findings are present. Raises a ValidationError if the finding is not permitted or required findings are missing.
+        """
         super().clean()
         
         # Prüfe ob Finding für diese Examination erlaubt ist
@@ -94,6 +98,11 @@ class PatientFinding(models.Model):
     
     # This avoids validation errors on partial updates 
     def save(self, *args, **kwargs):
+        """
+        Validates the model instance before saving, unless performing a partial update.
+        
+        Performs full model validation with `full_clean()` before saving, except when `update_fields` is specified for a partial update.
+        """
         if not kwargs.get('update_fields'):
             self.full_clean()
         super().save(*args, **kwargs)
@@ -131,7 +140,11 @@ class PatientFinding(models.Model):
         self.interventions.update(is_active=False, deactivated_at=timezone.now())
 
     def reactivate(self, user=None):
-        """Reaktivierung mit Validation"""
+        """
+        Reactivates a previously deactivated patient finding after validating its state.
+        
+        If validation passes, sets the finding as active, clears deactivation fields, updates the user, and saves changes. Raises a ValidationError if reactivation is not allowed.
+        """
         if not self.is_active:
             # Prüfe ob Reaktivierung erlaubt ist
             try:
@@ -146,7 +159,12 @@ class PatientFinding(models.Model):
 
 
     def get_interventions(self):
-        """Returns all active interventions that are associated with this patient finding."""
+        """
+        Retrieve all active interventions associated with this patient finding.
+        
+        Returns:
+            QuerySet: Active related interventions with intervention details prefetched.
+        """
         return self.interventions.filter(is_active=True).select_related('intervention')
 
     def add_classification(
@@ -155,7 +173,20 @@ class PatientFinding(models.Model):
             classification_choice_id,
             user=None,
         ) -> "PatientFindingClassification":
-        """Adds a validated classification choice to this patient finding."""
+        """
+            Add a classification choice to this patient finding after validating its association.
+            
+            Parameters:
+            	classification_id: The ID of the classification to add.
+            	classification_choice_id: The ID of the classification choice to associate.
+            	user: Optional user performing the action.
+            
+            Returns:
+            	PatientFindingClassification: The created or existing active classification association.
+            
+            Raises:
+            	ValidationError: If the classification does not exist or the choice is not valid for the classification.
+            """
         from .patient_finding_classification import PatientFindingClassification
         from ..finding import FindingClassification, FindingClassificationChoice
 
@@ -189,7 +220,21 @@ class PatientFinding(models.Model):
             raise ValidationError(f'Classification {classification_id} nicht gefunden')
 
     def add_intervention(self, intervention_id, state="pending", date=None, user=None):
-        """Adds a validated intervention to this patient finding."""
+        """
+        Add an intervention to the patient finding after validating its existence.
+        
+        Parameters:
+            intervention_id (int): The ID of the intervention to add.
+            state (str, optional): The state of the intervention. Defaults to "pending".
+            date (datetime, optional): The date of the intervention. Defaults to the current time if not provided.
+            user (User, optional): The user creating the intervention.
+        
+        Returns:
+            PatientFindingIntervention: The created intervention instance.
+        
+        Raises:
+            ValidationError: If the specified intervention does not exist.
+        """
         from .patient_finding_intervention import PatientFindingIntervention
         from ..finding import FindingIntervention
         
@@ -210,17 +255,37 @@ class PatientFinding(models.Model):
             raise ValidationError(f'Intervention {intervention_id} nicht gefunden')
 
     def add_video_segment(self, video_segment):
-        """Add video segment to finding"""
+        """
+        Associates a video segment with this patient finding.
+        
+        Parameters:
+        	video_segment: The video segment instance to add.
+        
+        Returns:
+        	The added video segment instance.
+        """
         self.video_segments.add(video_segment)
         return video_segment
 
     # Manager für active/inactive Objekte
     @property
     def active_classifications(self):
+        """
+        Return all active classifications associated with this patient finding.
+        
+        Returns:
+        	QuerySet: Active related classifications where `is_active` is True.
+        """
         return self.classifications.filter(is_active=True)
     
     @property
     def locations(self):
+        """
+        Return all classifications of this patient finding that are of type "location".
+        
+        Returns:
+        	QuerySet: Classifications related to this finding filtered by the "location" classification type.
+        """
         classifications = self.classifications.filter(
             classification__classification_types__name__iexact="location"
         )
@@ -228,6 +293,12 @@ class PatientFinding(models.Model):
 
     @property
     def morphologies(self):
+        """
+        Return all classifications of this patient finding that are of type "morphology".
+        
+        Returns:
+        	QuerySet: Classifications related to this finding filtered by the "morphology" classification type.
+        """
         classifications = self.classifications.filter(
             classification__classification_types__name__iexact="morphology"
         )
@@ -235,6 +306,9 @@ class PatientFinding(models.Model):
 
     @property
     def active_locations(self):
+        """
+        Return all active location classifications associated with this patient finding.
+        """
         return self.locations.filter(is_active=True)
     
     @property 
