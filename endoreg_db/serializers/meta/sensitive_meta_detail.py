@@ -59,7 +59,15 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_is_verified(self, obj):
-        """Get overall verification status."""
+        """
+        Return the overall verification status of the given SensitiveMeta instance.
+        
+        Returns:
+            bool: True if the instance is verified; False if the verification attribute is missing.
+        
+        Raises:
+            Exception: Propagates unexpected exceptions after logging.
+        """
         try:
             return obj.is_verified
         except AttributeError:
@@ -69,21 +77,36 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
             raise
 
     def get_dob_verified(self, obj):
-        """Get DOB verification status."""
+        """
+        Return the date of birth verification status for the given object.
+        
+        Returns:
+            bool: True if the date of birth is verified; otherwise, False if unavailable or on error.
+        """
         try:
             return obj.state.dob_verified
         except Exception:
             return False
 
     def get_names_verified(self, obj):
-        """Get names verification status."""
+        """
+        Return whether the patient's names have been verified.
+        
+        Returns:
+            bool: True if the names are verified; False if not verified or if an error occurs.
+        """
         try:
             return obj.state.names_verified
         except Exception:
             return False
 
     def get_examiners_display(self, obj):
-        """Get formatted examiner names."""
+        """
+        Return a list of examiner full names for the given SensitiveMeta instance.
+        
+        Returns:
+            list[str]: List of examiner names in "First Last" format, or an empty list if unavailable.
+        """
         try:
             if obj.pk:
                 examiners = obj.examiners.all()
@@ -94,25 +117,45 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
             return []
 
     def get_patient_dob_display(self, obj):
-        """Get formatted DOB for display."""
+        """
+        Return the patient's date of birth formatted as "YYYY-MM-DD" for display.
+        
+        Returns:
+            str or None: Formatted date string if available, otherwise None.
+        """
         if obj.patient_dob:
             return obj.patient_dob.strftime("%Y-%m-%d")
         return None
 
     def get_examination_date_display(self, obj):
-        """Get formatted examination date for display."""
+        """
+        Return the examination date formatted as "YYYY-MM-DD" for display.
+        
+        Returns:
+            str or None: Formatted examination date string, or None if not set.
+        """
         if obj.examination_date:
             return obj.examination_date.strftime("%Y-%m-%d")
         return None
 
     def get_patient_hash_display(self, obj):
-        """Get truncated patient hash for display."""
+        """
+        Return the last eight characters of the patient's hash, prefixed with ellipsis, or None if not available.
+        
+        Returns:
+            str or None: Truncated patient hash for display, or None if the hash is not set.
+        """
         if obj.patient_hash:
             return f"...{obj.patient_hash[-8:]}"
         return None
 
     def get_examination_hash_display(self, obj):
-        """Get truncated examination hash for display."""
+        """
+        Return the last eight characters of the examination hash, prefixed with ellipsis, or None if not available.
+        
+        Returns:
+            str or None: Truncated examination hash for display, or None if the hash is not set.
+        """
         if obj.examination_hash:
             return f"...{obj.examination_hash[-8:]}"
         return None

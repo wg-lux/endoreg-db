@@ -53,8 +53,13 @@ class VideoFileSerializer(serializers.ModelSerializer):
     #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
     def get_video_selection_field(self, obj:"Video"):
         """
-        Returns the field used for video selection in the frontend dropdown.
-        Currently, it shows the video ID, but this can be changed easily later.
+        Return the UUID of the video for use as a selection value in frontend dropdowns.
+        
+        Parameters:
+            obj (Video): The video instance being serialized.
+        
+        Returns:
+            str: The UUID of the video.
         """
         return obj.uuid
 
@@ -62,7 +67,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
-        Returns the absolute API URL for accessing the video file.
+        Return the absolute API URL for accessing the video file.
         
         If the video ID is invalid or the request context is missing, returns a dictionary with an error message.
         """
@@ -79,8 +84,9 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_duration(self, obj:"Video"):
         """
-        Returns the total duration of the video in seconds.
-        If duration is not stored in the database, it extracts it dynamically using OpenCV.
+        Return the duration of the video in seconds, using the stored value if available or extracting it dynamically with OpenCV.
+        
+        If the duration is not present in the database, the method opens the video file, retrieves its frame count and frames per second (FPS), and calculates the duration. Returns `None` if the video cannot be opened or FPS is zero.
         """
         if hasattr(obj, "duration") and obj.duration:
             return (
@@ -105,7 +111,13 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_file(self, obj:"Video"):
         """
-        Ensures the file field returns only the relative path, adn also validates it
+        Returns the relative file path of the active video file, or an error message if the file is missing or invalid.
+        
+        Parameters:
+            obj (Video): The video instance whose file path is to be retrieved.
+        
+        Returns:
+            str or dict: The relative file path as a string, or a dictionary with an error message if the file is missing or invalid.
         """
         if not obj.active_file:
             return {"error": "No file  associated with this entry"}
@@ -119,7 +131,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_full_video_path(self, obj:"Video"):
         """
-        Returns the absolute file path to the video's active file.
+        Return the absolute filesystem path to the video's active file.
         
         If the file does not exist or an error occurs during path construction, returns a dictionary with an error message.
         """
@@ -146,10 +158,10 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_sequences(self, obj:"Video"):
         """
-        Retrieves the frame sequences for each label from the video object.
+        Retrieve frame sequences for each label from the video object.
         
         Returns:
-            A dictionary mapping label names to lists of frame ranges. If no sequences are found, returns a dictionary with an error message.
+            dict: A mapping of label names to lists of frame ranges, or an error message if no sequences are found.
         """
         return obj.sequences or {
             "error": "no sequence found, check database first"
@@ -157,23 +169,25 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     def get_label_names(self, obj:"Video"):
         """
-        Extracts only label names from the sequences data.
-        Example Output:
-        ["outside", "needle", "kolonpolyp"]
+        Return a list of label names present in the video's frame sequences.
+        
+        Parameters:
+            obj (Video): The video instance to extract label names from.
+        
+        Returns:
+            list[str]: List of label names, or an empty list if no sequences are found.
         """
         sequences = self.get_sequences(obj)
         return list(sequences.keys()) if sequences else []
 
     def get_label_time_segments(self, obj:"Video"):
         """
-        Converts frame sequences of a selected label into time segments in seconds.
-        Also retrieves frame-wise predictions for the given label.
-
-        Includes:
-        - Frame index
-        - Corresponding frame filename (frame_0000001.jpg)
-        - Full frame file path for frontend access
-        - segment_start and segment_end (in frame index format, not divided by FPS)
+        Convert frame sequences for each label into time segments with frame-level metadata.
+        
+        For each label in the video, this method generates a list of time segments based on frame index ranges, converting them to seconds using the video's FPS. Each segment includes the raw frame indices, start and end times in seconds, and detailed information for each frame in the segment, such as filename, full file path, and a placeholder for predictions.
+        
+        Returns:
+            dict: A dictionary mapping each label to its list of time segments and associated frame metadata.
         """
 
         fps = (

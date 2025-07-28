@@ -70,19 +70,40 @@ class FindingClassification(models.Model):
         return str(self.name)
 
     def get_choices(self):
+        """
+        Return all choices associated with this classification.
+        
+        Returns:
+        	QuerySet: All related FindingClassificationChoice instances.
+        """
         return self.choices.all()
 
     @property
     def is_morphology(self):
+        """
+        Return True if any related classification type has the name "morphology" (case-insensitive).
+        """
         return self.classification_types.filter(name__iexact="morphology").exists()
 
     @property
     def is_location(self):
+        """
+        Returns True if any related classification type has the name "location" (case-insensitive).
+        """
         return self.classification_types.filter(name__iexact="location").exists()
 
 
 class FindingClassificationChoiceManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve an instance by its unique name using the natural key.
+        
+        Parameters:
+            name (str): The unique name identifying the instance.
+        
+        Returns:
+            The model instance with the specified name.
+        """
         return self.get(name=name)
     
 class FindingClassificationChoice(models.Model):

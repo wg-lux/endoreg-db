@@ -27,9 +27,27 @@ class PatientFindingDetailSerializer(serializers.ModelSerializer, TranslatableFi
         ]
         
     def get_finding_name(self, obj):
+        """
+        Return the localized name of the finding associated with the given PatientFinding instance.
+        
+        Parameters:
+            obj: The PatientFinding instance being serialized.
+        
+        Returns:
+            str: The localized name of the related finding.
+        """
         return self.get_localized_name(obj.finding)
     
     def get_examination_name(self, obj):
+        """
+        Return the localized name of the examination associated with the given PatientFinding instance.
+        
+        Parameters:
+            obj: The PatientFinding instance being serialized.
+        
+        Returns:
+            str: The localized name of the related examination.
+        """
         return self.get_localized_name(obj.patient_examination.examination)
 
 

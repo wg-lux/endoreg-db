@@ -83,9 +83,13 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        Validates that a PDF file is provided and the referenced sensitive_meta_id exists.
+        Validate input data to ensure a PDF file is provided and the referenced sensitive_meta_id exists.
         
-        Raises a ValidationError with detailed messages if the file is missing or the sensitive_meta_id does not correspond to an existing SensitiveMeta record.
+        Raises:
+            serializers.ValidationError: If the PDF file is missing or the sensitive_meta_id does not correspond to an existing SensitiveMeta record.
+        
+        Returns:
+            dict: The validated input data if all checks pass.
         """
         errors = {}
 

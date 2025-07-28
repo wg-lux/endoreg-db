@@ -56,7 +56,10 @@ class Label(models.Model):
     @classmethod
     def get_low_quality_label(cls):
         """
-        Returns the label instance for 'low quality'.
+        Retrieve the label instance with the name 'low_quality'.
+        
+        Raises:
+            ValueError: If a label with the name 'low_quality' does not exist.
         """
         try:
             return cls.objects.get(name="low_quality")
@@ -66,13 +69,13 @@ class Label(models.Model):
     @classmethod
     def get_or_create_from_name(cls, name:str):
         """
-        Retrieves or creates a label instance by its name.
+        Retrieve or create a Label instance with the specified name.
         
-        Args:
+        Parameters:
             name (str): The name of the label to retrieve or create.
         
         Returns:
-            Label: The label instance.
+            tuple: A tuple containing the Label instance and a boolean indicating whether the instance was created (True) or retrieved (False).
         """
         label, _created = cls.objects.get_or_create(name=name)
         return label, _created

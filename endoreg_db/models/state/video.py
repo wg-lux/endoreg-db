@@ -113,36 +113,77 @@ class VideoState(models.Model):
             self.save(update_fields=["sensitive_meta_processed", "date_modified"])
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
+        """
+        Mark the anonymization process as validated for this video state.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately.
+        """
         self.anonymization_validated = True
         if save:
             self.save(update_fields=["anonymization_validated", "date_modified"])
 
     def mark_frames_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video as having its frames extracted.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately.
+        """
         self.frames_extracted = True
         if save:
             self.save(update_fields=["frames_extracted", "date_modified"])
 
     def mark_frames_not_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video as having no extracted frames.
+        
+        If `save` is True, updates the database record for this state.
+        """
         self.frames_extracted = False
         if save:
             self.save(update_fields=["frames_extracted", "date_modified"])
 
     def mark_anonymized(self, *, save: bool = True) -> None:
+        """
+        Mark the video as anonymized by setting the anonymized flag to True.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.anonymized = True
         if save:
             self.save(update_fields=["anonymized", "date_modified"])
 
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
+        """
+        Mark the initial AI prediction as completed for this video state.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately.
+        """
         self.initial_prediction_completed = True
         if save:
             self.save(update_fields=["initial_prediction_completed", "date_modified"])
 
     def mark_video_meta_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video metadata as extracted for this video state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.video_meta_extracted = True
         if save:
             self.save(update_fields=["video_meta_extracted", "date_modified"])
 
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video as having its text metadata extracted.
+        
+        Parameters:
+        	save (bool): If True, immediately saves the updated state to the database.
+        """
         self.text_meta_extracted = True
         if save:
             self.save(update_fields=["text_meta_extracted", "date_modified"])

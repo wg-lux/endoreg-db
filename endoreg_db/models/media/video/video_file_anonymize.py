@@ -209,21 +209,15 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
 @transaction.atomic
 def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     """
-    Anonymizes the video by censoring frames and creating a new processed video file.
-    Requires raw file, extracted frames, validated sensitive meta, and validated 'outside' segments.
-    Raises ValueError or FileNotFoundError on pre-condition failure. Returns True on success.
-
-    Args:
-        video (VideoFile): The video file instance.
-        delete_original_raw (bool): Whether to delete the original raw file and frames after success.
-
+    Performs full anonymization of a video by censoring frames, assembling a processed video file, updating database records, and optionally deleting original raw assets.
+    
+    Raises:
+        ValueError: If required preconditions are not met (e.g., frames not extracted, sensitive metadata not validated).
+        FileNotFoundError: If the raw video file is missing.
+        RuntimeError: If anonymization or video assembly fails.
+    
     Returns:
-        bool: True if anonymization was successful. Raises exception otherwise (caught by pipeline).
-
-    State Transitions:
-        - Pre-condition: Requires state.frames_extracted=True, sensitive_meta validated, outside segments validated.
-        - Post-condition (on success): Sets state.anonymized=True. If delete_original_raw=True, schedules cleanup which sets state.frames_extracted=False.
-        - Post-condition (on failure): No state changes (transaction rollback).
+        bool: True if anonymization completes successfully.
     """
     state = video.get_or_create_state()
 

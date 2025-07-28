@@ -24,10 +24,9 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
     def validate(self, data):
         """
-        Validates that all required segment fields are provided correctly.
-
-        - Ensures that each segment contains `start_frame_number` and `end_frame_number`.
-        - Validates that `start_frame_number` is always less than or equal to `end_frame_number`.
+        Validate that the input data contains a non-empty list of segments with valid frame numbers.
+        
+        Raises a validation error if any segment is missing required fields or if a segment's start frame exceeds its end frame.
         """
         if not data.get("segments"):
             raise serializers.ValidationError("No segments provided.")
@@ -47,12 +46,12 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
     def save(self):
         """
-        Synchronizes label segments in the database with the provided frontend data for a specific video and label.
-
-        Compares incoming segments to existing database entries, updating segments with changed end frames, creating new segments as needed, and deleting segments that are no longer present. All changes are performed within a transaction to maintain consistency. Raises a validation error if no prediction metadata exists for the video.
-
+        Synchronizes label segments in the database to match the provided frontend data for a specific video and label.
+        
+        Compares incoming segments to existing database entries, updating segments with changed end frames, creating new segments as needed, and deleting segments that are no longer present. All changes are performed within a transaction to ensure consistency. Raises a validation error if no prediction metadata exists for the specified video.
+        
         Returns:
-            dict: Contains serialized updated segments, newly created segments, and the count of deleted segments.
+            dict: A dictionary containing serialized updated segments, newly created segments, and the count of deleted segments.
         """
 
         video_id = self.validated_data["video_id"]

@@ -12,6 +12,12 @@ class AnonymizationService:
     # ---------- READ ----------------------------------------------------
     @staticmethod
     def get_status(file_id: int):
+        """
+        Retrieve the anonymization status and media type for a file by its ID.
+        
+        Returns:
+            dict or None: A dictionary containing the file's media type and anonymization status if found, or None if no matching file exists.
+        """
         vf = VideoFile.objects.select_related("state", "sensitive_meta").filter(pk=file_id).first()
         if vf:
             return {
@@ -67,7 +73,10 @@ class AnonymizationService:
     @staticmethod
     def list_items():
         """
-        Returns a list of all files with their anonymization status.
+        Retrieve a combined list of all video and PDF files with their anonymization statuses and timestamps.
+        
+        Returns:
+            list: A list of dictionaries, each containing the file's ID, media type, anonymization status, creation date, and last modification date.
         """
         video_files = VideoFile.objects.select_related("state").all()
         pdf_files = RawPdfFile.objects.select_related("sensitive_meta").all()

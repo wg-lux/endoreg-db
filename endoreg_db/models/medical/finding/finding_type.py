@@ -3,6 +3,15 @@ from typing import TYPE_CHECKING
 
 class FindingTypeManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve a FindingType instance by its unique name for natural key deserialization.
+        
+        Parameters:
+            name (str): The unique name of the FindingType to retrieve.
+        
+        Returns:
+            FindingType: The instance matching the given name.
+        """
         return self.get(name=name)
     
 class FindingType(models.Model):

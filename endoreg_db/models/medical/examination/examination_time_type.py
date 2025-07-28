@@ -21,10 +21,7 @@ class ExaminationTimeType(models.Model):
 
     def __str__(self) -> str:
         """
-        String representation of the examination time type.
-
-        Returns:
-            str: The name of the examination time type.
+        Return the name of the examination time type as its string representation.
         """
         return self.name
 

@@ -29,20 +29,33 @@ class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):
         ]
 
     def get_confidence(self, obj: ImageClassificationAnnotation) -> Optional[float]:
+        """
+        Retrieve the confidence score associated with the annotation.
+        
+        Returns:
+            The float value representing the annotation's confidence, or None if not set.
+        """
         if obj.float_value is not None:
             return obj.float_value
         return None
 
     def get_label_name(self, obj: ImageClassificationAnnotation) -> str:
         """
-        Get the actual label name from the related Label model.
-        This method is used to retrieve the label name for the annotation.
+        Returns the name of the label associated with the annotation, or "No Label" if no label is set.
         """
         return obj.label.name if obj.label else "No Label"
 
     def to_representation(self, instance: ImageClassificationAnnotation) -> dict:
         """
-        Custom representation to include additional fields if necessary.
+        Return the serialized representation of an ImageClassificationAnnotation instance.
+        
+        Overrides the default method to allow for future customization of the serialized output, but currently returns the standard representation unchanged.
+        
+        Parameters:
+            instance (ImageClassificationAnnotation): The annotation instance to serialize.
+        
+        Returns:
+            dict: The serialized data for the annotation.
         """
         representation = super().to_representation(instance)
         # Add any additional fields or transformations here if needed

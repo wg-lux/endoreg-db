@@ -52,6 +52,9 @@ class RawPdfState(models.Model):
 
     def __str__(self):
         # Find the related VideoFile's UUID if possible
+        """
+        Return a string summarizing the RawPdfState instance, including the related PDF file UUID and key processing state flags with timestamps.
+        """
         try:
             uuid = self.raw_pdf_file.id
         except Exception:
@@ -71,8 +74,10 @@ class RawPdfState(models.Model):
     @property
     def anonymization_status(self) -> AnonymizationStatus:
         """
-        Fast, side‑effect‑free status resolution used by API & UI.
-        Reflects the PDF-specific anonymization workflow.
+        Determines the current anonymization workflow status for the PDF processing state.
+        
+        Returns:
+            AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
         """
         if getattr(self, "processing_error", False):
             return AnonymizationStatus.FAILED
@@ -90,31 +95,67 @@ class RawPdfState(models.Model):
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
+        """
+        Mark the sensitive metadata processing step as completed for this PDF state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.sensitive_meta_processed = True
         if save:
             self.save(update_fields=["sensitive_meta_processed", "date_modified"])
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
+        """
+        Mark the anonymization as validated for this PDF processing state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.anonymization_validated = True
         if save:
             self.save(update_fields=["anonymization_validated", "date_modified"])
 
     def mark_anonymized(self, *, save: bool = True) -> None:
+        """
+        Mark the PDF as anonymized and optionally save the updated state.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately. Defaults to True.
+        """
         self.anonymized = True
         if save:
             self.save(update_fields=["anonymized", "date_modified"])
 
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
+        """
+        Mark the initial AI prediction step as completed for this PDF processing state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.initial_prediction_completed = True
         if save:
             self.save(update_fields=["initial_prediction_completed", "date_modified"])
 
     def mark_pdf_meta_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the PDF metadata extraction step as completed for this state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.pdf_meta_extracted = True
         if save:
             self.save(update_fields=["pdf_meta_extracted", "date_modified"])
 
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the text metadata extraction step as completed for this PDF processing state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
         self.text_meta_extracted = True
         if save:
             self.save(update_fields=["text_meta_extracted", "date_modified"])

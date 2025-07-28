@@ -46,10 +46,17 @@ class PatientFindingClassification(models.Model):
         ordering = ['finding', 'classification', 'classification_choice']
 
     def __str__(self):
+        """
+        Return a string representation combining the finding, classification, and classification choice.
+        """
         return f"{self.finding} - {self.classification} - {self.classification_choice}"
 
     def save(self, *args, **kwargs):
-        """Override save method to ensure classification_choice is valid for the classification."""
+        """
+        Saves the model instance after validating and initializing classification-related fields.
+        
+        Ensures that the selected classification choice is valid for the associated classification. If subcategories or numerical descriptors are unset, initializes them from the classification choice before saving.
+        """
         if self.classification_choice not in self.classification.choices.all():
             raise ValueError("classification_choice must be in classification.choices")
 
@@ -62,20 +69,36 @@ class PatientFindingClassification(models.Model):
         super().save(*args, **kwargs)
 
     def initialize_and_get_subcategories(self):
-        """Returns the dictionary of subcategories, ensuring it's initialized."""
+        """
+        Ensure the subcategories field is initialized and return its dictionary.
+        
+        Returns:
+            dict: The subcategories associated with this classification.
+        """
         if not self.subcategories:
             self.save()
         return self.subcategories
 
     def initialize_and_get_descriptors(self):
-        """Returns the dictionary of numerical descriptors, ensuring it's initialized."""
+        """
+        Return the numerical descriptors dictionary, initializing it if necessary.
+        
+        If the `numerical_descriptors` field is empty or uninitialized, the method triggers model initialization and returns the resulting dictionary.
+        """
         if not self.numerical_descriptors:
             self.save()
         return self.numerical_descriptors
 
     def set_subcategory(self, subcategory_name: str, subcategory_value: Dict):
         """
-        Sets a subcategory for this classification.
+        Update the value of a specified subcategory and save the classification.
+        
+        Parameters:
+            subcategory_name (str): The name of the subcategory to update.
+            subcategory_value (dict): The value to assign to the subcategory.
+        
+        Returns:
+            dict: The updated subcategory dictionary.
         """
         assert subcategory_name in self.subcategories, "Subcategory must be in subcategories."
         self.subcategories[subcategory_name]["value"] = subcategory_value
@@ -85,8 +108,12 @@ class PatientFindingClassification(models.Model):
     
     def set_random_subcategories(self):
         """
-        Sets random subcategories for this classification.
-        This method should be implemented to set random values for subcategories.
+        Assign random values to all required subcategories that do not already have a value.
+        
+        For each required subcategory without a value, selects a random option from its available choices, updates the subcategory, saves the model, and returns the updated subcategories dictionary.
+        
+        Returns:
+            dict: The updated subcategories with random values assigned where needed.
         """
         if not self.subcategories or not self.numerical_descriptors:
             self.save()
@@ -103,7 +130,18 @@ class PatientFindingClassification(models.Model):
         return self.subcategories
     
     def get_random_value_for_numerical_descriptor(self, descriptor_name):
-        """Generates a random value for a specified numerical descriptor based on its definition."""
+        """
+        Generate a random value for the specified numerical descriptor using its defined distribution parameters.
+        
+        Parameters:
+            descriptor_name (str): The name of the numerical descriptor to generate a value for.
+        
+        Returns:
+            float: A randomly generated value based on the descriptor's distribution, clipped to its min and max range.
+        
+        Raises:
+            ValueError: If the descriptor's distribution type is not supported.
+        """
         import numpy as np
         assert descriptor_name in self.numerical_descriptors, "Descriptor must be in numerical descriptors."
         descriptor = self.numerical_descriptors[descriptor_name]
@@ -125,7 +163,17 @@ class PatientFindingClassification(models.Model):
 
     def set_random_numerical_descriptor(self, descriptor_name, save=True):
         """
-        Sets a random numerical descriptor for this classification.
+        Assigns a random value to the specified numerical descriptor and optionally saves the model.
+        
+        Parameters:
+            descriptor_name (str): The name of the numerical descriptor to update.
+            save (bool): If True, saves the model after updating the descriptor. Defaults to True.
+        
+        Returns:
+            dict: The updated numerical descriptor dictionary with the new random value.
+        
+        Raises:
+            ValueError: If the descriptor name is not present in the numerical descriptors.
         """
         if descriptor_name not in self.numerical_descriptors:
             raise ValueError("Descriptor name must be in numerical descriptors.")
@@ -140,7 +188,10 @@ class PatientFindingClassification(models.Model):
     
     def set_random_numerical_descriptors(self):
         """
-        Sets random numerical descriptors for this location if they are required.
+        Assigns random values to all numerical descriptors and saves the model.
+        
+        Returns:
+            dict: The updated numerical_descriptors dictionary with assigned random values.
         """
         if not self.subcategories or not self.numerical_descriptors:
             self.save()

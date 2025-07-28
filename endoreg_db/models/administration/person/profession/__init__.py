@@ -18,4 +18,7 @@ class Profession(models.Model):
         portal_user_infos: models.QuerySet["PortalUserInfo"]
 
     def __str__(self):
+        """
+        Return the profession's name as its string representation.
+        """
         return str(self.name)

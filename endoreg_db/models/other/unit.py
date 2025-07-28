@@ -23,4 +23,10 @@ class Unit(models.Model):
         return str(self.name)
     
     def natural_key(self):
+        """
+        Return a tuple containing the unit's name for natural key serialization.
+        
+        Returns:
+            tuple: A single-element tuple with the unit's name.
+        """
         return (self.name,)

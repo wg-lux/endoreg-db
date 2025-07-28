@@ -109,7 +109,17 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Fehler beim Erstellen der Patientenuntersuchung: {str(e)}")
 
     def update(self, instance, validated_data):
-        """Aktualisiert eine bestehende PatientExamination"""
+        """
+        Update an existing PatientExamination instance with validated data.
+        
+        If a new patient is provided, updates the patient reference. Applies all other validated fields to the instance and saves changes.
+        
+        Returns:
+            PatientExamination: The updated PatientExamination instance.
+        
+        Raises:
+            ValidationError: If an error occurs during the update process.
+        """
         try:
             # Falls Patient geändert wird
             if 'patient' in validated_data:

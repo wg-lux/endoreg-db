@@ -35,21 +35,35 @@ class Finding(models.Model):
         finding_interventions: models.QuerySet[FindingIntervention]
         
     def natural_key(self):
+        """
+        Return a tuple containing the unique natural key for this Finding instance.
+        
+        Returns:
+            tuple: A single-element tuple with the Finding's name.
+        """
         return (self.name,)
     
     def __str__(self):
         return self.name
     
     def get_finding_types(self):
+        """
+        Return all finding types associated with this finding.
+        
+        Returns:
+            QuerySet: All related FindingType instances.
+        """
         return self.finding_types.all()
     
     def get_classifications(self, classification_type: str = None) -> List['FindingClassification']:
         """
-        Returns all FindingClassification objects linked to this finding.
-        If classification_type is provided, it filters by that type.
+        Retrieve all classifications associated with this finding, optionally filtered by classification type.
         
-        :param classification_type: The type of classification to filter by (e.g., 'location', 'morphology').
-        :return: A list of FindingClassification objects.
+        Parameters:
+        	classification_type (str, optional): If provided, only classifications with a matching type name are returned.
+        
+        Returns:
+        	List[FindingClassification]: List of related classification objects, filtered by type if specified.
         """
         if classification_type:
             return self.finding_classifications.filter(classification_types__name=classification_type)
@@ -57,12 +71,18 @@ class Finding(models.Model):
     
     def get_location_classifications(self):
         """
-        Returns all FindingClassification objects of type 'location' linked to this finding.
+        Retrieve all related FindingClassification objects with classification type 'location'.
+        
+        Returns:
+            QuerySet: All FindingClassification instances linked to this finding where the classification type name is 'location' (case-insensitive).
         """
         return self.finding_classifications.filter(classification_types__name__iexact="location")
 
     def get_morphology_classifications(self):
         """
-        Returns all FindingClassification objects of type 'morphology' linked to this finding.
+        Retrieve all related FindingClassification objects with classification type 'morphology'.
+        
+        Returns:
+            QuerySet: A queryset of FindingClassification instances associated with this finding and classified as 'morphology'.
         """
         return self.finding_classifications.filter(classification_types__name__iexact="morphology")

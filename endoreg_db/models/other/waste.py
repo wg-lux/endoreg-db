@@ -11,8 +11,17 @@ class Waste(models.Model):
     # emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
     
     def natural_key(self):
+        """
+        Return a tuple containing the unique natural key for this Waste instance.
+        
+        Returns:
+            tuple: A single-element tuple with the waste's name, used for natural key serialization.
+        """
         return (self.name,)
     
     def __str__(self):
+        """
+        Return the name of the waste as its string representation.
+        """
         return self.name
 

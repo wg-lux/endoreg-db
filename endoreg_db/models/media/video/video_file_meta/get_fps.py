@@ -7,7 +7,14 @@ if TYPE_CHECKING:
     from ..video_file import VideoFile
 
 def _validate_video_path(video_path: Path):
-    """Validate the video file path."""
+    """
+    Validates that the provided path is an existing video file.
+    
+    Raises:
+        TypeError: If `video_path` is not a Path object.
+        FileNotFoundError: If the file does not exist at the specified path.
+        IsADirectoryError: If the path points to a directory instead of a file.
+    """
     if not isinstance(video_path, Path):
         raise TypeError("video_path must be a Path object")
     if not video_path.exists():
@@ -18,7 +25,17 @@ def _validate_video_path(video_path: Path):
 
 logger = logging.getLogger(__name__)
 def _get_fps(video: "VideoFile") -> float:
-    """Gets the FPS, trying instance, VideoMeta, and finally direct file access."""
+    """
+    Determine and return the frames per second (FPS) of a video associated with a VideoFile instance.
+    
+    Attempts to retrieve FPS from the instance itself, its linked VideoMeta, or by direct analysis of the raw video file using OpenCV. Updates and saves the FPS value to the instance if successfully determined. Raises a ValueError if FPS cannot be determined by any method.
+    
+    Returns:
+        float: The frames per second (FPS) of the video.
+    
+    Raises:
+        ValueError: If the FPS cannot be determined from any available source.
+    """
     from .video_meta import _update_video_meta
     if video.fps is not None:
         return video.fps
@@ -86,7 +103,15 @@ def _get_fps(video: "VideoFile") -> float:
 
 # TODO Refactor to utils / check if similar function exists in utils
 def _get_fps_from_property(cap) -> float:
-    """Get FPS from video capture property."""
+    """
+    Retrieve the frames per second (FPS) from an OpenCV video capture object using the appropriate property for the OpenCV version.
+    
+    Parameters:
+        cap: An OpenCV video capture object.
+    
+    Returns:
+        float: The FPS value obtained from the video capture properties, or 0.0 if unavailable.
+    """
     if hasattr(cv2, 'CAP_PROP_FPS'):
         return cap.get(cv2.CAP_PROP_FPS)
     # For older OpenCV versions
@@ -94,7 +119,16 @@ def _get_fps_from_property(cap) -> float:
 
 
 def _calculate_fps_manually(cap, video_path: Path) -> float:
-    """Manually calculate FPS as a fallback."""
+    """
+    Estimate the frames per second (FPS) of a video by reading all frames and dividing the total frame count by the elapsed time.
+    
+    Parameters:
+        cap: An OpenCV video capture object positioned at the start of the video.
+        video_path (Path): Path to the video file, used for logging.
+    
+    Returns:
+        float: The estimated FPS, or 0.0 if the duration is zero or calculation fails.
+    """
     logger.warning(f"Could not get a valid FPS for {video_path}. Trying to calculate manually.")
     # This is less accurate and slower
     num_frames = 0

@@ -23,6 +23,15 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
+        """
+        Create a new PatientFinding instance along with any provided nested classifications and interventions.
+        
+        Parameters:
+            validated_data (dict): Data validated by the serializer, potentially including nested classifications and interventions.
+        
+        Returns:
+            PatientFinding: The newly created PatientFinding instance with related nested objects.
+        """
         classifications_data = validated_data.pop('classifications', [])
         interventions_data = validated_data.pop('interventions', [])
 
@@ -34,6 +43,11 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
         return patient_finding
 
     def update(self, instance, validated_data):
+        """
+        Update a PatientFinding instance and its nested classifications and interventions.
+        
+        If new classification or intervention data is provided, existing related objects are deleted and replaced with the new data. Returns the updated PatientFinding instance.
+        """
         classifications_data = validated_data.pop('classifications', None)
         interventions_data = validated_data.pop('interventions', None)
 
@@ -54,11 +68,20 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
         return instance
 
     def _create_nested_objects(self, patient_finding, classifications_data, interventions_data):
-        """Hilfsmethode für verschachtelte Objekterstellung"""
+        """
+        Create nested classification and intervention objects linked to a PatientFinding instance.
+        
+        This helper method delegates the creation of related classification and intervention objects using the provided data, associating them with the specified PatientFinding.
+        """
         self._create_classifications(patient_finding, classifications_data)
         self._create_interventions(patient_finding, interventions_data)
 
     def _create_classifications(self, patient_finding, classifications_data):
+        """
+        Create and associate classification objects with a given PatientFinding instance using provided data.
+        
+        Each classification in `classifications_data` is validated and saved as a related object to `patient_finding`. Validation errors are printed but do not interrupt processing.
+        """
         for classification_data in classifications_data:
             serializer = PatientFindingClassificationSerializer(data=classification_data, context={'patient_finding': patient_finding})
             if serializer.is_valid():
@@ -68,6 +91,13 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
                 print(serializer.errors)  # Or raise an exception
 
     def _create_interventions(self, patient_finding, interventions_data):
+        """
+        Create and associate intervention objects with a given patient finding using provided intervention data.
+        
+        Parameters:
+            patient_finding: The PatientFinding instance to associate interventions with.
+            interventions_data: Iterable of dictionaries containing intervention attributes.
+        """
         for intervention_data in interventions_data:
             PatientFindingIntervention.objects.create(
                 finding=patient_finding,
@@ -75,6 +105,14 @@ class PatientFindingWriteSerializer(serializers.ModelSerializer):
             )
 
     def validate(self, data):
+        """
+        Validate that the selected finding is permitted for the specified patient examination.
+        
+        Raises a ValidationError if the finding is not among the allowed findings for the examination.
+        
+        Returns:
+            dict: The validated data if the finding is permitted.
+        """
         patient_examination = data.get('patient_examination')
         finding = data.get('finding')
 

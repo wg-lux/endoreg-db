@@ -42,7 +42,11 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_center_name(self, value):
-        """Validate center exists."""
+        """
+        Validates that a center with the given natural key exists.
+        
+        Raises a validation error if the specified center does not exist.
+        """
         if value:
             try:
                 Center.objects.get_by_natural_key(value)
@@ -52,7 +56,11 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_patient_gender_name(self, value):
-        """Validate gender exists."""
+        """
+        Validates that a gender with the given name exists.
+        
+        Raises a validation error if no matching Gender is found.
+        """
         if value:
             try:
                 Gender.objects.get(name=value)
@@ -62,7 +70,11 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        """Custom validation for the entire data set."""
+        """
+        Validate that patient first and last names, if provided, are not empty strings.
+        
+        Raises a validation error if either `patient_first_name` or `patient_last_name` is present but empty.
+        """
         # Ensure names are not empty if provided
         if 'patient_first_name' in data and not data['patient_first_name'].strip():
             raise serializers.ValidationError({
@@ -79,8 +91,12 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         """
-        Update SensitiveMeta instance and its related state.
-        Handles both model fields and verification state.
+        Updates a SensitiveMeta instance with provided data, including related center, gender, and verification state fields.
+        
+        Handles assignment of related Center and Gender objects by name, updates model fields, and manages verification state flags (`dob_verified`, `names_verified`) in the associated state object if provided.
+        
+        Returns:
+            SensitiveMeta: The updated SensitiveMeta instance.
         """
         # Extract verification state data
         dob_verified = validated_data.pop('dob_verified', None)

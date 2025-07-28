@@ -38,7 +38,9 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
     change_list_template = "admin/patient_finding_intervention.html"
 
     def changelist_view(self, request, extra_context=None):
-        """Pass Patients, Examinations, Findings, Classifications, Choices, and Finding Interventions to the template"""
+        """
+        Overrides the admin changelist view to provide additional context data for the template, including all patients, examinations, findings, classifications, and interventions relevant to patient finding interventions.
+        """
         extra_context = {
             "patients": Patient.objects.all(),
             "examinations": Examination.objects.all(),
@@ -52,7 +54,11 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
         return super().changelist_view(request, extra_context=extra_context)
 
     def get_location_choices_json(self, request):
-        """Ensure Django Admin returns JSON response for Location Choices"""
+        """
+        Handles AJAX requests to retrieve location classification choices as JSON.
+        
+        Expects a "location" parameter in the GET request and returns a list of matching FindingClassificationChoice objects with their IDs and names. Returns an error message with appropriate HTTP status if the parameter is missing or an exception occurs.
+        """
         location_id = request.GET.get("location")
         if not location_id:
             return JsonResponse({"error": "Location ID is required"}, status=400)

@@ -275,24 +275,25 @@ def import_and_anonymize(
     delete_source: bool = False,
 ) -> "VideoFile":
     """
-    High-level helper that wraps:
-      1. VideoFile.create_from_file_initialized(...)
-      4. VideoFile.pipe_1()
-      5. Saves the cleaned file back to VideoFile with processor ROI masking
-      6. Returns the VideoFile instance (fresh from DB).
-
-    Args:
-        file_path: Path to the video file to import
-        center_name: Name of the center to associate with video
-        processor_name: Name of the processor to associate with video
-        save_video: Whether to save the video file
-        delete_source: Whether to delete the source file after import
-        
+    Imports a video file, initializes processing, and performs anonymization with frame-level masking.
+    
+    This function creates a `VideoFile` instance from the provided file, runs initial processing including OCR frame selection, ensures required patient metadata is present, and applies anonymization using processor-specific region-of-interest masking. The resulting `VideoFile` is updated with anonymized content and metadata.
+    
+    Parameters:
+        file_path (Union[Path, str]): Path to the video file to import and anonymize.
+        center_name (str): Name of the center associated with the video.
+        processor_name (str): Name of the processor used for anonymization.
+        save_video (bool, optional): Whether to save the imported video file. Defaults to True.
+        ocr_frame_fraction (float, optional): Fraction of frames to use for OCR during processing. Defaults to 0.001.
+        delete_source (bool, optional): Whether to delete the source file after import. Defaults to False.
+    
     Returns:
-        VideoFile instance after import and anonymization
-        
+        VideoFile: The imported and anonymized VideoFile instance.
+    
     Raises:
-        Exception: On any failure during import or anonymization
+        FileNotFoundError: If the specified video file does not exist.
+        RuntimeError: If the VideoFile instance cannot be created.
+        Exception: For other failures during import or anonymization.
     """
     from endoreg_db.models import VideoFile
 
