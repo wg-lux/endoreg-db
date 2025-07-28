@@ -2,8 +2,7 @@
 Defines state tracking models related to PDF processing, including extraction of text and metadata, AI predictions, and anonymization status for RawPdfFile instances.
 """
 from django.db import models
-from .abstract import AbstractState
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 import logging
 from enum import Enum
 
@@ -15,7 +14,6 @@ if TYPE_CHECKING:
 
 class AnonymizationStatus(str, Enum):
     NOT_STARTED             = "not_started"
-    EXTRACTING_FRAMES       = "extracting_frames"
     PROCESSING_ANONYMIZING  = "processing_anonymization"
     DONE                    = "done"
     VALIDATED               = "validated"

@@ -270,7 +270,7 @@ class RawPdfFile(models.Model):
             except OSError as e:
                 logger.error("Error deleting source file %s: %s", file_path, e)
 
-        raw_pdf.save()
+        # raw_pdf.save() # unnecessary? 
         return raw_pdf
 
     def save(self, *args, **kwargs):

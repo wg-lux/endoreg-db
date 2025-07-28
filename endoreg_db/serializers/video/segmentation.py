@@ -90,17 +90,18 @@ class VideoFileSerializer(serializers.ModelSerializer):
         # Dynamically extract duration if not stored
         video_path = obj.active_file.path
         cap = cv2.VideoCapture(video_path)
+        try:
+            if not cap.isOpened():
+                return None  # Error handling if video can't be opened
 
-        if not cap.isOpened():
-            return None  # Error handling if video can't be opened
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        cap.release()
-
-        return (
-            round(total_frames / fps, 2) if fps > 0 else None
-        )  # Return duration in seconds
+            return (
+                round(total_frames / fps, 2) if fps > 0 else None
+            )  # Return duration in seconds
+        finally:
+            cap.release()
 
     def get_file(self, obj:"Video"):
         """

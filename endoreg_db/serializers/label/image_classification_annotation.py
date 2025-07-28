@@ -1,3 +1,4 @@
+from typing import Optional
 from rest_framework import serializers
 
 
@@ -27,7 +28,7 @@ class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):
             "label_name",
         ]
 
-    def get_confidence(self, obj: ImageClassificationAnnotation) -> float:
+    def get_confidence(self, obj: ImageClassificationAnnotation) -> Optional[float]:
         if obj.float_value is not None:
             return obj.float_value
         return None

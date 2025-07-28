@@ -1,9 +1,8 @@
 from rest_framework import serializers
 from typing import List
 from django.core.exceptions import ObjectDoesNotExist
-from sklearn.metrics import PredictionErrorDisplay
 
-from ...models import LabelVideoSegment, VideoFile, Label, InformationSource
+from ...models import LabelVideoSegment, VideoFile
 import logging
 from ._lvs_create import (
     _create,

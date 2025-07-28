@@ -52,7 +52,7 @@ class Finding(models.Model):
         :return: A list of FindingClassification objects.
         """
         if classification_type:
-            return self.finding_classifications.filter(classification_type__name=classification_type)
+            return self.finding_classifications.filter(classification_types__name=classification_type)
         return self.finding_classifications.all()
     
     def get_location_classifications(self):
