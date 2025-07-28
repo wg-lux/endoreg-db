@@ -103,7 +103,7 @@ class InformationSourceType(models.Model):
     # information_sources: models.QuerySet["InformationSource"]
 
     @classmethod
-    def get_prediction_type(cls):
+    def get_prediction_type(cls) -> "InformationSourceType":
         """
         Return the InformationSourceType instance with the name "prediction".
         
@@ -112,13 +112,20 @@ class InformationSourceType(models.Model):
         
         Raises:
             InformationSourceType.DoesNotExist: If no such instance exists.
+
         """
-        _type = cls.objects.get(name="prediction")
-        return _type
-    
+        try:
+            return cls.objects.get(name="prediction")
+        except cls.DoesNotExist as e:
+            raise cls.DoesNotExist(
+                "The 'prediction' InformationSourceType was not found. "
+                "Please check your data fixtures or initial data migrations."
+            ) from e
+
     @classmethod
-    def get_manual_annotation_type(cls):
+    def get_manual_annotation_type(cls) -> "InformationSourceType":
         """
+
         Return the InformationSourceType instance representing manual annotation.
         
         Returns:
@@ -126,9 +133,16 @@ class InformationSourceType(models.Model):
         
         Raises:
             AssertionError: If no InformationSourceType with name "annotation" exists.
+
         """
-        _type = cls.objects.get(name="annotation")
-        return _type
+        try:
+            return cls.objects.get(name="manual_annotation")
+        except cls.DoesNotExist as e:
+            raise cls.DoesNotExist(
+                "The 'manual_annotation' InformationSourceType was not found. "
+                "Please check your data fixtures or initial data migrations."
+            ) from e
+
 
     def natural_key(self):
         """

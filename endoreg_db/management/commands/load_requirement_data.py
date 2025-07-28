@@ -12,7 +12,7 @@ from endoreg_db.models import (
     Event,
     LabValue,
     Finding,
-    FindingClassification, FindingClassificationChoice,
+    FindingClassificationChoice,
     FindingIntervention,
     InformationSource,
     Unit,

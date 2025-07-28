@@ -1,9 +1,10 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, Any, Optional
 from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 from endoreg_db.models import (
     Label,
     VideoFile,
+    LabelVideoSegment
 )
 
 import logging
@@ -12,6 +13,60 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from endoreg_db.serializers import LabelVideoSegmentSerializer
 
+
+def _validate_fps(video: "VideoFile"):
+    """Raises a ValidationError if the video's FPS is invalid."""
+    fps = video.get_fps()
+    if not fps or fps <= 0:
+        raise serializers.ValidationError("The video must have a valid FPS to convert times to frames.")
+    return fps
+
+def _convert_time_to_frame(time_value: float, fps: float) -> int:
+    """Converts a time value in seconds to a frame number."""
+    return int(time_value * fps)
+
+def _update_frames_from_data(instance: "LabelVideoSegment", validated_data: Dict[str, Any], fps: Optional[float]):
+    """Updates start and end frames from either time or frame data."""
+    if 'start_time' in validated_data:
+        if fps is None:
+            fps = _validate_fps(instance.video)
+        instance.start_frame_number = _convert_time_to_frame(validated_data['start_time'], fps)
+    elif 'start_frame' in validated_data:
+        instance.start_frame_number = validated_data['start_frame']
+
+    if 'end_time' in validated_data:
+        if fps is None:
+            fps = _validate_fps(instance.video)
+        instance.end_frame_number = _convert_time_to_frame(validated_data['end_time'], fps)
+    elif 'end_frame' in validated_data:
+        instance.end_frame_number = validated_data['end_frame']
+
+def _update(instance: "LabelVideoSegment", validated_data: Dict[str, Any]) -> "LabelVideoSegment":
+    """
+    Handles the update logic for a LabelVideoSegment instance.
+    This function is designed to be used within a serializer's update method.
+    """
+    video: Optional["VideoFile"] = validated_data.get('video')
+    fps = None
+
+    if video and video != instance.video:
+        instance.video = video
+        fps = _validate_fps(video)  # Validate FPS for the new video
+
+    if 'label' in validated_data:
+        instance.label = validated_data['label']
+
+    _update_frames_from_data(instance, validated_data, fps)
+
+    # Final validation of frame numbers
+    if instance.start_frame_number >= instance.end_frame_number:
+        raise serializers.ValidationError("start_frame must be less than end_frame.")
+    
+    if instance.video and instance.end_frame_number > instance.video.frame_count:
+        raise serializers.ValidationError("end_frame cannot exceed the total frames of the video.")
+
+    instance.save()
+    return instance
 
 def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
     """
@@ -59,28 +114,15 @@ def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
             Returns:
                 float: The FPS value as a positive float. Defaults to 30.0 if missing, invalid, or non-positive.
             """
-            fps_raw = getattr(video_file, 'fps', 30)
-            try:
-                if isinstance(fps_raw, str):
-                    fps = float(fps_raw)
-                elif isinstance(fps_raw, (int, float)):
-                    fps = float(fps_raw)
-                else:
-                    fps = 30.0
-            except (ValueError, TypeError):
-                fps = 30.0
-            if fps <= 0:
-                fps = 30.0
-            return fps
 
         # Convert time to frame numbers if provided
         if start_time is not None:
-            fps = _get_valid_fps(instance.video_file)
-            instance.start_frame_number = int(start_time * fps)
+            fps = _validate_fps(instance.video_file)
+            instance.start_frame_number = _convert_time_to_frame(start_time, fps)
         
         if end_time is not None:
-            fps = _get_valid_fps(instance.video_file)
-            instance.end_frame_number = int(end_time * fps)
+            fps = _validate_fps(instance.video_file)
+            instance.end_frame_number = _convert_time_to_frame(end_time, fps)
         
         # Update other fields
         for attr, value in validated_data.items():

@@ -12,7 +12,7 @@ class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):
     """
 
     label_name = serializers.SerializerMethodField()
-    confidence = serializers.SerializerMethodField(source='float_value')
+    confidence = serializers.SerializerMethodField()
     frame_number = serializers.IntegerField(source='frame.frame_number', read_only=True)
 
     class Meta:

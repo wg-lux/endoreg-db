@@ -1,6 +1,7 @@
 from django.db import models
 from typing import TYPE_CHECKING, Dict
 import random
+import numpy as np
 
 
 # Corrected imports for type hints
@@ -130,6 +131,7 @@ class PatientFindingClassification(models.Model):
         return self.subcategories
     
     def get_random_value_for_numerical_descriptor(self, descriptor_name):
+
         """
         Generate a random value for the specified numerical descriptor using its defined distribution parameters.
         
@@ -141,8 +143,7 @@ class PatientFindingClassification(models.Model):
         
         Raises:
             ValueError: If the descriptor's distribution type is not supported.
-        """
-        import numpy as np
+        """  
         assert descriptor_name in self.numerical_descriptors, "Descriptor must be in numerical descriptors."
         descriptor = self.numerical_descriptors[descriptor_name]
         min_val = descriptor.get("min", 0)
