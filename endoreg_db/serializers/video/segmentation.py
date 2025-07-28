@@ -1,7 +1,10 @@
 from pathlib import Path
 from rest_framework import serializers
 from ...models import VideoFile 
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 # from django.conf import settings
 from typing import TYPE_CHECKING
@@ -204,7 +207,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         for label, frame_ranges in sequences.items():
             label_times = []  # Stores time segments
-            frame_predictions = {}  # Ensure frame_predictions is properly initialized for each label
+            frame_predictions = {}  # Ensure frame_predictions is properly initialized for each label #TODO Currently always emty?
 
             for frame_range in frame_ranges:
                 if len(frame_range) != 2:

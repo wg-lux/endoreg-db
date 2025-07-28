@@ -11,7 +11,7 @@ from endoreg_db.views import (
     SensitiveMetaListView,
 )
 
-url_patterns = [
+urlpatterns = [
     #----------------------------------START : SENSITIVE META AND RAWPDFOFILE PDF PATIENT DETAILS-----------------------------
         
     # Sensitive Meta Detail API (moved before generic pdf/sensitivemeta/ to avoid conflicts)

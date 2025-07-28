@@ -16,7 +16,7 @@ from endoreg_db.views import (
 
 # Simplified Meta and Validation Endpoints
     
-url_patterns = [
+urlpatterns = [
     # Video media endpoints
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
     path("media/videos/<int:pk>/", VideoMediaView.as_view(), name="video-detail"),

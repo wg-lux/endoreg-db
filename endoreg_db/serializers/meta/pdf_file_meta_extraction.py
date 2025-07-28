@@ -37,7 +37,14 @@ class PDFFileForMetaSerializer(serializers.ModelSerializer):
         Retrieves the first available PDF if `last_id` is NOT provided.
         Otherwise, fetches the next available PDF where `id > last_id`.
         """
-        query_filter = {} if last_id is None else {"id__gt": int(last_id)}
+        query_filter = {}
+        if last_id is not None:
+            try:
+                query_filter = {"id__gt": int(last_id)}
+            except ValueError:
+                # If last_id is not a valid integer, treat it as if no ID was provided.
+                # This prevents a crash and safely defaults to fetching the first PDF.
+                query_filter = {}
 
         # Get the next available PDF
         pdf_entry = RawPdfFile.objects.select_related("sensitive_meta").filter(**query_filter).order_by('id').first()

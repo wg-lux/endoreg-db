@@ -76,12 +76,14 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         Raises a validation error if either `patient_first_name` or `patient_last_name` is present but empty.
         """
         # Ensure names are not empty if provided
-        if 'patient_first_name' in data and not data['patient_first_name'].strip():
+        first_name = data.get('patient_first_name')
+        if first_name is not None and not first_name.strip():
             raise serializers.ValidationError({
                 'patient_first_name': 'First name cannot be empty.'
             })
         
-        if 'patient_last_name' in data and not data['patient_last_name'].strip():
+        last_name = data.get('patient_last_name')
+        if last_name is not None and not last_name.strip():
             raise serializers.ValidationError({
                 'patient_last_name': 'Last name cannot be empty.'
             })

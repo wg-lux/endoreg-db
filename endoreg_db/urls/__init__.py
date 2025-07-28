@@ -18,12 +18,12 @@ from endoreg_db.views import (
 
 from .anonymization import url_patterns as anonymization_url_patterns
 from .classification import url_patterns as classification_url_patterns
-from .auth import url_patterns as auth_url_patterns
-from .examination import url_patterns as examination_url_patterns
+from .auth import urlpatterns as auth_url_patterns
+from .examination import urlpatterns as examination_url_patterns
 from .files import urlpatterns as files_url_patterns
 from .label_video_segments import url_patterns as label_video_segments_url_patterns
-from .media import url_patterns as media_url_patterns
-from .pdf import url_patterns as pdf_url_patterns
+from .media import urlpatterns as media_url_patterns
+from .pdf import urlpatterns as pdf_url_patterns
 from .report import url_patterns as report_url_patterns
 from .upload import urlpatterns as upload_url_patterns
 from .video import url_patterns as video_url_patterns
@@ -58,11 +58,7 @@ router.register(r'patient-findings', PatientFindingViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  
-    path('api/', include(
-        classification_url_patterns + 
-        api_urls +
-        []
-     ))
+    path('api/', include(api_urls))
 ]
 
 if settings.DEBUG:

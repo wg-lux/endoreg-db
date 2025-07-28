@@ -29,7 +29,7 @@ class AnonymizationService:
         if pdf:
             return {
                 "mediaType": "pdf",
-                "status": pdf.state.anonymization_status,
+                "anonymizationStatus": pdf.state.anonymization_status,
             }
         return None
 

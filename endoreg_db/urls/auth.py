@@ -7,7 +7,7 @@ from endoreg_db.views import (
     csrf_token_view,
 )
 
-url_patterns = [
+urlpatterns = [
     # Authentication endpoints
     path('endoreg_db/', public_home, name='public_home'),
     path('login/', keycloak_login, name='keycloak_login'),

@@ -90,7 +90,7 @@ class VoPPatientDataSerializer(serializers.Serializer):
             }
 
         else:
-            raise TypeError(f"Unsupported instance for PatientDataSerializer: {type(instance)}")
+            raise TypeError(f"Unsupported instance for VoPPatientDataSerializer: {type(instance)}")
 
     def _serialize_sensitive_meta(self, sensitive_meta):
         """

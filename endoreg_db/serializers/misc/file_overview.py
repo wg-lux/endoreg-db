@@ -131,6 +131,7 @@ class FileOverviewSerializer(serializers.Serializer):
                         pass
 
         elif isinstance(instance, RawPdfFile):
+            instance:RawPdfFile
             media_type = "pdf"
             created_at = instance.date_created
             filename = instance.file.name.split("/")[-1] if instance.file else "unknown"

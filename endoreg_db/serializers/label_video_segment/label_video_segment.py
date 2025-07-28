@@ -36,8 +36,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     end_time = serializers.SerializerMethodField()
 
     # Input fields (write_only for creation)
-    video_id = serializers.IntegerField(write_only=True, required=False, help_text="Video file ID")
-    label_id = serializers.IntegerField(write_only=True, required=False, allow_null=True, help_text="Label ID")
+    video_id = serializers.IntegerField(required=False, help_text="Video file ID")
+    label_id = serializers.IntegerField(required=False, allow_null=True, help_text="Label ID")
     
     # Add support for label names (both Label and VideoSegmentationLabel)
     label_name = serializers.CharField(write_only=True, required=False, allow_null=True, help_text="Label name")
@@ -71,16 +71,16 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         model = LabelVideoSegment
         fields = [
             'id',
-            "video_file",  # Changed from video_id to video_file
-            "label",       # Changed from label_id to label
+            "video_file",
+            'video_name',
+            "video_id",
+            "label",
+            'label_name',
+            "label_id",
             'start_frame_number',
             'end_frame_number',
             'start_time',
             'end_time',
-            'video_id',
-            'label_id',
-            'label_name',
-            'video_name',
             "label_display", 
             "frame_predictions",
             "manual_frame_annotations",
@@ -90,7 +90,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'start_frame_number': {'required': False},
             'end_frame_number': {'required': False},
-            'video_file': {'required': False},  # Make video_file optional
+            'video_file': {'required': False},
+            'label': {'required': False},
         }
     
 
@@ -293,7 +294,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             data['label_name'] = instance.label.name
         else:
             data['label_name'] = None
-        # Explicitly add video_id and label_id to the output
+        # Explicitly add video_id and label_id to the output for frontend convenience
         data['video_id'] = instance.video_file.id if instance.video_file else None
         data['label_id'] = instance.label.id if instance.label else None
         return data

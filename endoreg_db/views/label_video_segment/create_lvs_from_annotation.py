@@ -28,6 +28,7 @@ def create_video_segment_annotation(request):
             # If the annotation type is 'segment', create a new LabelVideoSegment
             if annotation.type == 'segment':
                 metadata = annotation.metadata or {}
+                #TODO @coderabbitai we should create a followup issue for @Hamzaukw so we adress this naming inconsistency in future
                 LabelVideoSegment.objects.create(
                     video_id=annotation.video_id,
                     start_frame=metadata.get('start_frame'),

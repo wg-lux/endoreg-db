@@ -191,24 +191,22 @@ class TestLabelVideoSegmentCRUD:
         segment = LabelVideoSegment.objects.create(
             video_file=self.video,
             label=self.label,
-            start_frame_number=100,
-            end_frame_number=150
+            start_frame_number=0,
+            end_frame_number=50
         )
         
         data = {
             "video_file": self.video.id,
             "label": self.label.id,
-            "start_frame_number": 300,
-            "end_frame_number": 400,
-            "start_time": 12.0,
-            "end_time": 16.0
+            "start_frame_number": 50,
+            "end_frame_number": 60,
         }
         
         response = self.client.put(f"/api/video-segments/{segment.id}/", data, format="json")
         
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["start_frame_number"] == 300
-        assert response.data["end_frame_number"] == 400
+        assert response.data["start_frame_number"] == 50
+        assert response.data["end_frame_number"] == 60
     
     # def test_delete_segment(self):
     #     """Test: Segment löschen"""

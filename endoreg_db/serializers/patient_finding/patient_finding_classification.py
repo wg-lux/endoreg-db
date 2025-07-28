@@ -1,4 +1,4 @@
-from endoreg_db.models import Finding, PatientFindingClassification
+from endoreg_db.models import PatientFindingClassification
 from endoreg_db.serializers.misc.translatable_field_mix_in import TranslatableFieldMixin
 
 

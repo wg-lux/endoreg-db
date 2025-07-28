@@ -4,6 +4,9 @@ from rest_framework import serializers
 from endoreg_db.models import LabelVideoSegment, VideoPredictionMeta
 from endoreg_db.serializers.label_video_segment import LabelVideoSegmentSerializer
 
+import logging
+
+logger = logging.getLogger(__name__)
 class LabelSegmentUpdateSerializer(serializers.Serializer):
     """
     Serializer for updating label segments.
@@ -91,9 +94,9 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
         # Iterate through the validated data to update or create label video segments
         print(f" Before Update: Found {existing_segments.count()} existing segments.")
-        print(f" New Segments Received: {len(new_segments)}")
-        print(f" Using prediction_meta_id: {prediction_meta_id}")
-
+        logger.debug(f"Before Update: Found %d existing segments.", existing_segments.count())
+        logger.debug(f"New Segments Received: %d", len(new_segments))
+        logger.debug(f"Using prediction_meta_id: %d", prediction_meta_id)
         with transaction.atomic():
             for segment in new_segments:
                 start_frame = float(segment["start_frame_number"])
@@ -145,18 +148,11 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
             if new_entries:
                 LabelVideoSegment.objects.bulk_create(new_entries)
 
-        # Return the updated, new, and deleted segment information
-        print(
-            "------------------------------,",
-            updated_segments,
-            "-----------------------",
-            new_segments,
-            "_-------",
-            deleted_count,
-        )
-        print(
-            f" After Update: Updated {len(updated_segments)} segments, Added {len(new_entries)}, Deleted {deleted_count}"
-        )
+        logger.debug(  
+            "After Update: Updated %d segments, Added %d, Deleted %d",  
+            len(updated_segments), len(new_entries), deleted_count  
+        )  
+  
 
         return {
             "updated_segments": LabelVideoSegmentSerializer(
