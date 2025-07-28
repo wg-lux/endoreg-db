@@ -13,14 +13,10 @@ class ExaminationTimeType(models.Model):
 
     Attributes:
         name (str): The unique name of the examination time type.
-        name_de (str): The German name of the examination time type.
-        name_en (str): The English name of the examination time type.
         examinations: The examinations associated with this type.
     """
     objects = ExaminationTimeTypeManager()
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     examinations = models.ManyToManyField('Examination', blank=True)
 
     def __str__(self) -> str:

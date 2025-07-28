@@ -1,0 +1,32 @@
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_circularity_false"
+    name_de: "Kolonläsion - Zirkularität"
+    name_en: "Colon lesion - circularity"
+    description: "Category for non-circular lesions"
+
+- model: endoreg_db.finding_morphology_classification_choice
+  fields:
+    name: "colon_lesion_circularity_true"
+    name_de: "Kolonläsion - Zirkularität"
+    name_en: "Colon lesion - circularity"
+    description: "Category for circular lesions"
+    numerical_descriptors:
+      length:
+        unit: "milimeter"
+        min: 0
+        max: 100
+        default: null
+        distribution: "uniform"
+        description: "Length of the lesion in mm"
+        required: true
+      circumference:
+        unit: "percent"
+        min: 33
+        max: 100
+        mean: 50
+        std: 10
+        default: null
+        distribution: "normal"
+        description: "Circumference of the lesion in %"
+        required: true

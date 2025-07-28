@@ -10,14 +10,9 @@ class FindingManager(models.Manager):
 
 class Finding(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    description_de = models.TextField(blank=True, null=True)
-    description_en = models.TextField(blank=True, null=True)
     examinations = models.ManyToManyField('Examination', blank=True, related_name='findings')
     finding_types = models.ManyToManyField('FindingType', blank=True, related_name='findings')
-
 
     finding_interventions = models.ManyToManyField(
         'FindingIntervention',
@@ -25,48 +20,19 @@ class Finding(models.Model):
         related_name='findings'
     )
 
-    causing_finding_interventions = models.ManyToManyField(
-        'FindingIntervention',
-        blank=True,
-        related_name='causing_findings'
-    )
-
-    opt_causing_finding_interventions = models.ManyToManyField(
-        'FindingIntervention',
-        blank=True,
-        related_name='opt_causing_findings'
-    )
-
-    required_morphology_classification_types = models.ManyToManyField(
-        'FindingMorphologyClassificationType',
-        blank=True,
-        related_name='required_by_findings'
-    )
-
-    optional_morphology_classification_types = models.ManyToManyField(
-        'FindingMorphologyClassificationType',
-        blank=True,
-        related_name='optional_for_findings'
-    )
-
     objects = FindingManager()
 
     if TYPE_CHECKING:
         from endoreg_db.models import (
-            Examination, FindingType, FindingIntervention, FindingMorphologyClassificationType,
-            FindingMorphologyClassification, FindingLocationClassification,
-            FindingClassificationType, FindingClassification, FindingLocationClassificationChoice,
+            Examination, FindingType, FindingIntervention, FindingClassificationType,
+            FindingClassification,
             PatientFindingClassification
         )
     
         finding_classifications: models.QuerySet['FindingClassification']
         examinations: models.QuerySet[Examination]
-        morphology_classifications: models.QuerySet['FindingMorphologyClassification']
-        location_classifications: models.QuerySet['FindingLocationClassification']
         finding_types: models.QuerySet[FindingType]
         finding_interventions: models.QuerySet[FindingIntervention]
-        required_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
-        optional_morphology_classification_types: models.QuerySet[FindingMorphologyClassificationType]
         
     def natural_key(self):
         return (self.name,)
@@ -77,51 +43,26 @@ class Finding(models.Model):
     def get_finding_types(self):
         return self.finding_types.all()
     
+    def get_classifications(self, classification_type: str = None) -> List['FindingClassification']:
+        """
+        Returns all FindingClassification objects linked to this finding.
+        If classification_type is provided, it filters by that type.
+        
+        :param classification_type: The type of classification to filter by (e.g., 'location', 'morphology').
+        :return: A list of FindingClassification objects.
+        """
+        if classification_type:
+            return self.finding_classifications.filter(classification_types__name=classification_type)
+        return self.finding_classifications.all()
+    
     def get_location_classifications(self):
-        from endoreg_db.models import FindingLocationClassification
-        # FindingLocationClassification is a class with a many-to-many relationship to Finding
-        # related name is location_classifications
+        """
+        Returns all FindingClassification objects of type 'location' linked to this finding.
+        """
+        return self.finding_classifications.filter(classification_types__name__iexact="location")
 
-        location_classifications:FindingLocationClassification = self.location_classifications.all()
-        
-        return location_classifications 
-    
     def get_morphology_classifications(self):
-        from endoreg_db.models import FindingMorphologyClassification
-        # Get morphology classifications through the classification types
-        # Since Finding has relationships to FindingMorphologyClassificationType,
-        # we need to get the classifications through these types
-        
-        # Get all required and optional morphology classification types for this finding
-        required_types = self.required_morphology_classification_types.all()
-        optional_types = self.optional_morphology_classification_types.all()
-        
-        # Combine both sets of types
-        all_types = list(required_types) + list(optional_types)
-        
-        # Get all morphology classifications that belong to these types
-        morphology_classifications = []
-        for classification_type in all_types:
-            # Get all classifications of this type
-            classifications = FindingMorphologyClassification.objects.filter(
-                classification_type=classification_type
-            )
-            morphology_classifications.extend(classifications)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_classifications = []
-        for classification in morphology_classifications:
-            if classification.id not in seen:
-                seen.add(classification.id)
-                unique_classifications.append(classification)
-                
-        return unique_classifications
-    
-    def get_required_morphology_classification_types(self):
-        from endoreg_db.models import FindingMorphologyClassificationType
-        finding_morphology_classification_types:List[FindingMorphologyClassificationType] = [
-            _ for _ in self.required_morphology_classification_types.all()
-        ]
-        return finding_morphology_classification_types
-
+        """
+        Returns all FindingClassification objects of type 'morphology' linked to this finding.
+        """
+        return self.finding_classifications.filter(classification_types__name__iexact="morphology")

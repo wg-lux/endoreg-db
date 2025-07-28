@@ -271,13 +271,12 @@ def import_and_anonymize(
     center_name: str,
     processor_name: str,
     save_video: bool = True,
+    ocr_frame_fraction=0.001,  # Default OCR frame fraction
     delete_source: bool = False,
 ) -> "VideoFile":
     """
     High-level helper that wraps:
       1. VideoFile.create_from_file_initialized(...)
-      2. VideoFile.initialize_video_specs() 
-      3. VideoFile.initialize_frames()
       4. VideoFile.pipe_1()
       5. Saves the cleaned file back to VideoFile with processor ROI masking
       6. Returns the VideoFile instance (fresh from DB).
@@ -319,12 +318,11 @@ def import_and_anonymize(
         raise RuntimeError("Failed to create VideoFile instance")
 
     logger.info(f"Created VideoFile with UUID: {video_file_obj.uuid}")
-
-    # Step 2: Initialize video specifications (duration, fps, etc.)
-    video_file_obj.initialize_video_specs()
-
-    # Step 3: Initialize frame objects in database (without extracting)
-    video_file_obj.initialize_frames()
+    video_file_obj.pipe_1(
+        model_name=model_name,
+        ocr_frame_fraction = ocr_frame_fraction,
+        test_run=True
+    )
 
     logger.info("Pipe 1 processing completed successfully")
     

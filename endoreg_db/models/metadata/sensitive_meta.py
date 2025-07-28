@@ -260,6 +260,16 @@ class SensitiveMeta(models.Model):
             self.examiners.add(examiner_to_link)
             # Adding to M2M handles its own DB interaction, no second super().save() needed.
 
+    def mark_dob_verified(self):
+        """Mark the date of birth as verified."""
+        state = self.get_or_create_state()
+        state.mark_dob_verified()
+
+    def mark_names_verified(self):
+        """Mark the names as verified."""
+        state = self.get_or_create_state()
+        state.mark_names_verified()
+
     @classmethod
     def _update_name_db(cls, first_name, last_name):
         # Delegate to logic

@@ -33,14 +33,10 @@ class Event(models.Model):
 
     Attributes:
         name (str): The name of the event.
-        name_de (str): The German name of the event.
-        name_en (str): The English name of the event.
         description (str): A description of the event.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     event_classification: models.ForeignKey["EventClassification"] = models.ForeignKey(
         "EventClassification",
@@ -86,8 +82,6 @@ class EventClassification(models.Model):
     """
 
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
 
     objects = EventClassificationManager()
 
@@ -123,8 +117,6 @@ class EventClassificationChoice(models.Model):
     """
 
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
 

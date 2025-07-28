@@ -7,8 +7,6 @@ class FindingClassificationTypeManager(models.Manager):
     
 class FindingClassificationType(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     
     objects = FindingClassificationTypeManager()
@@ -37,10 +35,16 @@ class FindingClassificationManager(models.Manager):
 
 class FindingClassification(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
-    classification_type = models.ForeignKey(FindingClassificationType, on_delete=models.CASCADE)
+    classification_types = models.ManyToManyField(
+        to=FindingClassificationType, 
+        # on_delete=models.CASCADE
+    )
+    choices = models.ManyToManyField(
+        'FindingClassificationChoice', 
+        related_name='classifications', 
+        blank=True
+    )
 
     findings = models.ManyToManyField('Finding', blank=True, related_name='finding_classifications')
     examinations = models.ManyToManyField('Examination', blank=True, related_name='finding_classifications')
@@ -52,7 +56,7 @@ class FindingClassification(models.Model):
         from endoreg_db.models import (
             Finding, Examination, FindingType, PatientFindingClassification
         )
-        classification_type: models.ForeignKey[FindingClassificationType]
+        classification_types: models.ManyToManyField[FindingClassificationType]
         findings: models.QuerySet[Finding]
         examinations: models.QuerySet[Examination]
         finding_types: models.QuerySet[FindingType]
@@ -68,6 +72,14 @@ class FindingClassification(models.Model):
     def get_choices(self):
         return self.choices.all()
 
+    @property
+    def is_morphology(self):
+        return self.classification_types.filter(name__iexact="morphology").exists()
+
+    @property
+    def is_location(self):
+        return self.classification_types.filter(name__iexact="location").exists()
+
 
 class FindingClassificationChoiceManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -75,13 +87,11 @@ class FindingClassificationChoiceManager(models.Manager):
     
 class FindingClassificationChoice(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
-    classifications = models.ManyToManyField(
-        "FindingClassification", 
-        related_name='choices'
-    )
+    # classifications = models.ManyToManyField(
+    #     "FindingClassification", 
+    #     related_name='choices'
+    # )
     
     subcategories = models.JSONField(
         default = dict
