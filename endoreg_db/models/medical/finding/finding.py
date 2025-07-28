@@ -43,7 +43,7 @@ class Finding(models.Model):
     def get_finding_types(self):
         return self.finding_types.all()
     
-    def get_classifications(self, classification_type: str = None) -> List['FindingClassification']:
+    def get_classifications(self, classification_type: str = None) -> models.QuerySet['FindingClassification']:
         """
         Returns all FindingClassification objects linked to this finding.
         If classification_type is provided, it filters by that type.

@@ -112,40 +112,36 @@ class InformationSourceType(models.Model):
     # information_sources: models.QuerySet["InformationSource"]
 
     @classmethod
-    def get_prediction_type(cls):
+    def get_prediction_type(cls) -> "InformationSourceType":
         """
-        Retrieves the prediction information source type.
-        
-        This class method queries the InformationSourceType model for an entry with the name
-        "prediction" using Django's ORM and asserts that the retrieved object is valid.
-        It returns the matching InformationSourceType instance.
-        
-        Returns:
-            InformationSourceType: The InformationSourceType object with name "prediction".
-        
+        Returns the 'prediction' information source type.
+
         Raises:
-            AssertionError: If no prediction information source type is found.
+            cls.DoesNotExist: If the 'prediction' type is not found.
         """
-        _type = cls.objects.get(name="prediction")
-        return _type
-    
+        try:
+            return cls.objects.get(name="prediction")
+        except cls.DoesNotExist as e:
+            raise cls.DoesNotExist(
+                "The 'prediction' InformationSourceType was not found. "
+                "Please check your data fixtures or initial data migrations."
+            ) from e
+
     @classmethod
-    def get_manual_annotation_type(cls):
+    def get_manual_annotation_type(cls) -> "InformationSourceType":
         """
-        Retrieves the manual annotation information source type.
-        
-        This class method queries the InformationSourceType model for an entry with the name
-        "manual_annotation" using Django's ORM and asserts that the retrieved object is valid.
-        It returns the matching InformationSourceType instance.
-        
-        Returns:
-            InformationSourceType: The InformationSourceType object with name "manual_annotation".
-        
+        Returns the 'manual_annotation' information source type.
+
         Raises:
-            AssertionError: If no manual annotation information source type is found.
+            cls.DoesNotExist: If the 'manual_annotation' type is not found.
         """
-        _type = cls.objects.get(name="annotation")
-        return _type
+        try:
+            return cls.objects.get(name="manual_annotation")
+        except cls.DoesNotExist as e:
+            raise cls.DoesNotExist(
+                "The 'manual_annotation' InformationSourceType was not found. "
+                "Please check your data fixtures or initial data migrations."
+            ) from e
 
     def natural_key(self):
         """

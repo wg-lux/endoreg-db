@@ -12,7 +12,9 @@ from ._lvs_create import (
     _calculate_frame_numbers,
     _get_information_source
 )
-from ._lvs_update import _update
+from ._lvs_update import (
+    _update,
+)
 from ._lvs_validate import (
     _validate,
     _extract_and_validate_basic_attrs,

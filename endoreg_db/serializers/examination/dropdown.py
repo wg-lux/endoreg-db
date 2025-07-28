@@ -10,8 +10,8 @@ class ExaminationDropdownSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Examination
-        fields = ['id', 'name', 'name_de', 'name_en', 'display_name']
+        fields = ['id', 'name', 'display_name']
 
     def get_display_name(self, obj):
         """Gibt eine benutzerfreundliche Anzeige für die Untersuchung zurück"""
-        return obj.name_de if obj.name_de else obj.name
+        return obj.name
