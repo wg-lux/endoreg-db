@@ -1,5 +1,7 @@
 from django.db import models
-
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from endoreg_db.models import InformationSourceType
 
 def get_prediction_information_source():
     """
@@ -47,13 +49,9 @@ class InformationSource(models.Model):
     date_created = models.DateField(auto_now_add=True)
     date_modified = models.DateField(auto_now=True)
     abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
-    # information_source_types = models.ManyToManyField(
-    #     "InformationSourceType",
-    #     related_name="information_sources",
-    #     blank=True,
-    # )
-    information_source_types: models.ManyToManyRel
     
+    if TYPE_CHECKING:
+        information_source_types: models.QuerySet["InformationSourceType"]
     class Meta:
         verbose_name = "Information Source"
         verbose_name_plural = "Information Sources"
@@ -129,7 +127,6 @@ class InformationSourceType(models.Model):
             AssertionError: If no prediction information source type is found.
         """
         _type = cls.objects.get(name="prediction")
-        assert _type, "No prediction information source type found"
         return _type
     
     @classmethod
@@ -148,7 +145,6 @@ class InformationSourceType(models.Model):
             AssertionError: If no manual annotation information source type is found.
         """
         _type = cls.objects.get(name="annotation")
-        assert _type, "No manual annotation information source type found"
         return _type
 
     def natural_key(self):

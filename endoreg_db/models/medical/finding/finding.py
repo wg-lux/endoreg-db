@@ -50,7 +50,7 @@ class Finding(models.Model):
         :param classification_type: The type of classification to filter by (e.g., 'location', 'morphology').
         :return: A list of FindingClassification objects.
         """
-        return self.finding_classifications.all()
+        return self.finding_classifications.filter(classification_type__name=classification_type)
     
     def get_location_classifications(self):
         """

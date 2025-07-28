@@ -5,9 +5,24 @@ from sklearn.metrics import PredictionErrorDisplay
 
 from ...models import LabelVideoSegment, VideoFile, Label, InformationSource
 import logging
-from ._lvs_create import _create
+from ._lvs_create import (
+    _create,
+    _get_video_file,
+    _get_label,
+    _validate_fps,
+    _calculate_frame_numbers,
+    _get_information_source
+)
 from ._lvs_update import _update
-from ._lvs_validate import _validate
+from ._lvs_validate import (
+    _validate,
+    _extract_and_validate_basic_attrs,
+    _process_time_data,
+    _process_frame_data,
+    _validate_time_and_frame_presence,
+    _validate_time_constraints,
+    _validate_frame_constraints
+)
 from endoreg_db.serializers import ImageClassificationAnnotationSerializer
 
 logger = logging.getLogger(__name__)
@@ -35,8 +50,21 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     time_segments = serializers.SerializerMethodField(read_only=True, help_text="Time segments for the video segment")
 
     create = _create
+    get_video_file = _get_video_file
+    get_label = _get_label
+    validate_fps = _validate_fps
+    calculate_frame_numbers = _calculate_frame_numbers
+    get_information_source = _get_information_source
+
     update = _update
+
     validate = _validate
+    extract_and_validate_basic_attrs = _extract_and_validate_basic_attrs
+    process_time_data = _process_time_data
+    process_frame_data = _process_frame_data
+    validate_time_and_frame_presence = _validate_time_and_frame_presence
+    validate_time_constraints = _validate_time_constraints
+    validate_frame_constraints = _validate_frame_constraints
 
     class Meta:
         model = LabelVideoSegment
@@ -128,15 +156,18 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     def get_all_annotations(self, obj:LabelVideoSegment):
         """
         Returns all annotations associated with the frames in this segment.
+
+        Currently, this method is not included in the serializer's fields, but it can be used to retrieve all annotations for the segment.
         """
         return ImageClassificationAnnotationSerializer(obj.all_frame_annotations).data
 
-    def get_label_display(self, obj):
+    def get_label_display(self, obj:LabelVideoSegment):
         """Get the German translation for display"""
         if not obj.label:
             return "Unbekannt"
             
         label_name = obj.label.name
+        #TODO Refactor
         translations = {
             'appendix': 'Appendix',
             'blood': 'Blut',

@@ -329,13 +329,12 @@ class RawPdfFile(models.Model):
         if self.state:
             return self.state
 
-        state, created = RawPdfState.objects.get_or_create()
+        # Create a new RawPdfState instance directly and assign it
+        state = RawPdfState()
+        state.save()
         self.state = state
-        if created:
-            logger.info("Created new RawPdfState for RawPdfFile %s", self.pk)
-            self.save(update_fields=["state"])  # Save the RawPdfFile to link the state
-        else:
-            logger.debug("Retrieved existing RawPdfState for RawPdfFile %s", self.pk)
+        self.save(update_fields=["state"])  # Save the RawPdfFile to link the state
+        logger.info("Created new RawPdfState for RawPdfFile %s", self.pk)
         return state
 
     def verify_existing_file(self, fallback_file):

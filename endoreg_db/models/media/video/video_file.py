@@ -184,6 +184,7 @@ class VideoFile(models.Model):
         Returns the FFMpegMeta instance associated with this VideoFile.
         This is a convenience property to access the video metadata.
         """
+        from endoreg_db.models import FFMpegMeta
         if self.video_meta is not None:
             return self.video_meta.ffmpeg_meta
         else:
@@ -282,7 +283,7 @@ class VideoFile(models.Model):
         This method should be called if frame extraction fails or is not performed.
         """
         state = self.state
-        state.mark_frames_extracted()
+        state.mark_frames_not_extracted()
         logger.debug(f"Video {self.uuid} marked as not having frames extracted.")
         self.refresh_from_db()
 

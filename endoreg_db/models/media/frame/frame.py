@@ -62,8 +62,11 @@ class Frame(models.Model):
     
     @property
     def has_manual_annotations(self) -> bool:
-        """Checks if the frame has any annotations."""
-        return self.image_classification_annotations.exists()
+        """Checks if the frame has any manual annotations.
+        Specifically, returns True if there are any image_classification_annotations
+        with an information_source_type named 'manual_annotation'.
+        """
+        return self.manual_annotations.exists()
 
     def get_image(self) -> Optional[np.ndarray]:
         """Reads and returns the frame image using OpenCV."""
@@ -85,4 +88,3 @@ class Frame(models.Model):
 
     def get_classification_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
         return self.image_classification_annotations.all()
-    

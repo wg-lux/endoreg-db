@@ -1,6 +1,5 @@
 from rest_framework import serializers
 
-from typing import List, TYPE_CHECKING
 
 from endoreg_db.models import ImageClassificationAnnotation
 
@@ -31,7 +30,7 @@ class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):
     def get_confidence(self, obj: ImageClassificationAnnotation) -> float:
         if obj.float_value is not None:
             return obj.float_value
-
+        return None
 
     def get_label_name(self, obj: ImageClassificationAnnotation) -> str:
         """

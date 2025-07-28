@@ -1,5 +1,5 @@
 """
-Defines state tracking models related to video processing.
+Defines state tracking models related to PDF processing, including extraction of text and metadata, AI predictions, and anonymization status for RawPdfFile instances.
 """
 from django.db import models
 from .abstract import AbstractState
@@ -46,6 +46,9 @@ class RawPdfState(models.Model):
     
     was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
 
+    # PDF metadata extraction state
+    pdf_meta_extracted = models.BooleanField(default=False, help_text="True if PDF metadata has been extracted.")
+
     if TYPE_CHECKING:
         raw_pdf_file: "RawPdfFile"
 
@@ -71,17 +74,20 @@ class RawPdfState(models.Model):
     def anonymization_status(self) -> AnonymizationStatus:
         """
         Fast, side‑effect‑free status resolution used by API & UI.
+        Reflects the PDF-specific anonymization workflow.
         """
+        if getattr(self, "processing_error", False):
+            return AnonymizationStatus.FAILED
         if self.anonymization_validated:
             return AnonymizationStatus.VALIDATED
         if self.sensitive_meta_processed:
             return AnonymizationStatus.DONE
-        if not self.anonymized:
+        if self.anonymized:
             return AnonymizationStatus.PROCESSING_ANONYMIZING
-        if self.was_created:
-            return AnonymizationStatus.EXTRACTING_FRAMES
-        if getattr(self, "processing_error", False):
-            return AnonymizationStatus.FAILED
+        if self.initial_prediction_completed:
+            return AnonymizationStatus.PROCESSING_ANONYMIZING
+        if self.text_meta_extracted:
+            return AnonymizationStatus.NOT_STARTED
         return AnonymizationStatus.NOT_STARTED
 
     # ---- Single‑responsibility mutators ---------------------------------
@@ -106,7 +112,7 @@ class RawPdfState(models.Model):
             self.save(update_fields=["initial_prediction_completed", "date_modified"])
 
     def mark_pdf_meta_extracted(self, *, save: bool = True) -> None:
-        self.video_meta_extracted = True
+        self.pdf_meta_extracted = True
         if save:
             self.save(update_fields=["pdf_meta_extracted", "date_modified"])
 

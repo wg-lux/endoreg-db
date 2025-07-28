@@ -31,7 +31,7 @@ def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
         label_name = validated_data.pop('label_name', None)
         
         # Update video if provided
-        if video_id and video_id != instance.video_file.id:
+        if video_id and (not instance.video_file or video_id != instance.video_file.id):
             try:
                 instance.video_file = VideoFile.objects.get(id=video_id)
             except ObjectDoesNotExist as exc:
@@ -52,9 +52,8 @@ def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
             else:
                 instance.label = None
         
-        # Convert time to frame numbers if provided
-        if start_time is not None:
-            fps_raw = getattr(instance.video_file, 'fps', 30)
+        def _get_valid_fps(video_file):
+            fps_raw = getattr(video_file, 'fps', 30)
             try:
                 if isinstance(fps_raw, str):
                     fps = float(fps_raw)
@@ -66,21 +65,15 @@ def _update(self:"LabelVideoSegmentSerializer", instance, validated_data):
                 fps = 30.0
             if fps <= 0:
                 fps = 30.0
+            return fps
+
+        # Convert time to frame numbers if provided
+        if start_time is not None:
+            fps = _get_valid_fps(instance.video_file)
             instance.start_frame_number = int(start_time * fps)
         
         if end_time is not None:
-            fps_raw = getattr(instance.video_file, 'fps', 30)
-            try:
-                if isinstance(fps_raw, str):
-                    fps = float(fps_raw)
-                elif isinstance(fps_raw, (int, float)):
-                    fps = float(fps_raw)
-                else:
-                    fps = 30.0
-            except (ValueError, TypeError):
-                fps = 30.0
-            if fps <= 0:
-                fps = 30.0
+            fps = _get_valid_fps(instance.video_file)
             instance.end_frame_number = int(end_time * fps)
         
         # Update other fields
