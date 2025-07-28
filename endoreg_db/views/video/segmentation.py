@@ -139,17 +139,17 @@ class VideoStreamView(APIView):
     """
     permission_classes = [permissions.AllowAny]
     
-    def get(self, request, video_id=None):
+    def get(self, request, pk=None):
         """
         Streams the raw video file for the specified video with HTTP range and CORS support.
         """
-        if video_id is None:
+        if pk is None:
             raise Http404("Video ID is required")
             
         try:
             # Validate video_id is numeric
             try:
-                video_id_int = int(video_id)
+                video_id_int = int(pk)
             except (ValueError, TypeError):
                 raise Http404("Invalid video ID format")
                 
@@ -162,7 +162,7 @@ class VideoStreamView(APIView):
             # Log unexpected errors and convert to Http404
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error in VideoStreamView for video_id={video_id}: {str(e)}")
+            logger.error(f"Unexpected error in VideoStreamView for video_id={pk}: {str(e)}")
             raise Http404("Video streaming failed")
 
 class VideoLabelView(APIView):

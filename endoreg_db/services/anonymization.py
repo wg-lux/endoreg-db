@@ -21,7 +21,6 @@ class AnonymizationService:
 
         pdf = RawPdfFile.objects.select_related("sensitive_meta").filter(pk=file_id).first()
         if pdf:
-            status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
             return {
                 "mediaType": "pdf",
                 "status": pdf.state.anonymization_status,
@@ -84,11 +83,10 @@ class AnonymizationService:
             })
 
         for pdf in pdf_files:
-            status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
             data.append({
                 "id": pdf.id,
                 "mediaType": "pdf",
-                "anonymizationStatus": status,
+                "anonymizationStatus": pdf.state.anonymization_status,
                 "createdAt": pdf.date_created,
                 "updatedAt": pdf.date_modified,
             })

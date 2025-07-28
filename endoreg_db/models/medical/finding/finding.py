@@ -43,14 +43,17 @@ class Finding(models.Model):
     def get_finding_types(self):
         return self.finding_types.all()
     
-    def get_classifications(self, classification_type: str) -> List['FindingClassification']:
+    def get_classifications(self, classification_type: str = None) -> List['FindingClassification']:
         """
-        Returns all FindingClassification objects of a specific type linked to this finding.
+        Returns all FindingClassification objects linked to this finding.
+        If classification_type is provided, it filters by that type.
         
         :param classification_type: The type of classification to filter by (e.g., 'location', 'morphology').
         :return: A list of FindingClassification objects.
         """
-        return self.finding_classifications.filter(classification_type__name=classification_type)
+        if classification_type:
+            return self.finding_classifications.filter(classification_type__name=classification_type)
+        return self.finding_classifications.all()
     
     def get_location_classifications(self):
         """

@@ -1,7 +1,7 @@
 from django.urls import path
 from endoreg_db.views import (
     create_video_segment_annotation, 
-    update_lvs_from_annotation,
+    update_label_video_segment,
     UpdateAnonymizedTextView,
     SensitiveMetaDetailView,
     video_segments_view,
@@ -22,7 +22,7 @@ url_patterns = [
     ),
     path(
         'annotations/<int:annotation_id>/',
-        update_lvs_from_annotation,
+        update_label_video_segment,
         name='update_annotation'
     ),
     path(

@@ -5,7 +5,7 @@ from endoreg_db.views import (
     UploadStatusView,
 )
 
-url_patterns = [
+urlpatterns = [
     # Upload endpoints
     path(
         'upload/', 

@@ -8,8 +8,8 @@ def _calc_duration_vf(obj:"VideoFile") -> float:
     """
     Calculate duration of a VideoFile.
     """
-
-    assert obj.ffmpeg_meta is not None, "FFMpegMeta should not be None after initialization."
+    if not obj.ffmpeg_meta:
+        raise ValueError("ffmpeg_meta is missing, cannot calculate duration.")
 
     fps = obj.get_fps()
     frame_count = obj.frame_count #TODO similar implementation as in get_fps

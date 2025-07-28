@@ -17,6 +17,23 @@ class AvailableFilesListView(APIView):
 
     permission_classes = DEBUG_PERMISSIONS
 
+    def _validate_pagination_params(self, request):
+        """Validates and returns pagination parameters, raising ValueError on failure."""
+        try:
+            limit = int(request.query_params.get('limit', 50))
+            offset = int(request.query_params.get('offset', 0))
+        except (ValueError, TypeError):
+            raise ValueError("Invalid 'limit' or 'offset' parameter. Must be integers.")
+
+        if limit < 0 or offset < 0:
+            raise ValueError("'limit' and 'offset' must be non-negative.")
+        
+        if limit > 100:
+            logger.warning(f"Client requested limit of {limit}, capping at 100.")
+            limit = 100
+
+        return limit, offset
+
     def get(self, request):
         """
         List available PDF and video files for anonymization selection.
@@ -24,7 +41,7 @@ class AvailableFilesListView(APIView):
         Query Parameters:
         - type: Filter by file type ('pdf' or 'video')
         - status: Filter by anonymization status
-        - limit: Number of results to return (default 50)
+        - limit: Number of results to return (default 50, max 100)
         - offset: Offset for pagination (default 0)
 
         Returns:
@@ -36,29 +53,18 @@ class AvailableFilesListView(APIView):
         }
         """
         try:
+            limit, offset = self._validate_pagination_params(request)
             file_type = request.query_params.get('type', 'all').lower()
-            limit = int(request.query_params.get('limit', 50))
-            offset = int(request.query_params.get('offset', 0))
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
             response_data = {}
 
             # Get PDFs if requested
             if file_type in ['all', 'pdf']:
                 pdf_queryset = RawPdfFile.objects.select_related('sensitive_meta').all()
                 total_pdfs = pdf_queryset.count()
-                # Validate limit and offset
-                limit_param = request.query_params.get('limit', 50)
-                offset_param = request.query_params.get('offset', 0)
-                try:
-                    limit = int(limit_param)
-                    offset = int(offset_param)
-                    if limit < 0 or offset < 0:
-                        raise ValueError("limit and offset must be non-negative integers")
-                except ValueError:
-                    return Response(
-                        {"error": "Invalid 'limit' or 'offset' parameter. Must be non-negative integers."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
                 paginated_pdfs = pdf_queryset[offset:offset + limit]
 
                 pdf_list = []
@@ -93,23 +99,11 @@ class AvailableFilesListView(APIView):
 
                 response_data['pdfs'] = pdf_list
                 response_data['total_pdfs'] = total_pdfs
+
             # Get Videos if requested
             if file_type in ['all', 'video']:
                 video_queryset = VideoFile.objects.select_related('sensitive_meta').all()
                 total_videos = video_queryset.count()
-                # Validate limit and offset (reuse above logic)
-                limit_param = request.query_params.get('limit', 50)
-                offset_param = request.query_params.get('offset', 0)
-                try:
-                    limit = int(limit_param)
-                    offset = int(offset_param)
-                    if limit < 0 or offset < 0:
-                        raise ValueError("limit and offset must be non-negative integers")
-                except ValueError:
-                    return Response(
-                        {"error": "Invalid 'limit' or 'offset' parameter. Must be non-negative integers."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
                 paginated_videos = video_queryset[offset:offset + limit]
 
                 video_list = []
@@ -125,7 +119,6 @@ class AvailableFilesListView(APIView):
                         'filename': file_name,
                         'file_path': file_path,
                         'sensitive_meta_id': video.sensitive_meta_id,
-                        'created_at': video.created_at if hasattr(video, 'created_at') else None,
                         'patient_info': None
                     }
 
@@ -144,19 +137,10 @@ class AvailableFilesListView(APIView):
                 response_data['videos'] = video_list
                 response_data['total_videos'] = total_videos
 
-            response_data['limit'] = limit
-            response_data['offset'] = offset
-
-            return Response(response_data, status=status.HTTP_200_OK)
-
-        except ValueError as e:
-            return Response(
-                {"error": f"Invalid query parameters: {e}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response(response_data)
         except Exception as e:
-            logger.error(f"Error listing available files: {e}")
+            logger.error(f"Error listing available files: {e}", exc_info=True)
             return Response(
-                {"error": "Internal server error occurred"},
+                {"error": "An unexpected error occurred while fetching files."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

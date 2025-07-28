@@ -33,7 +33,7 @@ class ReportDataSerializer(ReportStatusMixin, serializers.ModelSerializer):
 
     def get_updated_at(self, obj):
         """Simuliert updated_at basierend auf created_at"""
-        return obj.date_created if obj.date_created else timezone.now()
+        return obj.created_at if obj.created_at else timezone.now()
 
     def get_file_type(self, obj):
         """Ermittelt den Dateityp basierend auf der Dateiendung"""

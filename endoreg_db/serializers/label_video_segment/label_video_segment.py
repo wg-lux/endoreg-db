@@ -159,7 +159,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
         Currently, this method is not included in the serializer's fields, but it can be used to retrieve all annotations for the segment.
         """
-        return ImageClassificationAnnotationSerializer(obj.all_frame_annotations).data
+        return ImageClassificationAnnotationSerializer(obj.all_frame_annotations, many=True).data
 
     def get_label_display(self, obj:LabelVideoSegment):
         """Get the German translation for display"""
@@ -242,8 +242,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         data = super().to_representation(instance)
         video_file = instance.video_file
-        assert video_file is not None, "Video file must be associated with the segment"
-        assert isinstance(video_file, VideoFile), "Expected video_file to be an instance of VideoFile"
+        if video_file is None:
+            raise ValueError("Video file must be associated with the segment")
+        if not isinstance(video_file, VideoFile):
+            raise TypeError("Expected video_file to be an instance of VideoFile")
         # Add calculated time fields for frontend compatibility
         data['start_time'] = video_file.frame_number_to_s(instance.start_frame_number)
         data['end_time'] = video_file.frame_number_to_s(instance.end_frame_number)

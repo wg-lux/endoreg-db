@@ -17,7 +17,7 @@ class SensitiveMetaListView(APIView):
     GET: Returns paginated list of SensitiveMeta entries
     """
 
-    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
+    permission_classes = DEBUG_PERMISSIONS  
 
     def get(self, request):
         """
@@ -58,10 +58,24 @@ class SensitiveMetaListView(APIView):
                 queryset = queryset.filter(center__name__icontains=center_filter)
 
             # Pagination
-            limit = int(request.query_params.get('limit', 20))
-            offset = int(request.query_params.get('offset', 0))
+            try:
+                limit = int(request.query_params.get('limit', 10))
+                if limit < 0:
+                    limit = 10
+            except (ValueError, TypeError):
+                limit = 10
+            
+            try:
+                offset = int(request.query_params.get('offset', 0))
+                if offset < 0:
+                    offset = 0
+            except (ValueError, TypeError):
+                offset = 0
 
-            total_count = queryset.count()
+            # Enforce a maximum limit
+            if limit > 100:
+                limit = 100
+
             paginated_queryset = queryset[offset:offset + limit]
 
             # Serialize results
@@ -69,10 +83,10 @@ class SensitiveMetaListView(APIView):
 
             response_data = {
                 "results": serializer.data,
-                "total_count": total_count,
+                "total_count": queryset.count(),
                 "limit": limit,
                 "offset": offset,
-                "has_more": (offset + limit) < total_count
+                "has_more": (offset + limit) < queryset.count()
             }
 
             return Response(response_data, status=status.HTTP_200_OK)

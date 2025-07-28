@@ -53,7 +53,7 @@ from .label_video_segment import (
     video_segments_by_label_name_view,
     video_segment_detail_view,
     video_segments_view,
-    update_lvs_from_annotation,
+    update_label_video_segment,
     get_lvs_by_name_and_video_id
 )
 
@@ -190,7 +190,7 @@ __all__ = [
     'video_segments_by_label_name_view',
     'video_segment_detail_view',
     'video_segments_view',
-    'update_lvs_from_annotation',
+    'update_label_video_segment',
     "get_lvs_by_name_and_video_id",
 
     # Meta Views
@@ -219,6 +219,7 @@ __all__ = [
     'TranslatedFieldMixin',
     'TranslationMigrationHelper',
     'TranslatedFixtureLoader',
+    "build_multilingual_response",
     'MODELTRANSLATION_SETTINGS',
     'UploadFileView',
     'UploadStatusView',

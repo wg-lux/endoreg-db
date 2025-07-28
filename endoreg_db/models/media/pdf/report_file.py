@@ -1,4 +1,4 @@
-from ...utils import FILE_STORAGE, DOCUMENT_DIR, STORAGE_DIR
+from ...utils import DOCUMENT_DIR, STORAGE_DIR
 from django.db import models
 from typing import TYPE_CHECKING
 
@@ -6,7 +6,6 @@ if TYPE_CHECKING:
     from ...administration import (
         Center,
         Patient,
-        Examiner,
     )
     from ...medical import (
         PatientExamination,

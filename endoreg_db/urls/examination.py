@@ -7,7 +7,6 @@ from endoreg_db.views import (
     ExaminationCreateView,
     PatientExaminationDetailView,
     PatientExaminationListView,
-    PatientExaminationViewSet
 )
 
 url_patterns = [# URL patterns for ExaminationForm.vue API calls
@@ -39,15 +38,9 @@ url_patterns = [# URL patterns for ExaminationForm.vue API calls
     
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     path(
-        'examination/<int:exam_id>/classifications/',
+        'examinations/<int:exam_id>/classifications/',
         get_classifications_for_examination,
         name='get_classifications_for_examination'
     ),
 
-    # URL patterns for ExaminationForm.vue API calls
-    path(
-        'examinations/<int:examination_id>/findings/',
-        get_findings_for_examination,
-        name='get_findings_for_examination'
-    ),
 ]

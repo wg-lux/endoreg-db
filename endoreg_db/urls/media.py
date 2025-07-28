@@ -16,15 +16,15 @@ from endoreg_db.views import (
 
 # Simplified Meta and Validation Endpoints
     
-    # video meta + stream
 url_patterns = [
-    path("media/videos/",               VideoMediaView.as_view(), name="videos-list"),
-    path("media/videos/<int:pk>/",      VideoMediaView.as_view(), name="videos-detail"),
-    path("media/videos/<int:video_id>/stream/", VideoStreamView.as_view(), name="video-stream"),
-    # pdf meta + stream
-    path("media/pdfs/",                 PDFFileForMetaView.as_view(),   name="pdfs-list"),
-    path("media/pdfs/<int:pk>/",        PDFStreamView.as_view(),  name="pdfs-detail"),
+    # Video media endpoints
+    path("media/videos/", VideoMediaView.as_view(), name="video-list"),
+    path("media/videos/<int:pk>/", VideoMediaView.as_view(), name="video-detail"),
+    path("media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"),
 
+    # PDF media endpoints
+    path("media/pdfs/", PDFFileForMetaView.as_view(), name="pdf-list"),
+    path("media/pdfs/<int:pk>/", PDFFileForMetaView.as_view(), name="pdf-detail"),
+    path("media/pdfs/<int:pk>/stream/", PDFStreamView.as_view(), name="pdf-stream"),
 ]
     # ---------------------------------------------------------------------------------------
- 

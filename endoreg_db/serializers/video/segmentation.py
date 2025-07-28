@@ -1,6 +1,6 @@
 from pathlib import Path
 from rest_framework import serializers
-from ...models import VideoFile # Added VideoPredictionMeta
+from ...models import VideoFile 
 import cv2
 
 # from django.conf import settings
@@ -30,7 +30,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
     # Convert selected label frames into time segments (seconds)
     label_time_segments = serializers.SerializerMethodField()
     # label_predictions = serializers.SerializerMethodField()
-    original_file_name = serializers.CharField()
+    original_file_name = serializers.CharField(read_only=True)
     duration = serializers.SerializerMethodField()
 
     class Meta:
@@ -75,7 +75,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
 
-        return {"error": "Video URL not avalaible"}
+        return {"error": "Video URL not available"}
 
     def get_duration(self, obj:"Video"):
         """

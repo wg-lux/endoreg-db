@@ -1,10 +1,10 @@
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from endoreg_db.models import RawPdfFile
-    from django.utils import timezone
 
 class ReportStatusMixin:
     """

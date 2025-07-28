@@ -41,7 +41,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
         return request.build_absolute_uri(f"/api/media/videos/{obj.pk}/") if request else None
     
     def get_duration(self, obj:VideoFile):
-        return obj.duration or _calc_duration_vf(self, obj)
+        return obj.duration or _calc_duration_vf(obj)
     
     def get_patient_dob(self, obj):
         """Extract date from datetime field, handling timezone properly."""

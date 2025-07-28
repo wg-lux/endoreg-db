@@ -1,5 +1,5 @@
+from endoreg_db.models import LabelVideoSegment
 from endoreg_db.serializers.label_video_segment.label_video_segment_annotation import LabelVideoSegmentAnnotationSerializer
-from endoreg_db.services.segment_sync import create_user_segment_from_annotation
 
 from django.db import transaction
 from rest_framework import status
@@ -23,35 +23,21 @@ def create_video_segment_annotation(request):
     with transaction.atomic():
         serializer = LabelVideoSegmentAnnotationSerializer(data=request.data)
         if serializer.is_valid():
-            try:
-                annotation = serializer.save()
+            annotation = serializer.save()
 
-                # Check if this is a segment annotation and create user segment
-                if annotation.get('type') == 'segment':
-                    new_segment = create_user_segment_from_annotation(annotation, request.user)
-                    if new_segment:
-                        # Update metadata with new segment ID
-                        metadata = annotation.get('metadata', {})
-                        metadata['segmentId'] = new_segment.id
-                        annotation['metadata'] = metadata
-
-                        # Update the annotation with new segment ID
-                        serializer = LabelVideoSegmentAnnotationSerializer(instance=annotation, data={'metadata': metadata}, partial=True)
-                        if serializer.is_valid():
-                            annotation = serializer.save()
-
-                logger.info(f"Successfully created annotation {annotation.get('id', 'unknown')}")
-                return Response(annotation, status=status.HTTP_201_CREATED)
-
-            except Exception as e:
-                logger.error(f"Error creating annotation: {str(e)}")
-                return Response(
-                    {'error': f'Failed to create annotation: {str(e)}'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            # If the annotation type is 'segment', create a new LabelVideoSegment
+            if annotation.type == 'segment':
+                metadata = annotation.metadata or {}
+                LabelVideoSegment.objects.create(
+                    video_id=annotation.video_id,
+                    start_frame=metadata.get('start_frame'),
+                    end_frame=metadata.get('end_frame'),
+                    label=metadata.get('label'),
+                    source='user'
                 )
-        else:
-            logger.warning(f"Invalid data for annotation creation: {serializer.errors}")
-            return Response(
-                {'error': 'Invalid data', 'details': serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            
+            logger.info(f"Successfully created annotation {annotation.id}")
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    logger.error(f"Failed to create annotation with data: {request.data}, errors: {serializer.errors}")
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
