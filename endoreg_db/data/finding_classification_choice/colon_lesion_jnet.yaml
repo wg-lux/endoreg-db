@@ -1,0 +1,15 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_2a"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_2b"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_3"

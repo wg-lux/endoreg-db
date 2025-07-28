@@ -1,3 +1,6 @@
+#####
+# Base types for distinguishing morphology and location
+# Related Fields
 - model: endoreg_db.finding_classification_type
   fields:
     name: "location"
@@ -10,18 +13,15 @@
     name_de: "Morphologie"
     name_en: "Morphology"
 
+#####
 
 - model: endoreg_db.finding_classification_type
   fields:
     name: "bowel_prep"
-    name_de: "Darmvorbereitung"
-    name_en: "Bowel Preparation"
 
 - model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_size"
-    name_de: "Größenklassifikation Kolonläsion"
-    name_en: "Colon Lesion Size Classification"
 
 - model: endoreg_db.finding_classification_type
   fields:
@@ -30,23 +30,19 @@
 - model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_planarity"
-    name_de: "Planaritätsklassifikation Kolonläsion"
-    name_en: "Colon Lesion Planarity Classification"
 
 - model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_circularity"
-    name_de: "Kolonläsion - Zirkularität"
-    name_en: "Colon lesion - circularity"
 
 - model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_advanced_imaging"
-    name_de: "Kolonläsion - Advanced Imaging"
-    name_en: "Colon lesion - Advanced Imaging"
 
 - model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_shape"
-    name_de: "Kolonläsion - Form"
-    name_en: "Colon lesion - Shape"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "colon_lesion_capillary_pattern"
