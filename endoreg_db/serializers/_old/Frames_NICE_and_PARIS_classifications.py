@@ -4,6 +4,8 @@ from endoreg_db.models import Label, LabelVideoSegment
 from itertools import combinations
 from pathlib import Path
 from django.conf import settings
+
+# Need to define all seetings and values in one file and import from there
 # === CONFIGURABLE PARAMETERS - ForNiceClassificationSerializer ===
 POLYP_LABEL_NAME = "polyp"
 CHROMO_LABEL_NAMES = ["digital_chromo_endoscopy", "nbi"]
@@ -210,7 +212,8 @@ class BaseClassificationSerializer(serializers.Serializer):
                 last_selected_frame = frame["frame_number"]
 
         return selected_frames
-    
+    #need to use already implemented functionality, to avoid redundencies if same,
+    # need to define the paths properly once decided.
     def extract_and_save_selected_frames(self, video, frame_numbers, classification_type: str):
         """
         Extract specific frames from the original video file and save them
