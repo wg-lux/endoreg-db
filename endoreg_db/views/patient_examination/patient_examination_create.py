@@ -4,7 +4,7 @@ from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 import logging
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class ExaminationCreateView(generics.CreateAPIView):
     }
     """
     serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = EnvironmentAwarePermission
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

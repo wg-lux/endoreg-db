@@ -3,7 +3,7 @@ from endoreg_db.serializers.patient_examination import PatientExaminationSeriali
 
 from rest_framework import generics, status
 from rest_framework.response import Response
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class PatientExaminationListView(generics.ListAPIView):
     - offset: Pagination offset (default 0)
     """
     serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = EnvironmentAwarePermission
 
     def get_queryset(self):
         queryset = PatientExamination.objects.select_related(
