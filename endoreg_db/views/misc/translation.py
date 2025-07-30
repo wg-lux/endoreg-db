@@ -2,7 +2,7 @@
 Automatisierte Internationalisierung für medizinische Terminologie
 Ersetzt manuelle name_de/name_en Felder durch django-modeltranslation
 """
-from modeltranslation.translator import TranslationOptions, translator
+from modeltranslation.translator import TranslationOptions
 from modeltranslation.decorators import register
 
 from endoreg_db.models import (
