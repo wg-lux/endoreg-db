@@ -18,7 +18,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
     """
     queryset = PatientExamination.objects.select_related('patient', 'examination')
     serializer_class = PatientExaminationSerializer
-    permission_classes = EnvironmentAwarePermission
+    permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, *args, **kwargs):
         try:

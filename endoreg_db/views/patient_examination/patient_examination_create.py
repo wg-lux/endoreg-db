@@ -23,7 +23,7 @@ class ExaminationCreateView(generics.CreateAPIView):
     }
     """
     serializer_class = PatientExaminationSerializer
-    permission_classes = EnvironmentAwarePermission
+    permission_classes = [EnvironmentAwarePermission]
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

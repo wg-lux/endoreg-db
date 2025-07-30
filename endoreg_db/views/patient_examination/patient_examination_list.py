@@ -21,7 +21,7 @@ class PatientExaminationListView(generics.ListAPIView):
     - offset: Pagination offset (default 0)
     """
     serializer_class = PatientExaminationSerializer
-    permission_classes = EnvironmentAwarePermission
+    permission_classes = [EnvironmentAwarePermission]
 
     def get_queryset(self):
         queryset = PatientExamination.objects.select_related(
