@@ -39,7 +39,7 @@ class DbConfig(BaseModel):
         with open(self.password_file, "r", encoding="utf-8") as f:
             self.password = f.read().strip()
 
-    def validate(self):
+    def _validate(self):
         """Fully validate all database configuration fields."""
         self.sync_password()
 
