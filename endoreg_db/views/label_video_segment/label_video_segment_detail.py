@@ -6,13 +6,14 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 import logging
 logger = logging.getLogger(__name__)
+PERMS = [EnvironmentAwarePermission]
 
 @api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes(PERMS)
 def video_segment_detail_view(request, segment_id):
     """
     Handles retrieval, update, and deletion of a single labeled video segment.

@@ -5,16 +5,17 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 import logging
 
 logger = logging.getLogger(__name__)
+PERMS = [EnvironmentAwarePermission]
 
 DEFAULT_FPS = 50 #TODO move to settings or config
 
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS) #TODO: Uncomment this line if authentication is set up
+@permission_classes(PERMS) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_id_view(request, video_id, label_id):
     """
     Retrieves all labeled segments for a given video and label by their IDs.
@@ -85,7 +86,7 @@ def video_segments_by_label_id_view(request, video_id, label_id):
 
 
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS) #TODO: Uncomment this line if authentication is set up
+@permission_classes(PERMS) #TODO: Uncomment this line if authentication is set up
 def video_segments_by_label_name_view(request, video_id, label_name):
     """
     Retrieves labeled video segments for a given video and label name.
