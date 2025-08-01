@@ -8,6 +8,7 @@ tests/sensitive/
 erc_data/
 /data/
 test_reports/*
+/$/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

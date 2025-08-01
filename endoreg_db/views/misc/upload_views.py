@@ -8,6 +8,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from endoreg_db.utils.error_responses.error_response import error_response
 
 # Try to import python-magic, but provide fallback if not available
 try:
@@ -67,49 +68,35 @@ class UploadFileView(APIView):
         """
         # Validate file presence
         if 'file' not in request.FILES:
-            return Response(
-                {'error': 'No file provided. Please include a file in the "file" field.'},
-                status=status.HTTP_400_BAD_REQUEST
+            return error_response(
+                'No file provided. Please include a file in the "file" field.',
+                status.HTTP_400_BAD_REQUEST
             )
+
         
         uploaded_file = request.FILES['file']
         
         # Validate file is not empty
         if not uploaded_file or uploaded_file.size == 0:
-            return Response(
-                {'error': 'Uploaded file is empty. Please select a valid file.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error_response('Uploaded file is empty. Please select a valid file.', status.HTTP_400_BAD_REQUEST)
         
         # Validate file size
         if uploaded_file.size > self.MAX_FILE_SIZE:
-            return Response(
-                {'error': f'File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error_response(f'File too large. Maximum size is {self.MAX_FILE_SIZE // (1024**3)} GB.', status.HTTP_400_BAD_REQUEST)
         
         # Validate filename
         if not uploaded_file.name or uploaded_file.name.strip() == '':
-            return Response(
-                {'error': 'Invalid filename. Please ensure the file has a valid name.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error_response('Invalid filename. Please ensure the file has a valid name.', status.HTTP_400_BAD_REQUEST)
         
         # Detect MIME type
         try:
             content_type = self._detect_mime_type(uploaded_file)
         except Exception as e:
-            return Response(
-                {'error': f'Could not determine file type: {str(e)}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error_response(f'Could not determine file type: {str(e)}', status.HTTP_400_BAD_REQUEST)
         
         # Validate MIME type
         if content_type not in self.ALLOWED_MIME_TYPES:
-            return Response(
-                {'error': f'Unsupported file type: {content_type}. Allowed types: PDF, MP4, AVI, MOV, WMV.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error_response(f'Unsupported file type: {content_type}. Allowed types: PDF, MP4, AVI, MOV, WMV.', status.HTTP_400_BAD_REQUEST)
         
         try:
             # Create upload job
@@ -125,10 +112,7 @@ class UploadFileView(APIView):
                 except Exception as e:
                     # If Celery task fails to start, mark job as failed
                     upload_job.mark_failed(f'Failed to start processing: {str(e)}')
-                    return Response(
-                        {'error': f'Failed to start processing: {str(e)}'},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
+                    return error_response(f'Failed to start processing: {str(e)}', status.HTTP_500_INTERNAL_SERVER_ERROR)
             else:
                 # For development without Celery, mark as processing immediately
                 upload_job.mark_processing()
@@ -150,10 +134,7 @@ class UploadFileView(APIView):
             )
             
         except Exception as e:
-            return Response(
-                {'error': f'Failed to create upload job: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return error_response(f'Failed to create upload job: {str(e)}', status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _detect_mime_type(self, uploaded_file) -> str:
         """
@@ -234,7 +215,4 @@ class UploadStatusView(APIView):
         except UploadJob.DoesNotExist:
             raise Http404("Upload job not found")
         except Exception as e:
-            return Response(
-                {'error': f'Failed to get upload status: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return error_response(f'Failed to get upload status: {str(e)}', status.HTTP_500_INTERNAL_SERVER_ERROR)

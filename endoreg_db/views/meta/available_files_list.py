@@ -1,5 +1,5 @@
 from endoreg_db.models import RawPdfFile, VideoFile
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 import logging
 
 from rest_framework import status
@@ -15,7 +15,7 @@ class AvailableFilesListView(APIView):
     GET: Returns lists of available PDF and video files with their metadata
     """
 
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
 
     def _validate_pagination_params(self, request):
         """Validates and returns pagination parameters, raising ValueError on failure."""
