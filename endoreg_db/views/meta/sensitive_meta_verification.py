@@ -5,7 +5,7 @@ from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class SensitiveMetaVerificationView(APIView):
     POST: Update verification flags (dob_verified, names_verified) for a SensitiveMeta
     """
 
-    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
+    permission_classes = [EnvironmentAwarePermission]  # Changed from IsAuthenticated for development
 
     @transaction.atomic
     def post(self, request):
