@@ -22,7 +22,7 @@ def main(conf_dir: Path = CONF_TARGETS["root"], template_dir: Path = TEMPLATE_DI
 
     if not CONF_TARGETS["db"].exists():
         db_cfg = DbConfig.from_file(DB_CFG_PATH)
-        db_cfg._validate()
+        db_cfg.custom_validate()
         db_cfg.to_file(CONF_TARGETS["db"], ask_override=True)
 
 
