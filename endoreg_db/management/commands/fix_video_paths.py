@@ -38,7 +38,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        """Fix video file paths to match actual storage locations."""
+        """
+        Synchronizes video file paths in the database with actual files on disk, updating broken or missing paths as needed.
+        
+        Scans the specified storage directory for video files, matches them to database records by UUID, and updates the `raw_file` field for videos whose stored path is missing or incorrect. Supports dry-run and verbose modes, and can process all videos or a specific video by ID.
+        """
         dry_run = options['dry_run']
         verbose = options['verbose']
         video_id = options.get('video_id')
@@ -155,7 +159,7 @@ class Command(BaseCommand):
         self.stdout.write(f"❌ Errors/Missing files: {error_count} videos")
         
         if dry_run and fixed_count > 0:
-            self.stdout.write(f"\n💡 Run without --dry-run to apply changes")
+            self.stdout.write("\n💡 Run without --dry-run to apply changes")
         elif not dry_run and fixed_count > 0:
             self.stdout.write(f"\n🎉 Successfully fixed {fixed_count} video file paths!")
-            self.stdout.write(f"🔄 Restart your Django server to reload file paths")
+            self.stdout.write("🔄 Restart your Django server to reload file paths")

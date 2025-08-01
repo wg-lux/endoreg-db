@@ -1,0 +1,36 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_surface_intact"
+    name_de: "Kolonläsion - Oberfläche intakt"
+    name_en: "Colon lesion - surface intact"
+    description: "Category for intact lesion surfaces"
+
+# eroded
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_surface_eroded"
+    name_de: "Kolonläsion - Oberfläche erodiert"
+    name_en: "Colon lesion - surface eroded"
+    description: "Category for eroded lesion surfaces"
+    subcategories:
+      description:
+        choices: ["unspecified", "focal", "diffuse"]
+        default: "unspecified"
+        probability: [0.5, 0.2, 0.3]
+        required: true
+
+
+# ulcerated
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_surface_ulcerated"
+    name_de: "Kolonläsion - Oberfläche ulzeriert"
+    name_en: "Colon lesion - surface ulcerated"
+    description: "Category for ulcerated lesion surfaces"
+    subcategories:
+      description:
+        choices: ["unspecified", "focal", "diffuse"]
+        default: "unspecified"
+        probability: [0.5, 0.2, 0.3]
+        required: true
+

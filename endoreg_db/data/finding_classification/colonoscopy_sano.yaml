@@ -1,0 +1,22 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_kudo"
+    classification_types: [
+      "colon_lesion_capillary_pattern",
+      "morphology"
+    ]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_sano_1",
+      "colon_lesion_sano_2",
+      "colon_lesion_sano_3a",
+      "colon_lesion_sano_3b",
+    ]

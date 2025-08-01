@@ -41,7 +41,7 @@ class AiModelSerializerTest(TestCase):
     def test_create_ai_model_with_model_type_object(self):
         """
         Test creating an AiModel instance using the serializer,
-        providing the model_type as an object instance.
+        providing the model_type as a string (name).
         """
         # 1. Arrange: Create prerequisite ModelType
         model_type = ModelType.objects.create(name="Classification", description="Classification models")
@@ -50,7 +50,7 @@ class AiModelSerializerTest(TestCase):
         ai_model_data = {
             "name": "Test AI Model 3",
             "description": "A third test model created via serializer with object.",
-            "model_type": model_type, # Provide object instance
+            "model_type": model_type.name,  # Pass the name (string) instead of the object
         }
 
         # 3. Act: Instantiate and validate the serializer
@@ -68,7 +68,7 @@ class AiModelSerializerTest(TestCase):
         self.assertEqual(ai_model_instance.name, "Test AI Model 3")
         self.assertEqual(ai_model_instance.model_type, model_type)
         self.assertEqual(ai_model_instance.model_type.name, "Classification")
-
+    
     def test_serialize_ai_model(self):
         """
         Test serializing an AiModel instance.

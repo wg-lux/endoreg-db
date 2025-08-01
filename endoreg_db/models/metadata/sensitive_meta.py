@@ -228,8 +228,9 @@ class SensitiveMeta(models.Model):
     # --- Save method orchestrates calls to logic ---
     def save(self, *args, **kwargs):
         """
-        Overrides the default save method to ensure data integrity, calculate hashes,
-        link pseudo-entities, and manage related state using external logic.
+        Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external logic.
+        
+        This method performs pre-save operations via external logic, persists the instance, ensures the related SensitiveMetaState exists, and links the appropriate examiner to the instance.
         """
         # 1. Call the main logic function to perform pre-save checks, data generation,
         #    and creation/linking of pseudo patient/examination FKs.
@@ -260,7 +261,28 @@ class SensitiveMeta(models.Model):
             self.examiners.add(examiner_to_link)
             # Adding to M2M handles its own DB interaction, no second super().save() needed.
 
+    def mark_dob_verified(self):
+        """
+        Mark the associated date of birth as verified in the related SensitiveMetaState.
+        """
+        state = self.get_or_create_state()
+        state.mark_dob_verified()
+
+    def mark_names_verified(self):
+        """
+        Mark the patient's names as verified in the associated verification state.
+        
+        This method ensures the related SensitiveMetaState exists and updates its status to indicate that the patient's names have been verified.
+        """
+        state = self.get_or_create_state()
+        state.mark_names_verified()
+
     @classmethod
     def _update_name_db(cls, first_name, last_name):
         # Delegate to logic
+        """
+        Update the name database with the provided first and last names using external logic.
+        
+        This method delegates the update operation to the external logic module responsible for managing name data.
+        """
         logic.update_name_db(first_name, last_name)

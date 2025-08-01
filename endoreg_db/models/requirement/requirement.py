@@ -16,11 +16,9 @@ if TYPE_CHECKING:
         ExaminationIndication,
         Finding,
         FindingIntervention,
-        FindingLocationClassification,
-        FindingLocationClassificationChoice,
-        FindingMorphologyClassification,
-        FindingMorphologyClassificationChoice,
-        FindingMorphologyClassificationType,
+        FindingClassification,
+        FindingClassificationChoice,
+        FindingClassificationType,
         LabValue,
         Medication,
         MedicationIndication,
@@ -64,13 +62,9 @@ class RequirementType(models.Model):
 
     Attributes:
         name (str): The name of the requirement type.
-        name_de (str): The German name of the requirement type.
-        name_en (str): The English name of the requirement type.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = RequirementTypeManager()
@@ -112,14 +106,10 @@ class Requirement(models.Model):
 
     Attributes:
         name (str): The name of the requirement.
-        name_de (str): The German name of the requirement.
-        name_en (str): The English name of the requirement.
         description (str): A description of the requirement.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     
     numeric_value = models.FloatField(
@@ -216,14 +206,8 @@ class Requirement(models.Model):
         related_name="required_in",
     )
 
-    finding_morphology_classification_choices = models.ManyToManyField(
-        "FindingMorphologyClassificationChoice",
-        blank=True,
-        related_name="required_in",
-    )
-
-    finding_location_classification_choices = models.ManyToManyField(
-        "FindingLocationClassificationChoice",
+    finding_classification_choices = models.ManyToManyField(
+        "FindingClassificationChoice",
         blank=True,
         related_name="required_in",
     )
@@ -275,12 +259,7 @@ class Requirement(models.Model):
         disease_classification_choices: models.QuerySet[DiseaseClassificationChoice]
         events: models.QuerySet[Event]
         findings: models.QuerySet[Finding]
-        finding_morphology_classification_choices: models.QuerySet[
-            FindingMorphologyClassificationChoice
-        ]
-        finding_location_classification_choices: models.QuerySet[
-            FindingLocationClassificationChoice
-        ]
+        finding_classification_choices: models.QuerySet[FindingClassificationChoice]
         finding_interventions: models.QuerySet[FindingIntervention]
         medications: models.QuerySet[Medication]
         medication_indications: models.QuerySet[MedicationIndication]
@@ -311,11 +290,9 @@ class Requirement(models.Model):
         "ExaminationIndication",
         "Finding",
         "FindingIntervention",
-        "FindingLocationClassification",
-        "FindingLocationClassificationChoice",
-        "FindingMorphologyClassification",
-        "FindingMorphologyClassificationChoice",
-        "FindingMorphologyClassificationType",
+        "FindingClassification",
+        "FindingClassificationChoice",
+        "FindingClassificationType",
         "LabValue",
         "Medication",
         "MedicationIndication",
@@ -331,9 +308,9 @@ class Requirement(models.Model):
         "PatientMedicationSchedule", # Added PatientMedicationSchedule
     ]]:
         """
-        Returns a list of model classes expected as input based on the requirement's linked types.
+        Return the list of model classes that are expected as input for evaluating this requirement.
         
-        The returned list corresponds to the model classes mapped from the names of all associated requirement types.
+        The returned models correspond to the requirement types linked to this requirement, mapped via the internal data model dictionary.
         """
         req_types = self.requirement_types.all()
         req_type_names = [_.name for _ in req_types]
@@ -344,9 +321,9 @@ class Requirement(models.Model):
     @property
     def links(self) -> "RequirementLinks":
         """
-        Aggregates and returns all related model instances as a RequirementLinks object.
+        Return a RequirementLinks object containing all non-null related model instances for this requirement.
         
-        The returned RequirementLinks contains lists of all non-null related objects from the requirement\\'s many-to-many fields, providing a structured view of its associations.
+        The returned object provides structured access to all associated entities, such as examinations, diseases, findings, classifications, interventions, medications, and related choices, aggregated from the requirement's many-to-many fields.
         """
         models_dict = RequirementLinks(
             # requirement_types=self.requirement_types.all(),
@@ -359,11 +336,8 @@ class Requirement(models.Model):
             disease_classification_choices=[_ for _ in self.disease_classification_choices.all() if _ is not None],
             events=[_ for _ in self.events.all() if _ is not None],
             findings=[_ for _ in self.findings.all() if _ is not None],
-            finding_morphology_classification_choices=[
-                _ for _ in self.finding_morphology_classification_choices.all() if _ is not None
-            ],
-            finding_location_classification_choices=[
-                _ for _ in self.finding_location_classification_choices.all() if _ is not None
+            finding_classification_choices=[
+                _ for _ in self.finding_classification_choices.all() if _ is not None
             ],
             finding_interventions=[_ for _ in self.finding_interventions.all() if _ is not None],
             medications=[_ for _ in self.medications.all() if _ is not None],

@@ -64,7 +64,6 @@ dependencies = [
     "whitenoise>=6.9.0",
     "requests>=2.32.3",
     "gunicorn>=23.0.0",
-    "modeltranslation>=0.25",
     "django-filter>=25.1",
     "optimum==1.26.1",
     "Pillow==11.1.0",
@@ -80,6 +79,7 @@ dependencies = [
     "moviepy==2.2.1",
     "celery>=5.5.3",
     "python-magic>=0.4.27",
+    "django-modeltranslation>=0.19.16",
 ]
 
 [project.urls]

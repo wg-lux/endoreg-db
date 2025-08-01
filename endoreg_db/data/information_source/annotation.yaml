@@ -1,0 +1,6 @@
+- model: endoreg_db.InformationSource
+  fields:
+    name: "default_annotation"
+    information_source_types: [
+      "annotation"
+    ]

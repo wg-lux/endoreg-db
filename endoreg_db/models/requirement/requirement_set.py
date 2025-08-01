@@ -35,13 +35,9 @@ class RequirementSetType(models.Model):
 
     Attributes:
         name (str): The name of the requirement set type.
-        name_de (str): The German name of the requirement set type.
-        name_en (str): The English name of the requirement set type.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = RequirementSetTypeManager()
@@ -81,14 +77,10 @@ class RequirementSet(models.Model):
 
     Attributes:
         name (str): The name of the requirement set.
-        name_de (str): The German name of the requirement set.
-        name_en (str): The English name of the requirement set.
         description (str): A description of the requirement set.
     """
 
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     requirements = models.ManyToManyField(
         "Requirement",

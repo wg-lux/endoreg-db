@@ -1,0 +1,26 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_paris"
+    classification_types: [
+      "colon_lesion_shape",
+      "morphology"
+    ]
+    name_de: "Formklassifikation Kolonläsion"
+    name_en: "Colon Lesion Shape Classification"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_paris_Is", # maps to colon_lesion_planarity_sessile
+      "colon_paris_Ip", # colon_lesion_planarity_pedunculated
+      "colon_paris_IIa", 
+      "colon_paris_IIb",
+      "colon_paris_IIc",
+      "colon_paris_III",
+      "colon_paris_IIa_IIc",
+      "colon_paris_IIb_IIc"
+    ]

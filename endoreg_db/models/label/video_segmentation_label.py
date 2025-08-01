@@ -13,8 +13,6 @@ class VideoSegmentationLabel(models.Model):
 
     Attributes:
         name (str): The name of the label.
-        name_de (str): The German name of the label.
-        name_en (str): The English name of the label.
         description (str): A description of the label.
         color (str): The color associated with the label.
         order_priority (int): The priority for ordering labels.
@@ -22,8 +20,6 @@ class VideoSegmentationLabel(models.Model):
     objects = VideoSegmentationLabelManager()
 
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     color = models.CharField(max_length=255, blank=True, null=True)
     order_priority = models.IntegerField(default=0)

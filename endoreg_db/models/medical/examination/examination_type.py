@@ -25,20 +25,14 @@ class ExaminationType(models.Model):
 
     Attributes:
         name (str): The unique name of the examination type.
-        name_de (str): The German name of the examination type.
-        name_en (str): The English name of the examination type.
     """
 
     objects = ExaminationTypeManager()
     name = models.CharField(max_length=100, unique=True)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self) -> str:
         """
-        Return the string representation of the examination type.
-        
-        If an English name is provided, it is returned; otherwise, the default name is used.
+        Return the string representation of the examination type using its name.
         """
         name = self.name_en or self.name
         name = str(name)

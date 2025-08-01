@@ -3,8 +3,8 @@
 - model: endoreg_db.center
   fields:
     name: "university_hospital_wuerzburg"
-    name_de: "Universitätsklinikum Würzburg"
-    name_en: "University Hospital Würzburg"
+    # name_de: "Universitätsklinikum Würzburg"
+    # name_en: "University Hospital Würzburg"
 
     first_names: [
       "Markus",
@@ -50,8 +50,8 @@
 - model: endoreg_db.center
   fields:
     name: "rbk_stuttgart"
-    name_de: "Robert-Bosch-Krankenhaus Stuttgart"
-    name_en: "Robert Bosch Hospital Stuttgart"
+    # name_de: "Robert-Bosch-Krankenhaus Stuttgart"
+    # name_en: "Robert Bosch Hospital Stuttgart"
     first_names: [] # many to many; if foreign key, we would just have a string; strings represent "name" attribute
     last_names: []
 
@@ -59,8 +59,8 @@
 - model: endoreg_db.center
   fields:
     name: "bbk_regensburg"
-    name_de: "Barmherzige  Brüder Krankenhaus Regensburg"
-    name_en: "Barmherzige Brüder Hospital Regensburg"
+    # name_de: "Barmherzige  Brüder Krankenhaus Regensburg"
+    # name_en: "Barmherzige Brüder Hospital Regensburg"
     first_names: []
     last_names: []
 
@@ -68,8 +68,8 @@
 - model: endoreg_db.center
   fields:
     name: "uke_hamburg"
-    name_de: "Universitätsklinikum Hamburg-Eppendorf"
-    name_en: "University Hospital Hamburg-Eppendorf"
+    # name_de: "Universitätsklinikum Hamburg-Eppendorf"
+    # name_en: "University Hospital Hamburg-Eppendorf"
     first_names: []
     last_names: []
 
@@ -77,15 +77,15 @@
 - model: endoreg_db.center
   fields:
     name: "rkh_ludwigsburg"
-    name_de: "RKH Krankenhaus Ludwigsburg"
-    name_en: "RKH Hospital Ludwigsburg"
+    # name_de: "RKH Krankenhaus Ludwigsburg"
+    # name_en: "RKH Hospital Ludwigsburg"
     first_names: []
     last_names: []
 
 - model: endoreg_db.center
   fields:
     name: "endoreg_db_demo"
-    name_de: "Demo Center"
-    name_en: "Demo Center"
+    # name_de: "Demo Center"
+    # name_en: "Demo Center"
     first_names: []
     last_names: []

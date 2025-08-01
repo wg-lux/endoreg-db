@@ -46,8 +46,8 @@ DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_d
 DEFAULT_GENDER = "unknown"
 
 def get_information_source_prediction():
-    from .data_loader import load_information_source
-    load_information_source()
+    from .data_loader import load_information_source_data
+    load_information_source_data()
     source = InformationSource.objects.get(name="prediction")
     assert isinstance(source, InformationSource), "No InformationSource found in the database."
     return source
@@ -222,10 +222,9 @@ def get_default_egd_pdf():
     try:
         # Create the PDF record using the temporary file.
         # delete_source=True will ensure temp_file_path is deleted by create_from_file
-        pdf_file = RawPdfFile.create_from_file(
+        pdf_file = RawPdfFile.create_from_file_initialized(
             file_path=temp_file_path,
             center_name=center_name,
-            save=True, # save=True is default and handled internally now
             delete_source=True,
         )
 
@@ -281,38 +280,20 @@ def get_default_video_file():
     from ..media.video.helper import get_random_video_path_by_examination_alias
     from endoreg_db.models import VideoFile
     from .data_loader import (
-        load_disease_data,
-        load_event_data,
-        load_information_source,
-        load_examination_data,
-        load_center_data,
-        load_endoscope_data,
-        load_ai_model_label_data,
-        load_ai_model_data,
+        load_base_db_data,
     )
     
-    load_disease_data()
-    load_event_data()
-    load_information_source()
-    load_examination_data()
-    load_center_data()
-    load_endoscope_data()
-    load_ai_model_label_data()
-    load_ai_model_data()
+    load_base_db_data()
     video_path = get_random_video_path_by_examination_alias(
         examination_alias='egd', is_anonymous=False
     )
 
-    video_file = VideoFile.create_from_file(
+    video_file = VideoFile.create_from_file_initialized(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests
         processor_name = DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
     )
 
-    # Ensure video metadata is loaded, including frame_count and frames are initialized
-    if video_file:
-        video_file.initialize() # This calls initialize_video_specs, set_frame_dir, get_or_create_state, and initialize_frames
-        video_file.save() # Save the updated metadata and initialized frames
-
+  
     return video_file

@@ -52,9 +52,7 @@ class LabValueManager(models.Manager):
     
 
 class LabValue(models.Model):
-    name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
+    name = models.CharField(max_length=255, unique=True) 
     abbreviation = models.CharField(max_length=10, blank=True, null=True)
     default_unit = models.ForeignKey(
         "Unit", on_delete=models.CASCADE, blank=True, null=True
