@@ -1,4 +1,4 @@
-# endoreg_db/api/views/anonymization_overview.py
+# endoreg_db/api/views/anonymization/overview.py
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes

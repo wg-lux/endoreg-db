@@ -1,5 +1,5 @@
 from .overview import (
-    anonymization_overview,
+    AnonymizationOverviewView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
