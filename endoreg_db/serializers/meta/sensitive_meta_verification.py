@@ -36,7 +36,7 @@ class SensitiveMetaVerificationSerializer(serializers.Serializer):
         """
         Updates the verification state for a specified SensitiveMeta instance.
 
-        Uses the cached SensitiveMeta object from validation, applies select_for_update for strong consistency,
+        Uses the SensitiveMeta object from validation, applies select_for_update for strong consistency,
         obtains or creates its verification state, updates the `dob_verified` and `names_verified` fields if provided,
         and saves the changes.
 
