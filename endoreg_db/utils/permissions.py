@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.decorators import permission_classes as drf_permission_classes
 from functools import wraps
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +123,31 @@ class EnvironmentAwarePermission(BasePermission):
         return self.has_permission(request, view)
 
 
+<<<<<<< HEAD
+=======
+def is_debug_mode():
+    """
+    Robustly determine if debug mode is enabled, checking both Django settings and environment variable.
+    """
+    import os
+    env_debug = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+    settings_debug = getattr(settings, 'DEBUG', False)
+    result = settings_debug or env_debug
+    logger.info(f"is_debug_mode: env={env_debug}, settings={settings_debug}, result={result}")
+    return result
+
+# Convenience constants for common use cases
+DEBUG_ENV = os.environ.get("DJANGO_DEBUG")
+logger.info(f"DEBUG env: {DEBUG_ENV}")
+logger.info(f"settings.DEBUG: {getattr(settings, 'DEBUG', None)}")
+DEBUG_PERMISSIONS = [AllowAny] if is_debug_mode() else [IsAuthenticated]
+# DEBUG_PERMISSIONS = [AllowAny]
+>>>>>>> origin/prototype
 ALWAYS_AUTH_PERMISSIONS = [IsAuthenticated]
 ALWAYS_PUBLIC_PERMISSIONS = [AllowAny]
 
 # Log the current permission mode
-if getattr(settings, 'DEBUG', False):
-    logger.info("🔓 Authentication disabled for DEBUG mode")
+if is_debug_mode():
+    logger.info("🔓 Authentication disabled for DEBUG mode (robust check)")
 else:
-    logger.info("🔒 Authentication required for production mode")
+    logger.info("🔒 Authentication required for production mode (robust check)")

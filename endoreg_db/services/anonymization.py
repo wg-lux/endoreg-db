@@ -1,6 +1,6 @@
 # endoreg_db/services/anonymization.py
 from django.db import transaction
-from endoreg_db.models import VideoFile, RawPdfFile, VideoState
+from endoreg_db.models import VideoFile, RawPdfFile
 from endoreg_db.services.video_import import import_and_anonymize   # existing func
 
 class AnonymizationService:
@@ -12,19 +12,24 @@ class AnonymizationService:
     # ---------- READ ----------------------------------------------------
     @staticmethod
     def get_status(file_id: int):
+        """
+        Retrieve the anonymization status and media type for a file by its ID.
+        
+        Returns:
+            dict or None: A dictionary containing the file's media type and anonymization status if found, or None if no matching file exists.
+        """
         vf = VideoFile.objects.select_related("state", "sensitive_meta").filter(pk=file_id).first()
         if vf:
             return {
-                "type": "video",
-                "status": vf.state.anonymization_status,
+                "mediaType": "video",
+                "anonymizationStatus": vf.state.anonymization_status,
             }
 
         pdf = RawPdfFile.objects.select_related("sensitive_meta").filter(pk=file_id).first()
         if pdf:
-            status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
             return {
-                "type": "pdf",
-                "status": status,
+                "mediaType": "pdf",
+                "anonymizationStatus": pdf.state.anonymization_status,
             }
         return None
 
@@ -58,7 +63,7 @@ class AnonymizationService:
             return "video"
 
         pdf = RawPdfFile.objects.select_related("sensitive_meta").filter(pk=file_id).first()
-        if pdf:
+        if pdf and pdf.sensitive_meta:
             pdf.sensitive_meta.anonymization_validated = True
             pdf.sensitive_meta.save(update_fields=["anonymization_validated"])
             return "pdf"
@@ -68,7 +73,10 @@ class AnonymizationService:
     @staticmethod
     def list_items():
         """
-        Returns a list of all files with their anonymization status.
+        Retrieve a combined list of all video and PDF files with their anonymization statuses and timestamps.
+        
+        Returns:
+            list: A list of dictionaries, each containing the file's ID, media type, anonymization status, creation date, and last modification date.
         """
         video_files = VideoFile.objects.select_related("state").all()
         pdf_files = RawPdfFile.objects.select_related("sensitive_meta").all()
@@ -76,17 +84,20 @@ class AnonymizationService:
         data = []
         for vf in video_files:
             data.append({
-                "file_id": vf.id,
-                "file_type": "video",
+                "id": vf.id,
+                "mediaType": "video",
                 "anonymizationStatus": vf.state.anonymization_status,
+                "createdAt": vf.date_created,
+                "updatedAt": vf.date_modified,
             })
 
         for pdf in pdf_files:
-            status = "done" if pdf.anonymized_text and pdf.anonymized_text.strip() else "not_started"
             data.append({
-                "file_id": pdf.id,
-                "file_type": "pdf",
-                "anonymizationStatus": status,
+                "id": pdf.id,
+                "mediaType": "pdf",
+                "anonymizationStatus": pdf.state.anonymization_status,
+                "createdAt": pdf.date_created,
+                "updatedAt": pdf.date_modified,
             })
 
         return data

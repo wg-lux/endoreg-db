@@ -22,8 +22,6 @@ class DateValueDistribution(BaseValueDistribution):
     """
     objects = DateValueDistributionManager()
     name = models.CharField(max_length=100)
-    name_de = models.CharField(max_length=100, blank=True, null=True)
-    name_en = models.CharField(max_length=100, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     DISTRIBUTION_CHOICES = [
         ('uniform', 'Uniform'),

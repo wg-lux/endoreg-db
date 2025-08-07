@@ -8,8 +8,6 @@ This module provides Celery tasks for:
 - Progress tracking and status updates
 """
 
-import os
-import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from celery import shared_task
@@ -107,6 +105,69 @@ def apply_video_mask_task(self, video_id: int, mask_type: str = 'device_default'
         raise
 
 
+def _setup_frame_removal(video_id: int, detection_engine: str):
+    from endoreg_db.models import VideoFile
+    from lx_anonymizer.frame_cleaner import FrameCleaner
+    from django.shortcuts import get_object_or_404
+    video = get_object_or_404(VideoFile, pk=video_id)
+    video_path = Path(video.file.path)
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    output_dir = video_path.parent / "processed"
+    output_dir.mkdir(exist_ok=True)
+    output_path = output_dir / f"{video_path.stem}_cleaned{video_path.suffix}"
+    use_minicpm = detection_engine == 'minicpm'
+    cleaner = FrameCleaner(use_minicpm=use_minicpm)
+    return video, video_path, output_path, cleaner
+
+def _detect_sensitive_frames(self, cleaner, video_path, selection_method, manual_frames, total_frames):
+    frames_to_remove = []
+    if selection_method == 'manual' and manual_frames:
+        frames_to_remove = manual_frames
+        self.update_state(state='PROGRESS', meta={'progress': 50, 'message': f'Using manual frame selection: {len(frames_to_remove)} frames'})
+    elif selection_method == 'automatic':
+        self.update_state(state='PROGRESS', meta={'progress': 20, 'message': 'Detecting sensitive frames...'})
+        if total_frames > 10000:
+            self.update_state(state='PROGRESS', meta={'progress': 30, 'message': 'Using statistical sampling for large video...'})
+            sensitive_frames, estimated_ratio, early_stopped = cleaner._sample_frames_coroutine(
+                video_path, total_frames, max_samples=500
+            )
+            frames_to_remove = sensitive_frames
+        else:
+            self.update_state(state='PROGRESS', meta={'progress': 30, 'message': 'Analyzing all frames...'})
+            for abs_i, gray_frame, skip in cleaner._iter_video(video_path, total_frames):
+                progress = 30 + (abs_i / total_frames) * 40  # 30-70% for detection
+                if abs_i % 100 == 0:
+                    self.update_state(state='PROGRESS', meta={
+                        'progress': int(progress),
+                        'message': f'Analyzing frame {abs_i}/{total_frames}...'
+                    })
+                ocr_text, avg_conf, _ = cleaner.frame_ocr.extract_text_from_frame(
+                    gray_frame, roi=None, high_quality=True
+                )
+                if ocr_text:
+                    frame_metadata = cleaner.extract_metadata_deepseek(ocr_text)
+                    if not frame_metadata:
+                        frame_metadata = cleaner.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                    has_sensitive = cleaner.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                    if has_sensitive:
+                        frames_to_remove.append(abs_i)
+    return frames_to_remove
+
+def _remove_frames_from_video(cleaner, video_path, frames_to_remove, output_path, use_streaming):
+    if use_streaming:
+        return cleaner.remove_frames_from_video_streaming(
+            video_path, frames_to_remove, output_path, use_named_pipe=True
+        )
+    else:
+        return cleaner.remove_frames_from_video(
+            video_path, frames_to_remove, output_path
+        )
+
+def _verify_frame_removal_output(output_path):
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        raise RuntimeError("Output video is empty or missing")
+
 @shared_task(bind=True)
 def remove_video_frames_task(self, video_id: int, selection_method: str = 'automatic',
                             detection_engine: str = 'minicpm', use_streaming: bool = True,
@@ -125,98 +186,28 @@ def remove_video_frames_task(self, video_id: int, selection_method: str = 'autom
         # Update task progress
         self.update_state(state='PROGRESS', meta={'progress': 0, 'message': 'Initializing frame removal...'})
         
-        # Import models here to avoid circular imports
-        from endoreg_db.models import VideoFile
-        from lx_anonymizer.frame_cleaner import FrameCleaner
-        
-        # Get video file
-        video = get_object_or_404(VideoFile, pk=video_id)
-        video_path = Path(video.file.path)
-        
-        if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
-        
-        # Create output path
-        output_dir = video_path.parent / "processed"
-        output_dir.mkdir(exist_ok=True)
-        output_path = output_dir / f"{video_path.stem}_cleaned{video_path.suffix}"
+        video, video_path, output_path, cleaner = _setup_frame_removal(video_id, detection_engine)
         
         self.update_state(state='PROGRESS', meta={'progress': 10, 'message': 'Setting up FrameCleaner...'})
         
-        # Initialize FrameCleaner
-        use_minicpm = detection_engine == 'minicpm'
-        cleaner = FrameCleaner(use_minicpm=use_minicpm)
+        # Get total frame count
+        total_frames = cleaner._get_total_frames()
         
-        frames_to_remove = []
-        
-        if selection_method == 'manual' and manual_frames:
-            frames_to_remove = manual_frames
-            self.update_state(state='PROGRESS', meta={'progress': 50, 'message': f'Using manual frame selection: {len(frames_to_remove)} frames'})
-        
-        elif selection_method == 'automatic':
-            self.update_state(state='PROGRESS', meta={'progress': 20, 'message': 'Detecting sensitive frames...'})
-            
-            # Get total frame count
-            total_frames = cleaner._get_total_frames()
-            
-            # Use statistical sampling for large videos
-            if total_frames > 10000:
-                self.update_state(state='PROGRESS', meta={'progress': 30, 'message': 'Using statistical sampling for large video...'})
-                sensitive_frames, estimated_ratio, early_stopped = cleaner._sample_frames_coroutine(
-                    video_path, total_frames, max_samples=500
-                )
-                frames_to_remove = sensitive_frames
-            else:
-                # Full analysis for shorter videos
-                self.update_state(state='PROGRESS', meta={'progress': 30, 'message': 'Analyzing all frames...'})
-                frames_to_remove = []
-                
-                for abs_i, gray_frame, skip in cleaner._iter_video(video_path, total_frames):
-                    # Progress update
-                    progress = 30 + (abs_i / total_frames) * 40  # 30-70% for detection
-                    if abs_i % 100 == 0:  # Update every 100 frames
-                        self.update_state(state='PROGRESS', meta={
-                            'progress': int(progress), 
-                            'message': f'Analyzing frame {abs_i}/{total_frames}...'
-                        })
-                    
-                    # Extract text and check for sensitive content
-                    ocr_text, avg_conf, _ = cleaner.frame_ocr.extract_text_from_frame(
-                        gray_frame, roi=None, high_quality=True
-                    )
-                    
-                    if ocr_text:
-                        # Try LLM extraction first
-                        frame_metadata = cleaner.extract_metadata_deepseek(ocr_text)
-                        if not frame_metadata:
-                            frame_metadata = cleaner.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
-                        
-                        # Check if frame contains sensitive content
-                        has_sensitive = cleaner.frame_metadata_extractor.is_sensitive_content(frame_metadata)
-                        
-                        if has_sensitive:
-                            frames_to_remove.append(abs_i)
+        frames_to_remove = _detect_sensitive_frames(
+            self, cleaner, video_path, selection_method, manual_frames, total_frames
+        )
         
         self.update_state(state='PROGRESS', meta={'progress': 70, 'message': f'Removing {len(frames_to_remove)} frames...'})
         
         # Remove frames using streaming
-        if use_streaming:
-            success = cleaner.remove_frames_from_video_streaming(
-                video_path, frames_to_remove, output_path, use_named_pipe=True
-            )
-        else:
-            success = cleaner.remove_frames_from_video(
-                video_path, frames_to_remove, output_path
-            )
-        
+        success = _remove_frames_from_video(cleaner, video_path, frames_to_remove, output_path, use_streaming)
+
         if not success:
             raise RuntimeError("Frame removal failed")
         
         self.update_state(state='PROGRESS', meta={'progress': 90, 'message': 'Finalizing...'})
         
-        # Verify output
-        if not output_path.exists() or output_path.stat().st_size == 0:
-            raise RuntimeError("Output video is empty or missing")
+        _verify_frame_removal_output(output_path)
         
         result = {
             'status': 'completed',

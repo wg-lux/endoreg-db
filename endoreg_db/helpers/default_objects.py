@@ -318,9 +318,12 @@ def get_default_egd_pdf():
 
 def get_default_video_file():
     """
-    Creates and returns a VideoFile instance using a randomly selected video for the 'egd' examination.
+    Creates and returns a VideoFile instance using a randomly selected EGD examination video.
     
-    Loads required data dependencies, retrieves a random video path for the esophagogastroduodenoscopy (EGD) examination, and creates a VideoFile object with the default center and processor names.
+    Loads all necessary data dependencies, selects a random video file for the 'egd' examination, and initializes a VideoFile object with the default center and processor names. The original video file is retained after creation.
+    
+    Returns:
+        VideoFile: The created and initialized VideoFile instance.
     """
     from .test_video_helper import get_random_video_path_by_examination_alias
     from endoreg_db.models import VideoFile
@@ -346,7 +349,7 @@ def get_default_video_file():
         examination_alias='egd', is_anonymous=False
     )
 
-    video_file = VideoFile.create_from_file(
+    video_file = VideoFile.create_from_file_initialized(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests

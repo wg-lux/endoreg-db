@@ -5,9 +5,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand, CommandError
 from django.conf import settings
-from django.db.models import Sum, Count, Q
-from endoreg_db.models import VideoFile, AnonymizationTask
-from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.models import VideoFile
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +63,11 @@ class Command(BaseCommand):
         self.force = options['force']
         self.max_age_days = options['max_age_days']
         self.emergency_threshold = options['emergency_threshold']
-        
+
+        # Validate emergency_threshold range
+        if not (0 <= self.emergency_threshold <= 100):
+            raise CommandError("The --emergency-threshold value must be between 0 and 100 (inclusive).")
+
         if self.dry_run:
             self.stdout.write(self.style.WARNING('DRY RUN MODE - No files will be deleted'))
         
@@ -159,7 +161,7 @@ class Command(BaseCommand):
         )
         
         self.stdout.write("\n" + "="*60)
-        self.stdout.write(status_color(f"💾 STORAGE STATUS"))
+        self.stdout.write(status_color("💾 STORAGE STATUS"))
         self.stdout.write("="*60)
         self.stdout.write(f"Total Space: {storage_info['total_gb']:.1f} GB")
         self.stdout.write(f"Used Space:  {storage_info['used_gb']:.1f} GB")
@@ -499,20 +501,8 @@ class Command(BaseCommand):
             
             for video in processed_videos:
                 try:
-                    if video.processed_file and hasattr(video.processed_file, 'path'):
-                        processed_path = Path(video.processed_file.path)
-                        
-                        if processed_path.exists():
-                            file_size = processed_path.stat().st_size
-                            
-                            if not self.dry_run:
-                                processed_path.unlink()
-                                video.processed_file = None
-                                video.save(update_fields=['processed_file'])
-                                
-                            total_freed += file_size
-                            self.stdout.write(f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB")
-                            
+                    freed = self._cleanup_processed_video_file(video)
+                    total_freed += freed
                 except Exception as e:
                     logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
                     continue
@@ -522,6 +512,22 @@ class Command(BaseCommand):
         
         self.stdout.write(f"✅ Aggressive processed videos cleanup: {total_freed / (1024**3):.2f} GB freed")
         return total_freed
+
+    def _cleanup_processed_video_file(self, video):
+        """
+        Helper to clean up a single processed video file, update DB, and return freed size in bytes.
+        """
+        if video.processed_file and hasattr(video.processed_file, 'path'):
+            processed_path = Path(video.processed_file.path)
+            if processed_path.exists():
+                file_size = processed_path.stat().st_size
+                if not self.dry_run:
+                    processed_path.unlink()
+                    video.processed_file = None
+                    video.save(update_fields=['processed_file'])
+                self.stdout.write(f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB")
+                return file_size
+        return 0
 
     def display_cleanup_summary(self, before, after):
         """Display cleanup summary."""

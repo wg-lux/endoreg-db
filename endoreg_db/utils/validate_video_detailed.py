@@ -11,9 +11,15 @@ from pathlib import Path
 import json
 import logging
 
-# Add the Django project to the path
-sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
+# Dynamically determine the Django project path
+# previously resolved to "/home/admin/test/lx-annotate/endoreg-db" (endoreg-db project directory)
+project_path = os.environ.get(
+    'ENDOREG_DJANGO_PROJECT_PATH',
+    str(Path(__file__).resolve().parent.parent.parent)
+)
+sys.path.insert(0, project_path)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dev.dev_settings')
+
 
 import django
 django.setup()
@@ -227,8 +233,14 @@ def test_django_video_access(video_id):
 
 
 def main():
-    video_id = 5
-    
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Comprehensive video file validation script for debugging streaming issues.")
+    parser.add_argument('video_id', nargs='?', type=int, default=5, help='ID of the video to validate (default: 5)')
+    args = parser.parse_args()
+
+    video_id = args.video_id
+
     print("🎬 COMPREHENSIVE VIDEO VALIDATION")
     print("=" * 50)
     print(f"Testing video ID: {video_id}")
@@ -258,7 +270,7 @@ def main():
         print("❌ No valid video file path found")
         return
     
-    print(f"\n2️⃣ Testing File System Access...")
+    print("\n2️⃣ Testing File System Access...")
     file_path = Path(video_path)
     print(f"📁 Path: {file_path}")
     print(f"✅ File exists: {file_path.exists()}")
@@ -266,7 +278,7 @@ def main():
     print(f"🔑 Readable: {os.access(file_path, os.R_OK)}")
     
     # Check FFmpeg availability
-    print(f"\n3️⃣ Checking FFmpeg Availability...")
+    print("\n3️⃣ Checking FFmpeg Availability...")
     if not check_ffmpeg_available():
         print("❌ FFmpeg not available - cannot perform detailed video analysis")
         print("💡 Install FFmpeg: sudo apt-get install ffmpeg")
@@ -275,7 +287,7 @@ def main():
         print("✅ FFmpeg is available")
     
     # Analyze video with FFmpeg
-    print(f"\n4️⃣ Video Analysis with FFmpeg...")
+    print("\n4️⃣ Video Analysis with FFmpeg...")
     analysis = analyze_video_with_ffmpeg(video_path)
     
     if analysis['file_readable']:
@@ -300,7 +312,7 @@ def main():
             print(f"   • {warning}")
     
     # Test streaming compatibility
-    print(f"\n5️⃣ Testing Web Streaming Compatibility...")
+    print("\n5️⃣ Testing Web Streaming Compatibility...")
     compatibility = test_video_streaming_compatibility(video_path)
     
     print(f"🌐 Web compatible: {compatibility['web_compatible']}")
@@ -313,7 +325,7 @@ def main():
             print(f"   • {rec}")
     
     # Final diagnosis
-    print(f"\n6️⃣ DIAGNOSIS")
+    print("\n6️⃣ DIAGNOSIS")
     print("=" * 30)
     
     if not analysis['file_readable']:
@@ -332,7 +344,7 @@ def main():
         print("🟢 GOOD: Video appears to be valid and web-compatible")
         print("📋 Issue likely in Django streaming view or network connection")
     
-    print(f"\n🔧 Suggested fixes for streaming issues:")
+    print("\n🔧 Suggested fixes for streaming issues:")
     print("1. Check Django VideoStreamView implementation")
     print("2. Verify file permissions (readable by web server)")
     print("3. Test with a different video file")

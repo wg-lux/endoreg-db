@@ -12,7 +12,11 @@ from .distribution import (
 from .emission import EmissionFactor
 
 from .gender import Gender
-from .information_source import InformationSource
+from .information_source import (
+    InformationSource,
+    InformationSourceType,
+)
+
 from .unit import Unit
 
 __all__ = [
@@ -27,6 +31,7 @@ __all__ = [
     'DateValueDistribution',
     "Gender",
     "InformationSource",
+    "InformationSourceType",
     "Unit",
     "EmissionFactor",
 ]

@@ -1,0 +1,24 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_planarity_default"
+    classification_types: [
+      "colon_lesion_planarity",
+      "morphology"
+    ]
+    name_de: "Planaritätsklassifikation Kolonläsion"
+    name_en: "Colon Lesion Planarity Classification"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_planarity_flat", 
+      "colon_lesion_planarity_flat_elevated",
+      "colon_lesion_planarity_sessile",
+      "colon_lesion_planarity_pedunculated",
+      "colon_lesion_planarity_excavated",
+      "colon_lesion_planarity_unknown"
+    ]

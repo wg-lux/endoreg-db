@@ -16,8 +16,6 @@ class GenderModelTest(TestCase):
         # Create a Unit instance for testing
         self.gender = Gender.objects.create(
             name = "test",  
-            name_de = "Test",
-            name_en = "Test",
             abbreviation = "T",
             description = "This is a Test Gender"
         )

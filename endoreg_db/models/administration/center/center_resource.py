@@ -14,8 +14,6 @@ class CenterResource(models.Model):
         on_delete=models.CASCADE,
         related_name="center_resources",
     )
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     quantity = models.FloatField()
     resource = models.ForeignKey("Resource", on_delete=models.CASCADE)
     transport_emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True,

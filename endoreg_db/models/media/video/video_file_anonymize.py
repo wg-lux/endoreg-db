@@ -209,21 +209,15 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
 @transaction.atomic
 def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     """
-    Anonymizes the video by censoring frames and creating a new processed video file.
-    Requires raw file, extracted frames, validated sensitive meta, and validated 'outside' segments.
-    Raises ValueError or FileNotFoundError on pre-condition failure. Returns True on success.
-
-    Args:
-        video (VideoFile): The video file instance.
-        delete_original_raw (bool): Whether to delete the original raw file and frames after success.
-
+    Performs full anonymization of a video by censoring frames, assembling a processed video file, updating database records, and optionally deleting original raw assets.
+    
+    Raises:
+        ValueError: If required preconditions are not met (e.g., frames not extracted, sensitive metadata not validated).
+        FileNotFoundError: If the raw video file is missing.
+        RuntimeError: If anonymization or video assembly fails.
+    
     Returns:
-        bool: True if anonymization was successful. Raises exception otherwise (caught by pipeline).
-
-    State Transitions:
-        - Pre-condition: Requires state.frames_extracted=True, sensitive_meta validated, outside segments validated.
-        - Post-condition (on success): Sets state.anonymized=True. If delete_original_raw=True, schedules cleanup which sets state.frames_extracted=False.
-        - Post-condition (on failure): No state changes (transaction rollback).
+        bool: True if anonymization completes successfully.
     """
     state = video.get_or_create_state()
 
@@ -236,12 +230,10 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         raise ValueError(f"Frames not extracted for video {video.uuid}, cannot anonymize.")
     if not video.sensitive_meta or not video.sensitive_meta.is_verified:
         raise ValueError(f"Sensitive metadata for video {video.uuid} is not validated. Cannot anonymize.")
-    outside_segments = video.get_outside_segments(only_validated=False)
-    unvalidated_outside = outside_segments.filter(state__is_validated=False)
+    # outside_segments = video.get_outside_segments(only_validated=False)
+    # unvalidated_outside = outside_segments.filter(state__is_validated=False)
     
-    # UNCOMMENT AGAIN AFTER TESTING
-    # if unvalidated_outside.exists():
-    #    raise ValueError(f"Not all 'outside' label segments for video {video.uuid} are validated. Cannot anonymize. Unvalidated count: {unvalidated_outside.count()}")
+    
 
     logger.info("Starting anonymization process for video %s", video.uuid)
 
@@ -299,12 +291,8 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
             ))
 
         video.save(update_fields=update_fields)
-
-        state.anonymized = True
-        state.save(update_fields=['anonymized'])
-        logger.info("Set state.anonymized to True for video %s", video.uuid)
-
-        logger.info("Successfully anonymized video %s. Processed hash: %s", video.uuid, new_processed_hash)
+        video.state.mark_anonymized(save=True)
+        video.refresh_from_db()
         return True
 
     except Exception as e:

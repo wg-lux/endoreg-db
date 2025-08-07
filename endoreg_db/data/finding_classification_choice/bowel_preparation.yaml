@@ -4,36 +4,24 @@
     name: "bowel_prep_boston_0"
     name_de: "0"
     name_en: "bowel_prep_boston_0"
-    classifications:
-      - "bowel_prep_boston"
-      - "bowel_prep_boston_simplified"
 
 - model: endoreg_db.finding_classification_choice
   fields:
     name: "bowel_prep_boston_1"
     name_de: "1"
     name_en: "bowel_prep_boston_1"
-    classifications:
-      - "bowel_prep_boston"
-      - "bowel_prep_boston_simplified"
 
 - model: endoreg_db.finding_classification_choice
   fields:
     name: "bowel_prep_boston_2"
     name_de: "2"
     name_en: "bowel_prep_boston_2"
-    classifications:
-      - "bowel_prep_boston"
-      - "bowel_prep_boston_simplified"
 
 - model: endoreg_db.finding_classification_choice
   fields:
     name: "bowel_prep_boston_3"
     name_de: "3"
     name_en: "bowel_prep_boston_3"
-    classifications:
-      - "bowel_prep_boston"
-      - "bowel_prep_boston_simplified"
 
 # Aronchick
 - model: endoreg_db.finding_classification_choice
@@ -41,30 +29,21 @@
     name: "bowel_prep_aronchick_0"
     name_de: "Inadäquat"
     name_en: "Inadequate"
-    classifications:
-      - "bowel_prep_boston"
-      - "bowel_prep_boston_simplified"
 
 - model: endoreg_db.finding_classification_choice
   fields:
     name: "bowel_prep_aronchick_1"
     name_en: "Fair"
     name_de: "Ausreichend"
-    classifications:
-      - bowel_prep_aronchick
 
 - model: endoreg_db.finding_classification_choice
   fields:
     name: "bowel_prep_aronchick_2"
     name_en: "Good"
     name_de: "Gut"
-    classifications:
-      - bowel_prep_aronchick
     
 - model: endoreg_db.finding_classification_choice
   fields:
     name: "bowel_prep_aronchick_3"
     name_en: "Excellent"
     name_de: "Exzellent"
-    classifications:
-      - bowel_prep_aronchick

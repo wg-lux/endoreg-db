@@ -7,8 +7,6 @@ class CenterModelTest(TestCase):
         # Create a Center instance for testing
         self.center = Center.objects.create(
             name="test_center",
-            name_de="Testzentrum",
-            name_en="Test Center"
         )
 
         

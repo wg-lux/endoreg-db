@@ -21,53 +21,15 @@ class AnonymizationStatus(str, Enum):
     VALIDATED               = "validated"
     FAILED                  = "failed"
 
-class AbstractVideoState(AbstractState):
-    """
-    Abstract base class for video-related states.
-
-    Tracks common processing state flags for video entities.
-
-    Expected State Transitions:
-    - `frames_extracted`: True after `VideoFile.extract_frames()` succeeds. False after `VideoFile.delete_frames()` or `_cleanup_raw_assets()`.
-    - `frames_initialized`: True after `_initialize_frames()` (called by `extract_frames`) succeeds. False after `VideoFile.delete_frames()`.
-    - `sensitive_data_retrieved`: True after `VideoFile.update_text_metadata()` runs (even if no text found).
-    - `anonymized`: True after `VideoFile.anonymize()` succeeds.
-    - `initial_prediction_completed`: True after `VideoFile.predict_video()` (called by `pipe_1`) succeeds.
-    - `lvs_created`: True after `_convert_sequences_to_db_segments()` (called by `pipe_1`) succeeds.
-    - `lvs_annotated`: (Currently unused/unmanaged by core logic).
-    - `frame_count`: Set by `_initialize_frames()`. Reset to None by `_extract_frames()` on failure.
-    """
-    if TYPE_CHECKING:
-        video_file: Optional["VideoFile"]
-
-    # --- Processing State Flags ---
-    frames_extracted = models.BooleanField(default=False, help_text="Have frame image files been extracted from the raw video?")
-    frames_initialized = models.BooleanField(default=False, help_text="Have Frame model objects been created in the DB for the extracted frames?")
-    sensitive_data_retrieved = models.BooleanField(default=False, help_text="Has OCR text been extracted and processed into SensitiveMeta?")
-    anonymized = models.BooleanField(default=False, help_text="Has the video been processed into an anonymized version (processed_file created)?")
-
-    # --- Prediction/Annotation State Flags ---
-    initial_prediction_completed = models.BooleanField(default=False, help_text="Have initial AI predictions been run and sequences stored?")
-    lvs_created = models.BooleanField(default=False, help_text="Have LabelVideoSegments been created from stored prediction sequences?")
-    lvs_annotated = models.BooleanField(default=False, help_text="Have annotations been generated from LabelVideoSegments? (Manual Step/Future)")
-
-    # --- Optional Fields ---
-    frame_count = models.PositiveIntegerField(
-        blank=True,
-        null=True,
-        default=None,
-        help_text="Number of frames extracted and initialized in the DB.",
-    )
-
-    class Meta:
-        abstract = True
-
 class VideoState(models.Model):
     """
     Tracks the processing state of a VideoFile instance.
     Uses BooleanFields for clear, distinct states.
     """
     # Frame related states
+    if TYPE_CHECKING:
+        video_file: Optional["VideoFile"]
+        
     frames_extracted = models.BooleanField(default=False, help_text="True if raw frames have been extracted to files.")
     frames_initialized = models.BooleanField(default=False, help_text="True if Frame DB objects have been created.")
     frame_count = models.PositiveIntegerField(null=True, blank=True, help_text="Number of frames extracted/initialized.")
@@ -87,6 +49,7 @@ class VideoState(models.Model):
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
     anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
+    anonymization_status: AnonymizationStatus
     
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
@@ -124,7 +87,6 @@ class VideoState(models.Model):
             f"DateCreated={self.date_created.isoformat()}",
             f"DateModified={self.date_modified.isoformat()}"
         ]
-        
         return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
 
     @property
@@ -151,10 +113,83 @@ class VideoState(models.Model):
             self.save(update_fields=["sensitive_meta_processed", "date_modified"])
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
+        """
+        Mark the anonymization process as validated for this video state.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately.
+        """
         self.anonymization_validated = True
         if save:
             self.save(update_fields=["anonymization_validated", "date_modified"])
+
+    def mark_frames_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video as having its frames extracted.
         
+        Parameters:
+            save (bool): If True, persist the change to the database immediately.
+        """
+        self.frames_extracted = True
+        if save:
+            self.save(update_fields=["frames_extracted", "date_modified"])
+
+    def mark_frames_not_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video as having no extracted frames.
+        
+        If `save` is True, updates the database record for this state.
+        """
+        self.frames_extracted = False
+        if save:
+            self.save(update_fields=["frames_extracted", "date_modified"])
+
+    def mark_anonymized(self, *, save: bool = True) -> None:
+        """
+        Mark the video as anonymized by setting the anonymized flag to True.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
+        self.anonymized = True
+        if save:
+            self.save(update_fields=["anonymized", "date_modified"])
+
+    def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
+        """
+        Mark the initial AI prediction as completed for this video state.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately.
+        """
+        self.initial_prediction_completed = True
+        if save:
+            self.save(update_fields=["initial_prediction_completed", "date_modified"])
+
+    def mark_video_meta_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video metadata as extracted for this video state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
+        self.video_meta_extracted = True
+        if save:
+            self.save(update_fields=["video_meta_extracted", "date_modified"])
+
+    def mark_text_meta_extracted(self, *, save: bool = True) -> None:
+        """
+        Mark the video as having its text metadata extracted.
+        
+        Parameters:
+        	save (bool): If True, immediately saves the updated state to the database.
+        """
+        self.text_meta_extracted = True
+        if save:
+            self.save(update_fields=["text_meta_extracted", "date_modified"])
+    
+    
+
     class Meta:
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"

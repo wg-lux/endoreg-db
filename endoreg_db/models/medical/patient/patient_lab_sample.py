@@ -20,13 +20,9 @@ class PatientLabSampleType(models.Model):
 
     Attributes:
         name (str): The name of the patient lab sample type.
-        name_de (str): The German name of the patient lab sample type.
-        name_en (str): The English name of the patient lab sample type.
         description (str): A description of the patient lab sample type.
     """
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = PatientLabSampleTypeManager()

@@ -13,8 +13,6 @@ class Gender(models.Model):
     objects = GenderManager()
 
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     abbreviation = models.CharField(max_length=255, null=True)
     description = models.TextField(blank=True, null=True)
 
