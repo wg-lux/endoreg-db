@@ -1,0 +1,20 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_surface_intact_default"
+    classification_types: [
+      "colon_lesion_surface_intact",
+      "morphology"
+    ]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_surface_intact",
+      "colon_lesion_surface_eroded",
+      "colon_lesion_surface_ulcerated"
+    ]

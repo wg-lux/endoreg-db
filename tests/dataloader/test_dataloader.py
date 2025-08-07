@@ -18,7 +18,7 @@ from ..helpers.data_loader import (
     load_pdf_type_data,
     load_report_reader_flag_data,
     load_requirement_data,
-    load_information_source,
+    load_information_source_data,
     load_unit_data,
     load_risk_data,
     load_base_db_data,
@@ -45,7 +45,7 @@ class TestDataLoader(TestCase):
         Test if the load_information_source command runs without errors.
         """
         try:
-            load_information_source()
+            load_information_source_data()
         except Exception as e:
             self.fail(f"load_information_source command failed: {e}")
 
@@ -210,7 +210,7 @@ class TestDataLoader(TestCase):
         try:
             # Load necessary dependencies first
             load_unit_data()
-            load_information_source()
+            load_information_source_data()
             load_disease_data()
             load_event_data()
             # Load the target data

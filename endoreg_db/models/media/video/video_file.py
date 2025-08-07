@@ -9,7 +9,7 @@ from django.db import models
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db.models import F
-
+from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
@@ -80,9 +80,19 @@ if TYPE_CHECKING:
         VideoState,
         ModelMeta,
         VideoImportMeta,
+        FFMpegMeta,
     )   
 class VideoQuerySet(models.QuerySet):
     def next_after(self, last_id=None):
+        """
+        Return the next VideoFile instance with a primary key greater than the given last_id.
+        
+        Parameters:
+            last_id (int or None): The primary key to start after. If None or invalid, returns the first instance.
+        
+        Returns:
+            VideoFile or None: The next VideoFile instance, or None if not found.
+        """
         if last_id is not None:
             try:
                 last_id = int(last_id)
@@ -176,8 +186,36 @@ class VideoFile(models.Model):
         ai_model_meta: "ModelMeta"
         import_meta: "VideoImportMeta"
 
+
+    @property
+    def ffmpeg_meta(self) -> "FFMpegMeta":
+        """
+        Return the associated FFMpegMeta instance for this video, initializing video specs if necessary.
+        
+        Returns:
+            FFMpegMeta: The FFMpegMeta object containing metadata for this video.
+        """
+        from endoreg_db.models import FFMpegMeta
+        if self.video_meta is not None:
+            return self.video_meta.ffmpeg_meta
+        else:
+            self.initialize_video_specs()
+            ffmpeg_meta = self.video_meta.ffmpeg_meta if self.video_meta else None
+            assert isinstance(ffmpeg_meta, FFMpegMeta), "Expected FFMpegMeta instance."
+            return ffmpeg_meta
+
+
     @property
     def active_file_url(self) -> str:
+        """
+        Return the URL of the active video file, preferring the processed file if available, otherwise the raw file.
+        
+        Returns:
+            str: The URL of the active video file.
+        
+        Raises:
+            AssertionError: If neither a raw nor processed file is available.
+        """
         _file = self.active_file
         assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
         url = _file.url
@@ -206,14 +244,125 @@ class VideoFile(models.Model):
     get_frames = _get_frames
     get_frame = _get_frame
     get_frame_range = _get_frame_range
+    get_duration = _calc_duration_vf
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
+
+    def mark_sensitive_meta_verified(self):
+        """
+        Mark the sensitive metadata associated with this video as verified.
+        
+        This method updates the linked SensitiveMeta instance to indicate that both date of birth and names have been verified.
+        """
+        sm = self.sensitive_meta
+        sm.mark_dob_verified()
+        sm.mark_names_verified()
+
+    def mark_anonymized(self):
+        """
+        Mark the video file as anonymized by updating its state.
+        
+        This method should be called after the video has been successfully anonymized. It updates the associated state to reflect the anonymized status and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_anonymized()
+        logger.debug(f"Video {self.uuid} state set to anonymized.")
+        self.refresh_from_db()
+
+    def mark_anonymization_validated(self):
+        """
+        Mark the video file's state as 'anonymization validated'.
+        
+        Call this method after the video's anonymization process has been successfully validated. Updates the associated state and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_anonymization_validated()
+        logger.debug(f"Video {self.uuid} state set to anonymization validated.")
+        self.refresh_from_db()
+    
+    def mark_sensitive_meta_processed(self):
+        """
+        Mark the video file as having its sensitive metadata processed.
+        
+        Updates the associated state to indicate that sensitive metadata processing is complete and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_sensitive_meta_processed()
+        logger.debug(f"Video {self.uuid} state set to sensitive meta processed.")
+        self.refresh_from_db()
+    
+    def mark_frames_extracted(self):
+        """
+        Mark this video file as having its frames extracted.
+        
+        Updates the associated state to indicate that frame extraction is complete and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_frames_extracted()
+        logger.debug(f"Video {self.uuid} marked as having frames extracted.")
+        self.refresh_from_db()
+
+    def mark_frames_not_extracted(self):
+        """
+        Mark the video file as not having frames extracted.
+        
+        Updates the associated state to indicate that frame extraction was not performed or failed, and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_frames_not_extracted()
+        logger.debug(f"Video {self.uuid} marked as not having frames extracted.")
+        self.refresh_from_db()
+
+    def mark_video_meta_extracted(self):
+        """
+        Mark this video file as having its video metadata extracted.
+        
+        Updates the associated state to indicate that video metadata extraction is complete and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_video_meta_extracted()
+        logger.debug(f"Video {self.uuid} state set to video meta extracted.")
+        self.refresh_from_db()
+
+    def mark_text_meta_extracted(self):
+        """
+        Mark the video file as having its text metadata extracted.
+        
+        Updates the associated state to indicate that text metadata extraction is complete and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_text_meta_extracted()
+        logger.debug(f"Video {self.uuid} state set to text meta extracted.")
+        self.refresh_from_db()
+
+    def mark_initial_prediction_completed(self):
+        """
+        Mark the video as having completed its initial AI predictions.
+        
+        Updates the associated state to indicate that initial AI predictions are finished and refreshes the instance from the database.
+        """
+        state = self.state
+        state.mark_initial_prediction_completed()
+        logger.debug(f"Video {self.uuid} state set to initial prediction completed.")
+        self.refresh_from_db()
 
     # Define new methods that call the helper functions
     def extract_specific_frame_range(self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs) -> bool:
         """
-        Extracts frames for a specific range [start_frame, end_frame).
-        kwargs can include 'quality', 'ext', 'verbose'.
+        Extract frames from the video within the specified frame range.
+        
+        Parameters:
+            start_frame (int): The starting frame number (inclusive).
+            end_frame (int): The ending frame number (exclusive).
+            overwrite (bool): Whether to overwrite existing frames in the range.
+        
+        Returns:
+            bool: True if frame extraction was successful, False otherwise.
+        
+        Additional keyword arguments:
+            quality (int, optional): Quality setting for extracted frames.
+            ext (str, optional): File extension for extracted frames.
+            verbose (bool, optional): Whether to enable verbose output.
         """
         quality = kwargs.get('quality', 2)
         ext = kwargs.get('ext', "jpg")
@@ -276,10 +425,23 @@ class VideoFile(models.Model):
 
     @property
     def has_raw(self) -> bool:
+        """
+        Return True if a raw video file is associated with this instance.
+        """
         return bool(self.raw_file and self.raw_file.name)
+    
 
     @property
     def active_file(self) -> File:
+        """
+        Return the active video file, preferring the processed file if available.
+        
+        Returns:
+            File: The processed file if present; otherwise, the raw file.
+        
+        Raises:
+            ValueError: If neither a processed nor a raw file is available.
+        """
         if self.is_processed:
             return self.processed_file
         elif self.has_raw:
@@ -288,21 +450,23 @@ class VideoFile(models.Model):
             raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
 
     @property
-    def active_file_path(self) -> Optional[Path]:
+    def active_file_path(self) -> Path:
+        """
+        Return the filesystem path of the active video file.
+        
+        Returns:
+            Path: The path to the processed file if available, otherwise the raw file.
+        
+        Raises:
+            ValueError: If neither a processed nor raw file is present.
+        """
         active = self.active_file
-        try:
-            if active == self.processed_file:
-                return _get_processed_file_path(self)
-            elif active == self.raw_file:
-                return _get_raw_file_path(self)
-            else:
-                return None
-        except Exception as e:
-            logger.warning("Could not get path for active file of VideoFile %s: %s", self.uuid, e, exc_info=True)
-            return None
-
-
-
+        if active == self.processed_file:
+            return _get_processed_file_path(self)
+        elif active == self.raw_file:
+            return _get_raw_file_path(self)
+        else:
+            raise ValueError("No active file path available. VideoFile has neither raw nor processed file.")
 
 
     @classmethod
@@ -346,8 +510,10 @@ class VideoFile(models.Model):
     
     def initialize(self):
         """
-        Initializes the VideoFile instance by setting up its properties and state.
-        This method should be called after the VideoFile instance is created.
+        Initialize the VideoFile instance by updating metadata, setting up video specs, assigning frame directory, ensuring related state and sensitive metadata exist, saving the instance, and initializing frames.
+        
+        Returns:
+            VideoFile: The initialized VideoFile instance.
         """
 
         self.update_video_meta()
@@ -358,14 +524,20 @@ class VideoFile(models.Model):
         self.set_frame_dir()
 
         # Create a new state if it doesn't exist
-        self.get_or_create_state()
+        self.state = self.get_or_create_state()
 
+        self.sensitive_meta = self.get_or_create_sensitive_meta()
+        self.save()
         # Initialize frames based on the video specs
         self.initialize_frames()
+
 
         return self
 
     def __str__(self):
+        """
+        Return a human-readable string summarizing the video's state, active file name, and UUID.
+        """
         active_path = self.active_file_path
         file_name = active_path.name if active_path else "No file"
         state = "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
@@ -373,31 +545,46 @@ class VideoFile(models.Model):
 
     def save(self, *args, **kwargs):
         # Ensure state exists or is created before the main save operation
-        self.get_or_create_state()
         # Now call the original save method
+        """
+        Saves the VideoFile instance to the database.
+        
+        Overrides the default save method to persist changes to the VideoFile model.
+        """
         super().save(*args, **kwargs)
 
     def get_or_create_state(self) -> "VideoState":
         """
-        Gets the related VideoState instance, creating one if it doesn't exist.
-        Does not save the VideoFile instance itself.
+        Return the related VideoState instance for this video, creating and assigning a new one if none exists.
+        
+        Returns:
+            VideoState: The associated VideoState instance.
         """
         if self.state is None:
             self.state = VideoState.objects.create()
         return self.state
     
+    def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
+        """
+        Retrieve the associated SensitiveMeta instance for this video, creating and assigning one if it does not exist.
+        
+        Returns:
+            SensitiveMeta: The related SensitiveMeta instance.
+        """
+        from endoreg_db.models import SensitiveMeta
+        if self.sensitive_meta is None:
+            self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
+        return self.sensitive_meta
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
         """
-        Retrieves video segments labeled as "outside" for this video.
+        Return all video segments labeled as "outside" for this video.
         
-        If `only_validated` is True, only segments with a validated state are returned. If the "outside" label does not exist or an error occurs, an empty queryset is returned.
-        
-        Args:
-            only_validated: Whether to include only segments with a validated state.
+        Parameters:
+            only_validated (bool): If True, only segments with a validated state are included.
         
         Returns:
-            A queryset of LabelVideoSegment instances labeled as "outside".
+            QuerySet: A queryset of LabelVideoSegment instances labeled as "outside". Returns an empty queryset if the label does not exist or an error occurs.
         """
         try:
             outside_label = Label.objects.get(name__iexact="outside")
@@ -426,11 +613,10 @@ class VideoFile(models.Model):
         
     def count_unmodified_others(self) -> int:
         """
-        Counts other VideoFile records that have never been modified since creation.
+        Count the number of other VideoFile instances that have not been modified since creation.
         
         Returns:
-            The number of VideoFile instances, excluding this one, where the modification
-            timestamp equals the creation timestamp.
+            int: The count of VideoFile records, excluding this instance, where the modification timestamp matches the creation timestamp.
         """
         return (
             VideoFile.objects
@@ -439,3 +625,21 @@ class VideoFile(models.Model):
             .count()                                  # run a fast COUNT(*) on the filtered set
         )
 
+
+    def frame_number_to_s(self, frame_number: int) -> float:
+        """
+        Convert a frame number to its corresponding time in seconds based on the video's frames per second (FPS).
+        
+        Parameters:
+            frame_number (int): The frame number to convert.
+        
+        Returns:
+            float: The time in seconds corresponding to the given frame number.
+        
+        Raises:
+            ValueError: If the video's FPS is not set or is less than or equal to zero.
+        """
+        fps = self.get_fps()
+        if fps is None or fps <= 0:
+            raise ValueError("FPS must be set and greater than zero.")
+        return frame_number / fps

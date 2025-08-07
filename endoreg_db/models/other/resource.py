@@ -8,10 +8,14 @@ class Resource(models.Model):
     objects = ResourceManager()
 
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
 
     def natural_key(self):
+        """
+        Return a tuple representing the natural key for this resource instance.
+        
+        Returns:
+            tuple: A one-element tuple containing the resource's name.
+        """
         return (self.name,)
     
     def __str__(self):

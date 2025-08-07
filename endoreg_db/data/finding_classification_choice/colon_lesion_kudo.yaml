@@ -1,0 +1,23 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_3s"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_3l"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_4"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_5i"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_5n"

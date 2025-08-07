@@ -1,0 +1,49 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_size_categorical"
+    classification_types: [
+      "colon_lesion_size",
+      "morphology"
+    ]
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+      "tumor",
+      "erosion",
+      "ulcer",
+      "scar"
+    ]
+    choices: [
+      "colon_lesion_size_categorical_diminutive",
+      "colon_lesion_size_categorical_small",
+      "colon_lesion_size_categorical_medium",
+      "colon_lesion_size_categorical_large"
+    ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_size_mm"
+    classification_types: [
+      "colon_lesion_size",
+      "morphology"
+    ]
+    name_de: "Größenklassifikation Kolonläsion (numerisch)"
+    name_en: "Colon Lesion Size Classification (numerical)"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+      "tumor",
+      "erosion",
+      "ulcer",
+      "scar"
+    ]
+    choices: [
+      "colon_lesion_size_oval_mm"
+    ]
+

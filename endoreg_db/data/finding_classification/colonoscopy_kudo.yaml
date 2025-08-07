@@ -1,0 +1,25 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_kudo"
+    classification_types: [
+      "colon_lesion_advanced_imaging",
+      "morphology"
+    ]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_kudo_1",
+      "colon_lesion_kudo_2",
+      "colon_lesion_kudo_3s",
+      "colon_lesion_kudo_3l",
+      "colon_lesion_kudo_4",
+      "colon_lesion_kudo_5i",
+      "colon_lesion_kudo_5n",
+    ]

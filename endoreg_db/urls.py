@@ -21,7 +21,6 @@ from .views.Frames_NICE_and_PARIS_classifications_views import (
 from .views.keycloak_views import keycloak_login, keycloak_callback, public_home
 #from .views.feature_selection_view import FetchSingleFramePredictionView // its implemented in endo-ai other project need to add here
 from .views.video_segmentation_views import VideoViewSet, VideoLabelView, UpdateLabelSegmentsView
-from .views.views_for_timeline import video_timeline_view
 from .views.raw_pdf_meta_validation_views import PDFFileForMetaView
 from .views.raw_pdf_meta_validation_views import UpdateSensitiveMetaView
 from .views.raw_pdf_anony_text_validation_views import RawPdfAnonyTextView, UpdateAnonymizedTextView
@@ -32,14 +31,11 @@ from .views.examination_views import (
     get_location_classification_choices_for_exam,
     get_interventions_for_exam,
     get_instruments_for_exam,
-    # New imports for restructured frontend
     get_location_classifications_for_exam,
     get_findings_for_exam,
     get_location_choices_for_classification,
     get_interventions_for_finding,
-    # Import for video examinations
     get_examinations_for_video,
-    # NEW: Add the missing API endpoints for ExaminationForm.vue
     get_findings_for_examination,
     get_location_classifications_for_finding,
     get_morphology_classifications_for_finding,
@@ -83,7 +79,6 @@ from .views.upload_views import (
     UploadStatusView
 )
 
-# Add missing examination CRUD imports
 from .views.examination_crud_views import (
     ExaminationCreateView,
     ExaminationDetailView,
@@ -100,7 +95,7 @@ from .views.sensitive_meta_views import (
 
 # Add missing anonymization overview imports
 from .views.anonymization_overview import (
-    anonymization_overview,
+    AnonymizationOverviewView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
@@ -205,9 +200,10 @@ urlpatterns = [
     path('start-examination/', start_examination, name="start_examination"),
     path('get-location-choices/<int:location_id>/', get_location_choices, name="get_location_choices"),
     path('get-morphology-choices/<int:morphology_id>/', get_morphology_choices, name="get_morphology_choices"),
+    
+    
     path('examinations/', ExaminationViewSet.as_view({'get': 'list'}), name='examination-list'),
     
-    # NEW: Examination CRUD endpoints for SimpleExaminationForm
     # POST /api/examinations/create/ - Create new examination
     # GET /api/examinations/{id}/ - Get examination details
     # PATCH /api/examinations/{id}/ - Update examination
@@ -239,7 +235,7 @@ urlpatterns = [
     ),
     
     # URL patterns for anonymization overview
-    path('anonymization/items/overview/', anonymization_overview, name='anonymization_items_overview'),
+    path('anonymization/items/overview/', AnonymizationOverviewView.as_view(), name='anonymization_items_overview'),
     path('anonymization/<int:file_id>/current/', anonymization_current, name='set_current_for_validation'),
     path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
     path('anonymization/<int:file_id>/status/', anonymization_status, name='get_anonymization_status'),
@@ -453,11 +449,6 @@ urlpatterns = [
         name='create_patient_finding_morphology'
     ),
 
-    # ---------------------------------------------------------------------------------------
-
-    #this is for, to test the timeline
-    #need to delete this url and also endoreg_db_production/endoreg_db/views/views_for_timeline.py and endoreg_db_production/endoreg_db/templates/timeline.html
-    path('video/<int:video_id>/timeline/', video_timeline_view, name='video_timeline'),
 
     # ---------------------------------------------------------------------------------------
     # STATISTICS API ENDPOINTS

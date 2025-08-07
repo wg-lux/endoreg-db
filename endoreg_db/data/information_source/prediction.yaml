@@ -1,0 +1,7 @@
+- model: endoreg_db.InformationSource
+  fields:
+    name: "default_prediction"
+    information_source_types: [
+      "prediction"
+    ]
+    

@@ -37,21 +37,24 @@ class CommonLabValuesTest(TestCase):
         
         cls.no_range_lv, _ = LabValue.objects.get_or_create(
             name="no_range_test_lv_common",
-            defaults={'name_de': "Kein Bereich LV", 'name_en': "No Range LV"}
+            defaults={
+                # 'name_de': "Kein Bereich LV", 
+                # 'name_en': "No Range LV"
+            }
         )
         cls.min_only_lv, _ = LabValue.objects.get_or_create(
             name="min_only_test_lv_common",
             defaults={
-                'name_de': "Nur Min LV", 
-                'name_en': "Min Only LV",
+                # 'name_de': "Nur Min LV", 
+                # 'name_en': "Min Only LV",
                 'default_normal_range': {"min": 10}
             }
         )
         cls.max_only_lv, _ = LabValue.objects.get_or_create(
             name="max_only_test_lv_common",
             defaults={
-                'name_de': "Nur Max LV", 
-                'name_en': "Max Only LV",
+                # 'name_de': "Nur Max LV", 
+                # 'name_en': "Max Only LV",
                 'default_normal_range': {"max": 100}
             }
         )

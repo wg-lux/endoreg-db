@@ -6,8 +6,6 @@ class RuleManager(models.Manager):
 
 class Rule(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     attribute_key = models.CharField(max_length=255)
     rule_type = models.ForeignKey("RuleType", on_delete=models.CASCADE)
@@ -20,5 +18,10 @@ class Rule(models.Model):
         verbose_name_plural = 'Rules'
 
     def natural_key(self):
+        """
+        Return a tuple representing the natural key for this Rule instance.
+        
+        Returns:
+            tuple: A one-element tuple containing the Rule's unique name.
+        """
         return (self.name,)
-    

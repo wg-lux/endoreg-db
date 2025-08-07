@@ -29,18 +29,6 @@ class ScheduledDays(models.Model):
         unique=True,
         help_text="Name of the scheduled days.",
     )
-    name_de = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True,
-        help_text="Name of the scheduled days in German.",
-    )
-    name_en = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True,
-        help_text="Name of the scheduled days in English.",
-    )
     working_days = models.BooleanField(
         null=True,
         blank=True,

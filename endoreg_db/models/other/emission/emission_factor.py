@@ -22,16 +22,12 @@ class EmissionFactor(models.Model):
 
     Attributes:
         name (str): The name of the emission factor.
-        name_de (str): The German name of the emission factor.
-        name_en (str): The English name of the emission factor.
         unit (ForeignKey): The unit associated with the emission factor.
         value (float): The value of the emission factor.
     """
     objects = EmissionFactorManager()
 
     name = models.CharField(max_length=255)
-    name_de = models.CharField(max_length=255, null=True)
-    name_en = models.CharField(max_length=255, null=True)
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
     value = models.FloatField()
 
