@@ -1,5 +1,3 @@
-# endoreg_db/api/views/anonymization/overview.py
-
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -11,17 +9,16 @@ from rest_framework.pagination import PageNumberPagination
 from django.db.models import Prefetch, QuerySet
 from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
-from endoreg_db.serializers.misc.file_overview import FileOverviewSerializer
-from endoreg_db.serializers.misc.vop_patient_data import VoPPatientDataSerializer as PatientDataSerializer
+from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
 from django.http import JsonResponse
 import logging
+
 logger = logging.getLogger(__name__)
 PERMS = [EnvironmentAwarePermission]
 
 # ---------- overview ----------------------------------------------------
 class NoPagination(PageNumberPagination):
     page_size = None
-
 
 class AnonymizationOverviewView(ListAPIView):
     """
@@ -31,7 +28,6 @@ class AnonymizationOverviewView(ListAPIView):
     """
     serializer_class = FileOverviewSerializer
     permission_classes = [EnvironmentAwarePermission]
-    #   
     pagination_class = NoPagination
 
     def get_queryset(self):
@@ -52,10 +48,16 @@ class AnonymizationOverviewView(ListAPIView):
             .only("id", "file", "created_at", 
                 "text", "anonymized_text",       # These fields only exist on RawPdfFile
                 "sensitive_meta")
-
         )
 
         return list(qs_video) + list(qs_pdf)
+
+# Keep the legacy function-based view for backward compatibility
+@api_view(["GET"])
+@permission_classes(PERMS)
+def anonymization_overview(request):
+    data = AnonymizationService.list_items()
+    return Response(data)
 
 # ---------- status ------------------------------------------------------
 @api_view(["GET"])
@@ -90,8 +92,6 @@ def validate_anonymization(request, file_id: int):
     return Response({"detail": f"Anonymization validated for {kind} file"})
 
 @api_view(['GET', 'POST', 'PUT'])
-
-
 @permission_classes(PERMS)
 def anonymization_current(request, file_id):
     """
@@ -104,23 +104,16 @@ def anonymization_current(request, file_id):
         return Response(serializer.data)
     except VideoFile.DoesNotExist:
         pass
+    
     # Try to find the file in RawPdfFile
     try:
         pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
         serializer = PatientDataSerializer(pdf_file, context={'request': request})
         return Response(serializer.data)
-
     except RawPdfFile.DoesNotExist:
         pass
-
     except (ValueError, TypeError, AttributeError) as e:
-        logger.error(f"Error in set_current_for_validation: {e}")
-
+        logger.error(f"Error in anonymization_current: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
-
-    
-
-
     return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
-    
