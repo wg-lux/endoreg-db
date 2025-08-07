@@ -6,7 +6,7 @@ the DEBUG setting and other environment configurations.
 """
 
 from django.conf import settings
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.decorators import permission_classes as drf_permission_classes
 from functools import wraps
 import logging
@@ -90,7 +90,7 @@ def get_auth_required():
     return not getattr(settings, 'DEBUG', False)
 
 
-class EnvironmentAwarePermission:
+class EnvironmentAwarePermission(BasePermission):
     """
     Custom permission class that can be used directly in DRF views.
     """
@@ -123,6 +123,8 @@ class EnvironmentAwarePermission:
         return self.has_permission(request, view)
 
 
+<<<<<<< HEAD
+=======
 def is_debug_mode():
     """
     Robustly determine if debug mode is enabled, checking both Django settings and environment variable.
@@ -140,6 +142,7 @@ logger.info(f"DEBUG env: {DEBUG_ENV}")
 logger.info(f"settings.DEBUG: {getattr(settings, 'DEBUG', None)}")
 DEBUG_PERMISSIONS = [AllowAny] if is_debug_mode() else [IsAuthenticated]
 # DEBUG_PERMISSIONS = [AllowAny]
+>>>>>>> origin/prototype
 ALWAYS_AUTH_PERMISSIONS = [IsAuthenticated]
 ALWAYS_PUBLIC_PERMISSIONS = [AllowAny]
 

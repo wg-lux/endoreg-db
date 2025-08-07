@@ -8,7 +8,11 @@ from ...models import (
     VideoFile, LabelVideoSegment, Examination, 
     SensitiveMeta, PatientExamination
 )
+<<<<<<< HEAD:endoreg_db/views/stats_views.py
+from ..utils.permissions import EnvironmentAwarePermission
+=======
 from ...utils.permissions import DEBUG_PERMISSIONS
+>>>>>>> origin/prototype:endoreg_db/views/misc/stats.py
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,7 @@ class ExaminationStatsView(APIView):
     API-Endpoint für Examination-Statistiken
     GET /api/examinations/stats/
     """
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
     
     def get(self, request):
         try:
@@ -72,7 +76,7 @@ class VideoSegmentStatsView(APIView):
     API-Endpoint für Video-Segment-Statistiken
     GET /api/video-segments/stats/
     """
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
     
     def get(self, request):
         try:
@@ -117,7 +121,7 @@ class SensitiveMetaStatsView(APIView):
     API-Endpoint für SensitiveMeta-Statistiken
     GET /api/video/sensitivemeta/stats/
     """
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
     
     def get(self, request):
         try:
@@ -179,7 +183,7 @@ class GeneralStatsView(APIView):
     API-Endpoint für allgemeine Dashboard-Statistiken
     GET /api/stats/
     """
-    permission_classes = DEBUG_PERMISSIONS
+    permission_classes = [EnvironmentAwarePermission]
     
     def get(self, request):
         try:
