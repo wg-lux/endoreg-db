@@ -87,12 +87,8 @@ class VideoState(models.Model):
             f"DateCreated={self.date_created.isoformat()}",
             f"DateModified={self.date_modified.isoformat()}"
         ]
-<<<<<<< HEAD
-        
-=======
         return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
 
->>>>>>> origin/prototype
     @property
     def anonymization_status(self) -> AnonymizationStatus:
         """
@@ -197,5 +193,3 @@ class VideoState(models.Model):
     class Meta:
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"
-
-
