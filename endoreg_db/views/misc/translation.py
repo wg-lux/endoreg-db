@@ -2,8 +2,7 @@
 Automatisierte Internationalisierung für medizinische Terminologie
 Ersetzt manuelle name_de/name_en Felder durch django-modeltranslation
 """
-from modeltranslation.translator import TranslationOptions
-from modeltranslation.decorators import register
+from modeltranslation.translator import TranslationOptions, translator
 
 from endoreg_db.models import (
     Examination,
@@ -14,39 +13,44 @@ from endoreg_db.models import (
 )
 
 
-@register(Examination)
 class ExaminationTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
 
+translator.register(Examination, ExaminationTranslationOptions)
 
-@register(model_or_iterable=Finding)
+
 class FindingTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
 
+translator.register(Finding, FindingTranslationOptions)
 
-@register(FindingClassification)
+
 class FindingClassificationTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
 
+translator.register(FindingClassification, FindingClassificationTranslationOptions)
 
-@register(FindingClassificationChoice)
+
 class FindingClassificationChoiceTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
 
+translator.register(FindingClassificationChoice, FindingClassificationChoiceTranslationOptions)
 
-@register(FindingIntervention)
+
 class InterventionTranslationOptions(TranslationOptions):
     fields = ('name', 'description')
     required_languages = ('de', 'en')
     fallback_languages = {'default': ('en', 'de')}
+
+translator.register(FindingIntervention, InterventionTranslationOptions)
 
 
 # Mixin für automatische Sprachauswahl in Serializers
