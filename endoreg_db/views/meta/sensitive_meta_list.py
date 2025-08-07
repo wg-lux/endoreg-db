@@ -4,7 +4,9 @@ from endoreg_db.serializers.meta.sensitive_meta_detail import SensitiveMetaDetai
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +19,7 @@ class SensitiveMetaListView(APIView):
     GET: Returns paginated list of SensitiveMeta entries
     """
 
-    permission_classes = DEBUG_PERMISSIONS  
+    permission_classes = [EnvironmentAwarePermission]  
 
     def get(self, request):
         """

@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class SensitiveMetaDetailView(APIView):
     PATCH: Updates SensitiveMeta fields including verification state
     """
 
-    permission_classes = DEBUG_PERMISSIONS  # Changed from IsAuthenticated for development
+    permission_classes = [EnvironmentAwarePermission]  # Changed from IsAuthenticated for development
 
     def get(self, request, sensitive_meta_id=None):
         """

@@ -6,6 +6,8 @@ from rest_framework import viewsets, decorators, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes as drf_permission_classes
+# FOR SOME REASON THE ABOVE FIX IS VERY NECESSARY. SOMEWHERE A PERMISION OVERRIDE IS BEING APPLIED OTHERWISE
 from rest_framework import status
 
 from ...serializers.label_video_segment.label_video_segment_update import LabelSegmentUpdateSerializer
@@ -17,12 +19,13 @@ from ...models import VideoFile, Label, LabelVideoSegment
 from ...serializers.video.segmentation import VideoFileSerializer
 from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
+PERMS = [EnvironmentAwarePermission]
+
 def _stream_video_file(vf, frontend_origin):
     """
     Helper to stream a video file with proper headers and CORS.
     Raises Http404 if file is missing.
     """
-    decorators.permission_classes = [EnvironmentAwarePermission]
     try:
         # Use active_file_path which handles both processed and raw files
         if hasattr(vf, 'active_file_path') and vf.active_file_path:
@@ -79,7 +82,7 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = VideoFile.objects.all()
     serializer_class = VideoFileListSerializer   # for the list view
-    permission_classes = DEBUG_PERMISSIONS
+    decorators.drf_permission_classes = [EnvironmentAwarePermission]
 
     def list(self, request, *args, **kwargs):
         """
@@ -132,13 +135,14 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # Neue separate View für Video-Streaming außerhalb des ViewSets
+@drf_permission_classes(PERMS)
 class VideoStreamView(APIView):
     """
     Separate view for video streaming to avoid DRF content negotiation issues.
     Supports streaming videos from different database entries based on patient examination data.
     """
-    permission_classes = [permissions.AllowAny]
-    
+    drf_permission_classes = [permissions.AllowAny]
+
     def get(self, request, pk=None):
         """
         Streams the raw video file for the specified video with HTTP range and CORS support.
@@ -165,6 +169,7 @@ class VideoStreamView(APIView):
             logger.error(f"Unexpected error in VideoStreamView for video_id={pk}: {str(e)}")
             raise Http404("Video streaming failed")
 
+@drf_permission_classes(PERMS)
 class VideoLabelView(APIView):
     """
     API to fetch time segments (start & end times in seconds) for a specific label.
@@ -296,7 +301,7 @@ class VideoLabelView(APIView):
             return Response({
                 "error": f"Internal error: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+@drf_permission_classes(PERMS)
 class UpdateLabelSegmentsView(APIView):
     """
     API to update or create label segments for a video.
@@ -335,7 +340,7 @@ class UpdateLabelSegmentsView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
            
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS)
+@drf_permission_classes(PERMS)
 def rerun_segmentation(request, video_id):
     """
     Rerun segmentation for a specific video.
