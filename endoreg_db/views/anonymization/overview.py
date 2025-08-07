@@ -9,7 +9,8 @@ from rest_framework.pagination import PageNumberPagination
 from django.db.models import Prefetch, QuerySet
 from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
-from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
+from endoreg_db.serializers.misc.file_overview import FileOverviewSerializer
+from endoreg_db.serializers.misc.vop_patient_data import VoPPatientDataSerializer
 from django.http import JsonResponse
 import logging
 
@@ -100,7 +101,7 @@ def anonymization_current(request, file_id):
     # Try to find the file in VideoFile first
     try:
         video_file = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
-        serializer = PatientDataSerializer(video_file, context={'request': request})
+        serializer = VoPPatientDataSerializer(video_file, context={'request': request})
         return Response(serializer.data)
     except VideoFile.DoesNotExist:
         pass
@@ -108,7 +109,7 @@ def anonymization_current(request, file_id):
     # Try to find the file in RawPdfFile
     try:
         pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
-        serializer = PatientDataSerializer(pdf_file, context={'request': request})
+        serializer = VoPPatientDataSerializer(pdf_file, context={'request': request})
         return Response(serializer.data)
     except RawPdfFile.DoesNotExist:
         pass
