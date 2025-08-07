@@ -90,12 +90,6 @@ def _ensure_default_patient_data(video_file: "VideoFile") -> None:
         except Exception as e:
             logger.error(f"Failed to create default SensitiveMeta for video {video_file.uuid}: {e}")
         
-        if video_file.sensitive_meta is None:
-        # --- create and attach ---
-            video_file.sensitive_meta = sensitive_meta
-            video_file.save(update_fields=["sensitive_meta"])
-            logger.info("Created default SensitiveMeta for %s", video_file.uuid)
-            return
             
     else:
         # Update existing SensitiveMeta with missing fields
