@@ -1,0 +1,49 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_planarity_flat"
+    name_de: "Kolonläsion - Planarität flach"
+    name_en: "Colon lesion - planarity flat"
+    description: "Category for flat lesions"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_planarity_flat_elevated"  
+    name_de: "Kolonläsion - Planarität flach-erhaben"
+    name_en: "Colon lesion - planarity flat-elevated"
+    description: "Category for flat-elevated lesions (surface +/- 2 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_planarity_sessile"
+    name_de: "Kolonläsion - Planarität sessil"
+    name_en: "Colon lesion - planarity sessile"
+    description: "Category for sessile lesions (surface > 2 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_planarity_pedunculated"
+    name_de: "Kolonläsion - Planarität gestielt"
+    name_en: "Colon lesion - planarity pedunculated"
+    description: "Category for pedunculated lesions (surface on a stalk)"
+
+# excavated
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_planarity_excavated"
+    name_de: "Kolonläsion - Planarität exkaviert"
+    name_en: "Colon lesion - planarity excavated"
+    description: "Category for excavated lesions (surface below surrounding mucosa)"
+    subcategories:
+      description:
+        choices: ["unspecified", "focal", "diffuse", "total"]
+        probability: [0.5, 0.2, 0.2, 0.1]
+        default: "unspecified"
+        required: true
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_planarity_unknown"
+    name_de: "Kolonläsion - Planarität unbekannt"
+    name_en: "Colon lesion - planarity unknown"
+
+

@@ -2,7 +2,7 @@
 Django management command to validate video file existence and accessibility.
 """
 from django.core.management.base import BaseCommand
-from django.db import transaction
+
 from endoreg_db.models import VideoFile
 from pathlib import Path
 import logging
@@ -67,7 +67,7 @@ class Command(BaseCommand):
 
         # Report results
         self.stdout.write("\n" + "="*60)
-        self.stdout.write(self.style.SUCCESS(f"VALIDATION COMPLETE"))
+        self.stdout.write(self.style.SUCCESS("VALIDATION COMPLETE"))
         self.stdout.write("="*60)
         
         self.stdout.write(f"✅ Accessible videos: {len(accessible_files)}")
@@ -79,7 +79,7 @@ class Command(BaseCommand):
             for file_info in missing_files:
                 self.stdout.write(f"  - Video ID {file_info['video_id']}: {file_info['error']}")
                 if fix_missing:
-                    self.stdout.write(f"    → Marking as inactive (if applicable)")
+                    self.stdout.write("    → Marking as inactive (if applicable)")
 
         if corrupted_files:
             self.stdout.write(self.style.WARNING("\nPOTENTIALLY CORRUPTED FILES:"))
@@ -110,116 +110,52 @@ class Command(BaseCommand):
             'error': None
         }
 
-        try:
-            # Check for active file path
-            if hasattr(video, 'active_file_path') and video.active_file_path:
-                file_path = Path(video.active_file_path)
-                video_info['path'] = str(file_path)
-                
+        # Helper to check a file attribute
+        def _check_file_attr(obj, attr, path_getter=None, label=None):
+            if not hasattr(obj, attr):
+                return None
+            file_field = getattr(obj, attr)
+            if not file_field:
+                return None
+            try:
+                file_path = Path(path_getter(file_field) if path_getter else file_field)
+                info = video_info.copy()
+                info['path'] = str(file_path)
                 if not file_path.exists():
-                    video_info['status'] = 'missing'
-                    video_info['error'] = f"Active file path does not exist: {file_path}"
-                    return video_info
-                
-                # Check file size
-                try:
-                    file_size = file_path.stat().st_size
-                    video_info['size_mb'] = file_size / (1024 * 1024)
-                    
-                    if file_size == 0:
-                        video_info['status'] = 'corrupted'
-                        video_info['error'] = "File exists but has zero size"
-                        return video_info
-                        
-                    video_info['status'] = 'accessible'
-                    return video_info
-                    
-                except OSError as e:
-                    video_info['status'] = 'corrupted'
-                    video_info['error'] = f"Cannot read file stats: {e}"
-                    return video_info
+                    info['status'] = 'missing'
+                    info['error'] = f"{label or attr.replace('_', ' ').title()} does not exist: {file_path}"
+                    return info
+                file_size = file_path.stat().st_size
+                info['size_mb'] = file_size / (1024 * 1024)
+                if file_size == 0:
+                    info['status'] = 'corrupted'
+                    info['error'] = f"{label or attr.replace('_', ' ').title()} exists but has zero size"
+                else:
+                    info['status'] = 'accessible'
+                return info
+            except (ValueError, OSError) as e:
+                info = video_info.copy()
+                info['path'] = str(getattr(file_field, 'path', file_field))
+                info['status'] = 'corrupted'
+                info['error'] = f"Cannot access {label or attr.replace('_', ' ').title()}: {e}"
+                return info
 
-            # Check for other file sources
-            elif hasattr(video, 'active_file') and video.active_file:
-                try:
-                    file_path = Path(video.active_file.path)
-                    video_info['path'] = str(file_path)
-                    
-                    if not file_path.exists():
-                        video_info['status'] = 'missing'
-                        video_info['error'] = f"Active file does not exist: {file_path}"
-                        return video_info
-                        
-                    file_size = file_path.stat().st_size
-                    video_info['size_mb'] = file_size / (1024 * 1024)
-                    video_info['status'] = 'accessible' if file_size > 0 else 'corrupted'
-                    
-                    if file_size == 0:
-                        video_info['error'] = "File exists but has zero size"
-                    
-                    return video_info
-                    
-                except (ValueError, OSError) as e:
-                    video_info['status'] = 'corrupted'
-                    video_info['error'] = f"Cannot access active file: {e}"
-                    return video_info
+        # Try each file attribute in order of preference
+        result = None
+        # active_file_path: direct path string
+        result = _check_file_attr(video, 'active_file_path', label='Active file path')
+        if result: return result
+        # active_file: Django FileField
+        result = _check_file_attr(video, 'active_file', path_getter=lambda f: f.path, label='Active file')
+        if result: return result
+        # raw_file: Django FileField
+        result = _check_file_attr(video, 'raw_file', path_getter=lambda f: f.path, label='Raw file')
+        if result: return result
+        # processed_file: Django FileField
+        result = _check_file_attr(video, 'processed_file', path_getter=lambda f: f.path, label='Processed file')
+        if result: return result
 
-            # Check raw_file
-            elif hasattr(video, 'raw_file') and video.raw_file:
-                try:
-                    file_path = Path(video.raw_file.path)
-                    video_info['path'] = str(file_path)
-                    
-                    if not file_path.exists():
-                        video_info['status'] = 'missing'
-                        video_info['error'] = f"Raw file does not exist: {file_path}"
-                        return video_info
-                        
-                    file_size = file_path.stat().st_size
-                    video_info['size_mb'] = file_size / (1024 * 1024)
-                    video_info['status'] = 'accessible' if file_size > 0 else 'corrupted'
-                    
-                    if file_size == 0:
-                        video_info['error'] = "Raw file exists but has zero size"
-                    
-                    return video_info
-                    
-                except (ValueError, OSError) as e:
-                    video_info['status'] = 'corrupted'
-                    video_info['error'] = f"Cannot access raw file: {e}"
-                    return video_info
-
-            # Check processed_file
-            elif hasattr(video, 'processed_file') and video.processed_file:
-                try:
-                    file_path = Path(video.processed_file.path)
-                    video_info['path'] = str(file_path)
-                    
-                    if not file_path.exists():
-                        video_info['status'] = 'missing'
-                        video_info['error'] = f"Processed file does not exist: {file_path}"
-                        return video_info
-                        
-                    file_size = file_path.stat().st_size
-                    video_info['size_mb'] = file_size / (1024 * 1024)
-                    video_info['status'] = 'accessible' if file_size > 0 else 'corrupted'
-                    
-                    if file_size == 0:
-                        video_info['error'] = "Processed file exists but has zero size"
-                    
-                    return video_info
-                    
-                except (ValueError, OSError) as e:
-                    video_info['status'] = 'corrupted'
-                    video_info['error'] = f"Cannot access processed file: {e}"
-                    return video_info
-
-            else:
-                video_info['status'] = 'missing'
-                video_info['error'] = "No video file paths found (no active_file, raw_file, or processed_file)"
-                return video_info
-
-        except Exception as e:
-            video_info['status'] = 'corrupted'
-            video_info['error'] = f"Unexpected error checking video: {e}"
-            return video_info
+        # If none found
+        video_info['status'] = 'missing'
+        video_info['error'] = "No video file paths found (no active_file, raw_file, or processed_file)"
+        return video_info

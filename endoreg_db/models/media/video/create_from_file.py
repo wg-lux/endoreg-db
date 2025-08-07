@@ -9,7 +9,7 @@ from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
 from ...utils import VIDEO_DIR, TMP_VIDEO_DIR, data_paths
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
+    from endoreg_db.models import VideoFile
 
 from ....utils.video.ffmpeg_wrapper import transcode_videofile_if_required
 from ....utils.hashs import get_video_hash

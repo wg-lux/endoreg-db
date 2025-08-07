@@ -6,6 +6,7 @@ from django.db import transaction
 from endoreg_db.models import VideoFile
 from pathlib import Path
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,28 @@ class Command(BaseCommand):
             action='store_true',
             help='Enable verbose output',
         )
+        parser.add_argument(
+            '--storage-dir',
+            type=str,
+            default=None,
+            help='Path to the storage directory (default: $ENDOREG_STORAGE_DIR or ./storage)'
+        )
 
     def handle(self, *args, **options):
-        """Fix video file paths to match actual storage locations."""
+        """
+        Synchronizes video file paths in the database with actual files on disk, updating broken or missing paths as needed.
+        
+        Scans the specified storage directory for video files, matches them to database records by UUID, and updates the `raw_file` field for videos whose stored path is missing or incorrect. Supports dry-run and verbose modes, and can process all videos or a specific video by ID.
+        """
         dry_run = options['dry_run']
         verbose = options['verbose']
         video_id = options.get('video_id')
 
-        storage_dir = Path('/home/admin/test/lx-annotate/storage')
+        # Determine storage_dir from argument, env, or fallback
+        storage_dir = options.get('storage_dir') or \
+            os.environ.get('ENDOREG_STORAGE_DIR') or \
+            './storage'
+        storage_dir = Path(storage_dir)
         
         # Find all actual video files
         actual_files = {}
@@ -93,7 +108,7 @@ class Command(BaseCommand):
                         try:
                             current_path = Path(video.raw_file.path)
                             current_path_exists = current_path.exists()
-                        except:
+                        except (ValueError, AttributeError, OSError):
                             current_path_exists = False
                     
                     if not current_path_exists:
@@ -144,7 +159,7 @@ class Command(BaseCommand):
         self.stdout.write(f"❌ Errors/Missing files: {error_count} videos")
         
         if dry_run and fixed_count > 0:
-            self.stdout.write(f"\n💡 Run without --dry-run to apply changes")
+            self.stdout.write("\n💡 Run without --dry-run to apply changes")
         elif not dry_run and fixed_count > 0:
             self.stdout.write(f"\n🎉 Successfully fixed {fixed_count} video file paths!")
-            self.stdout.write(f"🔄 Restart your Django server to reload file paths")
+            self.stdout.write("🔄 Restart your Django server to reload file paths")

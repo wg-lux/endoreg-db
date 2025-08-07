@@ -55,6 +55,24 @@ def load_data_with_foreign_keys(
     for entry in yaml_data:
         fields = entry.get("fields", {})
         name = fields.pop("name", None)
+
+
+        ####################
+        #TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED
+        SKIP_NAMES=[
+            "name_de",  # German name, not used
+            "name_en",  # English name, not used
+            "description_de",  # German description
+            "description_en",  # English description
+        ]
+
+        
+        # Remove fields that are not needed
+        for skip_name in SKIP_NAMES:
+            if skip_name in fields:
+                fields.pop(skip_name)
+        ########################
+
         m2m_relationships = {}  # Store many-to-many relationships
         # print(entry)
 

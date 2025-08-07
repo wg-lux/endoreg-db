@@ -7,7 +7,7 @@ from typing import Optional
 
 from endoreg_db.models import VideoFile, AnonymizationTask
 from endoreg_db.exceptions import InsufficientStorageError
-from endoreg_db.models.media.video.create_from_file import check_storage_capacity
+# from endoreg_db.models.media.video.create_from_file import check_storage_capacity
 
 logger = logging.getLogger(__name__)
 
@@ -293,10 +293,10 @@ class StorageAwareVideoProcessor:
                 
                 logger.info(f"Video processing completed successfully: {video_file.uuid}")
                 return True
-            else:
-                task.mark_failed("Video processing pipeline failed")
-                logger.error(f"Video processing failed: {video_file.uuid}")
-                return False
+
+            task.mark_failed("Video processing pipeline failed")
+            logger.error(f"Video processing failed: {video_file.uuid}")
+            return False
                 
         except InsufficientStorageError as e:
             logger.error(f"Storage error during video processing: {e}")

@@ -5,13 +5,14 @@ Direct fix for video file path issues without complex Django setup.
 
 import sqlite3
 from pathlib import Path
+import os
+import argparse
 
-def fix_video_paths_direct():
+def fix_video_paths_direct(db_path, storage_dir):
     """Fix video file paths directly in SQLite database."""
     
-    # Database path
-    db_path = Path('/home/admin/test/lx-annotate/endoreg-db/db.sqlite3')
-    storage_dir = Path('/home/admin/test/lx-annotate/storage')
+    db_path = Path(db_path)
+    storage_dir = Path(storage_dir)
     
     print("🔧 DIRECT VIDEO PATH FIX")
     print("=" * 40)
@@ -103,12 +104,16 @@ def fix_video_paths_direct():
                 print(f"   FROM: {current_raw_file}")
                 print(f"   TO:   {file_info['relative_path']}")
                 
-                # Update the database
-                cursor.execute(f"UPDATE {video_table} SET raw_file = ? WHERE id = ?", 
-                             (file_info['relative_path'], video_id))
-                conn.commit()
+                # Update the database with transaction safety
+                try:
+                    cursor.execute(f"UPDATE {video_table} SET raw_file = ? WHERE id = ?", 
+                                   (file_info['relative_path'], video_id))
+                    conn.commit()
+                    print("✅ Database updated successfully!")
+                except Exception as e:
+                    conn.rollback()
+                    print(f"❌ Failed to update database: {e}")
                 
-                print("✅ Database updated successfully!")
                 print("\n6. 🎯 NEXT STEPS:")
                 print("   1. Restart your Django development server")
                 print("   2. Test video streaming in the frontend")
@@ -127,4 +132,10 @@ def fix_video_paths_direct():
         print(f"❌ Database error: {e}")
 
 if __name__ == "__main__":
-    fix_video_paths_direct()
+    parser = argparse.ArgumentParser(description="Direct fix for video file path issues in SQLite DB.")
+    parser.add_argument('--db-path', type=str, default=os.environ.get('ENDOREG_DB_PATH', './db.sqlite3'),
+                        help='Path to the SQLite database file (default: ./db.sqlite3 or $ENDOREG_DB_PATH)')
+    parser.add_argument('--storage-dir', type=str, default=os.environ.get('ENDOREG_STORAGE_DIR', './storage'),
+                        help='Path to the storage directory (default: ./storage or $ENDOREG_STORAGE_DIR)')
+    args = parser.parse_args()
+    fix_video_paths_direct(args.db_path, args.storage_dir)

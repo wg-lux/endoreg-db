@@ -1,4 +1,3 @@
-# from random import choices
 from django.db import models
 from typing import TYPE_CHECKING, List
 
@@ -8,8 +7,6 @@ class FindingClassificationTypeManager(models.Manager):
     
 class FindingClassificationType(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     
     objects = FindingClassificationTypeManager()
@@ -29,17 +26,25 @@ class FindingClassificationType(models.Model):
             _ for _ in finding.required_morphology_classification_types.all()
         ]
         return required_classification_types
-    
+
+
 class FindingClassificationManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-    
+
+
 class FindingClassification(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
-    classification_type = models.ForeignKey(FindingClassificationType, on_delete=models.CASCADE)
+    classification_types = models.ManyToManyField(
+        to=FindingClassificationType, 
+        # on_delete=models.CASCADE
+    )
+    choices = models.ManyToManyField(
+        'FindingClassificationChoice', 
+        related_name='classifications', 
+        blank=True
+    )
 
     findings = models.ManyToManyField('Finding', blank=True, related_name='finding_classifications')
     examinations = models.ManyToManyField('Examination', blank=True, related_name='finding_classifications')
@@ -51,37 +56,63 @@ class FindingClassification(models.Model):
         from endoreg_db.models import (
             Finding, Examination, FindingType, PatientFindingClassification
         )
-        classification_type: models.ForeignKey[FindingClassificationType]
+        classification_types: models.ManyToManyField[FindingClassificationType]
         findings: models.QuerySet[Finding]
         examinations: models.QuerySet[Examination]
         finding_types: models.QuerySet[FindingType]
         choices: models.QuerySet['FindingClassificationChoice']
         patient_finding_classifications: models.QuerySet['PatientFindingClassification']
 
-    
     def natural_key(self):
         return (self.name,)
-    
+
     def __str__(self):
         return str(self.name)
-    
+
     def get_choices(self):
-        choices: List[FindingClassificationChoice] = [_ for _ in self.choices.all()]
-        return choices
-    
+        """
+        Return all choices associated with this classification.
+        
+        Returns:
+        	QuerySet: All related FindingClassificationChoice instances.
+        """
+        return self.choices.all()
+
+    @property
+    def is_morphology(self):
+        """
+        Return True if any related classification type has the name "morphology" (case-insensitive).
+        """
+        return self.classification_types.filter(name__iexact="morphology").exists()
+
+    @property
+    def is_location(self):
+        """
+        Returns True if any related classification type has the name "location" (case-insensitive).
+        """
+        return self.classification_types.filter(name__iexact="location").exists()
+
+
 class FindingClassificationChoiceManager(models.Manager):
     def get_by_natural_key(self, name):
+        """
+        Retrieve an instance by its unique name using the natural key.
+        
+        Parameters:
+            name (str): The unique name identifying the instance.
+        
+        Returns:
+            The model instance with the specified name.
+        """
         return self.get(name=name)
     
 class FindingClassificationChoice(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True)
-    name_en = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
-    classifications = models.ManyToManyField(
-        "FindingClassification", 
-        related_name='choices'
-    )
+    # classifications = models.ManyToManyField(
+    #     "FindingClassification", 
+    #     related_name='choices'
+    # )
     
     subcategories = models.JSONField(
         default = dict
@@ -105,8 +136,7 @@ class FindingClassificationChoice(models.Model):
         return (self.name,)
     
     def __str__(self):
-        _str = f"{self.name} ({self.classifications})"
+        classifications_names = ", ".join([c.name for c in self.classifications.all()])
+        _str = f"{self.name} ({classifications_names})"
         return _str
 
-    
-        

@@ -6,8 +6,6 @@ class RuleTypeManager(models.Manager):
 
 class RuleType(models.Model):
     name = models.CharField(max_length=255, unique=True)
-    name_de = models.CharField(max_length=255, blank=True, null=True)
-    name_en = models.CharField(max_length=255, blank=True, null=True)
 
     objects = RuleTypeManager()
 

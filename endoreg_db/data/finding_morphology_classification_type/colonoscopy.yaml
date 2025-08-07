@@ -1,4 +1,4 @@
-- model: endoreg_db.finding_morphology_classification_type
+- model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_size"
     name_de: "Größenklassifikation Kolonläsion"
@@ -11,7 +11,7 @@
       "tumor"
     ]
 
-- model: endoreg_db.finding_morphology_classification_type
+- model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_shape"
     name_de: "Formklassifikation Kolonläsion"
@@ -24,7 +24,7 @@
       "tumor"
     ]
 
-- model: endoreg_db.finding_morphology_classification_type
+- model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_surface_intact"
     name_de: "Oberflächenklassifikation Kolonläsion"
@@ -37,7 +37,7 @@
       "tumor"
     ]
 
-- model: endoreg_db.finding_morphology_classification_type
+- model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_planarity"
     name_de: "Planaritätsklassifikation Kolonläsion"
@@ -51,7 +51,7 @@
     ]
 
 # Circularity
-- model: endoreg_db.finding_morphology_classification_type
+- model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_circularity"
     name_de: "Kolonläsion - Zirkularität"
@@ -65,7 +65,7 @@
     ]
 
 # colon_lesion_advanced_imaging
-- model: endoreg_db.finding_morphology_classification_type
+- model: endoreg_db.finding_classification_type
   fields:
     name: "colon_lesion_advanced_imaging"
     name_de: "Kolonläsion - Advanced Imaging"
