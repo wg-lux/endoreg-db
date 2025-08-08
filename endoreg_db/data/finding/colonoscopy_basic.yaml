@@ -45,3 +45,22 @@
       ]
 
     finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "colonoscopy_complete"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["summary"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "colonoscopy_austria_screening_findings_summary"
+    examinations:
+      [
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["summary"]

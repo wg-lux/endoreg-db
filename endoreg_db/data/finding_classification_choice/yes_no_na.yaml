@@ -1,0 +1,11 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "yes"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "no"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "na"
