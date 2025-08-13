@@ -8,6 +8,7 @@ from datetime import date
 import logging
 import sys
 from pathlib import Path
+from turtle import st
 from typing import TYPE_CHECKING, Union
 from django.db import transaction
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -323,3 +324,37 @@ class PdfImportService:
         
         logger.info(f"Simple import completed for RawPdfFile hash: {pdf_file.pdf_hash}")
         return pdf_file
+    
+    def check_storage_capacity(self, file_path: Union[Path, str], storage_root, min_required_space) -> None:
+        """
+        Check if there is sufficient storage capacity for the PDF file.
+        
+        Args:
+            file_path: Path to the PDF file to check
+            
+        Raises:
+            InsufficientStorageError: If there is not enough space
+        """
+        import shutil
+        from endoreg_db.exceptions import InsufficientStorageError
+        
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found for storage check: {file_path}")
+        
+        # Get the size of the file
+        file_size = file_path.stat().st_size
+        
+        # Get available space in the storage directory
+
+        total, used, free = shutil.disk_usage(storage_root)
+        
+        if file_size:
+            min_required_space = file_size if isinstance(min_required_space, int) else 0
+
+        # Check if there is enough space
+        if file_size > free:
+            raise InsufficientStorageError(f"Not enough space to store PDF file: {file_path}")
+        logger.info(f"Storage check passed for {file_path}: {file_size} bytes, {free} bytes available")
+        
+        return True
