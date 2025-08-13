@@ -44,7 +44,9 @@ class InformationSource(models.Model):
     abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
     
     if TYPE_CHECKING:
-        information_source_types: models.QuerySet["InformationSourceType"]
+        #information_source_types: models.QuerySet["InformationSourceType"]
+        # Avoid self-referential import; use forward references instead
+        pass
     class Meta:
         verbose_name = "Information Source"
         verbose_name_plural = "Information Sources"
