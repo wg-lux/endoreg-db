@@ -58,7 +58,7 @@ router.register(r'patient-findings', PatientFindingViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),  
-    path('', include(api_urls))
+    path('api/', include(api_urls))
 ]
 
 if settings.DEBUG:
