@@ -20,13 +20,21 @@ class VideoImportService():
     """
     Service for importing and anonymizing video files.
     """
-    def __init__(self):
+    def __init__(self, project_root: Path = None):
         
+        # Set up project root path
+        if project_root:
+            self.project_root = Path(project_root)
+        else:
+            self.project_root = Path(__file__).parent.parent.parent.parent
+        
+        # Track processed files to prevent duplicates
+        self.processed_files = set()
 
         try:
             STORAGE_DIR = os.getenv("STORAGE_DIR")
             if not STORAGE_DIR:
-                STORAGE_DIR = Path(__file__).parent.parent.parent.parent / "data" / "videos"    
+                STORAGE_DIR = self.project_root / "data" / "videos"    
         except KeyError:
             raise EnvironmentError("STORAGE_DIR environment variable not set and default path not found.")
             
@@ -68,13 +76,20 @@ class VideoImportService():
         """
         from endoreg_db.models import VideoFile
         
-        self.logger.info(f"Starting import and anonymization for: {file_path}")
-        self.logger.info(f"Starting import and anonymization for: {file_path}")
+        file_path = Path(file_path)
         
-        model_name = "image_multilabel_classification_colonoscopy_default"
+        # Check if the file has already been processed
+        if str(file_path) in self.processed_files:
+            self.logger.info(f"File {file_path} already processed, skipping")
+            return None
+        
+        self.logger.info(f"Starting import and anonymization for: {file_path}")
         
         if not file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
+        
+        # Mark the file as processed early to prevent duplicates
+        self.processed_files.add(str(file_path))
         
         self.logger.info("Creating VideoFile instance...")
         self.logger.info("Creating VideoFile instance...")
@@ -260,7 +275,22 @@ class VideoImportService():
             self.logger.warning(f"Failed to signal completion status: {e}")
             # Don't fail the entire import for this - processing was successful
         
-        # Step 8: Refresh from database and return
+        # Step 8: Move processed files to correct directories
+        self.logger.info("Moving processed video files to target directories...")
+        try:
+            # Get video metadata if available
+            metadata = {}
+            if 'extracted_metadata' in locals():
+                metadata = extracted_metadata
+            
+            # Get the original file path from the video file object
+            if video_file_obj.raw_file and hasattr(video_file_obj.raw_file, 'path'):
+                original_file_path = Path(video_file_obj.raw_file.path)
+                self._move_processed_files_to_storage(original_file_path, video_file_obj, metadata)
+        except Exception as e:
+            self.logger.warning(f"Failed to move processed video files: {e}")
+        
+        # Step 9: Refresh from database and return
         with transaction.atomic():
             video_file_obj.refresh_from_db()
         
@@ -368,6 +398,80 @@ class VideoImportService():
                 except Exception as e:
                     self.logger.error(f"Failed to update SensitiveMeta for video {video_file.uuid}: {e}")
 
+    def _move_processed_files_to_storage(self, original_file_path: Path, video_file: "VideoFile", metadata: dict):
+        """
+        Move processed video files from raw_videos to appropriate storage directories.
+        
+        Args:
+            original_file_path: Original file path in raw_videos
+            video_file: VideoFile instance
+            metadata: Processing metadata
+        """
+        import shutil
+        
+        try:
+            # Define target directories
+            videos_dir = self.project_root / 'data' / 'videos'
+            anonymized_videos_dir = self.project_root / 'data' / 'videos' / 'anonymized'
+            frames_target = videos_dir / 'frames'
+            
+            # Create target directories
+            videos_dir.mkdir(parents=True, exist_ok=True)
+            anonymized_videos_dir.mkdir(parents=True, exist_ok=True)
+            frames_target.mkdir(parents=True, exist_ok=True)
+            
+            original_file_path = Path(original_file_path)
+            video_name = original_file_path.stem
+            
+            # 1. Move the original processed video to videos directory
+            if original_file_path.exists():
+                target_video_path = videos_dir / f"{video_name}{original_file_path.suffix}"
+                shutil.move(str(original_file_path), str(target_video_path))
+                self.logger.info(f"Moved original video to: {target_video_path}")
+            
+            # 2. Move anonymized video if it exists
+            for suffix in ['.mp4', '.avi', '.mov']:  # Common video formats
+                anonymized_video_path = original_file_path.parent / f"{video_name}_anonymized{suffix}"
+                if anonymized_video_path.exists():
+                    target_anonymized_path = anonymized_videos_dir / f"{video_name}_anonymized{suffix}"
+                    shutil.move(str(anonymized_video_path), str(target_anonymized_path))
+                    self.logger.info(f"Moved anonymized video to: {target_anonymized_path}")
+                    break
+            
+            # 3. Move extracted frames if they exist
+            frames_source = original_file_path.parent / 'frames'
+            if frames_source.exists():
+                # Create video-specific frame directory
+                video_frames_target = frames_target / video_name
+                video_frames_target.mkdir(parents=True, exist_ok=True)
+                
+                for frame_file in frames_source.glob(f"{video_name}*"):
+                    target_frame_path = video_frames_target / frame_file.name
+                    shutil.move(str(frame_file), str(target_frame_path))
+                    self.logger.info(f"Moved frame to: {target_frame_path}")
+                
+                # Remove empty frames directory if it's empty
+                try:
+                    if not any(frames_source.iterdir()):
+                        frames_source.rmdir()
+                        self.logger.debug(f"Removed empty directory: {frames_source}")
+                except OSError:
+                    pass  # Directory not empty, that's fine
+            
+            # 4. Move any metadata files (e.g., .json, .xml)
+            for metadata_file in original_file_path.parent.glob(f"{video_name}.*"):
+                if metadata_file.suffix.lower() in ['.json', '.xml', '.txt', '.meta']:
+                    target_metadata_path = videos_dir / metadata_file.name
+                    if metadata_file.exists():
+                        shutil.move(str(metadata_file), str(target_metadata_path))
+                        self.logger.info(f"Moved metadata file to: {target_metadata_path}")
+            
+            self.logger.info(f"Successfully moved all processed files for {video_name}")
+            
+        except Exception as e:
+            self.logger.error(f"Error moving processed video files: {e}")
+            raise
+
 
     def _perform_anonymization(self, video_file_obj: "VideoFile", processor_name: str) -> "VideoFile":
         """
@@ -433,12 +537,11 @@ class VideoImportService():
                 cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
                     path,
                     video_file_obj,
-                    tmp_dir= RAW_FRAME_DIR,  # Use default temp directory
-                    device_name=processor_name,
-                    endoscope_roi=endoscope_roi,
-                    processor_roi=processor_roi,
-                    frame_paths=frame_paths,
-                    output_path=Path(STORAGE_DIR / f"{hash}.mp4")
+                    RAW_FRAME_DIR,  # Use default temp directory
+                    processor_name,
+                    endoscope_roi,
+                    processor_roi,
+                    Path(STORAGE_DIR) / f"{hash}.mp4"
                 )
 
                 # Save cleaned video back to VideoFile (atomic transaction)
@@ -661,6 +764,21 @@ class VideoImportService():
         except Exception as e:
             self.logger.warning(f"Failed to signal completion status: {e}")
             # Don't fail the entire import for this - processing was successful
+        
+        # Move processed files to correct directories
+        self.logger.info("Moving processed video files to target directories...")
+        try:
+            # Get video metadata if available
+            metadata = {}
+            if 'extracted_metadata' in locals():
+                metadata = extracted_metadata
+            
+            # Get the original file path from the video file object
+            if video_file_obj.raw_file and hasattr(video_file_obj.raw_file, 'path'):
+                original_file_path = Path(video_file_obj.raw_file.path)
+                self._move_processed_files_to_storage(original_file_path, video_file_obj, metadata)
+        except Exception as e:
+            self.logger.warning(f"Failed to move processed video files: {e}")
         
         # Step 7: Refresh from database and return
         with transaction.atomic():
