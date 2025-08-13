@@ -8,7 +8,6 @@ from datetime import date
 import logging
 import sys
 from pathlib import Path
-from turtle import st
 from typing import TYPE_CHECKING, Union
 from django.db import transaction
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -115,6 +114,66 @@ class PdfImportService:
             except Exception as e:
                 logger.error(f"Failed to create default SensitiveMeta for PDF {pdf_file.pdf_hash}: {e}")
 
+    def _move_processed_files_to_storage(self, original_file_path: Path, pdf_file: "RawPdfFile", metadata: dict):
+        """
+        Move processed PDF files from raw_pdfs to appropriate storage directories.
+        
+        Args:
+            original_file_path: Original file path in raw_pdfs
+            pdf_file: RawPdfFile instance
+            metadata: Processing metadata
+        """
+        import shutil
+        
+        try:
+            # Define target directories
+            pdfs_dir = self.project_root / 'data' / 'pdfs'
+            anonymized_pdfs_dir = self.project_root / 'data' / 'pdfs' / 'anonymized'
+            cropped_regions_target = pdfs_dir / 'cropped_regions'
+            
+            # Create target directories
+            pdfs_dir.mkdir(parents=True, exist_ok=True)
+            anonymized_pdfs_dir.mkdir(parents=True, exist_ok=True)
+            cropped_regions_target.mkdir(parents=True, exist_ok=True)
+            
+            original_file_path = Path(original_file_path)
+            pdf_name = original_file_path.stem
+            
+            # 1. Move the original processed PDF to pdfs directory
+            if original_file_path.exists():
+                target_pdf_path = pdfs_dir / f"{pdf_name}.pdf"
+                shutil.move(str(original_file_path), str(target_pdf_path))
+                logger.info(f"Moved original PDF to: {target_pdf_path}")
+            
+            # 2. Move anonymized PDF if it exists
+            anonymized_pdf_path = original_file_path.parent / f"{pdf_name}_anonymized.pdf"
+            if anonymized_pdf_path.exists():
+                target_anonymized_path = anonymized_pdfs_dir / f"{pdf_name}_anonymized.pdf"
+                shutil.move(str(anonymized_pdf_path), str(target_anonymized_path))
+                logger.info(f"Moved anonymized PDF to: {target_anonymized_path}")
+            
+            # 3. Move cropped regions if they exist
+            cropped_regions_source = original_file_path.parent / 'cropped_regions'
+            if cropped_regions_source.exists():
+                for crop_file in cropped_regions_source.glob(f"{pdf_name}*"):
+                    target_crop_path = cropped_regions_target / crop_file.name
+                    shutil.move(str(crop_file), str(target_crop_path))
+                    logger.info(f"Moved cropped region to: {target_crop_path}")
+                
+                # Remove empty cropped_regions directory if it's empty
+                try:
+                    if not any(cropped_regions_source.iterdir()):
+                        cropped_regions_source.rmdir()
+                        logger.debug(f"Removed empty directory: {cropped_regions_source}")
+                except OSError:
+                    pass  # Directory not empty, that's fine
+            
+            logger.info(f"Successfully moved all processed files for {pdf_name}")
+            
+        except Exception as e:
+            logger.error(f"Error moving processed files: {e}")
+            raise
+
     def import_and_anonymize(
         self, 
         file_path: Union[Path, str], 
@@ -185,10 +244,10 @@ class PdfImportService:
                 
                 # Use the process_report_with_cropping method for comprehensive processing
                 # This method handles text extraction, metadata extraction, cropping and anonymization
-                original_text, anonymized_text, extracted_metadata = report_reader.process_report_with_cropping(
+                original_text, anonymized_text, extracted_metadata, _ = report_reader.process_report_with_cropping(
                     pdf_path=pdf_file.file.path,
                     crop_sensitive_regions=True,
-                    crop_output_dir=str(Path(pdf_file.file.path).parent / "pdfs")
+                    crop_output_dir=str(Path(pdf_file.file.path).parent / "cropped_regions")
                 )
 
                 if original_text:
@@ -272,7 +331,19 @@ class PdfImportService:
         except Exception as e:
             logger.warning(f"Failed to signal completion status: {e}")
 
-        # Step 5: Refresh from database and return
+        # Step 5: Move processed files to correct directories
+        logger.info("Moving processed files to target directories...")
+        try:
+            # Get report metadata if available
+            metadata = {}
+            if 'extracted_metadata' in locals():
+                metadata = extracted_metadata
+            
+            self._move_processed_files_to_storage(file_path, pdf_file, metadata)
+        except Exception as e:
+            logger.warning(f"Failed to move processed files: {e}")
+
+        # Step 6: Refresh from database and return
         with transaction.atomic():
             pdf_file.refresh_from_db()
 
