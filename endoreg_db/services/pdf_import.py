@@ -183,15 +183,14 @@ class PdfImportService:
                     text_date_format="%d.%m.%Y"  # German date format
                 )
                 
-                # Use the process_report method for comprehensive processing
-                # This method handles text extraction, metadata extraction, and anonymization
-                original_text, anonymized_text, extracted_metadata = report_reader.process_report(
+                # Use the process_report_with_cropping method for comprehensive processing
+                # This method handles text extraction, metadata extraction, cropping and anonymization
+                original_text, anonymized_text, extracted_metadata = report_reader.process_report_with_cropping(
                     pdf_path=pdf_file.file.path,
-                    use_ensemble=False,  # Set to True if you want better OCR
-                    verbose=True,
-                    use_llm_extractor='deepseek'  # Use DeepSeek for metadata extraction
+                    crop_sensitive_regions=True,
+                    crop_output_dir=str(Path(pdf_file.file.path).parent / "pdfs")
                 )
-                
+
                 if original_text:
                     # Store extracted text in the PDF file
                     pdf_file.text = original_text

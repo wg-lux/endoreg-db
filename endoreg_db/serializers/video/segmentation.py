@@ -98,6 +98,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         # Dynamically extract duration if not stored
         video_path = obj.active_file.path
+        
         cap = cv2.VideoCapture(video_path)
         try:
             if not cap.isOpened():

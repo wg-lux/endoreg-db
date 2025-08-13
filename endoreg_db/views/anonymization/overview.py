@@ -70,8 +70,8 @@ def anonymization_status(request, file_id: int):
 
     return Response({
         "file_id": file_id,
-        "file_type": info.get("file_type", "unknown"),  # Changed from info["type"] to info.get("file_type", "unknown")
-        "anonymizationStatus": info.get("status", "unknown"),  # Also made this safer with .get()
+        "file_type": info.get("mediaType", "unknown"),  # Use correct key: "mediaType" not "file_type"
+        "anonymizationStatus": info.get("anonymizationStatus", "unknown"),  # Use correct key: "anonymizationStatus" not "status"
     })
 
 # ---------- start -------------------------------------------------------
