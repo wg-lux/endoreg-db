@@ -78,7 +78,8 @@ def anonymization_status(request, file_id: int):
 @api_view(["POST"])
 @permission_classes(PERMS)
 def start_anonymization(request, file_id: int):
-    kind = AnonymizationService.start(file_id)
+    service = AnonymizationService()
+    kind = service.start(file_id)
     if not kind:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
     return Response({"detail": f"Anonymization started for {kind} file"})
