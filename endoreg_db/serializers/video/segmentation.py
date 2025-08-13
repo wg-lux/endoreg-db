@@ -8,7 +8,7 @@ except ImportError:
 
 # from django.conf import settings
 from typing import TYPE_CHECKING
-
+from rest_framework.exceptions import ValidationError
 if TYPE_CHECKING:
     from endoreg_db.models import Video
 class VideoFileSerializer(serializers.ModelSerializer):
@@ -194,13 +194,15 @@ class VideoFileSerializer(serializers.ModelSerializer):
             dict: A dictionary mapping each label to its list of time segments and associated frame metadata.
         """
 
-        fps = (
-            obj.fps
-            if hasattr(obj, "fps") and obj.fps is not None
-            else obj.get_fps()
-            if hasattr(obj, "get_fps") and obj.get_fps() is not None
-            else 50
-        )
+        fps = getattr(obj, "fps", None)
+        if fps is None and hasattr(obj, "get_fps"):
+            fps = obj.get_fps()
+
+        if not fps or fps <= 0:
+            raise ValidationError({
+                "label_time_segments": "FPS unavailable — cannot calculate time segments",
+                "video_id": getattr(obj, "id", None),
+            })
 
         sequences = self.get_sequences(obj)  # Fetch sequence data
         frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model
