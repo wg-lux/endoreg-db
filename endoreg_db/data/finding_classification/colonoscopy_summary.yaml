@@ -35,3 +35,20 @@
       "colonoscopy_worst_finding_polyp",
       "colonoscopy_worst_finding_rectum_cancer",
     ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_screening_outcome_overall"
+    classification_types: []
+    examinations: [
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colonoscopy_austria_screening_outcome",
+    ]
+    choices: [
+      "outcome_restitutio_ad_integrum",
+      "outcome_death",
+      "outcome_unknown",
+      "outcome_lasting_disability",
+    ]
