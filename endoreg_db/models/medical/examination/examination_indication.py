@@ -1,5 +1,5 @@
 from django.db import models
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from endoreg_db.models import Examination, Requirement, FindingIntervention
@@ -29,8 +29,8 @@ class ExaminationIndication(models.Model):
 
     Attributes:
         name (str): The unique name of the indication.
-        classification (ForeignKey): The classification associated with the indication.
-        examination (ForeignKey): The examination associated with the indication.
+        classifications (ManyToManyField): The classifications associated with the indication.
+        examinations (ManyToManyField): The examinations associated with the indication.
         expected_interventions (ManyToManyField): Expected interventions for this indication.
     """
 
@@ -43,10 +43,10 @@ class ExaminationIndication(models.Model):
         blank=True,
     )
 
-    examination = models.ForeignKey(
+    examinations = models.ManyToManyField(
         "Examination",
-        on_delete=models.CASCADE,
         related_name="indications",
+        blank=True,
     )
 
     expected_interventions = models.ManyToManyField(
@@ -58,10 +58,10 @@ class ExaminationIndication(models.Model):
     objects = ExaminationIndicationManager()
 
     if TYPE_CHECKING:
-        classifications: "models.ManyToManyField[ExaminationIndicationClassification]"
-        examination: "Examination"
+        classifications: "models.ManyToManyField[ExaminationIndicationClassification, ExaminationIndicationClassification]"
+        examinations: "models.ManyToManyField[Examination, Examination]"
         related_requirements: "models.QuerySet[Requirement]"
-        expected_interventions: "models.ManyToManyField[FindingIntervention]"
+        expected_interventions: "models.ManyToManyField[FindingIntervention, FindingIntervention]"
 
     @property
     def links(self) -> "RequirementLinks":
@@ -74,7 +74,7 @@ class ExaminationIndication(models.Model):
         from endoreg_db.utils.links.requirement_link import RequirementLinks
         return RequirementLinks(
             examination_indications=[self],
-            examinations=[self.examination],
+            examinations=list(self.examinations.all()),
             finding_interventions=list(self.expected_interventions.all()),
         )
 
@@ -108,11 +108,23 @@ class ExaminationIndication(models.Model):
             choices.extend(classification.choices.all())
         return choices
 
-    def get_examination(self) -> "Examination":
+    def get_examination(self) -> Optional["Examination"]:
         """
-        Returns the examination associated with this indication.
+        Returns the first examination associated with this indication, or None if no examinations exist.
+        
+        Note: Since this is now a many-to-many relationship, this method returns the first examination.
+        Consider using get_examinations() for accessing all related examinations.
         """
-        return self.examination
+        return self.examinations.first()
+
+    def get_examinations(self) -> List["Examination"]:
+        """
+        Returns all examinations associated with this indication.
+        
+        Returns:
+            List[Examination]: A list of all examinations linked to this indication.
+        """
+        return list(self.examinations.all())
     
 
 
@@ -141,23 +153,23 @@ class ExaminationIndicationClassification(models.Model):
 
     Attributes:
         name (str): The unique name of the classification.
+        description (str): Optional description of the classification.
+        examinations (ManyToManyField): The examinations associated with this classification.
     """
 
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    examination = models.ForeignKey(
+    examinations = models.ManyToManyField(
         "Examination",
-        on_delete=models.CASCADE,
         related_name="indication_classifications",
         blank=True,
-        null=True,
     )
 
-    if TYPE_CHECKING:
-        examination: "Examination"
-        choices: "models.QuerySet[ExaminationIndicationClassificationChoice]"
-
     objects = ExaminationIndicationClassificationManager()
+
+    if TYPE_CHECKING:
+        examinations: "models.ManyToManyField[Examination, Examination]"
+        choices: "models.QuerySet[ExaminationIndicationClassificationChoice]"
 
     def natural_key(self) -> tuple:
         """
@@ -185,6 +197,24 @@ class ExaminationIndicationClassification(models.Model):
             List[ExaminationIndicationClassificationChoice]: A list of classification choice instances.
         """
         return list(self.choices.all())
+
+    def get_examination(self) -> Optional["Examination"]:
+        """
+        Returns the first examination associated with this classification, or None if no examinations exist.
+        
+        Note: Since this is now a many-to-many relationship, this method returns the first examination.
+        Consider using get_examinations() for accessing all related examinations.
+        """
+        return self.examinations.first()
+
+    def get_examinations(self) -> List["Examination"]:
+        """
+        Returns all examinations associated with this classification.
+        
+        Returns:
+            List[Examination]: A list of all examinations linked to this classification.
+        """
+        return list(self.examinations.all())
 
 
 class ExaminationIndicationClassificationChoiceManager(models.Manager):

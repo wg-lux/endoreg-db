@@ -45,7 +45,6 @@ class TestVideoImportService(TestCase):
             center_name=self.center.name,
             processor_name=self.processor.name,
             delete_source=False,
-            ocr_frame_fraction=0.01,  # Default OCR frame fraction
         )
         
         # Verify the import was successful

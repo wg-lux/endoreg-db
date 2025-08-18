@@ -1,6 +1,9 @@
 from django.db import models
 from typing import TYPE_CHECKING, Dict, List, Union
 from endoreg_db.utils.links.requirement_link import RequirementLinks
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 QuerySet = models.QuerySet
@@ -29,8 +32,7 @@ if TYPE_CHECKING:
         PatientExamination,
         PatientFinding,
         PatientFindingIntervention,
-        PatientFindingLocation,
-        PatientFindingMorphology,
+        PatientFindingClassification,
         PatientLabValue,
         PatientMedicationSchedule, # Added PatientMedicationSchedule
         RequirementOperator,
@@ -144,13 +146,13 @@ class Requirement(models.Model):
 
     objects = RequirementManager()
 
-    requirement_types = models.ManyToManyField(
+    requirement_types = models.ManyToManyField( # type: ignore[assignment]
         "RequirementType",
         blank=True,
         related_name="linked_requirements",
     )
 
-    operators = models.ManyToManyField(
+    operators = models.ManyToManyField( # type: ignore[assignment]
         "RequirementOperator",
         blank=True,
         related_name="required_in",
@@ -164,85 +166,91 @@ class Requirement(models.Model):
         null=True,
     )
 
-    examinations = models.ManyToManyField(
+    examinations = models.ManyToManyField( # type: ignore[assignment]
         "Examination",
         blank=True,
         related_name="required_in",
     )
 
-    examination_indications = models.ManyToManyField(
+    examination_indications = models.ManyToManyField( # type: ignore[assignment]
         "ExaminationIndication",
         blank=True,
         related_name="required_in",
     )
 
-    diseases = models.ManyToManyField(
+    diseases = models.ManyToManyField( # type: ignore[assignment]
         "Disease",
         blank=True,
         related_name="required_in",
     )
 
-    disease_classification_choices = models.ManyToManyField(
+    disease_classification_choices = models.ManyToManyField( # type: ignore[assignment]
         "DiseaseClassificationChoice",
         blank=True,
         related_name="required_in",
     )
 
-    events = models.ManyToManyField(
+    events = models.ManyToManyField( # type: ignore[assignment]
         "Event",
         blank=True,
         related_name="required_in",
     )
 
-    lab_values = models.ManyToManyField(
+    lab_values = models.ManyToManyField( # type: ignore[assignment]
         "LabValue",
         blank=True,
         related_name="required_in",
     )
 
-    findings = models.ManyToManyField(
+    findings = models.ManyToManyField( # type: ignore[assignment]
         "Finding",
         blank=True,
         related_name="required_in",
     )
 
-    finding_classification_choices = models.ManyToManyField(
+    finding_classifications = models.ManyToManyField( # type: ignore[assignment]
+        "FindingClassification",
+        blank=True,
+        related_name="required_in",
+    )
+
+    finding_classification_choices = models.ManyToManyField( # type: ignore[assignment]
         "FindingClassificationChoice",
         blank=True,
         related_name="required_in",
     )
 
-    finding_interventions = models.ManyToManyField(
+    finding_interventions = models.ManyToManyField( # type: ignore[assignment]
         "FindingIntervention",
         blank=True,
         related_name="required_in",
     )
 
-    medications = models.ManyToManyField(
+    medications = models.ManyToManyField( # type: ignore[assignment]
         "Medication",
         blank=True,
         related_name="required_in",
     )
 
-    medication_indications = models.ManyToManyField(
+    medication_indications = models.ManyToManyField( # type: ignore[assignment]
         "MedicationIndication",
         blank=True,
         related_name="required_in",
     )
 
-    medication_intake_times = models.ManyToManyField( # Added medication_intake_times field
+    medication_intake_times = models.ManyToManyField( # type: ignore[assignment]
         "MedicationIntakeTime",
         blank=True,
         related_name="required_in",
     )
 
-    medication_schedules = models.ManyToManyField(
+    medication_schedules = models.ManyToManyField( # type: ignore[assignment]
         "MedicationSchedule",
         blank=True,
         related_name="required_in",
     )
 
-    genders = models.ManyToManyField(
+    genders = models.ManyToManyField( # type: ignore[assignment]
         "Gender",
         blank=True,
         related_name="required_in",
@@ -259,6 +267,7 @@ class Requirement(models.Model):
         disease_classification_choices: models.QuerySet[DiseaseClassificationChoice]
         events: models.QuerySet[Event]
         findings: models.QuerySet[Finding]
+        finding_classifications: models.QuerySet[FindingClassification]
         finding_classification_choices: models.QuerySet[FindingClassificationChoice]
         finding_interventions: models.QuerySet[FindingIntervention]
         medications: models.QuerySet[Medication]
@@ -302,8 +311,7 @@ class Requirement(models.Model):
         "PatientExamination",
         "PatientFinding",
         "PatientFindingIntervention",
-        "PatientFindingLocation",
-        "PatientFindingMorphology",
+        "PatientFindingClassification",
         "PatientLabValue",
         "PatientMedicationSchedule", # Added PatientMedicationSchedule
     ]]:
@@ -336,6 +344,7 @@ class Requirement(models.Model):
             disease_classification_choices=[_ for _ in self.disease_classification_choices.all() if _ is not None],
             events=[_ for _ in self.events.all() if _ is not None],
             findings=[_ for _ in self.findings.all() if _ is not None],
+            finding_classifications=[_ for _ in self.finding_classifications.all() if _ is not None],
             finding_classification_choices=[
                 _ for _ in self.finding_classification_choices.all() if _ is not None
             ],
@@ -401,20 +410,44 @@ class Requirement(models.Model):
             if not isinstance(_input, expected_models_tuple):
                 # Allow QuerySets of expected models
                 if isinstance(_input, models.QuerySet) and issubclass(_input.model, expected_models_tuple):
-                    # Process each item in the queryset
+                    # For QuerySets, evaluate each item individually and return True if any matches
                     if not _input.exists(): # Skip empty querysets
                         continue
+                    
+                    queryset_results = []
                     for item in _input:
                         if not hasattr(item, 'links') or not isinstance(item.links, RequirementLinks):
                             raise TypeError(
                                 f"Item {item} of type {type(item)} in QuerySet does not have a valid .links attribute of type RequirementLinks."
                             )
-                        active_item_links = item.links.active()
-                        for link_key, link_list in active_item_links.items():
-                            if link_key not in aggregated_input_links_data:
-                                aggregated_input_links_data[link_key] = []
-                            aggregated_input_links_data[link_key].extend(link_list)
-                        processed_inputs_count +=1
+                        
+                        # Evaluate this single item against the requirement
+                        item_input_links = RequirementLinks(**item.links.active())
+                        
+                        # Evaluate all operators for this single item
+                        item_operator_results = []
+                        for operator in self.operators.all():
+                            try:
+                                operator_result = operator.evaluate(
+                                    requirement_links=requirement_req_links,
+                                    input_links=item_input_links,
+                                    requirement=self,
+                                    original_input_args=args,
+                                    **kwargs
+                                )
+                                item_operator_results.append(operator_result)
+                            except Exception as e:
+                                logger.debug(f"Operator {operator.name} evaluation failed for item {item}: {e}")
+                                item_operator_results.append(False)
+                        
+                        # Apply evaluation mode for this single item
+                        item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+                        queryset_results.append(item_result)
+                        processed_inputs_count += 1
+                    
+                    # If any item in the QuerySet matches, return True for the whole QuerySet evaluation
+                    if any(queryset_results):
+                        return True
                     continue # Move to the next arg after processing queryset
                 else:
                     raise TypeError(
@@ -489,6 +522,7 @@ class Requirement(models.Model):
             # Prepare kwargs for the operator, including the current Requirement instance
             op_kwargs = kwargs.copy() # Start with kwargs passed to Requirement.evaluate
             op_kwargs['requirement'] = self # Add the Requirement instance itself
+            op_kwargs['original_input_args'] = args # Add the original input arguments for operators that need them (e.g., age operators)
             operator_results.append(operator.evaluate(
                 requirement_links=requirement_req_links,
                 input_links=final_input_links,

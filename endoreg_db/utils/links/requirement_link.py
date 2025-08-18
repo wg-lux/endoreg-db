@@ -10,6 +10,7 @@ from endoreg_db.models import (
     PatientFinding,
     Finding, 
     FindingIntervention, 
+    FindingClassification,
     FindingClassificationChoice, 
     LabValue,
     PatientLabValue,
@@ -65,6 +66,7 @@ class RequirementLinks(BaseModel):
     patient_findings: List["PatientFinding"] = []
     findings: List["Finding"] = []
     finding_classification_choices: List["FindingClassificationChoice"] = []
+    finding_classifications: List["FindingClassification"] = [] # Added for direct classification checks if needed
     finding_interventions: List["FindingIntervention"] = []
     patient_lab_sample_types: List["PatientLabSampleType"] = []
     patient_medications: List["PatientMedication"] = [] # Added

@@ -47,5 +47,5 @@
     ]
     choices: [
       "histology_dignity_benign",
-      "histology_dignity_malignant",
+      "histology_dignity_malign",
     ]

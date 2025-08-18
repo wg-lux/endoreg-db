@@ -16,7 +16,7 @@
         "colon_lesion_eftr",
         "colon_lesion_clip",
       ]
-    examinations: ["colonoscopy"]
+    examinations: ["colonoscopy", "colonoscopy_austria_screening"]
 
     finding_types: ["macroscopic"]
 

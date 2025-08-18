@@ -20,5 +20,5 @@
     description: "Histology: Benign"
 - model: endoreg_db.finding_classification_choice
   fields:
-    name: "histology_dignity_malignant"
-    description: "Histology: Malignant"
+    name: "histology_dignity_malign"
+    description: "Histology: Malign"

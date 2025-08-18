@@ -1,0 +1,48 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "patient_gender_generic"
+    name_de: "Patientengeschlecht (männlich/weiblich)"
+    name_en: "Patient gender generic" 
+    description: "Patient gender (generic)"
+    requirement_set_type: "any"
+    requirements:
+      - patient_gender_is_male
+      - patient_gender_is_female
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "basic_lab_values_normal"
+    name_de: "Basis-Labortests (Unauffällig)"
+    name_en: "Basic Lab Tests (Normal)"
+    description: "Basic lab tests (normal)"
+    requirement_set_type: "all"
+    requirements:
+      - "lab_value_hb_normal"
+      - "lab_value_leukocytes_normal"
+      - "lab_value_platelets_normal"
+      - "lab_value_creatinine_normal"
+      - "lab_value_inr_normal"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "patient_age_generic"
+    name_de: "Patientenalter (18-100 Jahre)"
+    name_en: "Patient Age (18-100 years)"
+    description: "Patient age between 18 and 100 years"
+    requirement_set_type: "all"
+    requirements:
+      - "patient_age_gte_18"
+      - "patient_age_lte_100"
+
+# - models: endoreg_db.requirement_set
+- models: endoreg_db.requirement_set
+  fields:
+    name: "generic_patient"
+    requirement_set_type: "all"
+    description: "Generic patient requirement set"
+    name_de: "Generische Patientenanforderung"
+    name_en: "Generic Patient Requirement"
+    links_to_sets:
+      - "patient_age_generic"
+      - "patient_gender_generic"
+      - "basic_lab_values_normal"

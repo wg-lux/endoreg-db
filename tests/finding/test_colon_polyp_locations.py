@@ -56,6 +56,6 @@ class ColonPolypLocationTest(TestCase):
 
         # make sure colonoscopy_coarse and colonoscopy_default are in the locations
         names = [location.name for location in colon_polyp_locations]
-        self.assertIn("colonoscopy_coarse", names, "Colonoscopy should have 'colonoscopy_coarse' location associated with it.")
-        self.assertIn("colonoscopy_default", names, "Colonoscopy should have 'colonoscopy_default' location associated with it.")
+        self.assertIn("colonoscopy_location_coarse", names, "Colonoscopy should have 'colonoscopy_location_coarse' location associated with it.")
+        self.assertIn("colonoscopy_location_default", names, "Colonoscopy should have 'colonoscopy_location_default' location associated with it.")
 

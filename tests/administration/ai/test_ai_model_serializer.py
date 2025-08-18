@@ -1,4 +1,5 @@
 from django.test import TestCase  # Import TestCase
+from typing import cast
 from endoreg_db.models import AiModel, ModelType
 from endoreg_db.serializers.administration.ai import AiModelSerializer
 
@@ -30,13 +31,17 @@ class AiModelSerializerTest(TestCase):
         self.assertTrue(is_valid, f"Serializer validation failed: {serializer.errors}")
 
         # 5. Act: Save the serializer to create the object
-        ai_model_instance = serializer.save()
+        ai_model_instance = cast(AiModel, serializer.save())
+
+        self.assertIsInstance(ai_model_instance, AiModel, "Serializer did not return an AiModel instance")
 
         # 6. Assert: Check the created instance (use self.assertEqual)
         self.assertEqual(AiModel.objects.count(), 1)
         self.assertEqual(ai_model_instance.name, "Test AI Model 2")
         self.assertEqual(ai_model_instance.model_type, model_type)
-        self.assertEqual(ai_model_instance.model_type.name, model_type_name)
+        self.assertIsNotNone(ai_model_instance.model_type)
+        if ai_model_instance.model_type:
+            self.assertEqual(ai_model_instance.model_type.name, model_type_name)
 
     def test_create_ai_model_with_model_type_object(self):
         """
@@ -61,13 +66,15 @@ class AiModelSerializerTest(TestCase):
         self.assertTrue(is_valid, f"Serializer validation failed: {serializer.errors}")
 
         # 5. Act: Save the serializer to create the object
-        ai_model_instance = serializer.save()
+        ai_model_instance = cast(AiModel, serializer.save())
 
         # 6. Assert: Check the created instance (use self.assertEqual)
         self.assertEqual(AiModel.objects.count(), 1)
         self.assertEqual(ai_model_instance.name, "Test AI Model 3")
         self.assertEqual(ai_model_instance.model_type, model_type)
-        self.assertEqual(ai_model_instance.model_type.name, "Classification")
+        self.assertIsNotNone(ai_model_instance.model_type)
+        if ai_model_instance.model_type:
+            self.assertEqual(ai_model_instance.model_type.name, "Classification")
     
     def test_serialize_ai_model(self):
         """
@@ -83,7 +90,7 @@ class AiModelSerializerTest(TestCase):
 
         # 2. Act: Serialize the instance
         serializer = AiModelSerializer(instance=ai_model)
-        serialized_data = serializer.data
+        serialized_data = cast(dict, serializer.data)
 
         # 3. Assert: Check the serialized data (use self.assertEqual)
         self.assertEqual(serialized_data['name'], "Test AI Model 4")

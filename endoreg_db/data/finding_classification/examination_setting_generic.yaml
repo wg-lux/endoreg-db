@@ -12,7 +12,6 @@
       "capsule_endoscopy",
       "percutaneous_transhepatic_biliary_drainage",
       "colonoscopy",
-      "colonoscopy_austria_screening",
     ]
     findings: [
       "examination_setting",

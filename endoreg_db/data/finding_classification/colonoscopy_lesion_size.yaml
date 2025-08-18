@@ -47,3 +47,22 @@
       "colon_lesion_size_oval_mm"
     ]
 
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_size_austria_categorical"
+    classification_types: [
+      "colon_lesion_size",
+      "morphology"
+    ]
+    examinations: [
+      "colonoscopy_austria_screening"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_size_austria_categorical_0_5",
+      "colon_lesion_size_austria_categorical_6_9",
+      "colon_lesion_size_austria_categorical_10_20",
+      "colon_lesion_size_austria_categorical_21_x"
+    ]

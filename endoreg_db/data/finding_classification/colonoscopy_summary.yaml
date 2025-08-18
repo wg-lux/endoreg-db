@@ -4,7 +4,6 @@
     name: "colonoscopy_not_complete_reason"
     classification_types: []
     examinations: [
-
       "colonoscopy",
       "colonoscopy_austria_screening",
     ]
