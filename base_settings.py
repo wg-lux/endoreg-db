@@ -94,3 +94,23 @@ LOGGING = get_logging_config(LOGGER_NAMES, file_log_level=FILE_LOG_LEVEL)
 # SECURE_HSTS_PRELOAD = True
 # SECURE_BROWSER_XSS_FILTER = True
 # SECURE_CONTENT_TYPE_NOSNIFF = True
+
+
+
+REST_FRAMEWORK = {
+    # Keep any existing settings you already have here...
+
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.UserRateThrottle",      # per authenticated user
+        "rest_framework.throttling.AnonRateThrottle",      # per IP for anonymous
+        "rest_framework.throttling.ScopedRateThrottle",    # per-view scopes
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        # Adjust to your traffic/profile; these are examples
+        "user": "100/hour",
+        "anon": "20/hour",
+
+        # Our new endpoint-specific scope
+        "secure-url-validate": "10/min",
+    },
+}
