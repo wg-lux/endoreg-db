@@ -18,7 +18,7 @@ body:
     attributes:
       label: Label Name
       description: What should the new label be called?
-      placeholder: e.g. ploly
+      placeholder: e.g. polyp
     validations:
       required: true
 
@@ -46,6 +46,8 @@ body:
       label: Redundancy or Interactions
       description: Does it conflict with or duplicate any existing labels?
       placeholder: Mention overlaps with labels.
+    validations:
+      required: true
 
   - type: input
     id: labelsets
@@ -53,6 +55,8 @@ body:
       label: Labelsets
       description: Which labelsets should include this label?
       placeholder: e.g. Instrument
+    validations:
+      required: true
 
   - type: textarea
     id: related_label
@@ -60,3 +64,5 @@ body:
       label: Related to an existing label?
       description: Is this improving or modifying an existing label?
       placeholder: Name the label it's related to or replacing
+    validations:
+      required: true
