@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from typing import List
 from django.core.exceptions import ObjectDoesNotExist
+from django.conf import settings
+from urllib.parse import urljoin
+from pathlib import Path
 
 from ...models import LabelVideoSegment, VideoFile
 import logging
@@ -27,6 +30,41 @@ from ._lvs_validate import (
 from endoreg_db.serializers import ImageClassificationAnnotationSerializer
 
 logger = logging.getLogger(__name__)
+
+# add these small helpers (could be private functions in this module)
+def _media_relpath_from_file_path(file_path) -> str:
+    """
+    Return a media-relative path (never an absolute server path).
+    If MEDIA_ROOT is a prefix, strip it; otherwise return the basename.
+    Accepts str or Path-like.
+    """
+    p = Path(str(file_path))
+    media_root = getattr(settings, "MEDIA_ROOT", None)
+    if media_root:
+        try:
+            rel = p.resolve().relative_to(Path(media_root).resolve())
+            return rel.as_posix()
+        except Exception:
+            pass
+    return p.name  # safe fallback
+
+def _media_url_from_file_path(file_path, request=None) -> str:
+    """
+    Build a public URL for the file using MEDIA_URL + relpath.
+    If `request` is provided, return an absolute URL.
+    """
+    base = getattr(settings, "MEDIA_URL", "/media/")
+    if not base.endswith("/"):
+        base += "/"
+    rel = _media_relpath_from_file_path(file_path)
+    url = urljoin(base, rel)
+    if request is not None:
+        try:
+            return request.build_absolute_uri(url)
+        except Exception:
+            pass
+    return url
+
 
 class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     """Serializer for creating and retrieving LabelVideoSegment instances."""
@@ -105,38 +143,44 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
 
     def get_time_segments(self, obj: LabelVideoSegment) -> List[dict]:
-        """
-        Return a dictionary representing the video segment with detailed frame-level annotation data for frontend use.
-        
-        The returned dictionary includes segment metadata (ID, frame range, start/end times) and a list of frames within the segment. Each frame entry contains its filename, file path, all classification annotations, predictions, manual annotations, and frame ID.
-        """
         frames = obj.frames
         time_segments = {
-            
             "segment_id": obj.id,
             "segment_start": obj.start_frame_number,
             "segment_end": obj.end_frame_number,
             "start_time": obj.start_time,
             "end_time": obj.end_time,
-            "frames": [
-
-            ]
+            "frames": []
         }
+
+        request = self.context.get("request") if hasattr(self, "context") else None
+
         for frame in frames:
-            all_classifications = ImageClassificationAnnotationSerializer(frame.image_classification_annotations.all(), many=True).data
+            all_classifications = ImageClassificationAnnotationSerializer(
+                frame.image_classification_annotations.all(), many=True
+            ).data
             predictions = ImageClassificationAnnotationSerializer(frame.predictions, many=True).data
-            manual_annotations = ImageClassificationAnnotationSerializer(frame.manual_annotations, many=True).data if frame.has_manual_annotations else []
-            
-            frame_data ={
-                    "frame_filename": frame.file_path.name,
-                    "frame_file_path": frame.file_path.as_posix(), #TODO If we host with whitenoise, this should probably be a relative path to media dir or an url?
-                    "all_classifications": all_classifications,
-                    "predictions": predictions,
-                    "frame_id": frame.id,
-                    "manual_annotations": manual_annotations
-                } 
+            manual_annotations = ImageClassificationAnnotationSerializer(
+                frame.manual_annotations, many=True
+            ).data if frame.has_manual_annotations else []
+
+            # 👇 changed here: no absolute server path; give a media-relative path + a URL
+            rel = _media_relpath_from_file_path(frame.file_path)
+            url = _media_url_from_file_path(frame.file_path, request=request)
+
+            frame_data = {
+                "frame_filename": Path(str(frame.file_path)).name,
+                "frame_file_path": rel,            # backwards-compatible, now relative
+                "frame_url": url,                  # new: what the frontend should use
+                "all_classifications": all_classifications,
+                "predictions": predictions,
+                "frame_id": frame.id,
+                "manual_annotations": manual_annotations
+            }
             time_segments["frames"].append(frame_data)
+
         return time_segments
+
     def get_label_name(self, obj):# -> Any | Literal['unknown']:
         """
         Return the name of the label associated with the segment, or "unknown" if no label is set.
