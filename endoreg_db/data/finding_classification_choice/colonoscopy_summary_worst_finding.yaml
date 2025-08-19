@@ -1,0 +1,15 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_worst_finding_polyp"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_worst_finding_rectum_cancer"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_worst_finding_colon_cancer"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_worst_finding_other"

@@ -11,10 +11,11 @@ if TYPE_CHECKING:
         PatientFindingClassification,
         LabelVideoSegment,
     )
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
     
 class PatientFinding(models.Model):
-    patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')
-    finding = models.ForeignKey('Finding', on_delete=models.CASCADE, related_name='finding_patient_findings')
+    patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='patient_findings')  # type: ignore[assignment]
+    finding = models.ForeignKey('Finding', on_delete=models.CASCADE, related_name='finding_patient_findings')  # type: ignore[assignment]
     
     # Audit-Felder für medizinische Nachverfolgung
     created_at = models.DateTimeField(auto_now_add=True)
@@ -264,7 +265,7 @@ class PatientFinding(models.Model):
         Returns:
         	The added video segment instance.
         """
-        self.video_segments.add(video_segment)
+        self.video_segments.add(video_segment) #TODO
         return video_segment
 
     # Manager für active/inactive Objekte
@@ -305,16 +306,52 @@ class PatientFinding(models.Model):
         return classifications
 
     @property
-    def active_locations(self):
-        """
-        Return all active location classifications associated with this patient finding.
-        """
-        return self.locations.filter(is_active=True)
-    
-    @property 
-    def active_morphologies(self):
-        return self.morphologies.filter(is_active=True)
-    
-    @property
     def active_interventions(self):
         return self.interventions.filter(is_active=True)
+
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Aggregates and returns all related model instances relevant for requirement evaluation
+        as a RequirementLinks object.
+        
+        This property provides access to:
+        - The finding associated with this patient finding
+        - All active finding classifications and their choices
+        - All active finding interventions
+        - The patient examination and patient
+        """
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from typing import cast, List
+        
+        # Get the base finding
+        findings_list = [self.finding] if self.finding else []
+        
+        # Get all active finding classifications and their choices
+        finding_classifications_list = []
+        finding_classification_choices_list = []
+        
+        for pf_classification in self.active_classifications:
+            if pf_classification.classification:
+                finding_classifications_list.append(pf_classification.classification)
+            if pf_classification.classification_choice:
+                finding_classification_choices_list.append(pf_classification.classification_choice)
+        
+        # Get all active finding interventions
+        finding_interventions_list = []
+        for pf_intervention in self.active_interventions:
+            if pf_intervention.intervention:
+                finding_interventions_list.append(pf_intervention.intervention)
+        
+        # Include patient examination and patient for context
+        patient_examinations_list = [self.patient_examination] if self.patient_examination else []
+        patient_findings_list = cast("List[PatientFinding]", [self])  # Include self for direct patient finding evaluations
+        
+        return RequirementLinks(
+            findings=findings_list,
+            finding_classifications=finding_classifications_list,
+            finding_classification_choices=finding_classification_choices_list,
+            finding_interventions=finding_interventions_list,
+            patient_examinations=patient_examinations_list,
+            patient_findings=patient_findings_list,
+        )

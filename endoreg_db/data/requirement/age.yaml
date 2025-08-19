@@ -22,4 +22,5 @@
       - "patient"
     operators:
       - age_lte
+    numeric_value: 100
     

@@ -4,7 +4,7 @@
     name_de: Koloskopie (unspezifisch)
     name_en: Colonoscopy (unspecific)
     description: Colonoscopy without further specification
-    examination: colonoscopy
+    examinations: ["colonoscopy"]
     indications:
       [
         "colonoscopy",
@@ -20,7 +20,7 @@
     name_de: Koloskopie (akut)
     name_en: Colonoscopy (acute)
     description: Colonoscopy for acute indications
-    examination: colonoscopy
+    examinations: ["colonoscopy"]
     indications: ["colonoscopy_diagnostic_acute_symptomatic"]
 
 - model: endoreg_db.examination_indication_classification
@@ -29,7 +29,7 @@
     name_de: Koloskopie (elektiv)
     name_en: Colonoscopy (elective)
     description: Colonoscopy for elective indications
-    examination: colonoscopy
+    examinations: ["colonoscopy"]
     indications:
       [
         "colonoscopy_screening",
@@ -43,7 +43,7 @@
     name_de: Gastroskopie
     name_en: Gastroscopy
     description: Gastroscopy without further specification
-    examination: gastroscopy
+    examinations: ["gastroscopy"]
     indications:
       [
         "gastroscopy",
@@ -66,7 +66,7 @@
     name_de: Gastroskopie (akut)
     name_en: Gastroscopy (acute)
     description: Gastroscopy for acute indications
-    examination: gastroscopy
+    examinations: ["gastroscopy"]
     indications:
       ["gastroscopy_diagnostic_acute_symptomatic", "gastroscopy_acute_bleeding"]
 
@@ -76,7 +76,7 @@
     name_de: Gastroskopie (elektiv)
     name_en: Gastroscopy (elective)
     description: Gastroscopy for elective indications
-    examination: gastroscopy
+    examinations: ["gastroscopy"]
     indications:
       [
         "gastroscopy_diagnostic_elective",
@@ -95,7 +95,7 @@
     name_de: "Dünndarmendoskopie"
     name_en: Small Bowel Endoscopy
     description: Small Bowel Endoscopy without further specification
-    examination: small_bowel_endoscopy
+    examinations: ["small_bowel_endoscopy"]
     indications: []
 
 - model: endoreg_db.examination_indication_classification
@@ -104,7 +104,7 @@
     name_de: Kapselendoskopie
     name_en: Capsule Endoscopy
     description: Capsule Endoscopy without further specification
-    examination: capsule_endoscopy
+    examinations: ["capsule_endoscopy"]
     indications: []
 
 - model: endoreg_db.examination_indication_classification
@@ -113,7 +113,7 @@
     name_de: Endosonographie unterer GI-Trakt
     name_en: Endosonography Lower GI Tract
     description: Endosonography Lower GI Tract without further specification
-    examination: endosonography_lower_gi
+    examinations: ["endosonography_lower_gi"]
     indications: ["endosonography_lower_gi"]
 
 - model: endoreg_db.examination_indication_classification
@@ -122,7 +122,7 @@
     name_de: Endosonographie oberer GI-Trakt
     name_en: Endosonography Upper GI Tract
     description: Endosonography Upper GI Tract without further specification
-    examination: endosonography_upper_gi
+    examinations: ["endosonography_upper_gi"]
     indications: ["endosonography_upper_gi", "endosonography_upper_gi_invasive"]
 
 - model: endoreg_db.examination_indication_classification
@@ -131,7 +131,7 @@
     name_de: Endoskopische retrograde Cholangiopankreatikographie
     name_en: Endoscopic Retrograde Cholangiopancreatography
     description: Endoscopic Retrograde Cholangiopancreatography without further specification
-    examination: ercp
+    examinations: ["ercp"]
     indications:
       ["erc", "erc_no_est", "ERCP", "ercp_no_est", "ercp_therapeutic_stenosis"]
 

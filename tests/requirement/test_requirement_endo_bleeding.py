@@ -35,8 +35,6 @@ class RequirementTest(TestCase):
         self.req_name_bleeding_high = "endoscopy_intervention_bleeding_risk_high"
         self.req_name_bleeding_low = "endoscopy_intervention_bleeding_risk_low"
 
-
-
         self.patient = generate_patient()
         self.patient.save()
 

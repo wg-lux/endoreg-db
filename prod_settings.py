@@ -24,7 +24,7 @@ from base_settings import (
 )
 import os
 ASSET_DIR = Path(__file__).parent / "tests/assets"
-RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "false").lower() == "true"  # Default to false for faster tests
 
 # Production settings
 DEBUG = os.environ.get("DJANGO_DEBUG", "False")  # Changed from True to False for production

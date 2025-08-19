@@ -15,10 +15,10 @@ class PatientExamination(models.Model):
     patient = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="patient_examinations"
     )
-    examination = models.ForeignKey(
+    examination = models.ForeignKey( # type: ignore[assignment]
         "Examination", on_delete=models.CASCADE, null=True, blank=True
     )
-    video = models.OneToOneField(
+    video = models.OneToOneField( # type: ignore[assignment]
         "VideoFile",
         on_delete=models.CASCADE,
         null=True,
@@ -30,9 +30,9 @@ class PatientExamination(models.Model):
     hash = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        patient: "Patient"
-        examination: "Examination"
-        video: "VideoFile"
+        patient: "models.ForeignKey[Patient]"
+        examination: "models.ForeignKey[Examination]"
+        video: "models.OneToOneField[VideoFile]"
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]
@@ -149,9 +149,17 @@ class PatientExamination(models.Model):
         """
         Aggregates and returns all related model instances relevant for requirement evaluation
         as a RequirementLinks object.
+        
+        This includes:
+        - All findings associated with this examination
+        - All classifications and choices from those findings
+        - All interventions from those findings
+        - Examination indications and their choices
+        - Patient lab values
         """
         from endoreg_db.utils.links.requirement_link import RequirementLinks
-        from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue # Added
+        from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
+        
         # Get all PatientExaminationIndication instances linked to this PatientExamination
         patient_exam_indications = self.indications.all() 
         
@@ -164,19 +172,52 @@ class PatientExamination(models.Model):
             if pei.indication_choice:
                 indication_choices_list.append(pei.indication_choice)
 
-        # Fetch all patient lab values associated with this patient examination\'s patient
+        # Fetch all patient lab values associated with this patient examination's patient
         patient_lab_values = []
         if self.patient:
             patient_lab_values = list(PatientLabValue.objects.filter(patient=self.patient))
 
         current_examination = [self.examination] if self.examination else []
+        
+        # Now aggregate findings data from all PatientFinding instances
+        findings_list = []
+        finding_classifications_list = []
+        finding_classification_choices_list = []
+        finding_interventions_list = []
+        patient_findings_list = []
+        
+        for patient_finding in self.patient_findings.all():
+            # Add the PatientFinding itself
+            patient_findings_list.append(patient_finding)
+            
+            # Add the base Finding
+            if patient_finding.finding:
+                findings_list.append(patient_finding.finding)
+                
+            # Add all active classifications and their choices from this PatientFinding
+            for pf_classification in patient_finding.active_classifications:
+                if pf_classification.classification:
+                    finding_classifications_list.append(pf_classification.classification)
+                if pf_classification.classification_choice:
+                    finding_classification_choices_list.append(pf_classification.classification_choice)
+            
+            # Add all active interventions from this PatientFinding  
+            for pf_intervention in patient_finding.active_interventions:
+                if pf_intervention.intervention:
+                    finding_interventions_list.append(pf_intervention.intervention)
 
         return RequirementLinks(
             patient_examinations=[self],  # Add the instance itself
             examinations=current_examination, # Add the related Examination model
             examination_indications=examination_indications_list,
             examination_indication_classification_choices=indication_choices_list,
-            patient_lab_values=patient_lab_values
+            patient_lab_values=patient_lab_values,
+            # Add findings-related data
+            patient_findings=patient_findings_list,
+            findings=findings_list,
+            finding_classifications=finding_classifications_list,
+            finding_classification_choices=finding_classification_choices_list,
+            finding_interventions=finding_interventions_list,
         )
 
     def create_finding(self, finding:"Finding") -> "PatientFinding":

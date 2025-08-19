@@ -12,6 +12,7 @@ from endoreg_db.models import (
     Event,
     LabValue,
     Finding,
+    FindingClassification,
     FindingClassificationChoice,
     FindingIntervention,
     InformationSource,
@@ -70,7 +71,8 @@ IMPORT_METADATA = {
             "events",
             "lab_values",
             "findings",
-            "finding_classification_choice",  # updated from finding_morphology_classification_choices
+            "finding_classifications",
+            "finding_classification_choices",  # updated from finding_morphology_classification_choices
             "finding_interventions",
             "risks",
             "risk_types",
@@ -92,6 +94,7 @@ IMPORT_METADATA = {
             Event,
             LabValue,
             Finding,
+            FindingClassification,
             FindingClassificationChoice,
             FindingIntervention,
             Risk,

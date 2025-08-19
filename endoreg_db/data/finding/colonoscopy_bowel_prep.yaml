@@ -45,3 +45,12 @@
       ]
 
     finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "bowel_prep_screening_austria"
+    examinations: 
+      [
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["macroscopic"]

@@ -16,17 +16,17 @@ class PatientFindingClassification(models.Model):
     """Represents basic classifications for specific findings in a patient context.
     Links a PatientFinding to a specific classification and choice, with optional subcategory values.
     """
-    finding = models.ForeignKey(
+    finding = models.ForeignKey( # type: ignore[assignment]
         "PatientFinding", 
         on_delete=models.CASCADE, 
         related_name="classifications"
     )
-    classification = models.ForeignKey(
+    classification = models.ForeignKey( # type: ignore[assignment]
         "FindingClassification", 
         on_delete=models.CASCADE, 
         related_name="patient_finding_classifications"
     )
-    classification_choice = models.ForeignKey(
+    classification_choice = models.ForeignKey( # type: ignore[assignment]
         "FindingClassificationChoice", 
         on_delete=models.CASCADE, 
         related_name="patient_finding_classifications"

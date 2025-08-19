@@ -5,7 +5,7 @@
     name: "colonoscopy"
     name_de: "Koloskopie"
     name_en: "Colonoscopy"
-    examination: "colonoscopy"
+    examinations: ["colonoscopy"]
     description: "Colonoscopy without further specification"
 
 ## Colonoscopy elective
@@ -14,7 +14,7 @@
     name: "colonoscopy_screening"
     name_de: "Koloskopie (Screening)"
     name_en: "Colonoscopy (Screening)"
-    examination: "colonoscopy"
+    examinations: ["colonoscopy"]
     description: "Colonoscopy for screening purposes"
     expected_interventions: # Many2Many to finding intervention
       [
@@ -29,7 +29,7 @@
     name: "colonoscopy_lesion_removal_small"
     name_de: "Koloskopie (Läsionsentfernung, klein (< 10 mm), elektiv)"
     name_en: "Colonoscopy (Lesion removal, small (< 10 mm), elective)"
-    examination: "colonoscopy"
+    examinations: ["colonoscopy"]
     description: "Elective colonoscopy for removal of small lesions (< 10 mm)"
     expected_interventions:
       [
@@ -47,7 +47,7 @@
     name: "colonoscopy_lesion_removal_emr"
     name_de: "Koloskopie (Läsionsentfernung, EMR, elektiv)"
     name_en: "Colonoscopy (Lesion removal, EMR, elective)"
-    examination: "colonoscopy"
+    examinations: ["colonoscopy"]
     description: "Elective colonoscopy for removal of lesions using EMR"
     expected_interventions:
       [
@@ -63,7 +63,7 @@
     name: "colonoscopy_lesion_removal_large"
     name_de: "Koloskopie (Läsionsentfernung, groß (≥ 10 mm), elektiv)"
     name_en: "Colonoscopy (Lesion removal, large (≥ 10 mm), elective)"
-    examination: "colonoscopy"
+    examinations: ["colonoscopy"]
     description: "Elective colonoscopy for removal of large lesions (≥ 10 mm)"
     expected_interventions:
       [
@@ -82,7 +82,7 @@
     name: "colonoscopy_diagnostic_acute_symptomatic"
     name_de: "Koloskopie (Diagnostik, akut-symptomatisch)"
     name_en: "Colonoscopy (Diagnostic, Acute Symptomatic)"
-    examination: "colonoscopy"
+    examinations: ["colonoscopy"]
     description: "Colonoscopy for diagnostic purposes in acute symptomatic patients"
     expected_interventions:
       ["colon_lesion_clip", "colon_lesion_injection_vasoactive"]
@@ -93,7 +93,7 @@
     name: "gastroscopy"
     name_de: "Gastroskopie"
     name_en: "Gastroscopy"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Gastroscopy without further specification"
     expected_interventions: # Many2Many to finding intervention
       [
@@ -109,7 +109,7 @@
     name: "gastroscopy_baseline"
     name_de: "Gastroskopie (Basis)"
     name_en: "Gastroscopy (Baseline)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Baseline gastroscopy"
     expected_interventions: ["egd_lesion_biopsy"]
 
@@ -119,7 +119,7 @@
     name: "gastroscopy_diagnostic_acute_symptomatic"
     name_de: "Gastroskopie (Diagnostik, akut-symptomatisch)"
     name_en: "Gastroscopy (Diagnostic, Acute Symptomatic)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Gastroscopy for diagnostic purposes in acute symptomatic patients"
     expected_interventions: [
         "egd_hp_biopsy", # default
@@ -130,7 +130,7 @@
     name: "gastroscopy_acute_bleeding"
     name_de: "Gastroskopie (akute Blutung)"
     name_en: "Gastroscopy (acute bleeding)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Gastroscopy for acute bleeding"
     expected_interventions: [
         "egd_lesion_injection_vasoactive",
@@ -147,7 +147,7 @@
     name: "gastroscopy_diagnostic_elective"
     name_de: "Gastroskopie (Diagnostik, elektiv)"
     name_en: "Gastroscopy (Diagnostic, Elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Gastroscopy for diagnostic purposes in elective patients"
     expected_interventions: ["egd_hp_biopsy"]
 
@@ -156,7 +156,7 @@
     name: "gastroscopy_percutane_enterostomy"
     name_de: "Gastroskopie (perkutane Enterostomie)"
     name_en: "Gastroscopy (percutaneous enterostomy)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Gastroscopy for percutaneous enterostomy"
     expected_interventions:
       [
@@ -171,7 +171,7 @@
     name: "gastroscopy_therapeutic_varicosis_esophagus"
     name_de: "Gastroskopie (Therapie, Varikosis Ösophagus, elektiv)"
     name_en: "Gastroscopy (Therapeutic, Varicosis Esophagus, elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Elective gastroscopy for therapeutic purposes in elective patients with varicosis of the esophagus"
     expected_interventions:
       [
@@ -186,7 +186,7 @@
     name: "gastroscopy_therapeutic_varicosis_stomach"
     name_de: "Gastroskopie (Therapie, Varikosis Magen, elektiv)"
     name_en: "Gastroscopy (Therapeutic, Varicosis Stomach, elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Elective gastroscopy for therapeutic purposes in elective patients with varicosis of the stomach"
     expected_interventions:
       [
@@ -201,7 +201,7 @@
     name: "gastroscopy_therapeutic_varicosis_intestine"
     name_de: "Gastroskopie (Therapie, Varikosis Darm, elektiv)"
     name_en: "Gastroscopy (Therapeutic, Varicosis Intestine, elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Elective gastroscopy for therapeutic purposes in elective patients with varicosis of the intestine"
     expected_interventions:
       [
@@ -216,7 +216,7 @@
     name: "gastroscopy_lesion_removal_small"
     name_de: "Gastroskopie (Läsionsentfernung, klein (< 10 mm), elektiv)"
     name_en: "Gastroscopy (Lesion removal, small (< 10 mm), elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Elective gastroscopy for removal of small lesions (< 10 mm)"
     expected_interventions:
       [
@@ -234,7 +234,7 @@
     name: "gastroscopy_lesion_removal_large"
     name_de: "Gastroskopie (Läsionsentfernung, groß (≥ 10 mm), elektiv)"
     name_en: "Gastroscopy (Lesion removal, large (≥ 10 mm), elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Elective gastroscopy for removal of large lesions (≥ 10 mm)"
     expected_interventions:
       [
@@ -253,7 +253,7 @@
     name: "gastroscopy_obstruction_generic"
     name_de: "Gastroskopie (Obstruktion / Dysphagie, generisch, elektiv)"
     name_en: "Gastroscopy (Obstruction / Dysphagia, generic, elective)"
-    examination: "gastroscopy"
+    examinations: ["gastroscopy"]
     description: "Elective gastroscopy for patients with obstruction / dysphagia"
     expected_interventions:
       [
@@ -276,7 +276,7 @@
     name: "endosonography_upper_gi"
     name_de: "Endosonographie oberer GI-Trakt"
     name_en: "Endosonography Upper GI Tract"
-    examination: "endosonography_upper_gi"
+    examinations: ["endosonography_upper_gi"]
     description: "Endosonography of the upper GI tract without further specification"
     expected_interventions: []
 
@@ -285,7 +285,7 @@
     name: "endosonography_upper_gi_invasive"
     name_de: "Endosonographie oberer GI-Trakt (invasiv)"
     name_en: "Endosonography Upper GI Tract (invasive)"
-    examination: "endosonography_upper_gi"
+    examinations: ["endosonography_upper_gi"]
     description: "Invasive endosonography of the upper GI tract"
     expected_interventions:
       [
@@ -305,7 +305,7 @@
     name: "endosonography_lower_gi"
     name_de: "Endosonographie unterer GI-Trakt"
     name_en: "Endosonography Lower GI Tract"
-    examination: "endosonography_lower_gi"
+    examinations: ["endosonography_lower_gi"]
     description: "Endosonography of the lower GI tract without further specification"
     expected_interventions: []
 
@@ -314,7 +314,7 @@
     name: "endosonography_lower_gi_invasive"
     name_de: "Endosonographie unterer GI-Trakt (invasiv)"
     name_en: "Endosonography Lower GI Tract (invasive)"
-    examination: "endosonography_lower_gi"
+    examinations: ["endosonography_lower_gi"]
     description: "Invasive endosonography of the lower GI tract"
     expected_interventions:
       [
@@ -328,7 +328,7 @@
     name: "percutaneous_transhepatic_cholangiography"
     name_de: "Perkutane transhepatische Cholangiographie"
     name_en: "Percutaneous Transhepatic Cholangiography"
-    examination: "percutaneous_transhepatic_cholangiography"
+    examinations: ["percutaneous_transhepatic_cholangiography"]
     description: "Percutaneous transhepatic cholangiography without further specification"
     expected_interventions:
       [
@@ -342,7 +342,7 @@
     name: "percutaneous_transhepatic_biliary_drainage"
     name_de: "Perkutane transhepatische Gallengangdrainage"
     name_en: "Percutaneous Transhepatic Biliary Drainage"
-    examination: "percutaneous_transhepatic_cholangiography"
+    examinations: ["percutaneous_transhepatic_cholangiography"]
     description: "Percutaneous transhepatic biliary drainage without further specification"
     expected_interventions:
       [
@@ -357,7 +357,7 @@
     name: "erc"
     name_de: "Endoskopische retrograde Cholangiographie"
     name_en: "Endoscopic Retrograde Cholangiography"
-    examination: "ercp"
+    examinations: ["ercp"]
     description: "ERC without further specification"
     expected_interventions:
       [
@@ -373,7 +373,7 @@
     name: "erc_no_est"
     name_de: "ERC (ohne EST)"
     name_en: "ERC (without EST)"
-    examination: "ercp"
+    examinations: ["ercp"]
     description: "ERC without endoscopic sphincterotomy"
     expected_interventions:
       ["erc", "ercp_stent", "ercp_extraction", "ercp_biopsy"]
@@ -383,7 +383,7 @@
     name: "ERCP"
     name_de: "Endoskopische retrograde Cholangiopankreatikographie"
     name_en: "Endoscopic Retrograde Cholangiopancreatography"
-    examination: "ercp"
+    examinations: ["ercp"]
     description: "ERCP without further specification"
     expected_interventions:
       [
@@ -400,7 +400,7 @@
     name: "ercp_no_est"
     name_de: "ERCP (ohne EST)"
     name_en: "ERCP (without EST)"
-    examination: "ercp"
+    examinations: ["ercp"]
     description: "ERCP without endoscopic sphincterotomy"
     expected_interventions:
       ["erc", "erp", "ercp_stent", "ercp_extraction", "ercp_biopsy"]
@@ -410,7 +410,7 @@
     name: "ercp_therapeutic_stenosis"
     name_de: "ERC(P) (Therapie, Stenose)"
     name_en: "ERC(P) (Therapeutic, Stenosis)"
-    examination: "ercp"
+    examinations: ["ercp"]
     description: "ERC(P) for therapeutic purposes in patients with stenosis"
     expected_interventions:
       [

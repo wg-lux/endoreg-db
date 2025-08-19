@@ -85,8 +85,32 @@ class Classifier:
         with torch.inference_mode():
             if self.verbose:
                 ic("Starting inference")
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.model.to(device).eval()
+                
+            # Ensure model exists
+            if self.model is None:
+                raise ValueError("Model is not loaded")
+            
+            # Use the device the model is currently on, with fallback to CPU
+            try:
+                # Check what device the model parameters are on
+                model_device = next(self.model.parameters()).device
+                device = model_device
+                if verbose:
+                    print(f"Using device: {device}")
+            except StopIteration:
+                # Model has no parameters, default to CPU
+                device = torch.device("cpu")
+                if verbose:
+                    print("Model has no parameters, defaulting to CPU")
+            except Exception as e:
+                # Any other issue, fall back to CPU
+                device = torch.device("cpu")
+                if verbose:
+                    print(f"Device detection failed, using CPU: {e}")
+                    
+            # Ensure model is in eval mode
+            self.model.eval()
+            
             for batch in tqdm(dl):
                 batch = batch.to(device, non_blocking=True)
                 prediction = self.model(batch)

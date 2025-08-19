@@ -17,7 +17,8 @@ def load_default_ai_model():
     call_command(
         "create_multilabel_model_meta",
         "--model_path",
-        model_path
+        model_path,
+        "--bump_version"  # Handle existing models by bumping version
     )
 
 def load_qualification_data():

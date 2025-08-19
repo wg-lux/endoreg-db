@@ -55,6 +55,18 @@ def get_logging_config(logger_names, log_level=None, log_dir=None):
             'level': 'INFO', # Or your preferred level for Django logs
             'propagate': False, # Don't propagate Django logs to root
         },
+        # Suppress faker debug messages
+        'faker': {
+            'handlers': [],  # No handlers = no output
+            'level': 'CRITICAL',  # Only critical messages (essentially disabled)
+            'propagate': False,
+        },
+        # Also suppress faker.providers which can be noisy
+        'faker.providers': {
+            'handlers': [],
+            'level': 'CRITICAL',
+            'propagate': False,
+        },
     }
 
     # Dynamically create file handlers and logger configurations

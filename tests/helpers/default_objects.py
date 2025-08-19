@@ -63,10 +63,12 @@ def get_latest_segmentation_model(model_name:str=DEFAULT_SEGMENTATION_MODEL_NAME
         load_center_data,
         load_ai_model_label_data,
         load_ai_model_data,
+        load_default_ai_model,
     )
     load_center_data()
     load_ai_model_label_data()
     load_ai_model_data()
+    load_default_ai_model()  # Create the model metadata
     ai_model = AiModel.objects.get(name=model_name)
     latest_meta = ai_model.get_latest_version()
     return latest_meta

@@ -1,0 +1,51 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_polyp_histology"
+    classification_types: []
+    examinations: [
+      "colonoscopy",
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "histology_polyp_hyperplastic",
+      "histology_polyp_adenoma_tubular",
+      "histology_polyp_adenoma_tubulovillous",
+      "histology_polyp_adenoma_villous",
+      "histology_polyp_sessile_serrated_lesion"
+    ]
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_polyp_histology_dysplasia"
+    classification_types: []
+    examinations: [
+      "colonoscopy",
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "histology_dysplasia_none",
+      "histology_dysplasia_low_grade",
+      "histology_dysplasia_high_grade",
+    ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_histology_dignity"
+    classification_types: []
+    examinations: [
+      "colonoscopy",
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "histology_dignity_benign",
+      "histology_dignity_malign",
+    ]

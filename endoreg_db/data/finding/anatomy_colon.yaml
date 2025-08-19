@@ -1,0 +1,128 @@
+- model: endoreg_db.finding
+  fields:
+    name: "cecum"
+    description: "Anatomical structure: Cecum"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+
+    finding_types: ["anatomy", "anatomy_colon"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "terminal_ileum"
+    description: "Anatomical structure: Terminal ileum"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "ileocecal_valve"
+    description: "Anatomical structure: Ileocecal valve"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "ascending_colon"
+    description: "Anatomical structure: Ascending colon"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+ # "right_flexure",
+- model: endoreg_db.finding
+  fields:
+    name: "right_flexure"
+    description: "Anatomical structure: Right flexure"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+# "transverse_colon",
+- model: endoreg_db.finding
+  fields:
+    name: "transverse_colon"
+    description: "Anatomical structure: Transverse colon"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+# "left_flexure",
+- model: endoreg_db.finding
+  fields:
+    name: "left_flexure"
+    description: "Anatomical structure: Left flexure"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+# "descending_colon",
+- model: endoreg_db.finding
+  fields:
+    name: "descending_colon"
+    description: "Anatomical structure: Descending colon"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+# "sigmoid_colon",
+- model: endoreg_db.finding
+  fields:
+    name: "sigmoid_colon"
+    description: "Anatomical structure: Sigmoid colon"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+# "rectum",
+- model: endoreg_db.finding
+  fields:
+    name: "rectum"
+    description: "Anatomical structure: Rectum"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]
+
+# "rectum_anus",
+- model: endoreg_db.finding
+  fields:
+    name: "rectum_anus"
+    description: "Anatomical structure: Rectum and anus"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["anatomy", "anatomy_colon"]

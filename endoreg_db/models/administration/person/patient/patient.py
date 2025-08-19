@@ -3,7 +3,7 @@ from django.db import models
 from faker import Faker
 import random
 from datetime import datetime
-from typing import TYPE_CHECKING, List  # Added List
+from typing import TYPE_CHECKING, List, Optional  # Added List
 import logging
 from django.utils import timezone  # Add this import
 
@@ -45,13 +45,13 @@ class Patient(Person):
     """
 
     # -----gc-08-dev--changings---
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    dob = models.DateField(null=True, blank=True)
-    gender = models.ForeignKey(
+    first_name = models.CharField(max_length=100) # type: ignore[assignment]
+    last_name = models.CharField(max_length=100) # type: ignore[assignment]
+    dob = models.DateField(null=True, blank=True) # type: ignore[assignment]
+    gender = models.ForeignKey( # type: ignore[assignment]
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
     )
-    center = models.ForeignKey(
+    center = models.ForeignKey( # type: ignore[assignment]
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
@@ -140,9 +140,9 @@ class Patient(Person):
 
     def create_examination(
         self,
-        examination_name_str: str = None,
-        date_start: datetime = None,
-        date_end: datetime = None,
+        examination_name_str: Optional[str] = None,
+        date_start: Optional[datetime] = None,
+        date_end: Optional[datetime] = None,
         save: bool = True,
     ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
