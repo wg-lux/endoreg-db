@@ -318,8 +318,7 @@ class PdfImportService:
             try:
                 file_hash = self._sha256(file_path)
             except Exception:
-                file_hash = None
-            
+                file_hash = None      
             if file_hash and RawPdfFile.objects.filter(pdf_hash=file_hash).exists():
                 existing = RawPdfFile.objects.get(pdf_hash=file_hash)
 
@@ -354,7 +353,7 @@ class PdfImportService:
                             )
                         except Exception as e:
                             logger.error(f"Failed to create simple anonymized PDF for existing file: {e}")
-                existing.mark_sensitive_meta_processed()
+                existing.state.mark_sensitive_meta_processed()
                 return existing
             
             # Move to quarantine directory so watcher no longer sees it
