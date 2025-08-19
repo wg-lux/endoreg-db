@@ -20,6 +20,7 @@ class AnonymizationStatus(str, Enum):
     DONE                    = "done"
     VALIDATED               = "validated"
     FAILED                  = "failed"
+    STARTED                = "started"
 
 class VideoState(models.Model):
     """
@@ -51,6 +52,8 @@ class VideoState(models.Model):
     anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
     anonymization_status: AnonymizationStatus
     
+    processing_started = models.BooleanField(default=False, help_text="True if the processing has started, but not yet completed.")
+    
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
@@ -60,6 +63,8 @@ class VideoState(models.Model):
     segment_annotations_validated = models.BooleanField(default=False, help_text="True if segment annotations have been validated.")
     
     was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
+    
+    objects = models.Manager()
 
     def __str__(self):
         # Find the related VideoFile's UUID if possible
@@ -104,6 +109,8 @@ class VideoState(models.Model):
             return AnonymizationStatus.EXTRACTING_FRAMES
         if getattr(self, "processing_error", False):
             return AnonymizationStatus.FAILED
+        if self.processing_started:
+            return AnonymizationStatus.STARTED
         return AnonymizationStatus.NOT_STARTED
 
     # ---- Single‑responsibility mutators ---------------------------------
@@ -187,6 +194,36 @@ class VideoState(models.Model):
         self.text_meta_extracted = True
         if save:
             self.save(update_fields=["text_meta_extracted", "date_modified"])
+    
+    def get_or_create_state(self):
+        """
+        Get the current state of the video, or create a new one if it doesn't exist.
+        
+        Returns:
+            VideoState: The current or newly created state.
+        """
+        if not hasattr(self, 'video_file'):
+            raise ValueError("This method requires a related VideoFile instance.")
+        
+        # If the state already exists, return it
+        if self.video_file.state:
+            return self.video_file.state
+        
+        # Otherwise, create a new state
+        new_state = VideoState(video_file=self.video_file)
+        new_state.save()
+        return new_state
+    
+    def mark_processing_started(self, *, save: bool = True) -> None:
+        """
+        Mark the processing as started for this video state.
+        
+        Parameters:
+            save (bool): If True, immediately saves the updated state to the database.
+        """
+        self.processing_started = True
+        if save:
+            self.save(update_fields=["processing_started", "date_modified"])
     
     
 

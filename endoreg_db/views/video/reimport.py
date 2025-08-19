@@ -1,3 +1,4 @@
+from celery.events import state
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -152,8 +153,11 @@ class VideoReimportView(APIView):
                     logger.exception(f"VideoImportService anonymization failed for video {video.uuid}: {e}")
                     logger.warning("Continuing without anonymization due to error")
                 
-                # Set anonymization status to "done" even without frame cleaning
-                video
+                state.mark_sensitive_meta_processed(save=True)
+                
+            # If we reach here, everything was successful
+            logger.info(f"Video re-import completed successfully for {video.uuid}")
+            video.save(update_fields=['sensitive_meta', 'date_modified'])
             
             return Response({
                 "message": "Video re-import completed successfully.",

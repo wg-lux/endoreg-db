@@ -81,13 +81,18 @@ class RawPdfFile(models.Model):
         null=True,
         related_name="raw_pdf_file",
     )
+    
+    objects = models.Manager()
 
     @property
     def file_url(self):
         """
         Returns the URL of the stored PDF file if available; otherwise, returns None.
         """
-        return self.file.url if self.file else None 
+        try:
+            return self.file.url if self.file and self.file.name else None
+        except (ValueError, AttributeError):
+            return None
 
     patient = models.ForeignKey(
         "Patient",
@@ -399,7 +404,7 @@ class RawPdfFile(models.Model):
             fallback_file = Path(fallback_file)
 
         try:
-            if not self.file.storage.exists(self.file.name):
+            if not self.file.field.storage.exists(self.file.name):
                 logger.warning(f"File missing at storage path {self.file.name}. Attempting copy from fallback {fallback_file}")
                 if fallback_file.exists():
                     with fallback_file.open("rb") as f:
@@ -473,3 +478,10 @@ class RawPdfFile(models.Model):
         }
 
         return settings_dict
+    
+    @staticmethod
+    def get_pdf_by_id(pdf_id: int) -> "RawPdfFile":
+        try:
+            return RawPdfFile.objects.get(pk=pdf_id)
+        except RawPdfFile.DoesNotExist:
+            raise ValueError(f"PDF with ID {pdf_id} does not exist.")

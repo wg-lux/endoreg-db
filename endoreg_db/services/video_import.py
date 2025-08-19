@@ -101,6 +101,13 @@ class VideoImportService():
             save_video_file=save_video,
         )
         
+        state = VideoFile.get_or_create_state(video_file_obj)
+        
+        if not state:
+            raise RuntimeError("Failed to create VideoFile instance")
+        
+        state.mark_processing_started(save=True)
+        self.logger.info(f"Created VideoFile with UUID: {video_file_obj.uuid}")
         if not video_file_obj:
             raise RuntimeError("Failed to create VideoFile instance")
         self.logger.info(f"Created VideoFile with UUID: {video_file_obj.uuid}")
@@ -287,13 +294,15 @@ class VideoImportService():
             if video_file_obj.raw_file and hasattr(video_file_obj.raw_file, 'path'):
                 original_file_path = Path(video_file_obj.raw_file.path)
                 self._move_processed_files_to_storage(original_file_path, video_file_obj, metadata)
+                
         except Exception as e:
             self.logger.warning(f"Failed to move processed video files: {e}")
         
         # Step 9: Refresh from database and return
         with transaction.atomic():
             video_file_obj.refresh_from_db()
-        
+        video_file_obj.state.mark_sensitive_meta_processed(save=True)
+        os.removedirs(RAW_FRAME_DIR)
         self.logger.info(f"Import and anonymization completed for VideoFile UUID: {video_file_obj.uuid}")
         return video_file_obj
 
@@ -467,6 +476,9 @@ class VideoImportService():
                         self.logger.info(f"Moved metadata file to: {target_metadata_path}")
             
             self.logger.info(f"Successfully moved all processed files for {video_name}")
+            
+            os.remove(original_file_path)  # Remove original file after moving
+            self.logger.info(f"Removed original file after moving: {original_file_path}")   
             
         except Exception as e:
             self.logger.error(f"Error moving processed video files: {e}")

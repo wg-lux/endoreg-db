@@ -18,6 +18,7 @@ class AnonymizationStatus(str, Enum):
     DONE                    = "done"
     VALIDATED               = "validated"
     FAILED                  = "failed"
+    STARTED                = "started"
 
 
 class RawPdfState(models.Model):
@@ -36,7 +37,10 @@ class RawPdfState(models.Model):
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
     anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
-    anonymization_status: AnonymizationStatus
+    
+    # Processing state
+    processing_started = models.BooleanField(default=False, help_text="True if the processing has started, but not yet completed.")
+    processing_error = models.BooleanField(default=False, help_text="True if an error occurred during processing.")
     
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
@@ -51,7 +55,6 @@ class RawPdfState(models.Model):
         raw_pdf_file: "RawPdfFile"
 
     def __str__(self):
-        # Find the related VideoFile's UUID if possible
         """
         Return a string summarizing the RawPdfState instance, including the related PDF file UUID and key processing state flags with timestamps.
         """
@@ -86,12 +89,25 @@ class RawPdfState(models.Model):
         if self.sensitive_meta_processed:
             return AnonymizationStatus.DONE
         if self.anonymized:
-            return AnonymizationStatus.PROCESSING_ANONYMIZING
+            return AnonymizationStatus.DONE
         if self.initial_prediction_completed:
             return AnonymizationStatus.PROCESSING_ANONYMIZING
-        if self.text_meta_extracted:
+        if self.pdf_meta_extracted:
             return AnonymizationStatus.NOT_STARTED
+        if self.processing_started:
+            return AnonymizationStatus.STARTED
         return AnonymizationStatus.NOT_STARTED
+    
+    def mark_processing_started(self, *, save: bool = True) -> None:
+        """
+        Mark the processing as started and optionally save the updated state.
+        
+        Parameters:
+            save (bool): If True, persist the change to the database immediately. Defaults to True.
+        """
+        self.processing_started = True
+        if save:
+            self.save(update_fields=["processing_started", "date_modified"])
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:

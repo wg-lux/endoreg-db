@@ -5,6 +5,7 @@ from django.conf import settings
 from endoreg_db.models import VideoFile, RawPdfFile
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.pdf_import import PdfImportService
+from endoreg_db.utils.paths import STORAGE_DIR
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,10 @@ class AnonymizationService:
             project_root: Path to the project root. If None, uses settings.BASE_DIR
         """
         if project_root is None:
-            project_root = getattr(settings, 'BASE_DIR', Path.cwd())
+            project_root = STORAGE_DIR
         
-        self.project_root = Path(project_root)
         self.video_service = VideoImportService()
-        self.pdf_service = PdfImportService(project_root=self.project_root)
+        self.pdf_service = PdfImportService()
 
     # ---------- READ ----------------------------------------------------
     @staticmethod
@@ -186,10 +186,9 @@ class AnonymizationService:
             vf.state.mark_anonymization_validated()
             return "video"
 
-        pdf = RawPdfFile.objects.select_related("sensitive_meta").filter(pk=file_id).first()
-        if pdf and pdf.sensitive_meta:
-            pdf.sensitive_meta.anonymization_validated = True
-            pdf.sensitive_meta.save(update_fields=["anonymization_validated"])
+        pdf = RawPdfFile.objects.select_related("state").filter(pk=file_id).first()
+        if pdf:
+            pdf.state.mark_anonymization_validated()
             return "pdf"
 
         return None
