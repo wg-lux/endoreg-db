@@ -73,6 +73,13 @@ class RawPdfFile(models.Model):
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
+    
+    anonymized_file = models.FileField(
+        upload_to=PDF_DIR.name,
+        validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
+        null=True,
+        blank=True,
+    )
 
     state = models.OneToOneField(
         "RawPdfState",
@@ -91,6 +98,16 @@ class RawPdfFile(models.Model):
         """
         try:
             return self.file.url if self.file and self.file.name else None
+        except (ValueError, AttributeError):
+            return None
+        
+    @property
+    def anonymized_file_url(self):
+        """
+        Returns the URL of the stored PDF file if available; otherwise, returns None.
+        """
+        try:
+            return self.anonymized_file.url if self.anonymized_file and self.anonymized_file.name else None
         except (ValueError, AttributeError):
             return None
 
@@ -151,9 +168,26 @@ class RawPdfFile(models.Model):
                 file_path_str = self.file.path
             except Exception as e:
                 logger.warning(f"Could not get file path for {self.file.name} before deletion: {e}")
+                
+        try:
+            #unlink the files
+            import os
+            if self.anonymized_file:
+                os.remove(self.anonymized_file)
+                logger.info("Anonymized file removed: %s", self.anonymized_file)
+        except OSError as e:
+            logger.error("Error removing anonymized file %s: %s", self.anonymized_file, e)
+        try:
+            if self.file:
+                os.remove(self.file)
+                logger.info("Original file removed: %s", self.file)
+        except OSError as e:
+            logger.error("Error removing original file %s: %s", self.file, e)
+
 
         # Call the original delete method first to remove DB record
         super().delete(*args, **kwargs)
+        
 
         # Delete the associated file using the stored path
         if file_path_str:

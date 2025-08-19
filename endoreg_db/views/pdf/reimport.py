@@ -91,14 +91,10 @@ class PdfReimportView(APIView):
                 
                 # Use VideoImportService for anonymization
                 try:
-                    processor_name = pdf.pdf_meta.processor.name if pdf.pdf_meta and pdf.pdf_meta.processor else "Unknown"
                     
                     logger.info(f"Starting anonymization using VideoImportService for {pdf.uuid}")
-                    self.pdf_service.anonymize(
+                    self.pdf_service.import_and_anonymize(
                         pdf_file_obj=pdf,
-                        processor_name=processor_name,
-                        just_anonymization=True,
-                        method="masking"
                     )
                     
                     logger.info(f"VideoImportService anonymization completed for {pdf.uuid}")

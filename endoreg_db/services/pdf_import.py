@@ -6,6 +6,7 @@ combining RawPdfFile creation with text extraction and anonymization.
 """
 from datetime import date
 import logging
+import shutil
 import sys
 import os
 import hashlib
@@ -142,45 +143,6 @@ class PdfImportService:
         self._report_reader_class = None
         return False, None
 
-    def _create_simple_anonymized_pdf(
-        self, 
-        original_pdf_path: Path, 
-        anonymized_pdf_path: Path, 
-        _original_text: str,  # Prefix with underscore to indicate unused
-        anonymized_text: str
-    ) -> bool:
-        """
-        Create a simple anonymized PDF by copying the original and storing anonymized text reference.
-        This is a fallback method when advanced PDF anonymization is not available.
-        
-        Args:
-            original_pdf_path: Path to the original PDF
-            anonymized_pdf_path: Path where anonymized PDF should be saved
-            original_text: Original extracted text
-            anonymized_text: Anonymized text
-            
-        Returns:
-            bool: True if anonymized PDF was created successfully
-        """
-        try:
-            import shutil
-            
-            # Simple approach: copy the original PDF and add a text file with anonymized content
-            shutil.copy2(str(original_pdf_path), str(anonymized_pdf_path))
-            
-            # Create a companion text file with anonymized content
-            anonymized_text_path = anonymized_pdf_path.parent / f"{anonymized_pdf_path.stem}_anonymized_text.txt"
-            with open(anonymized_text_path, 'w', encoding='utf-8') as f:
-                f.write(anonymized_text)
-            
-            logger.info(f"Created simple anonymized PDF copy: {anonymized_pdf_path}")
-            logger.info(f"Created anonymized text file: {anonymized_text_path}")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to create simple anonymized PDF: {e}")
-            return False
 
     def _ensure_default_patient_data(self, pdf_file: "RawPdfFile") -> None:
         """
@@ -207,79 +169,10 @@ class PdfImportService:
             except Exception as e:
                 logger.error(f"Failed to create default SensitiveMeta for PDF {pdf_file.pdf_hash}: {e}")
 
-    def _move_processed_files_to_storage(self, original_file_path: Path, pdf_file: "RawPdfFile", metadata: dict):
-        """
-        Move processed PDF files from raw_pdfs to appropriate storage directories.
-        
-        Args:
-            original_file_path: Original file path in raw_pdfs
-            pdf_file: RawPdfFile instance
-            metadata: Processing metadata
-        """
-        import shutil
-        
-        try:
-            # Define target directories
-            pdfs_dir = PDF_DIR
-            anonymized_pdfs_dir = pdfs_dir / 'anonymized'  # fix path join
-            cropped_regions_target = pdfs_dir / 'cropped_regions'
-            
-            # Create target directories
-            pdfs_dir.mkdir(parents=True, exist_ok=True)
-            anonymized_pdfs_dir.mkdir(parents=True, exist_ok=True)
-            cropped_regions_target.mkdir(parents=True, exist_ok=True)
-            
-            original_file_path = Path(original_file_path)
-            pdf_name = original_file_path.stem
-            pdfs_dir = PDF_DIR
-            
-            # 1. Move the original processed PDF to pdfs directory, then delete source
-            if original_file_path.exists():
-                target_pdf_path = pdfs_dir / f"{pdf_name}.pdf"
-                shutil.move(str(original_file_path), str(target_pdf_path))
-                logger.info(f"Moved original PDF to: {target_pdf_path}")
-                
-                # Delete the original raw PDF file after successful copy
-                try:
-                    original_file_path.unlink()
-                    logger.info(f"Deleted original raw PDF file: {original_file_path}")
-                except OSError as e:
-                    logger.warning(f"Failed to delete original raw PDF file {original_file_path}: {e}")
-            
-            # 2. Move anonymized PDF if it exists next to the original (legacy)
-            legacy_anonymized = original_file_path.parent / f"{pdf_name}_anonymized.pdf"
-            if legacy_anonymized.exists():
-                target_anonymized_path = anonymized_pdfs_dir / f"{pdf_name}_anonymized.pdf"
-                shutil.move(str(legacy_anonymized), str(target_anonymized_path))
-                logger.info(f"Moved anonymized PDF to: {target_anonymized_path}")
-            
-            # 3. Move cropped regions if they exist next to the original (legacy)
-            legacy_crops = original_file_path.parent / 'cropped_regions'
-            if legacy_crops.exists():
-                for crop_file in legacy_crops.glob(f"{pdf_name}*"):
-                    target_crop_path = cropped_regions_target / crop_file.name
-                    shutil.move(str(crop_file), str(target_crop_path))
-                    logger.info(f"Moved cropped region to: {target_crop_path}")
-                
-                try:
-                    if not any(legacy_crops.iterdir()):
-                        legacy_crops.rmdir()
-                        logger.debug(f"Removed empty directory: {legacy_crops}")
-                except OSError:
-                    pass  # Directory not empty, that's fine
-            
-            logger.info(f"Successfully moved all processed files for {pdf_name}")
-            
-            
-        except Exception as e:
-            logger.error(f"Error moving processed files: {e}")
-            raise
-
     def import_and_anonymize(
         self, 
         file_path: Union[Path, str], 
         center_name: str, 
-        processor_name: str = None,
         delete_source: bool = False,
         retry: bool = False,
     ) -> "RawPdfFile":
@@ -289,7 +182,6 @@ class PdfImportService:
         Args:
             file_path: Path to the PDF file to import
             center_name: Name of the center to associate with PDF
-            processor_name: Name of the processor (optional for PDFs)
             delete_source: Whether to delete the source file after import
             
         Returns:
@@ -321,13 +213,14 @@ class PdfImportService:
                 file_hash = None      
             if file_hash and RawPdfFile.objects.filter(pdf_hash=file_hash).exists():
                 existing = RawPdfFile.objects.get(pdf_hash=file_hash)
-
+                SENSITIVE_DIR = PDF_DIR / "sensitive"
+                target = SENSITIVE_DIR / f"{existing.pdf_hash}.pdf"
                 # delete source only if it's a different, non-canonical location
                 try:
                     if Path(file_path).resolve() != Path(existing.file.path).resolve():
-                        os.remove(file_path)
+                        shutil.copy2(file_path, target)
                 except Exception:
-                    logger.warning("Could not remove duplicate source %s", file_path, exc_info=True)
+                    logger.warning("Could not create duplicate source %s", file_path, exc_info=True)
 
                 if not existing.text:
                     logger.info(f"Reusing existing RawPdfFile {existing.pdf_hash} with no text")
@@ -336,23 +229,13 @@ class PdfImportService:
                         self.import_and_anonymize(
                             file_path=existing.file.path,
                             center_name=existing.center.name if existing.center else "unknown_center",
-                            processor_name=existing.processor_name,
                             delete_source=False,
                             retry=retry
                         )
                         retry = False
                     except Exception as e:
                         logger.error(f"Failed to re-import existing PDF {existing.pdf_hash}: {e}")
-                        
-                        try:
-                            self._create_simple_anonymized_pdf(
-                                original_pdf_path=Path(existing.file.path),
-                                anonymized_pdf_path=Path(existing.file.path).parent / f"{existing.pdf_hash}_anonymized.pdf",
-                                _original_text=existing.text,
-                                anonymized_text=existing.anonymized_text
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to create simple anonymized PDF for existing file: {e}")
+                        return existing
                 existing.state.mark_sensitive_meta_processed()
                 return existing
             
@@ -391,12 +274,7 @@ class PdfImportService:
             raise RuntimeError("Failed to create RawPdfFile instance")
         
         logger.info(f"Created RawPdfFile with hash: {pdf_file.pdf_hash}")
-        
-        # Handle processor_name if supported
-        if processor_name and hasattr(pdf_file, "processor_name"):
-            pdf_file.processor_name = processor_name
-            pdf_file.save(update_fields=["processor_name"])
-            logger.debug("Set processor_name: %s", processor_name)
+    
         
         # Mark the file as processed
         self.processed_files.add(str(file_path))
@@ -435,10 +313,13 @@ class PdfImportService:
                     crop_output_dir=str(crops_dir),
                     anonymization_output_dir=str(anonymized_dir)
                 )
+                
+                
                                 
                 # Compute expected anonymized path under PDF_DIR/anonymized
                 pdf_stem = Path(pdf_file.file.path).stem
                 expected_anonymized_path = anonymized_dir / f"{pdf_stem}_anonymized.pdf"
+                pdf_file.anonymized_file = expected_anonymized_path
                 if expected_anonymized_path.exists():
                     logger.info(f"Anonymized PDF automatically created at: {expected_anonymized_path}")
                 elif cropped_regions:
@@ -529,6 +410,7 @@ class PdfImportService:
                                         anonymized_text
                                     )
                                     anonymized_pdf_created = expected_anonymized_path.exists()
+                                    pdf_file.anonymized_file_url = str(expected_anonymized_path)    
                                     logger.info("Used fallback simple anonymized PDF creation (PDF_DIR)")
                                 except Exception as e:
                                     logger.warning("Fallback anonymized PDF creation failed: %s", e)
@@ -557,6 +439,8 @@ class PdfImportService:
                             logger.error("Error creating anonymized PDF: %s", pdf_error)
                             # Don't fail the entire process, continue with text anonymization
                     
+                    # Save Sensitive Meta for Validation
+                    text, anonymized_text, report_meta = pdf_file.process_file(original_text, anonymized_text, metadata_mapping, verbose=True)
                     # Update state tracking
                     state = self._ensure_state(pdf_file)
                     state.mark_anonymized()
@@ -631,25 +515,13 @@ class PdfImportService:
         except Exception as e:
             logger.warning(f"Failed to signal completion status: {e}")
 
-        # Step 5: Move processed files to correct directories
-        logger.info("Moving processed files to target directories...")
+        # Clean up quarantine directory if empty
         try:
-            # Get report metadata if available
-            metadata = {}
-            if 'extracted_metadata' in locals():
-                metadata = extracted_metadata
-            
-            self._move_processed_files_to_storage(file_path, pdf_file, metadata)
+            os.removedirs(qpath.parent)  # Clean up quarantine directory if empty
+            os.removedirs(PDF_DIR / 'cropped_regions')  # Clean up cropped regions directory if empty
         except Exception as e:
-            logger.warning(f"Failed to move processed files: {e}")
+            logger.warning(f"Failed to remove directories: {e}")
 
-        # Step 6: Refresh from database and return
-        with transaction.atomic():
-            pdf_file.refresh_from_db()
-
-        logger.info(f"Import and processing completed for RawPdfFile hash: {pdf_file.pdf_hash}")
-        os.removedirs(qpath.parent)  # Clean up quarantine directory if empty
-        os.removedirs(PDF_DIR / 'cropped_regions')  # Clean up cropped regions directory if empty
         return pdf_file
 
     def import_simple(

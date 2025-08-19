@@ -63,14 +63,6 @@ def anonymization_status(request, file_id: int):
     # Check if we can perform status check (rate limiting)
     file_type = request.GET.get('type', 'video')  # Allow client to specify type
     
-    if not PollingCoordinator.can_check_status(file_id, file_type):
-        return Response(
-            {
-                "file_id": file_id,
-                "cooldown_active": True
-            }, 
-            status=status.HTTP_429_TOO_MANY_REQUESTS
-        )
     
     info = AnonymizationService.get_status(file_id)
     if not info:
@@ -78,8 +70,8 @@ def anonymization_status(request, file_id: int):
 
     return Response({
         "file_id": file_id,
-        "file_type": info["type"],
-        "anonymizationStatus": info["status"],
+        "file_type": info["mediaType"],
+        "anonymizationStatus": info["anonymizationStatus"],
         "processing_locked": PollingCoordinator.is_processing_locked(file_id, info["type"]),
     })
 

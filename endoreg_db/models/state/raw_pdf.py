@@ -98,6 +98,8 @@ class RawPdfState(models.Model):
             return AnonymizationStatus.STARTED
         return AnonymizationStatus.NOT_STARTED
     
+
+    
     def mark_processing_started(self, *, save: bool = True) -> None:
         """
         Mark the processing as started and optionally save the updated state.

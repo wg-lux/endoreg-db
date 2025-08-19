@@ -141,7 +141,7 @@ class VideoImportService():
                 
                 try:
                     if video_file_obj.video_meta and video_file_obj.video_meta.processor:
-                        processor = video_file_obj.video_meta.processor
+                        processor = video_file_obj.video_meta.select_related("processor")
                         video_meta = video_file_obj.video_meta
                         # Get the endoscope ROI for masking
                         endoscope_roi = processor.get_roi_endoscope_image()
@@ -298,12 +298,24 @@ class VideoImportService():
         except Exception as e:
             self.logger.warning(f"Failed to move processed video files: {e}")
         
-        # Step 9: Refresh from database and return
+        # Step 9: Refresh from database and return, delete source file
         with transaction.atomic():
             video_file_obj.refresh_from_db()
         video_file_obj.state.mark_sensitive_meta_processed(save=True)
-        os.removedirs(RAW_FRAME_DIR)
+        try:
+            os.removedirs(RAW_FRAME_DIR)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            self.logger.warning(f"Failed to remove directory {RAW_FRAME_DIR}: {e}")
         self.logger.info(f"Import and anonymization completed for VideoFile UUID: {video_file_obj.uuid}")
+        try:
+            os.remove(file_path)
+            self.logger.info(f"Successfully removed file {file_path}")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            self.logger.warning(f"Failed to remove file {file_path}: {e}")
         return video_file_obj
 
 

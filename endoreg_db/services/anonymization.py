@@ -153,12 +153,12 @@ class AnonymizationService:
                     pdf.sensitive_meta.anonymization_started = True
                     pdf.sensitive_meta.save(update_fields=["anonymization_started"])
                 
+                
                 # Use PdfImportService for processing
                 # Use PdfImportService for processing
                 self.pdf_service.import_and_anonymize(
                     file_path=file_path,
                     center_name=center_name,
-                    processor_name=processor_name
                 )
                 
                 logger.info(f"PDF processing completed for RawPdfFile ID: {file_id}")
@@ -193,34 +193,31 @@ class AnonymizationService:
 
         return None
     
-    @staticmethod
     def list_items():
-        """
-        Retrieve a combined list of all video and PDF files with their anonymization statuses and timestamps.
-        
-        Returns:
-            list: A list of dictionaries, each containing the file's ID, media type, anonymization status, creation date, and last modification date.
-        """
         video_files = VideoFile.objects.select_related("state").all()
-        pdf_files = RawPdfFile.objects.select_related("sensitive_meta").all()
+        pdf_files = RawPdfFile.objects.select_related("state").all()  # was sensitive_meta
 
         data = []
         for vf in video_files:
             data.append({
                 "id": vf.id,
                 "mediaType": "video",
-                "anonymizationStatus": vf.state.anonymization_status,
+                "anonymizationStatus": vf.state.anonymization_status if vf.state else "not_started",
                 "createdAt": vf.date_created,
                 "updatedAt": vf.date_modified,
             })
+            
+            
 
         for pdf in pdf_files:
             data.append({
                 "id": pdf.id,
                 "mediaType": "pdf",
-                "anonymizationStatus": pdf.state.anonymization_status,
+                "anonymizationStatus": pdf.state.anonymization_status if pdf.state else "not_started",
                 "createdAt": pdf.date_created,
                 "updatedAt": pdf.date_modified,
             })
+        return data
+
 
         return data
