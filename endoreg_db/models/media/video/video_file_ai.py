@@ -253,17 +253,32 @@ def _predict_video_pipeline(
 
     # --- Model Loading ---
     try:
-        ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
-            checkpoint_path=weights_path.as_posix(), # Ensure path is string
-        )
-        try:
-            # Attempt to move to GPU
-            _ = ai_model_instance.cuda()
-            logger.info("Moved model to GPU for video %s.", video.uuid)
-        except RuntimeError as cuda_err: # Catch specific runtime error for CUDA
-            logger.warning("Could not move model to GPU for video %s: %s. Using CPU.", video.uuid, cuda_err)
-        except Exception as cuda_err: # Catch other potential errors
-            logger.warning("Error attempting to move model to GPU for video %s: %s. Using CPU.", video.uuid, cuda_err)
+        # Check if CUDA is available
+        import torch
+        if torch.cuda.is_available():
+            try:
+                # Try loading on GPU first
+                ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
+                    checkpoint_path=weights_path.as_posix(), # Ensure path is string
+                )
+                # Attempt to move to GPU
+                _ = ai_model_instance.cuda()
+                logger.info("Loaded model on GPU for video %s.", video.uuid)
+            except RuntimeError as cuda_err:
+                # If GPU loading fails, fall back to CPU
+                logger.warning("GPU loading failed for video %s: %s. Falling back to CPU.", video.uuid, cuda_err)
+                ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
+                    checkpoint_path=weights_path.as_posix(),
+                    map_location='cpu'
+                )
+                logger.info("Loaded model on CPU for video %s.", video.uuid)
+        else:
+            # No CUDA available, load directly on CPU
+            logger.info("CUDA not available. Loading model on CPU for video %s.", video.uuid)
+            ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
+                checkpoint_path=weights_path.as_posix(),
+                map_location='cpu'
+            )
 
         _ = ai_model_instance.eval() # Set to evaluation mode
         classifier = Classifier(ai_model_instance, verbose=True) # Assuming Classifier exists

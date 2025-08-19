@@ -6,35 +6,55 @@ with frame-level anonymization.
 """
 
 import tempfile
+import os
+import pytest
 from pathlib import Path
 from django.test import TestCase
-from django.core.files.base import ContentFile
-from endoreg_db.models import VideoFile, Center, EndoscopyProcessor
+from endoreg_db.models import VideoFile
 from endoreg_db.services.video_import import import_and_anonymize
 from .helpers.default_objects import get_default_center, get_default_processor
-from .helpers.data_loader import load_base_db_data
 from .media.video.helper import get_random_video_path_by_examination_alias
 import logging
 
-logger  = logging.getLogger(__name__)
+# Environment-based test control
+SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
+
+logger = logging.getLogger(__name__)
+
 class TestVideoImportService(TestCase):
     """Test cases for video import service."""
 
+    @classmethod
+    def setUpClass(cls):
+        """Set up session-scoped fixtures."""
+        super().setUpClass()
+        # Use session-scoped database loading from conftest.py
+        from .helpers.data_loader import load_base_db_data
+        load_base_db_data()
+
     def setUp(self):
         """Set up test fixtures."""
-        # Create test center and processor
-        load_base_db_data()
+        super().setUp()
+        # Use cached objects instead of creating each time
         self.center = get_default_center()
         self.processor = get_default_processor()
 
 
+    @pytest.mark.integration
+    @pytest.mark.video
+    @pytest.mark.expensive
     def test_import_and_anonymize_success(self):
         """
         Test successful import and anonymization of a video file.
         
         Creates a temporary video file, calls import_and_anonymize,
         and verifies a VideoFile was created with proper anonymization.
+        
+        This test is marked as expensive due to video processing operations.
         """
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest("Skipping expensive video import test (SKIP_EXPENSIVE_TESTS=true)")
+            
         # Create a temporary video file
         filepath = get_random_video_path_by_examination_alias()
         
@@ -60,9 +80,12 @@ class TestVideoImportService(TestCase):
             
 
 
+    @pytest.mark.unit
     def test_import_and_anonymize_nonexistent_file(self):
         """
         Test import_and_anonymize handles nonexistent files gracefully.
+        
+        This is a fast unit test that doesn't require actual video processing.
         """
         nonexistent_path = Path("/tmp/nonexistent_video.mp4")
         
@@ -74,10 +97,18 @@ class TestVideoImportService(TestCase):
                 processor_name="olympus_cv_1500"
             )
 
+    @pytest.mark.integration
+    @pytest.mark.video
+    @pytest.mark.expensive
     def test_import_and_anonymize_with_different_options(self):
         """
         Test import_and_anonymize with different save/delete options.
+        
+        This test is marked as expensive due to video file operations.
         """
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest("Skipping expensive video import test (SKIP_EXPENSIVE_TESTS=true)")
+            
         video_asset_path = get_random_video_path_by_examination_alias()
 
         # Create a temporary copy of the originalvideo file

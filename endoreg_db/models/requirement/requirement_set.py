@@ -176,6 +176,7 @@ class RequirementSet(models.Model):
             # If requirement expects PatientFinding, return the examination's findings
             if PatientFinding in expected_models:
                 return input_object.patient_findings.all()
+
         
         # Handle other model conversions as needed in the future
         # For now, return the original input object as fallback
@@ -189,7 +190,10 @@ class RequirementSet(models.Model):
             A list of boolean values indicating whether each linked requirement set is satisfied.
         """
         results = []
-        for linked_set in self.links_to_sets.all():
+        linked_sets = self.all_linked_sets
+        if not linked_sets:
+            return results
+        for linked_set in linked_sets:
             result = linked_set.evaluate(input_object)
             results.append(result)
         return results

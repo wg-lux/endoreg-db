@@ -172,6 +172,14 @@ class RequirementSetColoAustriaTest(TestCase):
         self.assertIsInstance(result, bool, "RequirementSet evaluation should return a boolean value.")
         self.assertTrue(result, "RequirementSet 'colonoscopy_austria_screening_finding_polyp_required_classifications' should evaluate to True when all required classifications are present in the PatientExamination.")
 
+        links = self.base_examination.links
+
+        dumped_links = links.model_dump()
+        for key, value in dumped_links.items():
+            logger.info("=" * 20)
+            logger.info(key)
+            for val in value:
+                logger.info(val)
 
     def test_colonoscopy_austria_screening_examination_complete(self):
         """

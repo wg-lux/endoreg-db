@@ -206,6 +206,7 @@ class ColonoscopyFindingTest(TestCase):
         load_data()
         
         self.colonoscopy = Examination.objects.get(name="colonoscopy_austria_screening")
+        # self.colonoscopy = Examination.objects.get(name="colonoscopy")
 
         self.colo_examination_indications = self.colonoscopy.indications.all()
         
@@ -245,7 +246,6 @@ class ColonoscopyFindingTest(TestCase):
                 for choice_name in choices:
                     if choice_name not in classification_choice_names:
                         missing_elements['choices'].append(f"'{choice_name}' choice for '{classification_name}' classification in '{finding_name}' finding")
-        
         # Report all missing elements at once
         error_messages = []
         if missing_elements['findings']:

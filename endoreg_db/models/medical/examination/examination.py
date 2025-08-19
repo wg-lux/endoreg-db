@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models import Finding
+    from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 
 class ExaminationManager(models.Manager):
@@ -35,6 +36,24 @@ class Examination(models.Model):
         finding_classifications: models.QuerySet['FindingClassification']
         indications: models.QuerySet[ExaminationIndication]
         findings: models.QuerySet["Finding"]
+
+
+    @property
+    def links(self) -> "RequirementLinks":
+        """
+        Returns a RequirementLinks instance containing all models related to this examination.
+        This should include:
+        - Examination, Finding, FindingClassification, ExaminationIndication
+        """
+
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
+
+        return RequirementLinks(
+            examinations=[self],
+            findings=list(self.findings.all()),
+            finding_classifications=list(self.finding_classifications.all()),
+            examination_indications=list(self.indications.all())
+        )
 
     def __str__(self) -> str:
         """

@@ -324,6 +324,7 @@ class Requirement(models.Model):
         req_type_names = [_.name for _ in req_types]
 
         expected_models = [self.data_model_dict[_] for _ in req_type_names]
+        # e.g. [PatientExamination, PatientFinding]
         return expected_models
 
     @property
@@ -393,6 +394,7 @@ class Requirement(models.Model):
         
         If the requirement specifies genders, only input containing a patient with a matching gender will be considered valid for evaluation.
         """
+        #TODO Review, Optimize or remove
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
 
