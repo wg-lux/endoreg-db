@@ -24,6 +24,7 @@ from endoreg_db.models import (
     MedicationSchedule,
     Medication,  # Added Medication model
     MedicationIntakeTime,
+    Tag,
 )
 from endoreg_db.models.other.gender import Gender
 from ...utils import load_model_data_from_yaml
@@ -121,12 +122,14 @@ IMPORT_METADATA = {
             "requirements",  # This is a many-to-many field
             "links_to_sets",
             "information_sources",
+            "tags",
         ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
             RequirementSetType,
             Requirement,
             RequirementSet,
             InformationSource,
+            Tag,
         ],  # e.g. [InterventionType]
     },
 }

@@ -49,3 +49,6 @@
       - "colonoscopy_austria_screening_finding_polyp_required_classifications"
       - "colonoscopy_austria_screening_required_patient_information"
       - "colonoscopy_austria_screening_examination_required_findings"
+    tags:
+      - "report_mask_requirement_set"
+      - "colonoscopy_austria_screening"

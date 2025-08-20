@@ -104,12 +104,20 @@ class RequirementSet(models.Model):
         related_name="requirement_sets",
         blank=True,
     )
+    
+    tags = models.ManyToManyField(  # type: ignore[assignment]
+        "Tag",
+        related_name="requirement_sets",
+        blank=True,
+    )
+    
     objects = RequirementSetManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import Requirement, InformationSource
+        from endoreg_db.models import Tag, Requirement, InformationSource
         from typing import Optional
 
+        tags: "models.ManyToManyField[Tag]"
         requirements: "models.Manager[Requirement]"
         information_sources: "models.Manager[InformationSource]"
         requirement_set_type: Optional[RequirementSetType]

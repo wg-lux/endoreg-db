@@ -138,6 +138,7 @@ from .other import (
     InformationSourceType,
     Unit,
     EmissionFactor,
+    Tag
 )
 
 from .requirement import (
@@ -328,6 +329,7 @@ __all__ = [
     "InformationSourceType",
     "Unit",
     "EmissionFactor",
+    "Tag",
 
     ###### Requirement ######
     "Requirement",

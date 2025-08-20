@@ -19,6 +19,8 @@ from .information_source import (
 
 from .unit import Unit
 
+from .tag import Tag
+
 __all__ = [
     'Material',
     'Resource',
@@ -34,4 +36,5 @@ __all__ = [
     "InformationSourceType",
     "Unit",
     "EmissionFactor",
+    "Tag",
 ]

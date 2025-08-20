@@ -1,0 +1,8 @@
+{
+  "DJANGO_MODULE": "endoreg_db",
+  "HOST": "localhost",
+  "PORT": "8188",
+  "CONF_DIR": "./conf",
+  "HOME_DIR": "/home/admin",
+  "WORKING_DIR": "/home/admin/endoreg-db"
+}

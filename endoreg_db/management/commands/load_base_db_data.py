@@ -27,6 +27,7 @@ class Command(BaseCommand):
 
         out = self.stdout
 
+        call_command("load_tag_data", stdout=out, verbose=verbose)
         call_command("load_information_source", stdout=out, verbose=verbose)
 
         call_command("load_risk_data", stdout=out, verbose=verbose)
