@@ -1,0 +1,1 @@
+from endoreg_db.models import ExaminationEvaluation

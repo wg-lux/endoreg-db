@@ -1,9 +1,9 @@
 from .overview import (
     AnonymizationOverviewView,
+    AnonymizationValidateView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
-    validate_anonymization,
     polling_coordinator_info,
     clear_processing_locks
 )
@@ -12,9 +12,9 @@ from .media_management import MediaManagementView, force_remove_media, reset_pro
 
 __all__ = [
     "AnonymizationOverviewView",
+    "AnonymizationValidateView",
     "anonymization_status",
     "start_anonymization",
-    "validate_anonymization",
     "anonymization_current",
     "polling_coordinator_info",
     "clear_processing_locks",

@@ -178,16 +178,22 @@ class MediaManagementView(APIView):
                 file_id = int(file_id)
             except ValueError:
                 raise ValueError(f"Invalid file ID: {file_id}")
+
+        video_file_obj = None
+        pdf_file_obj = None
             
         if media_type == 'video':
-            video_file_obj = VideoFile.get_video_by_id(file_id) if file_id else None
-            video_file_obj.delete_with_file
+            video_file_obj = VideoFile.get_video_by_id(self, video_id=file_id) if file_id else None
         elif media_type == 'pdf':
             pdf_file_obj = RawPdfFile.get_pdf_by_id(file_id) if file_id else None
-            if pdf_file_obj:
-                pdf_file_obj.delete()
+
 
         with transaction.atomic():
+            if video_file_obj:
+                video_file_obj.delete()
+            if pdf_file_obj:
+                pdf_file_obj.delete()
+            
             if cleanup_type == 'unfinished':
                 result.update(self._cleanup_unfinished_media(force))
             elif cleanup_type == 'failed':
@@ -195,7 +201,6 @@ class MediaManagementView(APIView):
             elif cleanup_type == 'stale':
                 result.update(self._cleanup_stale_processing(force))
             elif cleanup_type == 'all':
-                # Comprehensive cleanup
                 unfinished = self._cleanup_unfinished_media(force)
                 failed = self._cleanup_failed_media(force)
                 stale = self._cleanup_stale_processing(force)
