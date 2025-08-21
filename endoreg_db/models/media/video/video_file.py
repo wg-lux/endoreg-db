@@ -218,6 +218,8 @@ class VideoFile(models.Model):
         """
         _file = self.active_file
         assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
+        if not _file or not _file.name:
+            raise ValueError("Active file has no associated file.")
         url = _file.url
 
         return url
@@ -411,6 +413,70 @@ class VideoFile(models.Model):
 
         video_file = video_file.initialize()
         return video_file
+    
+    def delete(self, using = ..., keep_parents = ...):
+        """
+        Delete the VideoFile instance, including associated files and frames.
+        
+        Overrides the default delete method to ensure proper cleanup of related resources.
+        """
+        # Ensure frames are deleted before the main instance
+        _delete_frames(self)
+        
+        # Call the original delete method to remove the instance from the database
+        logger.info(f"Deleting VideoFile: {self.uuid} - {self.active_file_path}")
+        
+        # Delete associated files if they exist
+        if self.active_file_path.exists():
+            self.active_file_path.unlink(missing_ok=True)
+        
+        # Call the superclass delete method
+        # This will handle the database deletion and any additional cleanup defined in the parent class
+        logger.info(f"VideoFile {self.uuid} deleted successfully.")
+        # Ensure to call the superclass delete method to maintain the integrity of the model
+        # This will also trigger any signals or additional cleanup defined in the parent class
+        if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
+            self.raw_file.storage.delete(self.raw_file.name)
+        if self.processed_file and self.processed_file.storage.exists(self.processed_file.name):
+            self.processed_file.storage.delete(self.processed_file.name)
+        
+        # Call the superclass delete method to ensure proper deletion
+        # This will handle the database deletion and any additional cleanup defined in the parent class
+        # Using super() to ensure we call the correct method in the parent class hierarchy
+        from django.db.models.deletion import Collector
+        collector = Collector(using=using)
+        collector.collect([self], keep_parents=keep_parents)
+        collector.delete()
+        return super().delete(using, keep_parents)
+
+    def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
+        """
+        Validate the metadata of the VideoFile instance.
+        
+        Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
+        It also ensures the video file is properly saved after the metadata update.
+        """
+        from endoreg_db.models import SensitiveMeta
+        if not self.sensitive_meta:
+            self.sensitive_meta = SensitiveMeta.objects.create(center=self.center)
+        
+        # Delete the active file to ensure it is reprocessed with the new metadata
+        if self.active_file_path.exists():
+            self.active_file_path.unlink(missing_ok=True)
+        
+        # Update sensitive metadata with user annotations
+        sensitive_meta = self.update_text_metadata(self, extracted_data_dict, overwrite=True)
+        
+        if sensitive_meta:
+            # Save the VideoFile instance to persist changes
+            self.save()
+            logger.info(f"Metadata annotation validated and saved for video {self.uuid}.")
+            return True
+        else:
+            logger.error(f"Failed to validate metadata annotation for video {self.uuid}.")
+            return False
+        
+        
     
     def initialize(self):
         """

@@ -1,10 +1,10 @@
 from django.urls import path
 from endoreg_db.views.anonymization import (
     AnonymizationOverviewView,
+    AnonymizationValidateView,
     start_anonymization,
     anonymization_current,
     anonymization_status,
-    validate_anonymization,
     polling_coordinator_info,
     clear_processing_locks
 )
@@ -16,7 +16,7 @@ url_patterns = [
     path('anonymization/<int:file_id>/current/', anonymization_current, name='set_current_for_validation'),
     path('anonymization/<int:file_id>/start/', start_anonymization, name='start_anonymization'),
     path('anonymization/<int:file_id>/status/', anonymization_status, name='get_anonymization_status'),
-    path('anonymization/<int:file_id>/validate/', validate_anonymization, name='validate_anonymization'),
+    path('anonymization/<int:file_id>/validate/', AnonymizationValidateView.as_view(), name='validate_anonymization'),
         # Polling Coordination API (new endpoints)
     path('anonymization/polling-info/', polling_coordinator_info, name='polling_coordinator_info'),
     path('anonymization/clear-locks/', clear_processing_locks, name='clear_processing_locks'),

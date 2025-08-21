@@ -3,6 +3,8 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.db import transaction
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.anonymization import AnonymizationService
 from endoreg_db.services.polling_coordinator import PollingCoordinator, ProcessingLockContext
@@ -52,6 +54,45 @@ class AnonymizationOverviewView(ListAPIView):
         )
 
         return list(qs_video) + list(qs_pdf)
+    
+class AnonymizationValidateView(APIView):
+    """
+    POST /api/anonymization/<int:item_id>/validate/
+    Body: {
+      // common SensitiveMeta fields (snake_case):
+      "patient_first_name": "...",
+      "patient_last_name":  "...",
+      "patient_dob":        "YYYY-MM-DD",
+      "examination_date":   "YYYY-MM-DD",
+      "casenumber":         "...",
+      "anonymized_text":    "...",   # only for PDFs; ignored by videos
+      "is_verified": true            # optional; defaults to true here
+    }
+    """
+
+    @transaction.atomic
+    def post(self, request, item_id: int):
+        payload = request.data or {}
+        payload.setdefault("is_verified", True)
+
+        # Try Video first
+        video = VideoFile.objects.filter(pk=item_id).first()
+        if video:
+            ok = video.validate_metadata_annotation(payload)
+            if not ok:
+                return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
+
+        # Then PDF
+        pdf = RawPdfFile.objects.filter(pk=item_id).first()
+        if pdf:
+            ok = pdf.validate_metadata_annotation(payload)
+            if not ok:
+                return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
+
+        return Response({"error": f"Item {item_id} not found as video or pdf."}, status=status.HTTP_404_NOT_FOUND)
+
 
 # ---------- status with polling protection ------------------------------
 @api_view(["GET"])
@@ -131,36 +172,6 @@ def start_anonymization(request, file_id: int):
             "processing_locked": True
         })
 
-# ---------- validate with processing coordination -----------------------
-@api_view(["POST"])
-@permission_classes(PERMS)
-def validate_anonymization(request, file_id: int):
-    """
-    Validate anonymization with coordination to prevent conflicts.
-    """
-    # Check if processing is locked
-    # Try both video and pdf types since we don't know which one it is
-    is_video_locked = PollingCoordinator.is_processing_locked(file_id, "video")
-    is_pdf_locked = PollingCoordinator.is_processing_locked(file_id, "pdf")
-    
-    if is_video_locked or is_pdf_locked:
-        return Response(
-            {
-                "detail": "Cannot validate while file is being processed",
-                "file_id": file_id,
-                "processing_locked": True
-            }, 
-            status=status.HTTP_409_CONFLICT
-        )
-    
-    kind = AnonymizationService.validate(file_id)
-    if not kind:
-        return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
-    return Response({
-        "detail": f"Anonymization validated for {kind} file",
-        "file_id": file_id,
-        "file_type": kind
-    })
 
 # ---------- current with coordination ------------------------------------
 @api_view(['GET', 'POST', 'PUT'])
