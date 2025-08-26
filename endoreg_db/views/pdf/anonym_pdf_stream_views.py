@@ -40,13 +40,13 @@ class PDFStreamView(APIView):
     def get(self, request, pdf_id: int, *args, **kwargs):
         try:
             pdf_obj = RawPdfFile.objects.filter(pk=pdf_id).first()
-            if not pdf_obj or not pdf_obj.file:
+            if not pdf_obj or not pdf_obj.anonymized_file:
                 logger.warning(f"PDF not found: ID {pdf_id}")
                 raise Http404("PDF not found")
 
             # Check if file exists on filesystem
             try:
-                file_path = pdf_obj.file.path
+                file_path = pdf_obj.anonymized_file.path
                 if not os.path.exists(file_path):
                     logger.error(f"PDF file does not exist on filesystem: {file_path}")
                     raise Http404("PDF file not found on filesystem")
@@ -57,7 +57,7 @@ class PDFStreamView(APIView):
                 raise Http404("PDF file not accessible")
 
             # Generate safe filename
-            safe_filename = os.path.basename(pdf_obj.file.name) if pdf_obj.file.name else f"document_{pdf_id}.pdf"
+            safe_filename = os.path.basename(pdf_obj.anonymized_file.name) if pdf_obj.anonymized_file.name else f"document_{pdf_id}.pdf"
             if not safe_filename.endswith('.pdf'):
                 safe_filename += '.pdf'
 

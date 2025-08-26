@@ -21,7 +21,7 @@ from endoreg_db.models import (
     Medication, # Added
     MedicationIndication, # Added
     MedicationIntakeTime, # Added
-    MedicationSchedule, # Added
+    MedicationSchedule # Added
 )
 if TYPE_CHECKING: # Added for Patient import
     from endoreg_db.models.administration.person.patient import Patient
@@ -46,11 +46,9 @@ class RequirementLinks(BaseModel):
         finding_interventions (List[FindingIntervention]): A List of finding interventions.
     """
     model_config = {"arbitrary_types_allowed": True}
-    # 
     # requirement_types: Optional[List["RequirementType"]] = None
     # operators: Optional[List["RequirementOperator"]] = None
-    # The following model import causes circular import
-    #requirement_sets: Optional[List["RequirementSet"]] = None
+    # requirement_sets: Optional[List["RequirementSet"]] = None
     examinations: List["Examination"] = []
     examination_indications: List["ExaminationIndication"] = []
     examination_indication_classification_choices: List["ExaminationIndicationClassificationChoice"] = []
