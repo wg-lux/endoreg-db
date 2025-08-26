@@ -3,6 +3,8 @@ Automatisierte Internationalisierung für medizinische Terminologie
 Ersetzt manuelle name_de/name_en Felder durch django-modeltranslation
 """
 from modeltranslation.translator import TranslationOptions, translator
+# Source: https://github.com/deschler/django-modeltranslation
+#https://django-modeltranslation.readthedocs.io/en/latest/installation.html#advanced-settings
 
 from endoreg_db.models import (
     Examination,
@@ -11,7 +13,6 @@ from endoreg_db.models import (
     FindingClassificationChoice,
     FindingIntervention
 )
-
 
 class ExaminationTranslationOptions(TranslationOptions):
     fields = ('name', 'description')

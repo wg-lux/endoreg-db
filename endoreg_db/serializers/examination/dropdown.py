@@ -13,11 +13,9 @@ class ExaminationDropdownSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'display_name']
 
     def get_display_name(self, obj):
-        """
-        Return a user-friendly display name for the examination.
-        
-        If the German name (`name_de`) is available, it is returned; otherwise, the default name is used.
-        """
-
-        return obj.name
+            
+            """
+            Return a user-friendly (localized) display name for the examination.
+            Prefers a German translation (`name_de`) when available; otherwise falls back to `name`.   """
+            return getattr(obj, "name_de", None) or obj.name
 

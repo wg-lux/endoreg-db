@@ -1,9 +1,9 @@
 from .anonymization import (
-    anonymization_overview,
+    AnonymizationOverviewView,
+    AnonymizationValidateView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
-    validate_anonymization
 )
 
 
@@ -109,11 +109,7 @@ from .patient_finding_classification import (
 
 from .pdf import (
     ClosingFileWrapper,
-    PDFStreamView,
-    UpdateAnonymizedTextView,
-    RawPdfAnonyTextView,
-    PDFFileForMetaView,
-    UpdateSensitiveMetaView,
+    PDFMediaView,
 )
 
 from .report import (
@@ -145,11 +141,11 @@ from .video import (
 
 __all__ = [
     # Anonymization views
-    "anonymization_overview",
     "anonymization_status",
     "anonymization_current",
     "start_anonymization",
-    "validate_anonymization",
+    "AnonymizationOverviewView",
+    "AnonymizationValidateView",
 
     # Auth views
     "KeycloakVideoView",

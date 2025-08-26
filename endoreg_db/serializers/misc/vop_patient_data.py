@@ -79,6 +79,9 @@ class VoPPatientDataSerializer(serializers.Serializer):
             }
 
         elif isinstance(instance, RawPdfFile):
+            # Generate PDF streaming URL using pdf_id (RawPdfFile.id)
+            pdf_stream_url = f"/api/pdfstream/{instance.pk}/"
+            
             return {
                 "id": instance.pk,
                 "sensitiveMetaId": instance.sensitive_meta.pk if instance.sensitive_meta else None,
@@ -87,6 +90,7 @@ class VoPPatientDataSerializer(serializers.Serializer):
                 "reportMeta": self._serialize_sensitive_meta(instance.sensitive_meta) if instance.sensitive_meta else None,
                 "status": "done" if instance.anonymized_text else "not_started",
                 "error": False,
+                "pdfStreamUrl": pdf_stream_url,
             }
 
         else:

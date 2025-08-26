@@ -1,6 +1,6 @@
-# endoreg_db/serializers.py
+# eendoreg_db/serializers/examination/base.py
 from rest_framework import serializers
-from ...models import Examination, ExaminationType, Finding
+from ...models import Examination, ExaminationType
 
 
 class ExaminationTypeSerializer(serializers.ModelSerializer):

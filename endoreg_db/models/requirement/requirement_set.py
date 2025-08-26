@@ -82,37 +82,53 @@ class RequirementSet(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    requirements = models.ManyToManyField(
+    requirements = models.ManyToManyField(  # type: ignore[assignment]
         "Requirement",
         blank=True,
         related_name="requirement_sets",
     )
-    links_to_sets = models.ManyToManyField(
+    links_to_sets = models.ManyToManyField(  # type: ignore[assignment]
         "RequirementSet",
         blank=True,
         related_name="links_from_sets",
     )
-    requirement_set_type = models.ForeignKey(
+    requirement_set_type = models.ForeignKey(  # type: ignore[assignment]
         "RequirementSetType",
         on_delete=models.CASCADE,
         related_name="requirement_sets",
         blank=True,
         null=True,
     )
-    information_sources = models.ManyToManyField(
+    information_sources = models.ManyToManyField(  # type: ignore[assignment]
         "InformationSource",
         related_name="requirement_sets",
         blank=True,
     )
+    
+    reqset_exam_links = models.ManyToManyField(  # type: ignore[assignment]
+        "ExaminationRequirementSet",
+        related_name="requirement_set",
+        blank=True,
+    )
+    
+    tags = models.ManyToManyField(  # type: ignore[assignment]
+        "Tag",
+        related_name="requirement_sets",
+        blank=True,
+    )
+    
     objects = RequirementSetManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import Requirement, InformationSource
+        from endoreg_db.models import Tag, Requirement, InformationSource
+        from typing import Optional
 
-        requirements: models.QuerySet[Requirement]
-        information_source: InformationSource
-        requirement_set_type: RequirementSetType
-        linked_sets: models.QuerySet["RequirementSet"]
+        tags: "models.ManyToManyField[Tag]"
+        requirements: "models.Manager[Requirement]"
+        information_sources: "models.Manager[InformationSource]"
+        requirement_set_type: Optional[RequirementSetType]
+        links_to_sets: "models.Manager[RequirementSet]"
+        links_from_sets: "models.Manager[RequirementSet]"
 
     def natural_key(self):
         """Return the natural key as a tuple containing the instance's name."""
@@ -128,6 +144,10 @@ class RequirementSet(models.Model):
         """
         Evaluates all requirements in the set against the provided input object.
         
+        Intelligently selects the appropriate input data for each requirement based on its expected model types.
+        For example, if a requirement expects PatientFinding but receives a PatientExamination, 
+        it will use the examination's patient_findings instead.
+        
         Args:
             input_object: The object to be evaluated by each requirement.
             mode: Optional evaluation mode passed to each requirement (default is "loose").
@@ -137,9 +157,44 @@ class RequirementSet(models.Model):
         """
         results = []
         for requirement in self.requirements.all():
-            result = requirement.evaluate(input_object, mode=mode)
+            # Get the appropriate input for this specific requirement
+            evaluation_input = self._get_evaluation_input_for_requirement(requirement, input_object)
+            result = requirement.evaluate(evaluation_input, mode=mode)
             results.append(result)
         return results
+    
+    def _get_evaluation_input_for_requirement(self, requirement, input_object):
+        """
+        Determines the appropriate input object for evaluating a specific requirement.
+        
+        Args:
+            requirement: The requirement to be evaluated
+            input_object: The original input object
+            
+        Returns:
+            The most appropriate input object for the requirement evaluation
+        """
+        expected_models = requirement.expected_models
+        
+        # If the input object is already one of the expected models, use it directly
+        for expected_model in expected_models:
+            if isinstance(input_object, expected_model):
+                return input_object
+        
+        # Import here to avoid circular imports
+        from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+        from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+        
+        # Handle PatientExamination -> PatientFinding conversion
+        if isinstance(input_object, PatientExamination):
+            # If requirement expects PatientFinding, return the examination's findings
+            if PatientFinding in expected_models:
+                return input_object.patient_findings.all()
+
+        
+        # Handle other model conversions as needed in the future
+        # For now, return the original input object as fallback
+        return input_object
 
     def evaluate_requirement_sets(self, input_object) -> List[bool]:
         """
@@ -149,7 +204,10 @@ class RequirementSet(models.Model):
             A list of boolean values indicating whether each linked requirement set is satisfied.
         """
         results = []
-        for linked_set in self.links_to_sets.all():
+        linked_sets = self.all_linked_sets
+        if not linked_sets:
+            return results
+        for linked_set in linked_sets:
             result = linked_set.evaluate(input_object)
             results.append(result)
         return results
@@ -185,4 +243,45 @@ class RequirementSet(models.Model):
         eval_result = self.eval_function(results) if self.eval_function else all(results)
 
         return eval_result
+    
+    @property
+    def all_linked_sets(self):
+        """
+        Returns all linked requirement sets, including those linked to the current set and those linked to any of its linked sets.
+        
+        Uses recursive traversal with cycle detection to safely handle circular relationships.
+        Eliminates duplicates by tracking visited sets.
+        
+        Returns:
+            List[RequirementSet]: A list of all linked requirement sets.
+        """
+        visited = set()
+        result:List["RequirementSet"] = []
+        
+        def _collect_linked_sets(requirement_set:"RequirementSet"):
+            """
+            Recursively collect linked sets while avoiding cycles and duplicates.
+            
+            Args:
+                requirement_set: The RequirementSet to process
+            """
+            # Use the primary key to track visited sets (avoids issues with object comparison)
+            if requirement_set.pk in visited:
+                return
+            
+            visited.add(requirement_set.pk)
+            
+            # Process all directly linked sets
+            for linked_set in requirement_set.links_to_sets.all():
+                if linked_set.pk not in visited:
+                    result.append(linked_set)
+                    # Recursively process the linked set's links
+                    _collect_linked_sets(linked_set)
+        
+        # Start the recursive collection from this instance
+        _collect_linked_sets(self)
+        
+        return result
+
+
 

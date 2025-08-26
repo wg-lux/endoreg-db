@@ -1,0 +1,40 @@
+- model: endoreg_db.finding
+  fields:
+    name: "colon_polyp"
+    name_de: "Kolonpolyp"
+    name_en: "Colon Polyp"
+
+    finding_interventions:
+      [
+        "colon_lesion_polypectomy_cold_snare",
+        "colon_lesion_polypectomy_hot_snare",
+        "colon_lesion_injection_liftup",
+        "colon_lesion_injection_vasoactive",
+        "colon_lesion_biopsy",
+        "colon_lesion_emr",
+        "colon_lesion_esd",
+        "colon_lesion_eftr",
+        "colon_lesion_clip",
+      ]
+    examinations: ["colonoscopy", "colonoscopy_austria_screening"]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "colonoscopy_complete"
+    examinations:
+      [
+        "colonoscopy",
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["summary"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "colonoscopy_austria_screening_findings_summary"
+    examinations:
+      [
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["summary"]

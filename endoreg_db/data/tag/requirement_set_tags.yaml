@@ -1,0 +1,11 @@
+- model: endoreg_db.tag
+  fields:
+    name: "report_mask_requirement_set"
+
+- model: endoreg_db.tag
+  fields:
+    name: "colonoscopy_austria_screening"
+
+- model: endoreg_db.tag
+  fields:
+    name: "colonoscopy_austria"

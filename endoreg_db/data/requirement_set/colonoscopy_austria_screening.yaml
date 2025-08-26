@@ -1,0 +1,57 @@
+
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_austria_screening_finding_polyp_required_classifications"
+    name_de: "Vorsorge Koloskopie Österreich: Polyp"
+    requirement_set_type: "all"
+    links_to_sets: []
+    requirements:
+      - "colon_austria_screening_polyp_size"
+      - "colonoscopy_austria_screening_polyp_location"
+      - "colonoscopy_austria_screening_polyp_histology"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_austria_screening_examination_complete"
+    requirement_set_type: "any"
+    requirements:
+      - "colonoscopy_austria_screening_examination_cecum_visualized"
+      - "colonoscopy_austria_screening_examination_reason_incomplete"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_austria_screening_examination_required_findings"
+    links_to_sets:
+      - "colonoscopy_austria_screening_examination_complete"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_austria_screening_bowel_prep"
+      - "colonoscopy_austria_screening_sedation"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_austria_screening_required_patient_information"
+    name_de: "Vorsorge Koloskopie Österreich: Patienteninformation"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "patient_gender_generic"
+      - "patient_age_generic"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_austria_screening_qa"
+    name_de: "Vorsorge Koloskopie Österreich QA"
+    name_en: "Colonoscopy Austria Screening QA"
+    description: "Colonoscopy Austria Screening QA"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "colonoscopy_austria_screening_finding_polyp_required_classifications"
+      - "colonoscopy_austria_screening_required_patient_information"
+      - "colonoscopy_austria_screening_examination_required_findings"
+    tags:
+      - "report_mask_requirement_set"
+      - "colonoscopy_austria_screening"
+    reqset_exam_links:
+      - "colonoscopy_austria_req_sets"
+      - "colonoscopy_req_sets"

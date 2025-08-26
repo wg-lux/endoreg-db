@@ -68,3 +68,28 @@
       "bowel_prep_aronchick_3"
     ]
 
+# Screening Austria
+# Choices are "bowel_prep_perfect", "bowel_prep_good", 
+# "bowel_prep_fair", "bowel_prep_poor", "bowel_prep_poor_in_rc_only"
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_screening_austria"
+    classification_types: [
+      "bowel_prep"
+    ]
+    name_de: "Darmvorbereitung Screening Österreich"
+    name_en: "Bowel Preparation Screening Austria"
+    examinations: [
+      "colonoscopy_austria_screening"
+    ]
+    findings: [
+      "bowel_prep_screening_austria"
+    ]
+    choices: [
+      "bowel_prep_perfect",
+      "bowel_prep_good",
+      "bowel_prep_fair",
+      "bowel_prep_poor",
+      "bowel_prep_poor_in_rc_only"
+    ]

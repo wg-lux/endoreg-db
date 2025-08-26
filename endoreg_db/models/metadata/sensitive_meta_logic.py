@@ -251,7 +251,67 @@ def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, 
         aware_dob = timezone.make_aware(datetime.combine(dob, datetime.min.time()))
         selected_data["patient_dob"] = aware_dob
         logger.debug("Converted patient_dob from date to aware datetime: %s", aware_dob)
+    elif isinstance(dob, str):
+        # Handle string DOB - check if it's a field name or actual date
+        if dob == "patient_dob" or dob in ["patient_first_name", "patient_last_name", "examination_date"]:
+            logger.warning("Skipping invalid patient_dob value '%s' - appears to be field name", dob)
+            selected_data.pop("patient_dob", None)  # Remove invalid value
+        else:
+            # Try to parse as date string
+            try:
+                import dateparser
+                parsed_dob = dateparser.parse(dob, languages=['de'], settings={'DATE_ORDER': 'DMY'})
+                if parsed_dob:
+                    aware_dob = timezone.make_aware(parsed_dob.replace(hour=0, minute=0, second=0, microsecond=0))
+                    selected_data["patient_dob"] = aware_dob
+                    logger.debug("Parsed string patient_dob '%s' to aware datetime: %s", dob, aware_dob)
+                else:
+                    logger.warning("Could not parse patient_dob string '%s', removing from data", dob)
+                    selected_data.pop("patient_dob", None)
+            except Exception as e:
+                logger.warning("Error parsing patient_dob string '%s': %s, removing from data", dob, e)
+                selected_data.pop("patient_dob", None)
     # --- End Conversion ---
+    
+    # Similar validation for examination_date
+    exam_date = selected_data.get("examination_date")
+    if isinstance(exam_date, str):
+        if exam_date == "examination_date" or exam_date in ["patient_first_name", "patient_last_name", "patient_dob"]:
+            logger.warning("Skipping invalid examination_date value '%s' - appears to be field name", exam_date)
+            selected_data.pop("examination_date", None)
+        else:
+            # Try to parse as date string
+            try:
+                # First try simple ISO format for YYYY-MM-DD
+                if len(exam_date) == 10 and exam_date.count('-') == 2:
+                    try:
+                        from datetime import datetime as dt
+                        parsed_date = dt.strptime(exam_date, '%Y-%m-%d').date()
+                        selected_data["examination_date"] = parsed_date
+                        logger.debug("Parsed ISO examination_date '%s' to date: %s", exam_date, parsed_date)
+                    except ValueError:
+                        # Fall back to dateparser for complex formats
+                        import dateparser
+                        parsed_date = dateparser.parse(exam_date, languages=['de'], settings={'DATE_ORDER': 'DMY'})
+                        if parsed_date:
+                            selected_data["examination_date"] = parsed_date.date()
+                            logger.debug("Parsed string examination_date '%s' to date: %s", exam_date, parsed_date.date())
+                        else:
+                            logger.warning("Could not parse examination_date string '%s', removing from data", exam_date)
+                            selected_data.pop("examination_date", None)
+                else:
+                    # Use dateparser for non-ISO formats
+                    import dateparser
+                    parsed_date = dateparser.parse(exam_date, languages=['de'], settings={'DATE_ORDER': 'DMY'})
+                    if parsed_date:
+                        selected_data["examination_date"] = parsed_date.date()
+                        logger.debug("Parsed string examination_date '%s' to date: %s", exam_date, parsed_date.date())
+                    else:
+                        logger.warning("Could not parse examination_date string '%s', removing from data", exam_date)
+                        selected_data.pop("examination_date", None)
+            except Exception as e:
+                logger.warning("Error parsing examination_date string '%s': %s, removing from data", exam_date, e)
+                selected_data.pop("examination_date", None)
 
     # Handle Center
     center_name = data.get("center_name")
@@ -388,10 +448,48 @@ def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, A
             try:
                 # --- Convert patient_dob if it's a date object ---
                 value_to_set = v
-                if k == "patient_dob" and isinstance(v, date) and not isinstance(v, datetime):
-                    aware_dob = timezone.make_aware(datetime.combine(v, datetime.min.time()))
-                    value_to_set = aware_dob
-                    logger.debug("Converted patient_dob from date to aware datetime during update: %s", aware_dob)
+                if k == "patient_dob":
+                    if isinstance(v, date) and not isinstance(v, datetime):
+                        aware_dob = timezone.make_aware(datetime.combine(v, datetime.min.time()))
+                        value_to_set = aware_dob
+                        logger.debug("Converted patient_dob from date to aware datetime during update: %s", aware_dob)
+                    elif isinstance(v, str):
+                        # Handle string DOB - check if it's a field name or actual date
+                        if v == "patient_dob" or v in ["patient_first_name", "patient_last_name", "examination_date"]:
+                            logger.warning("Skipping invalid patient_dob value '%s' during update - appears to be field name", v)
+                            continue  # Skip this field
+                        else:
+                            # Try to parse as date string
+                            try:
+                                import dateparser
+                                parsed_dob = dateparser.parse(v, languages=['de'], settings={'DATE_ORDER': 'DMY'})
+                                if parsed_dob:
+                                    value_to_set = timezone.make_aware(parsed_dob.replace(hour=0, minute=0, second=0, microsecond=0))
+                                    logger.debug("Parsed string patient_dob '%s' during update to aware datetime: %s", v, value_to_set)
+                                else:
+                                    logger.warning("Could not parse patient_dob string '%s' during update, skipping", v)
+                                    continue
+                            except Exception as e:
+                                logger.warning("Error parsing patient_dob string '%s' during update: %s, skipping", v, e)
+                                continue
+                elif k == "examination_date" and isinstance(v, str):
+                    if v == "examination_date" or v in ["patient_first_name", "patient_last_name", "patient_dob"]:
+                        logger.warning("Skipping invalid examination_date value '%s' during update - appears to be field name", v)
+                        continue
+                    else:
+                        # Try to parse as date string
+                        try:
+                            import dateparser
+                            parsed_date = dateparser.parse(v, languages=['de'], settings={'DATE_ORDER': 'DMY'})
+                            if parsed_date:
+                                value_to_set = parsed_date.date()
+                                logger.debug("Parsed string examination_date '%s' during update to date: %s", v, value_to_set)
+                            else:
+                                logger.warning("Could not parse examination_date string '%s' during update, skipping", v)
+                                continue
+                        except Exception as e:
+                            logger.warning("Error parsing examination_date string '%s' during update: %s, skipping", v, e)
+                            continue
                 # --- End Conversion ---
 
                 # Check if patient name is changing

@@ -168,6 +168,108 @@ def _evaluate_models_match_all(
             
     return True
 
+def _evaluate_age_gte(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs
+) -> bool:
+    """
+    Checks if any patient in the input has an age greater than or equal to the requirement's numeric_value.
+    
+    Args:
+        requirement_links: The RequirementLinks object from the Requirement model (not used for age checks).
+        input_links: The aggregated RequirementLinks object from the input arguments.
+        requirement: The Requirement instance containing the minimum age in numeric_value.
+        **kwargs: Additional keyword arguments, should contain 'original_input_args' with the original Patient instances.
+    
+    Returns:
+        True if any patient in the input has an age >= requirement.numeric_value, False otherwise.
+    """
+    from endoreg_db.models.administration.person.patient import Patient
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    if requirement.numeric_value is None:
+        logger.debug("age_gte: requirement.numeric_value is None, returning False")
+        return False  # Cannot evaluate without a minimum age requirement
+    
+    min_age = requirement.numeric_value
+    logger.debug(f"age_gte: Checking if any patient has age >= {min_age}")
+    
+    # Check if we have Patient instances in the original_input_args
+    original_args = kwargs.get('original_input_args', [])
+    logger.debug(f"age_gte: Found {len(original_args)} original input arguments: {[type(arg).__name__ for arg in original_args]}")
+    
+    for i, arg in enumerate(original_args):
+        logger.debug(f"age_gte: Checking argument {i}: {type(arg).__name__}")
+        if isinstance(arg, Patient):
+            patient_age = arg.age()
+            logger.debug(f"age_gte: Patient {arg} has age {patient_age}, comparing with min_age {min_age}")
+            if patient_age is not None and patient_age >= min_age:
+                logger.debug(f"age_gte: Patient age {patient_age} >= {min_age}, returning True")
+                return True
+            else:
+                logger.debug(f"age_gte: Patient age {patient_age} < {min_age} or is None")
+        # Handle QuerySets of patients
+        elif hasattr(arg, 'model') and issubclass(arg.model, Patient):
+            logger.debug(f"age_gte: Found Patient QuerySet with {arg.count()} patients")
+            for patient in arg:
+                patient_age = patient.age()
+                logger.debug(f"age_gte: Patient {patient} has age {patient_age}, comparing with min_age {min_age}")
+                if patient_age is not None and patient_age >= min_age:
+                    logger.debug(f"age_gte: Patient age {patient_age} >= {min_age}, returning True")
+                    return True
+        else:
+            logger.debug(f"age_gte: Argument {i} is not a Patient or Patient QuerySet: {type(arg)}")
+    
+    logger.debug(f"age_gte: No patient found with age >= {min_age}, returning False")
+    return False
+
+
+def _evaluate_age_lte(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks", 
+    requirement: "Requirement",
+    **kwargs
+) -> bool:
+    """
+    Checks if any patient in the input has an age less than or equal to the requirement's numeric_value.
+    
+    Args:
+        requirement_links: The RequirementLinks object from the Requirement model (not used for age checks).
+        input_links: The aggregated RequirementLinks object from the input arguments.
+        requirement: The Requirement instance containing the maximum age in numeric_value.
+        **kwargs: Additional keyword arguments, should contain 'original_input_args' with the original Patient instances.
+    
+    Returns:
+        True if any patient in the input has an age <= requirement.numeric_value, False otherwise.
+    """
+    from endoreg_db.models.administration.person.patient import Patient
+    
+    if requirement.numeric_value is None:
+        return False  # Cannot evaluate without a maximum age requirement
+    
+    max_age = requirement.numeric_value
+    
+    # Check if we have Patient instances in the original_input_args
+    original_args = kwargs.get('original_input_args', [])
+    for arg in original_args:
+        if isinstance(arg, Patient):
+            patient_age = arg.age()
+            if patient_age is not None and patient_age <= max_age:
+                return True
+        # Handle QuerySets of patients
+        elif hasattr(arg, 'model') and issubclass(arg.model, Patient):
+            for patient in arg:
+                patient_age = patient.age()
+                if patient_age is not None and patient_age <= max_age:
+                    return True
+    
+    return False
+
+
 def dispatch_operator_evaluation(
     operator_name: str,
     requirement_links: "RequirementLinks",
@@ -235,6 +337,32 @@ def dispatch_operator_evaluation(
             input_links=input_links,
             requirement=requirement, 
             operator_kwargs=kwargs
+        )
+    elif operator_name == "age_gte":
+        if not isinstance(requirement, Requirement):
+            raise ValueError("age_gte operator requires a valid 'requirement' instance in kwargs.")
+        
+        # Create a new kwargs dict for the call, excluding 'requirement' to avoid passing it twice
+        kwargs_for_eval = {k: v for k, v in kwargs.items() if k != 'requirement'}
+        
+        return _evaluate_age_gte(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval
+        )
+    elif operator_name == "age_lte":
+        if not isinstance(requirement, Requirement):
+            raise ValueError("age_lte operator requires a valid 'requirement' instance in kwargs.")
+        
+        # Create a new kwargs dict for the call, excluding 'requirement' to avoid passing it twice
+        kwargs_for_eval = {k: v for k, v in kwargs.items() if k != 'requirement'}
+        
+        return _evaluate_age_lte(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval
         )
     else:
         raise NotImplementedError(f"Evaluation logic for operator '{operator_name}' is not implemented.")

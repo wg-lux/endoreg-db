@@ -1,0 +1,56 @@
+- model: endoreg_db.finding
+  fields:
+    name: "bowel_preparation_lc"
+    name_de: "Darmvorbereitung (Linkes Kolon)"
+    name_en: "Bowel Preparation (Left Colon)"
+    examinations:
+      [
+        "colonoscopy",
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "bowel_preparation_tc"
+    name_de: "Darmvorbereitung (Kolon Transversum)"
+    name_en: "Bowel Preparation (Transverse Colon)"
+    examinations:
+      [
+        "colonoscopy",
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "bowel_preparation_rc"
+    name_de: "Darmvorbereitung (Rechtes Kolon)"
+    name_en: "Bowel Preparation (Right Colon)"
+    examinations:
+      [
+        "colonoscopy",
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "bowel_preparation_simplified"
+    name_de: "Darmvorbereitung (Vereinfacht)"
+    name_en: "Bowel Preparation (Simplified)"
+    examinations:
+      [
+        "colonoscopy",
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "bowel_prep_screening_austria"
+    examinations: 
+      [
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: ["macroscopic"]

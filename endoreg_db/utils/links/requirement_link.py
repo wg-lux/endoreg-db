@@ -10,6 +10,7 @@ from endoreg_db.models import (
     PatientFinding,
     Finding, 
     FindingIntervention, 
+    FindingClassification,
     FindingClassificationChoice, 
     LabValue,
     PatientLabValue,
@@ -20,7 +21,7 @@ from endoreg_db.models import (
     Medication, # Added
     MedicationIndication, # Added
     MedicationIntakeTime, # Added
-    MedicationSchedule # Added
+    MedicationSchedule, # Added
 )
 if TYPE_CHECKING: # Added for Patient import
     from endoreg_db.models.administration.person.patient import Patient
@@ -45,9 +46,11 @@ class RequirementLinks(BaseModel):
         finding_interventions (List[FindingIntervention]): A List of finding interventions.
     """
     model_config = {"arbitrary_types_allowed": True}
+    # 
     # requirement_types: Optional[List["RequirementType"]] = None
     # operators: Optional[List["RequirementOperator"]] = None
-    # requirement_sets: Optional[List["RequirementSet"]] = None
+    # The following model import causes circular import
+    #requirement_sets: Optional[List["RequirementSet"]] = None
     examinations: List["Examination"] = []
     examination_indications: List["ExaminationIndication"] = []
     examination_indication_classification_choices: List["ExaminationIndicationClassificationChoice"] = []
@@ -65,6 +68,7 @@ class RequirementLinks(BaseModel):
     patient_findings: List["PatientFinding"] = []
     findings: List["Finding"] = []
     finding_classification_choices: List["FindingClassificationChoice"] = []
+    finding_classifications: List["FindingClassification"] = [] # Added for direct classification checks if needed
     finding_interventions: List["FindingIntervention"] = []
     patient_lab_sample_types: List["PatientLabSampleType"] = []
     patient_medications: List["PatientMedication"] = [] # Added

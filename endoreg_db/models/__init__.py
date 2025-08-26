@@ -72,6 +72,7 @@ from .medical import (
     EventClassificationChoice,
     Contraindication,
     Examination,
+    ExaminationRequirementSet,
     ExaminationType,
     ExaminationIndication,
     ExaminationIndicationClassificationChoice,
@@ -138,6 +139,7 @@ from .other import (
     InformationSourceType,
     Unit,
     EmissionFactor,
+    Tag
 )
 
 from .requirement import (
@@ -328,6 +330,7 @@ __all__ = [
     "InformationSourceType",
     "Unit",
     "EmissionFactor",
+    "Tag",
 
     ###### Requirement ######
     "Requirement",

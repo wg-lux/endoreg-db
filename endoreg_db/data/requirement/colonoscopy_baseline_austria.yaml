@@ -1,0 +1,45 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_austria_screening_bowel_prep"
+    requirement_types:
+      - "patient_examination"
+    operators:
+      - "models_match_any"
+    finding_classifications:
+      - "bowel_prep_screening_austria"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_austria_screening_sedation"
+    requirement_types:
+      - "patient_examination"
+    operators:
+      - "models_match_any"
+    finding_classifications:
+      - "sedation_performed"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_austria_screening_examination_cecum_visualized"
+    requirement_types:
+      - "patient_finding"
+    operators:
+      - "models_match_all"
+    findings:
+      - "cecum"
+    finding_classifications: [
+      "visualized"
+    ]
+    finding_classification_choices: [
+      "yes"
+    ]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_austria_screening_examination_reason_incomplete"
+    requirement_types:
+      - "patient_examination"
+    operators:
+      - "models_match_all"
+    finding_classifications:
+      - "colonoscopy_not_complete_reason"

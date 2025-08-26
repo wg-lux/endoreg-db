@@ -92,7 +92,7 @@ in
         "PORT": "${port}",
         "CONF_DIR": "${confDir}",
         "HOME_DIR": "$HOME",
-        "WORKING_DIR": "$PWD",
+        "WORKING_DIR": "$PWD"
       }
       EOF
       echo "Exported Nix variables to .devenv-vars.json"

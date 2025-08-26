@@ -7,7 +7,6 @@ from ...models import (
     Examination,
     FindingIntervention,
 )
-import os
 from ...utils import load_model_data_from_yaml
 from ...data import (
     EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR,
@@ -27,7 +26,7 @@ IMPORT_METADATA = {
         "dir": EXAMINATION_INDICATION_DATA_DIR,
         "model": ExaminationIndication,
         "foreign_keys": [
-            "examination",
+            "examinations",
             "expected_interventions",
         ],
         "foreign_key_models": [
@@ -39,7 +38,7 @@ IMPORT_METADATA = {
         "dir": EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR,
         "model": ExaminationIndicationClassification,
         "foreign_keys": [
-            "examination",
+            "examinations",
             "indications",  # This is a many-to-many field
         ],
         "foreign_key_models": [

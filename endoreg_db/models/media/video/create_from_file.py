@@ -53,6 +53,53 @@ def check_storage_capacity(src_path: Path, dst_root: Path, safety_margin: float 
         # Don't fail the operation, just log the warning
 
 
+def atomic_copy_with_fallback(src_path: Path, dst_path: Path) -> bool:
+    """
+    Atomically copy file from src to dst, preserving the source file.
+    
+    Args:
+        src_path: Source file path
+        dst_path: Destination file path
+        
+    Returns:
+        True if successful
+        
+    Raises:
+        InsufficientStorageError: If not enough space for the operation
+        OSError: For other file system errors
+    """
+    try:
+        # Check space before copy
+        src_size = src_path.stat().st_size
+        free_space = shutil.disk_usage(dst_path.parent).free
+        
+        if free_space < src_size * 1.1:  # 10% safety margin
+            raise InsufficientStorageError(
+                f"Insufficient space for copy operation. Required: {src_size/1e9:.1f} GB, "
+                f"Available: {free_space/1e9:.1f} GB",
+                required_space=src_size,
+                available_space=free_space
+            )
+        
+        # Use a temporary name during copy for atomicity
+        temp_dst = dst_path.with_suffix(dst_path.suffix + '.tmp')
+        
+        try:
+            shutil.copy2(str(src_path), str(temp_dst))
+            temp_dst.rename(dst_path)
+            logger.debug(f"Copy successful: {src_path} -> {dst_path}")
+            return True
+        except Exception:
+            # Clean up temp file if copy failed
+            if temp_dst.exists():
+                temp_dst.unlink(missing_ok=True)
+            raise
+    
+    except Exception as e:
+        logger.error(f"Copy operation failed: {src_path} -> {dst_path}: {e}")
+        raise
+
+
 def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
     """
     Atomically move file from src to dst, with fallback to copy+remove.
@@ -216,9 +263,9 @@ def _create_from_file(
                 logger.debug("Moving transcoded file %s to %s", transcoded_file_path, final_storage_path)
                 atomic_move_with_fallback(transcoded_file_path, final_storage_path)
             else:
-                # Copy scenario (delete_source is False)
+                # Copy scenario (delete_source is False) - PRESERVE THE SOURCE FILE
                 logger.debug("Copying file %s to %s", transcoded_file_path, final_storage_path)
-                atomic_move_with_fallback(transcoded_file_path, final_storage_path)
+                atomic_copy_with_fallback(transcoded_file_path, final_storage_path)
                 # Keep the source file, clean up transcoded temp file if different
                 if transcoded_file_path != file_path and transcoded_file_path.exists():
                     logger.debug("Cleaning up temporary transcoded file %s", transcoded_file_path)

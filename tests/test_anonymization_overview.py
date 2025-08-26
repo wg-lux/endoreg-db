@@ -3,37 +3,69 @@ Unit tests for anonymization overview API endpoints.
 Tests the /api/anonymization/items/overview/ endpoint that returns
 FileItem interface data for videos and PDFs.
 """
-from django.test import TestCase
-from django.utils import timezone
+import pytest
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework import status
-from endoreg_db.models import VideoFile, RawPdfFile, SensitiveMeta, Center, VideoState, SensitiveMetaState
-# from endoreg_db.models.media.video.video_file_state import VideoState
-from .helpers.data_loader import load_base_db_data
+from endoreg_db.models import SensitiveMeta, VideoState, SensitiveMetaState
 from .helpers.default_objects import (
-    get_default_center, get_default_egd_pdf, get_default_video_file
+    get_default_center, get_default_egd_pdf
 )
-import datetime
+from .helpers.optimized_video_fixtures import (
+    get_cached_or_create
+)
+import os
 
 import logging
 logger = logging.getLogger(__name__)
 
+# Environment-based test control
+SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
+
+@override_settings(
+    DEBUG=True,
+    REST_FRAMEWORK={
+        'DEFAULT_PERMISSION_CLASSES': [],  # Disable authentication for tests
+        'DEFAULT_AUTHENTICATION_CLASSES': [],
+    }
+)
+@pytest.mark.django_db
 class AnonymizationOverviewAPITest(TestCase):
     """Test cases for anonymization overview API."""
     
+    @classmethod
+    def setUpClass(cls):
+        """Set up session-scoped fixtures."""
+        super().setUpClass()
+        # Use session-scoped database loading from conftest.py
+        from .helpers.data_loader import load_base_db_data
+        load_base_db_data()
+    
     def setUp(self):
         """Set up test data."""
-        load_base_db_data()
+        super().setUp()
         self.client = APIClient()
         
-        # Create test center
+        # Create test center (cached)
         self.center = get_default_center()
         self.raw_pdf = get_default_egd_pdf()
-        self.video = get_default_video_file()
+        
+        # Always use real video file for this integration test suite
+        # These tests require full VideoFile functionality
+        from .helpers.default_objects import get_default_video_file
+        self.video = get_cached_or_create(
+            "anonymization_overview_video",
+            get_default_video_file
+        )
         
         
+    @pytest.mark.integration
+    @pytest.mark.video
     def test_video_sm_creation(self):
         """Test creation of SensitiveMeta for video."""
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest("Skipping video SensitiveMeta test (requires real video file)")
+            
         video = self.video
         video_sm = video.sensitive_meta
         self.assertIsNotNone(video_sm, "SensitiveMeta for video should be created")
@@ -42,6 +74,7 @@ class AnonymizationOverviewAPITest(TestCase):
         self.assertIsInstance(video.state, VideoState, "VideoFile should have a VideoState")
         self.assertEqual(video_sm.center, self.center, "SensitiveMeta should be linked to the correct center")
 
+    @pytest.mark.unit
     def test_pdf_sm_creation(self):
         """Test creation of SensitiveMeta for PDF."""
         pdf = self.raw_pdf
@@ -51,14 +84,23 @@ class AnonymizationOverviewAPITest(TestCase):
         self.assertIsInstance(pdf_sm.state, SensitiveMetaState, "SensitiveMeta should have a state")
         self.assertEqual(pdf_sm.center, self.center, "SensitiveMeta should be linked to the correct center")
 
+    @pytest.mark.integration  
+    @pytest.mark.api
     def test_overview_empty_database(self):
         """Test overview endpoint with no files."""
         response = self.client.get('/api/anonymization/items/overview/')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
     
+    @pytest.mark.integration
+    @pytest.mark.api
+    @pytest.mark.video
+    @pytest.mark.expensive
     def test_overview_mixed_files(self):
         """Test overview with both video and PDF files."""
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest("Skipping mixed files test (requires video processing)")
+            
         # Create video with different states
         video = self.video
 

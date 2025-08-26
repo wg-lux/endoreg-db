@@ -119,6 +119,11 @@
 
 - model: endoreg_db.requirement_type
   fields:
+    name: "patient_finding"
+    
+
+- model: endoreg_db.requirement_type
+  fields:
     name: "patient_medication"
     name_de: "Patientenmedikation"
     name_en: "Patient Medication"

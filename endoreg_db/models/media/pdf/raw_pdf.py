@@ -4,13 +4,13 @@
 # Class contains classmethod to create object from pdf file
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
-
+import os
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.core.files import File  # Import Django File
 from endoreg_db.utils.file_operations import get_uuid_filename
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 # Use the specific paths from the centralized paths module
 from ...utils import PDF_DIR, STORAGE_DIR
 from endoreg_db.utils.hashs import get_pdf_hash
@@ -73,6 +73,13 @@ class RawPdfFile(models.Model):
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
+    
+    anonymized_file = models.FileField(
+        upload_to=PDF_DIR.name,
+        validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
+        null=True,
+        blank=True,
+    )
 
     state = models.OneToOneField(
         "RawPdfState",
@@ -81,13 +88,66 @@ class RawPdfFile(models.Model):
         null=True,
         related_name="raw_pdf_file",
     )
+    
+    objects = models.Manager()
+    
+    @property
+    def file_path(self) -> Path:
+        """
+        Returns the file path of the stored PDF file if available; otherwise, returns None.
+        """
+        if self.file and self.file.name:
+            try:
+                return Path(self.file.path)
+            except (ValueError, AttributeError, NotImplementedError):
+                return None
+        return None
+    
+    def set_file_path(self, file_path: Path):
+        """
+        Sets the file path of the stored PDF file.
+        """
+        self.file = File(file_path)
+        self.save(update_fields=['file'])
+
+    @property
+    def anonymized_file_path(self) -> Path:
+        """
+        Returns the file path of the anonymized PDF file if available; otherwise, returns None.
+        """
+        if self.anonymized_file and self.anonymized_file.name:
+            try:
+                return Path(self.anonymized_file.path)
+            except (ValueError, AttributeError, NotImplementedError):
+                return None
+        return None
+    
+    def set_anonymized_file_path(self, file_path: Path):
+        """
+        Sets the file path of the anonymized PDF file.
+        """
+        self.anonymized_file = File(file_path)
+        self.save(update_fields=['anonymized_file'])
 
     @property
     def file_url(self):
         """
         Returns the URL of the stored PDF file if available; otherwise, returns None.
         """
-        return self.file.url if self.file else None 
+        try:
+            return self.file.url if self.file and self.file.name else None
+        except (ValueError, AttributeError):
+            return None
+        
+    @property
+    def anonymized_file_url(self):
+        """
+        Returns the URL of the stored PDF file if available; otherwise, returns None.
+        """
+        try:
+            return self.anonymized_file.url if self.anonymized_file and self.anonymized_file.name else None
+        except (ValueError, AttributeError):
+            return None
 
     patient = models.ForeignKey(
         "Patient",
@@ -139,28 +199,67 @@ class RawPdfFile(models.Model):
         
         This method ensures that the physical PDF file is deleted from the file system after the database record is removed. Logs warnings or errors if the file cannot be found or deleted.
         """
-        file_path_str = None
-        # Store path before super().delete() invalidates self.file
-        if self.file:
-            try:
-                file_path_str = self.file.path
-            except Exception as e:
-                logger.warning(f"Could not get file path for {self.file.name} before deletion: {e}")
-
         # Call the original delete method first to remove DB record
         super().delete(*args, **kwargs)
+        try:
+            if self.file_path:
+                os.remove(Path(self.file_path))
+                logger.info("Original file removed: %s", self.file)
+        except Exception as e:
+            logger.warning(f"Could not get file path for {self.file.name} before deletion: {e}")
+                
+        try:
+            if self.anonymized_file_path:
+                os.remove(Path(self.anonymized_file_path))
+                logger.info("Anonymized file removed: %s", self.anonymized_file.name)
+        except OSError as e:
+            logger.error("Error removing anonymized file %s: %s", self.anonymized_file.name, e)
 
-        # Delete the associated file using the stored path
-        if file_path_str:
-            file_path = Path(file_path_str)
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                    logger.info("File removed: %s", file_path)
-                except OSError as e:
-                    logger.error("Error removing file %s: %s", file_path, e)
-            else:
-                logger.warning("File path %s not found for deletion.", file_path_str)
+
+    def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
+        """
+        Validate the metadata of the RawPdf instance.
+        
+        Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
+        It also ensures the video file is properly saved after the metadata update.
+        """
+        
+        if not self.sensitive_meta:
+            logger.error("No sensitive meta data associated with this PDF file.")
+            return False
+        
+        if not extracted_data_dict:
+            logger.error("No extracted data provided for validation.")
+            return False
+        
+        # Update sensitive meta with the provided data
+        self.sensitive_meta.update_from_dict(extracted_data_dict)
+        
+        # Save the sensitive meta to ensure changes are persisted
+        self.sensitive_meta.save()
+        
+        # Save the RawPdfFile instance to ensure all changes are saved
+        self.save()
+        
+        logger.info(f"Metadata for PDF {self.id} validated and updated successfully.")
+        
+        if self.file_path:
+            try:
+                os.unlink(self.file_path)  # Delete the original file if it exists
+            except OSError as e:
+                logger.error(f"Error removing original file {self.file_path}: {e}")
+
+        if self.anonymized_file_path:
+            try:
+                os.unlink(self.anonymized_file_path)
+            except OSError as e:
+                logger.error(f"Error removing anonymized file {self.anonymized_file_path}: {e}")
+
+        self.save() # Save the model to persist the cleared file fields
+        
+        logger.info(f"Files for PDF {self.id} deleted successfully.")
+        return True
+        
 
     @classmethod
     def create_from_file_initialized(
@@ -399,7 +498,7 @@ class RawPdfFile(models.Model):
             fallback_file = Path(fallback_file)
 
         try:
-            if not self.file.storage.exists(self.file.name):
+            if not self.file.field.storage.exists(self.file.name):
                 logger.warning(f"File missing at storage path {self.file.name}. Attempting copy from fallback {fallback_file}")
                 if fallback_file.exists():
                     with fallback_file.open("rb") as f:
@@ -473,3 +572,10 @@ class RawPdfFile(models.Model):
         }
 
         return settings_dict
+    
+    @staticmethod
+    def get_pdf_by_id(pdf_id: int) -> "RawPdfFile":
+        try:
+            return RawPdfFile.objects.get(pk=pdf_id)
+        except RawPdfFile.DoesNotExist:
+            raise ValueError(f"PDF with ID {pdf_id} does not exist.")

@@ -20,7 +20,7 @@ class MedicationScheduleManager(models.Manager):
     
 class MedicationSchedule(models.Model):
     '''Model representing a medication schedule.'''
-    name = models.CharField(max_length=255) 
+    name = models.CharField(max_length=255, unique=True) 
     description = models.TextField(blank=True, null=True)
     medication = models.ForeignKey("Medication", on_delete=models.CASCADE)
     unit = models.ForeignKey("Unit", on_delete=models.CASCADE)

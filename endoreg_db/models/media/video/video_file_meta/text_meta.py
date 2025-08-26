@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _update_text_metadata(
     video: "VideoFile",
+    extracted_data_dict: Optional[dict] = None,
     ocr_frame_fraction: float = 0.01,
     cap: int = 10,
     overwrite: bool = False,
@@ -44,9 +45,10 @@ def _update_text_metadata(
     # Extract text using the AI helper function
     # _extract_text_from_video_frames raises ValueError on pre-condition failure
     try:
-        extracted_data_dict = video.extract_text_from_frames(
-            frame_fraction=ocr_frame_fraction, cap=cap
-        )
+        if not extracted_data_dict:
+            extracted_data_dict = video.extract_text_from_frames(
+                frame_fraction=ocr_frame_fraction, cap=cap
+            )
     except Exception as text_extract_e:
          logger.error("Failed during text extraction step for video %s: %s", video.uuid, text_extract_e, exc_info=True)
          raise RuntimeError(f"Text extraction failed for video {video.uuid}") from text_extract_e

@@ -2,12 +2,159 @@ import subprocess
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import cv2
 from tqdm import tqdm
 import shutil
 
 logger = logging.getLogger("ffmpeg_wrapper")
+
+# Global hardware acceleration cache
+_nvenc_available = None
+_preferred_encoder = None
+
+def _detect_nvenc_support() -> bool:
+    """
+    Detect if NVIDIA NVENC hardware acceleration is available.
+    
+    Returns:
+        True if NVENC is available, False otherwise
+    """
+    try:
+        # Test NVENC availability with a minimal command (minimum size for NVENC)
+        cmd = [
+            'ffmpeg', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=256x256:rate=1',
+            '-c:v', 'h264_nvenc', '-preset', 'p1', '-f', 'null', '-'
+        ]
+        
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True, 
+            timeout=15,
+            check=False
+        )
+        
+        if result.returncode == 0:
+            logger.debug("NVENC h264 encoding test successful")
+            return True
+        else:
+            logger.debug(f"NVENC test failed: {result.stderr}")
+            return False
+            
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        logger.debug(f"NVENC detection failed: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"Unexpected error during NVENC detection: {e}")
+        return False
+
+def _get_preferred_encoder() -> Dict[str, str]:
+    """
+    Get the preferred video encoder configuration based on available hardware.
+    
+    Returns:
+        Dictionary with encoder configuration
+    """
+    global _nvenc_available, _preferred_encoder
+    
+    if _nvenc_available is None:
+        _nvenc_available = _detect_nvenc_support()
+        
+    if _preferred_encoder is None:
+        if _nvenc_available:
+            _preferred_encoder = {
+                'name': 'h264_nvenc',
+                'preset_param': '-preset',
+                'preset_value': 'p4',  # Medium quality/speed for NVENC
+                'quality_param': '-cq',
+                'quality_value': '20',  # NVENC CQ mode
+                'type': 'nvenc',
+                'fallback_preset': 'p1'  # Fastest NVENC preset for fallback
+            }
+            logger.info("Hardware acceleration: NVENC available")
+        else:
+            _preferred_encoder = {
+                'name': 'libx264',
+                'preset_param': '-preset',
+                'preset_value': 'medium',  # CPU preset
+                'quality_param': '-crf',
+                'quality_value': '23',  # CPU CRF mode
+                'type': 'cpu',
+                'fallback_preset': 'ultrafast'  # Fastest CPU preset for fallback
+            }
+            logger.info("Hardware acceleration: NVENC not available, using CPU")
+            
+    return _preferred_encoder
+
+def _build_encoder_args(quality_mode: str = 'balanced', 
+                       fallback: bool = False,
+                       custom_crf: Optional[int] = None) -> Tuple[List[str], str]:
+    """
+    Build encoder command arguments based on available hardware and quality requirements.
+    
+    Args:
+        quality_mode: 'fast', 'balanced', or 'quality'
+        fallback: Whether to use fallback settings for compatibility
+        custom_crf: Override quality setting (for backward compatibility)
+        
+    Returns:
+        Tuple of (encoder_args, encoder_type)
+    """
+    encoder = _get_preferred_encoder()
+    
+    if encoder['type'] == 'nvenc':
+        # NVIDIA NVENC configuration
+        if fallback:
+            preset = encoder['fallback_preset']  # p1 - fastest
+            quality = '28'  # Lower quality for speed
+        elif quality_mode == 'fast':
+            preset = 'p2'  # Faster preset
+            quality = '25'
+        elif quality_mode == 'quality':
+            preset = 'p6'  # Higher quality preset
+            quality = '18'
+        else:  # balanced
+            preset = encoder['preset_value']  # p4
+            quality = encoder['quality_value']  # 20
+        
+        # Override with custom CRF if provided (for backward compatibility)
+        if custom_crf is not None:
+            quality = str(custom_crf)
+        
+        return [
+            '-c:v', encoder['name'],
+            encoder['preset_param'], preset,
+            encoder['quality_param'], quality,
+            '-gpu', '0',  # Use first GPU
+            '-rc', 'vbr',  # Variable bitrate
+            '-profile:v', 'high'
+        ], encoder['type']
+    else:
+        # CPU libx264 configuration
+        if fallback:
+            preset = encoder['fallback_preset']  # ultrafast
+            quality = '28'  # Lower quality for speed
+        elif quality_mode == 'fast':
+            preset = 'faster'
+            quality = '20'
+        elif quality_mode == 'quality':
+            preset = 'slow'
+            quality = '18'
+        else:  # balanced
+            preset = encoder['preset_value']  # medium
+            quality = encoder['quality_value']  # 23
+        
+        # Override with custom CRF if provided (for backward compatibility)
+        if custom_crf is not None:
+            quality = str(custom_crf)
+        
+        return [
+            '-c:v', encoder['name'],
+            encoder['preset_param'], preset,
+            encoder['quality_param'], quality,
+            '-profile:v', 'high'
+        ], encoder['type']
 
 def is_ffmpeg_available() -> bool:
     """
@@ -122,15 +269,32 @@ def assemble_video_from_frames( # Renamed from assemble_video
 def transcode_video(
     input_path: Path,
     output_path: Path,
-    codec: str = "libx264",
-    crf: int = 23,
-    preset: str = "medium",
+    codec: str = "auto",  # Changed default to "auto" for automatic selection
+    crf: Optional[int] = None,  # Will be determined automatically if None
+    preset: str = "auto",  # Changed default to "auto" for automatic selection
     audio_codec: str = "aac",
     audio_bitrate: str = "128k",
     extra_args: Optional[List[str]] = None,
+    quality_mode: str = "balanced",  # New parameter: 'fast', 'balanced', 'quality'
+    force_cpu: bool = False,  # New parameter to force CPU encoding
 ) -> Optional[Path]:
     """
-    Transcodes a video file using FFmpeg.
+    Transcodes a video file using FFmpeg with automatic hardware acceleration.
+    
+    Args:
+        input_path: Source video file path
+        output_path: Output video file path
+        codec: Video codec ('auto' for automatic selection, 'libx264', 'h264_nvenc')
+        crf: Constant Rate Factor (None for automatic selection)
+        preset: Encoder preset ('auto' for automatic selection)
+        audio_codec: Audio codec
+        audio_bitrate: Audio bitrate
+        extra_args: Additional FFmpeg arguments
+        quality_mode: Quality mode ('fast', 'balanced', 'quality')
+        force_cpu: Force CPU encoding even if NVENC is available
+        
+    Returns:
+        Path to transcoded video or None if failed
     """
     if not input_path.exists():
         logger.error("Input file not found for transcoding: %s", input_path)
@@ -138,19 +302,153 @@ def transcode_video(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Determine encoder configuration
+    if codec == "auto" or preset == "auto":
+        if force_cpu:
+            # Force CPU encoding
+            encoder_args, encoder_type = _build_encoder_args(quality_mode, fallback=False, custom_crf=crf)
+            # Override to use CPU encoder
+            encoder_args[1] = 'libx264'  # Replace encoder name
+            encoder_args[3] = 'medium' if preset == "auto" else preset  # Replace preset
+            if crf is not None:
+                encoder_args[5] = str(crf)  # Replace quality value
+        else:
+            # Use automatic hardware detection
+            encoder_args, encoder_type = _build_encoder_args(quality_mode, fallback=False, custom_crf=crf)
+    else:
+        # Manual codec/preset specification (backward compatibility)
+        encoder_args = [
+            '-c:v', codec,
+            '-preset', preset,
+            '-crf' if codec == 'libx264' else '-cq', str(crf if crf is not None else 23),
+        ]
+        encoder_type = 'nvenc' if 'nvenc' in codec else 'cpu'
+
+    # Build complete command
     command = [
         "ffmpeg",
         "-i", str(input_path),
-        "-c:v", codec,
-        "-crf", str(crf),
-        "-preset", preset,
+        *encoder_args,
         "-c:a", audio_codec,
         "-b:a", audio_bitrate,
-        "-y", # Overwrite output file if it exists
+        "-y",  # Overwrite output file if it exists
     ]
+    
     if extra_args:
         command.extend(extra_args)
     command.append(str(output_path))
+
+    logger.info("Starting transcoding: %s -> %s (using %s)", 
+                input_path.name, output_path.name, encoder_type)
+    logger.debug("FFmpeg command: %s", " ".join(command))
+
+    try:
+        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+
+        # Progress reporting and error handling
+        stderr_output = ""
+        if process.stderr:
+            for line in process.stderr:
+                stderr_output += line
+
+        process.wait()
+
+        if process.returncode == 0:
+            logger.info("Transcoding finished successfully: %s", output_path)
+            return output_path
+        else:
+            logger.error("FFmpeg transcoding failed for %s with return code %d.", 
+                        input_path.name, process.returncode)
+            logger.error("FFmpeg stderr:\n%s", stderr_output)
+            
+            # Try fallback to CPU if NVENC failed
+            if encoder_type == 'nvenc' and not force_cpu:
+                logger.warning("NVENC transcoding failed, trying CPU fallback...")
+                return _transcode_video_fallback(
+                    input_path, output_path, audio_codec, audio_bitrate, 
+                    extra_args, quality_mode, crf
+                )
+            
+            # Clean up potentially corrupted output file
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                except OSError as e:
+                    logger.error("Failed to delete incomplete output file %s: %s", output_path, e)
+            return None
+
+    except FileNotFoundError:
+        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        return None
+    except Exception as e:
+        logger.error("Error during transcoding of %s: %s", input_path.name, e, exc_info=True)
+        return None
+
+def _transcode_video_fallback(
+    input_path: Path,
+    output_path: Path,
+    audio_codec: str,
+    audio_bitrate: str,
+    extra_args: Optional[List[str]],
+    quality_mode: str,
+    custom_crf: Optional[int]
+) -> Optional[Path]:
+    """
+    Fallback transcoding using CPU encoding.
+    
+    Args:
+        input_path: Source video file path
+        output_path: Output video file path
+        audio_codec: Audio codec
+        audio_bitrate: Audio bitrate
+        extra_args: Additional FFmpeg arguments
+        quality_mode: Quality mode
+        custom_crf: Custom CRF value
+        
+    Returns:
+        Path to transcoded video or None if failed
+    """
+    try:
+        # Build CPU encoder arguments
+        encoder_args, _ = _build_encoder_args(quality_mode, fallback=True, custom_crf=custom_crf)
+        # Force CPU encoder
+        encoder_args[1] = 'libx264'
+        
+        command = [
+            "ffmpeg",
+            "-i", str(input_path),
+            *encoder_args,
+            "-c:a", audio_codec,
+            "-b:a", audio_bitrate,
+            "-y",
+        ]
+        
+        if extra_args:
+            command.extend(extra_args)
+        command.append(str(output_path))
+
+        logger.info("CPU fallback transcoding: %s -> %s", input_path.name, output_path.name)
+        logger.debug("Fallback FFmpeg command: %s", " ".join(command))
+        
+        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+        stderr_output = ""
+        if process.stderr:
+            for line in process.stderr:
+                stderr_output += line
+
+        process.wait()
+
+        if process.returncode == 0:
+            logger.info("CPU fallback transcoding successful: %s", output_path)
+            return output_path
+        else:
+            logger.error("CPU fallback transcoding also failed for %s", input_path.name)
+            logger.error("Fallback stderr:\n%s", stderr_output)
+            return None
+            
+    except Exception as e:
+        logger.error("Error during CPU fallback transcoding: %s", e, exc_info=True)
+        return None
 
     logger.info("Starting transcoding: %s -> %s", input_path.name, output_path.name)
     logger.debug("FFmpeg command: %s", " ".join(command))

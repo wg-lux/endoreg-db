@@ -1,12 +1,12 @@
+from celery.events import state
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import logging
 from pathlib import Path
 from django.db import transaction
-from django.core.files.base import ContentFile
 from ...models import VideoFile, SensitiveMeta
-from ...services.video_import import _ensure_default_patient_data, _ensure_frame_cleaning_available
+from ...services.video_import import VideoImportService
 logger = logging.getLogger(__name__)
 
 class VideoReimportView(APIView):
@@ -14,6 +14,10 @@ class VideoReimportView(APIView):
     API endpoint to re-import a video file and regenerate metadata.
     This is useful when OCR failed or metadata is incomplete.
     """
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.video_service = VideoImportService()
 
     def post(self, request, video_id):
         """
@@ -114,110 +118,46 @@ class VideoReimportView(APIView):
                 
                 # Ensure minimum patient data is available
                 logger.info(f"Ensuring minimum patient data for {video.uuid}")
-                _ensure_default_patient_data(video)
+                self.video_service._ensure_default_patient_data(video)
                 
                 # Refresh from database to get updated data
                 video.refresh_from_db()
-                frame_cleaning_available, FrameCleaner, ReportReader = _ensure_frame_cleaning_available()
-    
-                if frame_cleaning_available:
-                    try:
-                        logger.info("Starting frame-level anonymization with processor ROI masking...")
-                        
-                        # Get processor ROI information for masking
-                        _processor_roi = None
-                        endoscope_roi = None
-                        
-                        try:
-                            if video.video_meta and video.video_meta.processor:
-                                processor = video.video_meta.processor
-                                
-                                # Get the endoscope ROI for masking
-                                endoscope_roi = processor.get_roi_endoscope_image()
-                                
-                                # Get all processor ROIs for comprehensive masking
-                                _processor_roi = {
-                                    'endoscope_image': endoscope_roi,
-                                    'patient_first_name': processor.get_roi_patient_first_name(),
-                                    'patient_last_name': processor.get_roi_patient_last_name(),
-                                    'patient_dob': processor.get_roi_patient_dob(),
-                                    'examination_date': processor.get_roi_examination_date(),
-                                    'examination_time': processor.get_roi_examination_time(),
-                                    'endoscope_type': processor.get_roi_endoscope_type(),
-                                    'endoscopy_sn': processor.get_roi_endoscopy_sn(),
-                                }
-                                
-                                logger.info(f"Retrieved processor ROI information: endoscope_roi={endoscope_roi}")
-                                
-                            else:
-                                logger.warning(f"No processor found for video {video.uuid}, proceeding without ROI masking")
-                                
-                        except Exception as e:
-                            logger.error(f"Failed to retrieve processor ROI information: {e}")
-                            # Continue without ROI - don't fail the entire import process
-                        
-                        # Instantiate frame cleaner and report reader
-                        frame_cleaner = FrameCleaner()
-                        report_reader = ReportReader(
-                            report_root_path=str(Path(video.raw_file.path).parent),
-                            locale="de_DE",  # Default German locale for medical data
-                            text_date_format="%d.%m.%Y"  # Common German date format
-                        )
-                        
-                        # Clean video with ROI masking (heavy I/O operation)
-                        # Pass the endoscope ROI to the frame cleaner for masking
-                        output_path = Path(video.raw_file.path).parent / f"cleaned_{Path(video.raw_file.path).name}"
-                        cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
-                            Path(video.raw_file.path),
-                            output_path,
-                            video,  # Pass VideoFile object to store metadata
-                            report_reader,
-                            processor.name if processor else "Unknown",
-                            video.get_frame_paths() if hasattr(video, 'get_frame_paths') else None
-                        )
-                        
-                        
-                        
-                        # Save cleaned video back to VideoFile (atomic transaction)
-                        with transaction.atomic():
-                            # Save the cleaned video using Django's FileField
-                            with open(cleaned_video_path, 'rb') as f:
-                                video.raw_file.save(
-                                    cleaned_video_path.name, 
-                                    ContentFile(f.read())
-                                )
-                            video.save()
-                            
-                        logger.info(f"Frame cleaning with ROI masking completed: {cleaned_video_path.name}")
-                        logger.info(f"Extracted metadata: {extracted_metadata}")
-                            
-                        logger.info(f"In-place re-import completed successfully for video {video.uuid}")
-                        
-                        # ⭐ Set anonymization status to "done" for frontend validation
-                        self._set_anonymization_done_status(video)
-                        
-                        # FIX: Return proper Response object instead of bare return
-                        return Response({
-                            "message": "Video re-import with frame cleaning completed successfully.",
-                            "video_id": video_id,
-                            "uuid": str(video.uuid),
-                            "cleaned_video": str(cleaned_video_path.name),
-                            "frame_cleaning_applied": True,
-                            "extracted_metadata": extracted_metadata,
-                            "sensitive_meta_created": video.sensitive_meta is not None,
-                            "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
-                            "updated_in_place": True,
-                            "status": "done"  # ⭐ Add explicit done status
-                        }, status=status.HTTP_200_OK)
-                    except Exception as e:
-                        logger.exception(f"Frame cleaning with ROI masking failed for video {video.uuid}: {e}")
-                        # FIX: Don't return here, let it continue to the success response
-                        logger.warning("Continuing without frame cleaning due to error")
-                else:
-                    logger.warning("Frame cleaning not available, skipping anonymization step")
                 
-            # ⭐ Set anonymization status to "done" even without frame cleaning
-            self._set_anonymization_done_status(video)
+                # Use VideoImportService for anonymization
+                try:
+                    processor_name = video.video_meta.processor.name if video.video_meta and video.video_meta.processor else "Unknown"
+                    
+                    logger.info(f"Starting anonymization using VideoImportService for {video.uuid}")
+                    self.video_service.anonymize(
+                        video_file_obj=video,
+                        processor_name=processor_name,
+                        just_anonymization=True,
+                        method="masking"
+                    )
+                    
+                    logger.info(f"VideoImportService anonymization completed for {video.uuid}")
+                    
+                    
+                    return Response({
+                        "message": "Video re-import with VideoImportService completed successfully.",
+                        "video_id": video_id,
+                        "uuid": str(video.uuid),
+                        "frame_cleaning_applied": True,
+                        "sensitive_meta_created": video.sensitive_meta is not None,
+                        "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
+                        "updated_in_place": True,
+                        "status": "done"
+                    }, status=status.HTTP_200_OK)
+                    
+                except Exception as e:
+                    logger.exception(f"VideoImportService anonymization failed for video {video.uuid}: {e}")
+                    logger.warning("Continuing without anonymization due to error")
+                
+                state.mark_sensitive_meta_processed(save=True)
+                
+            # If we reach here, everything was successful
+            logger.info(f"Video re-import completed successfully for {video.uuid}")
+            video.save(update_fields=['sensitive_meta', 'date_modified'])
             
             return Response({
                 "message": "Video re-import completed successfully.",
@@ -250,36 +190,3 @@ class VideoReimportView(APIView):
                     "video_id": video_id,
                     "uuid": str(video.uuid)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def _set_anonymization_done_status(self, video_file):
-        """
-        Set the anonymization status to 'done' for frontend validation.
-        
-        Args:
-            video_file: VideoFile instance
-        """
-        try:
-            # Import here to avoid circular imports
-            from ...models import AnonymizationTask
-            
-            # Find or create anonymization task for this video
-            anonymization_task, created = AnonymizationTask.objects.get_or_create(
-                video_file=video_file,
-                defaults={
-                    'status': 'done',
-                    'progress': 100,
-                    'message': 'Video re-import completed successfully'
-                }
-            )
-            
-            if not created:
-                # Update existing task
-                anonymization_task.status = 'done'
-                anonymization_task.progress = 100
-                anonymization_task.message = 'Video re-import completed successfully'
-                anonymization_task.save(update_fields=['status', 'progress', 'message'])
-            
-            logger.info(f"Anonymization status set to 'done' for video {video_file.uuid}")
-            
-        except Exception as e:
-            logger.error(f"Failed to set anonymization status for {video_file.uuid}: {e}")

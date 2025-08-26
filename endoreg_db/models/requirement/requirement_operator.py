@@ -2,6 +2,9 @@ from django.db import models
 from typing import TYPE_CHECKING, List
 from logging import getLogger # Added logger
 
+# see how operator evaluation function is fetched, add to docs #TODO
+# endoreg_db/utils/requirement_operator_logic/model_evaluators.py
+
 if TYPE_CHECKING:
     from endoreg_db.utils.links.requirement_link import RequirementLinks
     from .requirement import Requirement # Added Requirement import for type hint

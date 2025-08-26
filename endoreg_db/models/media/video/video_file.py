@@ -218,6 +218,8 @@ class VideoFile(models.Model):
         """
         _file = self.active_file
         assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
+        if not _file or not _file.name:
+            raise ValueError("Active file has no associated file.")
         url = _file.url
 
         return url
@@ -248,103 +250,7 @@ class VideoFile(models.Model):
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
 
-    def mark_sensitive_meta_verified(self):
-        """
-        Mark the sensitive metadata associated with this video as verified.
-        
-        This method updates the linked SensitiveMeta instance to indicate that both date of birth and names have been verified.
-        """
-        sm = self.sensitive_meta
-        sm.mark_dob_verified()
-        sm.mark_names_verified()
 
-    def mark_anonymized(self):
-        """
-        Mark the video file as anonymized by updating its state.
-        
-        This method should be called after the video has been successfully anonymized. It updates the associated state to reflect the anonymized status and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_anonymized()
-        logger.debug(f"Video {self.uuid} state set to anonymized.")
-        self.refresh_from_db()
-
-    def mark_anonymization_validated(self):
-        """
-        Mark the video file's state as 'anonymization validated'.
-        
-        Call this method after the video's anonymization process has been successfully validated. Updates the associated state and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_anonymization_validated()
-        logger.debug(f"Video {self.uuid} state set to anonymization validated.")
-        self.refresh_from_db()
-    
-    def mark_sensitive_meta_processed(self):
-        """
-        Mark the video file as having its sensitive metadata processed.
-        
-        Updates the associated state to indicate that sensitive metadata processing is complete and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_sensitive_meta_processed()
-        logger.debug(f"Video {self.uuid} state set to sensitive meta processed.")
-        self.refresh_from_db()
-    
-    def mark_frames_extracted(self):
-        """
-        Mark this video file as having its frames extracted.
-        
-        Updates the associated state to indicate that frame extraction is complete and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_frames_extracted()
-        logger.debug(f"Video {self.uuid} marked as having frames extracted.")
-        self.refresh_from_db()
-
-    def mark_frames_not_extracted(self):
-        """
-        Mark the video file as not having frames extracted.
-        
-        Updates the associated state to indicate that frame extraction was not performed or failed, and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_frames_not_extracted()
-        logger.debug(f"Video {self.uuid} marked as not having frames extracted.")
-        self.refresh_from_db()
-
-    def mark_video_meta_extracted(self):
-        """
-        Mark this video file as having its video metadata extracted.
-        
-        Updates the associated state to indicate that video metadata extraction is complete and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_video_meta_extracted()
-        logger.debug(f"Video {self.uuid} state set to video meta extracted.")
-        self.refresh_from_db()
-
-    def mark_text_meta_extracted(self):
-        """
-        Mark the video file as having its text metadata extracted.
-        
-        Updates the associated state to indicate that text metadata extraction is complete and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_text_meta_extracted()
-        logger.debug(f"Video {self.uuid} state set to text meta extracted.")
-        self.refresh_from_db()
-
-    def mark_initial_prediction_completed(self):
-        """
-        Mark the video as having completed its initial AI predictions.
-        
-        Updates the associated state to indicate that initial AI predictions are finished and refreshes the instance from the database.
-        """
-        state = self.state
-        state.mark_initial_prediction_completed()
-        logger.debug(f"Video {self.uuid} state set to initial prediction completed.")
-        self.refresh_from_db()
 
     # Define new methods that call the helper functions
     def extract_specific_frame_range(self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs) -> bool:
@@ -508,6 +414,70 @@ class VideoFile(models.Model):
         video_file = video_file.initialize()
         return video_file
     
+    def delete(self, using = ..., keep_parents = ...):
+        """
+        Delete the VideoFile instance, including associated files and frames.
+        
+        Overrides the default delete method to ensure proper cleanup of related resources.
+        """
+        # Ensure frames are deleted before the main instance
+        _delete_frames(self)
+        
+        # Call the original delete method to remove the instance from the database
+        logger.info(f"Deleting VideoFile: {self.uuid} - {self.active_file_path}")
+        
+        # Delete associated files if they exist
+        if self.active_file_path.exists():
+            self.active_file_path.unlink(missing_ok=True)
+        
+        # Call the superclass delete method
+        # This will handle the database deletion and any additional cleanup defined in the parent class
+        logger.info(f"VideoFile {self.uuid} deleted successfully.")
+        # Ensure to call the superclass delete method to maintain the integrity of the model
+        # This will also trigger any signals or additional cleanup defined in the parent class
+        if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
+            self.raw_file.storage.delete(self.raw_file.name)
+        if self.processed_file and self.processed_file.storage.exists(self.processed_file.name):
+            self.processed_file.storage.delete(self.processed_file.name)
+        
+        # Call the superclass delete method to ensure proper deletion
+        # This will handle the database deletion and any additional cleanup defined in the parent class
+        # Using super() to ensure we call the correct method in the parent class hierarchy
+        from django.db.models.deletion import Collector
+        collector = Collector(using=using)
+        collector.collect([self], keep_parents=keep_parents)
+        collector.delete()
+        return super().delete(using, keep_parents)
+
+    def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
+        """
+        Validate the metadata of the VideoFile instance.
+        
+        Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
+        It also ensures the video file is properly saved after the metadata update.
+        """
+        from endoreg_db.models import SensitiveMeta
+        if not self.sensitive_meta:
+            self.sensitive_meta = SensitiveMeta.objects.create(center=self.center)
+        
+        # Delete the active file to ensure it is reprocessed with the new metadata
+        if self.active_file_path.exists():
+            self.active_file_path.unlink(missing_ok=True)
+        
+        # Update sensitive metadata with user annotations
+        sensitive_meta = self.update_text_metadata(self, extracted_data_dict, overwrite=True)
+        
+        if sensitive_meta:
+            # Save the VideoFile instance to persist changes
+            self.save()
+            logger.info(f"Metadata annotation validated and saved for video {self.uuid}.")
+            return True
+        else:
+            logger.error(f"Failed to validate metadata annotation for video {self.uuid}.")
+            return False
+        
+        
+    
     def initialize(self):
         """
         Initialize the VideoFile instance by updating metadata, setting up video specs, assigning frame directory, ensuring related state and sensitive metadata exist, saving the instance, and initializing frames.
@@ -643,3 +613,18 @@ class VideoFile(models.Model):
         if fps is None or fps <= 0:
             raise ValueError("FPS must be set and greater than zero.")
         return frame_number / fps
+    
+    def get_video_by_id(self, video_id: int) -> "VideoFile":
+        """
+        Retrieve a VideoFile instance by its primary key (ID).
+        
+        Parameters:
+            video_id (int): The primary key of the VideoFile to retrieve.
+        
+        Returns:
+            VideoFile: The VideoFile instance with the specified ID.
+        
+        Raises:
+            VideoFile.DoesNotExist: If no VideoFile with the given ID exists.
+        """
+        return self.objects.get(pk=video_id)

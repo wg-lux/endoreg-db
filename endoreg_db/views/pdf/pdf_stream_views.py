@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from ...utils.permissions import EnvironmentAwarePermission
 from endoreg_db.models import RawPdfFile
 import os
-from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 logger = logging.getLogger(__name__)
 _RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)")
@@ -36,7 +36,7 @@ class PDFStreamView(APIView):
     """
     permission_classes = [EnvironmentAwarePermission]
 
-    @xframe_options_exempt
+    @xframe_options_sameorigin
     def get(self, request, pdf_id: int, *args, **kwargs):
         try:
             pdf_obj = RawPdfFile.objects.filter(pk=pdf_id).first()

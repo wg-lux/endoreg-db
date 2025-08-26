@@ -1,24 +1,26 @@
+# endoreg_db/api/views/anonymization_overview.py
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from rest_framework.views import APIView
+from django.db import transaction
+from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.anonymization import AnonymizationService
+from endoreg_db.services.polling_coordinator import PollingCoordinator, ProcessingLockContext
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Prefetch, QuerySet
-from django.core.exceptions import ObjectDoesNotExist
 from endoreg_db.models import VideoFile, RawPdfFile
-from endoreg_db.serializers.file_overview_serializer import FileOverviewSerializer, PatientDataSerializer
+from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
 from django.http import JsonResponse
 import logging
-
 logger = logging.getLogger(__name__)
-PERMS = [EnvironmentAwarePermission]
+PERMS = DEBUG_PERMISSIONS   # shorten
 
 # ---------- overview ----------------------------------------------------
 class NoPagination(PageNumberPagination):
     page_size = None
+
 
 class AnonymizationOverviewView(ListAPIView):
     """
@@ -27,7 +29,7 @@ class AnonymizationOverviewView(ListAPIView):
     Returns a flat list (Video + PDF) ordered by newest upload first.
     """
     serializer_class = FileOverviewSerializer
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = DEBUG_PERMISSIONS   
     pagination_class = NoPagination
 
     def get_queryset(self):
@@ -45,54 +47,135 @@ class AnonymizationOverviewView(ListAPIView):
         qs_pdf = (
             RawPdfFile.objects
             .select_related("sensitive_meta")
-            .only("id", "file", "created_at", 
-                "text", "anonymized_text",       # These fields only exist on RawPdfFile
+            .only("id", "file", "date_created", 
+                "text", "anonymized_text",     
                 "sensitive_meta")
+
         )
 
         return list(qs_video) + list(qs_pdf)
+    
+class AnonymizationValidateView(APIView):
+    """
+    POST /api/anonymization/<int:item_id>/validate/
+    Body: {
+      // common SensitiveMeta fields (snake_case):
+      "patient_first_name": "...",
+      "patient_last_name":  "...",
+      "patient_dob":        "YYYY-MM-DD",
+      "examination_date":   "YYYY-MM-DD",
+      "casenumber":         "...",
+      "anonymized_text":    "...",   # only for PDFs; ignored by videos
+      "is_verified": true            # optional; defaults to true here
+    }
+    """
 
-# Keep the legacy function-based view for backward compatibility
-@api_view(["GET"])
-@permission_classes(PERMS)
-def anonymization_overview(request):
-    data = AnonymizationService.list_items()
-    return Response(data)
+    @transaction.atomic
+    def post(self, request, item_id: int):
+        payload = request.data or {}
+        payload.setdefault("is_verified", True)
 
-# ---------- status ------------------------------------------------------
+        # Try Video first
+        video = VideoFile.objects.filter(pk=item_id).first()
+        if video:
+            ok = video.validate_metadata_annotation(payload)
+            if not ok:
+                return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
+
+        # Then PDF
+        pdf = RawPdfFile.objects.filter(pk=item_id).first()
+        if pdf:
+            ok = pdf.validate_metadata_annotation(payload)
+            if not ok:
+                return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
+
+        return Response({"error": f"Item {item_id} not found as video or pdf."}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ---------- status with polling protection ------------------------------
 @api_view(["GET"])
 @permission_classes(PERMS)
 def anonymization_status(request, file_id: int):
+    """
+    Get anonymization status with polling rate limiting.
+    """
+    # Ermittele erst den echten Typ und Status
     info = AnonymizationService.get_status(file_id)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    file_type = info.get("mediaType") or info.get("type") or "video"
+
+    # Wende Rate-Limiting auf den echten Typ an (nicht auf einen evtl. falschen request-Parameter)
+    if not PollingCoordinator.can_check_status(file_id, file_type):
+        return Response(
+            {
+                "detail": "Status check rate limited. Please wait before checking again.",
+                "file_id": file_id,
+                "cooldown_active": True
+            }, 
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+
+    status_val = info.get("anonymizationStatus") or info.get("status") or "not_started"
+
+    # processing_locked als Ableitung des Status interpretieren
+    processing_statuses = {"processing_anonymization", "extracting_frames", "predicting_segments"}
+    processing_locked_derived = status_val in processing_statuses
+
     return Response({
         "file_id": file_id,
-        "file_type": info["type"],
-        "anonymizationStatus": info["status"],
+        "file_type": file_type,
+        "anonymizationStatus": status_val,
+        "processing_locked": processing_locked_derived,
     })
 
-# ---------- start -------------------------------------------------------
+# ---------- start with processing lock ----------------------------------
 @api_view(["POST"])
 @permission_classes(PERMS)
 def start_anonymization(request, file_id: int):
-    kind = AnonymizationService.start(file_id)
-    if not kind:
+    """
+    Start anonymization with processing lock to prevent duplicates.
+    """
+    # First check what type of file this is
+    info = AnonymizationService.get_status(file_id)
+    if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
-    return Response({"detail": f"Anonymization started for {kind} file"})
+    
+    file_type = info["mediaType"]
+    
+    # Use processing lock context to prevent duplicate processing
+    with ProcessingLockContext(file_id, file_type) as lock:
+        if not lock.acquired:
+            return Response(
+                {
+                    "detail": "File is already being processed by another request",
+                    "file_id": file_id,
+                    "file_type": file_type,
+                    "processing_locked": True
+                }, 
+                status=status.HTTP_409_CONFLICT
+            )
+        
+        # Proceed with starting anonymization
+        service = AnonymizationService()
+        kind = service.start(file_id)
+        if not kind:
+            return Response({"detail": "Failed to start anonymization"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            "detail": f"Anonymization started for {kind} file",
+            "file_id": file_id,
+            "file_type": kind,
+            "processing_locked": True
+        })
 
-# ---------- validate ----------------------------------------------------
-@api_view(["POST"])
-@permission_classes(PERMS)
-def validate_anonymization(request, file_id: int):
-    kind = AnonymizationService.validate(file_id)
-    if not kind:
-        return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
-    return Response({"detail": f"Anonymization validated for {kind} file"})
 
+# ---------- current with coordination ------------------------------------
 @api_view(['GET', 'POST', 'PUT'])
-@permission_classes(PERMS)
+@permission_classes(DEBUG_PERMISSIONS)
 def anonymization_current(request, file_id):
     """
     Set current file for validation and return patient data
@@ -100,20 +183,63 @@ def anonymization_current(request, file_id):
     # Try to find the file in VideoFile first
     try:
         video_file = VideoFile.objects.select_related('sensitive_meta').get(id=file_id)
-        serializer = PatientDataSerializer(video_file, context={'request': request})
+        serializer = VoPPatientDataSerializer(video_file, context={'request': request})
         return Response(serializer.data)
     except VideoFile.DoesNotExist:
         pass
-    
     # Try to find the file in RawPdfFile
     try:
         pdf_file = RawPdfFile.objects.select_related('sensitive_meta').get(id=file_id)
-        serializer = PatientDataSerializer(pdf_file, context={'request': request})
+        serializer = VoPPatientDataSerializer(pdf_file, context={'request': request})
         return Response(serializer.data)
+
     except RawPdfFile.DoesNotExist:
         pass
+
     except (ValueError, TypeError, AttributeError) as e:
-        logger.error(f"Error in anonymization_current: {e}")
+        logger.error(f"Error in set_current_for_validation: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
     return JsonResponse({'status': 'error', 'message': 'File not found'}, status=404)
+
+# ---------- polling coordinator info ------------------------------------
+@api_view(['GET'])
+@permission_classes(DEBUG_PERMISSIONS)
+def polling_coordinator_info(request):
+    """
+    GET /api/anonymization/polling-info/
+    Get information about polling coordinator status
+    """
+    try:
+        info = PollingCoordinator.get_processing_locks_info()
+        return Response(info)
+    except Exception as e:
+        logger.error(f"Error getting polling coordinator info: {e}")
+        return Response(
+            {"error": "Failed to get coordinator info"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# ---------- emergency lock management -----------------------------------
+@api_view(['DELETE'])
+@permission_classes(DEBUG_PERMISSIONS)
+def clear_processing_locks(request):
+    """
+    DELETE /api/anonymization/clear-locks/
+    Emergency endpoint to clear all processing locks
+    """
+    try:
+        file_type = request.query_params.get('type', None)
+        cleared_count = PollingCoordinator.clear_all_locks(file_type)
+        
+        return Response({
+            "detail": "Processing locks cleared",
+            "cleared_count": cleared_count,
+            "file_type_filter": file_type
+        })
+    except Exception as e:
+        logger.error(f"Error clearing processing locks: {e}")
+        return Response(
+            {"error": "Failed to clear locks"}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
