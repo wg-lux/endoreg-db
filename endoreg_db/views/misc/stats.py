@@ -8,11 +8,7 @@ from ...models import (
     VideoFile, LabelVideoSegment, Examination, 
     SensitiveMeta, PatientExamination
 )
-<<<<<<< HEAD:endoreg_db/views/stats_views.py
-from ..utils.permissions import EnvironmentAwarePermission
-=======
-from ...utils.permissions import DEBUG_PERMISSIONS
->>>>>>> origin/prototype:endoreg_db/views/misc/stats.py
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 

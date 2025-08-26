@@ -123,8 +123,6 @@ class EnvironmentAwarePermission(BasePermission):
         return self.has_permission(request, view)
 
 
-<<<<<<< HEAD
-=======
 def is_debug_mode():
     """
     Robustly determine if debug mode is enabled, checking both Django settings and environment variable.
@@ -142,7 +140,6 @@ logger.info(f"DEBUG env: {DEBUG_ENV}")
 logger.info(f"settings.DEBUG: {getattr(settings, 'DEBUG', None)}")
 DEBUG_PERMISSIONS = [AllowAny] if is_debug_mode() else [IsAuthenticated]
 # DEBUG_PERMISSIONS = [AllowAny]
->>>>>>> origin/prototype
 ALWAYS_AUTH_PERMISSIONS = [IsAuthenticated]
 ALWAYS_PUBLIC_PERMISSIONS = [AllowAny]
 
