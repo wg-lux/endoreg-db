@@ -1,0 +1,68 @@
+name: Label Request
+description: Suggest a new label for this project
+title: "[Label Request] "
+labels: ["label-request"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Main label changelog**:  
+        [Current and previous labels](https://github.com/wg-lux/endoreg-db/issues/102)
+
+        Please fill out the fields below to request a new label.
+
+  - type: input
+    id: label_name
+    attributes:
+      label: Label Name
+      description: What should the new label be called?
+      placeholder: e.g. polyp
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What does this label mean? What is its purpose?
+      placeholder: Describe what this label should represent
+    validations:
+      required: true
+
+  - type: textarea
+    id: importance
+    attributes:
+      label: Why is this label important?
+      description: Why do you think we need this label?
+      placeholder: Explain its value and how it helps the project
+    validations:
+      required: true
+
+  - type: textarea
+    id: interactions
+    attributes:
+      label: Redundancy or Interactions
+      description: Does it conflict with or duplicate any existing labels?
+      placeholder: Mention overlaps with labels.
+    validations:
+      required: true
+
+  - type: input
+    id: labelsets
+    attributes:
+      label: Labelsets
+      description: Which labelsets should include this label?
+      placeholder: e.g. Instrument
+    validations:
+      required: true
+
+  - type: textarea
+    id: related_label
+    attributes:
+      label: Related to an existing label?
+      description: Is this improving or modifying an existing label?
+      placeholder: Name the label it's related to or replacing
+    validations:
+      required: true
