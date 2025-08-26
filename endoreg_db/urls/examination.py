@@ -34,13 +34,13 @@ urlpatterns = [# URL patterns for ExaminationForm.vue API calls
     # The views below handle PatientExamination instances, which represent a specific examination performed on a patient.
     # The URL names are updated to reflect this, using the 'patient_examination_*' prefix for clarity.
     # TODO: Clearly Distinguish between Examination and PatientExamination by using 'patient-examination' prefix for clarity
-    path('examinations/create/', ExaminationCreateView.as_view(), name='patient_examination_create'),
-    path('examinations/<int:pk>/',     PatientExaminationDetailView.as_view(), name='patient_examination_detail'),
-    path('examinations/list/', PatientExaminationListView.as_view(), name='patient_examination_list'),
-    
+    path('patient-examinations/create/', ExaminationCreateView.as_view(), name='patient_examination_create'),
+    path('patient-examinations/<int:pk>/',     PatientExaminationDetailView.as_view(), name='patient_examination_detail'),
+    path('patient-examinations/list/', PatientExaminationListView.as_view(), name='patient_examination_list'),
+
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     path(
-        'examinations/<int:exam_id>/classifications/',
+        'patient-examinations/<int:exam_id>/classifications/',
         get_classifications_for_examination,
         name='get_classifications_for_examination'
     ),

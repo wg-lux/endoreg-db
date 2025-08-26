@@ -140,3 +140,5 @@ LX_CLIENT_TYPE_DATA_DIR = DATA_DIR / "lx_client_type"
 QUALIFICATION_DATA_DIR = DATA_DIR / "qualification"
 
 TAG_DATA_DIR = DATA_DIR / "tag"
+
+EXAMINATION_REQUIREMENT_SET_DATA_DIR = DATA_DIR / "examination_requirement_set"
