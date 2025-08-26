@@ -36,15 +36,6 @@ class Examination(models.Model):
         finding_classifications: models.QuerySet['FindingClassification']
         indications: models.QuerySet[ExaminationIndication]
         findings: models.QuerySet["Finding"]
-        exam_reqset_links: models.QuerySet["ExaminationRequirementSet"]
-
-    # # Requirement sets associated with the examination.
-    # requirement_sets = models.ManyToManyField(
-    #     "RequirementSet",
-    #     through="ExaminationRequirementSet",
-    #     related_name="examinations",
-    #     blank=True,
-    # )
 
 
     @property
@@ -98,51 +89,3 @@ class Examination(models.Model):
         verbose_name = "Examination"
         verbose_name_plural = "Examinations"
         ordering = ["name"]
-
-
-class ExaminationRequirementSetManager(models.Manager):
-    """
-    Manager for ExaminationRequirementSet with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ExaminationRequirementSet":
-        return self.get(name=name)
-
-        
-class ExaminationRequirementSet(models.Model):
-    """
-    Through table for Examination ↔ RequirementSet link.
-    Lets you store per-link metadata (order, default, etc.)
-    """
-    examinations = models.ManyToManyField(
-        "Examination",
-        related_name="exam_reqset_links",
-        blank=True,
-    )
-    # requirement_set = models.ForeignKey(
-    #     "RequirementSet",
-    #     on_delete=models.CASCADE,
-    #     related_name="reqset_exam_links",
-    # )
-    # Optional metadata
-    enabled_by_default = models.BooleanField(default=False)
-    
-    name = models.CharField(max_length=100, unique=True)
-
-    objects = ExaminationRequirementSetManager()
-
-    # class Meta:
-    #     unique_together = ("examination", "requirement_set")
-
-    # def __str__(self) -> str:
-    #     return f"{self.examination} ↔ {self.requirement_set} (prio={self.priority})"
-    
-    def natural_key(self) -> tuple:
-        """
-        Returns the natural key for the ExaminationRequirementSet.
-
-        Returns:
-            tuple: The natural key consisting of the name.
-        """
-        return (self.name,)
-

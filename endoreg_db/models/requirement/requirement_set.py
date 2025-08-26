@@ -105,12 +105,6 @@ class RequirementSet(models.Model):
         blank=True,
     )
     
-    reqset_exam_links = models.ManyToManyField(  # type: ignore[assignment]
-        "ExaminationRequirementSet",
-        related_name="requirement_set",
-        blank=True,
-    )
-    
     tags = models.ManyToManyField(  # type: ignore[assignment]
         "Tag",
         related_name="requirement_sets",

@@ -52,6 +52,3 @@
     tags:
       - "report_mask_requirement_set"
       - "colonoscopy_austria_screening"
-    reqset_exam_links:
-      - "colonoscopy_austria_req_sets"
-      - "colonoscopy_req_sets"

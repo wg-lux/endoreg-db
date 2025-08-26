@@ -25,7 +25,6 @@ from endoreg_db.models import (
     Medication,  # Added Medication model
     MedicationIntakeTime,
     Tag,
-    ExaminationRequirementSet,  # Added to avoid circular import issues
 )
 from endoreg_db.models.other.gender import Gender
 from ...utils import load_model_data_from_yaml
@@ -35,7 +34,6 @@ from ...data import (
     REQUIREMENT_DATA_DIR,
     REQUIREMENT_SET_TYPE_DATA_DIR,
     REQUIREMENT_SET_DATA_DIR,
-    EXAMINATION_REQUIREMENT_SET_DATA_DIR
 )
 
 
@@ -44,7 +42,6 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     RequirementOperator.__name__,
     Requirement.__name__,
     RequirementSetType.__name__,
-    ExaminationRequirementSet.__name__,
     RequirementSet.__name__,
 ]
 
@@ -61,13 +58,6 @@ IMPORT_METADATA = {
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
-    ExaminationRequirementSet.__name__: {
-        "dir": EXAMINATION_REQUIREMENT_SET_DATA_DIR,  # e.g. "interventions"
-        "model": ExaminationRequirementSet,  # e.g. Intervention
-        "foreign_keys": ["examinations",], # Through model uses foreign keys of both models
-        "foreign_key_models": [Examination,],
-    },
-    # ExaminationRequirementSet.__name__,
     Requirement.__name__: {
         "dir": REQUIREMENT_DATA_DIR,  # e.g. "interventions"
         "model": Requirement,  # e.g. Intervention
@@ -133,7 +123,6 @@ IMPORT_METADATA = {
             "links_to_sets",
             "information_sources",
             "tags",
-            "reqset_exam_links"
         ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
             RequirementSetType,
@@ -141,7 +130,6 @@ IMPORT_METADATA = {
             RequirementSet,
             InformationSource,
             Tag,
-            ExaminationRequirementSet
         ],  # e.g. [InterventionType]
     },
 }

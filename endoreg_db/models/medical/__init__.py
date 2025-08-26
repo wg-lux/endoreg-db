@@ -4,7 +4,6 @@ from .event import (Event, EventClassification, EventClassificationChoice)
 from .contraindication import Contraindication
 from .examination import (
     Examination,
-    ExaminationRequirementSet,
     ExaminationType,
     ExaminationIndication,
     ExaminationIndicationClassificationChoice,
@@ -83,7 +82,6 @@ __all__ = [
 
     # Examination
     "Examination",
-    "ExaminationRequirementSet",
     "ExaminationType",
     "ExaminationIndication",
     "ExaminationIndicationClassificationChoice",
