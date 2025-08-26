@@ -2,8 +2,7 @@ from django.urls import path
 
 from endoreg_db.views import (
     VideoMediaView,
-    PDFFileForMetaView,
-    PDFStreamView,
+    PDFMediaView,
     VideoStreamView,
 )
 # ---------------------------------------------------------------------------------------
@@ -23,8 +22,8 @@ urlpatterns = [
     path("media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"),
 
     # PDF media endpoints
-    path("media/pdfs/", PDFFileForMetaView.as_view(), name="pdf-list"),
-    path("media/pdfs/<int:pk>/", PDFFileForMetaView.as_view(), name="pdf-detail"),
-    path("media/pdfs/<int:pk>/stream/", PDFStreamView.as_view(), name="pdf-stream"),
+    path("media/pdfs/", PDFMediaView.as_view(), name="pdf-list"),
+    path("media/pdfs/<int:pk>/", PDFMediaView.as_view(), name="pdf-detail"),
+    path("media/pdfs/<int:pk>/stream/", PDFMediaView.as_view(), name="pdf-stream"),
 ]
     # ---------------------------------------------------------------------------------------
