@@ -1,0 +1,15 @@
+- model: endoreg_db.examination_requirement_set
+  fields:
+    name: "colonoscopy_req_sets"
+    examinations:
+      [
+        "colonoscopy",
+      ]
+
+- model: endoreg_db.examination_requirement_set
+  fields:
+    name: "colonoscopy_austria_req_sets"
+    examinations:
+      [
+        "colonoscopy_austria_screening",
+      ]

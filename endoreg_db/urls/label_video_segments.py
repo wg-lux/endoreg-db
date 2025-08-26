@@ -2,7 +2,6 @@ from django.urls import path
 from endoreg_db.views import (
     create_video_segment_annotation, 
     update_label_video_segment,
-    UpdateAnonymizedTextView,
     SensitiveMetaDetailView,
     video_segments_view,
     video_segment_detail_view,
@@ -24,11 +23,6 @@ url_patterns = [
         'annotations/<int:annotation_id>/',
         update_label_video_segment,
         name='update_annotation'
-    ),
-    path(
-        'save-anonymization-annotation-pdf/<int:annotation_id>/',
-        UpdateAnonymizedTextView.as_view(),
-        name='save_anonymization_annotation'
     ),
     path(
         'save-anonymization-annotation-video/<int:annotation_id>/',

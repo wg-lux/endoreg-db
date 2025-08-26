@@ -72,6 +72,7 @@ from .medical import (
     EventClassificationChoice,
     Contraindication,
     Examination,
+    ExaminationRequirementSet,
     ExaminationType,
     ExaminationIndication,
     ExaminationIndicationClassificationChoice,
