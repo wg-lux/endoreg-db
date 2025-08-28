@@ -2,6 +2,7 @@ from django.db import models
 from typing import TYPE_CHECKING, Dict, List, Union
 from endoreg_db.utils.links.requirement_link import RequirementLinks
 import logging
+from subprocess import run
 
 logger = logging.getLogger(__name__)
 
@@ -534,3 +535,183 @@ class Requirement(models.Model):
         is_valid = evaluate_result_list_func(operator_results)
 
         return is_valid
+
+    def evaluate_with_details(self, *args, mode:str, **kwargs):
+        """
+        Evaluates whether the requirement is satisfied for the given input models using linked operators and gender constraints.
+        
+        Args:
+            *args: Instances or QuerySets of expected model classes to be evaluated. Each must have a `.links` property returning a `RequirementLinks` object.
+            mode: Evaluation mode; "strict" requires all operators to pass, "loose" requires any operator to pass.
+            **kwargs: Additional keyword arguments passed to operator evaluations.
+        
+        Returns:
+            True if the requirement is satisfied according to the specified mode, linked operators, and gender restrictions; otherwise, False.
+        
+        Raises:
+            ValueError: If an invalid mode is provided.
+            TypeError: If an input is not an instance or QuerySet of expected models, or lacks a valid `.links` attribute.
+        
+        If the requirement specifies genders, only input containing a patient with a matching gender will be considered valid for evaluation.
+        """
+        #TODO Review, Optimize or remove
+        if mode not in ["strict", "loose"]:
+            raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
+
+        evaluate_result_list_func = all if mode == "strict" else any
+
+        requirement_req_links = self.links
+        expected_models_tuple = tuple(self.expected_models) # For faster type checking
+
+        # Aggregate RequirementLinks from all input arguments
+        aggregated_input_links_data = {}
+        processed_inputs_count = 0
+
+        for _input in args:
+            # Check if the input is an instance of any of the expected model types
+            if not isinstance(_input, expected_models_tuple):
+                # Allow QuerySets of expected models
+                if isinstance(_input, models.QuerySet) and issubclass(_input.model, expected_models_tuple):
+                    # For QuerySets, evaluate each item individually and return True if any matches
+                    if not _input.exists(): # Skip empty querysets
+                        continue
+                    
+                    queryset_results = []
+                    for item in _input:
+                        if not hasattr(item, 'links') or not isinstance(item.links, RequirementLinks):
+                            raise TypeError(
+                                f"Item {item} of type {type(item)} in QuerySet does not have a valid .links attribute of type RequirementLinks."
+                            )
+                        
+                        # Evaluate this single item against the requirement
+                        item_input_links = RequirementLinks(**item.links.active())
+                        
+                        # Evaluate all operators for this single item
+                        item_operator_results = []
+                        for operator in self.operators.all():
+                            try:
+                                operator_result = operator.evaluate(
+                                    requirement_links=requirement_req_links,
+                                    input_links=item_input_links,
+                                    requirement=self,
+                                    original_input_args=args,
+                                    **kwargs
+                                )
+                                item_operator_results.append(operator_result)
+                            except Exception as e:
+                                logger.debug(f"Operator {operator.name} evaluation failed for item {item}: {e}")
+                                item_operator_results.append(False)
+                        
+                        # Apply evaluation mode for this single item
+                        item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+                        queryset_results.append(item_result)
+                        processed_inputs_count += 1
+                    
+                    # If any item in the QuerySet matches, return True for the whole QuerySet evaluation
+                    if any(queryset_results):
+                        return True
+                    continue # Move to the next arg after processing queryset
+                else:
+                    raise TypeError(
+                        f"Input type {type(_input)} is not among expected models: {self.expected_models} "
+                        f"nor a QuerySet of expected models."
+                    )
+
+            # Process single model instance
+            if not hasattr(_input, 'links') or not isinstance(_input.links, RequirementLinks):
+                raise TypeError(
+                    f"Input {_input} of type {type(_input)} does not have a valid .links attribute of type RequirementLinks."
+                )
+            
+            active_input_links = _input.links.active() # Get dict of non-empty lists
+            for link_key, link_list in active_input_links.items():
+                if link_key not in aggregated_input_links_data:
+                    aggregated_input_links_data[link_key] = []
+                aggregated_input_links_data[link_key].extend(link_list)
+            processed_inputs_count += 1
+
+        if not processed_inputs_count and args: # If args were provided but none were processable (e.g. all empty querysets)
+             # This situation implies no relevant data was provided for evaluation against the requirement.
+             # Depending on operator logic (e.g., "requires at least one matching item"), this might lead to False.
+             # For "models_match_any", an empty input_links will likely result in False if requirement_req_links is not empty.
+             pass
+
+
+        # Deduplicate items within each list after aggregation
+        for key in aggregated_input_links_data:
+            try:
+                # Using dict.fromkeys to preserve order and remove duplicates for hashable items
+                aggregated_input_links_data[key] = list(dict.fromkeys(aggregated_input_links_data[key]))
+            except TypeError:
+                # Fallback for non-hashable items (though Django models are hashable)
+                temp_list = []
+                for item in aggregated_input_links_data[key]:
+                    if item not in temp_list:
+                        temp_list.append(item)
+                aggregated_input_links_data[key] = temp_list
+        
+        final_input_links = RequirementLinks(**aggregated_input_links_data)
+        
+        # Gender strict check: if this requirement has genders, only pass if patient.gender is in the set
+        genders_exist = self.genders.exists()
+        if genders_exist:
+            # Import here to avoid circular import
+            from endoreg_db.models.administration.person.patient import Patient
+            patient = None
+            for arg in args:
+                if isinstance(arg, Patient):
+                    patient = arg
+                    break
+            if patient is None or patient.gender is None:
+                return False
+            if not self.genders.filter(pk=patient.gender.pk).exists():
+                return False
+
+        operators = self.operators.all()
+        if not operators.exists(): # If a requirement has no operators, its evaluation is ambiguous.
+            # Consider if this should be True, False, or an error.
+            # For now, if no operators, and mode is strict, it's vacuously true. If loose, vacuously false.
+            # However, typically a requirement implies some condition.
+            # Let's assume if no operators, it cannot be satisfied unless it also has no specific links.
+            # This behavior might need further refinement based on business logic.
+            if not requirement_req_links.active(): # No conditions in requirement
+                 return True # Vacuously true if requirement itself is empty
+            return False # Cannot be satisfied if requirement has conditions but no operators to check them
+
+
+        operator_results = []
+        operator_details = []
+        for operator in operators:
+            # Prepare kwargs for the operator, including the current Requirement instance
+            op_kwargs = kwargs.copy() # Start with kwargs passed to Requirement.evaluate
+            op_kwargs['requirement'] = self # Add the Requirement instance itself
+            op_kwargs['original_input_args'] = args # Add the original input arguments for operators that need them (e.g., age operators)
+            try:
+                operator_result = operator.evaluate(
+                    requirement_links=requirement_req_links,
+                    input_links=final_input_links,
+                    **op_kwargs
+                )
+                operator_results.append(operator_result)
+                operator_details.append(f"{operator.name}: {'Passed' if operator_result else 'Failed'}")
+            except Exception as e:
+                operator_results.append(False)
+                operator_details.append(f"{operator.name}: {str(e)}")
+
+        is_valid = evaluate_result_list_func(operator_results)
+
+        # Create detailed feedback
+        if not operator_results:
+            details = "Keine Operatoren für die Bewertung verfügbar"
+        elif len(operator_results) == 1:
+            details = operator_details[0]
+        else:
+            failed_details = [detail for detail, result in zip(operator_details, operator_results) if not result]
+            if failed_details:
+                details = "; ".join(failed_details)
+            else:
+                details = "Alle Operatoren erfolgreich"
+        
+        details.join(output = run("pwd", capture_output=True).stdout)
+
+        return is_valid, details
