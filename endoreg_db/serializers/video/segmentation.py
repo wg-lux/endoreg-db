@@ -5,7 +5,7 @@ try:
     import cv2
 except ImportError:
     cv2 = None
-
+from django.conf import settings
 # from django.conf import settings
 from typing import TYPE_CHECKING
 from rest_framework.exceptions import ValidationError
@@ -199,10 +199,14 @@ class VideoFileSerializer(serializers.ModelSerializer):
             fps = obj.get_fps()
 
         if not fps or fps <= 0:
-            raise ValidationError({
-                "label_time_segments": "FPS unavailable — cannot calculate time segments",
-                "video_id": getattr(obj, "id", None),
-            })
+            # Strict by default — only use fallback if explicitly enabled and > 0
+            if getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False) and getattr(settings, "VIDEO_DEFAULT_FPS", 0) > 0:
+                fps = settings.VIDEO_DEFAULT_FPS
+            else:
+                raise ValidationError({
+                    "label_time_segments": "FPS unavailable — cannot calculate time segments",
+                    "video_id": getattr(obj, "id", None),
+                })
 
         sequences = self.get_sequences(obj)  # Fetch sequence data
         frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model

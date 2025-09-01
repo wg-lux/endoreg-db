@@ -26,6 +26,12 @@ import os
 ASSET_DIR = Path(__file__).parent / "tests/assets"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "false").lower() == "true"  # Default to false for faster tests
 
+VIDEO_ALLOW_FPS_FALLBACK = os.getenv("VIDEO_ALLOW_FPS_FALLBACK", "False") == "True"
+VIDEO_DEFAULT_FPS = int(os.getenv("VIDEO_DEFAULT_FPS", "50"))
+
+
+
+
 # Production settings
 DEBUG = os.environ.get("DJANGO_DEBUG", "False")  # Changed from True to False for production
 if DEBUG.lower() == "true":
