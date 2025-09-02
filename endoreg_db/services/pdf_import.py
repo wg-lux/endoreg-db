@@ -573,7 +573,72 @@ class PdfImportService:
             logger.warning("Date parsing failed for %s: %s", sm_field, e)
             return None
 
+    # from gc-08
     def _apply_anonymized_pdf(self):
+        """
+        Attach the already-generated anonymized PDF without copying bytes.
+
+        We do NOT re-upload or re-save file bytes via Django storage (which would
+        place a new file under upload_to='raw_pdfs' and retrigger the watcher).
+        Instead, we point the FileField to the path that the anonymizer already
+        wrote (ideally relative to STORAGE_DIR). Additionally, we make sure the
+        model/state reflect that anonymization is done even if text didn't change.
+        """
+        if not self.current_pdf:
+            logger.warning("Cannot apply anonymized PDF - no PDF instance available")
+            return
+
+        anonymized_pdf_path = self.processing_context.get('anonymized_pdf_path')
+        if not anonymized_pdf_path:
+            logger.debug("No anonymized_pdf_path present in processing context")
+            return
+
+        anonymized_path = Path(anonymized_pdf_path)
+        if not anonymized_path.exists():
+            logger.warning("Anonymized PDF path returned but file does not exist: %s", anonymized_path)
+            return
+
+        logger.info("Anonymized PDF created by ReportReader at: %s", anonymized_path)
+
+        try:
+            # Prefer storing a path relative to STORAGE_DIR so Django serves it correctly
+            try:
+                relative_name = str(anonymized_path.relative_to(STORAGE_DIR))
+            except ValueError:
+                # Fallback to absolute path if the file lives outside STORAGE_DIR
+                relative_name = str(anonymized_path)
+
+            # Only update if something actually changed
+            if getattr(self.current_pdf.anonymized_file, 'name', None) != relative_name:
+                self.current_pdf.anonymized_file.name = relative_name
+
+            # Ensure model/state reflect anonymization even if text didn't differ
+            if not getattr(self.current_pdf, "anonymized", False):
+                self.current_pdf.anonymized = True
+
+            # Persist cropped regions info somewhere useful (optional & non-breaking)
+            # If your model has a field for this, persist there; otherwise we just log.
+            cropped_regions = self.processing_context.get('cropped_regions')
+            if cropped_regions:
+                logger.debug("Cropped regions recorded (%d regions).", len(cropped_regions))
+
+            # Save model changes
+            update_fields = ['anonymized_file']
+            if 'anonymized' in self.current_pdf.__dict__:
+                update_fields.append('anonymized')
+            self.current_pdf.save(update_fields=update_fields)
+
+            # Mark state as anonymized immediately; this keeps downstream flows working
+            state = self._ensure_state(self.current_pdf)
+            if state and not state.anonymized:
+                state.mark_anonymized(save=True)
+
+            logger.info("Updated anonymized_file reference to: %s", self.current_pdf.anonymized_file.name)
+
+        except Exception as e:
+            logger.warning("Could not set anonymized file reference: %s", e)
+    
+    '''def _apply_anonymized_pdf(self):
         """Apply anonymized PDF results."""
         if not self.current_pdf:
             logger.warning("Cannot apply anonymized PDF - no PDF instance available")
@@ -599,7 +664,10 @@ class PdfImportService:
             except Exception as e:
                 logger.warning(f"Could not set anonymized file reference: {e}")
         else:
-            logger.warning(f"Anonymized PDF path returned but file does not exist: {anonymized_path}")
+            logger.warning(f"Anonymized PDF path returned but file does not exist: {anonymized_path}")'''
+
+
+
 
     def _finalize_processing(self):
         """Finalize processing and update state."""
@@ -842,7 +910,7 @@ class PdfImportService:
             # Update FileField to reference the file under STORAGE_DIR
             # We avoid re-saving file content (the file is already at target); set .name relative to STORAGE_DIR
             try:
-                relative_name = str(target.relative_to(STORAGE_DIR))
+                relative_name = str(target.relative_to(STORAGE_DIR)) #just point the Django FileField to the file that the anonymizer already created in data/pdfs/anonymized/.
             except ValueError:
                 # Fallback: if target is not under STORAGE_DIR, store absolute path (not ideal)
                 relative_name = str(target)
