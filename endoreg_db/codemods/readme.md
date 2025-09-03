@@ -1,3 +1,7 @@
+### install
+uv add bowler fissix
+
+
 ### Run it (models only):
 python endoreg_db/codemods/rename_datetime_fields.py endoreg_db/models
 
