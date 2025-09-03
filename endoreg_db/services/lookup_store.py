@@ -60,7 +60,7 @@ class LookupStore:
             return None
             
         # Check if required fields are present
-        required_fields = ['patient_examination_id', 'requirementsBySet', 'requirementStatus']
+        required_fields = ['patient_examination_id', 'requirementsBySet', 'requirementStatus', 'available_examinations']
         missing_fields = [field for field in required_fields if field not in data]
         
         if missing_fields:

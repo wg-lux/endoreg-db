@@ -58,6 +58,24 @@ def requirement_sets_for_patient_exam(pe: PatientExamination) -> List[Requiremen
         .distinct()
     )
 
+def get_available_examinations_for_patient(pe: PatientExamination) -> List[Dict[str, Any]]:
+    """
+    Get all examinations for the given patient.
+    """
+    if not pe.patient:
+        return []
+    
+    examinations = PatientExamination.objects.filter(patient=pe.patient).select_related('examination').order_by('-date')
+    
+    return [
+        {
+            "id": exam.id,
+            "date": exam.date.strftime('%Y-%m-%d'),
+            "examination_name": exam.examination.name if exam.examination else "N/A",
+        }
+        for exam in examinations
+    ]
+
 def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     """
     Build the initial lookup dict you will return to the client.
@@ -97,8 +115,11 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     # De-dup required
     required_findings = sorted(set(required_findings))
 
+    available_examinations = get_available_examinations_for_patient(pe)
+
     return {
         "patient_examination_id": pe.id,
+        "available_examinations": available_examinations,
         "requirement_sets": requirement_sets,
         "availableFindings": available_findings,
         "requiredFindings": required_findings,
