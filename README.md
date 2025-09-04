@@ -240,3 +240,21 @@ MIT - see LICENSE
 
 ---
 
+
+## 📖 Further Documentation
+
+All extended documentation lives in the project **Wiki** → **[Browse the Wiki »](https://github.com/wg-lux/endoreg-db/wiki)**
+
+### 📊 Reports
+- [Complete Optimiztion Project Report](https://github.com/wg-lux/endoreg-db/wiki/Complete-Optimiztion-Project-Report)
+- [Test Migration & Optimization Report](https://github.com/wg-lux/endoreg-db/wiki/Test-Migration-%26-Optimization-Report)
+- [Test Migration Success Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Migration-Success-Summary)
+- [Test Performance Optimization ‐ Succes Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-%E2%80%90-Succes-Summary)
+- [Test Performance Optimization: Complete Implementation Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization%3A-Complete-Implementation-Summary)
+- [Test Suite Optimization ‐ Final Status Report](https://github.com/wg-lux/endoreg-db/wiki/Test-Suite-Optimization-%E2%80%90-Final-Status-Report)
+
+### 📐 Standards & Conventions
+- [Date and Time Standardization for Models](https://github.com/wg-lux/endoreg-db/wiki/Date-and-Time-Standardization-for-Models)
+
+### 🔌 API
+- [Upload API Documentation](https://github.com/wg-lux/endoreg-db/wiki/Upload-API-Documentation)
