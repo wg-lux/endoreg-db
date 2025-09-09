@@ -262,3 +262,8 @@ All extended documentation lives in the project **Wiki** → **[Browse the Wiki 
 - [Date and Time Standardization for Models](https://github.com/wg-lux/endoreg-db/wiki/Date-and-Time-Standardization-for-Models)  
 - [Requirement System Guide](https://github.com/wg-lux/endoreg-db/wiki/Requirement-System-Guide)  
 - [Timestamp Naming Standard](https://github.com/wg-lux/endoreg-db/wiki/Timestamp-Naming-Standard)
+- [How to Create a New Account for Keycloak Nextcloud](https://github.com/wg-lux/endoreg-db/wiki/How-to-Create-a-New-Account-for-Keycloak---Nextcloud)  
+- [Keycloak Integration with the frontend](https://github.com/wg-lux/endoreg-db/wiki/Integration-with-the-frontend)  
+- [Merging Multi User Accounts in Nextcloud](https://github.com/wg-lux/endoreg-db/wiki/Merging-Multi-User-Accounts-in-Nextcloud----current-options)  
+- [New user login steps for keycloak and nextcloud](https://github.com/wg-lux/endoreg-db/wiki/New-user-login-steps-for-keycloak-and-nextcloud)  
+- [Keycloak integration with backend endpoint](https://github.com/wg-lux/endoreg-db/wiki/keycloak-integration-with-backend-endpoint)  
