@@ -25,6 +25,9 @@ class PatientExamination(models.Model):
         blank=True,
         related_name="patient_examination",
     )
+    
+    objects = models.Manager()
+    
     date_start = models.DateField(null=True, blank=True)
     date_end = models.DateField(null=True, blank=True)
     hash = models.CharField(max_length=255, unique=True)

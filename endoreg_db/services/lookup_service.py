@@ -65,12 +65,12 @@ def get_available_examinations_for_patient(pe: PatientExamination) -> List[Dict[
     if not pe.patient:
         return []
     
-    examinations = PatientExamination.objects.filter(patient=pe.patient).select_related('examination').order_by('-date')
+    examinations = PatientExamination.objects.filter(patient=pe.patient).select_related('examination').order_by('-date_start')
     
     return [
         {
             "id": exam.id,
-            "date": exam.date.strftime('%Y-%m-%d'),
+            "date_start": exam.date_start.strftime('%Y-%m-%d'),
             "examination_name": exam.examination.name if exam.examination else "N/A",
         }
         for exam in examinations
