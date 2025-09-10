@@ -28,6 +28,7 @@ from .report import url_patterns as report_url_patterns
 from .upload import urlpatterns as upload_url_patterns
 from .video import url_patterns as video_url_patterns
 from .requirements import urlpatterns as requirements_url_patterns
+from .patient import urlpatterns as patient_url_patterns
 
 api_urls = []
 api_urls += classification_url_patterns
@@ -42,11 +43,9 @@ api_urls += report_url_patterns
 api_urls += upload_url_patterns
 api_urls += video_url_patterns
 api_urls += requirements_url_patterns
+api_urls += patient_url_patterns
 
 router = DefaultRouter()
-router.register(r'patients', PatientViewSet)
-router.register(r'genders', GenderViewSet)
-router.register(r'centers', CenterViewSet)
 router.register(r'videos', VideoViewSet, basename='videos')  
 router.register(r'examinations', ExaminationViewSet)
 router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
