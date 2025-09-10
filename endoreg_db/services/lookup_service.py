@@ -67,10 +67,11 @@ def get_available_examinations_for_patient(pe: PatientExamination) -> List[Dict[
     
     examinations = PatientExamination.objects.filter(patient=pe.patient).select_related('examination').order_by('-date_start')
     
+
     return [
         {
-            "id": exam.id,
-            "date_start": exam.date_start.strftime('%Y-%m-%d'),
+            "id": exam.pk,
+            "date_start": exam.date_start.strftime('%Y-%m-%d') if exam.date_start else None,
             "examination_name": exam.examination.name if exam.examination else "N/A",
         }
         for exam in examinations
@@ -82,14 +83,14 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     Keep keys small and stable; values must be JSON-serializable.
     """
     # Available + required findings
-    available_findings = [f.id for f in pe.examination.get_available_findings()] if pe.examination else []
+    available_findings = [f.pk for f in pe.examination.get_available_findings()] if pe.examination else []
     required_findings: List[int] = []  # fill by scanning requirements below
 
     # Requirement sets: ids + meta
     rs_objs = requirement_sets_for_patient_exam(pe)
     requirement_sets = [
         {
-            "id": rs.id,
+            "id": rs.pk,
             "name": rs.name,
             "type": rs.requirement_set_type.name if rs.requirement_set_type else "all",
         }
@@ -107,10 +108,10 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
             defaults = getattr(req, "default_findings", lambda pe: [])(pe)
             choices = getattr(req, "classification_choices", lambda pe: [])(pe)
             if defaults:
-                req_defaults[str(req.id)] = defaults  # list of {finding_id, payload...}
+                req_defaults[str(req.pk)] = defaults  # list of {finding_id, payload...}
                 required_findings.extend([d.get("finding_id") for d in defaults if "finding_id" in d])
             if choices:
-                cls_choices[str(req.id)] = choices   # list of {classification_id, label, ...}
+                cls_choices[str(req.pk)] = choices   # list of {classification_id, label, ...}
 
     # De-dup required
     required_findings = sorted(set(required_findings))
@@ -118,7 +119,7 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     available_examinations = get_available_examinations_for_patient(pe)
 
     return {
-        "patient_examination_id": pe.id,
+        "patient_examination_id": pe.pk,
         "available_examinations": available_examinations,
         "requirement_sets": requirement_sets,
         "availableFindings": available_findings,
@@ -140,19 +141,36 @@ def create_lookup_token_for_pe(pe_id: int) -> str:
 
 def recompute_lookup(token: str) -> Dict[str, Any]:
     import logging
+    from datetime import datetime, timedelta
     logger = logging.getLogger(__name__)
     
     store = LookupStore(token=token)
     
-    # Simple reentrancy guard using data
-    data = store.get_all()
-    if data.get('_recomputing'):
-        logger.warning(f"Recompute already in progress for token {token}, skipping")
-        return {}
-    
-    store.set('_recomputing', True)
+    # Expiring lock mechanism to prevent stuck locks
+    LOCK_TTL_SECONDS = 90  # 90-second TTL for lock
+    lock_acquired = False
     
     try:
+        # Check for existing lock
+        existing_lock = store.get('_recomputing_lock')
+        current_time = datetime.now()
+        
+        if existing_lock:
+            try:
+                lock_time = datetime.fromisoformat(existing_lock)
+                # Check if lock has expired
+                if current_time - lock_time < timedelta(seconds=LOCK_TTL_SECONDS):
+                    logger.warning(f"Recompute already in progress for token {token}, skipping")
+                    return {}
+                else:
+                    logger.info(f"Expired lock found for token {token}, proceeding with recompute")
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid lock timestamp for token {token}, proceeding with recompute")
+        
+        # Acquire lock by setting timestamp
+        store.set('_recomputing_lock', current_time.isoformat())
+        lock_acquired = True
+        
         # First validate and attempt to recover corrupted data
         validated_data = store.validate_and_recover_data(token)
         if validated_data is None:
@@ -176,19 +194,19 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
         
         try:
             pe = load_patient_exam_for_eval(pe_id)
-        except Exception as e:
-            logger.error(f"Failed to load patient examination {pe_id} for token {token}: {e}")
-            raise ValueError(f"Failed to load patient examination {pe_id}: {e}")
+        except PatientExamination.DoesNotExist as err:
+            logger.exception(f"Patient examination {pe_id} not found for token {token}")
+            raise ValueError(f"Failed to load patient examination {pe_id}: {err}") from err
 
         selected_rs_ids: List[int] = data.get("selectedRequirementSetIds", [])
         logger.debug(f"Selected requirement set IDs for token {token}: {selected_rs_ids}")
         
-        rs_objs = [rs for rs in requirement_sets_for_patient_exam(pe) if rs.id in selected_rs_ids]
+        rs_objs = [rs for rs in requirement_sets_for_patient_exam(pe) if rs.pk in selected_rs_ids]
         logger.debug(f"Found {len(rs_objs)} requirement set objects for token {token}")
 
         # 1) requirements grouped by set (already prefetched in load func)
         requirements_by_set = {
-            rs.id: [ {"id": r.id, "name": r.name} for r in rs.requirements.all() ]
+            str(rs.pk): [ {"id": r.pk, "name": r.name} for r in rs.requirements.all() ]
             for rs in rs_objs
         }
 
@@ -199,9 +217,9 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
             req_results = []
             for r in rs.requirements.all():
                 ok = bool(r.evaluate(pe, mode="strict"))  # or "loose" if you prefer
-                requirement_status[str(r.id)] = ok
+                requirement_status[str(r.pk)] = ok
                 req_results.append(ok)
-            set_status[str(rs.id)] = rs.eval_function(req_results) if rs.eval_function else all(req_results)
+            set_status[str(rs.pk)] = rs.eval_function(req_results) if rs.eval_function else all(req_results)
 
         # 3) suggestions per requirement (defaults + classification choices you already expose)
         suggested_actions: Dict[str, List[Dict[str, Any]]] = {}
@@ -213,11 +231,11 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
                 defaults = getattr(r, "default_findings", lambda pe: [])(pe)  # [{finding_id, payload...}]
                 choices  = getattr(r, "classification_choices", lambda pe: [])(pe)  # [{classification_id, label,...}]
                 if defaults:
-                    req_defaults[str(r.id)] = defaults
+                    req_defaults[str(r.pk)] = defaults
                 if choices:
-                    cls_choices[str(r.id)] = choices
+                    cls_choices[str(r.pk)] = choices
 
-                if not requirement_status.get(str(r.id), False):
+                if not requirement_status.get(str(r.pk), False):
                     # turn default proposals into explicit UI actions
                     acts = []
                     for d in defaults or []:
@@ -231,7 +249,7 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
                     if "PatientExamination" in [m.__name__ for m in r.expected_models]:
                         acts.append({"type": "edit_patient", "fields": ["gender", "dob"]})  # example
                     if acts:
-                        suggested_actions[str(r.id)] = acts
+                        suggested_actions[str(r.pk)] = acts
 
         # 4) (optional) staged changes simulation hook (see §3)
         # staged = data.get("staged", {})
@@ -259,4 +277,11 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
         store.mark_recompute_done()
         return updates
     finally:
-        store.set('_recomputing', False)
+        # Clear the lock if we acquired it
+        if lock_acquired:
+            try:
+                # Remove the lock by setting it to None or deleting it
+                store.set('_recomputing_lock', None)
+                logger.debug(f"Cleared recompute lock for token {token}")
+            except Exception as e:
+                logger.warning(f"Failed to clear recompute lock for token {token}: {e}")
