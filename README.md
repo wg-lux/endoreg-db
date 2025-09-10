@@ -246,14 +246,14 @@ MIT - see LICENSE
 All extended documentation lives in the project **Wiki** → **[Browse the Wiki »](https://github.com/wg-lux/endoreg-db/wiki)**
 
 ### Optimization Documentation
-- [Complete Optimiztion Project Report](https://github.com/wg-lux/endoreg-db/wiki/Complete-Optimiztion-Project-Report)
+- [Complete Optimization Project Report](https://github.com/wg-lux/endoreg-db/wiki/Complete-Optimiztion-Project-Report)
 - [Test Performance Optimization Guide](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-Guide)
-- [Test Performance Optimization ‐ Succes Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-‐-Succes-Summary)
+- [Test Performance Optimization - Success Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-‐-Succes-Summary)
 - [Test Performance Optimization: Complete Implementation Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization:-Complete-Implementation-Summary)
-- [Test Suite Optimization ‐ Final Status Report](https://github.com/wg-lux/endoreg-db/wiki/Test-Suite-Optimization-‐-Final-Status-Report)
+- [Test Suite Optimization - Final Status Report](https://github.com/wg-lux/endoreg-db/wiki/Test-Suite-Optimization-‐-Final-Status-Report)
 - [Test Suite Analysis & Optimization Plan](https://github.com/wg-lux/endoreg-db/wiki/Test-Suite-Analysis-&-Optimization-Plan)
 
-***
+---
 
 ### Models and Migration Documentation
 - [Models Documentation](https://github.com/wg-lux/endoreg-db/wiki/Models-Documentation)
@@ -261,23 +261,23 @@ All extended documentation lives in the project **Wiki** → **[Browse the Wiki 
 - [Test Migration Success Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Migration-Success-Summary)
 - [Test Optimization Migration Guide](https://github.com/wg-lux/endoreg-db/wiki/Test-Optimization-Migration-Guide)
 
-***
+---
 
 ### API Documentation
 - [Upload API Documentation](https://github.com/wg-lux/endoreg-db/wiki/Upload-API-Documentation)
 
-***
+---
 
 ### Frame-Anonymisierung
 - [Frame-Anonymisierung](https://github.com/wg-lux/endoreg-db/wiki/Frame-Anonymisierung)
 
-***
+---
 
 ### Tutorials Documentation
 - [Run Production Server](https://github.com/wg-lux/endoreg-db/wiki/Run-Production-Server)
 - [Date and Time Standardization for Models](https://github.com/wg-lux/endoreg-db/wiki/Date-and-Time-Standardization-for-Models)
 
-***
+---
 
 ### Keycloak
 - [How to Create a New Account for Keycloak + Nextcloud](https://github.com/wg-lux/endoreg-db/wiki/How-to-Create-a-New-Account-for-Keycloak-+-Nextcloud)
@@ -286,12 +286,12 @@ All extended documentation lives in the project **Wiki** → **[Browse the Wiki 
 - [New user login steps for keycloak and nextcloud](https://github.com/wg-lux/endoreg-db/wiki/New-user-login-steps-for-keycloak-and-nextcloud)
 - [keycloak integration with backend endpoint](https://github.com/wg-lux/endoreg-db/wiki/keycloak-integration-with-backend-endpoint)
 
-***
+---
 
 ### Coding Principles & Practices
 - [Timestamp Naming Standard](https://github.com/wg-lux/endoreg-db/wiki/Timestamp-Naming-Standard)
 
-***
+---
 
 ### Figures
 - [Coloreg](https://github.com/wg-lux/endoreg-db/wiki/Coloreg)
@@ -299,7 +299,7 @@ All extended documentation lives in the project **Wiki** → **[Browse the Wiki 
 - [EndoReg Data Collection Workflow](https://github.com/wg-lux/endoreg-db/wiki/EndoReg-Data-Collection-Workflow)
 - [Eine gemeinsame Datenplattform für Klinik & Forschung](https://github.com/wg-lux/endoreg-db/wiki/Eine-gemeinsame-Datenplattform-für-Klinik-&-Forschung)
 
-***
+---
 
 ### Miscellaneous
 - [Requirement System Guide](https://github.com/wg-lux/endoreg-db/wiki/Requirement-System-Guide)
