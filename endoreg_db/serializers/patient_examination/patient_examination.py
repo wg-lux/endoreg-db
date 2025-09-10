@@ -132,3 +132,10 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
             return instance
         except Exception as e:
             raise serializers.ValidationError(f"Fehler beim Aktualisieren der Patientenuntersuchung: {str(e)}")
+    
+    def get_findings(self, patient_examination_id):
+        """Gibt die zugehörigen Befunde zurück"""
+        obj = PatientExamination.get_or_create_patient_examination_by_id(PatientExamination, patient_examination_id)
+        self.instance = obj
+        response = PatientExaminationSerializer()
+        return self.instance.patient_findings.all() if self.instance else []

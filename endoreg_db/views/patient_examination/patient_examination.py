@@ -122,3 +122,19 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get_findings_for_examination(self, request, pk=None):
+        """
+        Endpoint to retrieve findings for a specific PatientExamination
+        GET /api/patient-examinations/{pk}/findings/
+        """
+        examination = self.get_patient_examination_by_id(pk)
+        if not examination:
+            return Response(
+                {'error': 'PatientExamination nicht gefunden'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        findings = PatientExaminationSerializer.get_
+        finding_data = [{'id': f.id, 'name': str(f)} for f in findings]
+        return Response(finding_data)

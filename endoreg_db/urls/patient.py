@@ -2,6 +2,7 @@ from endoreg_db.views import (
     GenderViewSet,
     CenterViewSet,
     PatientViewSet,
+    PatientFindingViewSet
 )
 from rest_framework.routers import DefaultRouter
 from django.urls import path, include

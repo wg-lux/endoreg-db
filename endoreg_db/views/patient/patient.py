@@ -1,8 +1,8 @@
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
+
 from rest_framework import viewsets, status, serializers
-from rest_framework.fields import ObjectDoesNotExist
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
@@ -31,7 +31,7 @@ class PatientViewSet(viewsets.ModelViewSet):
             return patient
         except Exception as e:
             raise serializers.ValidationError(f"Fehler beim Erstellen des Patienten: {str(e)}")
-    
+        
     def update(self, request, *args, **kwargs):
         """Erweiterte Logik für das Aktualisieren von Patienten"""
         try:
@@ -107,8 +107,8 @@ class PatientViewSet(viewsets.ModelViewSet):
         try:
             PatientExamination.objects.get(pk=pk)
             return Response({"exists": True}, status=status.HTTP_200_OK)
-        except ObjectDoesNotExist:
-            return Response({"exists": False}, status=status.HTTP_200_OK)
+        except PatientExamination.DoesNotExist:
+            return Response({"exists": False}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
     def check_deletion_safety(self, request, pk=None):

@@ -148,6 +148,13 @@ class PatientExamination(models.Model):
         ]
         return choices
 
+    def get_or_create_patient_examination_by_id(self, pk: int) -> Optional["PatientExamination"]:
+        """Hilfsmethode zum Abrufen oder Erstellen einer PatientExamination nach ID"""
+        if not self.objects.filter(pk=pk).exists():
+            return None
+        else:
+            return self.objects.filter(pk=pk)
+
     @property
     def links(self) -> "RequirementLinks":
         """
