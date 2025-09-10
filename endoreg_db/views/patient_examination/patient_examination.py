@@ -22,6 +22,20 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
         ).prefetch_related(
             'patient_findings', 'indications'
         ).order_by('-date_start', '-id')
+        
+    def get_patient_examination_ids(self):
+        """Hilfsmethode zum Abrufen mehrerer PatientExamination IDs"""
+        return PatientExamination.objects.filter(all=True).values_list('id', flat=True)
+
+    def get_patient_examination_by_id(self, pk):
+        """Hilfsmethode zum Abrufen einer PatientExamination nach ID"""
+        if not PatientExamination.objects.filter(pk=pk).exists():
+            return None
+        else:
+            return PatientExamination.objects.select_related(
+                'patient', 'examination'
+            ).get(pk=pk)
+
     
     @action(detail=False, methods=['get'])
     def patients_dropdown(self, request):

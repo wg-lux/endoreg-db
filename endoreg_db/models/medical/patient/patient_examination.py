@@ -31,6 +31,7 @@ class PatientExamination(models.Model):
     date_start = models.DateField(null=True, blank=True)
     date_end = models.DateField(null=True, blank=True)
     hash = models.CharField(max_length=255, unique=True)
+    
 
     if TYPE_CHECKING:
         patient: "models.ForeignKey[Patient]"
