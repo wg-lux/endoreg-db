@@ -71,8 +71,12 @@ def evaluate_requirements(request):
         return Response({"results": results}, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
+        import logging
+        logging.getLogger(__name__).exception("evaluate_requirements failed: %s", e)
+        return Response(
+            {"error": "Unbekannter Fehler bei der Bewertung"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 def evaluate_requirement_set(request) -> Response:
     """
@@ -133,8 +137,8 @@ def evaluate_requirement_set(request) -> Response:
                 })
 
         return Response({
-            "results": results
+        return Response({"results": str(e), "details": "Fehler bei der Bewertung der Voraussetzung"}, status=status.HTTP_400_BAD_REQUEST)
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"results": str(e), details: "Fehler bei der Bewertung der Voraussetzung"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"results": str(e), "details": "Fehler bei der Bewertung der Voraussetzung"}, status=status.HTTP_400_BAD_REQUEST)
