@@ -136,9 +136,9 @@ def evaluate_requirement_set(request) -> Response:
                     "details": details
                 })
 
-        return Response({
-        return Response({"results": str(e), "details": "Fehler bei der Bewertung der Voraussetzung"}, status=status.HTTP_400_BAD_REQUEST)
-        }, status=status.HTTP_200_OK)
+        return Response({"results": results}, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"results": str(e), "details": "Fehler bei der Bewertung der Voraussetzung"}, status=status.HTTP_400_BAD_REQUEST)
+        import logging
+        logging.getLogger(__name__).exception("evaluate_requirement_set failed: %s", e)
+        return Response({"error": "Unbekannter Fehler bei der Bewertung"}, status=status.HTTP_400_BAD_REQUEST)
