@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 
 from endoreg_db.models import Patient
 from endoreg_db.serializers.patient import PatientSerializer
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 
 @staff_member_required  # Ensures only staff members can access the page
 def start_examination(request):
@@ -30,7 +31,7 @@ class PatientViewSet(viewsets.ModelViewSet):
             return patient
         except Exception as e:
             raise serializers.ValidationError(f"Fehler beim Erstellen des Patienten: {str(e)}")
-    
+        
     def update(self, request, *args, **kwargs):
         """Erweiterte Logik für das Aktualisieren von Patienten"""
         try:
@@ -92,6 +93,22 @@ class PatientViewSet(viewsets.ModelViewSet):
                 {"error": f"Fehler beim Löschen des Patienten: {str(e)}"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    def check_pe_exist(self, request, pk=None):
+        """Check if a patient examination exists.
+
+        Args:
+            request (id): pk of the PatientExamination
+            pk (int, optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
+        try:
+            PatientExamination.objects.get(pk=pk)
+            return Response({"exists": True}, status=status.HTTP_200_OK)
+        except PatientExamination.DoesNotExist:
+            return Response({"exists": False}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
     def check_deletion_safety(self, request, pk=None):

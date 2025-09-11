@@ -36,3 +36,6 @@ class PatientFindingListSerializer(serializers.ModelSerializer, TranslatableFiel
             str: The localized name of the related finding.
         """
         return self.get_localized_name(obj.finding)
+    
+
+ 
