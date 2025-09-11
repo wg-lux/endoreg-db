@@ -27,8 +27,3 @@ def get_findings_for_examination(request, examination_id):
         serializer = FindingSerializer(findings, many=True)
         return Response(serializer.data)
 
-def get_finding_by_id(finding_id):
-    from endoreg_db.models import Finding
-    findings_obj = Finding.objects.filter(id=finding_id)
-    serializer = FindingSerializer(findings_obj, many=False)
-    return Response(serializer.data)

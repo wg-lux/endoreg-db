@@ -10,7 +10,7 @@ from .get_finding_classifications import (
     get_location_classifications_for_examination,
     get_morphology_classifications_for_examination,
 )
-from .get_findings import get_findings_for_examination, get_finding_by_id
+from .get_findings import get_findings_for_examination
 from .get_instruments import get_instruments_for_examination
 from .get_interventions import get_interventions_for_examination
 
@@ -28,7 +28,6 @@ __all__ = [
     'get_morphology_classifications_for_examination',
 
     'get_findings_for_examination',
-    'get_finding_by_id',
     'get_instruments_for_examination',
     'get_interventions_for_examination',
 ]

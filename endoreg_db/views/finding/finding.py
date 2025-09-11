@@ -103,3 +103,10 @@ class FindingViewSet(ReadOnlyModelViewSet):
             return Response(result)
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+      
+    @action(detail=False, methods=['get'], url_path='by-id/(?P<finding_id>[^/.]+)')
+    def get_finding_by_id(self, request, finding_id=None):
+        findings_obj = Finding.objects.filter(id=finding_id)
+        serializer = FindingSerializer(findings_obj, many=False)
+        return Response(serializer.data)
+    

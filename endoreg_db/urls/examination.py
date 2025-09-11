@@ -4,7 +4,6 @@ from endoreg_db.views import (
     get_classifications_for_finding,
     get_classification_choices,
     get_classifications_for_examination,
-    get_finding_by_id,
     ExaminationCreateView,
     PatientExaminationDetailView,
     PatientExaminationListView,
@@ -15,11 +14,6 @@ urlpatterns = [# URL patterns for ExaminationForm.vue API calls
         'examinations/<int:examination_id>/findings/',
         get_findings_for_examination,
         name='get_findings_for_examination'
-    ),
-    path(
-        'findings/<int:finding_id>/',
-        get_finding_by_id,
-        name='get_finding_by_id'
     ),
     path(
         'findings/<int:finding_id>/classifications/',
