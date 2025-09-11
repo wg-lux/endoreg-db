@@ -1,6 +1,6 @@
 from typing import List, Optional, TYPE_CHECKING # Modified import
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from endoreg_db.models import (
     PatientDisease, Disease, DiseaseClassificationChoice,
@@ -51,33 +51,33 @@ class RequirementLinks(BaseModel):
     # operators: Optional[List["RequirementOperator"]] = None
     # The following model import causes circular import
     #requirement_sets: Optional[List["RequirementSet"]] = None
-    examinations: List["Examination"] = []
-    examination_indications: List["ExaminationIndication"] = []
-    examination_indication_classification_choices: List["ExaminationIndicationClassificationChoice"] = []
-    patient_examinations: List["PatientExamination"] = []
+    examinations: List["Examination"] = Field(default_factory=list)
+    examination_indications: List["ExaminationIndication"] = Field(default_factory=list)
+    examination_indication_classification_choices: List["ExaminationIndicationClassificationChoice"] = Field(default_factory=list)
+    patient_examinations: List["PatientExamination"] = Field(default_factory=list)
     
-    patient_examination_indication: List["PatientExaminationIndication"] = []
-    lab_values: List["LabValue"] = []
-    patient_lab_values: List["PatientLabValue"] = []
-    patient_lab_samples: List["PatientLabSample"] = []
-    patient_diseases: List["PatientDisease"] = []
-    diseases: List["Disease"] = []
-    disease_classification_choices: List["DiseaseClassificationChoice"] = []
-    events: List["Event"] = []
-    patient_events: List["PatientEvent"] = []
-    patient_findings: List["PatientFinding"] = []
-    findings: List["Finding"] = []
-    finding_classification_choices: List["FindingClassificationChoice"] = []
-    finding_classifications: List["FindingClassification"] = [] # Added for direct classification checks if needed
-    finding_interventions: List["FindingIntervention"] = []
-    patient_lab_sample_types: List["PatientLabSampleType"] = []
-    patient_medications: List["PatientMedication"] = [] # Added
-    patient_medication_schedules: List["PatientMedicationSchedule"] = [] # Added
+    patient_examination_indication: List["PatientExaminationIndication"] = Field(default_factory=list)
+    lab_values: List["LabValue"] = Field(default_factory=list)
+    patient_lab_values: List["PatientLabValue"] = Field(default_factory=list)
+    patient_lab_samples: List["PatientLabSample"] = Field(default_factory=list)
+    patient_diseases: List["PatientDisease"] = Field(default_factory=list)
+    diseases: List["Disease"] = Field(default_factory=list)
+    disease_classification_choices: List["DiseaseClassificationChoice"] = Field(default_factory=list)
+    events: List["Event"] = Field(default_factory=list)
+    patient_events: List["PatientEvent"] = Field(default_factory=list)
+    patient_findings: List["PatientFinding"] = Field(default_factory=list)
+    findings: List["Finding"] = Field(default_factory=list)
+    finding_classification_choices: List["FindingClassificationChoice"] = Field(default_factory=list)
+    finding_classifications: List["FindingClassification"] = Field(default_factory=list) # Added for direct classification checks if needed
+    finding_interventions: List["FindingIntervention"] = Field(default_factory=list)
+    patient_lab_sample_types: List["PatientLabSampleType"] = Field(default_factory=list)
+    patient_medications: List["PatientMedication"] = Field(default_factory=list) # Added
+    patient_medication_schedules: List["PatientMedicationSchedule"] = Field(default_factory=list) # Added
     # Added direct medication-related fields
-    medications: List["Medication"] = []
-    medication_indications: List["MedicationIndication"] = []
-    medication_intake_times: List["MedicationIntakeTime"] = []
-    medication_schedules: List["MedicationSchedule"] = []
+    medications: List["Medication"] = Field(default_factory=list)
+    medication_indications: List["MedicationIndication"] = Field(default_factory=list)
+    medication_intake_times: List["MedicationIntakeTime"] = Field(default_factory=list)
+    medication_schedules: List["MedicationSchedule"] = Field(default_factory=list)
 
     def get_first_patient(self) -> Optional["Patient"]:
         """
@@ -168,7 +168,8 @@ class RequirementLinks(BaseModel):
         Only attributes with non-empty lists are included in the returned dictionary.
         """
         active_links_dict = {}
-        for field_name, field_value in self:
+        # Use model_dump() to iterate field data reliably (pydantic v2)
+        for field_name, field_value in self.model_dump().items():
             if isinstance(field_value, list) and field_value:
                 active_links_dict[field_name] = field_value
         return active_links_dict
@@ -177,25 +178,16 @@ class RequirementLinks(BaseModel):
         """
         Returns a concise string summarizing the counts of each linked model list in the instance.
         """
-        return f"RequirementLinks(examinations={len(self.examinations)}, " \
-               f"examination_indications={len(self.examination_indications)}, " \
-               f"patient_examinations={len(self.patient_examinations)}, " \
-               f"lab_values={len(self.lab_values)}, " \
-               f"patient_lab_values={len(self.patient_lab_values)}, " \
-               f"patient_diseases={len(self.patient_diseases)}, " \
-               f"diseases={len(self.diseases)}, " \
-               f"disease_classification_choices={len(self.disease_classification_choices)}, " \
-               f"events={len(self.events)}, " \
-               f"patient_events={len(self.patient_events)}, " \
-               f"findings={len(self.findings)}, " \
-               f"patient_findings={len(self.patient_findings)}, " \
-               f"finding_classification_choices={len(self.finding_classification_choices)}, " \
-               f"finding_interventions={len(self.finding_interventions)}, " \
-               f"patient_medications={len(self.patient_medications)}, " \
-               f"patient_medication_schedules={len(self.patient_medication_schedules)}, " \
-               f"medications={len(self.medications)}, " \
-               f"medication_indications={len(self.medication_indications)}, " \
-               f"medication_intake_times={len(self.medication_intake_times)}, " \
-               f"medication_schedules={len(self.medication_schedules)})"
+        data = self.model_dump()
+        fields = [
+            'examinations', 'examination_indications', 'patient_examinations',
+            'lab_values', 'patient_lab_values', 'patient_diseases', 'diseases',
+            'disease_classification_choices', 'events', 'patient_events', 'findings',
+            'patient_findings', 'finding_classification_choices', 'finding_interventions',
+            'patient_medications', 'patient_medication_schedules', 'medications',
+            'medication_indications', 'medication_intake_times', 'medication_schedules'
+        ]
+        parts = [f"{f}={len(data.get(f, []))}" for f in fields]
+        return f"RequirementLinks({', '.join(parts)})"
 
 

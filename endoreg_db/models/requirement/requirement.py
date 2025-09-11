@@ -335,10 +335,8 @@ class Requirement(models.Model):
         
         The returned object provides structured access to all associated entities, such as examinations, diseases, findings, classifications, interventions, medications, and related choices, aggregated from the requirement's many-to-many fields.
         """
+        # requirement_sets is not part of RequirementLinks (avoids circular import); collect other related models
         models_dict = RequirementLinks(
-            # requirement_types=self.requirement_types.all(),
-            # operators=self.operators.all(),
-            requirement_sets=[_ for _ in self.requirement_sets.all() if _ is not None],
             examinations=[_ for _ in self.examinations.all() if _ is not None],
             examination_indications=[_ for _ in self.examination_indications.all() if _ is not None],
             lab_values=[_ for _ in self.lab_values.all() if _ is not None],
@@ -347,13 +345,11 @@ class Requirement(models.Model):
             events=[_ for _ in self.events.all() if _ is not None],
             findings=[_ for _ in self.findings.all() if _ is not None],
             finding_classifications=[_ for _ in self.finding_classifications.all() if _ is not None],
-            finding_classification_choices=[
-                _ for _ in self.finding_classification_choices.all() if _ is not None
-            ],
+            finding_classification_choices=[_ for _ in self.finding_classification_choices.all() if _ is not None],
             finding_interventions=[_ for _ in self.finding_interventions.all() if _ is not None],
             medications=[_ for _ in self.medications.all() if _ is not None],
             medication_indications=[_ for _ in self.medication_indications.all() if _ is not None],
-            medication_intake_times=[_ for _ in self.medication_intake_times.all() if _ is not None] # Added medication_intake_times
+            medication_intake_times=[_ for _ in self.medication_intake_times.all() if _ is not None],
         )
         return models_dict
     
@@ -402,7 +398,31 @@ class Requirement(models.Model):
         evaluate_result_list_func = all if mode == "strict" else any
 
         requirement_req_links = self.links
-        expected_models_tuple = tuple(self.expected_models) # For faster type checking
+        expected_models = self.expected_models
+
+        # helpers to avoid passing a complex tuple to isinstance/issubclass which confuses type checkers
+        def _is_expected_instance(obj) -> bool:
+            for cls in expected_models:
+                if isinstance(cls, type):
+                    try:
+                        if isinstance(obj, cls):
+                            return True
+                    except Exception:
+                        # cls might not be a runtime type
+                        continue
+            return False
+
+        def _is_queryset_of_expected(qs) -> bool:
+            if not isinstance(qs, models.QuerySet) or not hasattr(qs, 'model'):
+                return False
+            for cls in expected_models:
+                if isinstance(cls, type):
+                    try:
+                        if issubclass(qs.model, cls):
+                            return True
+                    except Exception:
+                        continue
+            return False
 
         # Aggregate RequirementLinks from all input arguments
         aggregated_input_links_data = {}
@@ -410,9 +430,9 @@ class Requirement(models.Model):
 
         for _input in args:
             # Check if the input is an instance of any of the expected model types
-            if not isinstance(_input, expected_models_tuple):
+            if not _is_expected_instance(_input):
                 # Allow QuerySets of expected models
-                if isinstance(_input, models.QuerySet) and issubclass(_input.model, expected_models_tuple):
+                if _is_queryset_of_expected(_input):
                     # For QuerySets, evaluate each item individually and return True if any matches
                     if not _input.exists(): # Skip empty querysets
                         continue
@@ -472,10 +492,10 @@ class Requirement(models.Model):
             processed_inputs_count += 1
 
         if not processed_inputs_count and args: # If args were provided but none were processable (e.g. all empty querysets)
-             # This situation implies no relevant data was provided for evaluation against the requirement.
-             # Depending on operator logic (e.g., "requires at least one matching item"), this might lead to False.
-             # For "models_match_any", an empty input_links will likely result in False if requirement_req_links is not empty.
-             pass
+              # This situation implies no relevant data was provided for evaluation against the requirement.
+              # Depending on operator logic (e.g., "requires at least one matching item"), this might lead to False.
+              # For "models_match_any", an empty input_links will likely result in False if requirement_req_links is not empty.
+              pass
 
 
         # Deduplicate items within each list after aggregation
@@ -561,7 +581,31 @@ class Requirement(models.Model):
         evaluate_result_list_func = all if mode == "strict" else any
 
         requirement_req_links = self.links
-        expected_models_tuple = tuple(self.expected_models) # For faster type checking
+        expected_models = self.expected_models
+
+        # helpers to avoid passing a complex tuple to isinstance/issubclass which confuses type checkers
+        def _is_expected_instance(obj) -> bool:
+            for cls in expected_models:
+                if isinstance(cls, type):
+                    try:
+                        if isinstance(obj, cls):
+                            return True
+                    except Exception:
+                        # cls might not be a runtime type
+                        continue
+            return False
+
+        def _is_queryset_of_expected(qs) -> bool:
+            if not isinstance(qs, models.QuerySet) or not hasattr(qs, 'model'):
+                return False
+            for cls in expected_models:
+                if isinstance(cls, type):
+                    try:
+                        if issubclass(qs.model, cls):
+                            return True
+                    except Exception:
+                        continue
+            return False
 
         # Aggregate RequirementLinks from all input arguments
         aggregated_input_links_data = {}
@@ -569,9 +613,9 @@ class Requirement(models.Model):
 
         for _input in args:
             # Check if the input is an instance of any of the expected model types
-            if not isinstance(_input, expected_models_tuple):
+            if not _is_expected_instance(_input):
                 # Allow QuerySets of expected models
-                if isinstance(_input, models.QuerySet) and issubclass(_input.model, expected_models_tuple):
+                if _is_queryset_of_expected(_input):
                     # For QuerySets, evaluate each item individually and return True if any matches
                     if not _input.exists(): # Skip empty querysets
                         continue
@@ -711,7 +755,13 @@ class Requirement(models.Model):
                 details = "; ".join(failed_details)
             else:
                 details = "Alle Operatoren erfolgreich"
-        
-        details.join(output = run("pwd", capture_output=True).stdout)
+
+        # Append working directory for debugging convenience
+        try:
+            cwd = run("pwd", capture_output=True, text=True).stdout.strip()
+            details = f"{details}\ncwd: {cwd}"
+        except Exception:
+            # non-fatal: ignore if subprocess fails
+            pass
 
         return is_valid, details

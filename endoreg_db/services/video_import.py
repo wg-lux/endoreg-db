@@ -669,3 +669,23 @@ class VideoImportService():
             # Reset context
             self.current_video = None
             self.processing_context = {}
+
+# Convenience function for callers/tests that expect a module-level import_and_anonymize
+def import_and_anonymize(
+    file_path,
+    center_name: str,
+    processor_name: str,
+    save_video: bool = True,
+    delete_source: bool = False,
+) -> "VideoFile":
+    """Module-level helper that instantiates VideoImportService and runs import_and_anonymize.
+    Kept for backward compatibility with callers that import this function directly.
+    """
+    service = VideoImportService()
+    return service.import_and_anonymize(
+        file_path=file_path,
+        center_name=center_name,
+        processor_name=processor_name,
+        save_video=save_video,
+        delete_source=delete_source,
+    )

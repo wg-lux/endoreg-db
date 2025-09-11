@@ -9,4 +9,9 @@
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
 
+  // Ensure VS Code uses the project virtualenv
+  "python.defaultInterpreterPath": "${workspaceFolder}/.devenv/state/venv/bin/python",
+  "python.pythonPath": "${workspaceFolder}/.devenv/state/venv/bin/python",
+  "python.testing.pytestPath": "${workspaceFolder}/.devenv/state/venv/bin/pytest",
+  "python.envFile": "${workspaceFolder}/.env"
 }
