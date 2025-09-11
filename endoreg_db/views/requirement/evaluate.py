@@ -47,9 +47,10 @@ def evaluate_requirements(request):
 
         # Determine which RequirementSets to evaluate
         if requirement_set_ids:
-            requirement_sets = RequirementSet.objects.filter(id__in=requirement_set_ids)
+            requirement_sets = RequirementSet.objects.filter(id__in=requirement_set_ids).prefetch_related("requirements")
         else:
-            requirement_sets = RequirementSet.objects.all()
+            requirement_sets = RequirementSet.objects.all().prefetch_related("requirements")
+
 
         results = []
 
