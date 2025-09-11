@@ -20,7 +20,7 @@ urlpatterns = [# URL patterns for ExaminationForm.vue API calls
         'findings/<int:finding_id>/',
         get_finding_by_id,
         name='get_finding_by_id'
-    )
+    ),
     path(
         'findings/<int:finding_id>/classifications/',
         get_classifications_for_finding,
