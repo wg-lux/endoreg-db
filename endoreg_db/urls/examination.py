@@ -40,7 +40,7 @@ urlpatterns = [# URL patterns for ExaminationForm.vue API calls
 
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     path(
-        'patient-examinations/<int:pk>/classifications/',
+        'patient-examinations/<int:exam_id>/classifications/',
         get_classifications_for_examination,
         name='get_classifications_for_examination'
     ),

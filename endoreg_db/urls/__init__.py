@@ -14,6 +14,7 @@ from endoreg_db.views import (
     FindingViewSet,
     FindingClassificationViewSet, 
     PatientFindingViewSet,
+    PatientExaminationViewSet
 )
 
 from .anonymization import url_patterns as anonymization_url_patterns
@@ -53,7 +54,7 @@ router.register(r'video-examinations', VideoExaminationViewSet, basename='video-
 router.register(r'findings', FindingViewSet)
 router.register(r'classifications', FindingClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
-# router.register(r'patient-examinations', PatientExaminationViewSet)
+router.register(r'patient-examinations', PatientExaminationViewSet)
 
 
 
