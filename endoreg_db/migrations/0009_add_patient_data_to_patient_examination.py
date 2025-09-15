@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('endoreg_db', '0XXX_previous_migration'),  # Replace with actual previous migration
+        ('endoreg_db', '0008_examination_description_de_and_more'),  # Replace with actual previous migration
     ]
 
     operations = [
