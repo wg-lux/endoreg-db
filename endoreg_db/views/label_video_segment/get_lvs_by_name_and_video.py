@@ -1,17 +1,16 @@
 from endoreg_db.models import Label, LabelVideoSegment, VideoFile
 from endoreg_db.serializers.label_video_segment.label_video_segment import LabelVideoSegmentSerializer
 
-from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 import logging
 logger = logging.getLogger(__name__)
 
 @api_view(['GET'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes([EnvironmentAwarePermission])
 def get_lvs_by_name_and_video_id(request, label_name, video_id):
     """
     Handles creation and retrieval of labeled video segments.

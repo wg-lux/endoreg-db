@@ -32,7 +32,7 @@ def test_lookup_init_happy_path(client, monkeypatch):
 
 
 def test_lookup_init_requires_integer_id(client):
-    for bad in (None, "abc", {}, []):
+    for bad in (None, "abc", {}, [], ""):
         resp = client.post("/api/lookup/init/", data={"patient_examination_id": bad})
         assert resp.status_code == 400
 

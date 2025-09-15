@@ -25,7 +25,9 @@ _TEST_VIDEOS = {
     "egd-small_intestine-non_anonymous": ASSET_DIR / "test_small_intestine.mp4",
 }
 
-TEST_VIDEOS = {key: value if value.exists() else None for key, value in _TEST_VIDEOS.items()}
+# Only keep entries that actually exist on disk to avoid returning None paths
+TEST_VIDEOS = {key: value for key, value in _TEST_VIDEOS.items() if value.exists()}
+
 
 def get_video_path(video_key:str) -> Path:
     """
@@ -78,6 +80,7 @@ def get_video_keys(
         logger.warning(f"Generated pattern (from imported function): {pattern}")
 
 
+    # Only consider keys for which the file actually exists
     keys_to_check = list(TEST_VIDEOS.keys())
     matched_keys = [key for key in keys_to_check if re.match(pattern, key)]
 
@@ -85,19 +88,16 @@ def get_video_keys(
     if not matched_keys and is_anonymous is False:
         logger.warning(f"Pattern '{pattern}' yielded no results for is_anonymous=False. Falling back to suffix check '-non_anonymous'.")
         matched_keys = [key for key in keys_to_check if key.endswith("-non_anonymous")]
-        # Optional: Add further filtering based on examination_alias and content if they were provided
-        # This part depends on how the pattern usually incorporates these elements.
-        # For now, this addresses the immediate error.
     elif not matched_keys and is_anonymous is True:
          logger.warning(f"Pattern '{pattern}' yielded no results for is_anonymous=True. Falling back to suffix check '-anonymous'.")
          matched_keys = [key for key in keys_to_check if key.endswith("-anonymous")]
-         # Optional: Add further filtering based on examination_alias and content
 
     if not matched_keys:
         logger.error(f"No keys found matching pattern '{pattern}' or fallback logic for keys: {keys_to_check}")
 
 
     return matched_keys
+
 
 def get_random_video_path_by_examination_alias(
     examination_alias:Optional[str]=None, content:Optional[str]=None, is_anonymous:Optional[bool]=None
@@ -114,6 +114,6 @@ def get_random_video_path_by_examination_alias(
         video_path = get_video_path(random_video_key)
         return video_path  # Return the first match for simplicity
     else:
-        raise ValueError(f"No matching video keys found for the given criteria.")
+        raise ValueError("No matching video keys found for the given criteria.")
 
 
