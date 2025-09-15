@@ -176,6 +176,7 @@ def _evaluate_age_gte(
 ) -> bool:
     """
     Checks if any patient in the input has an age greater than or equal to the requirement's numeric_value.
+    🎯 Enhanced to support PatientExamination with stored birth date for accurate age calculation.
     
     Args:
         requirement_links: The RequirementLinks object from the Requirement model (not used for age checks).
@@ -187,6 +188,7 @@ def _evaluate_age_gte(
         True if any patient in the input has an age >= requirement.numeric_value, False otherwise.
     """
     from endoreg_db.models.administration.person.patient import Patient
+    from endoreg_db.models.medical.patient.patient_examination import PatientExamination
     import logging
     
     logger = logging.getLogger(__name__)
@@ -204,7 +206,19 @@ def _evaluate_age_gte(
     
     for i, arg in enumerate(original_args):
         logger.debug(f"age_gte: Checking argument {i}: {type(arg).__name__}")
-        if isinstance(arg, Patient):
+        
+        # 🎯 NEW: Handle PatientExamination with stored birth date
+        if isinstance(arg, PatientExamination):
+            # Use the enhanced age calculation method that uses stored patient_birth_date
+            patient_age = arg.get_patient_age_at_examination_precise()
+            logger.debug(f"age_gte: PatientExamination {arg} has age {patient_age}, comparing with min_age {min_age}")
+            if patient_age is not None and patient_age >= min_age:
+                logger.debug(f"age_gte: PatientExamination age {patient_age} >= {min_age}, returning True")
+                return True
+            else:
+                logger.debug(f"age_gte: PatientExamination age {patient_age} < {min_age} or is None")
+        
+        elif isinstance(arg, Patient):
             patient_age = arg.age()
             logger.debug(f"age_gte: Patient {arg} has age {patient_age}, comparing with min_age {min_age}")
             if patient_age is not None and patient_age >= min_age:
@@ -221,8 +235,17 @@ def _evaluate_age_gte(
                 if patient_age is not None and patient_age >= min_age:
                     logger.debug(f"age_gte: Patient age {patient_age} >= {min_age}, returning True")
                     return True
+        # 🎯 NEW: Handle QuerySets of PatientExaminations
+        elif hasattr(arg, 'model') and issubclass(arg.model, PatientExamination):
+            logger.debug(f"age_gte: Found PatientExamination QuerySet with {arg.count()} examinations")
+            for pe in arg:
+                patient_age = pe.get_patient_age_at_examination_precise()
+                logger.debug(f"age_gte: PatientExamination {pe} has age {patient_age}, comparing with min_age {min_age}")
+                if patient_age is not None and patient_age >= min_age:
+                    logger.debug(f"age_gte: PatientExamination age {patient_age} >= {min_age}, returning True")
+                    return True
         else:
-            logger.debug(f"age_gte: Argument {i} is not a Patient or Patient QuerySet: {type(arg)}")
+            logger.debug(f"age_gte: Argument {i} is not a Patient or PatientExamination: {type(arg)}")
     
     logger.debug(f"age_gte: No patient found with age >= {min_age}, returning False")
     return False

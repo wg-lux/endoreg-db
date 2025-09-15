@@ -32,6 +32,13 @@ class PatientExamination(models.Model):
     date_end = models.DateField(null=True, blank=True)
     hash = models.CharField(max_length=255, unique=True)
     
+    # 🎯 NEW: Direct patient data fields for requirement evaluation
+    # These fields store patient data at examination time for accurate age calculation
+    patient_birth_date = models.DateField(null=True, blank=True, 
+                                        help_text="Patient's birth date at time of examination")
+    patient_gender = models.CharField(max_length=10, null=True, blank=True,
+                                    help_text="Patient's gender at time of examination")
+    
 
     if TYPE_CHECKING:
         patient: "models.ForeignKey[Patient]"
@@ -108,13 +115,42 @@ class PatientExamination(models.Model):
     def get_patient_age_at_examination(self) -> int:
         """
         Returns the patient's age at the time of the examination.
+        🎯 Enhanced to use stored patient_birth_date for accurate calculation.
         """
+        # 🎯 First try to use stored birth date (for requirement evaluation)
+        if self.patient_birth_date and self.date_start:
+            return (self.date_start - self.patient_birth_date).days // 365
+        
+        # Fallback to patient model if available
         from ...administration.person.patient import Patient
-
         patient: Patient = self.patient
         dob = patient.get_dob()
         date_start = self.date_start
-        return (date_start - dob).days // 365
+        
+        if dob and date_start:
+            return (date_start - dob).days // 365
+        
+        return None  # Cannot calculate age without birth date
+    
+    def get_patient_age_at_examination_precise(self) -> float:
+        """
+        Returns the patient's age in years (as float) at the time of examination.
+        🎯 More precise calculation for requirement evaluation.
+        """
+        # 🎯 First try to use stored birth date
+        if self.patient_birth_date and self.date_start:
+            return (self.date_start - self.patient_birth_date).days / 365.25
+        
+        # Fallback to patient model if available
+        from ...administration.person.patient import Patient
+        patient: Patient = self.patient
+        dob = patient.get_dob()
+        date_start = self.date_start
+        
+        if dob and date_start:
+            return (date_start - dob).days / 365.25
+        
+        return None  # Cannot calculate age without birth date
 
     def get_available_findings(self):
         """

@@ -20,6 +20,20 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
         allow_null=True
     )
     
+    # 🎯 NEW: Patient birth date and gender fields for age calculation
+    patient_birth_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Patient's birth date for age calculation during requirement evaluation"
+    )
+    
+    patient_gender = serializers.CharField(
+        max_length=10,
+        required=False,
+        allow_null=True,
+        help_text="Patient's gender for requirement evaluation"
+    )
+    
     # Zusätzliche schreibgeschützte Felder für bessere API-Antworten
     patient_name = serializers.SerializerMethodField()
     examination_name = serializers.SerializerMethodField()
@@ -28,7 +42,9 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
         model = PatientExamination
         fields = [
             'id', 'patient', 'patient_data', 'examination', 'date_start', 'date_end', 
-            'hash', 'patient_name', 'examination_name'
+            'hash', 'patient_name', 'examination_name',
+            # 🎯 NEW: Include patient birth date and gender fields
+            'patient_birth_date', 'patient_gender'
         ]
         read_only_fields = ['id', 'hash', 'patient_name', 'examination_name', 'patient_data']
 

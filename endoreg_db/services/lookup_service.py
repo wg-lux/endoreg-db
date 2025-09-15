@@ -97,6 +97,36 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     # De-dup required
     required_findings = sorted(set(required_findings))
 
+    # 🎯 NEW: Patient data for requirement evaluation
+    patient_data = {}
+    if pe.patient_birth_date and pe.date_start:
+        # Calculate age using precise method
+        age_years = (pe.date_start - pe.patient_birth_date).days / 365.25
+        patient_data.update({
+            "birth_date": pe.patient_birth_date.isoformat(),
+            "examination_date": pe.date_start.isoformat(),
+            "age_years": age_years,
+            "age_days": (pe.date_start - pe.patient_birth_date).days,
+        })
+    
+    if pe.patient_gender:
+        patient_data["gender"] = pe.patient_gender
+    
+    # Fallback to patient model if no direct data stored
+    if not patient_data.get("birth_date") and pe.patient:
+        try:
+            dob = pe.patient.get_dob()
+            if dob and pe.date_start:
+                age_years = (pe.date_start - dob).days / 365.25
+                patient_data.update({
+                    "birth_date": dob.isoformat(),
+                    "examination_date": pe.date_start.isoformat(),
+                    "age_years": age_years,
+                    "age_days": (pe.date_start - dob).days,
+                })
+        except:
+            pass  # Ignore errors in fallback
+
     return {
         "patient_examination_id": pe.id,
         "requirement_sets": requirement_sets,
@@ -104,6 +134,8 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
         "requiredFindings": required_findings,
         "requirementDefaults": req_defaults,
         "classificationChoices": cls_choices,
+        # 🎯 NEW: Patient data for requirement evaluation
+        "patient_data": patient_data,
         # New fields for expanded lookup payload
         "requirementsBySet": {},  # Will be populated when requirement sets are selected
         "requirementStatus": {},  # Status of each requirement (satisfied/unsatisfied)
