@@ -118,6 +118,11 @@ from .report import (
     start_examination,
 )
 
+from .requirement import (
+    evaluate_requirements,
+    LookupViewSet,
+)
+
 from .video import (
     VideoMediaView,
     VideoCorrectionView,
@@ -238,16 +243,16 @@ __all__ = [
 
     # PDF
     "ClosingFileWrapper",
-    "PDFStreamView",
-    "UpdateAnonymizedTextView",
-    "RawPdfAnonyTextView",
-    "PDFFileForMetaView",
-    "UpdateSensitiveMetaView",
 
     # Report
     "ReportListView",
     "ReportWithSecureUrlView",
     "start_examination",
+    
+    # Requirement Views
+    
+    "evaluate_requirements",
+    "LookupViewSet",
 
     # Video Views
     'VideoMediaView',

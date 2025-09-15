@@ -1,6 +1,8 @@
 import os
 import yaml
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import OperationalError, transaction
+
 
 def load_model_data_from_yaml(command, model_name, metadata, verbose):
     """
@@ -123,22 +125,43 @@ def load_data_with_foreign_keys(
                     continue
                 fields[fk_field] = obj
 
-        # Create or update the main object
-        if name is None:
-            obj, created = model.objects.get_or_create(**fields)
-        else:
-            obj, created = model.objects.update_or_create(defaults=fields, name=name)
+        # Create or update the main object (avoid update_or_create to prevent SQLite locks)
+        def _save_instance():
+            if name is None:
+                # Try to find an existing object by all provided fields
+                obj = model.objects.filter(**fields).first()
+                if obj is None:
+                    obj = model.objects.create(**fields)
+                    created = True
+                else:
+                    created = False
+            else:
+                obj = model.objects.filter(name=name).first()
+                if obj is None:
+                    obj = model.objects.create(name=name, **fields)
+                    created = True
+                else:
+                    # Update fields
+                    for k, v in fields.items():
+                        setattr(obj, k, v)
+                    obj.save()
+                    created = False
+            return obj, created
+
+        try:
+            # Attempt save inside a transaction for consistency
+            with transaction.atomic():
+                obj, created = _save_instance()
+        except OperationalError:
+            # Retry once on SQLite lock
+            obj, created = _save_instance()
+
         if created and verbose:
             command.stdout.write(
                 command.style.SUCCESS(f"Created {model.__name__} {name}")
             )
         elif verbose:
             pass
-            # command.stdout.write(
-            #     command.style.WARNING(
-            #         f"Skipped {model.__name__} {name}, already exists"
-            #     )
-            # )
 
         # Set many-to-many relationships
         for field_name, related_objs in m2m_relationships.items():

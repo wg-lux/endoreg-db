@@ -1,13 +1,8 @@
-from math import perm
-from django.conf import settings
-from django.db.models import query
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
 
 from django.db import transaction
-from environ import Env
 from rest_framework import generics, status
 from rest_framework.response import Response
-from endoreg_db.views.patient_examination.patient_examination_detail import PatientExaminationDetailView
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 import logging

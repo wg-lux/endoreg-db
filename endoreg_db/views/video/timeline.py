@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from ...models import VideoFile
 import json
-from ...serializers._old.video_segmentation import VideoFileSerializer
+from ...serializers.video import VideoFileSerializer
 
 def video_timeline_view(request, video_id):
     """

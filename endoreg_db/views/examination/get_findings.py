@@ -1,9 +1,11 @@
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from endoreg_db.models import Examination
 from ...serializers.finding import FindingSerializer
 from endoreg_db.utils.translation import build_multilingual_response
+from endoreg_db.models import PatientExamination
 
 @api_view(["GET"])
 def get_findings_for_examination(request, examination_id):
@@ -25,3 +27,15 @@ def get_findings_for_examination(request, examination_id):
     else:
         serializer = FindingSerializer(findings, many=True)
         return Response(serializer.data)
+    
+
+def get_findings_for_patient_examination(request, patient_examination_id):
+    """
+    Retrieve findings for a specific PatientExamination.
+    """
+    # Assuming PatientExamination model has a related_name 'patient_findings' for its findings
+    patient_examination = get_object_or_404(PatientExamination, id=patient_examination_id)
+    findings = patient_examination.patient_findings.all()
+    serializer = FindingSerializer(findings, many=True)
+    return Response(serializer.data)
+

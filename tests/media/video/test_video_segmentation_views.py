@@ -40,7 +40,7 @@ class VideoSegmentationViewTests(TestCase):
         for label_obj in test_labels:
             label_name = label_obj.name
             with self.subTest(label=label_name):
-                url = f"/api/lvs/by-label-name/{label_name}/by-video-id/{self.video.id}/"
+                url = f"/api/lvs/by-label-name/{label_name}/by-video-id/{self.video.pk}/"
                 
                 response = self.client.get(url)
                 
@@ -52,7 +52,7 @@ class VideoSegmentationViewTests(TestCase):
                 
                 # Verify response structure
                 self.assertEqual(data["label_name"], label_name)
-                self.assertEqual(data["label"], label_obj.id)
+                self.assertEqual(data["label"], label_obj.pk)
                 # self.assertIn("time_segments", data) #TODO Check if this is needed
                 self.assertIn("frame_predictions", data) #TODO Check if this is needed
                 
@@ -60,7 +60,7 @@ class VideoSegmentationViewTests(TestCase):
 
     def test_label_view_returns_404_for_missing_label(self):
         """Test 404 response when label doesn't exist."""
-        url = f"/api/lvs/by-label-name/NON_EXISTENT_TEST_LABEL/by-video-id/{self.video.id}/"
+        url = f"/api/lvs/by-label-name/NON_EXISTENT_TEST_LABEL/by-video-id/{self.video.pk}/"
         
         response = self.client.get(url)
         
@@ -81,7 +81,7 @@ class VideoSegmentationViewTests(TestCase):
     def test_video_label_view_no_segments_returns_empty_data(self):
         """Test empty response when no segments exist for label."""
         label_appendix = Label.objects.get(name="appendix")
-        url = f"/api/lvs/by-label-name/{label_appendix.name}/by-video-id/{self.video.id}/"
+        url = f"/api/lvs/by-label-name/{label_appendix.name}/by-video-id/{self.video.pk}/"
 
         response = self.client.get(url)
         
@@ -93,7 +93,7 @@ class VideoSegmentationViewTests(TestCase):
         """Test video streaming with byte range requests - ensures regression protection."""
         # Mock the video file to have an active_file_path
         # with patch.object(self.video, 'active_file_path', self.temp_video_file.name):
-        url = f"/api/media/videos/{self.video.id}/stream/"
+        url = f"/api/media/videos/{self.video.pk}/stream/"
         
         response = self.client.get(url)
         
@@ -109,7 +109,7 @@ class VideoSegmentationViewTests(TestCase):
     def test_video_segments_creation_works_in_dev_mode(self):
         """Test that video segment creation works in development mode (AllowAny permissions)."""
         segment_data = {
-            'video_id': self.video.id,
+            'video_id': self.video.pk,
             'start_time': 1.0,
             'end_time': 2.0,
             'label_name': self.label_snare.name
@@ -122,14 +122,14 @@ class VideoSegmentationViewTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.json()
         self.assertEqual(data['label_name'], self.label_snare.name)
-        self.assertEqual(data['video_id'], self.video.id)
+        self.assertEqual(data['video_id'], self.video.pk)
 
 #TODO Needs to be fixed since our app checks the .env file specifically for DJANGO_DEBUG
     # @override_settings(DEBUG=False)
     # def test_video_segments_creation_requires_auth_in_prod_mode(self):
     #     """Test that video segment creation requires authentication in production mode."""
     #     segment_data = {
-    #         'video_id': self.video.id,
+    #         'video_id': self.video.pk,
     #         'start_time': 1,
     #         'end_time': 2,
     #         'label_name': self.label_snare.name
@@ -150,8 +150,8 @@ class VideoSegmentationViewTests(TestCase):
             'HTTP_USER_AGENT': 'Mozilla/5.0 (Vue.js SPA)'
         }
         
-        # url = f"/api/videos/{self.video.id}/labels/nbi/"
-        url = f"/api/lvs/by-label-name/{self.label_nbi.name}/by-video-id/{self.video.id}/"
+        # url = f"/api/videos/{self.video.pk}/labels/nbi/"
+        url = f"/api/lvs/by-label-name/{self.label_nbi.name}/by-video-id/{self.video.pk}/"
         vue_response = self.client.get(url, **vue_headers)
         
         # Test with React dashboard headers  
@@ -194,7 +194,7 @@ class VideoSegmentationViewTests(TestCase):
                         self.assertIn(field, segment)
 
     def get_lvs_response(self):
-        url = f"/api/lvs/by-label-name/{self.label_nbi.name}/by-video-id/{self.video.id}/"
+        url = f"/api/lvs/by-label-name/{self.label_nbi.name}/by-video-id/{self.video.pk}/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
@@ -254,7 +254,7 @@ class VideoSegmentationViewTests(TestCase):
         
         
         # with self.assertLogs('endoreg_db.views.video_segmentation_views', level='WARNING') as cm:
-        #     url = f"/api/videos/{video.id}/labels/nbi/"
+        #     url = f"/api/videos/{video.pk}/labels/nbi/"
         #     response = self.client.get(url)
             
         #     # Should return 200, not 500
@@ -270,7 +270,7 @@ class VideoSegmentationViewTests(TestCase):
     #     # Mock Path to raise an exception
     #     mock_path.side_effect = Exception("Path construction failed")
         
-    #     url = f"/api/videos/{self.video.id}/labels/nbi/"
+    #     url = f"/api/videos/{self.video.pk}/labels/nbi/"
     #     response = self.client.get(url)
         
     #     # Should still return 200 but with empty frame_file_path
@@ -286,7 +286,7 @@ class VideoSegmentationViewTests(TestCase):
     # def test_permission_layer_intact_for_read_operations(self):
     #     """Test that permission layer allows read operations in both dev and prod."""
     #     # Test VideoLabelView (which should allow read access)
-    #     url = f"/api/videos/{self.video.id}/labels/nbi/"
+    #     url = f"/api/videos/{self.video.pk}/labels/nbi/"
     #     response = self.client.get(url)
         
     #     # Should work fine regardless of auth status for read operations
@@ -294,7 +294,7 @@ class VideoSegmentationViewTests(TestCase):
         
     #     # Test video streaming (which should also allow anonymous access)
     #     with patch.object(self.video, 'active_file_path', self.temp_video_file.name):
-    #         stream_url = f"/api/videostream/{self.video.id}/"
+    #         stream_url = f"/api/videostream/{self.video.pk}/"
     #         stream_response = self.client.get(stream_url)
     #         self.assertEqual(stream_response.status_code, status.HTTP_200_OK)
 
@@ -302,7 +302,7 @@ class VideoSegmentationViewTests(TestCase):
     #     """Test that no TypeError logs appear for path operations with string concatenation."""
     #     with self.assertLogs('endoreg_db.views.video_segmentation_views', level='INFO') as cm:
     #         # This should not generate any TypeError logs
-    #         url = f"/api/videos/{self.video.id}/labels/nbi/"
+    #         url = f"/api/videos/{self.video.pk}/labels/nbi/"
     #         response = self.client.get(url)
             
     #         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -334,7 +334,7 @@ class VideoSegmentationIntegrationTests(TestCase):
         """Test complete workflow: create segment -> retrieve segments -> stream video."""
         # Step 1: Create a segment
         create_data = {
-            'video_id': self.video.id,
+            'video_id': self.video.pk,
             'start_time': 0,
             'end_time': 1,
             'label_name': self.label_nbi.name
@@ -344,7 +344,7 @@ class VideoSegmentationIntegrationTests(TestCase):
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         
         # Step 2: Retrieve segments via VideoLabelView
-        label_response = self.client.get(f'/api/lvs/by-label-name/{self.label_nbi.name}/by-video-id/{self.video.id}/')
+        label_response = self.client.get(f'/api/lvs/by-label-name/{self.label_nbi.name}/by-video-id/{self.video.pk}/')
         self.assertEqual(label_response.status_code, status.HTTP_200_OK)
         
         label_data = label_response.json()
@@ -356,7 +356,7 @@ class VideoSegmentationIntegrationTests(TestCase):
         self.assertEqual(segment['end_time'], 1.0)
         
         # Step 4: Test video streaming still works
-        stream_response = self.client.get(f'/api/media/videos/{self.video.id}/stream/')
+        stream_response = self.client.get(f'/api/media/videos/{self.video.pk}/stream/')
         self.assertEqual(stream_response.status_code, status.HTTP_200_OK)
 
     #TODO @coderabbitai create a follow up issue for @Hamzaukw
@@ -367,7 +367,7 @@ class VideoSegmentationIntegrationTests(TestCase):
     #     self.assertEqual(response1.status_code, status.HTTP_404_NOT_FOUND)
         
     #     # Test with non-existent label
-    #     response2 = self.client.get(f'/api/videos/{self.video.id}/labels/nonexistent/')
+    #     response2 = self.client.get(f'/api/videos/{self.video.pk}/labels/nonexistent/')
     #     self.assertEqual(response2.status_code, status.HTTP_404_NOT_FOUND)
         
     #     # Test with malformed video ID

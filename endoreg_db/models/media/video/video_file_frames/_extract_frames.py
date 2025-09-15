@@ -142,7 +142,7 @@ def _extract_frames(
                     logger.error("Failed to update is_extracted flag for frames of video %s: %s", video.uuid, update_e, exc_info=True)
             if extracted_paths:
                 state.refresh_from_db()
-                video.mark_frames_extracted()
+                state.mark_frames_extracted()
         return True
 
     except Exception as e:

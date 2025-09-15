@@ -63,6 +63,8 @@ class TestLabelVideoSegmentCRUD:
             processor_name=self.processor.name
         )
 
+        assert self.video is not None, "VideoFile creation failed"
+
         self.video_fps = self.video.get_fps()
         assert self.video_fps > 0, "FPS must be greater than 0"
         self.start_frame_number = 10

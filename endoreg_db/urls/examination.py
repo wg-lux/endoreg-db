@@ -44,5 +44,11 @@ urlpatterns = [# URL patterns for ExaminationForm.vue API calls
         get_classifications_for_examination,
         name='get_classifications_for_examination'
     ),
+    
+    path(
+        'patient-examinations/<int:examination_id>/findings/',
+        get_findings_for_examination,
+        name='get_patient_examination_findings'
+    ),
 
 ]

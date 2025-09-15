@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     tests_dir = Path(__file__).parent / "tests"
 
-    os.environ["DJANGO_SETTINGS_MODULE"] = "tests.test_settings"
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.test")
     django.setup()
     TestRunner = get_runner(settings)
     test_runner = TestRunner()

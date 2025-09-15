@@ -6,12 +6,12 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 import logging
 logger = logging.getLogger(__name__)
 
 @api_view(['POST', 'GET'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes([EnvironmentAwarePermission])
 def video_segments_view(request):
     """
     Handles creation and retrieval of labeled video segments.
@@ -26,7 +26,7 @@ def video_segments_view(request):
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
-                    logger.info(f"Successfully created video segment {segment.id}")
+                    logger.info(f"Successfully created video segment {segment.pk}")
                     return Response(
                         LabelVideoSegmentSerializer(segment).data,
                         status=status.HTTP_201_CREATED

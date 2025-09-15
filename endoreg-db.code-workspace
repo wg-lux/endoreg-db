@@ -12,5 +12,6 @@
 		  "."
 		],
 		"python.testing.unittestEnabled": false,
+		"ansible.python.interpreterPath": ".devenv/state/venv/bin/python",
 	}
 }

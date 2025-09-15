@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 import uuid
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, cast
 
 from django.db import models
 from django.core.files import File
@@ -60,7 +60,7 @@ from .video_file_ai import (
 from .pipe_1 import _pipe_1, _test_after_pipe_1
 from .pipe_2 import _pipe_2
 
-from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR, STORAGE_DIR
+from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR
 from ...state import VideoState
 from ...label import LabelVideoSegment, Label
 
@@ -513,6 +513,27 @@ class VideoFile(models.Model):
         state = "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
         return f"VideoFile ({state}): {file_name} (UUID: {self.uuid})"
 
+    # --- Convenience state/meta helpers used in tests and admin workflows ---
+    def mark_sensitive_meta_processed(self, *, save: bool = True) -> "VideoFile":
+        """
+        Mark this video's processing state as having its sensitive meta fully processed.
+        This proxies to the related VideoState and persists by default.
+        """
+        state = self.get_or_create_state()
+        state.mark_sensitive_meta_processed(save=save)
+        return self
+
+    def mark_sensitive_meta_verified(self) -> "VideoFile":
+        """
+        Mark the associated SensitiveMeta as verified by setting both DOB and names as verified.
+        Ensures the SensitiveMeta and its state exist.
+        """
+        sm = self.get_or_create_sensitive_meta()
+        # Use SensitiveMeta methods to update underlying SensitiveMetaState
+        sm.mark_dob_verified()
+        sm.mark_names_verified()
+        return self
+
     def save(self, *args, **kwargs):
         # Ensure state exists or is created before the main save operation
         # Now call the original save method
@@ -533,7 +554,7 @@ class VideoFile(models.Model):
         if self.state is None:
             self.state = VideoState.objects.create()
         return self.state
-    
+
     def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
         """
         Retrieve the associated SensitiveMeta instance for this video, creating and assigning one if it does not exist.
@@ -579,7 +600,7 @@ class VideoFile(models.Model):
         
         This class method retrieves every VideoFile instance in the database without filtering.
         """
-        return cls.objects.all()
+        return cast(models.QuerySet["VideoFile"], cls.objects.all())
         
     def count_unmodified_others(self) -> int:
         """

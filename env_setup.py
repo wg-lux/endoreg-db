@@ -156,6 +156,8 @@ try:
             "DJANGO_DATA_DIR": str(working_dir / nix_vars.get("DATA_DIR", "data")),
             "DJANGO_IMPORT_DATA_DIR": str(working_dir / nix_vars.get("IMPORT_DIR", "data/import")),
             "DJANGO_VIDEO_IMPORT_DATA_DIR": str(working_dir / nix_vars.get("IMPORT_DIR", "data/import") / "video"),
+            "VIDEO_ALLOW_FPS_FALLBACK": "True",
+            "VIDEO_DEFAULT_FPS": "50",
         }
         for key, value in vars_to_add.items():
             if value is not None and key not in found_keys:

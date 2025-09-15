@@ -6,6 +6,7 @@ from django.db.models import Prefetch
 from endoreg_db.schemas.examination_evaluation import ExaminationEvalReport, RequirementSetEval, RequirementEval
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.requirement.requirement_set import RequirementSet
+import endoreg_db.services.lookup_service
 
 def _get_requirement_sets_for_exam(exam: PatientExamination) -> List[RequirementSet]:
     """
@@ -15,12 +16,14 @@ def _get_requirement_sets_for_exam(exam: PatientExamination) -> List[Requirement
     - or via information_sources
     - or a direct M2M on Examination
     """
-    # Example: assume Examination has M2M to RequirementSet named `requirement_sets`
-    return list(
-        exam.requirement_sets.all()
-        .select_related("requirement_set_type")
-        .prefetch_related("requirements", "links_to_sets", "links_to_sets__requirements", "links_to_sets__requirement_set_type")
-    )
+    # The new loader prefetches via `examination.exam_reqset_links`.
+    # We extract the RequirementSet from each link.
+    sets = []
+    if hasattr(exam, "examination") and hasattr(exam.examination, "exam_reqset_links"):
+        for link in exam.examination.exam_reqset_links.all():
+            if hasattr(link, "requirement_set"):
+                sets.append(link.requirement_set)
+    return sets
 
 def _eval_requirement(requirement, input_object, mode="loose") -> Tuple[bool, str | None]:
     """
@@ -89,18 +92,44 @@ def _eval_set_tree(root: RequirementSet, input_object, visited: Set[int]) -> Req
         requirements=req_evals,
         linked_sets=child_evals,
     )
+    
 
-def evaluate_examination(exam_id: int) -> ExaminationEvalReport:
-    exam = (
-        PatientExamination.objects
-        .select_related(  # include what you need for findings
-            # e.g., "patient", "examination_type"
+
+def evaluate_examination(request: dict) -> ExaminationEvalReport:
+    """
+    Communicates with: components/RequirementGenerator
+    Evaluates a PatientExamination by its Lookup. The frontend sends this structure:
+    
+    
+        requirement_set_ids: plainRequirementSetIds,
+        lookup_token: lookupToken,
+        patient_examination_id: patientExaminationId
+    };
+    
+    And expects a response to be processed like this:
+
+            const response = await axiosInstance.post('/api/evaluate-requirements/', payload);
+            const results = response.data.results || [];
+            const summary = response.data.summary || {};
+
+            // Update evaluation results
+            plainRequirementSetIds.forEach((setId: number) => {
+                evaluationResults.value[setId] = results.filter((r: RequirementEvaluationResult) =>
+                    summary[setId]?.requirements.includes(r.requirement_name)
+                );
+            });
+    """
+    exam_id = request.get("patient_examination_id")
+    if not exam_id:
+        return ExaminationEvalReport(
+            examination_id=None,
+            summary={"is_satisfied": True, "failed_count": 0, "total_sets": 0},
+            sets=[],
+            errors=["No patient_examination_id provided in request."]
         )
-        .prefetch_related(
-            # e.g., "patient_findings", Prefetch("requirement_sets", queryset=RequirementSet.objects.all())
-        )
-        .get(pk=exam_id)
-    )
+    
+    # Use the dedicated loader function from the lookup service.
+    exam = endoreg_db.services.lookup_service.load_patient_exam_for_eval(pk=exam_id)
 
     # This object (exam) is the "input_object" for requirement.evaluate(...)
     sets = _get_requirement_sets_for_exam(exam)

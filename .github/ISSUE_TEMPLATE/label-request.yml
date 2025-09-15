@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Main label changelog**:  
+        **Main label changelog**:
         [Current and previous labels](https://github.com/wg-lux/endoreg-db/issues/102)
 
         Please fill out the fields below to request a new label.

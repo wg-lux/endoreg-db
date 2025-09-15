@@ -198,8 +198,9 @@ def _create_from_file(
     transcoded_file_path = None
 
     try:
-        # Early storage capacity check
-        storage_root = Path(video_dir).parent if video_dir.name == 'videos' else video_dir
+        # Ensure we operate under the canonical video path root
+        video_dir = data_paths.get("video", video_dir)
+        storage_root = Path(video_dir).parent
         storage_root.mkdir(parents=True, exist_ok=True)
         
         # Check storage capacity before starting any work
@@ -237,7 +238,8 @@ def _create_from_file(
             logger.warning("Video with hash %s already exists (UUID: %s)", video_hash, existing_video.uuid)
             
             # Check if the existing video has a valid file
-            if existing_video.has_raw and existing_video.get_raw_file_path() and existing_video.get_raw_file_path().exists():
+            existing_raw_path = existing_video.get_raw_file_path()
+            if existing_video.has_raw and existing_raw_path and existing_raw_path.exists():
                 logger.warning("Video with hash %s already exists and file is present. Returning existing instance.", video_hash)
                 # Clean up transcoded file if it was created temporarily
                 if transcoded_file_path != file_path and transcoded_file_path.exists():
@@ -255,18 +257,14 @@ def _create_from_file(
         # 5. Move or Copy the file to final storage using improved method
         try:
             if delete_source and transcoded_file_path == file_path:
-                # Move the original source file if delete_source is True AND no transcoding happened
                 logger.debug("Moving original file %s to %s", file_path, final_storage_path)
                 atomic_move_with_fallback(file_path, final_storage_path)
             elif delete_source and transcoded_file_path != file_path:
-                # Move the transcoded file and optionally delete original
                 logger.debug("Moving transcoded file %s to %s", transcoded_file_path, final_storage_path)
                 atomic_move_with_fallback(transcoded_file_path, final_storage_path)
             else:
-                # Copy scenario (delete_source is False) - PRESERVE THE SOURCE FILE
                 logger.debug("Copying file %s to %s", transcoded_file_path, final_storage_path)
                 atomic_copy_with_fallback(transcoded_file_path, final_storage_path)
-                # Keep the source file, clean up transcoded temp file if different
                 if transcoded_file_path != file_path and transcoded_file_path.exists():
                     logger.debug("Cleaning up temporary transcoded file %s", transcoded_file_path)
                     transcoded_file_path.unlink(missing_ok=True)
@@ -301,9 +299,11 @@ def _create_from_file(
 
         # 8. Create the VideoFile instance
         logger.info("Creating new VideoFile instance with UUID: %s", uuid_val)
+        # Store FileField path relative to storage root including the videos prefix
+        relative_name = (final_storage_path.relative_to(data_paths['storage'])).as_posix()
         video = cls_model(
             uuid=uuid_val,
-            raw_file=final_storage_path.relative_to(data_paths['storage']).as_posix(),
+            raw_file=relative_name,
             processed_file=None,
             center=center,
             processor=processor,

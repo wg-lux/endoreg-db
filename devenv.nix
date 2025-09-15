@@ -67,7 +67,8 @@ in
   packages = runtimePackages ++ buildInputs;
 
   env = {
-    LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
+    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     # Force uv to use the Nix-provided Python - override any conflicts
     UV_PYTHON = lib.mkForce "${python}/bin/python";
     UV_PYTHON_DOWNLOADS = "never";
@@ -99,9 +100,10 @@ in
     '';
     
     env-setup.exec = ''
+    # Ensure runtimePackages are included in the library path here too
     export LD_LIBRARY_PATH="${
       with pkgs;
-      lib.makeLibraryPath buildInputs
+      lib.makeLibraryPath (buildInputs ++ runtimePackages)
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
     '';
 
@@ -145,13 +147,13 @@ in
     LX_ANONYMIZER_REPO="https://github.com/wg-lux/lx-anonymizer"
     LX_ANONYMIZER_BRANCH="prototype"
 
-    if [ -d "$LX_ANONYMIZER_DIR" ]; then
-      echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
-      (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git reset --hard "origin/$LX_ANONYMIZER_BRANCH")
-    else
-      echo "lx-anonymizer directory does not exist. Cloning repository..."
-      git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
-    fi
+    # if [ -d "$LX_ANONYMIZER_DIR" ]; then
+    #   echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
+    #   (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git reset --hard "origin/$LX_ANONYMIZER_BRANCH")
+    # else
+    #   echo "lx-anonymizer directory does not exist. Cloning repository..."
+    #   git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
+    # fi
 
     export SYNC_CMD="uv sync"
 

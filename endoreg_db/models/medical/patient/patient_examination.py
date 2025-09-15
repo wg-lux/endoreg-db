@@ -25,9 +25,13 @@ class PatientExamination(models.Model):
         blank=True,
         related_name="patient_examination",
     )
+    
+    objects = models.Manager()
+    
     date_start = models.DateField(null=True, blank=True)
     date_end = models.DateField(null=True, blank=True)
     hash = models.CharField(max_length=255, unique=True)
+    
 
     if TYPE_CHECKING:
         patient: "models.ForeignKey[Patient]"
@@ -143,6 +147,13 @@ class PatientExamination(models.Model):
             _.indication_choice for _ in self.get_indications() if _.indication_choice is not None
         ]
         return choices
+
+    def get_or_create_patient_examination_by_id(self, pk: int) -> Optional["PatientExamination"]:
+        """Hilfsmethode zum Abrufen oder Erstellen einer PatientExamination nach ID"""
+        if not self.objects.filter(pk=pk).exists():
+            return None
+        else:
+            return self.objects.filter(pk=pk)
 
     @property
     def links(self) -> "RequirementLinks":
