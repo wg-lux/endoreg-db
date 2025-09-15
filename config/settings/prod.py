@@ -1,16 +1,21 @@
 from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, ENV, env_bool
+from .base import BASE_DIR
+from endoreg_db.config.env import env_bool, env_str
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
-SECRET_KEY = ENV("DJANGO_SECRET_KEY", "replace-this-with-a-secure-key")
-ALLOWED_HOSTS = ENV("DJANGO_ALLOWED_HOSTS", "*").split(",")
+SECRET_KEY = env_str("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("DJANGO_SECRET_KEY environment variable must be set in production")
+ALLOWED_HOSTS = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
+if not ALLOWED_HOSTS:
+    raise ValueError("DJANGO_ALLOWED_HOSTS must be set in production (comma-separated list of allowed hosts)")
 
-DB_ENGINE = ENV("DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = ENV("DB_NAME", str(BASE_DIR / "prod_sim_db.sqlite3"))
-DB_USER = ENV("DB_USER", "")
-DB_PASSWORD = ENV("DB_PASSWORD", "")
-DB_HOST = ENV("DB_HOST", "")
-DB_PORT = ENV("DB_PORT", "")
+DB_ENGINE = env_str("DB_ENGINE", "django.db.backends.sqlite3")
+DB_NAME = env_str("DB_NAME", str(BASE_DIR / "prod_sim_db.sqlite3"))
+DB_USER = env_str("DB_USER", "")
+DB_PASSWORD = env_str("DB_PASSWORD", "")
+DB_HOST = env_str("DB_HOST", "")
+DB_PORT = env_str("DB_PORT", "")
 
 DATABASES = {
     "default": {
