@@ -1,16 +1,16 @@
-from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, ENV, env_bool
+from .base import BASE_DIR  # noqa: F401
+from endoreg_db.config.env import env_bool, env_str
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
-SECRET_KEY = ENV("DJANGO_SECRET_KEY", "dev-insecure-key")
-ALLOWED_HOSTS = ENV("DJANGO_ALLOWED_HOSTS", "*").split(",")
+SECRET_KEY = env_str("DJANGO_SECRET_KEY", "dev-insecure-key")
+ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
-DB_ENGINE = ENV("DEV_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = ENV("DEV_DB_NAME", str(BASE_DIR / "dev_db.sqlite3"))
-DB_USER = ENV("DEV_DB_USER", "")
-DB_PASSWORD = ENV("DEV_DB_PASSWORD", "")
-DB_HOST = ENV("DEV_DB_HOST", "")
-DB_PORT = ENV("DEV_DB_PORT", "")
+DB_ENGINE = env_str("DEV_DB_ENGINE", "django.db.backends.sqlite3")
+DB_NAME = env_str("DEV_DB_NAME", str(BASE_DIR / "dev_db.sqlite3"))
+DB_USER = env_str("DEV_DB_USER", "")
+DB_PASSWORD = env_str("DEV_DB_PASSWORD", "")
+DB_HOST = env_str("DEV_DB_HOST", "")
+DB_PORT = env_str("DEV_DB_PORT", "")
 
 DATABASES = {
     "default": {

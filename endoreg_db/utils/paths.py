@@ -13,26 +13,23 @@ from pathlib import Path
 from typing import Dict
 import dotenv
 
-dotenv.load_dotenv()
+# Only load .env in non-pytest contexts to avoid leaking dev settings into tests
+if not os.environ.get("PYTEST_CURRENT_TEST"):
+    dotenv.load_dotenv()
+else:
+    logger.debug("Skipping .env load under pytest")
 
 # Define BASE_DIR as the project root (endoreg_db/utils -> endoreg_db -> repo root)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Resolve STORAGE_DIR from env or Django settings, normalize to absolute
+# Resolve STORAGE_DIR from env or default under BASE_DIR
 def _resolve_storage_dir() -> Path:
     env_val = os.getenv("STORAGE_DIR")
     if env_val:
         p = Path(env_val)
         return p if p.is_absolute() else (BASE_DIR / p).resolve()
-    # Fallback to Django settings.MEDIA_ROOT if available
-    try:
-        from django.conf import settings
-        if getattr(settings, "MEDIA_ROOT", None):
-            p = Path(settings.MEDIA_ROOT)
-            return p if p.is_absolute() else (BASE_DIR / p).resolve()
-    except Exception:
-        pass
-    # Final fallback under project
+    # Do not import django.conf.settings here to avoid early settings configuration.
+    # Fall back to a local storage directory under the repo.
     return (BASE_DIR / "storage").resolve()
 
 STORAGE_DIR = _resolve_storage_dir()

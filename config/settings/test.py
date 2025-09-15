@@ -1,22 +1,23 @@
 from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, ENV, env_bool
+from .base import BASE_DIR
+from endoreg_db.config.env import env_bool, env_str
 from pathlib import Path
 
 # Persistent test DB
 DEFAULT_TEST_DB_PATH = BASE_DIR / "data" / "tests" / "db" / "test_db.sqlite3"
-TEST_DB_FILE = Path(ENV("TEST_DB_FILE", DEFAULT_TEST_DB_PATH))
+TEST_DB_FILE = Path(env_str("TEST_DB_FILE", str(DEFAULT_TEST_DB_PATH)))
 TEST_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
-SECRET_KEY = ENV("DJANGO_SECRET_KEY", "test-insecure-key")
-ALLOWED_HOSTS = ENV("DJANGO_ALLOWED_HOSTS", "*").split(",")
+SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
+ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
-DB_ENGINE = ENV("TEST_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = ENV("TEST_DB_NAME", str(TEST_DB_FILE))
-DB_USER = ENV("TEST_DB_USER", "")
-DB_PASSWORD = ENV("TEST_DB_PASSWORD", "")
-DB_HOST = ENV("TEST_DB_HOST", "")
-DB_PORT = ENV("TEST_DB_PORT", "")
+DB_ENGINE = env_str("TEST_DB_ENGINE", "django.db.backends.sqlite3")
+DB_NAME = env_str("TEST_DB_NAME", str(TEST_DB_FILE))
+DB_USER = env_str("TEST_DB_USER", "")
+DB_PASSWORD = env_str("TEST_DB_PASSWORD", "")
+DB_HOST = env_str("TEST_DB_HOST", "")
+DB_PORT = env_str("TEST_DB_PORT", "")
 
 DATABASES = {
     "default": {
@@ -36,7 +37,7 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "endoreg-test-cache",
-        "TIMEOUT": int(ENV("TEST_CACHE_TIMEOUT", str(60 * 30))),  # 30 minutes default
+        "TIMEOUT": int(env_str("TEST_CACHE_TIMEOUT", str(60 * 30))),
     }
 }
 
@@ -44,7 +45,7 @@ CACHES = {
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Toggle migrations via env
-if ENV("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
+if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
     class DisableMigrations:  # type: ignore
         def __contains__(self, item):
             return True

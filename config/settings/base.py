@@ -1,23 +1,15 @@
 from pathlib import Path
 import os
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-
-# Helpers
-ENV = os.environ.get
-
-def env_bool(key: str, default: bool = False) -> bool:
-    val = ENV(key)
-    if val is None:
-        return default
-    return str(val).lower() in {"1", "true", "yes", "on"}
+# Use centralized environment helpers
+from endoreg_db.config.env import env_bool, env_path
 
 # Small helper to coerce relative paths to absolute under BASE_DIR
 def _abs_under_base(path_str: str, default_relative: str) -> Path:
-    p = Path(ENV(path_str, str(BASE_DIR / default_relative)))
-    if not p.is_absolute():
-        p = (BASE_DIR / p).resolve()
+    p = env_path(path_str, default_relative)
     return p
+
+BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 
 # Test assets directory (used in tests and utilities)
 ASSET_DIR = _abs_under_base("ASSET_DIR", "tests/assets")
@@ -64,23 +56,21 @@ MIDDLEWARE = [
 # Use a distinct module name to avoid ambiguity with the urls/ package
 ROOT_URLCONF = 'endoreg_db.api_urls'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-TIME_ZONE = ENV("TIME_ZONE", "Europe/Berlin")
+TIME_ZONE = os.environ.get("TIME_ZONE", "Europe/Berlin")
 
-STATIC_URL = ENV("STATIC_URL", "/static/")
-STATIC_ROOT = Path(ENV("STATIC_ROOT", str(BASE_DIR / 'staticfiles')))
+STATIC_URL = os.environ.get("STATIC_URL", "/static/")
+STATIC_ROOT = env_path("STATIC_ROOT", 'staticfiles')
 
 # Media/storage root can be overridden from env (important when embedded)
-MEDIA_URL = ENV("MEDIA_URL", "/media/")
-# If STORAGE_DIR is relative, place it under BASE_DIR
-_media_root_env = ENV("STORAGE_DIR", str(BASE_DIR / 'storage'))
-MEDIA_ROOT = Path(_media_root_env) if Path(_media_root_env).is_absolute() else (BASE_DIR / _media_root_env).resolve()
+MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
+MEDIA_ROOT = env_path("STORAGE_DIR", 'storage')
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": ENV("CACHE_LOCATION", "endoreg-default-cache"),
-        "TIMEOUT": int(ENV("CACHE_TIMEOUT", str(60 * 30))),  # 30 minutes default
+        "LOCATION": os.environ.get("CACHE_LOCATION", "endoreg-default-cache"),
+        "TIMEOUT": int(os.environ.get("CACHE_TIMEOUT", str(60 * 30))),  # 30 minutes default
     }
 }
 
@@ -90,8 +80,8 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "user": ENV("DRF_THROTTLE_USER", "100/hour"),
-        "anon": ENV("DRF_THROTTLE_ANON", "20/hour"),
+        "user": os.environ.get("DRF_THROTTLE_USER", "100/hour"),
+        "anon": os.environ.get("DRF_THROTTLE_ANON", "20/hour"),
     },
 }
 
