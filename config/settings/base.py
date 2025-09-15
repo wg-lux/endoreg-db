@@ -53,8 +53,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Use a distinct module name to avoid ambiguity with the urls/ package
-ROOT_URLCONF = 'endoreg_db.api_urls'
+# Use a distinct module name to avoid ambiguity and mount API under /api/
+ROOT_URLCONF = 'endoreg_db.root_urls'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 TIME_ZONE = os.environ.get("TIME_ZONE", "Europe/Berlin")
 

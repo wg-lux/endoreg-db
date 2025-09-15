@@ -19,18 +19,22 @@ DB_PASSWORD = env_str("TEST_DB_PASSWORD", "")
 DB_HOST = env_str("TEST_DB_HOST", "")
 DB_PORT = env_str("TEST_DB_PORT", "")
 
-DATABASES = {
-    "default": {
-        "ENGINE": DB_ENGINE,
-        "NAME": DB_NAME if DB_ENGINE.endswith("sqlite3") else DB_NAME,
-        **({
-            "USER": DB_USER,
-            "PASSWORD": DB_PASSWORD,
-            "HOST": DB_HOST,
-            "PORT": DB_PORT,
-        } if not DB_ENGINE.endswith("sqlite3") else {}),
-    }
+# Build DB config without redundant conditionals and avoid passing empty creds
+_db_config = {
+    "ENGINE": DB_ENGINE,
+    "NAME": DB_NAME,
 }
+if not DB_ENGINE.endswith("sqlite3"):
+    if DB_USER:
+        _db_config["USER"] = DB_USER
+    if DB_PASSWORD:
+        _db_config["PASSWORD"] = DB_PASSWORD
+    if DB_HOST:
+        _db_config["HOST"] = DB_HOST
+    if DB_PORT:
+        _db_config["PORT"] = DB_PORT
+
+DATABASES = {"default": _db_config}
 
 # Configure cache with explicit TIMEOUT for tests
 CACHES = {
