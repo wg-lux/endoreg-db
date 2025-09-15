@@ -31,6 +31,15 @@ DATABASES = {
     }
 }
 
+# Configure cache with explicit TIMEOUT for tests
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "endoreg-test-cache",
+        "TIMEOUT": int(ENV("TEST_CACHE_TIMEOUT", str(60 * 30))),  # 30 minutes default
+    }
+}
+
 # Faster password hashing
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

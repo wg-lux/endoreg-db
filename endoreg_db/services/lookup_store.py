@@ -3,8 +3,13 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, Iterable, Optional
 from django.core.cache import cache
+from django.conf import settings
 
-DEFAULT_TTL_SECONDS = 60 * 30  # 30 minutes
+# Align TTL with Django cache TIMEOUT for consistency in tests and runtime
+try:
+    DEFAULT_TTL_SECONDS = int(settings.CACHES.get('default', {}).get('TIMEOUT', 60 * 30))
+except Exception:
+    DEFAULT_TTL_SECONDS = 60 * 30  # 30 minutes fallback
 
 class LookupStore:
     """
@@ -77,7 +82,7 @@ class LookupStore:
                     logger.info(f"Recovered patient_examination_id {recovered_id} for token {token}")
                     
             # Do not automatically recompute here to avoid loops
-            # Recompute will be triggered by PATCH or explicit POST /recompute/
+            # Recompute is only triggered by PATCH or explicit POST /recompute/
             # For now, just return the data as is
             
         return data

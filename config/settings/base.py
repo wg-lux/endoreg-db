@@ -58,6 +58,15 @@ MEDIA_URL = ENV("MEDIA_URL", "/media/")
 _media_root_env = ENV("STORAGE_DIR", str(BASE_DIR / 'storage'))
 MEDIA_ROOT = Path(_media_root_env) if Path(_media_root_env).is_absolute() else (BASE_DIR / _media_root_env).resolve()
 
+# Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": ENV("CACHE_LOCATION", "endoreg-default-cache"),
+        "TIMEOUT": int(ENV("CACHE_TIMEOUT", str(60 * 30))),  # 30 minutes default
+    }
+}
+
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.UserRateThrottle",
