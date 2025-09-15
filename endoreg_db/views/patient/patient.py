@@ -162,4 +162,49 @@ class PatientViewSet(viewsets.ModelViewSet):
         """Gibt die Anzahl der Patienten zurück"""
         count = Patient.objects.count()
         return Response({"count": count})
+    
+    @action(detail=True, methods=['post'], url_path='pseudonym')
+    def generate_pseudonym(self, request, pk=None):
+        """
+        Generate a pseudonym hash for an existing patient.
+        
+        This endpoint generates a deterministic hash based on the patient's
+        personal data (name, dob, center) using server-side logic without
+        exposing any secrets to the frontend.
+        """
+        from endoreg_db.services.pseudonym_service import generate_patient_pseudonym, validate_patient_for_pseudonym
+        
+        patient = self.get_object()
+        
+        try:
+            # Validate that patient has required fields
+            missing_fields = validate_patient_for_pseudonym(patient)
+            if missing_fields:
+                return Response({
+                    'error': 'Missing required fields for pseudonym generation',
+                    'missing_fields': missing_fields,
+                    'detail': f'Please provide: {", ".join(missing_fields)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Generate the pseudonym
+            patient_hash, persisted = generate_patient_pseudonym(patient)
+            
+            return Response({
+                'patient_id': patient.id,
+                'patient_hash': patient_hash,
+                'source': 'server',
+                'persisted': persisted,
+                'message': 'Pseudonym generated successfully'
+            }, status=status.HTTP_200_OK)
+            
+        except ValueError as e:
+            return Response({
+                'error': 'Pseudonym generation failed',
+                'detail': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': 'Internal server error during pseudonym generation',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
