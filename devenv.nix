@@ -147,13 +147,13 @@ in
     LX_ANONYMIZER_REPO="https://github.com/wg-lux/lx-anonymizer"
     LX_ANONYMIZER_BRANCH="prototype"
 
-    if [ -d "$LX_ANONYMIZER_DIR" ]; then
-      echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
-      (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git reset --hard "origin/$LX_ANONYMIZER_BRANCH")
-    else
-      echo "lx-anonymizer directory does not exist. Cloning repository..."
-      git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
-    fi
+    # if [ -d "$LX_ANONYMIZER_DIR" ]; then
+    #   echo "lx-anonymizer directory exists. Pulling latest changes from $LX_ANONYMIZER_BRANCH..."
+    #   (cd "$LX_ANONYMIZER_DIR" && git fetch origin && git checkout "$LX_ANONYMIZER_BRANCH" && git reset --hard "origin/$LX_ANONYMIZER_BRANCH")
+    # else
+    #   echo "lx-anonymizer directory does not exist. Cloning repository..."
+    #   git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
+    # fi
 
     export SYNC_CMD="uv sync"
 

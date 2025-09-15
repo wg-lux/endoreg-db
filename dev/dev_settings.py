@@ -1,4 +1,5 @@
-from base_settings import *
+from config.settings.dev import *  # noqa
+
 from pathlib import Path
 from icecream import ic
 import os

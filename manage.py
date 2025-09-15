@@ -8,7 +8,7 @@ import signal
 import atexit
 from pathlib import Path
 
-DJANGO_SETTINGS_MODULE = "dev.dev_settings"
+DJANGO_SETTINGS_MODULE = os.environ.get("DJANGO_SETTINGS_MODULE", "config.settings.dev")
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", DJANGO_SETTINGS_MODULE)
 
 # Global variable to track the token validator process

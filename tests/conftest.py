@@ -42,7 +42,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Configure pytest-django to use our test settings
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings_test")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.test")
 
 # Performance optimization settings
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -376,7 +376,7 @@ def setup_test_environment():
     
     # Set environment variables for tests
     os.environ.setdefault("STORAGE_DIR", str(TEST_STORAGE_DIR))
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings_test")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.test")
     
     # Apply global video operation safety mocks
     _apply_global_video_mocks()

@@ -1,20 +1,10 @@
 import os
 from django.core.wsgi import get_wsgi_application
 from whitenoise import WhiteNoise
-from pathlib import Path
+from django.conf import settings
 
-from base_settings import MEDIA_ROOT
-
-media_root_name = MEDIA_ROOT.name
-
-
-
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'prod_settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.prod')
 
 application = get_wsgi_application()
 application = WhiteNoise(application, root=os.path.join(os.path.dirname(__file__), 'staticfiles'))
-#application.add_files(os.path.join(os.path.dirname(__file__), media_root_name)) # , prefix='data/')
-application.add_files(os.path.join(os.path.dirname(__file__), media_root_name), prefix='/media/')
-
-media_root_path = str(MEDIA_ROOT)
-application.add_files(media_root_path)
+application.add_files(str(settings.MEDIA_ROOT), prefix='/media/')
