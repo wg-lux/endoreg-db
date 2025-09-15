@@ -63,4 +63,5 @@ CI tips
 ## Troubleshooting
 - If numpy/opencv import errors appear in VS Code discovery, ensure the editor inherits direnv env (Direnv extension) or use a pytest wrapper.
 - If tests fail with missing tables, recreate test DB with: pytest --reuse-db --create-db.
+    - above currently doesnt work, fix with 'DJANGO_SETTINGS_MODULE=config.settings.test python manage.py migrate'
 

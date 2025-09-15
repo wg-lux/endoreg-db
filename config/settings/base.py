@@ -23,8 +23,25 @@ def _abs_under_base(path_str: str, default_relative: str) -> Path:
 ASSET_DIR = _abs_under_base("ASSET_DIR", "tests/assets")
 RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
 
+# Internationalization
+LANGUAGE_CODE = 'de'
+USE_I18N = True
+USE_L10N = True
+USE_TZ = True
+
+# Only support German and English
+LANGUAGES = [
+    ('de', 'German'),
+    ('en', 'English'),
+]
+
+# Configure modeltranslation to only use our supported languages
+MODELTRANSLATION_LANGUAGES = ('de', 'en')
+MODELTRANSLATION_DEFAULT_LANGUAGE = 'de'
+
 # Core apps
 INSTALLED_APPS = [
+    "modeltranslation",  # Must be before endoreg_db to register translations
     "endoreg_db.apps.EndoregDbConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
