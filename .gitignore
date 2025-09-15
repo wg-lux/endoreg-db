@@ -9,6 +9,7 @@ erc_data/
 /data/
 test_reports/*
 staticfiles/
+.ansible/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

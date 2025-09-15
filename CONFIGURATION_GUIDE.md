@@ -11,6 +11,12 @@ This repository is a reusable Django app. It ships a small, robust settings pack
 
 Legacy settings (prod_settings.py, dev/dev_settings.py, tests/test_settings.py) are thin wrappers and can be removed after consumers update.
 
+## Centralized environment handling
+
+- Use helpers in `endoreg_db/config/env.py` (env_str, env_bool, env_int, env_path).
+- .env is not loaded during pytest to prevent test runs from picking up dev settings.
+- Under pytest, `DJANGO_SETTINGS_MODULE` is forced to `config.settings.test`.
+
 ## Key environment variables
 
 General
@@ -31,10 +37,12 @@ Testing (config.settings.test)
 - TEST_DISABLE_MIGRATIONS: true|false (default false)
 
 Production (config.settings.prod)
-- DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
-- DJANGO_DEBUG: true|false
+- DJANGO_SECRET_KEY: required (must be a strong random value; never commit real secrets)
+- DJANGO_DEBUG: true|false (use false in production)
 - DJANGO_ALLOWED_HOSTS: comma-separated
+- DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 - SECURE_SSL_REDIRECT, SESSION_COOKIE_SECURE, CSRF_COOKIE_SECURE
+- SECURE_HSTS_SECONDS, SECURE_HSTS_INCLUDE_SUBDOMAINS, SECURE_HSTS_PRELOAD
 
 ## Typical usage patterns
 
@@ -54,7 +62,7 @@ CI tips
 - Override TEST_DB_NAME to a workspace cache path if needed.
 
 ## Direnv/Devenv
-- This repo previously imported external devenv modules that could reset files. Ensure devenv.nix does not import external modules that mutate this repo. Keep any git operations confined to external subdirs.
+- Ensure devenv.nix and direnv don’t mutate repo files. Editor should inherit direnv env if used.
 
 ## Removing legacy settings
 - Replace imports of prod_settings, dev/dev_settings.py, tests/test_settings.py with config.settings.prod/dev/test.
@@ -63,5 +71,12 @@ CI tips
 ## Troubleshooting
 - If numpy/opencv import errors appear in VS Code discovery, ensure the editor inherits direnv env (Direnv extension) or use a pytest wrapper.
 - If tests fail with missing tables, recreate test DB with: pytest --reuse-db --create-db.
-- tests will fail since load_base_db_data did not run yet, fix with 'DJANGO_SETTINGS_MODULE=config.settings.test python manage.py migrate'
+- Run migrations and seed base data for tests when needed:
+  - DJANGO_SETTINGS_MODULE=config.settings.test python manage.py migrate
+  - DJANGO_SETTINGS_MODULE=config.settings.test python manage.py load_base_db_data
 
+## Production checklist
+- Set DJANGO_SECRET_KEY to a strong random value (never commit). 
+- Set DJANGO_ALLOWED_HOSTS to your domains.
+- Enforce HTTPS: SECURE_SSL_REDIRECT=true, cookie secure flags true.
+- Consider HSTS: set SECURE_HSTS_SECONDS (e.g., 31536000) only when ready; include subdomains/preload as appropriate.

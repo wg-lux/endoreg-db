@@ -18,7 +18,6 @@ RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
 # Internationalization
 LANGUAGE_CODE = 'de'
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 
 # Only support German and English
