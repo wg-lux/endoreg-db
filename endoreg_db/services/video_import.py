@@ -282,7 +282,16 @@ class VideoImportService():
             Path: The path to the created sensitive file.
         """
         video_file = video_instance or self.current_video
-        source_path = Path(file_path) if file_path else self.processing_context.get('file_path')
+        # Always use the currently stored raw file path from the model to avoid deleting external source assets
+        source_path = None
+        try:
+            if video_file and video_file.raw_file and hasattr(video_file.raw_file, 'path'):
+                source_path = Path(video_file.raw_file.path)
+        except Exception:
+            source_path = None
+        # Fallback only if explicitly provided (do NOT default to processing_context input file)
+        if source_path is None and file_path is not None:
+            source_path = Path(file_path)
         
         if not video_file:
             raise ValueError("No video instance available for creating sensitive file")
@@ -298,16 +307,28 @@ class VideoImportService():
             self.logger.info(f"Creating sensitive file directory: {target_dir}")
             os.makedirs(target_dir, exist_ok=True)
         
-        # Copy the original file to the sensitive directory
+        # Move the stored raw file into the sensitive directory within storage
         target_file_path = target_dir / source_path.name
-        shutil.copy(source_path, target_file_path)
+        try:
+            # Prefer a move within the storage to avoid extra disk usage. This does not touch external input files.
+            shutil.move(str(source_path), str(target_file_path))
+            self.logger.info(f"Moved raw file to sensitive directory: {target_file_path}")
+        except Exception as e:
+            # Fallback to copy if move fails (e.g., cross-device or permissions), then remove only the original stored raw file
+            self.logger.warning(f"Failed to move raw file to sensitive dir, copying instead: {e}")
+            shutil.copy(str(source_path), str(target_file_path))
+            try:
+                # Remove only the stored raw file copy; never touch external input paths here
+                os.remove(source_path)
+            except FileNotFoundError:
+                pass
+        
+        # Update the model to point to the sensitive file location
         video_file.raw_file = str(target_file_path)
         video_file.save(update_fields=['raw_file'])
         
-        try:
-            os.remove(source_path)  # Remove the original file after copying
-        except FileNotFoundError:
-            pass
+        # Important: Do NOT remove the original input asset passed to the service here.
+        # Source file cleanup for external inputs is handled by create_from_file via delete_source flag.
         
         self.logger.info(f"Created sensitive file for {video_file.uuid} at {target_file_path}")
         return target_file_path
