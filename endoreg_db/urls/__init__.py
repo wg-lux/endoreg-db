@@ -1,13 +1,9 @@
-
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 
 from endoreg_db.views import (
-    PatientViewSet,
-    GenderViewSet,
-    CenterViewSet,
     VideoViewSet,
     ExaminationViewSet,
     VideoExaminationViewSet,
@@ -49,18 +45,16 @@ api_urls += patient_url_patterns
 router = DefaultRouter()
 router.register(r'videos', VideoViewSet, basename='videos')  
 router.register(r'examinations', ExaminationViewSet)
-router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')  # NEW: Video examination CRUD
-# Add new router registrations
+router.register(r'video-examinations', VideoExaminationViewSet, basename='video-examinations')
 router.register(r'findings', FindingViewSet)
 router.register(r'classifications', FindingClassificationViewSet)
 router.register(r'patient-findings', PatientFindingViewSet)
 router.register(r'patient-examinations', PatientExaminationViewSet)
 
-
-
+# Export raw API urlpatterns (no prefix). The project-level endoreg_db/urls.py mounts these under /api/.
 urlpatterns = [
     path('', include(router.urls)),  
-    path('', include(api_urls))
+    path('', include(api_urls)),
 ]
 
 if settings.DEBUG:

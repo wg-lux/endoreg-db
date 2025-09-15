@@ -48,15 +48,6 @@ def dynamic_permission_classes(force_auth=None):
             - True: Always require authentication regardless of DEBUG
             - False: Always allow access regardless of DEBUG  
             - None: Use environment-based logic (default)
-    
-    Usage:
-        @dynamic_permission_classes()
-        def my_view(request):
-            pass
-            
-        @dynamic_permission_classes(force_auth=True) 
-        def sensitive_view(request):
-            pass
     """
     def decorator(view_func):
         @wraps(view_func)
@@ -134,12 +125,13 @@ def is_debug_mode():
     logger.info(f"is_debug_mode: env={env_debug}, settings={settings_debug}, result={result}")
     return result
 
-# Convenience constants for common use cases
-DEBUG_ENV = os.environ.get("DJANGO_DEBUG")
-logger.info(f"DEBUG env: {DEBUG_ENV}")
-logger.info(f"settings.DEBUG: {getattr(settings, 'DEBUG', None)}")
-DEBUG_PERMISSIONS = [AllowAny] if is_debug_mode() else [IsAuthenticated]
-# DEBUG_PERMISSIONS = [AllowAny]
+# Compute default permission classes each call to avoid stale values during tests
+
+def get_debug_permissions():
+    return [AllowAny] if getattr(settings, 'DEBUG', False) or os.environ.get("DJANGO_DEBUG", "False").lower() == "true" else [IsAuthenticated]
+
+# Export a name for convenience, but prefer calling get_debug_permissions() in views
+DEBUG_PERMISSIONS = get_debug_permissions()
 ALWAYS_AUTH_PERMISSIONS = [IsAuthenticated]
 ALWAYS_PUBLIC_PERMISSIONS = [AllowAny]
 

@@ -13,17 +13,17 @@ logger = logging.getLogger("video_file")
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     """
     Resolves and returns the absolute path to the raw video file if available.
-    
-    Returns:
-        The absolute Path to the raw file if the video has a raw file and a filename; otherwise, None.
+    The FileField stores a path relative to the storage root. We need to join
+    that relative path onto the actual video directory under STORAGE_DIR.
     """
     try:
         if video.has_raw and video.raw_file.name:
-            # Use VIDEO_DIR from utils instead of Django's MEDIA_ROOT
-            # since files are stored in the custom storage directory
-            raw_file_relative_path = Path(video.raw_file.name)
-            full_path = VIDEO_DIR / raw_file_relative_path.name
-            return full_path
+            # raw_file.name is a relative storage path like 'videos/<filename>'
+            raw_rel = Path(video.raw_file.name)
+            # If it already contains the video directory name, keep the tail
+            rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
+            full_path = data_paths["video"] / rel_name
+            return full_path.resolve()
         else:
             return None
     except Exception as e:

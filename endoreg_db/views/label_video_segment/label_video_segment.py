@@ -6,12 +6,12 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
+from endoreg_db.utils.permissions import get_debug_permissions
 import logging
 logger = logging.getLogger(__name__)
 
 @api_view(['POST', 'GET'])
-@permission_classes(DEBUG_PERMISSIONS)
+@permission_classes(get_debug_permissions())
 def video_segments_view(request):
     """
     Handles creation and retrieval of labeled video segments.

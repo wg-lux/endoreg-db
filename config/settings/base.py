@@ -12,8 +12,15 @@ def env_bool(key: str, default: bool = False) -> bool:
         return default
     return str(val).lower() in {"1", "true", "yes", "on"}
 
+# Small helper to coerce relative paths to absolute under BASE_DIR
+def _abs_under_base(path_str: str, default_relative: str) -> Path:
+    p = Path(ENV(path_str, str(BASE_DIR / default_relative)))
+    if not p.is_absolute():
+        p = (BASE_DIR / p).resolve()
+    return p
+
 # Test assets directory (used in tests and utilities)
-ASSET_DIR = Path(ENV("ASSET_DIR", str(BASE_DIR / "tests" / "assets")))
+ASSET_DIR = _abs_under_base("ASSET_DIR", "tests/assets")
 RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
 
 # Core apps
@@ -37,7 +44,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'endoreg_db.urls'
+# Use a distinct module name to avoid ambiguity with the urls/ package
+ROOT_URLCONF = 'endoreg_db.api_urls'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 TIME_ZONE = ENV("TIME_ZONE", "Europe/Berlin")
 
@@ -46,7 +54,9 @@ STATIC_ROOT = Path(ENV("STATIC_ROOT", str(BASE_DIR / 'staticfiles')))
 
 # Media/storage root can be overridden from env (important when embedded)
 MEDIA_URL = ENV("MEDIA_URL", "/media/")
-MEDIA_ROOT = Path(ENV("STORAGE_DIR", str(BASE_DIR / 'storage')))
+# If STORAGE_DIR is relative, place it under BASE_DIR
+_media_root_env = ENV("STORAGE_DIR", str(BASE_DIR / 'storage'))
+MEDIA_ROOT = Path(_media_root_env) if Path(_media_root_env).is_absolute() else (BASE_DIR / _media_root_env).resolve()
 
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": [
