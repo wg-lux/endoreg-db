@@ -26,6 +26,8 @@ LANGUAGES = [
     ('en', 'English'),
 ]
 
+#ROOT_URLCONF = 'endoreg_db.urls.root_urls'
+
 # Configure modeltranslation to only use our supported languages
 MODELTRANSLATION_LANGUAGES = ('de', 'en')
 MODELTRANSLATION_DEFAULT_LANGUAGE = 'de'
