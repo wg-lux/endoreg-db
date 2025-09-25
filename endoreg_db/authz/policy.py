@@ -38,11 +38,9 @@ REQUIRED_ROLES.update({
 
     # (examples for other existing ViewSets)
     # "center-list":   "data:read",
-    # "center-detail": "data:read",
-    # "gender-list":   "data:read",
-    # "gender-detail": "data:read",
-    # "patient-findings-list":   "data:read",
-    # "patient-findings-detail": "data:read",
+ 
+ 
+ 
 
     # (optional) DRF API root (GET /api/) route name is "api-root"
     # "api-root": "data:read",
@@ -126,3 +124,11 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
         base = needed.rsplit(":", 1)[0]
         return f"{base}:write" in user_roles
     return False
+
+
+
+"""
+export DJANGO_DEBUG=0
+python manage.py runserver
+
+"""
