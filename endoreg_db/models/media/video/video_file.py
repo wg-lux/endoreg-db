@@ -414,12 +414,29 @@ class VideoFile(models.Model):
         video_file = video_file.initialize()
         return video_file
     
-    def delete(self, using = ..., keep_parents = ...):
+    def delete(self, using=None, keep_parents=False) -> tuple[int, dict[str, int]]:
         """
         Delete the VideoFile instance, including associated files and frames.
         
         Overrides the default delete method to ensure proper cleanup of related resources.
+        
+        Args:
+            using: Database alias to use (default: None -> 'default')
+            keep_parents: Whether to keep parent objects during cascade (default: False)
+            
+        Returns:
+            Tuple of (number_deleted, dict_of_deletions)
         """
+        logger.debug(f"VideoFile.delete() called with using={using} (type: {type(using)}), keep_parents={keep_parents} (type: {type(keep_parents)})")
+        
+        # Validate parameters early
+        if using is not None and not isinstance(using, str):
+            logger.warning(f"Invalid using parameter type: {type(using)}, value: {using}, converting to 'default'")
+            using = 'default'
+        if not isinstance(keep_parents, bool):
+            logger.warning(f"Invalid keep_parents parameter type: {type(keep_parents)}, value: {keep_parents}, converting to False")
+            keep_parents = False
+        
         # Ensure frames are deleted before the main instance
         _delete_frames(self)
         
@@ -430,24 +447,45 @@ class VideoFile(models.Model):
         if self.active_file_path.exists():
             self.active_file_path.unlink(missing_ok=True)
         
-        # Call the superclass delete method
-        # This will handle the database deletion and any additional cleanup defined in the parent class
-        logger.info(f"VideoFile {self.uuid} deleted successfully.")
-        # Ensure to call the superclass delete method to maintain the integrity of the model
-        # This will also trigger any signals or additional cleanup defined in the parent class
+        # Delete file storage
         if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
             self.raw_file.storage.delete(self.raw_file.name)
         if self.processed_file and self.processed_file.storage.exists(self.processed_file.name):
             self.processed_file.storage.delete(self.processed_file.name)
         
-        # Call the superclass delete method to ensure proper deletion
-        # This will handle the database deletion and any additional cleanup defined in the parent class
-        # Using super() to ensure we call the correct method in the parent class hierarchy
-        from django.db.models.deletion import Collector
-        collector = Collector(using=using)
-        collector.collect([self], keep_parents=keep_parents)
-        collector.delete()
-        return super().delete(using, keep_parents)
+        # Use proper database connection
+        if using is None:
+            using = 'default'
+        
+        # Ensure using is a string
+        if not isinstance(using, str):
+            logger.warning(f"Invalid using parameter type: {type(using)}, converting to 'default'")
+            using = 'default'
+        
+        try:
+            # Call parent delete with proper parameters
+            logger.debug(f"Calling super().delete with using='{using}' (type: {type(using)}) and keep_parents={keep_parents}")
+            result = super().delete(using=using, keep_parents=keep_parents)
+            logger.info(f"VideoFile {self.uuid} deleted successfully.")
+            return result
+        except TypeError as e:
+            if "ellipsis" in str(e) or "NoneType" in str(e) or "attribute name must be string" in str(e):
+                logger.error(f"Django database connection error for VideoFile {self.uuid}: {e}")
+                logger.warning(f"Attempting fallback deletion for VideoFile {self.uuid}")
+                try:
+                    # Fallback: try with explicit string parameters
+                    result = super().delete(using='default', keep_parents=False)
+                    logger.info(f"VideoFile {self.uuid} deleted successfully with fallback approach.")
+                    return result
+                except Exception as fallback_error:
+                    logger.error(f"Fallback deletion also failed for VideoFile {self.uuid}: {fallback_error}")
+                    raise fallback_error
+            else:
+                logger.error(f"Unexpected TypeError deleting VideoFile {self.uuid}: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Error deleting VideoFile {self.uuid}: {e}")
+            raise
 
     def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
         """
