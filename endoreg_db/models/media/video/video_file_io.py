@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 from django.db import transaction
 
-from ...utils import data_paths, ANONYM_VIDEO_DIR, VIDEO_DIR # Import VIDEO_DIR for correct path resolution
+from ...utils import data_paths, ANONYM_VIDEO_DIR
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -14,15 +14,15 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     """
     Resolves and returns the absolute path to the raw video file if available.
     The FileField stores a path relative to the storage root. We need to join
-    that relative path onto the actual video directory under STORAGE_DIR.
+    that relative path onto the actual storage directory, NOT the video directory.
     """
     try:
         if video.has_raw and video.raw_file.name:
-            # raw_file.name is a relative storage path like 'videos/<filename>'
+            # raw_file.name is already a full relative path like 'videos/sensitive/<filename>'
+            # We need to join this with the storage root, not the video directory
             raw_rel = Path(video.raw_file.name)
-            # If it already contains the video directory name, keep the tail
-            rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
-            full_path = data_paths["video"] / rel_name
+            # Use storage root instead of video directory to avoid double path
+            full_path = data_paths["storage"] / raw_rel
             return full_path.resolve()
         else:
             return None
