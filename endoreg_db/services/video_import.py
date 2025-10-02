@@ -163,10 +163,7 @@ class VideoImportService():
         # Create sensitive file
         self._create_sensitive_file()
         
-        # Refresh video instance after file operations to ensure correct paths
-        self.current_video.refresh_from_db()
-        
-        # Initialize video specifications (must happen after sensitive file creation)
+        # Initialize video specifications
         self.current_video.initialize_video_specs()
         
         # Initialize frame objects in database
@@ -304,32 +301,6 @@ class VideoImportService():
         if not video_file.raw_file:
             raise ValueError("VideoFile must have a raw_file to create a sensitive file")
         
-        # Check if source file exists, if not try alternative locations
-        if not source_path.exists():
-            self.logger.warning(f"Source file not found at raw_file.path: {source_path}")
-            
-            # Try alternative location using VIDEO_DIR + filename
-            filename = source_path.name
-            alternative_path = VIDEO_DIR / filename
-            
-            if alternative_path.exists():
-                self.logger.info(f"Found video at alternative location: {alternative_path}")
-                source_path = alternative_path
-            else:
-                # Try with UUID as filename if the original filename doesn't match
-                uuid_filename = f"{video_file.uuid}.mp4"
-                uuid_alternative = VIDEO_DIR / uuid_filename
-                
-                if uuid_alternative.exists():
-                    self.logger.info(f"Found video using UUID filename: {uuid_alternative}")
-                    source_path = uuid_alternative
-                else:
-                    self.logger.error(f"Video file not found at any expected location:")
-                    self.logger.error(f"  - Original path: {source_path}")
-                    self.logger.error(f"  - Alternative path: {alternative_path}")
-                    self.logger.error(f"  - UUID path: {uuid_alternative}")
-                    raise FileNotFoundError(f"Video file not found at expected locations for UUID {video_file.uuid}")
-        
         # Ensure the target directory exists
         target_dir = VIDEO_DIR / 'sensitive'
         if not target_dir.exists():
@@ -353,27 +324,13 @@ class VideoImportService():
                 pass
         
         # Update the model to point to the sensitive file location
-        from django.core.files.base import ContentFile
-        with open(target_file_path, 'rb') as f:
-            # Save with just the filename - Django's upload_to already points to videos/
-            # The physical file is in videos/sensitive/ but Django's FileField 
-            # only needs the relative path within the upload_to directory
-            relative_filename = f"sensitive/{target_file_path.name}"
-            video_file.raw_file.save(
-                relative_filename,
-                ContentFile(f.read()),
-                save=False
-            )
+        video_file.raw_file = str(target_file_path)
         video_file.save(update_fields=['raw_file'])
-        
-        # Refresh the video_file instance from database to ensure it has the updated file paths
-        video_file.refresh_from_db()
         
         # Important: Do NOT remove the original input asset passed to the service here.
         # Source file cleanup for external inputs is handled by create_from_file via delete_source flag.
         
         self.logger.info(f"Created sensitive file for {video_file.uuid} at {target_file_path}")
-        self.logger.info(f"Updated raw_file field to: {video_file.raw_file.name}")
         return target_file_path
 
 
@@ -515,13 +472,8 @@ class VideoImportService():
             # 1. Move the original processed video to videos directory
             if file_path.exists():
                 target_video_path = videos_dir / f"{video_name}{file_path.suffix}"
-                try:
-                    shutil.move(str(file_path), str(target_video_path))
-                    self.logger.info(f"Moved original video to: {target_video_path}")
-                except FileNotFoundError:
-                    self.logger.info(f"Original file already deleted, skipping move: {file_path}")
-            else:
-                self.logger.info(f"Original file not found, skipping move: {file_path}")
+                shutil.move(str(file_path), str(target_video_path))
+                self.logger.info(f"Moved original video to: {target_video_path}")
             
             # 2. Move anonymized video if it exists
             for suffix in ['.mp4', '.avi', '.mov']:  # Common video formats

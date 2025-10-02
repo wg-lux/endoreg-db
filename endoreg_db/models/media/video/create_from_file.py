@@ -247,25 +247,7 @@ def _create_from_file(
                 return existing_video
 
             logger.warning("Video with hash %s exists but file is missing. Deleting orphaned record.", video_hash)
-            try:
-                existing_video.delete()
-            except TypeError as e:
-                if "ellipsis" in str(e) or "NoneType" in str(e):
-                    logger.error("Django database error deleting orphaned video %s: %s", existing_video.uuid, e)
-                    # Try alternative deletion approach with explicit parameters
-                    try:
-                        existing_video.delete(using='default', keep_parents=False)
-                        logger.info("Successfully deleted orphaned video using fallback approach")
-                    except Exception as fallback_error:
-                        logger.error("Fallback deletion also failed for video %s: %s", existing_video.uuid, fallback_error)
-                        # Continue with processing despite deletion failure
-                        logger.warning("Continuing video creation despite orphaned record cleanup failure")
-                else:
-                    raise
-            except Exception as e:
-                logger.error("Unexpected error deleting orphaned video %s: %s", existing_video.uuid, e)
-                # Continue with processing despite deletion failure
-                logger.warning("Continuing video creation despite orphaned record cleanup failure")
+            existing_video.delete()
 
         # 4. Generate UUID and final storage path
         new_file_name, uuid_val = get_uuid_filename(transcoded_file_path)

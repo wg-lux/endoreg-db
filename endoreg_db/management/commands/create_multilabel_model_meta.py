@@ -9,7 +9,7 @@ from endoreg_db.models import LabelSet, AiModel, ModelMeta
 
 # Example usage:
 # python manage.py create_multilabel_model_meta --model_path "./data/models/colo_segmentation_RegNetX800MF_6.ckpt"
-
+# python manage.py create_multilabel_model_meta --model_path "./libs/endoreg-db/tests/assets/colo_segmentation_RegNetX800MF_6.ckpt"
 
 FPS = 50
 SMOOTH_WINDOW_SIZE_S = 1

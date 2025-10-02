@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 import os
 
 import logging
+from ...utils.paths import data_paths  # Added for centralized path management
 logger = logging.getLogger(__name__)
 
 

@@ -98,8 +98,8 @@ class AnonymizationService:
                 
                 # Mark as started
                 if vf.state:
-                    vf.state.anonymization_started = True
-                    vf.state.save(update_fields=["anonymization_started"])
+                    vf.state.processing_started = True
+                    vf.state.save(update_fields=["processing_started"])
                 
                 # Use VideoImportService for anonymization
                 self.video_service.import_and_anonymize(
@@ -117,8 +117,8 @@ class AnonymizationService:
                 logger.error(f"Failed to anonymize VideoFile {file_id}: {e}")
                 # Mark as failed if state exists
                 if vf.state:
-                    vf.state.anonymization_failed = True
-                    vf.state.save(update_fields=["anonymization_failed"])
+                    vf.state.processing_started = False  # Mark processing as not started due to failure
+                    vf.state.save(update_fields=["processing_started"])
                 raise
 
         # Try RawPdfFile

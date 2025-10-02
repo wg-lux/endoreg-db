@@ -20,19 +20,19 @@ else:
     logger.debug("Skipping .env load under pytest")
 
 # Define BASE_DIR as the project root (endoreg_db/utils -> endoreg_db -> repo root)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR"))
 
 # Resolve STORAGE_DIR from env or default under BASE_DIR
-def _resolve_storage_dir() -> Path:
-    env_val = os.getenv("STORAGE_DIR")
-    if env_val:
-        p = Path(env_val)
-        return p if p.is_absolute() else (BASE_DIR / p).resolve()
-    # Do not import django.conf.settings here to avoid early settings configuration.
-    # Fall back to a local storage directory under the repo.
-    return (BASE_DIR / "storage").resolve()
+#def _resolve_storage_dir() -> Path:
+#     env_val = os.getenv("STORAGE_DIR")
+#     if env_val:
+#         p = Path(env_val)
+#         return p if p.is_absolute() else (BASE_DIR / p).resolve()
+#     # Do not import django.conf.settings here to avoid early settings configuration.
+#     # Fall back to a local storage directory under the repo.
+#     return (BASE_DIR / "storage").resolve()
 
-STORAGE_DIR = _resolve_storage_dir()
+# STORAGE_DIR = _resolve_storage_dir()
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 PREFIX_RAW = "raw_"

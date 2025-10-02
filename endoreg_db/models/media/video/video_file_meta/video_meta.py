@@ -16,13 +16,15 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
     logger.debug("Updating technical VideoMeta for video %s (from raw file).", video.uuid)
 
     if not video.has_raw:
-        # Raise exception
-        raise FileNotFoundError(f"Raw video file path not available for {video.uuid}. Cannot update VideoMeta.")
+        # DEFENSIVE: Log warning and skip instead of crashing
+        logger.warning(f"Raw video file path not available for {video.uuid}. Skipping VideoMeta update - this may indicate the video was processed and raw file moved.")
+        return  # Graceful skip instead of FileNotFoundError
 
     raw_video_path = video.get_raw_file_path() # Use helper
     if not raw_video_path or not raw_video_path.exists():
-        # Raise exception
-        raise FileNotFoundError(f"Raw video file path {raw_video_path} does not exist or is None for video {video.uuid}. Cannot update VideoMeta.")
+        # DEFENSIVE: Log warning and skip instead of crashing production pipeline
+        logger.warning(f"Raw video file path {raw_video_path} does not exist for video {video.uuid}. Skipping VideoMeta update - this typically happens after video processing when raw files are moved to processed location.")
+        return  # Graceful skip instead of FileNotFoundError that crashes production
 
     try:
         vm = video.video_meta

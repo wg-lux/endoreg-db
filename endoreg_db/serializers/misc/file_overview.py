@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from typing import TYPE_CHECKING
 from endoreg_db.models.media import VideoFile, RawPdfFile
+from endoreg_db.models.state.video import AnonymizationStatus as VideoAnonymizationStatus
+from endoreg_db.models.state.raw_pdf import AnonymizationStatus as PdfAnonymizationStatus
 
 if TYPE_CHECKING:
     pass
@@ -50,7 +52,7 @@ class FileOverviewSerializer(serializers.Serializer):
             
             # ------- anonymization status using VideoState model
             vs = instance.state
-            anonym_status = vs.anonymization_status
+            anonym_status = vs.anonymization_status if vs else VideoAnonymizationStatus.NOT_STARTED
             
             # ------- annotation status (validated label segments)
             if instance.label_video_segments.filter(state__is_validated=True).exists():
