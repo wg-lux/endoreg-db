@@ -34,8 +34,25 @@ def _update_text_metadata(
 
     # --- Pre-condition Checks ---
     if not state.frames_extracted:
-        # Raise exception instead of returning None
-        raise ValueError(f"Cannot update text metadata for video {video.uuid}: Frames not extracted.")
+        # Attempt to extract frames automatically if they're not available
+        logger.warning(f"Frames not extracted for video {video.uuid}. Attempting automatic frame extraction...")
+        try:
+            success = video.extract_frames(overwrite=False)
+            if success:
+                # Refresh state after frame extraction
+                state.refresh_from_db()
+                if state.frames_extracted:
+                    logger.info(f"Successfully extracted frames for video {video.uuid}")
+                else:
+                    # Force update the state if extraction was successful but state wasn't updated
+                    state.frames_extracted = True
+                    state.save(update_fields=['frames_extracted'])
+                    logger.info(f"Corrected frames_extracted state for video {video.uuid}")
+            else:
+                raise ValueError(f"Cannot update text metadata for video {video.uuid}: Frame extraction failed.")
+        except Exception as e:
+            logger.error(f"Failed to extract frames for video {video.uuid}: {e}")
+            raise ValueError(f"Cannot update text metadata for video {video.uuid}: Frames not extracted and automatic extraction failed: {e}")
 
     if state.text_meta_extracted and not overwrite:
         logger.info("Text already extracted for video %s and overwrite=False. Skipping.", video.uuid) # Changed to info
@@ -101,6 +118,11 @@ def _update_text_metadata(
             if not state.text_meta_extracted:
                 state.text_meta_extracted = True
                 state.save(update_fields=['text_meta_extracted'])
+
+            # Mark sensitive meta as processed when updated via text metadata
+            if sensitive_meta:
+                state.mark_sensitive_meta_processed(save=True)
+                logger.info(f"Marked sensitive_meta_processed=True for video {video.uuid} after text metadata update")
 
             logger.info("Successfully updated/created SensitiveMeta and state for video %s.", video.uuid) # Changed to info
             return sensitive_meta

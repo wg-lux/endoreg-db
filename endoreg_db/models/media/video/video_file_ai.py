@@ -297,8 +297,43 @@ def _predict_video_pipeline(
         logger.info("Inference completed for video %s.", video.uuid)
     except Exception as e:
         logger.error("Inference failed for video %s: %s", video.uuid, e, exc_info=True)
-        # Raise exception
-        raise RuntimeError("Inference failed") from e
+        # CUDA-OOM Fallback: Speicher freigeben und CPU versuchen
+        try:
+            import torch, gc
+            is_oom = isinstance(e, (getattr(torch.cuda, 'OutOfMemoryError', RuntimeError), RuntimeError)) and (
+                'out of memory' in str(e).lower() or 'cuda out of memory' in str(e).lower()
+            )
+        except Exception:
+            is_oom = False
+        if 'torch' in globals() or 'torch' in locals():
+            try:
+                import torch  # ensure available in this scope
+                if torch.cuda.is_available() and is_oom:
+                    logger.warning("CUDA OOM detected. Freeing CUDA cache and retrying on CPU…")
+                    try:
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                    except Exception:
+                        pass
+                    try:
+                        # Move model to CPU and retry inference
+                        _ = ai_model_instance.cpu()
+                        classifier = Classifier(ai_model_instance, verbose=True)
+                        predictions = classifier.pipe(string_paths, crops)
+                        logger.info("Inference completed on CPU after CUDA OOM for video %s.", video.uuid)
+                    except Exception as e2:
+                        logger.error("CPU fallback inference failed for video %s: %s", video.uuid, e2, exc_info=True)
+                        # Raise exception
+                        raise RuntimeError("Inference failed") from e2
+                else:
+                    # Raise exception
+                    raise RuntimeError("Inference failed") from e
+            except Exception:
+                # Raise exception
+                raise RuntimeError("Inference failed") from e
+        else:
+            # Raise exception
+            raise RuntimeError("Inference failed") from e
 
     # --- Post-processing ---
     try:

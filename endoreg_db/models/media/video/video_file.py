@@ -208,13 +208,13 @@ class VideoFile(models.Model):
     @property
     def active_file_url(self) -> str:
         """
-        Return the URL of the active video file, preferring the processed file if available, otherwise the raw file.
+        Return the URL of the active processed file.
         
         Returns:
             str: The URL of the active video file.
         
         Raises:
-            AssertionError: If neither a raw nor processed file is available.
+            Value Error if no active VideoFile is available.
         """
         _file = self.active_file
         assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
@@ -223,6 +223,31 @@ class VideoFile(models.Model):
         url = _file.url
 
         return url
+    
+    @property
+    def active_raw_file(self) -> File:
+        if self.has_raw:
+            return self.raw_file
+        else:
+            raise ValueError("Has no raw file")
+        
+    @property
+    def active_raw_file_url(self)-> str:
+        """
+        Return the path of the URL of the active raw file for name reading.
+
+        Raises:
+        ValueError("Active file has no associated file")
+        
+        Returns:
+        """
+        _file = self.active_raw_file
+        assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
+        if not _file or not _file.name:
+            raise ValueError("Active file has no associated file.")
+        url = _file.url
+        return url
+        
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -354,6 +379,7 @@ class VideoFile(models.Model):
             return self.raw_file
         else:
             raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
+        
 
     @property
     def active_file_path(self) -> Path:
@@ -464,9 +490,11 @@ class VideoFile(models.Model):
             self.active_file_path.unlink(missing_ok=True)
         
         # Update sensitive metadata with user annotations
-        sensitive_meta = self.update_text_metadata(self, extracted_data_dict, overwrite=True)
+        sensitive_meta = _update_text_metadata(self, extracted_data_dict, overwrite=True)
         
         if sensitive_meta:
+            # Mark as processed after validation
+            self.get_or_create_state().mark_sensitive_meta_processed(save=True)
             # Save the VideoFile instance to persist changes
             self.save()
             logger.info(f"Metadata annotation validated and saved for video {self.uuid}.")
@@ -564,6 +592,8 @@ class VideoFile(models.Model):
         from endoreg_db.models import SensitiveMeta
         if self.sensitive_meta is None:
             self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
+            # Mark as processed when creating new SensitiveMeta
+            self.get_or_create_state().mark_sensitive_meta_processed(save=True)
         return self.sensitive_meta
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:

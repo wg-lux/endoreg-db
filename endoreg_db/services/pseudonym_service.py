@@ -56,12 +56,12 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
             patient.patient_hash = patient_hash
             patient.save(update_fields=['patient_hash'])
         
-        logger.info("Generated and persisted pseudonym for patient %s", patient.pk)
+        logger.info(f"Generated and persisted pseudonym for patient {patient.id}: {patient_hash[:8]}...")
         
         return patient_hash, True
         
     except Exception as e:
-        logger.error(f"Error generating pseudonym for patient {patient.pk}: {str(e)}")
+        logger.error(f"Error generating pseudonym for patient {patient.id}: {str(e)}")
         raise ValueError(f"Failed to generate pseudonym: {str(e)}")
 
 

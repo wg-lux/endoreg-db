@@ -31,16 +31,21 @@ class VideoMediaView(APIView):
 
     # ---------- GET ----------
     def get(self, request, pk=None):
-        wants_json = request.accepted_media_type == "application/json"
-
-        if pk and not wants_json:                                  # STREAM
+        # Prüfe explizit auf Streaming-Anfrage via Query-Parameter
+        wants_stream = request.query_params.get("stream") is not None or request.query_params.get("type") is not None
+        
+        if pk and wants_stream:                                    # STREAM
             vf = get_object_or_404(VideoFile, pk=pk)
+            file_type = (request.query_params.get("type") or "auto").lower()
+            
+                
             return _stream_video_file(
                 vf,
-                os.getenv("FRONTEND_ORIGIN", "*")
+                os.getenv("FRONTEND_ORIGIN", "*"),
+                file_type
             )
 
-        # META (list or single)
+        # META (list or single) - nur wenn kein Streaming gewünscht
         if pk:                                                     # detail JSON
             vf = get_object_or_404(VideoFile, pk=pk)
         else:

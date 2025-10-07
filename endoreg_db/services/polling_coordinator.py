@@ -135,6 +135,35 @@ class PollingCoordinator:
             return False
     
     @classmethod
+    def get_remaining_cooldown_seconds(cls, file_id: int, file_type: str = "video") -> int:
+        """
+        Get the remaining cooldown seconds for a status check.
+        
+        Args:
+            file_id: ID of the media file
+            file_type: Type of media (video, pdf)
+            
+        Returns:
+            Remaining cooldown in seconds (0 if no cooldown active)
+        """
+        cache_key = f"{cls.LAST_CHECK_PREFIX}{file_type}:{file_id}"
+        last_check = cache.get(cache_key)
+        
+        if last_check is None:
+            return 0
+        
+        # Check if cooldown period has passed
+        last_check_time = timezone.datetime.fromisoformat(last_check.replace('Z', '+00:00'))
+        cooldown_end = last_check_time + timedelta(seconds=cls.CHECK_COOLDOWN)
+        
+        if timezone.now() > cooldown_end:
+            return 0
+        else:
+            remaining_cooldown = (cooldown_end - timezone.now()).total_seconds()
+            # Round up to at least 1 second
+            return max(1, int(remaining_cooldown) + 1)
+
+    @classmethod
     def _record_status_check(cls, file_id: int, file_type: str = "video") -> None:
         """Record the time of a status check"""
         cache_key = f"{cls.LAST_CHECK_PREFIX}{file_type}:{file_id}"

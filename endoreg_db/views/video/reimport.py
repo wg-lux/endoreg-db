@@ -126,13 +126,13 @@ class VideoReimportView(APIView):
                 # Use VideoImportService for anonymization
                 try:
                     processor_name = video.video_meta.processor.name if video.video_meta and video.video_meta.processor else "Unknown"
-                    
                     logger.info(f"Starting anonymization using VideoImportService for {video.uuid}")
-                    self.video_service.anonymize(
-                        video_file_obj=video,
+                    self.video_service.import_and_anonymize(
+                        file_path=raw_file_path,
+                        center_name=video.center.name,
                         processor_name=processor_name,
-                        just_anonymization=True,
-                        method="masking"
+                        save_video=True,
+                        delete_source=False
                     )
                     
                     logger.info(f"VideoImportService anonymization completed for {video.uuid}")

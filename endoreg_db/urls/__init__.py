@@ -26,6 +26,7 @@ from .upload import urlpatterns as upload_url_patterns
 from .video import url_patterns as video_url_patterns
 from .requirements import urlpatterns as requirements_url_patterns
 from .patient import urlpatterns as patient_url_patterns
+from .stats import url_patterns as stats_url_patterns
 
 api_urls = []
 api_urls += classification_url_patterns
@@ -41,6 +42,7 @@ api_urls += upload_url_patterns
 api_urls += video_url_patterns
 api_urls += requirements_url_patterns
 api_urls += patient_url_patterns
+api_urls += stats_url_patterns
 
 router = DefaultRouter()
 router.register(r'videos', VideoViewSet, basename='videos')  
@@ -53,8 +55,8 @@ router.register(r'patient-examinations', PatientExaminationViewSet)
 
 # Export raw API urlpatterns (no prefix). The project-level endoreg_db/urls.py mounts these under /api/.
 urlpatterns = [
-    path('', include(router.urls)),  
-    path('', include(api_urls)),
+    path('', include(api_urls)),  # Specific routes first
+    path('', include(router.urls)),  # Generic router routes second
 ]
 
 if settings.DEBUG:

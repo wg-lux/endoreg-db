@@ -17,24 +17,30 @@ from ...models import VideoFile, Label, LabelVideoSegment
 from ...serializers.video.segmentation import VideoFileSerializer
 from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
-def _stream_video_file(vf, frontend_origin):
+def _stream_video_file(vf, frontend_origin, file_type):
     """
     Helper to stream a video file with proper headers and CORS.
     Raises Http404 if file is missing.
     """
     decorators.permission_classes = [EnvironmentAwarePermission]
     try:
-        # Use active_file_path which handles both processed and raw files
-        if hasattr(vf, 'active_file_path') and vf.active_file_path:
-            path = Path(vf.active_file_path)
-        elif vf.active_file and hasattr(vf.active_file, 'path'):
-            try:
-                path = Path(vf.active_file.path)
-            except (ValueError, AttributeError) as exc:
-                raise Http404("No file associated with this video") from exc
-        else:
-            raise Http404("No video file available for this entry")
-
+        if file_type == 'raw':
+            if hasattr(vf, 'active_raw_file') and vf.active_raw_file and hasattr(vf.active_raw_file, 'path'):
+                try:
+                    path = Path(vf.active_raw_file.path)
+                except (ValueError, AttributeError) as exc:
+                    raise Http404("No raw file associated with this video") from exc
+            else:
+                raise Http404("No raw video file available for this entry")
+            
+        elif file_type == 'processed':
+            if hasattr(vf, 'processed_file') and vf.processed_file and hasattr(vf.processed_file, 'path'):
+                try:
+                    path = Path(vf.processed_file.path)
+                except (ValueError, AttributeError) as exc:
+                    raise Http404("No processed file associated with this video") from exc
+            else:
+                raise Http404("No processed video file available for this entry")
         if not path.exists():
             raise Http404("Video file not found on disk")
 
@@ -152,10 +158,17 @@ class VideoStreamView(APIView):
                 video_id_int = int(pk)
             except (ValueError, TypeError):
                 raise Http404("Invalid video ID format")
-                
+            try:
+                file_type: str = request.query_params.get('file_type', 'raw').lower()
+                if file_type not in ['raw', 'processed']:
+                    raise ValueError("file_type must be 'raw' or 'processed'")
+            except Exception:
+                file_type = 'raw'  # Default to 'raw' if any error occurs
+                            
             vf = VideoFile.objects.get(pk=video_id_int)
             frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-            return _stream_video_file(vf, frontend_origin)
+            
+            return _stream_video_file(vf, frontend_origin, file_type)
         except VideoFile.DoesNotExist:
             raise Http404("Video not found")
         except Exception as e:

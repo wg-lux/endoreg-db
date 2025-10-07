@@ -74,9 +74,22 @@ def _extract_frames(
                     )
         elif not state.frames_extracted and files_exist_on_disk:
             logger.warning(
-                "Files exist on disk for video %s but state.frames_extracted is False. State might be inconsistent.",
+                "Files exist on disk for video %s but state.frames_extracted is False. Correcting state to match disk.",
                 video.uuid,
             )
+            # Fix inconsistent state: files exist but state.frames_extracted is False
+            state.frames_extracted = True
+            state.save(update_fields=['frames_extracted'])
+            
+            # Also update Frame objects to be consistent
+            with transaction.atomic():
+                updated_count = Frame.objects.filter(video=video, is_extracted=False).update(is_extracted=True)
+                if updated_count > 0:
+                    logger.info(
+                        "Marked %d existing Frame objects as extracted for video %s after state correction.",
+                        updated_count,
+                        video.uuid,
+                    )
         return True
 
     # Overwrite: delete existing frames/files before re-extraction.

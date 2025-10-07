@@ -1,12 +1,13 @@
 from .overview import (
     AnonymizationOverviewView,
-    AnonymizationValidateView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
     polling_coordinator_info,
     clear_processing_locks
 )
+
+from .validate import AnonymizationValidateView
 
 from .media_management import MediaManagementView, force_remove_media, reset_processing_status
 

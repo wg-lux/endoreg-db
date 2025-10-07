@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import re  # Neu hinzugefügt für Regex-Pattern
 from hashlib import sha256
 from datetime import datetime, timedelta, date
 from typing import TYPE_CHECKING, Dict, Any, Optional, Type
@@ -25,6 +26,100 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
 DEFAULT_UNKNOWN_NAME = "unknown"
+
+# Regex-Pattern für verschiedene Datumsformate
+ISO_RX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DE_RX = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
+
+
+def parse_any_date(s: str) -> Optional[date]:
+    """
+    Parst Datumsstring mit Priorität auf deutsches Format (DD.MM.YYYY).
+    
+    Unterstützte Formate:
+    1. DD.MM.YYYY (Priorität) - deutsches Format
+    2. YYYY-MM-DD (Fallback) - ISO-Format
+    3. Erweiterte Fallbacks über dateparser
+    
+    Args:
+        s: Datumsstring zum Parsen
+        
+    Returns:
+        date-Objekt oder None bei ungültigem/fehlendem Input
+    """
+    if not s:
+        return None
+    
+    s = s.strip()
+    
+    # 1. German dd.mm.yyyy (PRIORITÄT)
+    if DE_RX.match(s):
+        try:
+            dd, mm, yyyy = s.split(".")
+            return date(int(yyyy), int(mm), int(dd))
+        except ValueError as e:
+            logger.warning(f"Invalid German date format '{s}': {e}")
+            return None
+    
+    # 2. ISO yyyy-mm-dd (Fallback für Rückwärtskompatibilität)
+    if ISO_RX.match(s):
+        try:
+            return date.fromisoformat(s)
+        except ValueError as e:
+            logger.warning(f"Invalid ISO date format '{s}': {e}")
+            return None
+    
+    # 3. Extended fallbacks
+    try:
+        # Try standard datetime parsing
+        return datetime.fromisoformat(s).date()
+    except Exception:
+        pass
+    
+    try:
+        # Try dateparser with German locale preference
+        import dateparser
+        dt = dateparser.parse(
+            s, 
+            settings={
+                "DATE_ORDER": "DMY", 
+                "PREFER_DAY_OF_MONTH": "first"
+            }
+        )
+        return dt.date() if dt else None
+    except Exception as e:
+        logger.debug(f"Dateparser fallback failed for '{s}': {e}")
+        return None
+
+
+def format_date_german(d: Optional[date]) -> str:
+    """
+    Formatiert date-Objekt als deutsches Datumsformat (DD.MM.YYYY).
+    
+    Args:
+        d: date-Objekt oder None
+        
+    Returns:
+        Formatiertes Datum als String oder leerer String bei None
+    """
+    if not d:
+        return ""
+    return d.strftime("%d.%m.%Y")
+
+
+def format_date_iso(d: Optional[date]) -> str:
+    """
+    Formatiert date-Objekt als ISO-Format (YYYY-MM-DD).
+    
+    Args:
+        d: date-Objekt oder None
+        
+    Returns:
+        Formatiertes Datum als String oder leerer String bei None
+    """
+    if not d:
+        return ""
+    return d.isoformat()
 
 
 def generate_random_dob() -> datetime:

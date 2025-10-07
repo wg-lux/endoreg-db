@@ -20,9 +20,37 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
         if video.has_raw and video.raw_file.name:
             # raw_file.name is a relative storage path like 'videos/<filename>'
             raw_rel = Path(video.raw_file.name)
+            
             # If it already contains the video directory name, keep the tail
             rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
             full_path = data_paths["video"] / rel_name
+            
+            # If primary path doesn't exist, check alternative locations
+            if not full_path.exists():
+                # Check if file is in sensitive subdirectory
+                sensitive_path = data_paths["video"] / "sensitive" / rel_name
+                if sensitive_path.exists():
+                    return sensitive_path.resolve()
+                
+                # Check direct raw_file.path if available
+                try:
+                    direct_path = Path(video.raw_file.path)
+                    if direct_path.exists():
+                        return direct_path.resolve()
+                except Exception:
+                    pass  # Fallback to original behavior
+                
+                # Check common alternative paths
+                alternative_paths = [
+                    Path("/home/admin/dev/lx-annotate/libs/data/videos") / rel_name,
+                    Path("/home/admin/dev/lx-annotate/libs/data/videos/sensitive") / rel_name,
+                    data_paths["video"].parent / "libs" / "data" / "videos" / rel_name,
+                ]
+                
+                for alt_path in alternative_paths:
+                    if alt_path.exists():
+                        return alt_path.resolve()
+            
             return full_path.resolve()
         else:
             return None
