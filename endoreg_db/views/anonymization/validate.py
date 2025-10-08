@@ -42,6 +42,8 @@ class AnonymizationValidateView(APIView):
                 payload["center_name"] = video.center.name
                 
             ok = video.validate_metadata_annotation(payload)
+            #if ok:
+            #    video._cleanup_raw_assets()
             if not ok:
                 return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
             return Response({"message": "Video validated."}, status=status.HTTP_200_OK)

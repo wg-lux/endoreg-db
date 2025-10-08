@@ -19,6 +19,7 @@ from .auth import urlpatterns as auth_url_patterns
 from .examination import urlpatterns as examination_url_patterns
 from .files import urlpatterns as files_url_patterns
 from .label_video_segments import url_patterns as label_video_segments_url_patterns
+from .label_video_segment_validate import url_patterns as label_video_segment_validate_url_patterns
 from .media import urlpatterns as media_url_patterns
 from .sensitive_meta import urlpatterns as pdf_url_patterns
 from .report import url_patterns as report_url_patterns
@@ -35,6 +36,7 @@ api_urls += auth_url_patterns
 api_urls += examination_url_patterns
 api_urls += files_url_patterns
 api_urls += label_video_segments_url_patterns
+api_urls += label_video_segment_validate_url_patterns  # Neue Validierungs-Endpunkte
 api_urls += media_url_patterns
 api_urls += pdf_url_patterns
 api_urls += report_url_patterns

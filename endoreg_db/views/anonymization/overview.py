@@ -204,3 +204,13 @@ def clear_processing_locks(request):
             {"error": "Failed to clear locks"}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+        
+@api_view(['GET'])
+@permission_classes(DEBUG_PERMISSIONS)
+def has_raw_video_file(request, file_id):
+    """
+    GET /api/anonymization/{file_id}/has-raw/
+    Check if a raw video file exists for the given file ID
+    """
+    exists = VideoFile.objects.filter(id=file_id, raw_file__isnull=False).exists()
+    return Response({"file_id": file_id, "has_raw_file": exists})

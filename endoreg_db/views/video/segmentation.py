@@ -2,11 +2,10 @@ from pathlib import Path
 import os
 import mimetypes
 from django.http import FileResponse, Http404
-from rest_framework import viewsets, decorators, permissions
+from rest_framework import viewsets, decorators, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework import status
 
 from ...serializers.label_video_segment.label_video_segment_update import LabelSegmentUpdateSerializer
 
@@ -15,14 +14,15 @@ from ...serializers.label.label import LabelSerializer
 from ...serializers.video.video_file_list import VideoFileListSerializer
 from ...models import VideoFile, Label, LabelVideoSegment
 from ...serializers.video.segmentation import VideoFileSerializer
-from ...utils.permissions import dynamic_permission_classes, DEBUG_PERMISSIONS, EnvironmentAwarePermission
+from ...utils.permissions import DEBUG_PERMISSIONS, EnvironmentAwarePermission
 
 def _stream_video_file(vf, frontend_origin, file_type):
     """
     Helper to stream a video file with proper headers and CORS.
     Raises Http404 if file is missing.
+    
+    Note: Permissions are handled by the calling view, not in this helper function.
     """
-    decorators.permission_classes = [EnvironmentAwarePermission]
     try:
         if file_type == 'raw':
             if hasattr(vf, 'active_raw_file') and vf.active_raw_file and hasattr(vf.active_raw_file, 'path'):
@@ -143,7 +143,7 @@ class VideoStreamView(APIView):
     Separate view for video streaming to avoid DRF content negotiation issues.
     Supports streaming videos from different database entries based on patient examination data.
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [EnvironmentAwarePermission]  # Use proper permission class
     
     def get(self, request, pk=None):
         """
