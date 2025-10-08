@@ -23,6 +23,7 @@ let
   
   buildInputs = with pkgs; [
     python312
+    python312Packages.tkinter
     stdenv.cc.cc
     tesseract
     glib
@@ -70,8 +71,8 @@ in
     # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
     LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     # Force uv to use the Nix-provided Python - override any conflicts
-    UV_PYTHON = lib.mkForce "${python}/bin/python";
-    UV_PYTHON_DOWNLOADS = "never";
+    # UV_PYTHON = lib.mkForce "${python}/bin/python";
+    # UV_PYTHON_DOWNLOADS = "never";
   };
 
   languages.python = {

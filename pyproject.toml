@@ -80,6 +80,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "django-modeltranslation>=0.19.16",
     "pip>=25.2",
+    "lx-anonymizer>=0.7.0",
 ]
 
 [project.urls]
@@ -103,4 +104,5 @@ packages = ["endoreg_db"]
 
 [tool.uv.sources]
 endoreg-db = { path = "endoreg-db" }
+lx-anonymizer = { path = "lx-anonymizer" }
 
