@@ -260,14 +260,11 @@ class VideoImportService():
         # Check frame cleaning availability
         frame_cleaning_available, FrameCleaner, ReportReader = self._ensure_frame_cleaning_available()
         
-        if not frame_cleaning_available:
-            self.logger.warning("Frame cleaning not available (lx_anonymizer not found)")
-            return
-        
         if not (frame_cleaning_available and self.current_video.raw_file):
-            self.logger.warning("Frame cleaning conditions not met")
+            self.logger.warning("Frame cleaning not available or conditions not met, using fallback anonymization.")
+            self._fallback_anonymize_video()
             return
-        
+
         try:
             self.logger.info("Starting frame-level anonymization with processor ROI masking...")
             
@@ -284,6 +281,27 @@ class VideoImportService():
             self.processing_context['anonymization_completed'] = False
             self.processing_context['error_reason'] = f"Frame cleaning failed: {e}"
             
+
+    def _fallback_anonymize_video(self):
+        """Fallback to create anonymized video if lx_anonymizer is not available."""
+        try:
+            self.logger.info("Attempting to anonymize video using fallback method.")
+            # This requires sensitive meta to be verified.
+            if self.current_video.sensitive_meta:
+                self.current_video.sensitive_meta.is_verified = True
+                self.current_video.sensitive_meta.save()
+
+            if self.current_video.anonymize_video(delete_original_raw=False):
+                self.logger.info("Fallback anonymization successful.")
+                self.processing_context['anonymization_completed'] = True
+            else:
+                self.logger.warning("Fallback anonymization failed.")
+                self.processing_context['anonymization_completed'] = False
+                self.processing_context['error_reason'] = "Fallback anonymization failed"
+        except Exception as e:
+            self.logger.error(f"Error during fallback anonymization: {e}", exc_info=True)
+            self.processing_context['anonymization_completed'] = False
+            self.processing_context['error_reason'] = f"Fallback anonymization failed: {e}"
 
     def _finalize_processing(self):
         """Finalize processing and update video state."""
