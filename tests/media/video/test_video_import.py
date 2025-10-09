@@ -79,43 +79,68 @@ class TestVideoImportFileMovement(TestCase):
         with patch.object(VideoImportService, '_ensure_frame_cleaning_available') as mock_frame_cleaning:
             mock_frame_cleaning.return_value = (False, None, None)
             
-            # Mock video creation methods to avoid database dependencies
+            # Mock video creation methods with proper center/processor handling
             with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
-                mock_video = MagicMock()
-                mock_video.uuid = "test-uuid-123"
-                mock_video.raw_file = MagicMock()
-                mock_video.raw_file.name = "videos/test-uuid-123_test_input.mp4"
-                mock_video.file = MagicMock()
-                mock_video.file.name = "anonym_videos/anonym_test-uuid-123_test_input.mp4"
-                mock_video.sensitive_meta = None
-                mock_create_video.return_value = mock_video
+                # Create side effect that validates center parameter
+                def create_video_side_effect(file_path, center, processor=None, **kwargs):
+                    # ✅ Validate: center must be a Center instance (not string!)
+                    self.assertIsInstance(center, Center, 
+                                        "center should be a Center instance, not string")
+                    self.assertEqual(center.name, "test_center",
+                                   "center should match the test center")
+                    
+                    # ✅ Validate: processor must be EndoscopyProcessor instance
+                    if processor:
+                        self.assertIsInstance(processor, EndoscopyProcessor,
+                                            "processor should be EndoscopyProcessor instance")
+                        self.assertEqual(processor.name, "test_processor")
+                    
+                    # Create mock video with correct relationships
+                    mock_video = MagicMock()
+                    mock_video.uuid = "test-uuid-123"
+                    mock_video.center = center  # ✅ Store the actual Center object
+                    mock_video.processor = processor  # ✅ Store the actual Processor object
+                    mock_video.raw_file = MagicMock()
+                    mock_video.raw_file.name = "videos/test-uuid-123_test_input.mp4"
+                    mock_video.file = MagicMock()
+                    mock_video.file.name = "anonym_videos/anonym_test-uuid-123_test_input.mp4"
+                    mock_video.sensitive_meta = None
+                    
+                    # ✅ Add required methods to mock
+                    mock_video.initialize_video_specs = MagicMock()
+                    mock_video.initialize_frames = MagicMock()
+                    mock_video.extract_frames = MagicMock(return_value=True)
+                    mock_video.get_or_create_state = MagicMock(return_value=MagicMock())
+                    mock_video.save = MagicMock()
+                    mock_video.refresh_from_db = MagicMock()
+                    
+                    return mock_video
+                
+                mock_create_video.side_effect = create_video_side_effect
                 
                 # Mock state management
                 mock_state = MagicMock()
                 with patch('endoreg_db.models.VideoFile.get_or_create_state') as mock_get_state:
                     mock_get_state.return_value = mock_state
                     
-                    # Mock additional methods
-                    mock_video.initialize_video_specs = MagicMock()
-                    mock_video.initialize_frames = MagicMock()
-                    mock_video.extract_frames = MagicMock(return_value=True)
-                    mock_video.get_or_create_state = MagicMock(return_value=mock_state)
-                    mock_video.save = MagicMock()
-                    mock_video.refresh_from_db = MagicMock()
-                    
                     # Initialize service and run import
                     service = VideoImportService()
                     
                     result_video = service.import_and_anonymize(
                         file_path=test_video_path,
-                        center_name=self.center.name,
-                        processor_name=self.processor.name,
+                        center_name=self.center.name,  # ✅ Service converts string → Center object
+                        processor_name=self.processor.name,  # ✅ Service converts string → Processor object
                         save_video=True,
                         delete_source=True
                     )
                     
                     # Verify the result
                     self.assertIsNotNone(result_video, "Video import should return a video instance")
+                    # ✅ Verify center/processor were correctly passed
+                    self.assertEqual(result_video.center, self.center, 
+                                   "Result video should have correct center")
+                    self.assertEqual(result_video.processor, self.processor,
+                                   "Result video should have correct processor")
         
         # CRITICAL TESTS: Verify file movements
         
@@ -155,30 +180,38 @@ class TestVideoImportFileMovement(TestCase):
             mock_frame_cleaning.return_value = (False, None, None)
             
             with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
-                mock_video = MagicMock()
-                mock_video.uuid = "test-uuid-456"
-                mock_video.raw_file = MagicMock()
-                mock_video.file = MagicMock()
-                mock_video.sensitive_meta = None
-                mock_create_video.return_value = mock_video
+                # Create side effect with proper validation
+                def create_video_side_effect(file_path, center, processor=None, **kwargs):
+                    self.assertIsInstance(center, Center)
+                    self.assertIsInstance(processor, EndoscopyProcessor)
+                    
+                    mock_video = MagicMock()
+                    mock_video.uuid = "test-uuid-456"
+                    mock_video.center = center
+                    mock_video.processor = processor
+                    mock_video.raw_file = MagicMock()
+                    mock_video.file = MagicMock()
+                    mock_video.sensitive_meta = None
+                    mock_video.initialize_video_specs = MagicMock()
+                    mock_video.initialize_frames = MagicMock()
+                    mock_video.extract_frames = MagicMock(return_value=True)
+                    mock_video.get_or_create_state = MagicMock(return_value=MagicMock())
+                    mock_video.save = MagicMock()
+                    mock_video.refresh_from_db = MagicMock()
+                    return mock_video
                 
-                # Mock other dependencies
+                mock_create_video.side_effect = create_video_side_effect
+                
+                # Mock state management  
                 mock_state = MagicMock()
                 with patch('endoreg_db.models.VideoFile.get_or_create_state') as mock_get_state:
                     mock_get_state.return_value = mock_state
                     
-                    mock_video.initialize_video_specs = MagicMock()
-                    mock_video.initialize_frames = MagicMock()
-                    mock_video.extract_frames = MagicMock(return_value=True)
-                    mock_video.get_or_create_state = MagicMock(return_value=mock_state)
-                    mock_video.save = MagicMock()
-                    mock_video.refresh_from_db = MagicMock()
-                    
                     service = VideoImportService()
                     service.import_and_anonymize(
                         file_path=test_video_path,
-                        center_name=self.center.name,
-                        processor_name=self.processor.name
+                        center_name=self.center.name,  # ✅ Service converts string → Center
+                        processor_name=self.processor.name  # ✅ Service converts string → Processor
                     )
         
         # Check UUID-based naming in videos directory

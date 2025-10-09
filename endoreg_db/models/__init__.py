@@ -62,6 +62,10 @@ from .media import (
     ReportReaderFlag,
 )
 
+####### Video Correction (Phase 1.1) ########
+from .video_metadata import VideoMetadata
+from .video_processing import VideoProcessingHistory
+
 ######## Medical ########
 from .medical import (
     Disease,
