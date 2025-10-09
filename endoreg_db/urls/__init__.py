@@ -3,6 +3,9 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 
+# Phase 1.2: Media Management URLs ✅ IMPLEMENTED  
+from .media import urlpatterns as media_url_patterns
+
 from endoreg_db.views import (
     VideoViewSet,
     ExaminationViewSet,
@@ -20,7 +23,8 @@ from .examination import urlpatterns as examination_url_patterns
 from .files import urlpatterns as files_url_patterns
 from .label_video_segments import url_patterns as label_video_segments_url_patterns
 from .label_video_segment_validate import url_patterns as label_video_segment_validate_url_patterns
-from .media import urlpatterns as media_url_patterns
+# TODO Phase 1.2: Implement VideoMediaView and PDFMediaView before enabling
+# from .media import urlpatterns as media_url_patterns
 from .sensitive_meta import urlpatterns as pdf_url_patterns
 from .report import url_patterns as report_url_patterns
 from .upload import urlpatterns as upload_url_patterns
@@ -37,6 +41,7 @@ api_urls += examination_url_patterns
 api_urls += files_url_patterns
 api_urls += label_video_segments_url_patterns
 api_urls += label_video_segment_validate_url_patterns  # Neue Validierungs-Endpunkte
+# Phase 1.2: Enable media_url_patterns ✅ IMPLEMENTED
 api_urls += media_url_patterns
 api_urls += pdf_url_patterns
 api_urls += report_url_patterns

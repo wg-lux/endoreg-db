@@ -73,6 +73,10 @@ from .report import (
     ReportDataSerializer,
     SecureFileUrlSerializer
 )
+
+from .video.video_metadata import VideoMetadataSerializer
+from .video.video_processing_history import VideoProcessingHistorySerializer
+
 __all__ = [
     # Administration
     "CenterSerializer",
@@ -135,5 +139,9 @@ __all__ = [
     # Report
     "ReportListSerializer",
     "ReportDataSerializer",
-    "SecureFileUrlSerializer"
+    "SecureFileUrlSerializer",
+
+    # Video Correction (Phase 1.1)
+    "VideoMetadataSerializer",
+    "VideoProcessingHistorySerializer",
 ]

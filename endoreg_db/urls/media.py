@@ -1,8 +1,10 @@
 from django.urls import path
 
-from endoreg_db.views import (
+from endoreg_db.views.media import (
     VideoMediaView,
-    PDFMediaView,
+    PDFMediaManagementView as PDFMediaView,  # Alias to avoid conflict with legacy pdf.PDFMediaView
+)
+from endoreg_db.views import (
     VideoStreamView,
 )
 # ---------------------------------------------------------------------------------------
@@ -18,8 +20,9 @@ from endoreg_db.views import (
 urlpatterns = [
     # Video media endpoints
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
-    path("media/videos/<int:pk>/", VideoMediaView.as_view(), name="video-detail"),
-    path("media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"),
+    path("media/videos/<int:pk>/", VideoStreamView.as_view(), name="video-detail-stream"),  # Support ?type= params
+    path("media/videos/<int:pk>/details/", VideoMediaView.as_view(), name="video-detail"),  # JSON metadata
+    path("media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"),  # Legacy support
 
     # PDF media endpoints
     path("media/pdfs/", PDFMediaView.as_view(), name="pdf-list"),

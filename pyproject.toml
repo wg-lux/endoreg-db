@@ -103,6 +103,5 @@ build-backend = "hatchling.build"
 packages = ["endoreg_db"]
 
 [tool.uv.sources]
-endoreg-db = { path = "endoreg-db" }
-lx-anonymizer = { path = "lx-anonymizer" }
+lx-anonymizer = { workspace = true }
 

@@ -124,16 +124,24 @@ from .requirement import (
 )
 
 from .video import (
-    VideoMediaView,
-    VideoCorrectionView,
+    # Video Correction (Phase 1.1) - Implemented
     VideoMetadataView,
     VideoProcessingHistoryView,
     VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
     VideoReprocessView,
-    TaskStatusView,
-    VideoDownloadProcessedView,
+    
+    # Phase 1.2: Media Management Views ✅ IMPLEMENTED
+    # VideoMediaView,  # Imported via video module
+    # PDFMediaView,    # Legacy view still in pdf module
+    
+    # TODO Phase 1.2+: Future views
+    # VideoCorrectionView,
+    # TaskStatusView,
+    # VideoDownloadProcessedView,
+    
+    # Existing views
     VideoReimportView,
     VideoViewSet,
     VideoStreamView,
@@ -254,17 +262,15 @@ __all__ = [
     "evaluate_requirements",
     "LookupViewSet",
 
-    # Video Views
-    'VideoMediaView',
-    'VideoCorrectionView',
+    # Video Views (Phase 1.1 - Implemented)
     'VideoMetadataView',
     'VideoProcessingHistoryView',
     'VideoAnalyzeView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
     'VideoReprocessView',
-    'TaskStatusView',
-    'VideoDownloadProcessedView',
+    
+    # Video Views (Existing)
     'VideoReimportView',
     'VideoViewSet',
     'VideoStreamView',

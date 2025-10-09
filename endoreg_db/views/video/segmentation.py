@@ -14,67 +14,11 @@ from ...serializers.label.label import LabelSerializer
 from ...serializers.video.video_file_list import VideoFileListSerializer
 from ...models import VideoFile, Label, LabelVideoSegment
 from ...serializers.video.segmentation import VideoFileSerializer
-from ...utils.permissions import DEBUG_PERMISSIONS, EnvironmentAwarePermission
+from ...utils.permissions import DEBUG_PERMISSIONS
 
-def _stream_video_file(vf, frontend_origin, file_type):
-    """
-    Helper to stream a video file with proper headers and CORS.
-    Raises Http404 if file is missing.
-    
-    Note: Permissions are handled by the calling view, not in this helper function.
-    """
-    try:
-        if file_type == 'raw':
-            if hasattr(vf, 'active_raw_file') and vf.active_raw_file and hasattr(vf.active_raw_file, 'path'):
-                try:
-                    path = Path(vf.active_raw_file.path)
-                except (ValueError, AttributeError) as exc:
-                    raise Http404("No raw file associated with this video") from exc
-            else:
-                raise Http404("No raw video file available for this entry")
-            
-        elif file_type == 'processed':
-            if hasattr(vf, 'processed_file') and vf.processed_file and hasattr(vf.processed_file, 'path'):
-                try:
-                    path = Path(vf.processed_file.path)
-                except (ValueError, AttributeError) as exc:
-                    raise Http404("No processed file associated with this video") from exc
-            else:
-                raise Http404("No processed video file available for this entry")
-        if not path.exists():
-            raise Http404("Video file not found on disk")
-
-        # Validate file size before streaming
-        try:
-            file_size = path.stat().st_size
-            if file_size == 0:
-                raise Http404("Video file is empty")
-        except OSError as e:
-            raise Http404(f"Cannot access video file: {str(e)}")
-
-        mime, _ = mimetypes.guess_type(str(path))
-        # Default to mp4 if MIME type detection fails
-        content_type = mime or 'video/mp4'
-        
-        try:
-            # Open file in binary mode and ensure file descriptor is closed by FileResponse
-            file_handle = open(path, 'rb')
-            response = FileResponse(file_handle, content_type=content_type)
-            response['Content-Length'] = str(file_size)
-            response['Accept-Ranges'] = 'bytes'
-            response['Content-Disposition'] = f'inline; filename="{path.name}"'
-            response["Access-Control-Allow-Origin"] = frontend_origin
-            response["Access-Control-Allow-Credentials"] = "true"
-            return response
-        except IOError as e:
-            raise Http404(f"Cannot open video file: {str(e)}")
-            
-    except Exception as e:
-        # Log unexpected errors but don't expose internal details
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Unexpected error in _stream_video_file: {str(e)}")
-        raise Http404("Video file cannot be streamed")
+# Phase 3.2: Import video streaming functionality from dedicated module
+# Phase 3.2: VideoStreamView and _stream_video_file moved to video_stream.py
+from .video_stream import _stream_video_file
 
 
 class VideoViewSet(viewsets.ReadOnlyModelViewSet):
@@ -137,46 +81,9 @@ class VideoViewSet(viewsets.ReadOnlyModelViewSet):
             raise Http404("Video streaming failed")
 
 
-# Neue separate View für Video-Streaming außerhalb des ViewSets
-class VideoStreamView(APIView):
-    """
-    Separate view for video streaming to avoid DRF content negotiation issues.
-    Supports streaming videos from different database entries based on patient examination data.
-    """
-    permission_classes = [EnvironmentAwarePermission]  # Use proper permission class
-    
-    def get(self, request, pk=None):
-        """
-        Streams the raw video file for the specified video with HTTP range and CORS support.
-        """
-        if pk is None:
-            raise Http404("Video ID is required")
-            
-        try:
-            # Validate video_id is numeric
-            try:
-                video_id_int = int(pk)
-            except (ValueError, TypeError):
-                raise Http404("Invalid video ID format")
-            try:
-                file_type: str = request.query_params.get('file_type', 'raw').lower()
-                if file_type not in ['raw', 'processed']:
-                    raise ValueError("file_type must be 'raw' or 'processed'")
-            except Exception:
-                file_type = 'raw'  # Default to 'raw' if any error occurs
-                            
-            vf = VideoFile.objects.get(pk=video_id_int)
-            frontend_origin = os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')
-            
-            return _stream_video_file(vf, frontend_origin, file_type)
-        except VideoFile.DoesNotExist:
-            raise Http404("Video not found")
-        except Exception as e:
-            # Log unexpected errors and convert to Http404
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error in VideoStreamView for video_id={pk}: {str(e)}")
-            raise Http404("Video streaming failed")
+# Phase 3.2: VideoStreamView moved to video_stream.py - imported at top
+# Old implementation removed to avoid duplication
+
 
 class VideoLabelView(APIView):
     """

@@ -5,6 +5,13 @@ from endoreg_db.views import (
     SensitiveMetaDetailView,
     VideoLabelView,
     VideoStreamView,
+    # Video Correction Views (Phase 1.1)
+    VideoMetadataView,
+    VideoProcessingHistoryView,
+    VideoAnalyzeView,
+    VideoApplyMaskView,
+    VideoRemoveFramesView,
+    VideoReprocessView,
 )
 
 url_patterns = [
@@ -41,5 +48,72 @@ url_patterns = [
         'video/sensitivemeta/<int:sensitive_meta_id>/', 
         SensitiveMetaDetailView.as_view(), 
         name='video_sensitive_meta_detail'
+    ),
+    
+    # ---------------------------------------------------------------------------------------
+    # VIDEO CORRECTION API ENDPOINTS (Phase 1.1)
+    #
+    # These endpoints enable video correction workflows:
+    # - Analysis: Detect sensitive frames using MiniCPM-o 2.6 or OCR+LLM
+    # - Masking: Apply device-specific masks or custom ROI masks
+    # - Frame Removal: Remove sensitive frames from videos
+    # - Processing History: Track all correction operations
+    # ---------------------------------------------------------------------------------------
+    
+    # Video Metadata API
+    # GET /api/video-metadata/<int:id>/
+    # Returns analysis results (sensitive frame count, ratio, frame IDs)
+    path(
+        'video-metadata/<int:id>/',
+        VideoMetadataView.as_view(),
+        name='video_metadata'
+    ),
+    
+    # Video Processing History API
+    # GET /api/video-processing-history/<int:id>/
+    # Returns history of all processing operations (masking, frame removal, analysis)
+    path(
+        'video-processing-history/<int:id>/',
+        VideoProcessingHistoryView.as_view(),
+        name='video_processing_history'
+    ),
+    
+    # Video Analysis API
+    # POST /api/video-analyze/<int:id>/
+    # Analyzes video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM
+    # Body: { detection_method: 'minicpm'|'ocr_llm'|'hybrid', sample_interval: 30 }
+    path(
+        'video-analyze/<int:id>/',
+        VideoAnalyzeView.as_view(),
+        name='video_analyze'
+    ),
+    
+    # Video Masking API
+    # POST /api/video-apply-mask/<int:id>/
+    # Applies device mask or custom ROI mask to video
+    # Body: { mask_type: 'device'|'custom', device_name: 'olympus', roi: {...} }
+    path(
+        'video-apply-mask/<int:id>/',
+        VideoApplyMaskView.as_view(),
+        name='video_apply_mask'
+    ),
+    
+    # Frame Removal API
+    # POST /api/video-remove-frames/<int:id>/
+    # Removes specified frames from video
+    # Body: { frame_list: [10,20,30] OR frame_ranges: '10-20,30' OR detection_method: 'automatic' }
+    path(
+        'video-remove-frames/<int:id>/',
+        VideoRemoveFramesView.as_view(),
+        name='video_remove_frames'
+    ),
+    
+    # Video Reprocessing API
+    # POST /api/video-reprocess/<int:id>/
+    # Re-runs entire anonymization pipeline for a video
+    path(
+        'video-reprocess/<int:id>/',
+        VideoReprocessView.as_view(),
+        name='video_reprocess'
     ),
 ]
