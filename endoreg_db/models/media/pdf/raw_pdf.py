@@ -8,11 +8,12 @@ import os
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
-from django.core.files import File  # Import Django File
+from django.core.files import File
+from numpy import isin  # Import Django File
 from endoreg_db.utils.file_operations import get_uuid_filename
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 # Use the specific paths from the centralized paths module
-from ...utils import PDF_DIR, STORAGE_DIR
+from ...utils import PDF_DIR
 from endoreg_db.utils.hashs import get_pdf_hash
 
 if TYPE_CHECKING:
@@ -48,20 +49,20 @@ class RawPdfFile(models.Model):
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-    )
+    ) # type: ignore
     examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_files",
-    )
+    ) # type: ignore
     examiner = models.ForeignKey(
         "Examiner",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-    )
+    ) # type: ignore
     text = models.TextField(blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
@@ -72,14 +73,14 @@ class RawPdfFile(models.Model):
         # Use the relative path from the specific PDF_DIR
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-    )
+    ) # type: ignore
     
     anonymized_file = models.FileField(
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         null=True,
         blank=True,
-    )
+    ) # type: ignore
 
     state = models.OneToOneField(
         "RawPdfState",
@@ -87,15 +88,17 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
         related_name="raw_pdf_file",
-    )
+    ) # type: ignore
     
     objects = models.Manager()
     
     @property
-    def file_path(self) -> Path:
+    def file_path(self) -> Path|None:
         """
         Returns the file path of the stored PDF file if available; otherwise, returns None.
         """
+        # assert self.file has path attribute
+        assert isinstance(self.file, models.FieldFile)
         if self.file and self.file.name:
             try:
                 return Path(self.file.path)
@@ -107,11 +110,11 @@ class RawPdfFile(models.Model):
         """
         Sets the file path of the stored PDF file.
         """
-        self.file = File(file_path)
+        self.file = File(file_path) # type: ignore
         self.save(update_fields=['file'])
 
     @property
-    def anonymized_file_path(self) -> Path:
+    def anonymized_file_path(self) -> Path|None:
         """
         Returns the file path of the anonymized PDF file if available; otherwise, returns None.
         """
@@ -126,7 +129,7 @@ class RawPdfFile(models.Model):
         """
         Sets the file path of the anonymized PDF file.
         """
-        self.anonymized_file = File(file_path)
+        self.anonymized_file = File(file_path) # type: ignore
         self.save(update_fields=['anonymized_file'])
 
     @property
@@ -155,14 +158,14 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
         related_name="raw_pdf_files",
-    )
+    ) # type: ignore
     sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
         on_delete=models.SET_NULL,
         related_name="raw_pdf_files",
         null=True,
         blank=True,
-    )
+    ) # type: ignore
     state_report_processing_required = models.BooleanField(default=True)
     state_report_processed = models.BooleanField(default=False)
     raw_meta = models.JSONField(blank=True, null=True)
@@ -172,19 +175,21 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
         related_name="raw_pdf_file",
-    )
+    ) # type: ignore
     anonymized_text = models.TextField(blank=True, null=True)
 
-    # Type hinting if needed
+    # Type hinting is needed, improve and use correct django types
     if TYPE_CHECKING:
-        pdf_type: "PdfType"
-        examination: "PatientExamination"
-        examiner: "Examiner"
-        patient: "Patient"
-        center: "Center"
-        anonym_examination_report: "AnonymExaminationReport"
-        sensitive_meta: "SensitiveMeta"
-        state: "RawPdfState"
+        file : Optional[Union[models.FieldFile,models.FileField]] 
+        anonymized_file : Optional[Union[models.FieldFile,models.FileField]]  
+        pdf_type: Optional[models.ForeignKey]
+        examination: Optional[models.ForeignKey["PatientExamination"]]
+        examiner: Optional[models.ForeignKey["Examiner"]]
+        patient: Optional[models.ForeignKey["Patient"]]
+        center: Optional[models.ForeignKey["Center"]]
+        anonym_examination_report: Optional[models.OneToOneField["AnonymExaminationReport"]]
+        sensitive_meta: Optional[models.ForeignKey["SensitiveMeta"]]
+        state: Optional[models.ForeignKey["RawPdfState"]]
 
     def __str__(self):
         """
@@ -200,20 +205,22 @@ class RawPdfFile(models.Model):
         This method ensures that the physical PDF file is deleted from the file system after the database record is removed. Logs warnings or errors if the file cannot be found or deleted.
         """
         # Call the original delete method first to remove DB record
+        if self.file:
+            try:
+                if self.file_path:
+                    os.remove(Path(self.file_path))
+                    logger.info("Original file removed: %s", self.file)
+            except Exception as e:
+                logger.warning(f"Could not get file path for {self.file.name} before deletion: {e}")
+        if self.anonymized_file:
+            try:
+                if self.anonymized_file_path:
+                    os.remove(Path(self.anonymized_file_path))
+                    logger.info("Anonymized file removed: %s", self.anonymized_file.name)
+            except OSError as e:
+                logger.error("Error removing anonymized file %s: %s", self.anonymized_file.name, e)
+
         super().delete(*args, **kwargs)
-        try:
-            if self.file_path:
-                os.remove(Path(self.file_path))
-                logger.info("Original file removed: %s", self.file)
-        except Exception as e:
-            logger.warning(f"Could not get file path for {self.file.name} before deletion: {e}")
-                
-        try:
-            if self.anonymized_file_path:
-                os.remove(Path(self.anonymized_file_path))
-                logger.info("Anonymized file removed: %s", self.anonymized_file.name)
-        except OSError as e:
-            logger.error("Error removing anonymized file %s: %s", self.anonymized_file.name, e)
 
 
     def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
@@ -241,7 +248,7 @@ class RawPdfFile(models.Model):
         # Save the RawPdfFile instance to ensure all changes are saved
         self.save()
         
-        logger.info(f"Metadata for PDF {self.id} validated and updated successfully.")
+        logger.info(f"Metadata for PDF {self.pk} validated and updated successfully.")
         
         if self.file_path:
             try:
@@ -257,7 +264,7 @@ class RawPdfFile(models.Model):
 
         self.save() # Save the model to persist the cleared file fields
         
-        logger.info(f"Files for PDF {self.id} deleted successfully.")
+        logger.info(f"Files for PDF {self.pk} deleted successfully.")
         return True
         
 
@@ -331,23 +338,26 @@ class RawPdfFile(models.Model):
             raise ValueError(f"Could not calculate hash for {file_path}") from e
 
         # 2. Check if record with this hash already exists
-        existing_pdf_file = cls.objects.filter(pdf_hash=pdf_hash).first()
+        existing_pdf_file = cls.objects.filter(pdf_hash=pdf_hash).first()  
         if existing_pdf_file:
             logger.warning("RawPdfFile with hash %s already exists (ID: %s)", pdf_hash, existing_pdf_file.pk)
 
             # Verify physical file exists for the existing record
             try:
+                if existing_pdf_file is not None and isinstance(existing_pdf_file, cls):
                 # Use storage API to check existence
-                if not existing_pdf_file.file.storage.exists(existing_pdf_file.file.name):
-                    logger.warning("File for existing RawPdfFile %s not found in storage at %s. Attempting to restore from source %s", pdf_hash, existing_pdf_file.file.name, file_path)
-                    # Re-save the file from the source to potentially fix it
-                    with file_path.open("rb") as f:
-                        django_file = File(f, name=Path(existing_pdf_file.file.name).name)  # Use existing name if possible
-                        existing_pdf_file.file = django_file
-                        existing_pdf_file.save(update_fields=['file'])  # Only update file field
-                else:
-                    pass
-                    # logger.debug("File for existing RawPdfFile %s already exists in storage.", pdf_hash)
+                    _file = existing_pdf_file.file
+                    assert _file is not None
+                    if not _file.storage.exists(_file.name):
+                        logger.warning("File for existing RawPdfFile %s not found in storage at %s. Attempting to restore from source %s", pdf_hash, _file.name, file_path)
+                        # Re-save the file from the source to potentially fix it
+                        with file_path.open("rb") as f:
+                            django_file = File(f, name=Path(_file.name).name)  # Use existing name if possible
+                            existing_pdf_file.file = django_file # type: ignore
+                            existing_pdf_file.save(update_fields=['file'])  # Only update file field
+                    else:
+                        pass
+                        # logger.debug("File for existing RawPdfFile %s already exists in storage.", pdf_hash)
             except Exception as e:
                 logger.error("Error verifying/restoring file for existing record %s: %s", pdf_hash, e)
 
@@ -383,20 +393,22 @@ class RawPdfFile(models.Model):
         try:
             with file_path.open("rb") as f:
                 django_file = File(f, name=new_file_name)
-                raw_pdf.file = django_file  # Assign the file object
+                raw_pdf.file = django_file  # type: ignore # Assign the file object
                 # Save the instance - Django storage handles the file copy/move
                 raw_pdf.save()
-                logger.info(f"Created and saved new RawPdfFile {raw_pdf.pk} with file {raw_pdf.file.name}")
+                _file = raw_pdf.file
+                assert _file is not None
+                logger.info(f"Created and saved new RawPdfFile {raw_pdf.pk} with file {_file.name}")
 
                 # Verify file exists in storage after save
-                if not raw_pdf.file.storage.exists(raw_pdf.file.name):
-                    logger.error(f"File was not saved correctly to storage path {raw_pdf.file.name} after model save.")
-                    raise IOError(f"File not found at expected storage path after save: {raw_pdf.file.name}")
+                if not _file.storage.exists(_file.name):
+                    logger.error(f"File was not saved correctly to storage path {_file.name} after model save.")
+                    raise IOError(f"File not found at expected storage path after save: {_file.name}")
                 # Log the absolute path for debugging if possible (depends on storage)
                 try:
-                    logger.info(f"File saved to absolute path: {raw_pdf.file.path}")
+                    logger.info(f"File saved to absolute path: {_file.path}")
                 except NotImplementedError:
-                    logger.info(f"File saved to storage path: {raw_pdf.file.name} (Absolute path not available from storage)")
+                    logger.info(f"File saved to storage path: {_file.name} (Absolute path not available from storage)")
 
         except Exception as e:
             logger.error(f"Error processing or saving file {file_path} for new record: {e}")
@@ -424,10 +436,13 @@ class RawPdfFile(models.Model):
         """
         if not self.pk and not self.pdf_hash and self.file:
             try:
+                file_path = Path(self.file.path).resolve()
+                if not file_path.exists():
+                    raise FileNotFoundError(f"File path does not exist: {file_path}")
                 # Read from the file object before it's saved by storage
                 self.file.open('rb')  # Ensure file is open
                 self.file.seek(0)  # Go to beginning
-                self.pdf_hash = get_pdf_hash(self.file)  # Assuming get_pdf_hash can handle file obj
+                self.pdf_hash = get_pdf_hash(file_path)  # Assuming get_pdf_hash can handle file obj
                 self.file.seek(0)  # Reset position
                 self.file.close()  # Close after reading
                 logger.info(f"Calculated hash during pre-save for {self.file.name}")
@@ -445,9 +460,12 @@ class RawPdfFile(models.Model):
         # This is less ideal as it requires the file to be saved first.
         if not self.pdf_hash and self.pk and self.file and self.file.storage.exists(self.file.name):
             try:
+                file_path = Path(self.file.path).resolve()
+                if not file_path.exists():
+                    raise FileNotFoundError(f"File path does not exist: {file_path}")
                 logger.warning(f"Hash missing for saved file {self.file.name}. Recalculating.")
                 with self.file.storage.open(self.file.name, 'rb') as f:
-                    self.pdf_hash = get_pdf_hash(f)  # Assuming get_pdf_hash handles file obj
+                    self.pdf_hash = get_pdf_hash(file_path)  # Assuming get_pdf_hash handles file obj
                 # No need to save again just for hash unless update_fields is used carefully
                 # Let the main super().save() handle saving the hash if it changed
             except Exception as e:
@@ -460,8 +478,9 @@ class RawPdfFile(models.Model):
             self.examination = self.sensitive_meta.pseudo_examination
         if not self.center and self.sensitive_meta:
             self.center = self.sensitive_meta.center
-        if not self.examiner and self.sensitive_meta and hasattr(self.sensitive_meta, 'pseudo_examiner'):
-            self.examiner = self.sensitive_meta.pseudo_examiner
+        #TODO Outdated?
+        # if not self.examiner and self.sensitive_meta and hasattr(self.sensitive_meta, 'pseudo_examiner'):
+        #     self.examiner = self.sensitive_meta.pseudo_examiner
 
         super().save(*args, **kwargs)
 
@@ -497,22 +516,27 @@ class RawPdfFile(models.Model):
         if not isinstance(fallback_file, Path):
             fallback_file = Path(fallback_file)
 
+        _file = self.file
+        assert _file is not None
         try:
-            if not self.file.field.storage.exists(self.file.name):
-                logger.warning(f"File missing at storage path {self.file.name}. Attempting copy from fallback {fallback_file}")
+            if not _file.field.storage.exists(_file.name):
+                logger.warning(f"File missing at storage path {_file.name}. Attempting copy from fallback {fallback_file}")
                 if fallback_file.exists():
                     with fallback_file.open("rb") as f:
                         # Use save method which handles storage backend
-                        self.file.save(Path(self.file.name).name, File(f), save=True)  # Re-save the file content
-                    logger.info(f"Successfully restored file from fallback {fallback_file} to {self.file.name}")
+                        _file.save(Path(_file.name).name, File(f), save=True)  # Re-save the file content
+                    logger.info(f"Successfully restored file from fallback {fallback_file} to {_file.name}")
                 else:
                     logger.error(f"Fallback file {fallback_file} does not exist.")
         except Exception as e:
-            logger.error(f"Error during verify_existing_file for {self.file.name}: {e}")
+
+            logger.error(f"Error during verify_existing_file for {_file.name}: {e}")
 
     def process_file(self, text, anonymized_text, report_meta, verbose):
         self.text = text
         self.anonymized_text = anonymized_text
+
+        assert self.center is not None, "Center must be set before processing file"
 
         report_meta["center_name"] = self.center.name
         if not self.sensitive_meta:
@@ -546,12 +570,15 @@ class RawPdfFile(models.Model):
         from ...metadata.pdf_meta import PdfType
         from warnings import warn
 
+        _center = self.center
+        assert _center is not None, "Center must be set to get report reader config"
+
         if not self.pdf_type:
             warn("PdfType not set, using default settings")
             pdf_type = PdfType.default_pdf_type()
         else:
             pdf_type: PdfType = self.pdf_type
-        center: Center = self.center
+        center: Center = _center
         if pdf_type.endoscope_info_line:
             endoscope_info_line = pdf_type.endoscope_info_line.value
 

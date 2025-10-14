@@ -1,87 +1,90 @@
 [project]
-name = "endoreg-db"
-version = "0.8.1"
-description = "EndoReg Db Django App"
-readme = "README.md"
 authors = [
-    { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
-    { name = "Max Hild" },
-    { name = "Hamza Zahid" },
-    { name = "Peter Kowalczyk" },
+  {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
+  {name = "Max Hild"},
+  {name = "Hamza Zahid"},
+  {name = "Peter Kowalczyk"},
 ]
+description = "EndoReg Db Django App"
 maintainers = [
-    { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
-    { name = "Max Hild" },
-    { name = "Hamza Zahid" },
-    { name = "Peter Kowalczyk" },
+  {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
+  {name = "Max Hild"},
+  {name = "Hamza Zahid"},
+  {name = "Peter Kowalczyk"},
 ]
+name = "endoreg-db"
+readme = "README.md"
+version = "0.8.1"
 
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Topic :: Scientific/Engineering :: Medical Science Apps.",
-
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+  "Development Status :: 3 - Alpha",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 
-requires-python = ">=3.12,<3.13"
 dependencies = [
-    "agl-report-reader>=0.4.0",
-    "django-bootstrap5>=25.2",
-    "django-cors-headers>=4.8.0",
-    "django-extensions>=3.2.3",
-    "django>=5.2.4",
-    "djangorestframework>=3.16.1",
-    "dotenv>=0.9.9",
-    "faker>=37.6.0",
-    "icecream>=2.1.4",
-    "numpy>=2.2.3",
-    "opencv-python>=4.11.0.86",
-    "pandas>=2.2.3",
-    "pillow>=11.3.0",
-    "pydantic>=2.10.6",
-    "pytesseract>=0.3.13",
-    "pytest>=8.3.5",
-    "python-ffmpeg>=2.0.12",
-    "pytorch-lightning>=2.5.1",
-    "pyyaml>=6.0.2",
-    "regex>=2024.11.6",
-    "scikit-learn>=1.5.2",
-    "scipy>=1.16.1",
-    "sphinx-rtd-theme>=3.0.2",
-    "sphinx>=8.2.3",
-    "tesseract>=0.1.3",
-    "llvmlite>=0.44.0",
-    "tqdm>=4.67.0",
-    "urllib3>=2.2.3",
-    "pytest-django>=4.11.1",
-    "pytest-cov>=6.1.1",
-    "pytest-env>=1.1.5",
-    "openpyxl>=3.1.5",
-    "pyjwt>=2.10.1",
-    "cryptography>=44.0.2",
-    "mypy>=1.16.0",
-    "whitenoise>=6.10.0",
-    "requests>=2.32.3",
-    "gunicorn>=23.0.0",
-    "django-filter>=25.1",
-    "optimum==1.26.1",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
-    "torchvision==0.20.1",
-    "transformers==4.44.2",
-    "librosa==0.11.0",
-    "soundfile==0.12.1",
-    "vector-quantize-pytorch==1.18.5",
-    "vocos==0.1.0",
-    "decord==0.6.0",
-    "moviepy==2.2.1",
-    "celery>=5.5.3",
-    "python-magic>=0.4.27",
-    "django-modeltranslation>=0.19.16",
-    "pip>=25.2",
-    "lx-anonymizer[ocr,llm]>=0.8.1",
+  "agl-report-reader>=0.4.0",
+  "django-bootstrap5>=25.2",
+  "django-cors-headers>=4.8.0",
+  "django-extensions>=3.2.3",
+  "django>=5.2.4",
+  "djangorestframework>=3.16.1",
+  "dotenv>=0.9.9",
+  "faker>=37.6.0",
+  "icecream>=2.1.4",
+  "numpy>=2.2.3",
+  "opencv-python>=4.11.0.86",
+  "pandas>=2.2.3",
+  "pillow>=11.3.0",
+  "pydantic>=2.10.6",
+  "pytesseract>=0.3.13",
+  "pytest>=8.3.5",
+  "python-ffmpeg>=2.0.12",
+  "pytorch-lightning>=2.5.1",
+  "pyyaml>=6.0.2",
+  "regex>=2024.11.6",
+  "scikit-learn>=1.5.2",
+  "scipy>=1.16.1",
+  "sphinx-rtd-theme>=3.0.2",
+  "sphinx>=8.2.3",
+  "tesseract>=0.1.3",
+  "llvmlite>=0.44.0",
+  "tqdm>=4.67.0",
+  "urllib3>=2.2.3",
+  "pytest-django>=4.11.1",
+  "pytest-cov>=6.1.1",
+  "pytest-env>=1.1.5",
+  "openpyxl>=3.1.5",
+  "pyjwt>=2.10.1",
+  "cryptography>=44.0.2",
+  "mypy>=1.16.0",
+  "whitenoise>=6.10.0",
+  "requests>=2.32.3",
+  "gunicorn>=23.0.0",
+  "django-filter>=25.1",
+  "optimum==1.26.1",
+  "torch==2.5.1",
+  "torchaudio==2.5.1",
+  "torchvision==0.20.1",
+  "transformers==4.44.2",
+  "librosa==0.11.0",
+  "soundfile==0.12.1",
+  "vector-quantize-pytorch==1.18.5",
+  "vocos==0.1.0",
+  "decord==0.6.0",
+  "moviepy==2.2.1",
+  "celery>=5.5.3",
+  "python-magic>=0.4.27",
+  "django-modeltranslation>=0.19.16",
+  "pip>=25.2",
+  "lx-anonymizer[ocr,llm]>=0.8.1",
+  "ruff>=0.14.0",
+  "build>=1.3.0",
+  "flake8>=7.3.0",
+  "twine>=6.2.0",
 ]
+requires-python = ">=3.12,<3.13"
 
 [project.urls]
 Homepage = "https://info.coloreg.de"
@@ -89,19 +92,45 @@ Repository = "https://github.com/wg-lux/endoreg-db"
 
 [project.optional-dependencies]
 dev = [
-    # Add development tools here, e.g.:
-    # "pytest",
-    # "ruff",
-    # "black",
+  # Add development tools here, e.g.:
+  # "pytest",
+  # "ruff",
+  # "black",
 ]
 
 [build-system]
-requires = ["hatchling"]
 build-backend = "hatchling.build"
+requires = ["hatchling"]
 
 [tool.setuptools]
 packages = ["endoreg_db"]
 
+[tool.hatch.build]
+exclude = [
+  "tests",
+  "tests/**",
+  "docs/production",
+  "docs/production/**",
+  "htmlcov",
+  "htmlcov/**",
+  "storage",
+  "storage/**",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["endoreg_db"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "tests",
+  "tests/**",
+  "docs/production",
+  "docs/production/**",
+  "htmlcov",
+  "htmlcov/**",
+  "storage",
+  "storage/**",
+]
+
 # [tool.uv.sources]
 # lx-anonymizer = { workspace = true }
-

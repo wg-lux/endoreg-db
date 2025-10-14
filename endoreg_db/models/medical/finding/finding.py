@@ -11,14 +11,22 @@ class FindingManager(models.Manager):
 class Finding(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    examinations = models.ManyToManyField('Examination', blank=True, related_name='findings')
-    finding_types = models.ManyToManyField('FindingType', blank=True, related_name='findings')
+    examinations = models.ManyToManyField(
+        'Examination', 
+        blank=True, 
+        related_name='findings'
+    ) # type: ignore
+    finding_types = models.ManyToManyField(
+        'FindingType', 
+        blank=True, 
+        related_name='findings'
+    ) # type: ignore
 
     finding_interventions = models.ManyToManyField(
         'FindingIntervention',
         blank=True,
         related_name='findings'
-    )
+    ) # type: ignore
 
     objects = FindingManager()
 
