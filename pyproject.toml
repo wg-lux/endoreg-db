@@ -1,6 +1,6 @@
 [project]
 name = "endoreg-db"
-version = "0.7.0"
+version = "0.8.1"
 description = "EndoReg Db Django App"
 readme = "README.md"
 authors = [
@@ -80,7 +80,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "django-modeltranslation>=0.19.16",
     "pip>=25.2",
-    "lx-anonymizer>=0.7.0",
+    "lx-anonymizer[ocr,llm]>=0.8.1",
 ]
 
 [project.urls]
@@ -102,6 +102,6 @@ build-backend = "hatchling.build"
 [tool.setuptools]
 packages = ["endoreg_db"]
 
-[tool.uv.sources]
-lx-anonymizer = { workspace = true }
+# [tool.uv.sources]
+# lx-anonymizer = { workspace = true }
 
