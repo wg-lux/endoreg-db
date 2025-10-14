@@ -21,6 +21,7 @@ class AnonymizationValidateView(APIView):
       "casenumber":         "12345",
       "anonymized_text":    "...",             // nur für PDFs; Videos ignorieren
       "is_verified":        true               // optional; default true
+      "file_type":        "video"            // optional; "video" oder "pdf"; wenn nicht angegeben, wird zuerst Video, dann PDF versucht
     }
     
     Rückwärtskompatibilität: ISO-Format (YYYY-MM-DD) wird ebenfalls akzeptiert.
@@ -35,7 +36,8 @@ class AnonymizationValidateView(APIView):
         payload.setdefault("is_verified", True)
 
         # Try Video first
-        video = VideoFile.objects.filter(pk=file_id).first()
+        if payload.get("file_type") == "video" or not payload.get("file_type"):
+            video = VideoFile.objects.filter(pk=file_id).first()
         if video:
             # Ensure center_name is in payload for hash calculation
             if video.center and not payload.get("center_name"):
@@ -49,7 +51,8 @@ class AnonymizationValidateView(APIView):
             return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
 
         # Then PDF
-        pdf = RawPdfFile.objects.filter(pk=file_id).first()
+        if payload.get("file_type") == "pdf" or not payload.get("file_type"):
+            pdf = RawPdfFile.objects.filter(pk=file_id).first()
         if pdf:
             # Ensure center_name is in payload for hash calculation
             if pdf.center and not payload.get("center_name"):

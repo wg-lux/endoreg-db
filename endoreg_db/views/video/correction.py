@@ -121,7 +121,7 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
 
 class VideoMetadataView(APIView):
     """
-    GET /api/video-metadata/{id}/
+    GET /api/media/videos/{pk}/metadata/
     
     Retrieve analysis results for a video.
     
@@ -139,9 +139,9 @@ class VideoMetadataView(APIView):
         }
     """
     
-    def get(self, request, id):
+    def get(self, request, pk):
         """Get video metadata by video ID."""
-        video = get_object_or_404(VideoFile, pk=id)
+        video = get_object_or_404(VideoFile, pk=pk)
         
         # Get or create metadata record
         metadata, created = VideoMetadata.objects.get_or_create(video=video)
@@ -152,7 +152,7 @@ class VideoMetadataView(APIView):
 
 class VideoProcessingHistoryView(APIView):
     """
-    GET /api/video-processing-history/{id}/
+    GET /api/media/videos/{pk}/processing-history/
     
     Retrieve processing history for a video.
     
@@ -179,9 +179,9 @@ class VideoProcessingHistoryView(APIView):
         ]
     """
     
-    def get(self, request, id):
+    def get(self, request, pk):
         """Get processing history for a video."""
-        video = get_object_or_404(VideoFile, pk=id)
+        video = get_object_or_404(VideoFile, pk=pk)
         
         # Get all history records, newest first
         history = VideoProcessingHistory.objects.filter(
@@ -198,7 +198,7 @@ class VideoProcessingHistoryView(APIView):
 
 class VideoAnalyzeView(APIView):
     """
-    POST /api/video-analyze/{id}/
+    POST /api/media/videos/{pk}/analyze/
     
     Analyze video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM.
     
@@ -220,9 +220,9 @@ class VideoAnalyzeView(APIView):
         }
     """
     
-    def post(self, request, id):
+    def post(self, request, pk):
         """Analyze video for sensitive content."""
-        video = get_object_or_404(VideoFile, pk=id)
+        video = get_object_or_404(VideoFile, pk=pk)
         
         # Extract parameters
         detection_method = request.data.get('detection_method', 'minicpm')
@@ -270,7 +270,7 @@ class VideoAnalyzeView(APIView):
                 details=f"Found {sensitive_count} sensitive frames out of {total_frames} total frames"
             )
             
-            logger.info(f"Video {id} analyzed: {sensitive_count}/{total_frames} sensitive frames")
+            logger.info(f"Video {pk} analyzed: {sensitive_count}/{total_frames} sensitive frames")
             
             return Response({
                 'sensitive_frame_count': sensitive_count,
@@ -283,7 +283,7 @@ class VideoAnalyzeView(APIView):
             })
             
         except Exception as e:
-            logger.error(f"Video analysis failed for {id}: {str(e)}", exc_info=True)
+            logger.error(f"Video analysis failed for {pk}: {str(e)}", exc_info=True)
             
             # Create failure record
             VideoProcessingHistory.objects.create(
@@ -305,7 +305,7 @@ class VideoAnalyzeView(APIView):
 
 class VideoApplyMaskView(APIView):
     """
-    POST /api/video-apply-mask/{id}/
+    POST /api/media/videos/{pk}/apply-mask/
     
     Apply device mask or custom ROI mask to video.
     
@@ -333,9 +333,9 @@ class VideoApplyMaskView(APIView):
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
     
-    def post(self, request, id):
+    def post(self, request, pk):
         """Apply masking to video."""
-        video = get_object_or_404(VideoFile, pk=id)
+        video = get_object_or_404(VideoFile, pk=pk)
         
         # Extract parameters
         mask_type = request.data.get('mask_type', 'device')
@@ -414,7 +414,7 @@ class VideoApplyMaskView(APIView):
                     details=f"Masking completed in {processing_time:.1f}s"
                 )
                 
-                logger.info(f"Video {id} masked successfully: {output_path}")
+                logger.info(f"Video {pk} masked successfully: {output_path}")
                 
                 return Response({
                     'task_id': None,  # Will be Celery task ID in Phase 1.2
@@ -426,7 +426,7 @@ class VideoApplyMaskView(APIView):
                 raise Exception("Masking failed - check FFmpeg logs")
                 
         except Exception as e:
-            logger.error(f"Video masking failed for {id}: {str(e)}", exc_info=True)
+            logger.error(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
             
             history.mark_failure(str(e))
             
@@ -438,7 +438,7 @@ class VideoApplyMaskView(APIView):
 
 class VideoRemoveFramesView(APIView):
     """
-    POST /api/video-remove-frames/{id}/
+    POST /api/media/videos/{pk}/remove-frames/
     
     Remove specified frames from video.
     
@@ -465,9 +465,9 @@ class VideoRemoveFramesView(APIView):
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
     
-    def post(self, request, id):
+    def post(self, request, pk):
         """Remove frames from video."""
-        video = get_object_or_404(VideoFile, pk=id)
+        video = get_object_or_404(VideoFile, pk=pk)
         
         # Extract parameters
         frame_list = request.data.get('frame_list')
@@ -571,7 +571,7 @@ class VideoRemoveFramesView(APIView):
                     details="; ".join(details_parts)
                 )
                 
-                logger.info(f"Video {id} cleaned: removed {len(frames_to_remove)} frames")
+                logger.info(f"Video {pk} cleaned: removed {len(frames_to_remove)} frames")
                 
                 return Response({
                     'task_id': None,  # Will be Celery task ID in Phase 1.2
@@ -585,7 +585,7 @@ class VideoRemoveFramesView(APIView):
                 raise Exception("Frame removal failed - check FFmpeg logs")
                 
         except Exception as e:
-            logger.error(f"Frame removal failed for {id}: {str(e)}", exc_info=True)
+            logger.error(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
             
             history.mark_failure(str(e))
             
@@ -613,7 +613,7 @@ class VideoRemoveFramesView(APIView):
 
 class VideoReprocessView(APIView):
     """
-    POST /api/video-reprocess/{id}/
+    POST /api/media/videos/{pk}/reprocess/
     
     Re-run entire anonymization pipeline for a video.
     
@@ -628,9 +628,9 @@ class VideoReprocessView(APIView):
     Note: This resets VideoState and triggers video_import service.
     """
     
-    def post(self, request, id):
+    def post(self, request, pk):
         """Reprocess video through entire anonymization pipeline."""
-        video = get_object_or_404(VideoFile, pk=id)
+        video = get_object_or_404(VideoFile, pk=pk)
         
         try:
             # Create processing history record
@@ -656,7 +656,7 @@ class VideoReprocessView(APIView):
             
             history.mark_success(details="Reprocessing initiated")
             
-            logger.info(f"Video {id} reprocessing started")
+            logger.info(f"Video {pk} reprocessing started")
             
             return Response({
                 'message': 'Reprocessing started',
@@ -664,7 +664,7 @@ class VideoReprocessView(APIView):
             })
             
         except Exception as e:
-            logger.error(f"Reprocessing failed for {id}: {str(e)}", exc_info=True)
+            logger.error(f"Reprocessing failed for {pk}: {str(e)}", exc_info=True)
             
             return Response(
                 {'error': f'Reprocessing failed: {str(e)}'},

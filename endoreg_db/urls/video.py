@@ -1,17 +1,10 @@
 from django.urls import path
 
 from endoreg_db.views import (
-    VideoReimportView,
     SensitiveMetaDetailView,
     VideoLabelView,
     VideoStreamView,
-    # Video Correction Views (Phase 1.1)
-    VideoMetadataView,
-    VideoProcessingHistoryView,
-    VideoAnalyzeView,
-    VideoApplyMaskView,
-    VideoRemoveFramesView,
-    VideoReprocessView,
+    # Note: All Video Correction Views moved to modern media framework. See: endoreg_db/urls/media.py
 )
 
 url_patterns = [
@@ -33,14 +26,9 @@ url_patterns = [
         name='video_stream'
     ),
     
-    # Video Re-import API endpoint
-    # POST /api/video/<int:video_id>/reimport/
-    # Re-imports a video file to regenerate metadata when OCR failed or data is incomplete
-    path(
-        'video/<int:video_id>/reimport/', 
-        VideoReimportView.as_view(), 
-        name='video_reimport'
-    ),
+    # Note: Video Re-import moved to modern media framework
+    # See: endoreg_db/urls/media.py - POST /api/media/videos/<int:pk>/reimport/
+    
     # Video Sensitive Meta endpoints (for video anonymization)
     # GET /api/video/sensitivemeta/<int:sensitive_meta_id>/
     # PATCH /api/video/sensitivemeta/<int:sensitive_meta_id>/
@@ -51,69 +39,19 @@ url_patterns = [
     ),
     
     # ---------------------------------------------------------------------------------------
-    # VIDEO CORRECTION API ENDPOINTS (Phase 1.1)
+    # VIDEO CORRECTION API ENDPOINTS - MOVED TO MODERN MEDIA FRAMEWORK
     #
-    # These endpoints enable video correction workflows:
-    # - Analysis: Detect sensitive frames using MiniCPM-o 2.6 or OCR+LLM
-    # - Masking: Apply device-specific masks or custom ROI masks
-    # - Frame Removal: Remove sensitive frames from videos
-    # - Processing History: Track all correction operations
+    # All video correction endpoints have been migrated to the modern media framework
+    # as of October 14, 2025. Please use the new endpoints:
+    #
+    # OLD → NEW:
+    # GET  /api/video-metadata/<id>/              → GET  /api/media/videos/<pk>/metadata/
+    # GET  /api/video-processing-history/<id>/    → GET  /api/media/videos/<pk>/processing-history/
+    # POST /api/video-analyze/<id>/               → POST /api/media/videos/<pk>/analyze/
+    # POST /api/video-apply-mask/<id>/            → POST /api/media/videos/<pk>/apply-mask/
+    # POST /api/video-remove-frames/<id>/         → POST /api/media/videos/<pk>/remove-frames/
+    # POST /api/video-reprocess/<id>/             → POST /api/media/videos/<pk>/reprocess/
+    #
+    # See: endoreg_db/urls/media.py for new URL registrations
     # ---------------------------------------------------------------------------------------
-    
-    # Video Metadata API
-    # GET /api/video-metadata/<int:id>/
-    # Returns analysis results (sensitive frame count, ratio, frame IDs)
-    path(
-        'video-metadata/<int:id>/',
-        VideoMetadataView.as_view(),
-        name='video_metadata'
-    ),
-    
-    # Video Processing History API
-    # GET /api/video-processing-history/<int:id>/
-    # Returns history of all processing operations (masking, frame removal, analysis)
-    path(
-        'video-processing-history/<int:id>/',
-        VideoProcessingHistoryView.as_view(),
-        name='video_processing_history'
-    ),
-    
-    # Video Analysis API
-    # POST /api/video-analyze/<int:id>/
-    # Analyzes video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM
-    # Body: { detection_method: 'minicpm'|'ocr_llm'|'hybrid', sample_interval: 30 }
-    path(
-        'video-analyze/<int:id>/',
-        VideoAnalyzeView.as_view(),
-        name='video_analyze'
-    ),
-    
-    # Video Masking API
-    # POST /api/video-apply-mask/<int:id>/
-    # Applies device mask or custom ROI mask to video
-    # Body: { mask_type: 'device'|'custom', device_name: 'olympus', roi: {...} }
-    path(
-        'video-apply-mask/<int:id>/',
-        VideoApplyMaskView.as_view(),
-        name='video_apply_mask'
-    ),
-    
-    # Frame Removal API
-    # POST /api/video-remove-frames/<int:id>/
-    # Removes specified frames from video
-    # Body: { frame_list: [10,20,30] OR frame_ranges: '10-20,30' OR detection_method: 'automatic' }
-    path(
-        'video-remove-frames/<int:id>/',
-        VideoRemoveFramesView.as_view(),
-        name='video_remove_frames'
-    ),
-    
-    # Video Reprocessing API
-    # POST /api/video-reprocess/<int:id>/
-    # Re-runs entire anonymization pipeline for a video
-    path(
-        'video-reprocess/<int:id>/',
-        VideoReprocessView.as_view(),
-        name='video_reprocess'
-    ),
 ]

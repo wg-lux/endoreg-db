@@ -21,7 +21,7 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission
 logger = logging.getLogger(__name__)
 
 
-class PDFMediaManagementView(APIView):
+class PdfMediaView(APIView):
     """
     PDF Media Management API for CRUD operations on PDF files.
     

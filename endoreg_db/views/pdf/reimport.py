@@ -18,15 +18,21 @@ class PdfReimportView(APIView):
         super().__init__(**kwargs)
         self.pdf_service = PdfImportService()
 
-    def post(self, request, pdf_id):
+    def post(self, request, pk):
         """
         Re-import a pdf file to regenerate SensitiveMeta and other metadata.
         Instead of creating a new pdf, this updates the existing one.
+        
+        Args:
+            request: HTTP request object
+            pk: PDF primary key (ID)
         """
+        pdf_id = pk  # Align with media framework naming convention
+        
         # Validate pdf_id parameter
         if not pdf_id or not isinstance(pdf_id, int):
             return Response(
-                {"error": "Invalid pdf ID provided."}, 
+                {"error": "Invalid PDF ID provided."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -94,7 +100,11 @@ class PdfReimportView(APIView):
                     
                     logger.info(f"Starting anonymization using VideoImportService for {pdf.uuid}")
                     self.pdf_service.import_and_anonymize(
-                        pdf_file_obj=pdf,
+                        file_path=raw_file_path,
+                        center_name=pdf.center.name,
+                        processor_name=pdf.processor.name if pdf.processor else "Unknown",
+                        save_video=True,
+                        delete_source=False
                     )
                     
                     logger.info(f"VideoImportService anonymization completed for {pdf.uuid}")
@@ -115,17 +125,17 @@ class PdfReimportView(APIView):
                     logger.exception(f"VideoImportService anonymization failed for pdf {pdf.uuid}: {e}")
                     logger.warning("Continuing without anonymization due to error")
                 
-                # Set anonymization status to "done" even without frame cleaning
-                pdf
+            # Refresh from database to get final state
+            pdf.refresh_from_db()
             
             return Response({
-                "message": "Video re-import completed successfully.",
+                "message": "PDF re-import completed successfully.",
                 "pdf_id": pdf_id,
                 "uuid": str(pdf.uuid),
                 "sensitive_meta_created": pdf.sensitive_meta is not None,
-                "sensitive_meta_id": .sensitive_meta.id if pdf.sensitive_meta else None,
+                "sensitive_meta_id": pdf.sensitive_meta.id if pdf.sensitive_meta else None,
                 "updated_in_place": True,
-                "status": "done"  # ⭐ Add explicit done status
+                "status": "done"
             }, status=status.HTTP_200_OK)
 
         except Exception as e:

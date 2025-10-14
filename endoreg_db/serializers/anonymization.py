@@ -28,6 +28,9 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
     patient_gender = serializers.CharField(required=False, allow_blank=True)
     center_name = serializers.CharField(required=False, allow_blank=True)
     is_verified = serializers.BooleanField(required=False, default=True)
+    file_type = serializers.ChoiceField(
+        choices=['video', 'pdf'], required=False
+    )  # Optional: "video" oder "pdf"
 
     def validate_patient_dob(self, value):
         """
