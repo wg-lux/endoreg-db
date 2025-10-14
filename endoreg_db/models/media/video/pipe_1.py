@@ -1,6 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Dict, List, Tuple
 from django.db import transaction
+from endoreg_db.helpers.download_segmentation_model import download_segmentation_model
 
 # Added imports
 
@@ -50,6 +51,8 @@ def _pipe_1(
             if not state.frames_extracted:
                 logger.error("Pipe 1 failed: Frame extraction did not complete successfully.")
                 return False
+            
+            
 
             # 3. Perform Initial Prediction
             logger.info(f"Pipe 1: Performing prediction with model '{model_name}'...")
@@ -61,7 +64,16 @@ def _pipe_1(
                     model_meta = ai_model_obj.get_latest_version()
             except AiModel.DoesNotExist:
                 logger.error(f"Pipe 1 failed: Model '{model_name}' not found.")
-                return False
+                try:
+                    model_name = download_segmentation_model()
+                    ai_model_obj = AiModel.objects.get(name=model_name)
+                    if model_meta_version is not None:
+                        model_meta = ai_model_obj.metadata_versions.get(version=model_meta_version)
+                    else:
+                        model_meta = ai_model_obj.get_latest_version()
+                except AiModel.DoesNotExist:
+                    logger.error(f"Pipe 1 failed: Model '{model_name}' not found.")
+                    return False
             except ModelMeta.DoesNotExist:
                 logger.error(
                     f"Pipe 1 failed: ModelMeta version {model_meta_version} for model '{model_name}' not found."
