@@ -637,36 +637,6 @@ class PdfImportService:
 
         except Exception as e:
             logger.warning("Could not set anonymized file reference: %s", e)
-    
-    '''def _apply_anonymized_pdf(self):
-        """Apply anonymized PDF results."""
-        if not self.current_pdf:
-            logger.warning("Cannot apply anonymized PDF - no PDF instance available")
-            return
-            
-        anonymized_pdf_path = self.processing_context.get('anonymized_pdf_path')
-        
-        if not anonymized_pdf_path:
-            return
-            
-        anonymized_path = Path(anonymized_pdf_path)
-        if anonymized_path.exists():
-            logger.info(f"Anonymized PDF created by ReportReader at: {anonymized_path}")
-            try:
-                from django.core.files.base import File
-                with open(anonymized_path, 'rb') as f:
-                    django_file = File(f)
-                    self.current_pdf.anonymized_file.save(
-                        anonymized_path.name,
-                        django_file,
-                        save=False
-                    )
-            except Exception as e:
-                logger.warning(f"Could not set anonymized file reference: {e}")
-        else:
-            logger.warning(f"Anonymized PDF path returned but file does not exist: {anonymized_path}")'''
-
-
 
 
     def _finalize_processing(self):
