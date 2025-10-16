@@ -11,11 +11,14 @@ from pathlib import Path
 import os
 import mimetypes
 import logging
+from typing import cast
 from django.http import FileResponse, Http404
 from rest_framework.views import APIView
+from rest_framework.request import Request
 
 from ...models import VideoFile
 from ...utils.permissions import EnvironmentAwarePermission
+from ...utils.paths import STORAGE_DIR  # Import STORAGE_DIR for path resolution
 
 logger = logging.getLogger(__name__)
 
@@ -41,24 +44,32 @@ def _stream_video_file(vf: VideoFile, frontend_origin: str, file_type: str = 'ra
     try:
         # Determine which file to stream based on file_type
         if file_type == 'raw':
-            if hasattr(vf, 'active_raw_file') and vf.active_raw_file and hasattr(vf.active_raw_file, 'path'):
-                try:
-                    path = Path(vf.active_raw_file.path)
-                except (ValueError, AttributeError) as exc:
-                    raise Http404("No raw file associated with this video") from exc
+            if hasattr(vf, 'active_raw_file') and vf.active_raw_file and hasattr(vf.active_raw_file, 'name'):
+                file_ref = vf.active_raw_file
             else:
                 raise Http404("No raw video file available for this entry")
             
         elif file_type == 'processed':
-            if hasattr(vf, 'processed_file') and vf.processed_file and hasattr(vf.processed_file, 'path'):
-                try:
-                    path = Path(vf.processed_file.path)
-                except (ValueError, AttributeError) as exc:
-                    raise Http404("No processed file associated with this video") from exc
+            if hasattr(vf, 'processed_file') and vf.processed_file and hasattr(vf.processed_file, 'name'):
+                file_ref = vf.processed_file
             else:
                 raise Http404("No processed video file available for this entry")
         else:
             raise ValueError(f"Invalid file_type: {file_type}. Must be 'raw' or 'processed'.")
+        
+        # FIX: Handle both relative and absolute paths
+        # Django FileField.path returns .name if MEDIA_ROOT is not set
+        # Import services store relative paths like "videos/UUID.mp4"
+        # We need to resolve to absolute path: STORAGE_DIR / "videos/UUID.mp4"
+        file_name = file_ref.name
+        
+        if file_name.startswith('/'):
+            # Already absolute path
+            path = Path(file_name)
+        else:
+            # Relative path - make absolute by prepending STORAGE_DIR
+            path = STORAGE_DIR / file_name
+            logger.debug(f"Resolved relative path '{file_name}' to absolute: {path}")
         
         # Validate file exists on disk
         if not path.exists():
@@ -142,6 +153,9 @@ class VideoStreamView(APIView):
         if pk is None:
             raise Http404("Video ID is required")
             
+        # Initialize variables in outer scope
+        video_id_int = None
+        
         try:
             # Validate video_id is numeric
             try:
@@ -151,16 +165,15 @@ class VideoStreamView(APIView):
             
             # Support both 'type' (frontend standard) and 'file_type' (legacy)
             # Priority: type > file_type > default 'raw'
+            file_type = 'raw'  # Default value
             try:
-                file_type: str = (
-                    request.query_params.get('type') or 
-                    request.query_params.get('file_type') or 
-                    'raw'
-                ).lower()
-                
-                if file_type not in ['raw', 'processed']:
-                    logger.warning(f"Invalid file_type '{file_type}', defaulting to 'raw'")
-                    file_type = 'raw'
+                file_type_param = request.query_params.get('type') or request.query_params.get('file_type')
+                if file_type_param:
+                    file_type = file_type_param.lower()
+                    
+                    if file_type not in ['raw', 'processed']:
+                        logger.warning(f"Invalid file_type '{file_type}', defaulting to 'raw'")
+                        file_type = 'raw'
                     
             except Exception as e:
                 logger.warning(f"Error parsing file_type parameter: {e}, defaulting to 'raw'")

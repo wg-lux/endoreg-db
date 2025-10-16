@@ -3,7 +3,7 @@ from django.urls import path
 from endoreg_db.views import (
     SensitiveMetaDetailView,
     VideoLabelView,
-    VideoStreamView,
+    # Note: VideoStreamView moved to modern media framework. See: endoreg_db/urls/media.py
     # Note: All Video Correction Views moved to modern media framework. See: endoreg_db/urls/media.py
 )
 
@@ -17,14 +17,18 @@ url_patterns = [
         name='video_label_segments'
     ),
     
-    # Video streaming API endpoint
-    # GET /api/videostream/<int:pk>/
-    # Streams the raw video file with HTTP range and CORS support
-    path(
-        'videostream/<int:pk>/', 
-        VideoStreamView.as_view(), 
-        name='video_stream'
-    ),
+    # ---------------------------------------------------------------------------------------
+    # VIDEO STREAMING - MOVED TO MODERN MEDIA FRAMEWORK
+    #
+    # Video streaming endpoint has been migrated to the media framework
+    # as of October 14, 2025. Please use the new endpoints:
+    #
+    # OLD → NEW:
+    # GET /api/videostream/<pk>/              → GET /api/media/videos/<pk>/
+    # GET /api/videostream/<pk>/              → GET /api/media/videos/<pk>/stream/
+    #
+    # See: endoreg_db/urls/media.py for new URL registrations
+    # ---------------------------------------------------------------------------------------
     
     # Note: Video Re-import moved to modern media framework
     # See: endoreg_db/urls/media.py - POST /api/media/videos/<int:pk>/reimport/

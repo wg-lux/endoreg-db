@@ -4,6 +4,19 @@ from endoreg_db.views.media import (
     VideoMediaView,
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.PDFMediaView
     video_segments_by_pk,
+    video_segments_collection,
+    video_segments_by_video,
+    video_segment_detail,
+    video_segments_stats,
+    video_segment_validate,
+    video_segments_validate_bulk,
+    video_segments_validation_status,
+    video_sensitive_metadata,
+    video_sensitive_metadata_verify,
+    pdf_sensitive_metadata,
+    pdf_sensitive_metadata_verify,
+    sensitive_metadata_list,
+    pdf_sensitive_metadata_list,
 )
 from endoreg_db.views import (
     VideoStreamView,
@@ -89,13 +102,119 @@ urlpatterns = [
     # ---------------------------------------------------------------------------------------
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
     #
-    # Unified segment management endpoints
+    # Unified segment management endpoints replacing legacy /api/video-segments/
+    # Collection: GET/POST all segments across videos
+    # Video-scoped: GET/POST segments for specific video
+    # Detail: GET/PATCH/DELETE individual segment
     # ---------------------------------------------------------------------------------------
     
-    # Video Segments API (GET with filters, supports label filtering)
-    # GET /api/media/videos/<int:pk>/segments/?label=outside
-    # Returns all segments for a video, optionally filtered by label name
-    path("media/videos/<int:pk>/segments/", video_segments_by_pk, name="video-segments"),
+    # Video Segments Collection API
+    # GET/POST /api/media/videos/segments/
+    # List all video segments across videos or create new segment
+    path("media/videos/segments/", video_segments_collection, name="video-segments-collection"),
+    
+    # Video Segments Stats API
+    # GET /api/media/videos/segments/stats/
+    # Get statistics about video segments
+    path("media/videos/segments/stats/", video_segments_stats, name="video-segments-stats"),
+    
+    # Video-Specific Segments API
+    # GET/POST /api/media/videos/<int:pk>/segments/
+    # List segments for specific video or create segment for video
+    path("media/videos/<int:pk>/segments/", video_segments_by_video, name="video-segments-by-video"),
+    
+    # Segment Detail API
+    # GET /api/media/videos/<int:pk>/segments/<int:segment_id>/
+    # PATCH /api/media/videos/<int:pk>/segments/<int:segment_id>/
+    # DELETE /api/media/videos/<int:pk>/segments/<int:segment_id>/
+    # Manages individual segment operations
+    path("media/videos/<int:pk>/segments/<int:segment_id>/", video_segment_detail, name="video-segment-detail"),
+    
+    # ---------------------------------------------------------------------------------------
+    # VIDEO SEGMENT VALIDATION API ENDPOINTS (Modern Media Framework - October 14, 2025)
+    #
+    # Unified validation endpoints replacing legacy /api/label-video-segment/*/validate/
+    # Single: POST validate individual segment
+    # Bulk: POST validate multiple segments
+    # Status: GET/POST validation status for all segments
+    # ---------------------------------------------------------------------------------------
+    
+    # Single Segment Validation API
+    # POST /api/media/videos/<int:pk>/segments/<int:segment_id>/validate/
+    # Validates a single video segment
+    # Body: { "is_validated": true, "notes": "..." }
+    path("media/videos/<int:pk>/segments/<int:segment_id>/validate/", video_segment_validate, name="video-segment-validate"),
+    
+    # Bulk Segment Validation API
+    # POST /api/media/videos/<int:pk>/segments/validate-bulk/
+    # Validates multiple segments at once
+    # Body: { "segment_ids": [1,2,3], "is_validated": true, "notes": "..." }
+    path("media/videos/<int:pk>/segments/validate-bulk/", video_segments_validate_bulk, name="video-segments-validate-bulk"),
+    
+    # Segment Validation Status API
+    # GET /api/media/videos/<int:pk>/segments/validation-status/
+    # Returns validation statistics for all segments
+    # POST /api/media/videos/<int:pk>/segments/validation-status/
+    # Marks all segments (or filtered by label) as validated
+    # Body: { "label_name": "polyp", "notes": "..." }
+    path("media/videos/<int:pk>/segments/validation-status/", video_segments_validation_status, name="video-segments-validation-status"),
+
+    # ---------------------------------------------------------------------------------------
+    # SENSITIVE METADATA ENDPOINTS (Modern Media Framework)
+    # ---------------------------------------------------------------------------------------
+    
+    # Video Sensitive Metadata (Resource-Scoped)
+    # GET/PATCH /api/media/videos/<pk>/sensitive-metadata/
+    # Get or update sensitive patient data for a video
+    path(
+        "media/videos/<int:pk>/sensitive-metadata/",
+        video_sensitive_metadata,
+        name="video-sensitive-metadata"
+    ),
+    
+    # POST /api/media/videos/<pk>/sensitive-metadata/verify/
+    # Update verification state (dob_verified, names_verified)
+    path(
+        "media/videos/<int:pk>/sensitive-metadata/verify/",
+        video_sensitive_metadata_verify,
+        name="video-sensitive-metadata-verify"
+    ),
+    
+    # PDF Sensitive Metadata (Resource-Scoped)
+    # GET/PATCH /api/media/pdfs/<pk>/sensitive-metadata/
+    # Get or update sensitive patient data for a PDF
+    path(
+        "media/pdfs/<int:pk>/sensitive-metadata/",
+        pdf_sensitive_metadata,
+        name="pdf-sensitive-metadata"
+    ),
+    
+    # POST /api/media/pdfs/<pk>/sensitive-metadata/verify/
+    # Update verification state (dob_verified, names_verified)
+    path(
+        "media/pdfs/<int:pk>/sensitive-metadata/verify/",
+        pdf_sensitive_metadata_verify,
+        name="pdf-sensitive-metadata-verify"
+    ),
+    
+    # List Endpoints (Collection-Level)
+    # GET /api/media/sensitive-metadata/
+    # List all sensitive metadata (combined PDFs and Videos)
+    # Supports filtering: ?content_type=pdf|video&verified=true&search=name
+    path(
+        "media/sensitive-metadata/",
+        sensitive_metadata_list,
+        name="sensitive-metadata-list"
+    ),
+    
+    # GET /api/media/pdfs/sensitive-metadata/
+    # List sensitive metadata for PDFs only
+    # Replaces legacy /api/pdf/sensitivemeta/list/
+    path(
+        "media/pdfs/sensitive-metadata/",
+        pdf_sensitive_metadata_list,
+        name="pdf-sensitive-metadata-list"
+    ),
 
     # PDF media endpoints
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
