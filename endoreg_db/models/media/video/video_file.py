@@ -465,7 +465,14 @@ class VideoFile(models.Model):
         # Use proper database connection
         if using is None:
             using = 'default'
-        
+        lock_path = Path(video.get_raw_file_path()).with_suffix(video.get_raw_file_path().suffix + ".lock")
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+                logger.info(f"Removed processing lock: {lock_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove processing lock {lock_path}: {e}")
+                
         try:
             # Call parent delete with proper parameters
             super().delete(using=using, keep_parents=keep_parents)
