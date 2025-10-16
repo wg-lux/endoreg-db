@@ -771,7 +771,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "0.8.1"
+version = "0.8.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "agl-report-reader" },
@@ -856,7 +856,7 @@ requires-dist = [
     { name = "icecream", specifier = ">=2.1.4" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["ocr", "llm"], specifier = ">=0.8.1" },
+    { name = "lx-anonymizer", extras = ["ocr", "llm"], specifier = ">=0.8.2.1" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mypy", specifier = ">=1.16.0" },
     { name = "numpy", specifier = ">=2.2.3" },
@@ -1520,7 +1520,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.8.1"
+version = "0.8.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1548,9 +1548,9 @@ dependencies = [
     { name = "torchaudio" },
     { name = "torchvision" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/a3/528e55312a5cb1c2d6c635b8427aa7c326c3a4031c8a9953dbc0ba726be6/lx_anonymizer-0.8.1.tar.gz", hash = "sha256:9d3f2aa2638081af662d0767f8975db374f3ea467595a8089ae177dd05a56325", size = 571582, upload-time = "2025-10-13T18:45:18.948Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/19/c9f9fb37d25910c17a22d7ce44b8f1c0203d38e6c5707bec23d38e206def/lx_anonymizer-0.8.2.1.tar.gz", hash = "sha256:b3204976e51c3039991ecbdc5e29def1d56e845ceebcbc2193b95a61cef910cc", size = 568735, upload-time = "2025-10-16T11:32:16.101Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/71/5c5788a6b5d7fed065b42c83a4551e643d6809251772538f74ec57421804/lx_anonymizer-0.8.1-py3-none-any.whl", hash = "sha256:3d87946fca26a84ad18eb3920df11a353e90d39f5bb22f71fcd5476e0bb9062e", size = 735977, upload-time = "2025-10-13T18:45:17.2Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/90/9810ef634f75ab0581e94892cc4acca9e1d86678a8adca7830f534c28583/lx_anonymizer-0.8.2.1-py3-none-any.whl", hash = "sha256:ba8d198b65b715d11aa5dd6b99e746ebbd5eafbea17166eac25823bb469fa976", size = 731805, upload-time = "2025-10-16T11:32:13.634Z" },
 ]
 
 [package.optional-dependencies]

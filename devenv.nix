@@ -18,12 +18,11 @@ let
   confDir = "./conf"; # Define confDir here
 
   # Pin to specific Python 3.12 version to match pyproject.toml
-  python = pkgs.python312;
+  python = pkgs.python3.withPackages(ps: with ps; [tkinter]); #known devenv issue with python3Packages since python3Full was deprecated
   uvPackage = pkgs.uv;
   
   buildInputs = with pkgs; [
     python312
-    python312Packages.tkinter
     stdenv.cc.cc
     tesseract
     glib
@@ -47,16 +46,16 @@ let
 
   _module.args.buildInputs = baseBuildInputs;
 
-  lx-anonymizer-src = pkgs.fetchGit {
-    url = "https://github.com/wg-lux/lx-anonymizer";
-    ref = "prototype";
-    # If you know the specific revision, it's better to use rev for reproducibility
-    # rev = "abcdef1234567890"; 
-  };
+  # lx-anonymizer-src = pkgs.fetchGit {
+  #   url = "https://github.com/wg-lux/lx-anonymizer";
+  #   ref = "prototype";
+  #   # If you know the specific revision, it's better to use rev for reproducibility
+  #   # rev = "abcdef1234567890"; 
+  # };
 
-  imports = [ 
-    "${lx-anonymizer-src}/devenv.nix"
-  ]; 
+  # imports = [ 
+  #   "${lx-anonymizer-src}/devenv.nix"
+  # ]; 
 
 in 
 {
@@ -86,6 +85,7 @@ in
   };
 
   scripts = {
+
     export-nix-vars.exec = ''
       cat > .devenv-vars.json << EOF
       {
@@ -179,9 +179,7 @@ in
       echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
     fi
 
-    # . .devenv/state/venv/bin/activate
-    # runtests-dataloader
-    # hello
+    env-setup
   '';
 
   enterTest = ''

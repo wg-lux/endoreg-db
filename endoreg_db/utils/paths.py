@@ -8,19 +8,12 @@ It provides a unified dictionary 'data_paths' for accessing all path objects.
 from logging import getLogger
 logger = getLogger(__name__)
 
-import os
 from pathlib import Path
 from typing import Dict
-import dotenv
 
-# Only load .env in non-pytest contexts to avoid leaking dev settings into tests
-if not os.environ.get("PYTEST_CURRENT_TEST"):
-    dotenv.load_dotenv()
-else:
-    logger.debug("Skipping .env load under pytest")
+from endoreg_db.config.env import env_path
 
-# Define BASE_DIR as the project root (endoreg_db/utils -> endoreg_db -> repo root)
-STORAGE_DIR = Path(os.getenv("STORAGE_DIR"))
+STORAGE_DIR = env_path("STORAGE_DIR", "storage")
 
 # Resolve STORAGE_DIR from env or default under BASE_DIR
 #def _resolve_storage_dir() -> Path:
@@ -36,7 +29,6 @@ STORAGE_DIR = Path(os.getenv("STORAGE_DIR"))
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 PREFIX_RAW = "raw_"
-STORAGE_DIR_NAME = "data"
 IMPORT_DIR_NAME = "import"
 EXPORT_DIR_NAME = "export"
 

@@ -13,7 +13,7 @@ else:
     ENDOREG_CENTER_ID = settings.ENDOREG_CENTER_ID
 
 # Import the new utility function
-from ...utils.video.ffmpeg_wrapper import get_stream_info
+from ...utils.video import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ class FFMpegMeta(models.Model):
         """
         logger.info("Running ffprobe on %s", file_path)
         try:
-            probe_data = get_stream_info(file_path)  # Use the new utility
+            probe_data = ffmpeg_wrapper.get_stream_info(file_path)  # Use the new utility
         except Exception as probe_err:
             logger.error("ffprobe execution failed for %s: %s", file_path, probe_err, exc_info=True)
             raise RuntimeError(f"ffprobe execution failed for {file_path}") from probe_err
