@@ -25,7 +25,7 @@ from lx_anonymizer.ocr import trocr_full_image_ocr
 from numpy import ma
 
 # File lock configuration (matches PDF import)
-STALE_LOCK_SECONDS = 600  # 10 minutes - reclaim locks older than this
+STALE_LOCK_SECONDS = 6000  # 10 minutes - reclaim locks older than this
 MAX_LOCK_WAIT_SECONDS = 90  # New: wait up to 90s for a non-stale lock to clear before skipping
 
 logger = logging.getLogger(__name__)

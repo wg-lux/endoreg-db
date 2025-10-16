@@ -10,13 +10,14 @@ import tempfile
 import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-import uuid
 
 from django.test import TestCase
 
 from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.models import VideoFile, Center, EndoscopyProcessor
-from endoreg_db.utils import data_paths
+from endoreg_db.models import Center, EndoscopyProcessor
+
+from ...helpers.default_objects import get_default_processor, get_default_center
+from ...helpers.data_loader import load_center_data, load_endoscope_data
 
 
 class TestVideoImportFileMovement(TestCase):
@@ -25,6 +26,8 @@ class TestVideoImportFileMovement(TestCase):
     def setUp(self):
         """Set up test environment."""
         # Create test video file data (minimal MP4 header)
+        load_center_data()
+        load_endoscope_data()
         self.test_video_data = b'\x00\x00\x00\x20ftypmp42\x00\x00\x00\x00mp42isom' + b'\x00' * 1000
         
         # Create temporary directories for testing
@@ -38,15 +41,21 @@ class TestVideoImportFileMovement(TestCase):
             dir_path.mkdir(parents=True, exist_ok=True)
         
         # Create test center and processor
-        self.center = Center.objects.create(
-            name="test_center",
-            display_name="Test Center"
-        )
+        # self.center = Center.objects.create(
+        #     name="test_center",
+        #     # display_name="Test Center"
+        # )
+        self.center = get_default_center()
+        self.center_name = self.center.name
         
-        self.processor = EndoscopyProcessor.objects.create(
-            name="test_processor",
-            center=self.center
-        )
+        # self.processor = EndoscopyProcessor.objects.create(
+        #     name="test_processor",
+        # )
+        # self.processor.centers.add(self.center)
+        # self.processor.save()
+
+        self.processor = get_default_processor()
+        self.processor_name = self.processor.name
     
     def tearDown(self):
         """Clean up test environment."""
@@ -81,41 +90,47 @@ class TestVideoImportFileMovement(TestCase):
             
             # Mock video creation methods with proper center/processor handling
             with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
-                # Create side effect that validates center parameter
-                def create_video_side_effect(file_path, center, processor=None, **kwargs):
-                    # ✅ Validate: center must be a Center instance (not string!)
-                    self.assertIsInstance(center, Center, 
-                                        "center should be a Center instance, not string")
-                    self.assertEqual(center.name, "test_center",
-                                   "center should match the test center")
-                    
-                    # ✅ Validate: processor must be EndoscopyProcessor instance
-                    if processor:
-                        self.assertIsInstance(processor, EndoscopyProcessor,
-                                            "processor should be EndoscopyProcessor instance")
-                        self.assertEqual(processor.name, "test_processor")
-                    
-                    # Create mock video with correct relationships
+                # Create side effect that validates keyword-based API
+                def create_video_side_effect(
+                    *,
+                    file_path,
+                    center_name,
+                    processor_name=None,
+                    delete_source=False,
+                    save_video_file=True,
+                    **kwargs,
+                ):
+                    self.assertIsInstance(center_name, str, "center_name should be a string identifier")
+                    self.assertEqual(center_name, self.center_name, "center_name should match provided center")
+                    self.assertIsInstance(delete_source, bool)
+                    self.assertIsInstance(save_video_file, bool)
+
+                    center = Center.objects.get(name=center_name)
+                    processor = None
+                    if processor_name:
+                        self.assertIsInstance(processor_name, str, "processor_name should be a string identifier")
+                        processor = EndoscopyProcessor.objects.get(name=processor_name)
+
                     mock_video = MagicMock()
                     mock_video.uuid = "test-uuid-123"
-                    mock_video.center = center  # ✅ Store the actual Center object
-                    mock_video.processor = processor  # ✅ Store the actual Processor object
+                    mock_video.center = center
+                    mock_video.processor = processor
                     mock_video.raw_file = MagicMock()
-                    mock_video.raw_file.name = "videos/test-uuid-123_test_input.mp4"
-                    mock_video.file = MagicMock()
-                    mock_video.file.name = "anonym_videos/anonym_test-uuid-123_test_input.mp4"
+                    mock_video.raw_file.name = ""
+                    mock_video.processed_file = MagicMock()
+                    mock_video.processed_file.name = ""
+                    mock_video.active_file_path = file_path
                     mock_video.sensitive_meta = None
-                    
-                    # ✅ Add required methods to mock
+
                     mock_video.initialize_video_specs = MagicMock()
                     mock_video.initialize_frames = MagicMock()
                     mock_video.extract_frames = MagicMock(return_value=True)
                     mock_video.get_or_create_state = MagicMock(return_value=MagicMock())
                     mock_video.save = MagicMock()
                     mock_video.refresh_from_db = MagicMock()
-                    
+
                     return mock_video
-                
+
                 mock_create_video.side_effect = create_video_side_effect
                 
                 # Mock state management
@@ -140,7 +155,7 @@ class TestVideoImportFileMovement(TestCase):
                     self.assertEqual(result_video.center, self.center, 
                                    "Result video should have correct center")
                     self.assertEqual(result_video.processor, self.processor,
-                                   "Result video should have correct processor")
+                                     "Result video should have correct processor")
         
         # CRITICAL TESTS: Verify file movements
         
@@ -149,14 +164,14 @@ class TestVideoImportFileMovement(TestCase):
                         f"Original file should be moved from raw_videos: {test_video_path}")
         
         # 2. Raw video should exist in /data/videos
-        raw_video_files = list(self.temp_videos.glob("*test_input.mp4"))
-        self.assertTrue(len(raw_video_files) > 0, 
-                       f"Raw video should exist in videos directory: {self.temp_videos}")
+        expected_raw_path = self.temp_videos / "test-uuid-123.mp4"
+        self.assertTrue(expected_raw_path.exists(),
+                        f"Raw video should be renamed to UUID in videos directory: {expected_raw_path}")
         
         # 3. Processed video should exist in /data/anonym_videos  
-        anonym_video_files = list(self.temp_anonym_videos.glob("*test_input.mp4"))
-        self.assertTrue(len(anonym_video_files) > 0,
-                       f"Processed video should exist in anonym_videos directory: {self.temp_anonym_videos}")
+        expected_anonym_path = self.temp_anonym_videos / "anonym_test-uuid-123.mp4"
+        self.assertTrue(expected_anonym_path.exists(),
+                        f"Processed video should be renamed with anonym prefix: {expected_anonym_path}")
         
         # 4. raw_videos directory should be empty
         remaining_files = list(self.temp_raw_videos.glob("*"))
@@ -181,16 +196,32 @@ class TestVideoImportFileMovement(TestCase):
             
             with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
                 # Create side effect with proper validation
-                def create_video_side_effect(file_path, center, processor=None, **kwargs):
-                    self.assertIsInstance(center, Center)
-                    self.assertIsInstance(processor, EndoscopyProcessor)
-                    
+                def create_video_side_effect(
+                    *,
+                    file_path,
+                    center_name,
+                    processor_name=None,
+                    delete_source=False,
+                    save_video_file=True,
+                    **kwargs,
+                ):
+                    self.assertIsInstance(center_name, str)
+                    center = Center.objects.get(name=center_name)
+
+                    processor = None
+                    if processor_name:
+                        self.assertIsInstance(processor_name, str)
+                        processor = EndoscopyProcessor.objects.get(name=processor_name)
+
                     mock_video = MagicMock()
                     mock_video.uuid = "test-uuid-456"
                     mock_video.center = center
                     mock_video.processor = processor
                     mock_video.raw_file = MagicMock()
-                    mock_video.file = MagicMock()
+                    mock_video.raw_file.name = ""
+                    mock_video.processed_file = MagicMock()
+                    mock_video.processed_file.name = ""
+                    mock_video.active_file_path = file_path
                     mock_video.sensitive_meta = None
                     mock_video.initialize_video_specs = MagicMock()
                     mock_video.initialize_frames = MagicMock()
@@ -215,14 +246,14 @@ class TestVideoImportFileMovement(TestCase):
                     )
         
         # Check UUID-based naming in videos directory
-        raw_video_files = list(self.temp_videos.glob("test-uuid-456_*"))
-        self.assertTrue(len(raw_video_files) > 0,
-                       "Raw video should be named with UUID prefix")
+        expected_raw_path = self.temp_videos / "test-uuid-456.mp4"
+        self.assertTrue(expected_raw_path.exists(),
+                        "Raw video should be renamed with UUID only")
         
         # Check anonym prefix in anonym_videos directory
-        anonym_video_files = list(self.temp_anonym_videos.glob("anonym_*"))
-        self.assertTrue(len(anonym_video_files) > 0,
-                       "Processed video should be named with 'anonym_' prefix")
+        expected_anonym_path = self.temp_anonym_videos / "anonym_test-uuid-456.mp4"
+        self.assertTrue(expected_anonym_path.exists(),
+                        "Processed video should be named with 'anonym_' prefix and UUID")
     
     @patch('endoreg_db.utils.data_paths')
     def test_error_handling_preserves_file_structure(self, mock_data_paths):
@@ -286,7 +317,8 @@ class TestVideoImportFileMovement(TestCase):
             service.processing_context = {
                 'file_path': self.create_test_video_file(),
                 'video_filename': 'test.mp4',
-                'cleaned_video_path': None
+                'cleaned_video_path': None,
+                'delete_source': False,
             }
             service.current_video = MagicMock()
             service.current_video.uuid = "test-uuid"
