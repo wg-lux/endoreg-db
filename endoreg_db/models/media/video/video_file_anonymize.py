@@ -12,6 +12,7 @@ from django.conf import settings
 
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
+from endoreg_db.utils.paths import STORAGE_DIR
 from ....utils.video.ffmpeg_wrapper import assemble_video_from_frames
 from ...utils import anonymize_frame  # Import from models.utils
 from .video_file_segments import _get_outside_frames, _get_outside_frame_numbers
@@ -268,7 +269,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
             raise ValueError(f"Processed video hash {new_processed_hash} already exists for another video (Video: {video.uuid}).")
 
         video.processed_video_hash = new_processed_hash
-        video.processed_file.name = video.get_target_anonymized_video_path().relative_to(settings.MEDIA_ROOT).as_posix()
+        video.processed_file.name = video.get_target_anonymized_video_path().relative_to(STORAGE_DIR).as_posix()
 
         update_fields = [
             "processed_video_hash",
