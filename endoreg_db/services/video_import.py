@@ -268,46 +268,62 @@ class VideoImportService():
         from endoreg_db.utils import data_paths
         
         source_path = self.processing_context['file_path']
-        
-        # Define target directories
-        videos_dir = data_paths["video"]  # /data/videos for raw files
+
+        videos_dir = data_paths["video"]
         videos_dir.mkdir(parents=True, exist_ok=True)
 
         _current_video = self.current_video
         assert _current_video is not None, "Current video instance is None during storage move"
-        
-        # Create target path for raw video in /data/videos
-        ext = Path(_current_video.active_file_path).suffix or ".mp4"
-        video_filename = f"{_current_video.uuid}{ext}"
-        raw_target_path = videos_dir / video_filename
-        
-        # Move source file to raw video storage
+
+        stored_raw_path = _current_video.get_raw_file_path()
+        if not stored_raw_path:
+            raise RuntimeError("VideoFile has no raw file path after creation")
+
+        delete_source = bool(self.processing_context.get('delete_source'))
+        stored_raw_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not stored_raw_path.exists():
+            try:
+                if source_path.exists():
+                    if delete_source:
+                        shutil.move(str(source_path), str(stored_raw_path))
+                        self.logger.info("Moved raw video to: %s", stored_raw_path)
+                    else:
+                        shutil.copy2(str(source_path), str(stored_raw_path))
+                        self.logger.info("Copied raw video to: %s", stored_raw_path)
+                else:
+                    raise FileNotFoundError(f"Neither stored raw path nor source path exists for {self.processing_context['file_path']}")
+            except Exception as e:
+                self.logger.error("Failed to place video in final storage: %s", e)
+                raise
+        else:
+            # If we already have the stored copy, respect delete_source flag without touching assets unnecessarily
+            if delete_source and source_path.exists():
+                try:
+                    os.remove(source_path)
+                    self.logger.info("Removed original source file after storing copy: %s", source_path)
+                except OSError as e:
+                    self.logger.warning("Failed to remove source file %s: %s", source_path, e)
+
+        # Ensure database path points to stored location (relative to storage root)
         try:
-            shutil.move(str(source_path), str(raw_target_path))
-            self.logger.info("Moved raw video to: %s", raw_target_path)
-        except Exception as e:
-            self.logger.error("Failed to move video to final storage: %s", e)
-            raise
-        
-        # Update the raw_file path in database (relative to storage root)
-        try:
-            assert _current_video is not None, "Current video instance is None during raw_file update"
             storage_root = data_paths["storage"]
-            relative_path = raw_target_path.relative_to(storage_root)
-            _current_video.raw_file.name = str(relative_path)
-            _current_video.save(update_fields=['raw_file'])
-            self.logger.info("Updated raw_file path to: %s", relative_path)
+            relative_path = Path(stored_raw_path).relative_to(storage_root)
+            if _current_video.raw_file.name != str(relative_path):
+                _current_video.raw_file.name = str(relative_path)
+                _current_video.save(update_fields=['raw_file'])
+                self.logger.info("Updated raw_file path to: %s", relative_path)
         except Exception as e:
-            self.logger.error("Failed to update raw_file path: %s", e)
-            # Fallback to simple relative path
-            _current_video.raw_file.name = f"videos/{video_filename}"
-            _current_video.save(update_fields=['raw_file'])
-            self.logger.info("Updated raw_file path using fallback: %s", f"videos/{video_filename}")
-            
-        
+            self.logger.error("Failed to ensure raw_file path is relative: %s", e)
+            fallback_relative = Path("videos") / Path(stored_raw_path).name
+            if _current_video.raw_file.name != fallback_relative.as_posix():
+                _current_video.raw_file.name = fallback_relative.as_posix()
+                _current_video.save(update_fields=['raw_file'])
+                self.logger.info("Updated raw_file path using fallback: %s", fallback_relative.as_posix())
+
         # Store paths for later processing
-        self.processing_context['raw_video_path'] = raw_target_path
-        self.processing_context['video_filename'] = video_filename
+        self.processing_context['raw_video_path'] = Path(stored_raw_path)
+        self.processing_context['video_filename'] = Path(stored_raw_path).name
 
     def _setup_processing_environment(self):
         """Setup the processing environment without file movement."""
