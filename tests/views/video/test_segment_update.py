@@ -5,7 +5,7 @@ Tests the update_segments_after_frame_removal() function from Phase 1.4.
 """
 import pytest
 from django.test import TestCase
-from endoreg_db.models import VideoFile, LabelVideoSegment, Label, VideoState
+from endoreg_db.models import Center, EndoscopyProcessor, VideoFile, LabelVideoSegment, Label, VideoState
 from endoreg_db.views.video.correction import update_segments_after_frame_removal
 
 
@@ -14,17 +14,50 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
     
     def setUp(self):
         """Create test video and segments."""
+        # Create center and processor to satisfy foreign key requirements
+        self.center = Center.objects.create(
+            name="segment_update_center",
+            display_name="Segment Update Center",
+        )
+        self.processor = EndoscopyProcessor.objects.create(
+            name="segment_processor",
+            image_width=1920,
+            image_height=1080,
+            endoscope_image_x=0,
+            endoscope_image_y=0,
+            endoscope_image_width=0,
+            endoscope_image_height=0,
+            examination_date_x=0,
+            examination_date_y=0,
+            examination_date_width=0,
+            examination_date_height=0,
+            patient_first_name_x=0,
+            patient_first_name_y=0,
+            patient_first_name_width=0,
+            patient_first_name_height=0,
+            patient_last_name_x=0,
+            patient_last_name_y=0,
+            patient_last_name_width=0,
+            patient_last_name_height=0,
+            patient_dob_x=0,
+            patient_dob_y=0,
+            patient_dob_width=0,
+            patient_dob_height=0,
+        )
+        self.processor.centers.add(self.center)
+
         # Create video
         self.video = VideoFile.objects.create(
+            center=self.center,
+            processor=self.processor,
             video_hash="test_hash_segment_update",
-            original_file_name="test_video.mp4"
+            original_file_name="test_video.mp4",
         )
         
-        # Create video state
-        self.video_state = VideoState.objects.create(
-            video_file=self.video,
-            frames_extracted=True
-        )
+        # Create video state and associate with the video
+        self.video_state = VideoState.objects.create(frames_extracted=True)
+        self.video.state = self.video_state
+        self.video.save(update_fields=["state"])
         
         # Create test labels
         self.label1 = Label.objects.create(name="Polyp")
@@ -34,9 +67,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test that segments remain unchanged when no frames are removed."""
         # Create segment
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=200,
             label=self.label1
         )
         
@@ -45,8 +78,8 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify no changes
         segment.refresh_from_db()
-        assert segment.start_frame == 100
-        assert segment.end_frame == 200
+        assert segment.start_frame_number == 100
+        assert segment.end_frame_number == 200
         assert result['segments_updated'] == 0
         assert result['segments_deleted'] == 0
         assert result['segments_unchanged'] == 0
@@ -55,9 +88,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test segment shift when frames are removed before it."""
         # Create segment at frames 100-200
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=200,
             label=self.label1
         )
         
@@ -67,8 +100,8 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify segment shifted left by 3 frames
         segment.refresh_from_db()
-        assert segment.start_frame == 97  # 100 - 3
-        assert segment.end_frame == 197   # 200 - 3
+        assert segment.start_frame_number == 97  # 100 - 3
+        assert segment.end_frame_number == 197   # 200 - 3
         assert result['segments_updated'] == 1
         assert result['segments_deleted'] == 0
     
@@ -76,9 +109,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test segment shrinkage when frames are removed within it."""
         # Create segment at frames 100-200
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=200,
             label=self.label1
         )
         
@@ -88,8 +121,8 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify segment shrunk by 3 frames
         segment.refresh_from_db()
-        assert segment.start_frame == 100  # No shift (no frames before)
-        assert segment.end_frame == 197    # 200 - 3 (frames within)
+        assert segment.start_frame_number == 100  # No shift (no frames before)
+        assert segment.end_frame_number == 197    # 200 - 3 (frames within)
         assert result['segments_updated'] == 1
         assert result['segments_deleted'] == 0
     
@@ -97,9 +130,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test segment update when frames removed both before and within."""
         # Create segment at frames 100-200
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=200,
             label=self.label1
         )
         
@@ -109,8 +142,8 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify both shift and shrinkage
         segment.refresh_from_db()
-        assert segment.start_frame == 98   # 100 - 2 (frames before)
-        assert segment.end_frame == 195    # 200 - 2 (before) - 3 (within)
+        assert segment.start_frame_number == 98   # 100 - 2 (frames before)
+        assert segment.end_frame_number == 195    # 200 - 2 (before) - 3 (within)
         assert result['segments_updated'] == 1
         assert result['segments_deleted'] == 0
     
@@ -118,9 +151,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test segment deletion when all its frames are removed."""
         # Create small segment at frames 100-105
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=105,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=105,
             label=self.label1
         )
         
@@ -137,25 +170,25 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test multiple segments with different update scenarios."""
         # Segment 1: frames 50-100 (will be shifted)
         seg1 = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=50,
-            end_frame=100,
+            video_file=self.video,
+            start_frame_number=50,
+            end_frame_number=100,
             label=self.label1
         )
         
         # Segment 2: frames 150-200 (will be shifted and shrunk)
         seg2 = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=150,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=150,
+            end_frame_number=200,
             label=self.label2
         )
         
         # Segment 3: frames 250-260 (will be deleted)
         seg3 = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=250,
-            end_frame=260,
+            video_file=self.video,
+            start_frame_number=250,
+            end_frame_number=260,
             label=self.label1
         )
         
@@ -165,12 +198,12 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify results
         seg1.refresh_from_db()
-        assert seg1.start_frame == 48   # 50 - 2 (frames before)
-        assert seg1.end_frame == 98     # 100 - 2 (frames before)
+        assert seg1.start_frame_number == 48   # 50 - 2 (frames before)
+        assert seg1.end_frame_number == 98     # 100 - 2 (frames before)
         
         seg2.refresh_from_db()
-        assert seg2.start_frame == 148  # 150 - 2 (frames before seg1)
-        assert seg2.end_frame == 196    # 200 - 2 (before) - 2 (within)
+        assert seg2.start_frame_number == 148  # 150 - 2 (frames before seg1)
+        assert seg2.end_frame_number == 196    # 200 - 2 (before) - 2 (within)
         
         # Segment 3 should be deleted
         assert not LabelVideoSegment.objects.filter(id=seg3.id).exists()
@@ -182,9 +215,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test that removing frames after a segment doesn't affect it."""
         # Create segment at frames 50-100
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=50,
-            end_frame=100,
+            video_file=self.video,
+            start_frame_number=50,
+            end_frame_number=100,
             label=self.label1
         )
         
@@ -194,8 +227,8 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify segment unchanged
         segment.refresh_from_db()
-        assert segment.start_frame == 50
-        assert segment.end_frame == 100
+        assert segment.start_frame_number == 50
+        assert segment.end_frame_number == 100
         assert result['segments_updated'] == 0
         assert result['segments_deleted'] == 0
         assert result['segments_unchanged'] == 1
@@ -204,9 +237,9 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         """Test that duplicate frame numbers are handled correctly."""
         # Create segment at frames 100-200
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=200,
             label=self.label1
         )
         
@@ -216,17 +249,17 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify only unique frames counted (50 and 75 = 2 frames)
         segment.refresh_from_db()
-        assert segment.start_frame == 98   # 100 - 2
-        assert segment.end_frame == 198    # 200 - 2
+        assert segment.start_frame_number == 98   # 100 - 2
+        assert segment.end_frame_number == 198    # 200 - 2
         assert result['segments_updated'] == 1
     
     def test_unsorted_removed_frames(self):
         """Test that unsorted frame numbers are handled correctly."""
         # Create segment at frames 100-200
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=200,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=200,
             label=self.label1
         )
         
@@ -236,17 +269,17 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify all frames counted correctly (4 frames before segment)
         segment.refresh_from_db()
-        assert segment.start_frame == 96   # 100 - 4
-        assert segment.end_frame == 196    # 200 - 4
+        assert segment.start_frame_number == 96   # 100 - 4
+        assert segment.end_frame_number == 196    # 200 - 4
         assert result['segments_updated'] == 1
     
     def test_edge_case_segment_at_frame_0(self):
         """Test segment starting at frame 0."""
         # Create segment at frames 0-50
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=0,
-            end_frame=50,
+            video_file=self.video,
+            start_frame_number=0,
+            end_frame_number=50,
             label=self.label1
         )
         
@@ -256,17 +289,17 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         
         # Verify segment shrunk but stays at frame 0
         segment.refresh_from_db()
-        assert segment.start_frame == 0    # No frames before
-        assert segment.end_frame == 47     # 50 - 3 (within)
+        assert segment.start_frame_number == 0    # No frames before
+        assert segment.end_frame_number == 47     # 50 - 3 (within)
         assert result['segments_updated'] == 1
     
     def test_edge_case_single_frame_segment(self):
-        """Test single-frame segment (start_frame == end_frame)."""
-        # Create single-frame segment at frame 100
+        """Test single-frame segment where end is start + 1."""
+        # Create single-frame segment at frame 100 (length 1)
         segment = LabelVideoSegment.objects.create(
-            video=self.video,
-            start_frame=100,
-            end_frame=100,
+            video_file=self.video,
+            start_frame_number=100,
+            end_frame_number=101,
             label=self.label1
         )
         

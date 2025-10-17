@@ -64,15 +64,17 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
         return {'segments_updated': 0, 'segments_deleted': 0, 'segments_unchanged': 0}
     
     removed_frames = sorted(set(removed_frames))  # Ensure sorted and unique
-    segments = LabelVideoSegment.objects.filter(video=video).order_by('start_frame')
+    segments = LabelVideoSegment.objects.filter(
+        video_file=video
+    ).order_by('start_frame_number')
     
     segments_updated = 0
     segments_deleted = 0
     segments_unchanged = 0
     
     for segment in segments:
-        original_start = segment.start_frame
-        original_end = segment.end_frame
+        original_start = segment.start_frame_number
+        original_end = segment.end_frame_number
         
         # Count frames removed before this segment
         frames_before = sum(1 for f in removed_frames if f < original_start)
@@ -99,9 +101,9 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
                 f"{original_start}-{original_end} → {new_start}-{new_end} "
                 f"(before: {frames_before}, within: {frames_within})"
             )
-            segment.start_frame = new_start
-            segment.end_frame = new_end
-            segment.save()
+            segment.start_frame_number = new_start
+            segment.end_frame_number = new_end
+            segment.save(update_fields=["start_frame_number", "end_frame_number"])
             segments_updated += 1
         else:
             # No change needed
