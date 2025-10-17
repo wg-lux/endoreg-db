@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Optional, Type
 
 # Import the new exceptions from the correct path
 from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
-from ...utils import VIDEO_DIR, TMP_VIDEO_DIR, data_paths
+from ...utils import VIDEO_DIR, TMP_VIDEO_DIR
+from importlib import import_module
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -170,6 +171,22 @@ def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
         raise
 
 
+def _get_data_paths():
+    """Return the current data_paths mapping (supports patched instances in tests)."""
+    utils_module = import_module("endoreg_db.utils")
+    return getattr(utils_module, "data_paths")
+
+
+def _get_path(mapping, key, default):
+    """Access mapping by key using __getitem__ so MagicMocks with side effects work."""
+    if mapping is None:
+        return default
+    try:
+        return mapping[key]
+    except (KeyError, TypeError):
+        return default
+
+
 def _create_from_file(
     cls_model: Type["VideoFile"],
     file_path: Path,
@@ -199,8 +216,12 @@ def _create_from_file(
 
     try:
         # Ensure we operate under the canonical video path root
-        video_dir = data_paths.get("video", video_dir)
-        storage_root = Path(video_dir).parent
+        data_paths = _get_data_paths()
+        resolved_video_dir = _get_path(data_paths, "video", video_dir)
+        video_dir = Path(resolved_video_dir)
+        storage_root_default = Path(video_dir).parent
+        resolved_storage_root = _get_path(data_paths, "storage", storage_root_default)
+        storage_root = Path(resolved_storage_root)
         storage_root.mkdir(parents=True, exist_ok=True)
         
         # Check storage capacity before starting any work
@@ -300,7 +321,8 @@ def _create_from_file(
         # 8. Create the VideoFile instance
         logger.info("Creating new VideoFile instance with UUID: %s", uuid_val)
         # Store FileField path relative to storage root including the videos prefix
-        relative_name = (final_storage_path.relative_to(data_paths['storage'])).as_posix()
+        storage_base = Path(_get_path(data_paths, "storage", final_storage_path.parent))
+        relative_name = (final_storage_path.relative_to(storage_base)).as_posix()
         video = cls_model(
             uuid=uuid_val,
             raw_file=relative_name,

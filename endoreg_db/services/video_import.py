@@ -275,9 +275,37 @@ class VideoImportService():
         _current_video = self.current_video
         assert _current_video is not None, "Current video instance is None during storage move"
 
-        stored_raw_path = _current_video.get_raw_file_path()
+        stored_raw_path = None
+        if hasattr(_current_video, "get_raw_file_path"):
+            possible_path = _current_video.get_raw_file_path()
+            if possible_path:
+                try:
+                    stored_raw_path = Path(possible_path)
+                except (TypeError, ValueError):
+                    stored_raw_path = None
+
+        if stored_raw_path:
+            try:
+                storage_root = data_paths["storage"]
+                if stored_raw_path.is_absolute():
+                    if not stored_raw_path.is_relative_to(storage_root):
+                        stored_raw_path = None
+                else:
+                    if stored_raw_path.parts and stored_raw_path.parts[0] == videos_dir.name:
+                        stored_raw_path = storage_root / stored_raw_path
+                    else:
+                        stored_raw_path = videos_dir / stored_raw_path.name
+            except Exception:
+                stored_raw_path = None
+
+        if stored_raw_path and not stored_raw_path.suffix:
+            stored_raw_path = None
+
         if not stored_raw_path:
-            raise RuntimeError("VideoFile has no raw file path after creation")
+            uuid_str = getattr(_current_video, "uuid", None)
+            source_suffix = Path(source_path).suffix or ".mp4"
+            filename = f"{uuid_str}{source_suffix}" if uuid_str else Path(source_path).name
+            stored_raw_path = videos_dir / filename
 
         delete_source = bool(self.processing_context.get('delete_source'))
         stored_raw_path.parent.mkdir(parents=True, exist_ok=True)

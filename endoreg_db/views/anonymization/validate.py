@@ -1,9 +1,16 @@
+import logging
+from typing import Any, Dict, cast
+
+from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db import transaction
-from endoreg_db.models import VideoFile, RawPdfFile
+
+from endoreg_db.models import RawPdfFile, VideoFile
 from endoreg_db.serializers.anonymization import SensitiveMetaValidateSerializer
+
+
+logger = logging.getLogger(__name__)
 
 
 class AnonymizationValidateView(APIView):
@@ -32,35 +39,69 @@ class AnonymizationValidateView(APIView):
         # Serializer-Validierung mit deutscher Datums-Priorität
         serializer = SensitiveMetaValidateSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
-        payload = serializer.validated_data
-        payload.setdefault("is_verified", True)
+        validated_data = cast(Dict[str, Any], serializer.validated_data)
+        payload: Dict[str, Any] = dict(validated_data)
+        if "is_verified" not in payload:
+            payload["is_verified"] = True
 
-        # Try Video first
-        if payload.get("file_type") == "video" or not payload.get("file_type"):
-            video = VideoFile.objects.filter(pk=file_id).first()
-        if video:
-            # Ensure center_name is in payload for hash calculation
-            if video.center and not payload.get("center_name"):
-                payload["center_name"] = video.center.name
-                
-            ok = video.validate_metadata_annotation(payload)
-            #if ok:
-            #    video._cleanup_raw_assets()
-            if not ok:
-                return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
+        file_type = payload.get("file_type")
 
-        # Then PDF
-        if payload.get("file_type") == "pdf" or not payload.get("file_type"):
-            pdf = RawPdfFile.objects.filter(pk=file_id).first()
-        if pdf:
-            # Ensure center_name is in payload for hash calculation
-            if pdf.center and not payload.get("center_name"):
-                payload["center_name"] = pdf.center.name
-                
-            ok = pdf.validate_metadata_annotation(payload)
-            if not ok:
-                return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
+        # Try Video first (unless explicitly requesting PDF)
+        if file_type in (None, "video"):
+            video = VideoFile.objects.select_related("center").filter(pk=file_id).first()
+            if video is not None:
+                prepared_payload = self._prepare_payload(payload, video)
+                try:
+                    ok = video.validate_metadata_annotation(prepared_payload)
+                except Exception:  # pragma: no cover - defensive safety net
+                    logger.exception("Video validation crashed for id=%s", file_id)
+                    return Response(
+                        {"error": "Video validation encountered an unexpected error."},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+
+                if not ok:
+                    return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+
+                return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
+
+            if file_type == "video":
+                return Response({"error": f"Video {file_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Then PDF (unless explicitly requesting Video)
+        if file_type in (None, "pdf"):
+            pdf = RawPdfFile.objects.select_related("center").filter(pk=file_id).first()
+            if pdf is not None:
+                prepared_payload = self._prepare_payload(payload, pdf)
+                try:
+                    ok = pdf.validate_metadata_annotation(prepared_payload)
+                except Exception:  # pragma: no cover - defensive safety net
+                    logger.exception("PDF validation crashed for id=%s", file_id)
+                    return Response(
+                        {"error": "PDF validation encountered an unexpected error."},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+
+                if not ok:
+                    return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+
+                return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
+
+            if file_type == "pdf":
+                return Response({"error": f"PDF {file_id} not found."}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({"error": f"Item {file_id} not found as video or pdf."}, status=status.HTTP_404_NOT_FOUND)
+
+    @staticmethod
+    def _prepare_payload(base_payload: Dict[str, Any], file_obj: Any) -> Dict[str, Any]:
+        """Return a fresh payload tailored for the given file object."""
+
+        prepared = dict(base_payload)
+        prepared.pop("file_type", None)
+
+        center = getattr(file_obj, "center", None)
+        center_name = getattr(center, "name", None)
+        if center_name and not prepared.get("center_name"):
+            prepared["center_name"] = center_name
+
+        return prepared
