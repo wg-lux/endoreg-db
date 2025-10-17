@@ -600,7 +600,9 @@ class VideoFile(models.Model):
         if self.sensitive_meta is None:
             self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
             # Mark as processed when creating new SensitiveMeta
-            self.get_or_create_state().mark_sensitive_meta_processed(save=True)
+        if self.sensitive_meta is None:
+            self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
+            # Do not mark processed here; it will be set after extraction/validation steps
         return self.sensitive_meta
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
