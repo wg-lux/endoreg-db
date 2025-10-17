@@ -33,12 +33,14 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
                     return sensitive_path.resolve()
                 
                 # Check direct raw_file.path if available
+                # Check direct raw_file.path if available
                 try:
                     direct_path = Path(video.raw_file.path)
                     if direct_path.exists():
                         return direct_path.resolve()
-                except Exception:
-                    pass  # Fallback to original behavior
+                except Exception as e:
+                    logger.debug("Could not access direct raw_file.path for video %s: %s", video.uuid, e)
+                    # Fallback to checking alternative paths
                 
                 # Check common alternative paths
                 alternative_paths = [
