@@ -43,7 +43,7 @@ class VideoImportService():
         - Graceful fallback processing without lx_anonymizer
     """
     
-    def __init__(self, project_root: Path = None):
+    def __init__(self, project_root: Optional[Path] = None):
         
         # Set up project root path
         if project_root:
@@ -132,7 +132,7 @@ class VideoImportService():
         processor_name: str,
         save_video: bool = True,
         delete_source: bool = True,
-    ) -> "VideoFile":
+    ) -> "VideoFile|None":
         """
         High-level helper that orchestrates the complete video import and anonymization process.
         Uses the central video instance pattern for improved state management.
@@ -268,10 +268,13 @@ class VideoImportService():
         # Define target directories
         videos_dir = data_paths["video"]  # /data/videos for raw files
         videos_dir.mkdir(parents=True, exist_ok=True)
+
+        _current_video = self.current_video
+        assert _current_video is not None, "Current video instance is None during storage move"
         
         # Create target path for raw video in /data/videos
-        ext = Path(self.current_video.active_file_path).suffix or ".mp4"
-        video_filename = f"{self.current_video.uuid}{ext}"
+        ext = Path(_current_video.active_file_path).suffix or ".mp4"
+        video_filename = f"{_current_video.uuid}{ext}"
         raw_target_path = videos_dir / video_filename
         
         # Move source file to raw video storage
@@ -284,16 +287,17 @@ class VideoImportService():
         
         # Update the raw_file path in database (relative to storage root)
         try:
+            assert _current_video is not None, "Current video instance is None during raw_file update"
             storage_root = data_paths["storage"]
             relative_path = raw_target_path.relative_to(storage_root)
-            self.current_video.raw_file.name = str(relative_path)
-            self.current_video.save(update_fields=['raw_file'])
+            _current_video.raw_file.name = str(relative_path)
+            _current_video.save(update_fields=['raw_file'])
             self.logger.info("Updated raw_file path to: %s", relative_path)
         except Exception as e:
             self.logger.error("Failed to update raw_file path: %s", e)
             # Fallback to simple relative path
-            self.current_video.raw_file.name = f"videos/{video_filename}"
-            self.current_video.save(update_fields=['raw_file'])
+            _current_video.raw_file.name = f"videos/{video_filename}"
+            _current_video.save(update_fields=['raw_file'])
             self.logger.info("Updated raw_file path using fallback: %s", f"videos/{video_filename}")
             
         
@@ -345,7 +349,10 @@ class VideoImportService():
         # Check frame cleaning availability
         frame_cleaning_available, FrameCleaner, ReportReader = self._ensure_frame_cleaning_available()
         
-        if not (frame_cleaning_available and self.current_video.raw_file):
+        _current_video = self.current_video
+        assert _current_video is not None, "Current video instance is None during frame processing"
+
+        if not (frame_cleaning_available and _current_video.raw_file):
             self.logger.warning("Frame cleaning not available or conditions not met, using fallback anonymization.")
             self._fallback_anonymize_video()
             return
