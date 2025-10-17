@@ -1,6 +1,8 @@
+import os
 import subprocess
 import json
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import cv2
@@ -12,6 +14,67 @@ logger = logging.getLogger("ffmpeg_wrapper")
 # Global hardware acceleration cache
 _nvenc_available = None
 _preferred_encoder = None
+
+
+@lru_cache(maxsize=1)
+def _resolve_ffmpeg_executable() -> Optional[str]:
+    """Locate the ffmpeg executable using multiple discovery strategies."""
+    # 1) Explicit overrides via env vars
+    env_candidates = [
+        os.environ.get("FFMPEG_EXECUTABLE"),
+        os.environ.get("FFMPEG_BINARY"),
+        os.environ.get("FFMPEG_PATH"),
+    ]
+
+    # 2) Django settings overrides (if Django is configured)
+    try:
+        from django.conf import settings  # type: ignore
+
+        env_candidates.extend(
+            getattr(settings, attr)
+            for attr in ("FFMPEG_EXECUTABLE", "FFMPEG_BINARY", "FFMPEG_PATH")
+            if hasattr(settings, attr)
+        )
+    except Exception:
+        # Django might not be configured for every consumer
+        pass
+
+    # Normalize and verify explicit candidates
+    for candidate in env_candidates:
+        if not candidate:
+            continue
+        candidate_path = Path(candidate)
+        if candidate_path.is_dir():
+            candidate_path = candidate_path / "ffmpeg"
+        if candidate_path.exists() and os.access(candidate_path, os.X_OK):
+            logger.debug("Using ffmpeg executable override at %s", candidate_path)
+            return str(candidate_path)
+
+    # 3) PATH lookup (shutil.which)
+    via_path = shutil.which("ffmpeg")
+    if via_path:
+        return via_path
+
+    # 4) Common fallback locations (useful for Nix-based environments)
+    nix_store = Path("/nix/store")
+    if nix_store.exists():
+        patterns = (
+            "*-ffmpeg-*/bin/ffmpeg",
+            "*-ffmpeg-headless-*/bin/ffmpeg",
+            "*-ffmpeg-headless*/bin/ffmpeg",
+        )
+        for pattern in patterns:
+            matches = sorted(nix_store.glob(pattern))
+            if matches:
+                logger.debug("Discovered ffmpeg in nix store at %s", matches[-1])
+                return str(matches[-1])
+
+    # 5) Final fallback to standard Unix locations
+    for fallback in (Path("/usr/bin/ffmpeg"), Path("/usr/local/bin/ffmpeg")):
+        if fallback.exists() and os.access(fallback, os.X_OK):
+            return str(fallback)
+
+    return None
 
 def _detect_nvenc_support() -> bool:
     """
@@ -163,7 +226,7 @@ def is_ffmpeg_available() -> bool:
     Returns:
         True if FFmpeg is found in the PATH; otherwise, False.
     """
-    return shutil.which("ffmpeg") is not None
+    return _resolve_ffmpeg_executable() is not None
 
 def check_ffmpeg_availability():
     """
@@ -607,8 +670,8 @@ def extract_frames(
     Returns:
         A list of Path objects for the extracted frames.
     """
-    # Check if ffmpeg command exists
-    ffmpeg_executable = shutil.which("ffmpeg")
+    # Resolve ffmpeg executable with multiple fallbacks
+    ffmpeg_executable = _resolve_ffmpeg_executable()
     if not ffmpeg_executable:
         error_msg = "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
         logger.error(error_msg)
@@ -691,7 +754,7 @@ def extract_frame_range(
         logger.warning("extract_frame_range called with start_frame (%d) >= end_frame (%d). No frames to extract.", start_frame, end_frame)
         return []
 
-    ffmpeg_executable = shutil.which("ffmpeg")
+    ffmpeg_executable = _resolve_ffmpeg_executable()
     if not ffmpeg_executable:
         error_msg = "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
         logger.error(error_msg)
