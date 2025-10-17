@@ -5,6 +5,7 @@ Provides high-level functions for importing and anonymizing PDF files,
 combining RawPdfFile creation with text extraction and anonymization.
 """
 from datetime import date, datetime
+import errno
 import logging
 import shutil
 import sys
@@ -13,12 +14,11 @@ import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 from contextlib import contextmanager
-from django.conf.locale import tr
 from django.db import transaction
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models import SensitiveMeta
-from endoreg_db.utils.paths import PDF_DIR, STORAGE_DIR
+from endoreg_db.utils import paths as path_utils
 import time
 
 logger = logging.getLogger(__name__)
@@ -111,14 +111,44 @@ class PdfImportService:
                     break
                 h.update(b)
         return h.hexdigest()
+
+    def _get_pdf_dir(self) -> Path | None:
+        """Resolve the configured PDF directory to a concrete Path."""
+        candidate = getattr(path_utils, "PDF_DIR", None)
+        if isinstance(candidate, Path):
+            return candidate
+        if candidate is None:
+            return None
+        try:
+            derived = candidate / "."
+        except Exception:
+            derived = None
+
+        if derived is not None:
+            try:
+                return Path(derived)
+            except Exception:
+                return None
+
+        try:
+            return Path(str(candidate))
+        except Exception:
+            return None
     
     def _quarantine(self, source: Path) -> Path:
         """Move file to quarantine directory to prevent re-processing."""
-        qdir = PDF_DIR / "_processing"
+        qdir = path_utils.PDF_DIR / "_processing"
         qdir.mkdir(parents=True, exist_ok=True)
         target = qdir / source.name
-        # atomic rename on same filesystem
-        source.rename(target)
+        try:
+            # Try atomic rename first (fastest when on same filesystem)
+            source.rename(target)
+        except OSError as exc:
+            if exc.errno == errno.EXDEV:
+                # Cross-device move, fall back to shutil.move which copies+removes
+                shutil.move(str(source), str(target))
+            else:
+                raise
         return target
     
     def _ensure_state(self, pdf_file: "RawPdfFile"):
@@ -287,6 +317,7 @@ class PdfImportService:
         """Initialize the processing context for the current PDF."""
         self.processing_context = {
             'file_path': Path(file_path),
+            'original_file_path': Path(file_path),
             'center_name': center_name,
             'delete_source': delete_source,
             'retry': retry,
@@ -379,11 +410,18 @@ class PdfImportService:
 
     def _setup_processing_environment(self):
         """Setup processing environment and state."""
+        original_path = self.processing_context.get('file_path')
+
         # Create sensitive file copy
-        self.create_sensitive_file(self.current_pdf, self.processing_context['file_path'])
+        self.create_sensitive_file(self.current_pdf, original_path)
         
         # Update file path to point to sensitive copy
         self.processing_context['file_path'] = self.current_pdf.file.path
+        self.processing_context['sensitive_copy_created'] = True
+        try:
+            self.processing_context['sensitive_file_path'] = Path(self.current_pdf.file.path)
+        except Exception:
+            self.processing_context['sensitive_file_path'] = None
         
         # Ensure state exists
         state = self.current_pdf.get_or_create_state()
@@ -415,14 +453,14 @@ class PdfImportService:
             logger.info("Starting text extraction and metadata processing with ReportReader...")
             
             # Setup output directories
-            crops_dir = PDF_DIR / 'cropped_regions'
-            anonymized_dir = PDF_DIR / 'anonymized'
+            crops_dir = path_utils.PDF_DIR / 'cropped_regions'
+            anonymized_dir = path_utils.PDF_DIR / 'anonymized'
             crops_dir.mkdir(parents=True, exist_ok=True)
             anonymized_dir.mkdir(parents=True, exist_ok=True)
 
             # Initialize ReportReader
             report_reader = ReportReader(
-                report_root_path=STORAGE_DIR,
+                report_root_path=str(path_utils.STORAGE_DIR),
                 locale="de_DE",
                 text_date_format="%d.%m.%Y"
             )
@@ -603,7 +641,7 @@ class PdfImportService:
         try:
             # Prefer storing a path relative to STORAGE_DIR so Django serves it correctly
             try:
-                relative_name = str(anonymized_path.relative_to(STORAGE_DIR))
+                relative_name = str(anonymized_path.relative_to(path_utils.STORAGE_DIR))
             except ValueError:
                 # Fallback to absolute path if the file lives outside STORAGE_DIR
                 relative_name = str(anonymized_path)
@@ -717,18 +755,96 @@ class PdfImportService:
         except Exception as e:
             logger.warning(f"Error during cleanup: {e}")
         finally:
+            # Remove any sensitive copy created during this processing run
+            sensitive_created = self.processing_context.get('sensitive_copy_created')
+            if sensitive_created:
+                pdf_obj = self.current_pdf
+                try:
+                    if pdf_obj:
+                        file_field = getattr(pdf_obj, "file", None)
+                        if file_field and getattr(file_field, "name", None):
+                            storage_name = file_field.name
+                            file_field.delete(save=False)
+                            logger.debug("Deleted sensitive copy %s during error cleanup", storage_name)
+                except Exception as cleanup_exc:
+                    logger.warning("Failed to remove sensitive copy during error cleanup: %s", cleanup_exc)
+
             # Always clean up processed files set to prevent blocks
             file_path = self.processing_context.get('file_path')
             if file_path and str(file_path) in self.processed_files:
                 self.processed_files.remove(str(file_path))
                 logger.debug(f"Removed {file_path} from processed files during error cleanup")
 
+            try:
+                original_path = self.processing_context.get('original_file_path')
+                logger.debug("PDF cleanup original path: %s (%s)", original_path, type(original_path))
+                raw_dir = original_path.parent if isinstance(original_path, Path) else None
+                if (
+                    isinstance(original_path, Path)
+                    and original_path.exists()
+                    and not self.processing_context.get('sensitive_copy_created')
+                ):
+                    try:
+                        original_path.unlink()
+                        logger.info("Removed original file %s during error cleanup", original_path)
+                    except Exception as remove_exc:
+                        logger.warning("Could not remove original file %s during error cleanup: %s", original_path, remove_exc)
+                pdf_dir = self._get_pdf_dir()
+                if not pdf_dir and raw_dir:
+                    base_dir = raw_dir.parent
+                    dir_name = getattr(path_utils, "PDF_DIR_NAME", "pdfs")
+                    fallback_pdf_dir = base_dir / dir_name
+                    logger.debug(
+                        "PDF cleanup fallback resolution - base: %s, dir_name: %s, exists: %s",
+                        base_dir,
+                        dir_name,
+                        fallback_pdf_dir.exists(),
+                    )
+                    if fallback_pdf_dir.exists():
+                        pdf_dir = fallback_pdf_dir
+
+                # Remove empty PDF subdirectories that might have been created during setup
+                if pdf_dir and pdf_dir.exists():
+                    for subdir_name in ("sensitive", "cropped_regions", "anonymized", "_processing"):
+                        subdir_path = pdf_dir / subdir_name
+                        if subdir_path.exists() and subdir_path.is_dir():
+                            try:
+                                next(subdir_path.iterdir())
+                            except StopIteration:
+                                try:
+                                    subdir_path.rmdir()
+                                    logger.debug("Removed empty directory %s during error cleanup", subdir_path)
+                                except OSError as rm_err:
+                                    logger.debug("Could not remove directory %s: %s", subdir_path, rm_err)
+                            except Exception as iter_err:
+                                logger.debug("Could not inspect directory %s: %s", subdir_path, iter_err)
+
+                raw_count = len(list(raw_dir.glob("*"))) if raw_dir and raw_dir.exists() else None
+                pdf_count = len(list(pdf_dir.glob("*"))) if pdf_dir and pdf_dir.exists() else None
+
+                sensitive_path = self.processing_context.get('sensitive_file_path')
+                if sensitive_path:
+                    sensitive_parent = Path(sensitive_path).parent
+                    sensitive_count = len(list(sensitive_parent.glob("*"))) if sensitive_parent.exists() else None
+                else:
+                    sensitive_dir = pdf_dir / "sensitive" if pdf_dir else None
+                    sensitive_count = len(list(sensitive_dir.glob("*"))) if sensitive_dir and sensitive_dir.exists() else None
+
+                logger.info(
+                    "PDF import error cleanup counts - raw: %s, pdf: %s, sensitive: %s",
+                    raw_count,
+                    pdf_count,
+                    sensitive_count,
+                )
+            except Exception:
+                pass
+
     def _cleanup_processing_context(self):
         """Cleanup processing context."""
         try:
             # Clean up temporary directories
             if self.processing_context.get('text_extracted'):
-                crops_dir = PDF_DIR / 'cropped_regions'
+                crops_dir = path_utils.PDF_DIR / 'cropped_regions'
                 if crops_dir.exists() and not any(crops_dir.iterdir()):
                     crops_dir.rmdir()
                     
@@ -857,7 +973,7 @@ class PdfImportService:
         if not source_path:
             raise ValueError("No file path available for creating sensitive file")
 
-        SENSITIVE_DIR = PDF_DIR / "sensitive"
+        SENSITIVE_DIR = path_utils.PDF_DIR / "sensitive"
         target = SENSITIVE_DIR / f"{pdf_file.pdf_hash}.pdf"
 
         try:
@@ -880,7 +996,7 @@ class PdfImportService:
             # Update FileField to reference the file under STORAGE_DIR
             # We avoid re-saving file content (the file is already at target); set .name relative to STORAGE_DIR
             try:
-                relative_name = str(target.relative_to(STORAGE_DIR)) #just point the Django FileField to the file that the anonymizer already created in data/pdfs/anonymized/.
+                relative_name = str(target.relative_to(path_utils.STORAGE_DIR))  # Point Django FileField to sensitive storage
             except ValueError:
                 # Fallback: if target is not under STORAGE_DIR, store absolute path (not ideal)
                 relative_name = str(target)
@@ -934,7 +1050,7 @@ class PdfImportService:
         if pdf_problematic:
             # Quarantine the file
             logger.warning(f"Quarantining problematic PDF: {pdf_file.pdf_hash}, reason: {quarantine_reason}")
-            quarantine_dir = PDF_DIR / "quarantine"
+            quarantine_dir = path_utils.PDF_DIR / "quarantine"
             os.makedirs(quarantine_dir, exist_ok=True)
             
             quarantine_path = quarantine_dir / f"{pdf_file.pdf_hash}.pdf"
@@ -950,7 +1066,7 @@ class PdfImportService:
         else:
             # Archive the file normally
             logger.info(f"Archiving successfully processed PDF: {pdf_file.pdf_hash}")
-            archive_dir = PDF_DIR / "processed"
+            archive_dir = path_utils.PDF_DIR / "processed"
             os.makedirs(archive_dir, exist_ok=True)
             
             archive_path = archive_dir / f"{pdf_file.pdf_hash}.pdf"

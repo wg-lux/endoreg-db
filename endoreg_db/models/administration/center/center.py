@@ -19,6 +19,7 @@ class Center(models.Model):
 
     # import_id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255, blank=True, default="")
 
     first_names = models.ManyToManyField(
         to="FirstName",
@@ -45,8 +46,13 @@ class Center(models.Model):
     def natural_key(self) -> tuple[str]:
         return (self.name,)
 
+    def save(self, *args, **kwargs):
+        if not self.display_name:
+            self.display_name = self.name
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
-        return str(object=self.name)
+        return str(object=self.display_name or self.name)
 
     def get_first_names(self):
         return self.first_names.all()

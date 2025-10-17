@@ -126,7 +126,7 @@ class VideoFile(models.Model):
 
     sensitive_meta = models.OneToOneField(
         "SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
-    )
+    ) # type: ignore
     center = models.ForeignKey("Center", on_delete=models.PROTECT)
     processor = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True
@@ -465,13 +465,17 @@ class VideoFile(models.Model):
         # Use proper database connection
         if using is None:
             using = 'default'
-        lock_path = Path(video.get_raw_file_path()).with_suffix(video.get_raw_file_path().suffix + ".lock")
-        if lock_path.exists():
-            try:
-                lock_path.unlink()
-                logger.info(f"Removed processing lock: {lock_path}")
-            except Exception as e:
-                logger.warning(f"Could not remove processing lock {lock_path}: {e}")
+
+        raw_file_path = self.get_raw_file_path()
+        if raw_file_path:
+            raw_file_path = Path(raw_file_path)
+            lock_path = raw_file_path.with_suffix(raw_file_path.suffix + ".lock")
+            if lock_path.exists():
+                try:
+                    lock_path.unlink()
+                    logger.info(f"Removed processing lock: {lock_path}")
+                except Exception as e:
+                    logger.warning(f"Could not remove processing lock {lock_path}: {e}")
                 
         try:
             # Call parent delete with proper parameters

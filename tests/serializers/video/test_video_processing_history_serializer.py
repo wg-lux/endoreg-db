@@ -7,13 +7,17 @@ Tests cover:
 - Download URL generation
 - Edge cases and configuration validation
 """
-import pytest
 import json
+import uuid
+
+import pytest
 from unittest.mock import Mock
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIRequestFactory
-from django.utils import timezone
-from endoreg_db.models import VideoProcessingHistory, VideoFile, Center, EndoscopyProcessor
+
+from endoreg_db.models import Center, EndoscopyProcessor, VideoFile, VideoProcessingHistory
 from endoreg_db.serializers.video.video_processing_history import VideoProcessingHistorySerializer
 
 
@@ -32,18 +36,48 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
     @pytest.fixture
     def processor(self, center):
         """Create a test processor."""
-        return EndoscopyProcessor.objects.create(
+        processor = EndoscopyProcessor.objects.create(
             name="test_processor",
-            center=center
+            image_width=1920,
+            image_height=1080,
+            endoscope_image_x=0,
+            endoscope_image_y=0,
+            endoscope_image_width=0,
+            endoscope_image_height=0,
+            examination_date_x=0,
+            examination_date_y=0,
+            examination_date_width=0,
+            examination_date_height=0,
+            patient_first_name_x=0,
+            patient_first_name_y=0,
+            patient_first_name_width=0,
+            patient_first_name_height=0,
+            patient_last_name_x=0,
+            patient_last_name_y=0,
+            patient_last_name_width=0,
+            patient_last_name_height=0,
+            patient_dob_x=0,
+            patient_dob_y=0,
+            patient_dob_width=0,
+            patient_dob_height=0,
         )
+        processor.centers.add(center)
+        return processor
     
     @pytest.fixture
     def video_file(self, center, processor):
         """Create a test video file."""
+        raw_file = SimpleUploadedFile(
+            name="test-video.mp4",
+            content=b"fake-content",
+            content_type="video/mp4",
+        )
         return VideoFile.objects.create(
             center=center,
             processor=processor,
-            uuid="test-video-uuid-history"
+            uuid=uuid.uuid4(),
+            raw_file=raw_file,
+            video_hash=f"hash-{uuid.uuid4()}"
         )
     
     @pytest.fixture

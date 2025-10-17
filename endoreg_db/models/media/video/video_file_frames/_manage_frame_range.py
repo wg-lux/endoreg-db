@@ -97,6 +97,7 @@ def _extract_frame_range(
             return True  # Indicate success as frames are considered present
 
     frame_dir.mkdir(parents=True, exist_ok=True)
+    extracted_paths = []
 
     try:
         logger.info("Starting frame range extraction [%d, %d) for video %s to %s", start_frame, end_frame, video.uuid, frame_dir)
@@ -110,6 +111,17 @@ def _extract_frame_range(
         logger.info("Marked %d Frame objects in range [%d, %d) as is_extracted=True for video %s.", update_count, start_frame, end_frame, video.uuid)
 
         return True
+
+    except FileNotFoundError as err:
+        logger.error(
+            "Frame range extraction [%d, %d) failed for video %s: %s",
+            start_frame,
+            end_frame,
+            video.uuid,
+            err,
+            exc_info=True,
+        )
+        raise
 
     except Exception as e:
         logger.error("Frame range extraction [%d, %d) or DB update failed for video %s: %s", start_frame, end_frame, video.uuid, e, exc_info=True)

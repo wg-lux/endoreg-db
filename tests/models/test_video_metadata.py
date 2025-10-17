@@ -1,17 +1,14 @@
-"""
-Comprehensive unit tests for VideoMetadata model.
+"""Comprehensive unit tests for the VideoMetadata model."""
 
-Tests cover:
-- Model creation and relationships
-- Properties (has_analysis, sensitive_percentage)
-- Data validation and edge cases
-- String representation
-"""
-import pytest
 import json
+import uuid
+
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.utils import timezone
-from endoreg_db.models import VideoMetadata, VideoFile, Center, EndoscopyProcessor
+
+from endoreg_db.models import Center, EndoscopyProcessor, VideoFile, VideoMetadata
 
 
 @pytest.mark.django_db
@@ -30,20 +27,49 @@ class TestVideoMetadataModel:
     @pytest.fixture
     def processor(self, center):
         """Create a test processor."""
-        return EndoscopyProcessor.objects.create(
+        processor = EndoscopyProcessor.objects.create(
             name="test_processor",
-            center=center
+            image_width=1920,
+            image_height=1080,
+            endoscope_image_x=0,
+            endoscope_image_y=0,
+            endoscope_image_width=0,
+            endoscope_image_height=0,
+            examination_date_x=0,
+            examination_date_y=0,
+            examination_date_width=0,
+            examination_date_height=0,
+            patient_first_name_x=0,
+            patient_first_name_y=0,
+            patient_first_name_width=0,
+            patient_first_name_height=0,
+            patient_last_name_x=0,
+            patient_last_name_y=0,
+            patient_last_name_width=0,
+            patient_last_name_height=0,
+            patient_dob_x=0,
+            patient_dob_y=0,
+            patient_dob_width=0,
+            patient_dob_height=0,
         )
+        processor.centers.add(center)
+        return processor
     
     @pytest.fixture
     def video_file(self, center, processor):
         """Create a test video file."""
-        video = VideoFile.objects.create(
+        raw_file = SimpleUploadedFile(
+            name="test-video.mp4",
+            content=b"fake-content",
+            content_type="video/mp4",
+        )
+        return VideoFile.objects.create(
             center=center,
             processor=processor,
-            uuid="test-video-uuid-123"
+            uuid=uuid.uuid4(),
+            raw_file=raw_file,
+            video_hash=f"hash-{uuid.uuid4()}"
         )
-        return video
     
     def test_create_video_metadata_basic(self, video_file):
         """Test basic VideoMetadata creation."""
@@ -186,7 +212,7 @@ class TestVideoMetadataModel:
         )
         
         # Verify JSON can be parsed back
-        stored_ids = json.loads(metadata.sensitive_frame_ids)
+        stored_ids = json.loads(metadata.sensitive_frame_ids or "[]")
         assert stored_ids == frame_ids
     
     def test_cascade_deletion(self, video_file):
@@ -195,7 +221,7 @@ class TestVideoMetadataModel:
             video=video_file,
             sensitive_frame_count=10
         )
-        metadata_id = metadata.id
+        metadata_id = metadata.pk
         
         # Delete the video
         video_file.delete()
@@ -244,10 +270,17 @@ class TestVideoMetadataModel:
         
         # Test ratio = 1.0 (100%)
         video_file.delete()
+        new_raw_file = SimpleUploadedFile(
+            name="test-video-2.mp4",
+            content=b"fake-content",
+            content_type="video/mp4",
+        )
         video_file = VideoFile.objects.create(
             center=metadata_zero.video.center,
             processor=metadata_zero.video.processor,
-            uuid="test-video-uuid-456"
+            uuid=uuid.uuid4(),
+            raw_file=new_raw_file,
+            video_hash=f"hash-{uuid.uuid4()}"
         )
         metadata_full = VideoMetadata.objects.create(
             video=video_file,
@@ -265,7 +298,7 @@ class TestVideoMetadataModel:
             sensitive_frame_ids=json.dumps([])
         )
         
-        stored_ids = json.loads(metadata.sensitive_frame_ids)
+        stored_ids = json.loads(metadata.sensitive_frame_ids or "[]")
         assert stored_ids == []
     
     def test_large_frame_ids_list(self, video_file):
@@ -279,7 +312,7 @@ class TestVideoMetadataModel:
             sensitive_frame_ids=json.dumps(large_frame_list)
         )
         
-        stored_ids = json.loads(metadata.sensitive_frame_ids)
+        stored_ids = json.loads(metadata.sensitive_frame_ids or "[]")
         assert len(stored_ids) == 1000
         assert stored_ids[0] == 0
         assert stored_ids[-1] == 9990

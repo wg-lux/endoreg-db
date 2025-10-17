@@ -383,37 +383,42 @@ class RawPdfFile(models.Model):
         new_file_name, _uuid = get_uuid_filename(file_path)
         logger.info(f"Generated new filename: {new_file_name}")
 
-        # Create model instance (without file initially)
-        raw_pdf = cls(
-            pdf_hash=pdf_hash,
-            center=center,
-        )
-
-        # Assign file using Django's File wrapper and save
+        # Create model instance via manager so creation can be intercepted/mocked during tests
         try:
             with file_path.open("rb") as f:
                 django_file = File(f, name=new_file_name)
-                raw_pdf.file = django_file  # type: ignore # Assign the file object
-                # Save the instance - Django storage handles the file copy/move
-                raw_pdf.save()
-                _file = raw_pdf.file
-                assert _file is not None
-                logger.info(f"Created and saved new RawPdfFile {raw_pdf.pk} with file {_file.name}")
+                raw_pdf = cls.objects.create(
+                    pdf_hash=pdf_hash,
+                    center=center,
+                    file=django_file,
+                )
 
-                # Verify file exists in storage after save
-                if not _file.storage.exists(_file.name):
-                    logger.error(f"File was not saved correctly to storage path {_file.name} after model save.")
-                    raise IOError(f"File not found at expected storage path after save: {_file.name}")
-                # Log the absolute path for debugging if possible (depends on storage)
-                try:
-                    logger.info(f"File saved to absolute path: {_file.path}")
-                except NotImplementedError:
-                    logger.info(f"File saved to storage path: {_file.name} (Absolute path not available from storage)")
+            _file = raw_pdf.file
+            assert _file is not None
+            logger.info(
+                "Created and saved new RawPdfFile %s with file %s", raw_pdf.pk, _file.name
+            )
+
+            if not _file.storage.exists(_file.name):
+                logger.error(
+                    "File was not saved correctly to storage path %s after model save.",
+                    _file.name,
+                )
+                raise IOError(
+                    f"File not found at expected storage path after save: {_file.name}"
+                )
+
+            try:
+                logger.info("File saved to absolute path: %s", _file.path)
+            except NotImplementedError:
+                logger.info(
+                    "File saved to storage path: %s (Absolute path not available from storage)",
+                    _file.name,
+                )
 
         except Exception as e:
-            logger.error(f"Error processing or saving file {file_path} for new record: {e}")
-            # If save failed, the instance might be partially created but not fully saved.
-            raise  # Re-raise the exception
+            logger.error("Error processing or saving file %s for new record: %s", file_path, e)
+            raise
 
         # Delete source file *after* successful save and verification
         if delete_source:
