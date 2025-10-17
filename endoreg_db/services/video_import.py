@@ -22,7 +22,9 @@ from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, RAW_FRAME_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
 import random
 from lx_anonymizer.ocr import trocr_full_image_ocr
-from numpy import ma
+from endoreg_db.utils.hashs import get_video_hash
+from endoreg_db.models.media.video.video_file_anonymize import _cleanup_raw_assets
+
 
 # File lock configuration (matches PDF import)
 STALE_LOCK_SECONDS = 6000  # 100 minutes - reclaim locks older than this
@@ -59,6 +61,8 @@ class VideoImportService():
         # Central video instance and processing context
         self.current_video = None
         self.processing_context: Dict[str, Any] = {}
+        
+        self.delete_source = False
         
         self.logger = logging.getLogger(__name__)
     
@@ -405,50 +409,78 @@ class VideoImportService():
                 # If even fallback fails, mark as not anonymized but continue import
                 self.processing_context['anonymization_completed'] = False
                 self.processing_context['error_reason'] = f"Frame cleaning failed: {e}, Fallback failed: {fallback_error}"
-            
+
+    def _save_anonymized_video(self):
+        anonymized_video_path = self.current_video.get_target_anonymized_video_path()
+        
+        if not anonymized_video_path.exists():
+            raise RuntimeError(f"Processed video file not found after assembly for {self.current_video.uuid}: {anonymized_video_path}")
+
+        new_processed_hash = get_video_hash(anonymized_video_path)
+        if type(self.current_video).objects.filter(processed_video_hash=new_processed_hash).exclude(pk=self.current_video.pk).exists():
+            raise ValueError(f"Processed video hash {new_processed_hash} already exists for another video (Video: {self.current_video.uuid}).")
+
+        self.current_video.processed_video_hash = new_processed_hash
+        self.current_video.processed_file.name = anonymized_video_path.relative_to(STORAGE_DIR).as_posix()
+
+        update_fields = [
+            "processed_video_hash",
+            "processed_file",
+            "frame_dir",
+        ]
+
+        if self.delete_source:
+            original_raw_file_path_to_delete = self.current_video.get_raw_file_path()
+            original_raw_frame_dir_to_delete = self.current_video.get_frame_dir_path()
+
+            self.current_video.raw_file.name = None
+
+            update_fields.extend(["raw_file", "video_hash"])
+
+            transaction.on_commit(lambda: _cleanup_raw_assets(
+                video_uuid=self.current_video.uuid,
+                raw_file_path=original_raw_file_path_to_delete,
+                raw_frame_dir=original_raw_frame_dir_to_delete
+            ))
+
+        self.current_video.save(update_fields=update_fields)
+        self.current_video.state.mark_anonymized(save=True)
+        self.current_video.refresh_from_db()
+        return True
 
     def _fallback_anonymize_video(self):
         """
         Fallback to create anonymized video if lx_anonymizer is not available.
-        
-        This method tries multiple fallback strategies:
-        1. Use VideoFile.anonymize_video() method if available
-        2. Simple copy of raw video to anonym_videos (no processing)
-        
-        The processed video will be marked in processing_context for _cleanup_and_archive().
         """
         try:
             self.logger.info("Attempting fallback video anonymization...")
-            
-            # Strategy 1: Try VideoFile.pipe_2() method
-            if hasattr(self.current_video, 'pipe_2'):
-                self.logger.info("Trying VideoFile.pipe_2() method...")
-                
-                # Try to anonymize
-                if self.current_video.pipe_2:
-                    self.logger.info("VideoFile.pipe_2() succeeded")
+            if self.current_video:
+                # Try VideoFile.pipe_2() method if available
+                if hasattr(self.current_video, 'pipe_2'):
+                    self.logger.info("Trying VideoFile.pipe_2() method...")
+                    if self.current_video.pipe_2():
+                        self.logger.info("VideoFile.pipe_2() succeeded")
+                        self.processing_context['anonymization_completed'] = True
+                        return
+                    else:
+                        self.logger.warning("VideoFile.pipe_2() returned False")
+                # Try direct anonymization via _anonymize
+                if _anonymize(self.current_video, delete_original_raw=self.delete_source):
+                    self.logger.info("VideoFile._anonymize() succeeded")
                     self.processing_context['anonymization_completed'] = True
                     return
-                else:
-                    self.logger.warning("VideoFile.pipe_2() returned False, trying simple copy fallback")
             else:
-                self.logger.warning("VideoFile.pipe_2() method not available")
+                self.logger.warning("No VideoFile instance available for fallback anonymization")
 
             # Strategy 2: Simple copy (no processing, just copy raw to processed)
             self.logger.info("Using simple copy fallback (raw video will be used as 'processed' video)")
-            
-            # The _cleanup_and_archive() method will handle the copy
-            # We just need to mark that no real anonymization happened
             self.processing_context['anonymization_completed'] = False
-            self.processing_context['use_raw_as_processed'] = True  # Signal for cleanup
-            
+            self.processing_context['use_raw_as_processed'] = True
             self.logger.warning("Fallback: Video will be imported without anonymization (raw copy used)")
-            
         except Exception as e:
             self.logger.error(f"Error during fallback anonymization: {e}", exc_info=True)
             self.processing_context['anonymization_completed'] = False
-            self.processing_context['error_reason'] = f"Fallback anonymization failed: {e}"
-
+            self.processing_context['error_reason']
     def _finalize_processing(self):
         """Finalize processing and update video state."""
         self.logger.info("Updating video processing state...")
@@ -597,6 +629,18 @@ class VideoImportService():
                 self.logger.info("Removed remaining source file: %s", source_path)
             except Exception as e:
                 self.logger.warning("Failed to remove source file %s: %s", source_path, e)
+                
+        # Check if processed video exists and otherwise call anonymize
+        
+        if not self.current_video.processed_file or not Path(self.current_video.processed_file.path).exists():
+            self.logger.warning("No processed_file found after cleanup - video will be unprocessed")
+            self.current_video.anonymize(delete_original_raw=self.delete_source)
+            self.current_video.save(update_fields=['processed_file'])
+            
+        
+        self.logger.info("Cleanup and archiving completed")
+        
+        
         
         # Mark as processed (in-memory tracking)
         self.processed_files.add(str(self.processing_context['file_path']))
@@ -606,6 +650,7 @@ class VideoImportService():
             self.current_video.refresh_from_db()
             if hasattr(self.current_video, 'state') and self.processing_context.get('anonymization_completed'):
                 self.current_video.state.mark_sensitive_meta_processed(save=True)
+                
         
         self.logger.info("Import and anonymization completed for VideoFile UUID: %s", self.current_video.uuid)
         self.logger.info("Raw video stored in: /data/videos")
