@@ -583,15 +583,28 @@ class VideoFile(models.Model):
         super().save(*args, **kwargs)
 
     def get_or_create_state(self) -> "VideoState":
-        """
-        Return the related VideoState instance for this video, creating and assigning a new one if none exists.
-        
-        Returns:
-            VideoState: The associated VideoState instance.
-        """
-        if self.state is None:
-            self.state = VideoState.objects.create()
-        return self.state
+        """Ensure this video has a persisted ``VideoState`` and return it."""
+
+        state = self.state
+
+        # When tests reuse cached instances across database flushes, ``state`` may reference
+        # a row that no longer exists. Guard against that by validating persistence.
+        state_pk = getattr(state, "pk", None)
+        if state is not None and state_pk is not None:
+            if not VideoState.objects.filter(pk=state_pk).exists():
+                state = None
+
+        if state is None:
+            # Create a fresh state to avoid refresh_from_db() failures on unsaved instances.
+            state = VideoState.objects.create()
+            self.state = state
+
+            # Persist the relation immediately if the VideoFile already exists in the DB so
+            # later refreshes see the association without requiring additional saves.
+            if self.pk:
+                self.save(update_fields=["state"])
+
+        return state
 
     def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
         """
@@ -601,9 +614,6 @@ class VideoFile(models.Model):
             SensitiveMeta: The related SensitiveMeta instance.
         """
         from endoreg_db.models import SensitiveMeta
-        if self.sensitive_meta is None:
-            self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
-            # Mark as processed when creating new SensitiveMeta
         if self.sensitive_meta is None:
             self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
             # Do not mark processed here; it will be set after extraction/validation steps

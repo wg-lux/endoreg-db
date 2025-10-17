@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.conf import settings
 
+from django.db import models
+
 from endoreg_db.models import (
     VideoFile,
     Center,
@@ -71,9 +73,22 @@ def get_cached_or_create(cache_key: str, factory_func, *args, **kwargs):
     """
     Get an object from session cache or create it if not exists.
     """
-    if cache_key not in _session_cache:
-        _session_cache[cache_key] = factory_func(*args, **kwargs)
-    return _session_cache[cache_key]
+    cached = _session_cache.get(cache_key)
+
+    if isinstance(cached, models.Model):
+        pk = getattr(cached, "pk", None)
+        if pk is not None and cached.__class__.objects.filter(pk=pk).exists():
+            # Return a fresh instance to avoid stale relations after DB flushes.
+            return cached.__class__.objects.get(pk=pk)
+        # Stale instance – drop it so we fall back to factory creation.
+        _session_cache.pop(cache_key, None)
+        cached = None
+
+    if cached is None:
+        cached = factory_func(*args, **kwargs)
+        _session_cache[cache_key] = cached
+
+    return cached
 
 def clear_session_cache():
     """Clear the session cache."""
