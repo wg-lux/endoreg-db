@@ -37,7 +37,7 @@ class SensitiveMeta(models.Model):
         blank=True,
         null=True,
         help_text="FK to the pseudo-anonymized Patient record."
-    )
+    ) # type: ignore
     patient_first_name = models.CharField(max_length=255, blank=True, null=True)
     patient_last_name = models.CharField(max_length=255, blank=True, null=True)
     patient_dob = models.DateTimeField(
@@ -51,24 +51,24 @@ class SensitiveMeta(models.Model):
         blank=True,
         null=True,
         help_text="FK to the pseudo-anonymized PatientExamination record."
-    )
+    ) # type: ignore
     patient_gender = models.ForeignKey(
         "Gender",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
-    )
+    ) # type: ignore
     examiners = models.ManyToManyField(
         "Examiner",
         blank=True,
         help_text="Pseudo-anonymized examiner(s) associated with the examination."
-    )
+    ) # type: ignore
     center = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         blank=True, # Should ideally be False if always required before save
         null=True,  # Should ideally be False
-    )
+    ) # type: ignore
 
     # Raw examiner names stored temporarily until pseudo-examiner is created/linked
     examiner_first_name = models.CharField(max_length=255, blank=True, null=True, editable=False)
@@ -258,7 +258,7 @@ class SensitiveMeta(models.Model):
 
         # 4. Handle ManyToMany linking (examiners) *after* the instance has a PK.
         if examiner_to_link and self.pk and not self.examiners.filter(pk=examiner_to_link.pk).exists():
-            self.examiners.add(examiner_to_link)
+            self.examiners.add(examiner_to_link) # type: ignore
             # Adding to M2M handles its own DB interaction, no second super().save() needed.
 
     def mark_dob_verified(self):

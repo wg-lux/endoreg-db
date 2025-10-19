@@ -6,14 +6,16 @@ session-scoped caching, and mock implementations to improve test performance.
 """
 
 import os
+import time
 import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Optional, TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.conf import settings
 
+from django.core.files.base import ContentFile
 from django.db import models
 
 from endoreg_db.models import (
@@ -26,8 +28,197 @@ from endoreg_db.models import (
 )
 from endoreg_db.models.state.video import VideoState
 
-# Cache for expensive objects
-_session_cache: Dict[str, Any] = {}
+from .default_objects import (
+    DEFAULT_CENTER_NAME,
+    DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
+    get_default_center,
+    get_default_processor,
+)
+
+if TYPE_CHECKING:  # pragma: no cover
+    from tests.plugins.cache import CacheNamespace
+
+
+_cache_namespace: Optional["CacheNamespace"] = None
+_fallback_cache: Dict[str, Any] = {}
+_CACHE_SENTINEL = object()
+
+
+def configure_cache(namespace: Optional["CacheNamespace"]) -> None:
+    """Configure or reset the cache namespace used by these helpers."""
+
+    global _cache_namespace
+    _cache_namespace = namespace
+
+
+def _cache_get(key: str) -> Any:
+    if _cache_namespace is not None:
+        value = _cache_namespace.get(key, default=_CACHE_SENTINEL)
+        if value is not _CACHE_SENTINEL:
+            return value
+    return _fallback_cache.get(key)
+
+
+def _cache_set(key: str, value: Any) -> None:
+    if _cache_namespace is not None:
+        _cache_namespace.set(key, value)
+    else:
+        _fallback_cache[key] = value
+
+
+def _record_timing(cache_key: str, duration: float) -> None:
+    try:
+        from tests.plugins.cache import get_global_cache_manager
+    except Exception:
+        return
+
+    manager = get_global_cache_manager()
+    if manager is None:
+        return
+
+    namespace = manager.namespace("timings")
+    namespace.set(cache_key, duration)
+
+
+def _cache_pop(key: str) -> None:
+    if _cache_namespace is not None:
+        _cache_namespace.invalidate(key)
+    else:
+        _fallback_cache.pop(key, None)
+
+
+def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
+    """Capture immutable info so stub videos can be rebuilt after DB flush."""
+
+    return {
+        "uuid": str(video.uuid),
+        "video_hash": video.video_hash,
+        "original_file_name": video.original_file_name or "segment_stub.mp4",
+    "raw_file_name": os.path.basename(video.raw_file.name) if video.raw_file else "",
+        "fps": float(video.fps or 25.0),
+        "frame_count": int(video.frame_count or 0),
+        "duration": float(video.duration or 0.0),
+        "width": int(video.width or 0),
+        "height": int(video.height or 0),
+        "frame_dir": video.frame_dir or "",
+        "center_name": getattr(video.center, "name", DEFAULT_CENTER_NAME),
+        "processor_name": getattr(video.processor, "name", DEFAULT_ENDOSCOPY_PROCESSOR_NAME),
+    }
+
+
+def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
+    """Recreate a lightweight VideoFile from cached payload data."""
+
+    center = Center.objects.filter(name=payload["center_name"]).first()
+    if center is None:
+        try:
+            center = get_default_center()
+        except Exception:
+            from tests.helpers.data_loader import load_center_data
+
+            load_center_data()
+            center = get_default_center()
+
+    processor_name = payload.get("processor_name")
+    processor = None
+    if processor_name:
+        processor = EndoscopyProcessor.objects.filter(name=processor_name).first()
+    if processor is None:
+        try:
+            processor = get_default_processor()
+        except Exception:
+            from tests.helpers.data_loader import load_endoscope_data
+
+            load_endoscope_data()
+            processor = get_default_processor()
+
+    existing = VideoFile.objects.filter(uuid=payload["uuid"]).first()
+    if existing is not None:
+        if not existing.has_raw:
+            raw_name = payload.get("raw_file_name") or f"segment_stub_{existing.uuid.hex}.mp4"
+            existing.raw_file.save(raw_name, ContentFile(b""), save=True)
+        return existing
+
+    raw_file_name = payload.get("raw_file_name") or f"segment_stub_{uuid.uuid4().hex}.mp4"
+
+    return VideoFile.objects.create(
+        uuid=payload["uuid"],
+        video_hash=payload["video_hash"],
+        center=center,
+        processor=processor,
+        original_file_name=payload["original_file_name"],
+        fps=payload["fps"],
+        frame_count=payload["frame_count"],
+        duration=payload["duration"],
+        width=payload["width"],
+        height=payload["height"],
+        frame_dir=payload["frame_dir"],
+        raw_file=ContentFile(b"", name=raw_file_name),
+    )
+
+
+def _create_segment_stub_video() -> VideoFile:
+    """Create a minimal VideoFile suitable for CRUD API tests."""
+
+    try:
+        center = get_default_center()
+    except Exception:
+        from tests.helpers.data_loader import load_center_data
+
+        load_center_data()
+        center = get_default_center()
+
+    try:
+        processor = get_default_processor()
+    except Exception:
+        from tests.helpers.data_loader import load_endoscope_data
+
+        load_endoscope_data()
+        processor = get_default_processor()
+    suffix = uuid.uuid4().hex
+    frame_dir = f"tests/storage/frames/segment_stub_{suffix}"
+    raw_file_name = f"segment_stub_{suffix}.mp4"
+
+    return VideoFile.objects.create(
+        uuid=uuid.uuid4(),
+        video_hash=f"segment-stub-{suffix}",
+        center=center,
+        processor=processor,
+        original_file_name=f"segment_stub_{suffix}.mp4",
+        fps=25.0,
+        frame_count=900,
+        duration=36.0,
+        width=1920,
+        height=1080,
+        frame_dir=frame_dir,
+        raw_file=ContentFile(b"", name=raw_file_name),
+    )
+
+
+def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
+    """Return a lightweight cached VideoFile for segment CRUD suites."""
+
+    payload_key = f"{cache_key}::payload"
+
+    cached_pk = _cache_get(cache_key)
+    if cached_pk is not None:
+        cached_video = VideoFile.objects.filter(pk=cached_pk).first()
+        if cached_video is not None:
+            return cached_video
+
+    payload = _cache_get(payload_key)
+    if isinstance(payload, dict):
+        video = _hydrate_segment_video(payload)
+        _cache_set(cache_key, video.pk)
+        return video
+
+    start = time.perf_counter()
+    video = _create_segment_stub_video()
+    payload = _segment_payload_from_video(video)
+    _cache_set(cache_key, video.pk)
+    _cache_set(payload_key, payload)
+    _record_timing(cache_key, time.perf_counter() - start)
+    return video
 
 
 class MockVideoState:
@@ -70,30 +261,34 @@ class MockVideoState:
 
 
 def get_cached_or_create(cache_key: str, factory_func, *args, **kwargs):
-    """
-    Get an object from session cache or create it if not exists.
-    """
-    cached = _session_cache.get(cache_key)
+    """Return cached values, refreshing stale ORM objects when needed."""
+
+    cached = _cache_get(cache_key)
 
     if isinstance(cached, models.Model):
         pk = getattr(cached, "pk", None)
         if pk is not None and cached.__class__.objects.filter(pk=pk).exists():
-            # Return a fresh instance to avoid stale relations after DB flushes.
             return cached.__class__.objects.get(pk=pk)
-        # Stale instance – drop it so we fall back to factory creation.
-        _session_cache.pop(cache_key, None)
+        _cache_pop(cache_key)
         cached = None
 
     if cached is None:
+        start = time.perf_counter()
         cached = factory_func(*args, **kwargs)
-        _session_cache[cache_key] = cached
+        duration = time.perf_counter() - start
+        _cache_set(cache_key, cached)
+        _record_timing(cache_key, duration)
 
     return cached
 
-def clear_session_cache():
-    """Clear the session cache."""
-    global _session_cache
-    _session_cache.clear()
+
+def clear_cache() -> None:
+    """Clear cache entries owned by this helper."""
+
+    if _cache_namespace is not None:
+        _cache_namespace.invalidate()
+    else:
+        _fallback_cache.clear()
 
 class MockVideoFile:
     """
@@ -397,8 +592,3 @@ def cleanup_test_files(directory: str):
     if dir_path.exists():
         shutil.rmtree(dir_path, ignore_errors=True)
 
-@pytest.fixture(autouse=True, scope="session")
-def cleanup_session_cache():
-    """Clean up session cache after all tests."""
-    yield
-    clear_session_cache()
