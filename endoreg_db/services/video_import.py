@@ -894,13 +894,12 @@ class VideoImportService():
         
         # Clean video with ROI masking (heavy I/O operation)
         actual_cleaned_path, extracted_metadata = frame_cleaner.clean_video(
-            Path(raw_video_path),
-            video,
-            tmp_dir,
-            device_name,
-            endoscope_roi,
-            processor_roi,
-            cleaned_video_path
+            video_path=Path(raw_video_path),
+            video_file_obj=video,
+            device_name=device_name,
+            endoscope_roi=processor.get_roi_endoscope_image() if processor else None,
+            output_path=cleaned_video_path,
+            technique="mask_overlay"
         )
         
         # Optional: enrich metadata using TrOCR+LLM on one random extracted frame
