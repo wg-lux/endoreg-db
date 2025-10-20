@@ -668,8 +668,13 @@ class VideoImportService():
 
         if not video.processed_file or not Path(video.processed_file.path).exists():
             self.logger.warning("No processed_file found after cleanup - video will be unprocessed")
-            video.anonymize(delete_original_raw=self.delete_source)
-            video.save(update_fields=['processed_file'])
+            try:
+                video.anonymize(delete_original_raw=self.delete_source)
+                video.save(update_fields=['processed_file'])
+                self.logger.info("Late-stage anonymization succeeded")
+            except Exception as e:
+                self.logger.error("Late-stage anonymization failed: %s", e)
+                self.processing_context['anonymization_completed'] = False
 
         self.logger.info("Cleanup and archiving completed")
 
