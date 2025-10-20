@@ -56,7 +56,7 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
             patient.patient_hash = patient_hash
             patient.save(update_fields=['patient_hash'])
         
-        logger.info(f"Generated and persisted pseudonym for patient {patient.id}: {patient_hash[:8]}...")
+        logger.info(f"Generated and persisted pseudonym for patient {patient.id}")
         
         return patient_hash, True
         
