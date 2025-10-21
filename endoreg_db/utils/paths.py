@@ -11,9 +11,9 @@ logger = getLogger(__name__)
 from pathlib import Path
 from typing import Dict
 
-from endoreg_db.config.env import env_path
+import os
 
-STORAGE_DIR = env_path("STORAGE_DIR", "storage")
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "storage"))
 
 # Resolve STORAGE_DIR from env or default under BASE_DIR
 #def _resolve_storage_dir() -> Path:
