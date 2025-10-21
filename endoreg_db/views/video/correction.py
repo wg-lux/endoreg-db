@@ -24,8 +24,23 @@ from endoreg_db.models import VideoFile, VideoMetadata, VideoProcessingHistory, 
 from endoreg_db.serializers import VideoMetadataSerializer, VideoProcessingHistorySerializer
 from lx_anonymizer import FrameCleaner
 
+from endoreg_db.models import VideoFile
+from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+
 logger = logging.getLogger(__name__)
 
+
+class VideoCorrectionView(APIView):
+    """
+    GET /api/video/media/video-correction/{id}/ - Get video details for correction
+    """
+    permission_classes = [EnvironmentAwarePermission]
+
+    def get(self, request, pk):
+        video = get_object_or_404(VideoFile, pk=pk)
+        ser = VideoDetailSerializer(video, context={"request": request})
+        return Response(ser.data, status=status.HTTP_200_OK)
 
 def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) -> dict:
     """
@@ -240,8 +255,6 @@ class VideoAnalyzeView(APIView):
             
             # Run analysis (uses existing FrameCleaner.analyze_video_sensitivity)
             analysis_result = frame_cleaner.analyze_video_sensitivity(
-                video_path=video_path,
-                sample_interval=sample_interval
             )
             
             # Extract results
