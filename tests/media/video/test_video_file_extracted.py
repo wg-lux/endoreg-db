@@ -7,6 +7,7 @@ from logging import getLogger
 import unittest
 import pytest
 import os
+from typing import Union, cast
 from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import (
@@ -36,16 +37,14 @@ from ...helpers.optimized_video_fixtures import (
 
 FFMPEG_AVAILABLE = is_ffmpeg_available()
 
+@pytest.mark.usefixtures("base_db_data")
 class VideoFileModelExtractedTest(TestCase):
+    video_file: Union[VideoFile, MockVideoFile]
     video: "VideoFile"
     
     def setUp(self):
         """Initialize test with optimized fixtures"""
         super().setUp()
-        
-        # Load base data using session scope (from conftest.py fixtures)
-        from ...helpers.data_loader import load_base_db_data
-        load_base_db_data()
         
         # Use session-scoped AI model instead of loading every time
         self.ai_model_meta = get_latest_segmentation_model()
@@ -59,10 +58,10 @@ class VideoFileModelExtractedTest(TestCase):
         else:
             # Use cached real video file for expensive tests
             from ...helpers.default_objects import get_default_video_file
-            self.video_file = get_cached_or_create(
+            self.video_file = cast(Union[VideoFile, MockVideoFile], get_cached_or_create(
                 "pipeline_test_video", 
                 get_default_video_file
-            )
+            ))
         
         self.center = self.video_file.center
         self.endo_processor = self.video_file.processor
@@ -114,7 +113,7 @@ class VideoFileModelExtractedTest(TestCase):
             
         # Force use of real video file for integration testing  
         from ...helpers.default_objects import get_default_video_file
-        self.video_file = get_cached_or_create("real_pipeline_video", get_default_video_file)
+        self.video_file = cast(Union[VideoFile, MockVideoFile], get_cached_or_create("real_pipeline_video", get_default_video_file))
             
         _test_pipe_1(self)
         mock_video_anonym_annotation(self)

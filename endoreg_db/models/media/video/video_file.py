@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional, Union, cast
 
 from django.db import models
 from django.core.files import File
+from django.db.models.fields.files import FieldFile
 from django.core.validators import FileExtensionValidator
 from django.db.models import F
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
@@ -127,36 +128,36 @@ class VideoFile(models.Model):
     sensitive_meta = models.OneToOneField(
         "SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
     ) # type: ignore
-    center = models.ForeignKey("Center", on_delete=models.PROTECT)
+    center = models.ForeignKey("Center", on_delete=models.PROTECT) # type: ignore
     processor = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True
-    )
+    ) # type: ignore
     video_meta = models.OneToOneField(
         "VideoMeta", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
-    )
+    ) # type: ignore
     examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
-    )
+    ) # type: ignore
     patient = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
-    )
+    ) # type: ignore
     ai_model_meta = models.ForeignKey(
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
-    )
+    ) # type: ignore
     state = models.OneToOneField(
         "VideoState", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
-    )
+    ) # type: ignore
     import_meta = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
-    )
+    ) # type: ignore
 
     original_file_name = models.CharField(max_length=255, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -197,7 +198,9 @@ class VideoFile(models.Model):
         """
         from endoreg_db.models import FFMpegMeta
         if self.video_meta is not None:
-            return self.video_meta.ffmpeg_meta
+            if self.video_meta.ffmpeg_meta is not None:
+                return self.video_meta.ffmpeg_meta
+            raise AssertionError("Expected FFMpegMeta instance.")
         else:
             self.initialize_video_specs()
             ffmpeg_meta = self.video_meta.ffmpeg_meta if self.video_meta else None
@@ -216,20 +219,19 @@ class VideoFile(models.Model):
         Raises:
             Value Error if no active VideoFile is available.
         """
-        _file = self.active_file
-        assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
-        if not _file or not _file.name:
-            raise ValueError("Active file has no associated file.")
-        url = _file.url
-
-        return url
+        active = self.active_file
+        if not isinstance(active, FieldFile):
+            raise ValueError("Active file is not a stored FieldFile instance.")
+        if not active.name:
+            raise ValueError("Active file has no associated name.")
+        return active.url
     
     @property
-    def active_raw_file(self) -> File:
-        if self.has_raw:
-            return self.raw_file
-        else:
-            raise ValueError("Has no raw file")
+    def active_raw_file(self) -> FieldFile:
+        raw = self.raw_file
+        if isinstance(raw, FieldFile) and raw.name:
+            return raw
+        raise ValueError("No raw file available for this video")
         
     @property
     def active_raw_file_url(self)-> str:
@@ -241,12 +243,10 @@ class VideoFile(models.Model):
         
         Returns:
         """
-        _file = self.active_raw_file
-        assert _file is not None, "No active file available. VideoFile has neither raw nor processed file."
-        if not _file or not _file.name:
-            raise ValueError("Active file has no associated file.")
-        url = _file.url
-        return url
+        raw = self.active_raw_file
+        if not raw.name:
+            raise ValueError("Active raw file has no associated name.")
+        return raw.url
         
 
     # Pipeline Functions
@@ -363,7 +363,7 @@ class VideoFile(models.Model):
     
 
     @property
-    def active_file(self) -> File:
+    def active_file(self) -> FieldFile:
         """
         Return the active video file, preferring the processed file if available.
         
@@ -373,12 +373,15 @@ class VideoFile(models.Model):
         Raises:
             ValueError: If neither a processed nor a raw file is available.
         """
-        if self.is_processed:
-            return self.processed_file
-        elif self.has_raw:
-            return self.raw_file
-        else:
-            raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
+        processed = self.processed_file
+        if isinstance(processed, FieldFile) and processed.name:
+            return processed
+
+        raw = self.raw_file
+        if isinstance(raw, FieldFile) and raw.name:
+            return raw
+
+        raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
         
 
     @property
@@ -393,12 +396,16 @@ class VideoFile(models.Model):
             ValueError: If neither a processed nor raw file is present.
         """
         active = self.active_file
-        if active == self.processed_file:
-            return _get_processed_file_path(self)
-        elif active == self.raw_file:
-            return _get_raw_file_path(self)
+        if active is self.processed_file:
+            path = _get_processed_file_path(self)
+        elif active is self.raw_file:
+            path = _get_raw_file_path(self)
         else:
             raise ValueError("No active file path available. VideoFile has neither raw nor processed file.")
+
+        if path is None:
+            raise ValueError("Active file path could not be resolved.")
+        return path
 
 
     @classmethod
@@ -448,13 +455,14 @@ class VideoFile(models.Model):
         """
         # Ensure frames are deleted before the main instance
         _delete_frames(self)
-        
+
         # Call the original delete method to remove the instance from the database
-        logger.info(f"Deleting VideoFile: {self.uuid} - {self.active_file_path}")
-        
+        active_path = self.active_file_path
+        logger.info(f"Deleting VideoFile: {self.uuid} - {active_path}")
+
         # Delete associated files if they exist
-        if self.active_file_path.exists():
-            self.active_file_path.unlink(missing_ok=True)
+        if active_path.exists():
+            active_path.unlink(missing_ok=True)
         
         # Delete file storage
         if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
@@ -479,8 +487,9 @@ class VideoFile(models.Model):
                 
         try:
             # Call parent delete with proper parameters
-            super().delete(using=using, keep_parents=keep_parents)
+            result = super().delete(using=using, keep_parents=keep_parents)
             logger.info(f"VideoFile {self.uuid} deleted successfully.")
+            return result
         except Exception as e:
             logger.error(f"Error deleting VideoFile {self.uuid}: {e}")
             raise

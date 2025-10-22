@@ -1,4 +1,5 @@
 import random
+from typing import Optional
 from endoreg_db.models import (
     Center, 
     Gender, 
@@ -17,6 +18,7 @@ import shutil
 from pathlib import Path
 from django.conf import settings # Import settings
 from django.core.files.storage import default_storage # Import default storage
+from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils import (
     create_mock_patient_name,
@@ -44,6 +46,10 @@ DEFAULT_INDICATIONS = [
 DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 
 DEFAULT_GENDER = "unknown"
+DEFAULT_PATIENT_FIRST_NAME = "TestFirst"
+DEFAULT_PATIENT_LAST_NAME = "TestLast"
+DEFAULT_PATIENT_GENDER_NAME = "female"
+DEFAULT_PATIENT_BIRTH_DATE = date(1970, 1, 1)
 
 def get_information_source_prediction():
     """
@@ -170,33 +176,41 @@ def get_default_center() -> Center:
     return center
 
 def generate_patient(**kwargs) -> Patient:
-    """
-    Creates a Patient instance with randomized or specified attributes.
-    
-    Randomly generates first name, last name, date of birth, gender, and center for the patient unless overridden by keyword arguments. Raises ValueError if the provided gender is invalid.
-    
-    Args:
-        **kwargs: Optional overrides for patient attributes such as 'first_name', 'last_name', 'birth_date', 'gender', and 'center'.
-    
-    Returns:
-        A Patient instance with the specified or randomly generated attributes.
-    """
-    # Set default values
-    gender = kwargs.get("gender", get_random_gender())
-    if not isinstance(gender, Gender):
+    """Create a Patient with deterministic defaults unless ``randomize=True`` is supplied."""
+
+    randomize = kwargs.pop("randomize", False)
+
+    gender = kwargs.get("gender")
+    if gender is None:
+        if randomize:
+            gender = get_random_gender()
+        else:
+            gender = Gender.objects.get(name=DEFAULT_PATIENT_GENDER_NAME)
+    elif not isinstance(gender, Gender):
         gender = Gender.objects.get(name=gender)
 
-    if not isinstance(gender, Gender):
-        raise ValueError("No Gender Found")
-    first_name, last_name = create_mock_patient_name(gender = gender.name)
-    first_name = kwargs.get("first_name", first_name)
-    last_name = kwargs.get("last_name", last_name)
-    birth_date = kwargs.get("birth_date", "1970-01-01")
-    dob = date.fromisoformat(birth_date)
-    center = kwargs.get("center", None)
+    first_name = kwargs.get("first_name")
+    last_name = kwargs.get("last_name")
+    if first_name is None or last_name is None:
+        if randomize:
+            generated_first, generated_last = create_mock_patient_name(gender=gender.name)
+        else:
+            generated_first, generated_last = DEFAULT_PATIENT_FIRST_NAME, DEFAULT_PATIENT_LAST_NAME
+        first_name = first_name or generated_first
+        last_name = last_name or generated_last
+
+    dob = kwargs.get("dob")
+    if dob is None:
+        birth_date = kwargs.get("birth_date", DEFAULT_PATIENT_BIRTH_DATE)
+        if isinstance(birth_date, date):
+            dob = birth_date
+        else:
+            dob = date.fromisoformat(str(birth_date))
+
+    center = kwargs.get("center")
     if center is None:
         center = get_default_center()
-    else:
+    elif not isinstance(center, Center):
         center = Center.objects.get(name=center)
 
     patient = Patient(
@@ -261,6 +275,7 @@ def get_default_egd_pdf():
     shutil.copy(egd_path, temp_file_path)
 
     pdf_file = None
+    file_field: Optional[FieldFile] = None
     try:
         # Create the PDF record using the temporary file.
         # delete_source=True will ensure temp_file_path is deleted by create_from_file
@@ -275,8 +290,11 @@ def get_default_egd_pdf():
             raise RuntimeError("Failed to create PDF file object")
         
         # Use storage API to check existence
-        if not default_storage.exists(pdf_file.file.path):
-            raise RuntimeError(f"PDF file does not exist in storage at {pdf_file.file.path}")
+        file_field = pdf_file.file
+        if not isinstance(file_field, FieldFile):
+            raise RuntimeError("RawPdfFile.file did not return a FieldFile instance")
+        if not default_storage.exists(file_field.path):
+            raise RuntimeError(f"PDF file does not exist in storage at {file_field.path}")
         
         # Check that the source temp file was deleted
         if temp_file_path.exists():
@@ -308,10 +326,11 @@ def get_default_egd_pdf():
 
     # pdf_file.file.path might fail if storage doesn't support direct paths (like S3)
     # Prefer using storage API for checks. Logging path if available.
-    try:
-        logger.info(f"PDF file created: {pdf_file.file.name}, Path: {pdf_file.file.path}")
-    except NotImplementedError:
-        logger.info(f"PDF file created: {pdf_file.file.name}, Path: (Not available from storage)")
+    if file_field is not None:
+        try:
+            logger.info(f"PDF file created: {file_field.name}, Path: {file_field.path}")
+        except NotImplementedError:
+            logger.info(f"PDF file created: {file_field.name}, Path: (Not available from storage)")
 
 
     return pdf_file
