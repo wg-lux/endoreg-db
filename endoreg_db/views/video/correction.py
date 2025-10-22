@@ -26,6 +26,16 @@ from lx_anonymizer import FrameCleaner
 
 logger = logging.getLogger(__name__)
 
+def update_processed_file(video, output_path: Path):
+    from endoreg_db.utils import data_paths
+    storage_root = Path(data_paths["storage"])
+    try:
+        rel_path = output_path.relative_to(storage_root)
+    except ValueError:
+        rel_path = output_path.relative_to(Path(settings.MEDIA_ROOT))
+    video.processed_file.name = str(rel_path)
+    video.save(update_fields=["processed_file"])
+
 
 def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) -> dict:
     """
@@ -408,9 +418,7 @@ class VideoApplyMaskView(APIView):
                 # Update video record with anonymized file
                 from django.core.files import File
                 processed_file_path = output_path
-                with open(processed_file_path, "rb") as f:
-                    video.processed_file.save(processed_file_path.name, File(f), save=True)
-
+                update_processed_file(video, processed_file_path)
                 # Mark history as success
                 history.mark_success(
                     output_file=str(output_path),
@@ -550,12 +558,8 @@ class VideoRemoveFramesView(APIView):
             
             if success:
                 # Update video record
-                processed_field = video.processed_file
-                expected_cleaned_path = Path(processed_field.path)
+                update_processed_file(video, output_path)
 
-                if processed_field.name:
-                    video.processed_file = f"anonym_videos/{video.uuid}_cleaned.mp4"
-                video.save()
                 
                 # Phase 1.4: Update LabelVideoSegments (shift frame numbers)
                 segment_update_result = update_segments_after_frame_removal(video, frames_to_remove)
