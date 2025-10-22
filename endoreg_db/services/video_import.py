@@ -16,7 +16,7 @@ import shutil
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Union, Dict, Any, Optional
+from typing import Union, Dict, Any, Optional, List, Tuple
 from django.db import transaction
 from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, RAW_FRAME_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
@@ -418,13 +418,13 @@ class VideoImportService():
             self.logger.info("Starting frame-level anonymization with processor ROI masking...")
             
             # Get processor ROI information
-            processor_roi, endoscope_roi = self._get_processor_roi_info()
+            endoscope_data_roi_nested, endoscope_image_roi = self._get_processor_roi_info()
             
             # Perform frame cleaning with timeout to prevent blocking
             from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
             
             with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(self._perform_frame_cleaning, FrameCleaner, processor_roi, endoscope_roi)
+                future = executor.submit(self._perform_frame_cleaning, FrameCleaner, endoscope_data_roi_nested, endoscope_image_roi)
                 try:
                     # Increased timeout to better accommodate ffmpeg + OCR
                     future.result(timeout=300)
@@ -742,10 +742,10 @@ class VideoImportService():
         self.logger.info("Created sensitive file for %s at %s", video.uuid, target_file_path)
         return target_file_path
 
-    def _get_processor_roi_info(self):
+    def _get_processor_roi_info(self) -> Tuple[Optional[List[List[Dict[str, Any]]]], Optional[Dict[str, Any]]]:
         """Get processor ROI information for masking."""
-        processor_roi = None
-        endoscope_roi = None
+        endoscope_data_roi_nested = None
+        endoscope_image_roi = None
 
         video = self._require_current_video()
 
@@ -754,18 +754,9 @@ class VideoImportService():
             processor = getattr(video_meta, "processor", None) if video_meta else None
             if processor:
                 assert isinstance(processor, EndoscopyProcessor), "Processor is not of type EndoscopyProcessor"
-                endoscope_roi = processor.get_roi_endoscope_image()
-                processor_roi = {
-                    "endoscope_image": endoscope_roi,
-                    "patient_first_name": processor.get_roi_patient_first_name(),
-                    "patient_last_name": processor.get_roi_patient_last_name(),
-                    "patient_dob": processor.get_roi_patient_dob(),
-                    "examination_date": processor.get_roi_examination_date(),
-                    "examination_time": processor.get_roi_examination_time(),
-                    "endoscope_type": processor.get_roi_endoscope_type(),
-                    "endoscopy_sn": processor.get_roi_endoscopy_sn(),
-                }
-                self.logger.info("Retrieved processor ROI information: endoscope_roi=%s", endoscope_roi)
+                endoscope_image_roi = processor.get_roi_endoscope_image()
+                endoscope_data_roi_nested = processor.get_rois()
+                self.logger.info("Retrieved processor ROI information: endoscope_image_roi=%s", endoscope_image_roi)
             else:
                 self.logger.warning(
                     "No processor found for video %s, proceeding without ROI masking",
@@ -774,7 +765,7 @@ class VideoImportService():
         except Exception as exc:
             self.logger.error("Failed to retrieve processor ROI information: %s", exc)
 
-        return processor_roi, endoscope_roi
+        return endoscope_data_roi_nested, endoscope_image_roi
 
     def _ensure_default_patient_data(self, video_instance: VideoFile | None = None) -> None:
         """Ensure minimum patient data is present on the video's SensitiveMeta."""
@@ -868,7 +859,7 @@ class VideoImportService():
 
     
 
-    def _perform_frame_cleaning(self, FrameCleaner, processor_roi, endoscope_roi):
+    def _perform_frame_cleaning(self, FrameCleaner, endoscope_data_roi_nested, endoscope_image_roi):
         """Perform frame cleaning and anonymization."""
         # Instantiate frame cleaner
         frame_cleaner = FrameCleaner()
@@ -884,9 +875,7 @@ class VideoImportService():
         video_meta = getattr(video, "video_meta", None)
         processor = getattr(video_meta, "processor", None) if video_meta else None
         device_name = processor.name if processor else self.processing_context['processor_name']
-        
-        tmp_dir = RAW_FRAME_DIR
-        
+                
         # Create temporary output path for cleaned video
         video_filename = self.processing_context.get('video_filename', Path(raw_video_path).name)
         cleaned_filename = f"cleaned_{video_filename}"
@@ -896,8 +885,8 @@ class VideoImportService():
         actual_cleaned_path, extracted_metadata = frame_cleaner.clean_video(
             video_path=Path(raw_video_path),
             video_file_obj=video,
-            device_name=device_name,
-            endoscope_roi=processor.get_roi_endoscope_image() if processor else None,
+            endoscope_image_roi=endoscope_image_roi,
+            endoscope_data_roi_nested=endoscope_data_roi_nested,
             output_path=cleaned_video_path,
             technique="mask_overlay"
         )
@@ -937,12 +926,11 @@ class VideoImportService():
         self.logger.info(f"Frame cleaning with ROI masking completed: {actual_cleaned_path}")
         self.logger.info("Cleaned video will be moved to anonym_videos during cleanup")
 
-    def _update_sensitive_metadata(self, extracted_metadata):
+    def _update_sensitive_metadata(self, extracted_metadata: Dict[str, Any]):
         """
         Update sensitive metadata with extracted information.
-        
-        SAFETY MECHANISM: Only updates fields that are empty, default values, or explicitly marked as safe to overwrite.
-        This prevents accidentally overwriting valuable manually entered or previously extracted data.
+        Args:
+            extracted_metadata (Dict[str, Any]): Extracted metadata to update.
         """
         video = self._require_current_video()
         sensitive_meta = getattr(video, "sensitive_meta", None)
@@ -953,51 +941,12 @@ class VideoImportService():
         sm = sensitive_meta
         updated_fields = []
         
-        # Map extracted metadata to SensitiveMeta fields
-        metadata_mapping = {
-            'patient_first_name': 'patient_first_name',
-            'patient_last_name': 'patient_last_name',
-            'patient_dob': 'patient_dob',
-            'examination_date': 'examination_date',
-            'endoscope_type': 'endoscope_type'
-        }
-        
-        # Define default/placeholder values that are safe to overwrite
-        SAFE_TO_OVERWRITE_VALUES = [
-            'Vorname unbekannt',           # Default first name
-            'Nachname unbekannt',           # Default last name
-            date(1990, 1, 1),   # Default DOB
-            None,               # Empty values
-            '',                 # Empty strings
-            'N/A',              # Placeholder values
-            'Unbekanntes Gerät',   # Default device name
-        ]
-        
-        for meta_key, sm_field in metadata_mapping.items():
-            if extracted_metadata.get(meta_key) and hasattr(sm, sm_field):
-                old_value = getattr(sm, sm_field)
-                new_value = extracted_metadata[meta_key]
-                
-                # Enhanced safety check: Only update if current value is safe to overwrite
-                if new_value and (old_value in SAFE_TO_OVERWRITE_VALUES):
-                    self.logger.info(
-                        "Updating %s from '%s' to '%s' for video %s",
-                        sm_field,
-                        old_value,
-                        new_value,
-                        video.uuid,
-                    )
-                    setattr(sm, sm_field, new_value)
-                    updated_fields.append(sm_field)
-                elif new_value and old_value and old_value not in SAFE_TO_OVERWRITE_VALUES:
-                    self.logger.info(
-                        "Preserving existing %s value '%s' (not overwriting with '%s') for video %s",
-                        sm_field,
-                        old_value,
-                        new_value,
-                        video.uuid,
-                    )
-        
+        try:
+            sm.update_from_dict(extracted_metadata)
+            updated_fields = list(extracted_metadata.keys())
+        except KeyError as e:
+            self.logger.warning(f"Failed to update SensitiveMeta field {e}")
+            
         if updated_fields:
             sm.save(update_fields=updated_fields)
             self.logger.info("Updated SensitiveMeta fields for video %s: %s", video.uuid, updated_fields)

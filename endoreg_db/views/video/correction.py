@@ -378,7 +378,7 @@ class VideoApplyMaskView(APIView):
             frame_cleaner = FrameCleaner()
             
             # Get video paths
-            video_path = video.raw_file.path if hasattr(video.raw_file, 'path') else str(video.raw_file)
+            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else str(video.raw_file)
             output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_masked.mp4"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -390,7 +390,6 @@ class VideoApplyMaskView(APIView):
                 # Convert ROI to mask config
                 mask_config = frame_cleaner._create_mask_config_from_roi(
                     endoscope_roi=roi,
-                    processor_rois=None
                 )
             
             # Apply mask (uses existing FrameCleaner._mask_video)
@@ -400,16 +399,18 @@ class VideoApplyMaskView(APIView):
             success = frame_cleaner._mask_video(
                 input_video=video_path,
                 mask_config=mask_config,
-                output_video=str(output_path)
+                output_video=output_path
             )
             
             processing_time = time.time() - start_time
             
             if success:
                 # Update video record with anonymized file
-                video.anonymized_file = f"anonym_videos/{video.uuid}_masked.mp4"
-                video.save()
-                
+                from django.core.files import File
+                processed_file_path = output_path
+                with open(processed_file_path, "rb") as f:
+                    video.processed_file.save(processed_file_path.name, File(f), save=True)
+
                 # Mark history as success
                 history.mark_success(
                     output_file=str(output_path),
@@ -531,7 +532,7 @@ class VideoRemoveFramesView(APIView):
             frame_cleaner = FrameCleaner()
             
             # Get video paths
-            video_path = video.raw_file.path if hasattr(video.raw_file, 'path') else str(video.raw_file)
+            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else Path(str(video.raw_file))
             output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_cleaned.mp4"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -542,14 +543,18 @@ class VideoRemoveFramesView(APIView):
             success = frame_cleaner.remove_frames_from_video(
                 original_video=video_path,
                 frames_to_remove=frames_to_remove,
-                output_video=str(output_path)
+                output_video=output_path
             )
             
             processing_time = time.time() - start_time
             
             if success:
                 # Update video record
-                video.anonymized_file = f"anonym_videos/{video.uuid}_cleaned.mp4"
+                processed_field = video.processed_file
+                expected_cleaned_path = Path(processed_field.path)
+
+                if processed_field.name:
+                    video.processed_file = f"anonym_videos/{video.uuid}_cleaned.mp4"
                 video.save()
                 
                 # Phase 1.4: Update LabelVideoSegments (shift frame numbers)
@@ -611,64 +616,3 @@ class VideoRemoveFramesView(APIView):
             else:
                 frames.append(int(part))
         return sorted(set(frames))  # Remove duplicates and sort
-
-
-class VideoReprocessView(APIView):
-    """
-    POST /api/media/videos/{pk}/reprocess/
-    
-    Re-run entire anonymization pipeline for a video.
-    
-    Request body: {} (empty)
-    
-    Returns:
-        {
-            "message": "Reprocessing started",
-            "status": "processing_anonymization"
-        }
-    
-    Note: This resets VideoState and triggers video_import service.
-    """
-    
-    def post(self, request, pk):
-        """Reprocess video through entire anonymization pipeline."""
-        video = get_object_or_404(VideoFile, pk=pk)
-        
-        try:
-            # Create processing history record
-            history = VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_REPROCESSING,
-                status=VideoProcessingHistory.STATUS_PENDING,
-                config={}
-            )
-            
-            # Reset video state to trigger re-processing
-            if hasattr(video, 'state') and video.state:
-                video.state.anonymization_status = 'processing_anonymization'
-                video.state.save()
-            
-            # Clear previous metadata
-            VideoMetadata.objects.filter(video=video).delete()
-            
-            # TODO Phase 1.2: Trigger Celery task for async reprocessing
-            # task = reprocess_video_task.delay(video.id)
-            # history.task_id = task.id
-            # history.save()
-            
-            history.mark_success(details="Reprocessing initiated")
-            
-            logger.info(f"Video {pk} reprocessing started")
-            
-            return Response({
-                'message': 'Reprocessing started',
-                'status': 'processing_anonymization'
-            })
-            
-        except Exception as e:
-            logger.error(f"Reprocessing failed for {pk}: {str(e)}", exc_info=True)
-            
-            return Response(
-                {'error': f'Reprocessing failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )

@@ -1,4 +1,4 @@
-from .video import VideoFile
+from .video import VideoFile, VideoMetadata, VideoProcessingHistory
 from .frame import Frame
 from .pdf import RawPdfFile, DocumentType, AnonymExaminationReport, ReportReaderConfig, ReportReaderFlag, AnonymHistologyReport
 
@@ -11,4 +11,6 @@ __all__ = [
     "AnonymHistologyReport",
     'ReportReaderConfig',
     'ReportReaderFlag',
+    'VideoMetadata',
+    'VideoProcessingHistory',
 ]

@@ -6,27 +6,19 @@ It provides a unified dictionary 'data_paths' for accessing all path objects.
 """
 
 from logging import getLogger
+
+from sphinx.search import no
 logger = getLogger(__name__)
 
 from pathlib import Path
 from typing import Dict
-
+import os
 from endoreg_db.config.env import env_path
 
-STORAGE_DIR = env_path("STORAGE_DIR", "storage")
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR"))
 
-# Resolve STORAGE_DIR from env or default under BASE_DIR
-#def _resolve_storage_dir() -> Path:
-#     env_val = os.getenv("STORAGE_DIR")
-#     if env_val:
-#         p = Path(env_val)
-#         return p if p.is_absolute() else (BASE_DIR / p).resolve()
-#     # Do not import django.conf.settings here to avoid early settings configuration.
-#     # Fall back to a local storage directory under the repo.
-#     return (BASE_DIR / "storage").resolve()
-
-# STORAGE_DIR = _resolve_storage_dir()
-STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+if not STORAGE_DIR.exists():
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 PREFIX_RAW = "raw_"
 IMPORT_DIR_NAME = "import"
@@ -63,29 +55,29 @@ EXPORT_DIR = STORAGE_DIR / EXPORT_DIR_NAME
 
 data_paths:Dict[str,Path] = {
     "storage": STORAGE_DIR,
-    "video": VIDEO_DIR,
-    "anonym_video": ANONYM_VIDEO_DIR, # Added
-    "frame": FRAME_DIR,
-    "pdf": PDF_DIR, # Changed
-    "import": IMPORT_DIR,
-    "video_import": VIDEO_IMPORT_DIR,
-    "frame_import": FRAME_IMPORT_DIR,
-    "pdf_import": PDF_IMPORT_DIR, # Changed
-    "raw_video": RAW_VIDEO_DIR,
-    "raw_frame": RAW_FRAME_DIR,
-    "raw_pdf": RAW_PDF_DIR, # Changed
-    "weights": WEIGHTS_DIR,
-    "weights_import": WEIGHTS_IMPORT_DIR,
-    "export": EXPORT_DIR,
-    "video_export": EXPORT_DIR / VIDEO_DIR_NAME,
-    "anonym_video_export": EXPORT_DIR / ANONYM_VIDEO_DIR_NAME, # Added
-    "frame_export": EXPORT_DIR / FRAME_DIR_NAME,
-    "pdf_export": EXPORT_DIR / PDF_DIR_NAME, # Changed
-    "weights_export": EXPORT_DIR / WEIGHTS_DIR_NAME,
-    "examination_export": EXPORT_DIR / EXAMINATION_DIR_NAME,
-    "raw_video_export": EXPORT_DIR / RAW_VIDEO_DIR_NAME,
-    "raw_frame_export": EXPORT_DIR / RAW_FRAME_DIR_NAME,
-    "raw_pdf_export": EXPORT_DIR / RAW_PDF_DIR_NAME, # Changed
+    # "video": VIDEO_DIR,
+    # "anonym_video": ANONYM_VIDEO_DIR, # Added
+    # "frame": FRAME_DIR,
+    # "pdf": PDF_DIR, # Changed
+    # "import": IMPORT_DIR,
+    # "video_import": VIDEO_IMPORT_DIR,
+    # "frame_import": FRAME_IMPORT_DIR,
+    # "pdf_import": PDF_IMPORT_DIR, # Changed
+    # "raw_video": RAW_VIDEO_DIR,
+    # "raw_frame": RAW_FRAME_DIR,
+    # "raw_pdf": RAW_PDF_DIR, # Changed
+    # "weights": WEIGHTS_DIR,
+    # "weights_import": WEIGHTS_IMPORT_DIR,
+    # "export": EXPORT_DIR,
+    # "video_export": EXPORT_DIR / VIDEO_DIR_NAME,
+    # "anonym_video_export": EXPORT_DIR / ANONYM_VIDEO_DIR_NAME, # Added
+    # "frame_export": EXPORT_DIR / FRAME_DIR_NAME,
+    # "pdf_export": EXPORT_DIR / PDF_DIR_NAME, # Changed
+    # "weights_export": EXPORT_DIR / WEIGHTS_DIR_NAME,
+    # "examination_export": EXPORT_DIR / EXAMINATION_DIR_NAME,
+    # "raw_video_export": EXPORT_DIR / RAW_VIDEO_DIR_NAME,
+    # "raw_frame_export": EXPORT_DIR / RAW_FRAME_DIR_NAME,
+    # "raw_pdf_export": EXPORT_DIR / RAW_PDF_DIR_NAME, # Changed
 }
 
 logger.info(f"Storage directory: {STORAGE_DIR.resolve()}")

@@ -116,7 +116,7 @@ class SensitiveMeta(models.Model):
         return None # Cannot determine before saving and linking
 
     # --- Update method delegates to logic ---
-    def update_from_dict(self, data: Dict[str, Any]):
+    def update_from_dict(self, data: Dict[str, Any]) -> logic.SensitiveMeta:
         """Updates the instance from a dictionary using external logic."""
         # Delegate to logic function
         return logic.update_sensitive_meta_from_dict(self, data)
