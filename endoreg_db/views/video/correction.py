@@ -208,113 +208,6 @@ class VideoProcessingHistoryView(APIView):
         return Response(serializer.data)
 
 
-class VideoAnalyzeView(APIView):
-    """
-    POST /api/media/videos/{pk}/analyze/
-    
-    Analyze video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM.
-    
-    Request body (optional):
-        {
-            "detection_method": "minicpm",  // or "ocr_llm", "hybrid"
-            "sample_interval": 30           // analyze every Nth frame (default: adaptive)
-        }
-    
-    Returns:
-        {
-            "sensitive_frame_count": 42,
-            "total_frames": 840,
-            "sensitive_ratio": 0.05,
-            "sensitive_frame_ids": [10, 15, 20, ...],
-            "sensitive_percentage": 5.0,
-            "detection_method": "minicpm",
-            "message": "Analysis complete"
-        }
-    """
-    
-    def post(self, request, pk):
-        """Analyze video for sensitive content."""
-        video = get_object_or_404(VideoFile, pk=pk)
-        
-        # Extract parameters
-        detection_method = request.data.get('detection_method', 'minicpm')
-        sample_interval = request.data.get('sample_interval', None)
-        
-        try:
-            # Initialize FrameCleaner with appropriate detection method
-            use_minicpm = detection_method in ['minicpm', 'hybrid']
-            frame_cleaner = FrameCleaner(use_minicpm=use_minicpm)
-            
-            # Get video path
-            video_path = video.raw_file.path if hasattr(video.raw_file, 'path') else str(video.raw_file)
-            
-            # Run analysis (uses existing FrameCleaner.analyze_video_sensitivity)
-            analysis_result = frame_cleaner.analyze_video_sensitivity(
-                video_path=video_path,
-                sample_interval=sample_interval
-            )
-            
-            # Extract results
-            sensitive_frame_ids = analysis_result.get('sensitive_frame_ids', [])
-            total_frames = analysis_result.get('total_frames', 0)
-            sensitive_count = len(sensitive_frame_ids)
-            sensitive_ratio = sensitive_count / total_frames if total_frames > 0 else 0.0
-            
-            # Update or create metadata
-            metadata, created = VideoMetadata.objects.update_or_create(
-                video=video,
-                defaults={
-                    'sensitive_frame_count': sensitive_count,
-                    'sensitive_ratio': sensitive_ratio,
-                    'sensitive_frame_ids': json.dumps(sensitive_frame_ids)
-                }
-            )
-            
-            # Create processing history record
-            VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_ANALYSIS,
-                status=VideoProcessingHistory.STATUS_SUCCESS,
-                config={
-                    'detection_method': detection_method,
-                    'sample_interval': sample_interval
-                },
-                details=f"Found {sensitive_count} sensitive frames out of {total_frames} total frames"
-            )
-            
-            logger.info(f"Video {pk} analyzed: {sensitive_count}/{total_frames} sensitive frames")
-            
-            return Response({
-                'sensitive_frame_count': sensitive_count,
-                'total_frames': total_frames,
-                'sensitive_ratio': sensitive_ratio,
-                'sensitive_frame_ids': sensitive_frame_ids,
-                'sensitive_percentage': sensitive_ratio * 100,
-                'detection_method': detection_method,
-                'message': 'Analysis complete'
-            })
-            
-        except Exception as e:
-            logger.error(f"Video analysis failed for {pk}: {str(e)}", exc_info=True)
-            
-            # Create failure record
-            VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_ANALYSIS,
-                status=VideoProcessingHistory.STATUS_FAILURE,
-                config={
-                    'detection_method': detection_method,
-                    'sample_interval': sample_interval
-                },
-                details=str(e)
-            )
-            
-            return Response(
-                {'error': f'Analysis failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
 class VideoApplyMaskView(APIView):
     """
     POST /api/media/videos/{pk}/apply-mask/
@@ -388,7 +281,7 @@ class VideoApplyMaskView(APIView):
             frame_cleaner = FrameCleaner()
             
             # Get video paths
-            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else str(video.raw_file)
+            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else Path(str(video.raw_file))
             output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_masked.mp4"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             

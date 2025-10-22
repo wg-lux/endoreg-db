@@ -13,10 +13,15 @@ logger = getLogger(__name__)
 from pathlib import Path
 from typing import Dict
 import os
-from endoreg_db.config.env import env_path
+# Alternative approach using env_path helper, deprecated since monorepo setup. Alright for single install, env is always preferred.
+#from endoreg_db.config.env import env_path
 
-STORAGE_DIR = Path(os.getenv("STORAGE_DIR"))
 
+storage_dir_env = os.getenv("STORAGE_DIR")
+if storage_dir_env is None:
+    raise RuntimeError("STORAGE_DIR environment variable is not set.")
+storage_dir_str = Path(storage_dir_env)
+STORAGE_DIR = storage_dir_str
 if not STORAGE_DIR.exists():
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -55,34 +60,35 @@ EXPORT_DIR = STORAGE_DIR / EXPORT_DIR_NAME
 
 data_paths:Dict[str,Path] = {
     "storage": STORAGE_DIR,
-    # "video": VIDEO_DIR,
-    # "anonym_video": ANONYM_VIDEO_DIR, # Added
-    # "frame": FRAME_DIR,
-    # "pdf": PDF_DIR, # Changed
-    # "import": IMPORT_DIR,
-    # "video_import": VIDEO_IMPORT_DIR,
-    # "frame_import": FRAME_IMPORT_DIR,
-    # "pdf_import": PDF_IMPORT_DIR, # Changed
-    # "raw_video": RAW_VIDEO_DIR,
-    # "raw_frame": RAW_FRAME_DIR,
-    # "raw_pdf": RAW_PDF_DIR, # Changed
-    # "weights": WEIGHTS_DIR,
-    # "weights_import": WEIGHTS_IMPORT_DIR,
-    # "export": EXPORT_DIR,
-    # "video_export": EXPORT_DIR / VIDEO_DIR_NAME,
-    # "anonym_video_export": EXPORT_DIR / ANONYM_VIDEO_DIR_NAME, # Added
-    # "frame_export": EXPORT_DIR / FRAME_DIR_NAME,
-    # "pdf_export": EXPORT_DIR / PDF_DIR_NAME, # Changed
-    # "weights_export": EXPORT_DIR / WEIGHTS_DIR_NAME,
-    # "examination_export": EXPORT_DIR / EXAMINATION_DIR_NAME,
-    # "raw_video_export": EXPORT_DIR / RAW_VIDEO_DIR_NAME,
-    # "raw_frame_export": EXPORT_DIR / RAW_FRAME_DIR_NAME,
-    # "raw_pdf_export": EXPORT_DIR / RAW_PDF_DIR_NAME, # Changed
+    "video": VIDEO_DIR,
+    "anonym_video": ANONYM_VIDEO_DIR, # Added
+    "frame": FRAME_DIR,
+    "pdf": PDF_DIR, # Changed
+    "import": IMPORT_DIR,
+    "video_import": VIDEO_IMPORT_DIR,
+    "frame_import": FRAME_IMPORT_DIR,
+    "pdf_import": PDF_IMPORT_DIR, # Changed
+    "raw_video": RAW_VIDEO_DIR,
+    "raw_frame": RAW_FRAME_DIR,
+    "raw_pdf": RAW_PDF_DIR, # Changed
+    "weights": WEIGHTS_DIR,
+    "weights_import": WEIGHTS_IMPORT_DIR,
+    "export": EXPORT_DIR,
+    "video_export": EXPORT_DIR / VIDEO_DIR_NAME,
+    "anonym_video_export": EXPORT_DIR / ANONYM_VIDEO_DIR_NAME, # Added
+    "frame_export": EXPORT_DIR / FRAME_DIR_NAME,
+    "pdf_export": EXPORT_DIR / PDF_DIR_NAME, # Changed
+    "weights_export": EXPORT_DIR / WEIGHTS_DIR_NAME,
+    "examination_export": EXPORT_DIR / EXAMINATION_DIR_NAME,
+    "raw_video_export": EXPORT_DIR / RAW_VIDEO_DIR_NAME,
+    "raw_frame_export": EXPORT_DIR / RAW_FRAME_DIR_NAME,
+    "raw_pdf_export": EXPORT_DIR / RAW_PDF_DIR_NAME, # Changed
 }
 
 logger.info(f"Storage directory: {STORAGE_DIR.resolve()}")
 logger.info(f"Export directory: {EXPORT_DIR.resolve()}")
 
-for key, path in data_paths.items():
-    path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"{key.capitalize()} directory: {path.resolve()}")
+# for key, path in data_paths.items():
+#     path.mkdir(parents=True, exist_ok=True)
+
+#     logger.info(f"{key.capitalize()} directory: {path.resolve()}")

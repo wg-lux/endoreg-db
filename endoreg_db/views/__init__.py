@@ -127,7 +127,6 @@ from .video import (
     # Video Correction (Phase 1.1) - Implemented
     VideoMetadataView,
     VideoProcessingHistoryView,
-    VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
     
@@ -255,7 +254,6 @@ __all__ = [
     # Video Views (Phase 1.1 - Implemented)
     'VideoMetadataView',
     'VideoProcessingHistoryView',
-    'VideoAnalyzeView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
     

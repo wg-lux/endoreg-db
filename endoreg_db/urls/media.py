@@ -26,7 +26,6 @@ from endoreg_db.views.video.reimport import VideoReimportView
 from endoreg_db.views.video.correction import (
     VideoMetadataView,
     VideoProcessingHistoryView,
-    VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
 )
@@ -79,7 +78,6 @@ urlpatterns = [
     # POST /api/media/videos/<int:pk>/analyze/
     # Analyzes video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM
     # Body: { detection_method: 'minicpm'|'ocr_llm'|'hybrid', sample_interval: 30 }
-    path("media/videos/<int:pk>/analyze/", VideoAnalyzeView.as_view(), name="video-analyze"),
     
     # Video Masking API
     # POST /api/media/videos/<int:pk>/apply-mask/

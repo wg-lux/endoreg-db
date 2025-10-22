@@ -1,7 +1,7 @@
 from django.db import models
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
-from typing import TYPE_CHECKING, Dict, Any, Type
+from typing import TYPE_CHECKING, Dict, Any, Type, Self
 import logging # Add logging import
 
 # Import logic functions
@@ -116,7 +116,7 @@ class SensitiveMeta(models.Model):
         return None # Cannot determine before saving and linking
 
     # --- Update method delegates to logic ---
-    def update_from_dict(self, data: Dict[str, Any]) -> logic.SensitiveMeta:
+    def update_from_dict(self, data: Dict[str, Any]) -> Self:
         """Updates the instance from a dictionary using external logic."""
         # Delegate to logic function
         return logic.update_sensitive_meta_from_dict(self, data)

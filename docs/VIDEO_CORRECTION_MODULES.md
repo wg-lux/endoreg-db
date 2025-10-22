@@ -476,7 +476,7 @@ class VideoProcessingHistoryView(APIView):
 
 ---
 
-### VideoAnalyzeView
+### VideoAnalyzeView (TODO: CURRENTLY NEEDS REWORK SINCE METHOD DEPRECATED IN LX ANONYMIZER)
 
 **Endpoint:** `POST /api/video-analyze/<id>/`
 
@@ -791,7 +791,6 @@ Methods:
 from endoreg_db.views.video import (
     VideoMetadataView,
     VideoProcessingHistoryView,
-    VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
 )
@@ -1085,7 +1084,6 @@ def update_segments_after_frame_removal(video, removed_frames):
 # views/video/__init__.py
 from .correction import (
     VideoMetadataView,
-    VideoAnalyzeView,
     # ...
 )
 ```
