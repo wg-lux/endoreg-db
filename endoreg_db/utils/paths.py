@@ -16,6 +16,7 @@ import os
 # Alternative approach using env_path helper, deprecated since monorepo setup. Alright for single install, env is always preferred.
 #from endoreg_db.config.env import env_path
 
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "storage"))
 
 storage_dir_env = os.getenv("STORAGE_DIR")
 if storage_dir_env is None:

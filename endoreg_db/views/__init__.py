@@ -139,6 +139,7 @@ from .video import (
     rerun_segmentation,
     video_timeline_view,
     VideoExaminationViewSet,
+    VideoCorrectionView,
 )
 
 __all__ = [
@@ -256,6 +257,8 @@ __all__ = [
     'VideoProcessingHistoryView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
+
+    'VideoCorrectionView',
     
     # Video Views (Existing)
     'VideoReimportView',

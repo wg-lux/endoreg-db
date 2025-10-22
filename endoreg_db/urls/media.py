@@ -28,6 +28,7 @@ from endoreg_db.views.video.correction import (
     VideoProcessingHistoryView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
+    VideoCorrectionView,
 )
 # ---------------------------------------------------------------------------------------
 # ANNOTATION API ENDPOINTS
@@ -64,6 +65,10 @@ urlpatterns = [
     # - History: Track all correction operations
     # ---------------------------------------------------------------------------------------
     
+    # Video Correction API
+    # GET /api/media/videos/video-correction/{id}/ - Get video details for correction
+    path("media/videos/video-correction/<int:pk>", VideoCorrectionView.as_view(), name="video-correction"),
+
     # Video Metadata API
     # GET /api/media/videos/<int:pk>/metadata/
     # Returns analysis results (sensitive frame count, ratio, frame IDs)

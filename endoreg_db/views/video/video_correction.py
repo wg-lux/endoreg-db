@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 class VideoCorrectionView(APIView):
     """
-    GET /api/video-correction/{id}/ - Get video details for correction
+    GET /api/video/media/video-correction/{id}/ - Get video details for correction
     """
     permission_classes = [EnvironmentAwarePermission]
 

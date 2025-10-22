@@ -3,6 +3,7 @@ from .correction import (
     VideoProcessingHistoryView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
+    VideoCorrectionView,
 )
 
 from ..media.video_media import VideoMediaView
@@ -38,7 +39,7 @@ __all__ = [
     'VideoMediaView',
     
     # TODO Phase 1.2+: Future views
-    # 'VideoCorrectionView',
+    'VideoCorrectionView',
     # 'TaskStatusView',
     # 'VideoDownloadProcessedView',
 
