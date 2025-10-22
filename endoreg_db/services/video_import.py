@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Tuple
 from django.db import transaction
+from transformers.models.align.convert_align_tf_to_hf import get_processor
 from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, RAW_FRAME_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
 import random
@@ -165,6 +166,9 @@ class VideoImportService():
                     self.logger.info(f"Skipping {file_path}: {ve}")
                     return None
                 raise
+            
+            # Create sensitive meta file, ensure raw is moved out of processing folder watched by file watcher.
+            self._create_sensitive_file()
             
             # Create or retrieve video instance
             self._create_or_retrieve_video_instance()
@@ -664,8 +668,13 @@ class VideoImportService():
 
         if not video.processed_file or not Path(video.processed_file.path).exists():
             self.logger.warning("No processed_file found after cleanup - video will be unprocessed")
-            video.anonymize(delete_original_raw=self.delete_source)
-            video.save(update_fields=['processed_file'])
+            try:
+                video.anonymize(delete_original_raw=self.delete_source)
+                video.save(update_fields=['processed_file'])
+                self.logger.info("Late-stage anonymization succeeded")
+            except Exception as e:
+                self.logger.error("Late-stage anonymization failed: %s", e)
+                self.processing_context['anonymization_completed'] = False
 
         self.logger.info("Cleanup and archiving completed")
 
@@ -881,6 +890,10 @@ class VideoImportService():
         cleaned_filename = f"cleaned_{video_filename}"
         cleaned_video_path = Path(raw_video_path).parent / cleaned_filename
         
+        processor_roi, endoscope_roi = self._get_processor_roi_info(video)
+        
+        # Processor roi can be used later to OCR preknown regions.
+        
         # Clean video with ROI masking (heavy I/O operation)
         actual_cleaned_path, extracted_metadata = frame_cleaner.clean_video(
             video_path=Path(raw_video_path),
@@ -1035,6 +1048,9 @@ class VideoImportService():
                 if file_path_str in self.processed_files:
                     self.processed_files.remove(file_path_str)
                     self.logger.info(f"Removed {file_path_str} from processed files (failed processing)")
+            
+                 
+            
             
         except Exception as e:
             self.logger.warning(f"Error during context cleanup: {e}")
