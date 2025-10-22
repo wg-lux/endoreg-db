@@ -24,7 +24,6 @@ from endoreg_db.views import (
 from endoreg_db.views.pdf.reimport import PdfReimportView
 from endoreg_db.views.video.reimport import VideoReimportView
 from endoreg_db.views.video.correction import (
-    VideoReprocessView,
     VideoMetadataView,
     VideoProcessingHistoryView,
     VideoAnalyzeView,
@@ -93,12 +92,7 @@ urlpatterns = [
     # Removes specified frames from video
     # Body: { frame_list: [10,20,30] OR frame_ranges: '10-20,30' OR detection_method: 'automatic' }
     path("media/videos/<int:pk>/remove-frames/", VideoRemoveFramesView.as_view(), name="video-remove-frames"),
-    
-    # Video Reprocess API endpoint (modern media framework)
-    # POST /api/media/videos/<int:pk>/reprocess/
-    # Re-runs entire anonymization pipeline for a video (correction workflow)
-    path("media/videos/<int:pk>/reprocess/", VideoReprocessView.as_view(), name="video-reprocess"),
-    
+        
     # ---------------------------------------------------------------------------------------
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
     #

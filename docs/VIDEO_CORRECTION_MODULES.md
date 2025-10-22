@@ -758,55 +758,30 @@ class VideoRemoveFramesView(APIView):
 
 ---
 
-### VideoReprocessView
+### VideoReimportView
 
-**Endpoint:** `POST /api/video-reprocess/<id>/`
+"""
+VideoReimportView provides an API endpoint for re-importing a video file and regenerating its metadata, particularly SensitiveMeta. This is intended for cases where OCR or metadata extraction failed or was incomplete during the initial import.
 
-**Purpose:** Triggers full re-anonymization pipeline (resets state, clears metadata).
+Features:
+- Validates the provided video ID (pk) and checks for the existence of the video and its raw file.
+- Ensures the video has an associated center and required relationships.
+- Clears any existing SensitiveMeta and deletes the old record to force regeneration.
+- Re-initializes video specifications and frames.
+- Runs OCR and AI processing (Pipe 1) to extract new metadata.
+- Ensures minimum patient data is present.
+- Uses VideoImportService to anonymize and process the video file.
+- Handles errors gracefully, including storage issues and processing failures.
+- Returns detailed status and metadata about the re-import operation.
 
-**Implementation:**
-```python
-class VideoReprocessView(APIView):
-    def post(self, request, id):
-        video = get_object_or_404(VideoFile, pk=id)
-        
-        # Create processing history
-        VideoProcessingHistory.objects.create(
-            video=video,
-            operation=VideoProcessingHistory.OPERATION_REPROCESSING,
-            status=VideoProcessingHistory.STATUS_PENDING,
-            config={}
-        )
-        
-        # Reset video state
-        if video.state:
-            video.state.anonymization_status = 'processing_anonymization'
-            video.state.save()
-        
-        # Clear existing metadata
-        VideoMetadata.objects.filter(video=video).delete()
-        
-        # TODO Phase 1.2: Trigger Celery task
-        # task = reprocess_video_task.delay(video.id)
-        # return Response({'task_id': task.id, 'message': 'Reprocessing started'})
-        
-        return Response({
-            'message': 'Reprocessing started',
-            'status': 'processing_anonymization'
-        })
-```
-
-**Response Example:**
-```json
-{
-  "message": "Reprocessing started",
-  "status": "processing_anonymization"
-}
-```
-
-**Use Case:** User wants to completely re-run anonymization (e.g., after mask config changes).
-
----
+Methods:
+- post(request, pk): Handles the re-import process for the video with the given primary key.
+    - Args:
+        - request: The HTTP request object.
+        - pk (int): Primary key of the VideoFile to re-import.
+    - Returns:
+        - Response: JSON response indicating success or failure, with relevant metadata.
+"""
 
 ## URL Configuration
 
@@ -819,7 +794,6 @@ from endoreg_db.views.video import (
     VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
-    VideoReprocessView,
 )
 
 urlpatterns = [
@@ -831,7 +805,6 @@ urlpatterns = [
     path('video-analyze/<int:id>/', VideoAnalyzeView.as_view(), name='video_analyze'),
     path('video-apply-mask/<int:id>/', VideoApplyMaskView.as_view(), name='video_apply_mask'),
     path('video-remove-frames/<int:id>/', VideoRemoveFramesView.as_view(), name='video_remove_frames'),
-    path('video-reprocess/<int:id>/', VideoReprocessView.as_view(), name='video_reprocess'),
 ]
 ```
 
@@ -841,7 +814,6 @@ urlpatterns = [
 - `POST /api/video-analyze/<id>/`
 - `POST /api/video-apply-mask/<id>/`
 - `POST /api/video-remove-frames/<id>/`
-- `POST /api/video-reprocess/<id>/`
 
 ---
 
