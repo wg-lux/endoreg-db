@@ -5,7 +5,7 @@ Serializes VideoMetadata model for API responses.
 Created as part of Phase 1.1: Video Correction API Endpoints.
 """
 from rest_framework import serializers
-from endoreg_db.models import VideoMetadata
+from endoreg_db.models.media.video import VideoMetadata
 import json
 
 

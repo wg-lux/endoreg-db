@@ -30,6 +30,16 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
+def update_processed_file(video, output_path: Path):
+    from endoreg_db.utils import data_paths
+    storage_root = Path(data_paths["storage"])
+    try:
+        rel_path = output_path.relative_to(storage_root)
+    except ValueError:
+        rel_path = output_path.relative_to(Path(settings.MEDIA_ROOT))
+    video.processed_file.name = str(rel_path)
+    video.save(update_fields=["processed_file"])
+
 
 class VideoCorrectionView(APIView):
     """
@@ -213,111 +223,6 @@ class VideoProcessingHistoryView(APIView):
         return Response(serializer.data)
 
 
-class VideoAnalyzeView(APIView):
-    """
-    POST /api/media/videos/{pk}/analyze/
-    
-    Analyze video for sensitive frames using MiniCPM-o 2.6 or OCR+LLM.
-    
-    Request body (optional):
-        {
-            "detection_method": "minicpm",  // or "ocr_llm", "hybrid"
-            "sample_interval": 30           // analyze every Nth frame (default: adaptive)
-        }
-    
-    Returns:
-        {
-            "sensitive_frame_count": 42,
-            "total_frames": 840,
-            "sensitive_ratio": 0.05,
-            "sensitive_frame_ids": [10, 15, 20, ...],
-            "sensitive_percentage": 5.0,
-            "detection_method": "minicpm",
-            "message": "Analysis complete"
-        }
-    """
-    
-    def post(self, request, pk):
-        """Analyze video for sensitive content."""
-        video = get_object_or_404(VideoFile, pk=pk)
-        
-        # Extract parameters
-        detection_method = request.data.get('detection_method', 'minicpm')
-        sample_interval = request.data.get('sample_interval', None)
-        
-        try:
-            # Initialize FrameCleaner with appropriate detection method
-            use_minicpm = detection_method in ['minicpm', 'hybrid']
-            frame_cleaner = FrameCleaner(use_minicpm=use_minicpm)
-            
-            # Get video path
-            video_path = video.raw_file.path if hasattr(video.raw_file, 'path') else str(video.raw_file)
-            
-            # Run analysis (uses existing FrameCleaner.analyze_video_sensitivity)
-            analysis_result = frame_cleaner.analyze_video_sensitivity(
-            )
-            
-            # Extract results
-            sensitive_frame_ids = analysis_result.get('sensitive_frame_ids', [])
-            total_frames = analysis_result.get('total_frames', 0)
-            sensitive_count = len(sensitive_frame_ids)
-            sensitive_ratio = sensitive_count / total_frames if total_frames > 0 else 0.0
-            
-            # Update or create metadata
-            metadata, created = VideoMetadata.objects.update_or_create(
-                video=video,
-                defaults={
-                    'sensitive_frame_count': sensitive_count,
-                    'sensitive_ratio': sensitive_ratio,
-                    'sensitive_frame_ids': json.dumps(sensitive_frame_ids)
-                }
-            )
-            
-            # Create processing history record
-            VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_ANALYSIS,
-                status=VideoProcessingHistory.STATUS_SUCCESS,
-                config={
-                    'detection_method': detection_method,
-                    'sample_interval': sample_interval
-                },
-                details=f"Found {sensitive_count} sensitive frames out of {total_frames} total frames"
-            )
-            
-            logger.info(f"Video {pk} analyzed: {sensitive_count}/{total_frames} sensitive frames")
-            
-            return Response({
-                'sensitive_frame_count': sensitive_count,
-                'total_frames': total_frames,
-                'sensitive_ratio': sensitive_ratio,
-                'sensitive_frame_ids': sensitive_frame_ids,
-                'sensitive_percentage': sensitive_ratio * 100,
-                'detection_method': detection_method,
-                'message': 'Analysis complete'
-            })
-            
-        except Exception as e:
-            logger.error(f"Video analysis failed for {pk}: {str(e)}", exc_info=True)
-            
-            # Create failure record
-            VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_ANALYSIS,
-                status=VideoProcessingHistory.STATUS_FAILURE,
-                config={
-                    'detection_method': detection_method,
-                    'sample_interval': sample_interval
-                },
-                details=str(e)
-            )
-            
-            return Response(
-                {'error': f'Analysis failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
 class VideoApplyMaskView(APIView):
     """
     POST /api/media/videos/{pk}/apply-mask/
@@ -391,7 +296,7 @@ class VideoApplyMaskView(APIView):
             frame_cleaner = FrameCleaner()
             
             # Get video paths
-            video_path = video.raw_file.path if hasattr(video.raw_file, 'path') else str(video.raw_file)
+            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else Path(str(video.raw_file))
             output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_masked.mp4"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -403,7 +308,6 @@ class VideoApplyMaskView(APIView):
                 # Convert ROI to mask config
                 mask_config = frame_cleaner._create_mask_config_from_roi(
                     endoscope_roi=roi,
-                    processor_rois=None
                 )
             
             # Apply mask (uses existing FrameCleaner._mask_video)
@@ -413,16 +317,16 @@ class VideoApplyMaskView(APIView):
             success = frame_cleaner._mask_video(
                 input_video=video_path,
                 mask_config=mask_config,
-                output_video=str(output_path)
+                output_video=output_path
             )
             
             processing_time = time.time() - start_time
             
             if success:
                 # Update video record with anonymized file
-                video.anonymized_file = f"anonym_videos/{video.uuid}_masked.mp4"
-                video.save()
-                
+                from django.core.files import File
+                processed_file_path = output_path
+                update_processed_file(video, processed_file_path)
                 # Mark history as success
                 history.mark_success(
                     output_file=str(output_path),
@@ -544,7 +448,7 @@ class VideoRemoveFramesView(APIView):
             frame_cleaner = FrameCleaner()
             
             # Get video paths
-            video_path = video.raw_file.path if hasattr(video.raw_file, 'path') else str(video.raw_file)
+            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else Path(str(video.raw_file))
             output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_cleaned.mp4"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -555,15 +459,15 @@ class VideoRemoveFramesView(APIView):
             success = frame_cleaner.remove_frames_from_video(
                 original_video=video_path,
                 frames_to_remove=frames_to_remove,
-                output_video=str(output_path)
+                output_video=output_path
             )
             
             processing_time = time.time() - start_time
             
             if success:
                 # Update video record
-                video.anonymized_file = f"anonym_videos/{video.uuid}_cleaned.mp4"
-                video.save()
+                update_processed_file(video, output_path)
+
                 
                 # Phase 1.4: Update LabelVideoSegments (shift frame numbers)
                 segment_update_result = update_segments_after_frame_removal(video, frames_to_remove)
@@ -624,64 +528,3 @@ class VideoRemoveFramesView(APIView):
             else:
                 frames.append(int(part))
         return sorted(set(frames))  # Remove duplicates and sort
-
-
-class VideoReprocessView(APIView):
-    """
-    POST /api/media/videos/{pk}/reprocess/
-    
-    Re-run entire anonymization pipeline for a video.
-    
-    Request body: {} (empty)
-    
-    Returns:
-        {
-            "message": "Reprocessing started",
-            "status": "processing_anonymization"
-        }
-    
-    Note: This resets VideoState and triggers video_import service.
-    """
-    
-    def post(self, request, pk):
-        """Reprocess video through entire anonymization pipeline."""
-        video = get_object_or_404(VideoFile, pk=pk)
-        
-        try:
-            # Create processing history record
-            history = VideoProcessingHistory.objects.create(
-                video=video,
-                operation=VideoProcessingHistory.OPERATION_REPROCESSING,
-                status=VideoProcessingHistory.STATUS_PENDING,
-                config={}
-            )
-            
-            # Reset video state to trigger re-processing
-            if hasattr(video, 'state') and video.state:
-                video.state.anonymization_status = 'processing_anonymization'
-                video.state.save()
-            
-            # Clear previous metadata
-            VideoMetadata.objects.filter(video=video).delete()
-            
-            # TODO Phase 1.2: Trigger Celery task for async reprocessing
-            # task = reprocess_video_task.delay(video.id)
-            # history.task_id = task.id
-            # history.save()
-            
-            history.mark_success(details="Reprocessing initiated")
-            
-            logger.info(f"Video {pk} reprocessing started")
-            
-            return Response({
-                'message': 'Reprocessing started',
-                'status': 'processing_anonymization'
-            })
-            
-        except Exception as e:
-            logger.error(f"Reprocessing failed for {pk}: {str(e)}", exc_info=True)
-            
-            return Response(
-                {'error': f'Reprocessing failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )

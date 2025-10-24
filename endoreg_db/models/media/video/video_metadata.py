@@ -5,8 +5,7 @@ Stores analysis results for videos (sensitive frames, detection statistics).
 Created as part of Phase 1.1: Video Correction API Endpoints.
 """
 from django.db import models
-from endoreg_db.models.media import VideoFile
-
+from .video_file import VideoFile
 
 class VideoMetadata(models.Model):
     """
