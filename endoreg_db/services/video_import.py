@@ -18,7 +18,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Tuple
 from django.db import transaction
-from transformers.models.align.convert_align_tf_to_hf import get_processor
 from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, RAW_FRAME_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
 import random
