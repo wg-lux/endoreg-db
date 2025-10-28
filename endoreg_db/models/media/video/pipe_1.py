@@ -74,11 +74,20 @@ def _pipe_1(
                 except AiModel.DoesNotExist:
                     logger.error(f"Pipe 1 failed: Model '{model_name}' not found.")
                     return False
+                
             except ModelMeta.DoesNotExist:
-                logger.error(
-                    f"Pipe 1 failed: ModelMeta version {model_meta_version} for model '{model_name}' not found."
-                )
-                return False
+                try:
+                    model_name = download_segmentation_model()
+                    ai_model_obj = AiModel.objects.get(name=model_name)
+                    if model_meta_version is not None:
+                        model_meta = ai_model_obj.metadata_versions.get(version=model_meta_version)
+                    else:
+                        model_meta = ModelMeta.setup_default_from_huggingface()
+                except ModelMeta.DoesNotExist:
+                    logger.error(
+                        f"Pipe 1 failed: ModelMeta version {model_meta_version} for model '{model_name}' not found."
+                    )
+                    return False
             try:
                 sequences: Optional[Dict[str, List[Tuple[int, int]]]] = video_file.predict_video(
                     model_meta=model_meta,
