@@ -166,11 +166,11 @@ class VideoImportService():
                     return None
                 raise
             
-            # Create sensitive meta file, ensure raw is moved out of processing folder watched by file watcher.
-            self._create_sensitive_file()
-            
             # Create or retrieve video instance
             self._create_or_retrieve_video_instance()
+            
+            # Create sensitive meta file, ensure raw is moved out of processing folder watched by file watcher.
+            self._create_sensitive_file()
             
             # Setup processing environment
             self._setup_processing_environment()
@@ -244,7 +244,6 @@ class VideoImportService():
 
     def _create_or_retrieve_video_instance(self):
         """Create or retrieve the VideoFile instance and move to final storage."""
-        # Removed duplicate import of VideoFile (already imported at module level)
         
         self.logger.info("Creating VideoFile instance...")
         
