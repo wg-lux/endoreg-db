@@ -523,20 +523,7 @@ class VideoImportService():
             video = self.current_video
             if video is None:
                 self.logger.warning("No VideoFile instance available for fallback anonymization")
-            else:
-                # Try VideoFile.pipe_2() method if available
-                if hasattr(video, 'pipe_2'):
-                    self.logger.info("Trying VideoFile.pipe_2() method...")
-                    if video.pipe_2():
-                        self.logger.info("VideoFile.pipe_2() succeeded")
-                        self.processing_context['anonymization_completed'] = True
-                        return
-                    self.logger.warning("VideoFile.pipe_2() returned False")
-                # Try direct anonymization via _anonymize
-                if _anonymize(video, delete_original_raw=self.delete_source):
-                    self.logger.info("VideoFile._anonymize() succeeded")
-                    self.processing_context['anonymization_completed'] = True
-                    return
+
 
             # Strategy 2: Simple copy (no processing, just copy raw to processed)
             self.logger.info("Using simple copy fallback (raw video will be used as 'processed' video)")
@@ -888,10 +875,8 @@ class VideoImportService():
         video_filename = self.processing_context.get('video_filename', Path(raw_video_path).name)
         cleaned_filename = f"cleaned_{video_filename}"
         cleaned_video_path = Path(raw_video_path).parent / cleaned_filename
-        
-        processor_roi, endoscope_roi = self._get_processor_roi_info(video)
-        
-        # Processor roi can be used later to OCR preknown regions.
+                
+        # Processor roi is used later to OCR preknown regions.
         
         # Clean video with ROI masking (heavy I/O operation)
         actual_cleaned_path, extracted_metadata = frame_cleaner.clean_video(
@@ -903,29 +888,6 @@ class VideoImportService():
             technique="mask_overlay"
         )
         
-        # Optional: enrich metadata using TrOCR+LLM on one random extracted frame
-        try:
-            # Prefer frames belonging to this video (UUID in path), else pick any frame
-            frame_candidates = list(RAW_FRAME_DIR.rglob("*.jpg")) + list(RAW_FRAME_DIR.rglob("*.png"))
-            video_uuid = str(video.uuid)
-            filtered = [p for p in frame_candidates if video_uuid in str(p)] or frame_candidates
-            if filtered:
-                sample_frame = random.choice(filtered)
-                ocr_text = trocr_full_image_ocr(sample_frame)
-                if ocr_text:
-                    llm_metadata = frame_cleaner.extract_metadata(ocr_text)
-                    if llm_metadata:
-                        # Merge with already extracted frame-level metadata
-                        extracted_metadata = frame_cleaner.frame_metadata_extractor.merge_metadata(
-                            extracted_metadata or {}, llm_metadata
-                        )
-                        self.logger.info("LLM metadata extraction (random frame) successful")
-                    else:
-                        self.logger.info("LLM metadata extraction (random frame) found no data")
-                else:
-                    self.logger.info("No text extracted by TrOCR on random frame")
-        except Exception as e:
-            self.logger.error(f"LLM metadata enrichment step failed: {e}")
         
         # Store cleaned video path for later use in _cleanup_and_archive
         self.processing_context['cleaned_video_path'] = actual_cleaned_path
@@ -1047,8 +1009,6 @@ class VideoImportService():
                 if file_path_str in self.processed_files:
                     self.processed_files.remove(file_path_str)
                     self.logger.info(f"Removed {file_path_str} from processed files (failed processing)")
-            
-                 
             
             
         except Exception as e:
