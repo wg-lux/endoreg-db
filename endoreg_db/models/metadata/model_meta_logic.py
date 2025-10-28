@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Any, Type
-
+from huggingface_hub import hf_hub_download
 from django.db import transaction
 
 # Assuming ModelMeta, AiModel, LabelSet are importable from the correct locations
@@ -234,3 +234,90 @@ def get_model_meta_by_name_version_logic(
             raise cls.DoesNotExist(
                 f"No ModelMeta found for '{meta_name}' and model '{model_name}'."
             )
+            
+from huggingface_hub import model_info
+import re
+
+def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
+    """
+    Infers default model metadata (activation, normalization, input size)
+    from a Hugging Face model_id using its tags and architecture.
+
+    Returns:
+        A dict with fields: name, activation, mean, std, size_x, size_y
+    """
+
+    if not (info := model_info(model_id)):
+        logger.info(f"Could not retrieve model info for {model_id}, using ColoReg segmentation defaults.")
+        return {
+            "name": "wg-lux/colo_segmentation_RegNetX800MF_base",
+            "activation": "sigmoid",
+            "mean": (0.45211223, 0.27139644, 0.19264949),
+            "std": (0.31418097, 0.21088019, 0.16059452),
+            "size_x": 716,
+            "size_y": 716,
+            "description": f"Defaults for unknown model {model_id}",
+        }
+
+    # Extract architecture from tags or model_id ---
+    tags = info.tags or []
+    model_name = model_id.split("/")[-1].lower()
+
+    # Heuristics for architecture and task
+    architecture = next((t for t in tags if t.startswith("architecture:")), None)
+    task = next((t for t in tags if t.startswith("task:")), None)
+
+    # Default values
+    activation = "sigmoid"
+    size_x = size_y = 716
+    mean = (0.45211223, 0.27139644, 0.19264949)
+    std = (0.31418097, 0.21088019, 0.16059452)
+
+    # --- 2. Task-based inference ---
+    if task:
+        if "segmentation" in task or "detection" in task:
+            activation = "sigmoid"
+        elif any(k in task for k in ["classification"]):
+            activation = "softmax"
+
+    # --- 3. Architecture-based inference ---
+    if architecture:
+        arch = architecture.replace("architecture:", "")
+    else:
+        arch = re.sub(r"[^a-z0-9]+", "_", model_name)
+
+    return {
+        "name": arch,
+        "activation": activation,
+        "mean": mean,
+        "std": std,
+        "size_x": size_x,
+        "size_y": size_y,
+        "description": f"Inferred defaults for {model_id}",
+    }
+    
+def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str | None = None):
+    """
+    Downloads model weights from Hugging Face and auto-fills ModelMeta fields.
+    """
+    meta = infer_default_model_meta_from_hf(model_id)
+
+    # Download weights
+    weights_path = hf_hub_download(repo_id=model_id, filename="pytorch_model.bin", local_dir=WEIGHTS_DIR)
+
+    ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
+    labelset = LabelSet.objects.first() if not labelset_name else LabelSet.objects.get(name=labelset_name)
+
+    return create_from_file_logic(
+        cls,
+        meta_name=meta["name"],
+        model_name=ai_model.name,
+        labelset_name=labelset.name,
+        weights_file=weights_path,
+        activation=meta["activation"],
+        mean=meta["mean"],
+        std=meta["std"],
+        size_x=meta["size_x"],
+        size_y=meta["size_y"],
+        description=meta["description"],
+    )
