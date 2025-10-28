@@ -11,23 +11,22 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import pytest
 from django.test import TestCase
 
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.models import Center, EndoscopyProcessor
 
 from ...helpers.default_objects import get_default_processor, get_default_center
-from ...helpers.data_loader import load_center_data, load_endoscope_data
 
 
+@pytest.mark.usefixtures("base_db_data")
 class TestVideoImportFileMovement(TestCase):
     """Test video import service file movement and organization."""
     
     def setUp(self):
         """Set up test environment."""
         # Create test video file data (minimal MP4 header)
-        load_center_data()
-        load_endoscope_data()
         self.test_video_data = b'\x00\x00\x00\x20ftypmp42\x00\x00\x00\x00mp42isom' + b'\x00' * 1000
         
         # Create temporary directories for testing
@@ -151,9 +150,10 @@ class TestVideoImportFileMovement(TestCase):
                     
                     # Verify the result
                     self.assertIsNotNone(result_video, "Video import should return a video instance")
+                    assert result_video is not None
                     # ✅ Verify center/processor were correctly passed
                     self.assertEqual(result_video.center, self.center, 
-                                   "Result video should have correct center")
+                                    "Result video should have correct center")
                     self.assertEqual(result_video.processor, self.processor,
                                      "Result video should have correct processor")
         

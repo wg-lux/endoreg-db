@@ -13,5 +13,5 @@
   "python.defaultInterpreterPath": "${workspaceFolder}/.devenv/state/venv/bin/python",
   "python.pythonPath": "${workspaceFolder}/.devenv/state/venv/bin/python",
   "python.testing.pytestPath": "${workspaceFolder}/.devenv/state/venv/bin/pytest",
-  "python.envFile": "${workspaceFolder}/.env"
+  "python.envFile": "${workspaceFolder}/.env",
 }

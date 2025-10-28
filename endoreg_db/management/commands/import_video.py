@@ -294,10 +294,11 @@ class Command(BaseCommand):
                 
                 # Updated to handle new return signature (path, metadata)
                 cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
-                    Path(video_file_obj.raw_file.path),
-                    video_file_obj=video_file_obj,  # Pass VideoFile object to store metadata
-                    report_reader=report_reader,
-                    device_name=processor_name
+                    video_path=Path(video_file_obj.raw_file.path),
+                    endoscope_roi=video_file_obj.processor.get_roi_endoscope_image() if video_file_obj.processor else None,
+                    endoscope_data_roi_nested=video_file_obj.processor.get_rois() if video_file_obj.processor else None,
+                    output_path=video_file_obj.get_processed_file_path(),
+                    technique="mask_overlay"  # Use mask overlay technique as default, if not set this will be inferred.
                 )
                 
                 # Save the cleaned video using Django's FileField
