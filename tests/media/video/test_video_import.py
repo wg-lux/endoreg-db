@@ -458,7 +458,7 @@ class DummyVideoFile:
 # 🧩 Fixtures
 # ---------------------------------------------------------------------
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def patch_env(monkeypatch, tmp_path):
     """Prepare isolated environment."""
     video_dir = tmp_path / "videos"
@@ -494,7 +494,7 @@ def dummy_file(tmp_path):
 # ✅ Tests
 # ---------------------------------------------------------------------
 
-def test_file_lock_acquire_and_release(dummy_file):
+def test_file_lock_acquire_and_release(patch_env,dummy_file):
     svc = vis.VideoImportService()
     with svc._file_lock(dummy_file):
         assert (dummy_file.with_suffix(".mp4.lock")).exists()
@@ -535,7 +535,7 @@ def test_create_sensitive_file_moves(patch_env, dummy_file):
     assert "videos/sensitive" in v.raw_file.name
 
 
-def test_fallback_anonymize_sets_flags():
+def test_fallback_anonymize_sets_flags(patch_env):
     svc = vis.VideoImportService()
     svc.current_video = DummyVideoFile("uuidF", Path(tempfile.gettempdir()))
     svc._fallback_anonymize_video()
@@ -544,7 +544,7 @@ def test_fallback_anonymize_sets_flags():
     assert ctx.get("anonymization_completed") is False
 
 
-def test_get_processor_roi_info_returns_valid():
+def test_get_processor_roi_info_returns_valid(patch_env):
     svc = vis.VideoImportService()
     svc.current_video = DummyVideoFile("uuidP", Path(tempfile.gettempdir()))
     data, img = svc._get_processor_roi_info()
@@ -552,7 +552,7 @@ def test_get_processor_roi_info_returns_valid():
     assert isinstance(img, dict)
 
 
-def test_cleanup_processing_context_releases_lock(tmp_path):
+def test_cleanup_processing_context_releases_lock(patch_env, tmp_path):
     svc = vis.VideoImportService()
     lock_file = tmp_path / "vid.mp4.lock"
     lock_file.write_text("lock")
@@ -564,7 +564,7 @@ def test_cleanup_processing_context_releases_lock(tmp_path):
     assert svc.processing_context == {}
 
 
-def test_finalize_processing_marks_state(monkeypatch):
+def test_finalize_processing_marks_state(patch_env, monkeypatch):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidG", Path(tempfile.gettempdir()))
     svc.current_video = v
