@@ -568,6 +568,8 @@ def test_cleanup_processing_context_releases_lock(patch_env, tmp_path):
 def test_finalize_processing_marks_state(patch_env, monkeypatch):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidG", Path(tempfile.gettempdir()))
+    # Ensure the instance method returns the attached state
+    v.get_or_create_state = lambda: v.state
     svc.current_video = v
     svc.processing_context = {"frames_extracted": True, "anonymization_completed": True}
     svc._finalize_processing()
