@@ -8,7 +8,7 @@ from pathlib import Path
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
-
+from endoreg_db.models import ModelMeta
 
 class Command(BaseCommand):
     help = """
@@ -137,6 +137,14 @@ class Command(BaseCommand):
     def _find_model_weights_file(self):
         """Find the model weights file in various possible locations."""
         # Check common locations for model weights
+        
+        if not ModelMeta.objects.exists():
+            print("📦 No model metadata found — creating from Hugging Face...")
+            ModelMeta.setup_default_from_huggingface(
+                "wg-lux/colo_segmentation_RegNetX800MF_base",
+                labelset_name="multilabel_classification_colonoscopy_default"
+            )
+            print("✅ Default ModelMeta created.")
         possible_paths = [
             # Test assets (for development)
             Path("tests/assets/colo_segmentation_RegNetX800MF_6.ckpt"),
@@ -154,7 +162,10 @@ class Command(BaseCommand):
                 return path
 
         self.stdout.write("Model weights file not found in standard locations")
+        
         return None
+    
+
 
     def _verify_setup(self):
         """Verify that the setup was successful."""
@@ -194,3 +205,5 @@ class Command(BaseCommand):
             self.stdout.write(f"Found {meta_count} model metadata record(s)")
 
         self.stdout.write("Setup verification passed")
+        
+
