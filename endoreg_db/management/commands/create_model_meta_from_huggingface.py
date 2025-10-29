@@ -50,11 +50,17 @@ class Command(BaseCommand):
 
         try:
             # Download the model weights
-            weights_path = hf_hub_download(repo_id=model_id, filename="pytorch_model.bin", local_dir="/tmp")
+            weights_path = hf_hub_download(
+                repo_id=model_id,
+                filename="colo_segmentation_RegNetX800MF_base.ckpt",
+                local_dir="/tmp",
+            )
             self.stdout.write(f"Downloaded weights to: {weights_path}")
 
             # Get or create AI model
-            ai_model, created = AiModel.objects.get_or_create(name=model_name, defaults={"description": f"Model from {model_id}"})
+            ai_model, created = AiModel.objects.get_or_create(
+                name=model_name, defaults={"description": f"Model from {model_id}"}
+            )
             if created:
                 self.stdout.write(f"Created AI model: {ai_model.name}")
 
@@ -62,7 +68,9 @@ class Command(BaseCommand):
             try:
                 labelset = LabelSet.objects.get(name=labelset_name)
             except LabelSet.DoesNotExist:
-                self.stdout.write(self.style.ERROR(f"LabelSet '{labelset_name}' not found"))
+                self.stdout.write(
+                    self.style.ERROR(f"LabelSet '{labelset_name}' not found")
+                )
                 return
 
             # Create ModelMeta
@@ -86,13 +94,19 @@ class Command(BaseCommand):
 
             # Save the weights file to the model
             with open(weights_path, "rb") as f:
-                model_meta.weights.save(f"{model_name}_v{version}_pytorch_model.bin", ContentFile(f.read()))
+                model_meta.weights.save(
+                    f"{model_name}_v{version}_pytorch_model.bin", ContentFile(f.read())
+                )
 
             # Set as active meta
             ai_model.active_meta = model_meta
             ai_model.save()
 
-            self.stdout.write(self.style.SUCCESS(f"Successfully {'created' if created else 'updated'} ModelMeta: {model_meta}"))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Successfully {'created' if created else 'updated'} ModelMeta: {model_meta}"
+                )
+            )
 
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error creating ModelMeta: {e}"))
