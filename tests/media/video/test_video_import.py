@@ -333,3 +333,259 @@ class TestVideoImportFileMovement(TestCase):
             # Directory should now exist
             self.assertTrue(self.temp_anonym_videos.exists(),
                            "Missing directories should be created automatically")
+
+from pathlib import Path
+from types import SimpleNamespace
+import pytest
+
+import endoreg_db.services.video_import as vis
+
+
+# ---------------------------------------------------------------------
+# 🔧 Lightweight Mocks
+# ---------------------------------------------------------------------
+
+class DummyState:
+    def __init__(self):
+        self.frames_extracted = False
+        self.frames_initialized = False
+        self.video_meta_extracted = False
+        self.text_meta_extracted = False
+        self.sensitive_meta_processed = False
+        self.saved = False
+
+    def save(self, *a, **k):
+        self.saved = True
+
+    def mark_processing_started(self, save=True):
+        self.frames_initialized = True
+        if save:
+            self.saved = True
+
+    def mark_sensitive_meta_processed(self, save=True):
+        self.sensitive_meta_processed = True
+        if save:
+            self.saved = True
+
+    def mark_anonymized(self, save=True):
+        self.video_meta_extracted = True
+        if save:
+            self.saved = True
+
+
+class DummySensitiveMeta:
+    def __init__(self, **data):
+        self.__dict__.update(data)
+
+    @classmethod
+    def create_from_dict(cls, d):
+        return cls(**d)
+
+    def update_from_dict(self, d):
+        self.__dict__.update(d)
+
+    def save(self, update_fields=None):
+        pass
+
+
+class DummyProcessor:
+    def get_roi_endoscope_image(self):
+        return {"x": 1, "y": 2, "w": 3, "h": 4}
+
+    def get_rois(self):
+        return [{"roi": "region"}]
+
+
+class DummyVideoMeta:
+    def __init__(self):
+        self.processor = DummyProcessor()
+
+
+class DummyVideoFile:
+    objects = []
+
+    def __init__(self, uuid, storage_root):
+        self.uuid = uuid
+        self.center = SimpleNamespace(name="center")
+        self.raw_file = SimpleNamespace(name="", path="")
+        self.sensitive_meta = None
+        self.video_meta = DummyVideoMeta()
+        self.state = DummyState()
+        self._storage_root = storage_root
+        self.processed_file = SimpleNamespace(name="", path=str(storage_root / f"anonym_{uuid}.mp4"))
+
+    @classmethod
+    def create_from_file_initialized(cls, file_path, **kwargs):
+        v = cls(Path(file_path).stem, Path(file_path).parent)
+        return v
+
+    @classmethod
+    def get_or_create_state(cls, video=None):
+        return DummyState()
+
+    def get_raw_file_path(self):
+        return self.raw_file.path
+
+    def save(self, update_fields=None):
+        pass
+
+    def refresh_from_db(self):
+        pass
+
+    def initialize_video_specs(self):
+        pass
+
+    def initialize_frames(self):
+        pass
+
+    def extract_frames(self, overwrite=False):
+        return True
+
+    def get_target_anonymized_video_path(self):
+        return self._storage_root / f"anonym_{self.uuid}.mp4"
+
+    def get_frame_dir_path(self):
+        return self._storage_root / f"frames_{self.uuid}"
+
+    def anonymize(self, delete_original_raw=True):
+        # create fake anonymized video
+        (self._storage_root / f"anonym_{self.uuid}.mp4").write_bytes(b"ANONYMIZED")
+        self.processed_file.path = str(self._storage_root / f"anonym_{self.uuid}.mp4")
+        return self.processed_file.path
+
+
+# ---------------------------------------------------------------------
+# 🧩 Fixtures
+# ---------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def patch_env(monkeypatch, tmp_path):
+    """Prepare isolated environment."""
+    video_dir = tmp_path / "videos"
+    video_dir.mkdir()
+    anon_dir = tmp_path / "anonym_videos"
+    anon_dir.mkdir()
+    storage_dir = tmp_path
+
+    monkeypatch.setattr(vis, "VIDEO_DIR", video_dir)
+    monkeypatch.setattr(vis, "ANONYM_VIDEO_DIR", anon_dir)
+    monkeypatch.setattr(vis, "STORAGE_DIR", storage_dir)
+    monkeypatch.setattr("endoreg_db.models.VideoFile", DummyVideoFile)
+    monkeypatch.setattr("endoreg_db.models.SensitiveMeta", DummySensitiveMeta)
+    monkeypatch.setattr("endoreg_db.models.media.video.video_file_anonymize._cleanup_raw_assets", lambda **_: None)
+    monkeypatch.setattr("endoreg_db.models.EndoscopyProcessor", DummyProcessor)
+    monkeypatch.setattr("endoreg_db.utils.data_paths", {
+        "video": video_dir,
+        "storage": storage_dir,
+        "anonym_video": anon_dir,
+    })
+
+    return tmp_path
+
+
+@pytest.fixture
+def dummy_file(tmp_path):
+    p = tmp_path / "test.mp4"
+    p.write_bytes(b"FAKEVIDEO")
+    return p
+
+
+# ---------------------------------------------------------------------
+# ✅ Tests
+# ---------------------------------------------------------------------
+
+def test_file_lock_acquire_and_release(dummy_file):
+    svc = vis.VideoImportService()
+    with svc._file_lock(dummy_file):
+        assert (dummy_file.with_suffix(".mp4.lock")).exists()
+    assert not (dummy_file.with_suffix(".mp4.lock")).exists()
+
+
+def test_move_to_final_storage_copy(patch_env, dummy_file):
+    svc = vis.VideoImportService()
+    v = DummyVideoFile("uuidX", patch_env)
+    svc.current_video = v
+    svc.processing_context = {"file_path": dummy_file, "delete_source": False}
+    svc._move_to_final_storage()
+    dest = svc.processing_context["raw_video_path"]
+    assert dest.exists()
+    assert dest.read_bytes() == b"FAKEVIDEO"
+    assert "uuidX" in dest.name
+
+
+def test_move_to_final_storage_delete_source(patch_env, dummy_file):
+    svc = vis.VideoImportService()
+    v = DummyVideoFile("uuidY", patch_env)
+    svc.current_video = v
+    svc.processing_context = {"file_path": dummy_file, "delete_source": True}
+    svc._move_to_final_storage()
+    dest = svc.processing_context["raw_video_path"]
+    assert dest.exists()
+    assert not dummy_file.exists()
+
+
+def test_create_sensitive_file_moves(patch_env, dummy_file):
+    svc = vis.VideoImportService()
+    v = DummyVideoFile("uuidZ", patch_env)
+    v.raw_file.path = dummy_file
+    svc.current_video = v
+    target = svc._create_sensitive_file(v)
+    assert target.exists()
+    assert target.parent.name == "sensitive"
+    assert "videos/sensitive" in v.raw_file.name
+
+
+def test_fallback_anonymize_sets_flags():
+    svc = vis.VideoImportService()
+    svc.current_video = DummyVideoFile("uuidF", Path(tempfile.gettempdir()))
+    svc._fallback_anonymize_video()
+    ctx = svc.processing_context
+    assert ctx.get("use_raw_as_processed", True)
+    assert ctx.get("anonymization_completed") is False
+
+
+def test_get_processor_roi_info_returns_valid():
+    svc = vis.VideoImportService()
+    svc.current_video = DummyVideoFile("uuidP", Path(tempfile.gettempdir()))
+    data, img = svc._get_processor_roi_info()
+    assert isinstance(data, list)
+    assert isinstance(img, dict)
+
+
+def test_cleanup_processing_context_releases_lock(tmp_path):
+    svc = vis.VideoImportService()
+    lock_file = tmp_path / "vid.mp4.lock"
+    lock_file.write_text("lock")
+    ctx = SimpleNamespace(__exit__=lambda *a, **k: lock_file.unlink())
+    svc.processing_context = {"_lock_context": ctx, "file_path": tmp_path / "vid.mp4"}
+    svc._cleanup_processing_context()
+    assert not lock_file.exists()
+    assert svc.current_video is None
+    assert svc.processing_context == {}
+
+
+def test_finalize_processing_marks_state(monkeypatch):
+    svc = vis.VideoImportService()
+    v = DummyVideoFile("uuidG", Path(tempfile.gettempdir()))
+    svc.current_video = v
+    svc.processing_context = {"frames_extracted": True, "anonymization_completed": True}
+    svc._finalize_processing()
+    st = v.state
+    assert st.frames_extracted
+    assert st.sensitive_meta_processed
+
+
+def test_cleanup_and_archive_moves_files(patch_env, dummy_file):
+    svc = vis.VideoImportService()
+    v = DummyVideoFile("uuidC", patch_env)
+    dest = patch_env / f"cleaned_{dummy_file.name}"
+    shutil.copy2(dummy_file, dest)
+    svc.current_video = v
+    svc.processing_context = {
+        "cleaned_video_path": dest,
+        "file_path": dummy_file,
+        "delete_source": True,
+    }
+    svc._cleanup_and_archive()
+    anonym_target = patch_env / "anonym_videos" / f"anonym_{v.uuid}.mp4"
+    assert anonym_target.exists()
