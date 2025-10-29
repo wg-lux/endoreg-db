@@ -474,6 +474,7 @@ def patch_env(monkeypatch, tmp_path):
     monkeypatch.setattr("endoreg_db.models.SensitiveMeta", DummySensitiveMeta)
     monkeypatch.setattr("endoreg_db.models.media.video.video_file_anonymize._cleanup_raw_assets", lambda **_: None)
     monkeypatch.setattr("endoreg_db.models.EndoscopyProcessor", DummyProcessor)
+    monkeypatch.setattr("endoreg_db.services.video_import.EndoscopyProcessor", DummyProcessor, raising=False)
     monkeypatch.setattr("endoreg_db.utils.data_paths", {
         "video": video_dir,
         "storage": storage_dir,
