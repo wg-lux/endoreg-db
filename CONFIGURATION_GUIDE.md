@@ -54,10 +54,14 @@ As an embedded app in a host project:
 
 The `setup_endoreg_db` command performs all necessary initialization:
 1. Loads base database data (medical vocabularies, centers, etc.)
-2. Creates Django cache table for API functionality
+2. Creates Django cache table for API functionality (only when using database-backed caching)
 3. Sets up AI models and labels (unless --skip-ai-setup is used)
 4. Creates AI model metadata with weights
 5. Verifies the setup was successful
+
+The command automatically detects your cache configuration:
+- For LocMemCache (default): Skips cache table creation
+- For database caching: Creates the required cache tables
 
 Use `--skip-ai-setup` if AI video processing features are not needed, or `--force-recreate` to recreate AI metadata.
 

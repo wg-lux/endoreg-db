@@ -47,14 +47,21 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"❌ Failed to load base data: {e}"))
             return
 
-        # Step 2: Create cache table
-        self.stdout.write("\n💾 Step 2: Creating Django cache table...")
-        try:
-            call_command("createcachetable")
-            self.stdout.write(self.style.SUCCESS("✅ Cache table created successfully"))
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"❌ Failed to create cache table: {e}"))
-            return
+            # Step 2: Create cache table (only if using database caching)
+        self.stdout.write("\n💾 Step 2: Setting up caching...")
+        from django.conf import settings
+
+        cache_backend = settings.CACHES.get("default", {}).get("BACKEND", "")
+        if "db" in cache_backend or "database" in cache_backend:
+            self.stdout.write("Using database caching - creating cache table...")
+            try:
+                call_command("createcachetable")
+                self.stdout.write(self.style.SUCCESS("✅ Cache table created successfully"))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"❌ Failed to create cache table: {e}"))
+                return
+        else:
+            self.stdout.write("Using in-memory caching - skipping cache table creation")
 
         if skip_ai:
             self.stdout.write(self.style.WARNING("\n⚠️  Skipping AI setup as requested"))
@@ -151,14 +158,19 @@ class Command(BaseCommand):
 
     def _verify_setup(self):
         """Verify that the setup was successful."""
+        from django.conf import settings
         from django.db import connection
 
         # Check that required tables exist
         required_tables = [
             "endoreg_db_aimodel",
             "endoreg_db_modelmeta",
-            "django_cache_table",
         ]
+
+        # Only check for cache table if using database caching
+        cache_backend = settings.CACHES.get("default", {}).get("BACKEND", "")
+        if "db" in cache_backend or "database" in cache_backend:
+            required_tables.append("django_cache_table")
 
         cursor = connection.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
