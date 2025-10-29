@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Tuple
 from django.db import transaction
+from moviepy import video
 from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
 import random
@@ -715,6 +716,10 @@ class VideoImportService():
                 "Updated video.raw_file using fallback method: videos/sensitive/%s",
                 target_file_path.name,
             )
+            
+        self.processing_context["raw_video_path"] = target_file_path
+        self.processing_context["video_filename"] = target_file_path.name
+
 
         self.logger.info("Created sensitive file for %s at %s", video.uuid, target_file_path)
         return target_file_path
@@ -837,13 +842,18 @@ class VideoImportService():
         raw_video_path = self.processing_context.get('raw_video_path')
         
         if not raw_video_path or not Path(raw_video_path).exists():
-            raise RuntimeError(f"Raw video path not found: {raw_video_path}")
+            try:
+                self.current_video = self._require_current_video()
+                raw_video_path = self.current_video.get_raw_file_path()
+            except Exception:
+                raise RuntimeError(f"Raw video path not found: {raw_video_path}")
 
                 
         # Create temporary output path for cleaned video
         video_filename = self.processing_context.get('video_filename', Path(raw_video_path).name)
         cleaned_filename = f"cleaned_{video_filename}"
         cleaned_video_path = Path(raw_video_path).parent / cleaned_filename
+        
                 
         
         # Clean video with ROI masking (heavy I/O operation)
