@@ -85,7 +85,7 @@ class TestVideoImportFileMovement(TestCase):
         
         # Mock frame cleaning to avoid dependencies
         with patch.object(VideoImportService, '_ensure_frame_cleaning_available') as mock_frame_cleaning:
-            mock_frame_cleaning.return_value = (False, None, None)
+            mock_frame_cleaning.return_value = (False, None)
             
             # Mock video creation methods with proper center/processor handling
             with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
