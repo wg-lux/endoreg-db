@@ -14,11 +14,7 @@ maintainers = [
 ]
 name = "endoreg-db"
 readme = "README.md"
-<<<<<<< HEAD
-version = "0.8.3.9"
-=======
-version = "0.8.4.4"
->>>>>>> 0cee921 (Bump version to 0.8.4.3 - setup of ai model to respect local files and new models, configuration is done via setup conf script and respective model yamls and setup_conf.yaml)
+version = "0.8.4.3"
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -86,7 +82,6 @@ dependencies = [
   "build>=1.3.0",
   "flake8>=7.3.0",
   "twine>=6.2.0",
-  "huggingface-hub>=0.35.3",
 ]
 requires-python = ">=3.12,<3.13"
 
