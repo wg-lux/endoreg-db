@@ -2,7 +2,7 @@ import shutil
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Type
-
+from django.core.files import File
 from django.db import transaction
 from huggingface_hub import hf_hub_download
 
@@ -127,6 +127,8 @@ def create_from_file_logic(
         logger.info(f"Copied weights from {source_weights_path} to {full_dest_path}")
     except Exception as e:
         raise IOError(f"Failed to copy weights file: {e}") from e
+    
+
 
     # --- Create/Update ModelMeta Instance ---
     defaults = {
@@ -144,6 +146,11 @@ def create_from_file_logic(
         version=target_version,
         defaults=defaults,
     )
+    
+    with open(full_dest_path, "rb") as f:
+        model_meta.weights.save(relative_dest_path.name, File(f), save=False)
+    model_meta.save()
+
 
     if created:
         logger.info(f"Created new ModelMeta: {model_meta}")

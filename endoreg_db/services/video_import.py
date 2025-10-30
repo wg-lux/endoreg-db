@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Tuple
 from django.db import transaction
+from lx_anonymizer import FrameCleaner
 from moviepy import video
 from endoreg_db.models import VideoFile, SensitiveMeta
 from endoreg_db.utils.paths import STORAGE_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
@@ -64,6 +65,8 @@ class VideoImportService():
         self.delete_source = True
         
         self.logger = logging.getLogger(__name__)
+        
+        self.cleaner = None # This gets instantiated in the perform_frame_cleaning method
 
     def _require_current_video(self) -> VideoFile:
         """Return the current VideoFile or raise if it has not been initialized."""
@@ -821,7 +824,7 @@ class VideoImportService():
             from lx_anonymizer import FrameCleaner  # type: ignore[import]
 
             if FrameCleaner:
-                return True, FrameCleaner
+                return True, FrameCleaner()
                         
         except Exception as e:
             self.logger.warning(f"Frame cleaning not available: {e} Please install or update lx_anonymizer.")
@@ -850,9 +853,12 @@ class VideoImportService():
 
                 
         # Create temporary output path for cleaned video
-        video_filename = self.processing_context.get('video_filename', Path(raw_video_path).name)
+        video_filename = self.processing_context.get('video_filename', Path(raw_video_path).name if raw_video_path else "video.mp4")
         cleaned_filename = f"cleaned_{video_filename}"
+        if not raw_video_path:
+            raise RuntimeError("raw_video_path is None after fallback, cannot construct cleaned_video_path")
         cleaned_video_path = Path(raw_video_path).parent / cleaned_filename
+        
         
                 
         
