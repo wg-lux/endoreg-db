@@ -9,6 +9,7 @@ from ...data import (
 )
 from ...models import (
     AiModel,
+    LabelSet,  # Add LabelSet import
     ModelMeta,  # Add ModelMeta back to imports
     ModelType,
     VideoSegmentationLabel,
@@ -35,7 +36,7 @@ IMPORT_METADATA = {
         "dir": AI_MODEL_META_DATA_DIR,  # e.g. "ai_model_meta"
         "model": ModelMeta,  # e.g. ModelMeta
         "foreign_keys": ["labelset", "model"],  # Foreign key relationships
-        "foreign_key_models": [VideoSegmentationLabelSet, AiModel],  # Actual model classes
+        "foreign_key_models": [LabelSet, AiModel],  # Actual model classes
     },
     VideoSegmentationLabel.__name__: {
         "dir": VIDEO_SEGMENTATION_LABEL_DATA_DIR,  # e.g. "interventions"

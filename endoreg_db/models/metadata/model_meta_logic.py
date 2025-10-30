@@ -19,6 +19,13 @@ if TYPE_CHECKING:
     from .model_meta import ModelMeta  # Import ModelMeta for type hinting
 
 
+def _get_model_meta_class():
+    """Lazy import to avoid circular imports"""
+    from .model_meta import ModelMeta
+
+    return ModelMeta
+
+
 def get_latest_version_number_logic(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
     """
     Finds the highest numerical version for a given meta_name and model_name.
@@ -308,7 +315,14 @@ def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str 
     )
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
-    labelset = LabelSet.objects.first() if not labelset_name else LabelSet.objects.get(name=labelset_name)
+    if not labelset_name:
+        labelset = LabelSet.objects.first()
+        if not labelset:
+            raise ValueError("No labelset found and no labelset_name provided")
+    else:
+        labelset = LabelSet.objects.get(name=labelset_name)
+
+    ModelMeta = _get_model_meta_class()
     model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
     if model_meta:
         logger.info(f"ModelMeta {meta['name']} for model {ai_model.name} already exists. Skipping creation.")

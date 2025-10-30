@@ -119,13 +119,17 @@ class Command(BaseCommand):
                     # Try to create model metadata using configurable approach
                     model_path = self._find_model_weights_file()
                     if model_path:
-                        call_command(
-                            "create_multilabel_model_meta",
-                            model_name=default_model_name,
-                            model_meta_version=1,
-                            image_classification_labelset_name=primary_labelset,
-                            model_path=str(model_path),
-                        )
+                        call_command_kwargs = {
+                            "model_name": default_model_name,
+                            "model_meta_version": 1,
+                            "image_classification_labelset_name": primary_labelset,
+                            "model_path": str(model_path),
+                        }
+                        # Add bump_version flag if force_recreate is enabled
+                        if force_recreate:
+                            call_command_kwargs["bump_version"] = True
+
+                        call_command("create_multilabel_model_meta", **call_command_kwargs)
                         self.stdout.write(self.style.SUCCESS("✅ AI model metadata created successfully"))
                     else:
                         self.stdout.write(self.style.WARNING("⚠️  Model weights file not found. AI features may not work properly."))
