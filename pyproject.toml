@@ -17,7 +17,7 @@ readme = "README.md"
 <<<<<<< HEAD
 version = "0.8.3.9"
 =======
-version = "0.8.4.3"
+version = "0.8.4.4"
 >>>>>>> 0cee921 (Bump version to 0.8.4.3 - setup of ai model to respect local files and new models, configuration is done via setup conf script and respective model yamls and setup_conf.yaml)
 
 classifiers = [

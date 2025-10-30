@@ -829,7 +829,7 @@ class VideoImportService:
             from lx_anonymizer import FrameCleaner  # type: ignore[import]
 
             if FrameCleaner:
-                return True, FrameCleaner
+                return True, FrameCleaner()
 
         except Exception as e:
             self.logger.warning(f"Frame cleaning not available: {e} Please install or update lx_anonymizer.")
