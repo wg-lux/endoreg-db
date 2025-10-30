@@ -80,9 +80,7 @@ def parse_any_date(s: str) -> Optional[date]:
         # Try dateparser with German locale preference
         import dateparser
 
-        dt = dateparser.parse(
-            s, settings={"DATE_ORDER": "DMY", "PREFER_DAY_OF_MONTH": "first"}
-        )
+        dt = dateparser.parse(s, settings={"DATE_ORDER": "DMY", "PREFER_DAY_OF_MONTH": "first"})
         return dt.date() if dt else None
     except Exception as e:
         logger.debug(f"Dateparser fallback failed for '{s}': {e}")
@@ -172,9 +170,7 @@ def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -
     return sha256(hash_str.encode()).hexdigest()
 
 
-def calculate_examination_hash(
-    instance: "SensitiveMeta", salt: str = SECRET_SALT
-) -> str:
+def calculate_examination_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -> str:
     """Calculates the examination hash for the instance."""
     dob = instance.patient_dob
     first_name = instance.patient_first_name
@@ -207,25 +203,17 @@ def create_pseudo_examiner_logic(instance: "SensitiveMeta") -> "Examiner":
     center = instance.center  # Should be set before calling save
 
     if not first_name or not last_name or not center:
-        logger.warning(
-            f"Incomplete examiner info for SensitiveMeta (pk={instance.pk}). Using default examiner."
-        )
+        logger.warning(f"Incomplete examiner info for SensitiveMeta (pk={instance.pk or 'new'}). Using default examiner.")
         # Ensure default center exists or handle appropriately
         try:
             default_center = Center.objects.get_by_natural_key("endoreg_db_demo")
         except Center.DoesNotExist:
-            logger.error(
-                "Default center 'endoreg_db_demo' not found. Cannot create default examiner."
-            )
+            logger.error("Default center 'endoreg_db_demo' not found. Cannot create default examiner.")
             raise ValueError("Default center 'endoreg_db_demo' not found.")
 
-        examiner, _created = Examiner.custom_get_or_create(
-            first_name="Unknown", last_name="Unknown", center=default_center
-        )
+        examiner, _created = Examiner.custom_get_or_create(first_name="Unknown", last_name="Unknown", center=default_center)
     else:
-        examiner, _created = Examiner.custom_get_or_create(
-            first_name=first_name, last_name=last_name, center=center
-        )
+        examiner, _created = Examiner.custom_get_or_create(first_name=first_name, last_name=last_name, center=center)
 
     return examiner
 
@@ -271,13 +259,11 @@ def get_or_create_pseudo_patient_examination_logic(
         pseudo_patient = get_or_create_pseudo_patient_logic(instance)
         instance.pseudo_patient_id = pseudo_patient.pk  # Assign FK directly
 
-    patient_examination, _created = (
-        PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
-            patient_hash=instance.patient_hash,
-            examination_hash=instance.examination_hash,
-            # Optionally pass pseudo_patient if the method requires it
-            # pseudo_patient=instance.pseudo_patient
-        )
+    patient_examination, _created = PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
+        patient_hash=instance.patient_hash,
+        examination_hash=instance.examination_hash,
+        # Optionally pass pseudo_patient if the method requires it
+        # pseudo_patient=instance.pseudo_patient
     )
     return patient_examination
 
@@ -294,14 +280,10 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 
     # 1. Ensure DOB and Examination Date exist
     if not instance.patient_dob:
-        logger.debug(
-            f"SensitiveMeta (pk={instance.pk}): Patient DOB missing, generating random."
-        )
+        logger.debug(f"SensitiveMeta (pk={instance.pk or 'new'}): Patient DOB missing, generating random.")
         instance.patient_dob = generate_random_dob()
     if not instance.examination_date:
-        logger.debug(
-            f"SensitiveMeta (pk={instance.pk}): Examination date missing, generating random."
-        )
+        logger.debug(f"SensitiveMeta (pk={instance.pk or 'new'}): Examination date missing, generating random.")
         instance.examination_date = generate_random_examination_date()
 
     # 2. Ensure Center exists (should be set before calling save)
@@ -314,9 +296,7 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
         first_name = instance.patient_first_name or DEFAULT_UNKNOWN_NAME
         gender = guess_name_gender(first_name)
         if not gender:
-            raise ValueError(
-                "Patient gender could not be determined and must be set before saving."
-            )
+            raise ValueError("Patient gender could not be determined and must be set before saving.")
         instance.patient_gender = gender
 
     # 4. Calculate Hashes (depends on DOB, Exam Date, Center, Names)
@@ -344,16 +324,10 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
     return examiner_instance
 
 
-def create_sensitive_meta_from_dict(
-    cls: Type["SensitiveMeta"], data: Dict[str, Any]
-) -> "SensitiveMeta":
+def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, Any]) -> "SensitiveMeta":
     """Logic to create a SensitiveMeta instance from a dictionary."""
 
-    field_names = {
-        f.name
-        for f in cls._meta.get_fields()
-        if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)
-    }
+    field_names = {f.name for f in cls._meta.get_fields() if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)}
     selected_data = {k: v for k, v in data.items() if k in field_names}
 
     # --- Convert patient_dob if it's a date object ---
@@ -380,13 +354,9 @@ def create_sensitive_meta_from_dict(
             try:
                 import dateparser
 
-                parsed_dob = dateparser.parse(
-                    dob, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                )
+                parsed_dob = dateparser.parse(dob, languages=["de"], settings={"DATE_ORDER": "DMY"})
                 if parsed_dob:
-                    aware_dob = timezone.make_aware(
-                        parsed_dob.replace(hour=0, minute=0, second=0, microsecond=0)
-                    )
+                    aware_dob = timezone.make_aware(parsed_dob.replace(hour=0, minute=0, second=0, microsecond=0))
                     selected_data["patient_dob"] = aware_dob
                     logger.debug(
                         "Parsed string patient_dob '%s' to aware datetime: %s",
@@ -440,9 +410,7 @@ def create_sensitive_meta_from_dict(
                         # Fall back to dateparser for complex formats
                         import dateparser
 
-                        parsed_date = dateparser.parse(
-                            exam_date, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                        )
+                        parsed_date = dateparser.parse(exam_date, languages=["de"], settings={"DATE_ORDER": "DMY"})
                         if parsed_date:
                             selected_data["examination_date"] = parsed_date.date()
                             logger.debug(
@@ -460,9 +428,7 @@ def create_sensitive_meta_from_dict(
                     # Use dateparser for non-ISO formats
                     import dateparser
 
-                    parsed_date = dateparser.parse(
-                        exam_date, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                    )
+                    parsed_date = dateparser.parse(exam_date, languages=["de"], settings={"DATE_ORDER": "DMY"})
                     if parsed_date:
                         selected_data["examination_date"] = parsed_date.date()
                         logger.debug(
@@ -508,34 +474,22 @@ def create_sensitive_meta_from_dict(
     elif isinstance(patient_gender_input, str):
         # Input is a string (gender name)
         try:
-            selected_data["patient_gender"] = Gender.objects.get(
-                name=patient_gender_input
-            )
+            selected_data["patient_gender"] = Gender.objects.get(name=patient_gender_input)
         except Gender.DoesNotExist:
-            logger.warning(
-                f"Gender with name '{patient_gender_input}' provided but not found. Attempting to guess or use default."
-            )
+            logger.warning(f"Gender with name '{patient_gender_input}' provided but not found. Attempting to guess or use default.")
             # Fall through to guessing logic if provided string name is invalid
             patient_gender_input = None  # Reset to trigger guessing
 
-    if not isinstance(
-        selected_data.get("patient_gender"), Gender
-    ):  # If not already a Gender object (e.g. was None, or string lookup failed)
+    if not isinstance(selected_data.get("patient_gender"), Gender):  # If not already a Gender object (e.g. was None, or string lookup failed)
         gender_name_to_use = guess_name_gender(first_name)
         if not gender_name_to_use:
-            logger.warning(
-                f"Could not guess gender for name '{first_name}'. Setting Gender to unknown."
-            )
+            logger.warning(f"Could not guess gender for name '{first_name}'. Setting Gender to unknown.")
             gender_name_to_use = "unknown"
         try:
-            selected_data["patient_gender"] = Gender.objects.get(
-                name=gender_name_to_use
-            )
+            selected_data["patient_gender"] = Gender.objects.get(name=gender_name_to_use)
         except Gender.DoesNotExist:
             # This should ideally not happen if "unknown" gender is guaranteed to exist
-            raise ValueError(
-                f"Default or guessed gender '{gender_name_to_use}' does not exist in Gender table."
-            )
+            raise ValueError(f"Default or guessed gender '{gender_name_to_use}' does not exist in Gender table.")
 
     # Update name DB
     update_name_db(first_name, last_name)
@@ -549,20 +503,12 @@ def create_sensitive_meta_from_dict(
     return sensitive_meta
 
 
-def update_sensitive_meta_from_dict(
-    instance: "SensitiveMeta", data: Dict[str, Any]
-) -> "SensitiveMeta":
+def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, Any]) -> "SensitiveMeta":
     """Logic to update a SensitiveMeta instance from a dictionary."""
-    field_names = {
-        f.name
-        for f in instance._meta.get_fields()
-        if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)
-    }
+    field_names = {f.name for f in instance._meta.get_fields() if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)}
     # Exclude FKs that should not be updated directly from dict keys (handled separately or via save logic)
     excluded_fields = {"pseudo_patient", "pseudo_examination"}
-    selected_data = {
-        k: v for k, v in data.items() if k in field_names and k not in excluded_fields
-    }
+    selected_data = {k: v for k, v in data.items() if k in field_names and k not in excluded_fields}
 
     # Handle potential Center update
     center_name = data.get("center_name")
@@ -571,9 +517,7 @@ def update_sensitive_meta_from_dict(
             center = Center.objects.get_by_natural_key(center_name)
             instance.center = center  # Update center directly
         except Center.DoesNotExist as exc:
-            logger.warning(
-                f"Center '{center_name}' not found during update. Keeping existing center."
-            )
+            logger.warning(f"Center '{center_name}' not found during update. Keeping existing center.")
             selected_data.pop("center", None)  # Remove from dict if not found
 
     # Set examiner names if provided, before calling save
@@ -593,14 +537,10 @@ def update_sensitive_meta_from_dict(
             elif isinstance(patient_gender_input, str):
                 gender_input_clean = patient_gender_input.strip()
                 # Try direct case-insensitive DB lookup first
-                gender_obj = Gender.objects.filter(
-                    name__iexact=gender_input_clean
-                ).first()
+                gender_obj = Gender.objects.filter(name__iexact=gender_input_clean).first()
                 if gender_obj:
                     selected_data["patient_gender"] = gender_obj
-                    logger.debug(
-                        f"Successfully matched gender string '{patient_gender_input}' to Gender object via iexact lookup"
-                    )
+                    logger.debug(f"Successfully matched gender string '{patient_gender_input}' to Gender object via iexact lookup")
                 else:
                     # Use mapping helper for fallback
                     mapped = _map_gender_string_to_standard(gender_input_clean)
@@ -608,50 +548,30 @@ def update_sensitive_meta_from_dict(
                         gender_obj = Gender.objects.filter(name__iexact=mapped).first()
                         if gender_obj:
                             selected_data["patient_gender"] = gender_obj
-                            logger.info(
-                                f"Mapped gender '{patient_gender_input}' to '{mapped}' via fallback mapping"
-                            )
+                            logger.info(f"Mapped gender '{patient_gender_input}' to '{mapped}' via fallback mapping")
                         else:
-                            logger.warning(
-                                f"Mapped gender '{patient_gender_input}' to '{mapped}', but no such Gender in DB. Trying 'unknown'."
-                            )
-                            unknown_gender = Gender.objects.filter(
-                                name__iexact="unknown"
-                            ).first()
+                            logger.warning(f"Mapped gender '{patient_gender_input}' to '{mapped}', but no such Gender in DB. Trying 'unknown'.")
+                            unknown_gender = Gender.objects.filter(name__iexact="unknown").first()
                             if unknown_gender:
                                 selected_data["patient_gender"] = unknown_gender
-                                logger.warning(
-                                    f"Using 'unknown' gender as fallback for '{patient_gender_input}'"
-                                )
+                                logger.warning(f"Using 'unknown' gender as fallback for '{patient_gender_input}'")
                             else:
-                                logger.error(
-                                    f"No 'unknown' gender found in database. Cannot handle gender '{patient_gender_input}'. Skipping gender update."
-                                )
+                                logger.error(f"No 'unknown' gender found in database. Cannot handle gender '{patient_gender_input}'. Skipping gender update.")
                                 selected_data.pop("patient_gender", None)
                     else:
                         # Last resort: try to get 'unknown' gender
-                        unknown_gender = Gender.objects.filter(
-                            name__iexact="unknown"
-                        ).first()
+                        unknown_gender = Gender.objects.filter(name__iexact="unknown").first()
                         if unknown_gender:
                             selected_data["patient_gender"] = unknown_gender
-                            logger.warning(
-                                f"Using 'unknown' gender as fallback for '{patient_gender_input}' (no mapping)"
-                            )
+                            logger.warning(f"Using 'unknown' gender as fallback for '{patient_gender_input}' (no mapping)")
                         else:
-                            logger.error(
-                                f"No 'unknown' gender found in database. Cannot handle gender '{patient_gender_input}'. Skipping gender update."
-                            )
+                            logger.error(f"No 'unknown' gender found in database. Cannot handle gender '{patient_gender_input}'. Skipping gender update.")
                             selected_data.pop("patient_gender", None)
             else:
-                logger.warning(
-                    f"Unexpected patient_gender type {type(patient_gender_input)}: {patient_gender_input}. Skipping gender update."
-                )
+                logger.warning(f"Unexpected patient_gender type {type(patient_gender_input)}: {patient_gender_input}. Skipping gender update.")
                 selected_data.pop("patient_gender", None)
         except Exception as e:
-            logger.exception(
-                f"Error handling patient_gender '{patient_gender_input}': {e}. Skipping gender update."
-            )
+            logger.exception(f"Error handling patient_gender '{patient_gender_input}': {e}. Skipping gender update.")
             selected_data.pop("patient_gender", None)
 
     # Update other attributes from selected_data
@@ -668,9 +588,7 @@ def update_sensitive_meta_from_dict(
                 value_to_set = v
                 if k == "patient_dob":
                     if isinstance(v, date) and not isinstance(v, datetime):
-                        aware_dob = timezone.make_aware(
-                            datetime.combine(v, datetime.min.time())
-                        )
+                        aware_dob = timezone.make_aware(datetime.combine(v, datetime.min.time()))
                         value_to_set = aware_dob
                         logger.debug(
                             "Converted patient_dob from date to aware datetime during update: %s",
@@ -693,15 +611,9 @@ def update_sensitive_meta_from_dict(
                             try:
                                 import dateparser
 
-                                parsed_dob = dateparser.parse(
-                                    v, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                                )
+                                parsed_dob = dateparser.parse(v, languages=["de"], settings={"DATE_ORDER": "DMY"})
                                 if parsed_dob:
-                                    value_to_set = timezone.make_aware(
-                                        parsed_dob.replace(
-                                            hour=0, minute=0, second=0, microsecond=0
-                                        )
-                                    )
+                                    value_to_set = timezone.make_aware(parsed_dob.replace(hour=0, minute=0, second=0, microsecond=0))
                                     logger.debug(
                                         "Parsed string patient_dob '%s' during update to aware datetime: %s",
                                         v,
@@ -736,9 +648,7 @@ def update_sensitive_meta_from_dict(
                         try:
                             import dateparser
 
-                            parsed_date = dateparser.parse(
-                                v, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                            )
+                            parsed_date = dateparser.parse(v, languages=["de"], settings={"DATE_ORDER": "DMY"})
                             if parsed_date:
                                 value_to_set = parsed_date.date()
                                 logger.debug(
@@ -762,18 +672,13 @@ def update_sensitive_meta_from_dict(
                 # --- End Conversion ---
 
                 # Check if patient name is changing
-                if (
-                    k in ["patient_first_name", "patient_last_name"]
-                    and getattr(instance, k) != value_to_set
-                ):
+                if k in ["patient_first_name", "patient_last_name"] and getattr(instance, k) != value_to_set:
                     patient_name_changed = True
 
                 setattr(instance, k, value_to_set)  # Use value_to_set
 
             except Exception as e:
-                logger.error(
-                    f"Error setting attribute '{k}' to '{v}': {e}. Skipping this field."
-                )
+                logger.error(f"Error setting attribute '{k}' to '{v}': {e}. Skipping this field.")
                 continue
 
     # Update name DB if patient names changed

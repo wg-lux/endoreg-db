@@ -2,6 +2,7 @@ import shutil
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Type
+
 from django.core.files import File
 from django.db import transaction
 from huggingface_hub import hf_hub_download
@@ -18,18 +19,14 @@ if TYPE_CHECKING:
     from .model_meta import ModelMeta  # Import ModelMeta for type hinting
 
 
-def get_latest_version_number_logic(
-    cls: Type["ModelMeta"], meta_name: str, model_name: str
-) -> int:
+def get_latest_version_number_logic(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
     """
     Finds the highest numerical version for a given meta_name and model_name.
     Iterates through all versions, attempts to parse them as integers,
     and returns the maximum integer found. If no numeric versions are found,
     returns 0.
     """
-    versions_qs = cls.objects.filter(
-        name=meta_name, model__name=model_name
-    ).values_list("version", flat=True)
+    versions_qs = cls.objects.filter(name=meta_name, model__name=model_name).values_list("version", flat=True)
 
     max_v = 0
     found_numeric_version = False
@@ -84,24 +81,17 @@ def create_from_file_logic(
 
     if requested_version:
         target_version = str(requested_version)
-        existing = cls.objects.filter(
-            name=meta_name, model=ai_model, version=target_version
-        ).first()
+        existing = cls.objects.filter(name=meta_name, model=ai_model, version=target_version).first()
         if existing and not bump_if_exists:
             raise ValueError(
-                f"ModelMeta '{meta_name}' version '{target_version}' for model '{model_name}' "
-                f"already exists. Use bump_if_exists=True to increment."
+                f"ModelMeta '{meta_name}' version '{target_version}' for model '{model_name}' already exists. Use bump_if_exists=True to increment."
             )
         elif existing and bump_if_exists:
             target_version = str(latest_version_num + 1)
-            logger.info(
-                f"Bumping version for {meta_name}/{model_name} to {target_version}"
-            )
+            logger.info(f"Bumping version for {meta_name}/{model_name} to {target_version}")
     else:
         target_version = str(latest_version_num + 1)
-        logger.info(
-            f"Setting next version for {meta_name}/{model_name} to {target_version}"
-        )
+        logger.info(f"Setting next version for {meta_name}/{model_name} to {target_version}")
 
     # --- Prepare Weights File ---
     source_weights_path = Path(weights_file).resolve()
@@ -111,10 +101,7 @@ def create_from_file_logic(
     # Construct destination path within MEDIA_ROOT/WEIGHTS_DIR
     weights_filename = source_weights_path.name
     # Relative path for the FileField upload_to
-    relative_dest_path = (
-        Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
-        / f"{meta_name}_v{target_version}_{weights_filename}"
-    )
+    relative_dest_path = Path(WEIGHTS_DIR.relative_to(STORAGE_DIR)) / f"{meta_name}_v{target_version}_{weights_filename}"
     # Full path for shutil.copy
     full_dest_path = STORAGE_DIR / relative_dest_path
 
@@ -127,8 +114,6 @@ def create_from_file_logic(
         logger.info(f"Copied weights from {source_weights_path} to {full_dest_path}")
     except Exception as e:
         raise IOError(f"Failed to copy weights file: {e}") from e
-    
-
 
     # --- Create/Update ModelMeta Instance ---
     defaults = {
@@ -146,11 +131,6 @@ def create_from_file_logic(
         version=target_version,
         defaults=defaults,
     )
-    
-    with open(full_dest_path, "rb") as f:
-        model_meta.weights.save(relative_dest_path.name, File(f), save=False)
-    model_meta.save()
-
 
     if created:
         logger.info(f"Created new ModelMeta: {model_meta}")
@@ -160,8 +140,8 @@ def create_from_file_logic(
     # --- Optionally update AiModel's active_meta ---
     # You might want to add logic here to automatically set the newly created/updated
     # meta as the active one for the AiModel, e.g.:
-    # ai_model.active_meta = model_meta
-    # ai_model.save()
+    ai_model.active_meta = model_meta
+    ai_model.save()
 
     return model_meta
 
@@ -240,22 +220,14 @@ def get_model_meta_by_name_version_logic(
         try:
             return cls.objects.get(name=meta_name, model=ai_model, version=version)
         except Exception as exc:
-            raise cls.DoesNotExist(
-                f"ModelMeta '{meta_name}' version '{version}' for model '{model_name}' not found."
-            ) from exc
+            raise cls.DoesNotExist(f"ModelMeta '{meta_name}' version '{version}' for model '{model_name}' not found.") from exc
     else:
         # Get latest version
-        latest = (
-            cls.objects.filter(name=meta_name, model=ai_model)
-            .order_by("-date_created")
-            .first()
-        )
+        latest = cls.objects.filter(name=meta_name, model=ai_model).order_by("-date_created").first()
         if latest:
             return latest
         else:
-            raise cls.DoesNotExist(
-                f"No ModelMeta found for '{meta_name}' and model '{model_name}'."
-            )
+            raise cls.DoesNotExist(f"No ModelMeta found for '{meta_name}' and model '{model_name}'.")
 
 
 import re
@@ -273,9 +245,7 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
     """
 
     if not (info := model_info(model_id)):
-        logger.info(
-            f"Could not retrieve model info for {model_id}, using ColoReg segmentation defaults."
-        )
+        logger.info(f"Could not retrieve model info for {model_id}, using ColoReg segmentation defaults.")
         return {
             "name": "wg-lux/colo_segmentation_RegNetX800MF_base",
             "activation": "sigmoid",
@@ -324,9 +294,7 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
     }
 
 
-def setup_default_from_huggingface_logic(
-    cls, model_id: str, labelset_name: str | None = None
-):
+def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str | None = None):
     """
     Downloads model weights from Hugging Face and auto-fills ModelMeta fields.
     """
@@ -340,11 +308,11 @@ def setup_default_from_huggingface_logic(
     )
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
-    labelset = (
-        LabelSet.objects.first()
-        if not labelset_name
-        else LabelSet.objects.get(name=labelset_name)
-    )
+    labelset = LabelSet.objects.first() if not labelset_name else LabelSet.objects.get(name=labelset_name)
+    model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
+    if model_meta:
+        logger.info(f"ModelMeta {meta['name']} for model {ai_model.name} already exists. Skipping creation.")
+        return model_meta
 
     return create_from_file_logic(
         cls,

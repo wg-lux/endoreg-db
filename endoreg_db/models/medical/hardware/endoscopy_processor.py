@@ -160,7 +160,7 @@ class EndoscopyProcessor(models.Model):
             "height": self.endoscope_sn_height,
         }
 
-    def get_rois(self) -> dict[ str, dict[str, int | None] | None]:
+    def get_rois(self) -> dict[str, dict[str, int | None] | None]:
         return {
             "endoscope_image": self.get_roi_endoscope_image(),
             "examination_date": self.get_roi_examination_date(),
@@ -170,4 +170,13 @@ class EndoscopyProcessor(models.Model):
             "patient_dob": self.get_roi_patient_dob(),
             "endoscope_type": self.get_roi_endoscope_type(),
             "endoscope_sn": self.get_roi_endoscopy_sn(),
+        }
+
+    def get_sensitive_rois(self) -> dict[str, dict[str, int | None] | None]:
+        return {
+            "examination_date": self.get_roi_examination_date(),
+            "examination_time": self.get_roi_examination_time(),
+            "patient_first_name": self.get_roi_patient_first_name(),
+            "patient_last_name": self.get_roi_patient_last_name(),
+            "patient_dob": self.get_roi_patient_dob(),
         }
