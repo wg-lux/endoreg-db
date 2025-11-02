@@ -34,6 +34,7 @@ from .person import (
     Person,
     Examiner, 
     Patient, 
+    PatientExternalID,
     PortalUserInfo,     
     FirstName,
     LastName,
@@ -88,6 +89,7 @@ __all__ = [
     # Person
     "Person",
     "Patient",
+    "PatientExternalID",
     "Examiner",
     "PortalUserInfo",
     "FirstName",

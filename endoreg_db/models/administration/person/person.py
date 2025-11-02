@@ -22,6 +22,10 @@ class Person(models.Model):
     phone = models.CharField(max_length=255, blank=True, null=True)
     is_real_person = models.BooleanField(default=True)
 
+    post_code = models.CharField(max_length=20, blank=True, null=True)
+    city = models.CharField(max_length=255, blank=True, null=True)
+    street = models.CharField(max_length=255, blank=True, null=True)
+
     @abstractmethod
     def __str__(self):
         pass

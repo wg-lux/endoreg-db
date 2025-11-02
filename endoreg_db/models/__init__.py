@@ -17,6 +17,7 @@ from .administration import (
     CenterShift,
     Person,
     Patient,
+    PatientExternalID,
     Examiner,
     PortalUserInfo,
     FirstName,
@@ -194,6 +195,7 @@ __all__ = [
     # Person
     "Person",
     "Patient",
+    "PatientExternalID",
     "Examiner",
     "PortalUserInfo",
     "FirstName",

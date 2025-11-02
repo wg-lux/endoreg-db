@@ -2,7 +2,7 @@ from ..person import Person
 from django.db import models
 from faker import Faker
 import random
-from datetime import datetime
+from datetime import datetime, date
 from typing import TYPE_CHECKING, List, Optional  # Added List
 import logging
 from django.utils import timezone  # Add this import
@@ -20,13 +20,9 @@ if TYPE_CHECKING:
         Center,
         AnonymExaminationReport,
         AnonymHistologyReport, RawPdfFile,
-        # Added for links property
-        Medication,
+        PatientExternalID,
         PatientMedication,
-        MedicationIndication,
-        MedicationIntakeTime,
-        PatientLabValue, # Assuming self.lab_values are PatientLabValue instances
-        LabValue # If RequirementLinks expects actual LabValue instances
+        PatientLabValue,
     )
     from endoreg_db.utils.links.requirement_link import RequirementLinks
 
@@ -44,7 +40,6 @@ class Patient(Person):
 
     """
 
-    # -----gc-08-dev--changings---
     first_name = models.CharField(max_length=100) # type: ignore[assignment]
     last_name = models.CharField(max_length=100) # type: ignore[assignment]
     dob = models.DateField(null=True, blank=True) # type: ignore[assignment]
@@ -55,13 +50,13 @@ class Patient(Person):
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
-    
+
     objects = models.Manager()  # Default manager
 
     if TYPE_CHECKING:
         first_name: str
         last_name: str
-        dob: datetime.date
+        dob: date
         gender: "Gender"
         center: "Center"
         events: models.QuerySet["PatientEvent"]
@@ -69,6 +64,10 @@ class Patient(Person):
         patient_examinations: models.QuerySet["PatientExamination"]
         anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
         anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
+        external_ids: models.QuerySet["PatientExternalID"]
+
+        patientmedication_set: models.QuerySet["PatientMedication"]
+        lab_values: models.QuerySet["PatientLabValue"]
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
@@ -77,10 +76,10 @@ class Patient(Person):
     def get_or_create_pseudo_patient_by_hash(
         cls,
         patient_hash: str,
-        center: "Center" = None,
-        gender: "Gender | str" = None,  # Allow string type hint
-        birth_month: int = None,
-        birth_year: int = None,
+        center: Optional["Center"] = None,
+        gender: Optional["Gender | str"] = None,  # Allow string type hint
+        birth_month: Optional[int] = None,
+        birth_year: Optional[int] = None,
     ):
         from endoreg_db.utils import random_day_by_year, create_mock_patient_name
         from ....other import Gender  # Import Gender model
@@ -130,8 +129,8 @@ class Patient(Person):
 
         return patient, created
 
-    def get_dob(self) -> datetime.date:
-        dob: datetime.date = self.dob
+    def get_dob(self) -> date:
+        dob: date = self.dob
         return dob
 
     def get_patient_examinations(self):  # field: self.patient_examinations
@@ -146,9 +145,8 @@ class Patient(Person):
         save: bool = True,
     ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
-
+        from ....medical import Examination, PatientExamination
         if examination_name_str:
-            from ....medical import Examination, PatientExamination
 
             examination = Examination.objects.get(name=examination_name_str)
             patient_examination = PatientExamination(
@@ -169,7 +167,7 @@ class Patient(Person):
         return patient_examination
 
     def create_examination_by_indication(
-        self, indication: "ExaminationIndication", date_start: datetime = None, date_end: datetime = None
+        self, indication: "ExaminationIndication", date_start: Optional[datetime] = None, date_end: datetime = None
     ):
         from ....medical import (
             PatientExaminationIndication,
@@ -197,9 +195,9 @@ class Patient(Person):
     def create_event(
         self,
         event_name_str: str,
-        date_start: datetime = None,
-        date_end: datetime = None,
-        description: str = None,
+        date_start: Optional[datetime] = None,
+        date_end: Optional[datetime] = None,
+        description: Optional[str] = None,
     ):
         """
         Creates a patient event with the specified event name and start date.
@@ -350,6 +348,12 @@ class Patient(Person):
         )
         # No need to call save() again after create()
         return patient
+
+    @property
+    def age_safe(self) -> int:
+        age = self.age()
+        assert age is not None, "Patient age is not set."
+        return age
 
     def age(self) -> int | None:
         """

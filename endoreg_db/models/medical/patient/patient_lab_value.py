@@ -24,7 +24,7 @@ class PatientLabValue(models.Model):
     lab_value = models.ForeignKey('LabValue', on_delete=models.CASCADE)
     value = models.FloatField(blank=True, null=True)
     value_str = models.CharField(max_length=255, blank=True, null=True)
-    sample: models.ForeignKey["PatientLabSample"] = models.ForeignKey(
+    sample = models.ForeignKey(
         'PatientLabSample', on_delete=models.CASCADE, 
         blank=True, null=True,
         related_name='values'
@@ -37,12 +37,27 @@ class PatientLabValue(models.Model):
     )
     unit = models.ForeignKey('Unit', on_delete=models.CASCADE, blank=True, null=True)
 
+    @property
+    def lab_value_safe(self) -> "LabValue":
+        """Returns the lab value, raises error if not set."""
+        if not self.lab_value:
+            raise ValueError("Lab value is not set.")
+        return self.lab_value
+
+    @property
+    def patient_safe(self) -> "Patient":
+        """Returns the patient, raises error if not set."""
+        if not self.patient:
+            raise ValueError("Patient is not set.")
+        return self.patient
+
     if TYPE_CHECKING:
 
-        patient: "Patient"
-        lab_value: "LabValue"
-        unit: "Unit"
-        sample: "PatientLabSample"
+        patient: models.ForeignKey["Patient|None"]
+        lab_value: models.ForeignKey["LabValue|None"]
+        unit: models.ForeignKey["Unit|None"]
+        sample: models.ForeignKey["PatientLabSample|None"]
+        normal_range: models.JSONField[dict]
 
     @classmethod
     def create_lab_value_by_sample(
@@ -53,7 +68,6 @@ class PatientLabValue(models.Model):
         from ..laboratory import LabValue
         patient = sample.patient
         lab_value = LabValue.objects.get(name=lab_value_name)
-
 
         pat_lab_val = cls.objects.create(
             patient = patient,
@@ -76,10 +90,10 @@ class PatientLabValue(models.Model):
         return _str
     
     def get_normal_range(self):
-        lab_value = self.lab_value
-        patient = self.patient
+        lab_value = self.lab_value_safe
+        patient = self.patient_safe
 
-        age = patient.age()
+        age = patient.age_safe
         gender = patient.gender
 
         normal_range_dict = lab_value.get_normal_range(
@@ -106,7 +120,8 @@ class PatientLabValue(models.Model):
         self.save()
 
     def set_unit_from_default(self):
-        self.unit = self.lab_value.default_unit
+        _default_unit = self.lab_value_safe.default_unit
+        self.unit = _default_unit
         self.save()
 
     def get_value(self):
@@ -123,14 +138,16 @@ class PatientLabValue(models.Model):
         
     # customize save method so that if a numeric value exists, we round it to the precision of the lab value
     def save(self, *args, **kwargs):
-        if self.value:
-            precision = self.lab_value.numeric_precision
-            self.value = round(self.value, precision)
+        if self.value is not None:
+            # only attempt rounding for real numeric types (ints/floats/compatible)
+            import numbers
+            precision = getattr(self.lab_value_safe, "numeric_precision", None)
+            if isinstance(self.value, numbers.Real) and precision is not None:
+                # ensure a plain float is passed to built-in round to satisfy type checkers
+                self.value = round(float(self.value), int(precision))
         super().save(*args, **kwargs)
 
     def set_value_by_distribution(self, distribution=None, save = True):
-        from ...administration.person.patient import Patient
-        from ..laboratory import LabValue
         from ...other.distribution import (
             DateValueDistribution,
             SingleCategoricalValueDistribution,
@@ -139,12 +156,10 @@ class PatientLabValue(models.Model):
         ) 
         import warnings  
 
-        patient:Patient = self.patient
+        patient = self.patient_safe
+        lab_value = self.lab_value_safe
 
-        lab_value:LabValue = self.lab_value
-
-        assert self.lab_value, "Lab value must be set to set value by distribution"
-        self.unit = self.lab_value.default_unit
+        self.unit = self.lab_value_safe.default_unit
 
         if not distribution:
             distribution = lab_value.get_default_default_distribution()
@@ -156,11 +171,9 @@ class PatientLabValue(models.Model):
 
                 if not self.normal_range.get("min", None) or not self.normal_range.get("max", None):
                     self.set_norm_values_from_default()
-
-                self.normal_range:dict
                 _min = self.normal_range.get("min", 0.0001)
                 _max = self.normal_range.get("max", 100)
-                _name = "auto-" + self.lab_value.name + "-distribution-default-uniform" 
+                _name = "auto-" + self.lab_value_safe.name + "-distribution-default-uniform" 
                 distribution = NumericValueDistribution(
                     name = _name,
                     min_descriptor = _min,
