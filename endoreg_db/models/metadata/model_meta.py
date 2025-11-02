@@ -18,7 +18,6 @@ from . import model_meta_logic as logic
 
 if TYPE_CHECKING:
     from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
-    from torch.nn import Module as TorchModule
 
 
 class ModelMetaManager(models.Manager):
@@ -128,6 +127,20 @@ class ModelMeta(models.Model):
             cls, meta_name, model_name, labelset_name, weights_file,
             requested_version, bump_if_exists, **kwargs
         )
+        
+    @classmethod
+    def setup_default_from_huggingface(
+        cls: Type["ModelMeta"],
+        model_id: str = "wg-lux/colo_segmentation_RegNetX800MF_base",
+        labelset_name: Optional[str] = None,
+    ) -> "ModelMeta":
+        """
+        Downloads a pretrained model from Hugging Face and initializes ModelMeta automatically.
+        """
+        # If labelset_name is not provided, handle default logic here if needed
+        return logic.setup_default_from_huggingface_logic(cls, model_id, labelset_name)
+
+
 
     @classmethod
     def get_latest_version_number(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
