@@ -26,8 +26,24 @@ from urllib.parse import urlencode
 # Any URL path that starts with one of these prefixes is considered "protected" for browser UX.
 # You can add more prefixes if you want the same login-redirect behavior elsewhere
 # (e.g., PROTECTED_PREFIXES = ("/api/", "/reports/", "/dashboard/")).
-PROTECTED_PREFIXES = ("/api/",)
-
+PROTECTED_PREFIXES = (
+    "/api/",
+    "/",                      # homepage/dashboard (if your SPA shell is mounted at /)
+    "/annotationen",
+    "/video-untersuchung",
+    "/ueber-uns",
+    "/uebersicht",
+    "/untersuchung",
+    "/patient",
+    "/patienten",
+    "/profil",
+    "/anonymisierung",
+    "/anonymisierung/uebersicht",
+    "/anonymisierung/validierung",
+    "/anonymisierung/korrektur/",
+    "/validierung",
+    "/report-generator",
+)
 
 class LoginRequiredForAPIsMiddleware:
     """
