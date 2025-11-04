@@ -1,71 +1,72 @@
 """Concrete model for video files, handling both raw and processed states."""
 
 import logging
-from pathlib import Path
-import uuid
-from typing import TYPE_CHECKING, Optional, Union, cast
 import os
+import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union, cast
 
-from django.db import models
 from django.core.files import File
-from django.db.models.fields.files import FieldFile
 from django.core.validators import FileExtensionValidator
+from django.db import models
 from django.db.models import F
+from django.db.models.fields.files import FieldFile
+
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
+
+from ...label import Label, LabelVideoSegment
+from ...state import VideoState
+from ...utils import ANONYM_VIDEO_DIR, VIDEO_DIR
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
+from .pipe_1 import _pipe_1, _test_after_pipe_1
+from .pipe_2 import _pipe_2
+from .video_file_ai import _extract_text_from_video_frames, _predict_video_pipeline
 from .video_file_anonymize import (
     _anonymize,
-    _create_anonymized_frame_files,
     _cleanup_raw_assets,
-)
-from .video_file_meta import (
-    _update_text_metadata,
-    _update_video_meta,
-    _get_fps,
-    _get_endo_roi,
-    _get_crop_template,
-    _initialize_video_specs,
+    _create_anonymized_frame_files,
 )
 from .video_file_frames import (
-    _extract_frames,
-    _initialize_frames,
+    _bulk_create_frames,
+    _create_frame_object,
     _delete_frames,
+    _extract_frames,
+    _get_frame,
+    _get_frame_number,
     _get_frame_path,
     _get_frame_paths,
-    _get_frame_number,
-    _get_frames,
-    _get_frame,
     _get_frame_range,
-    _create_frame_object,
-    _bulk_create_frames,
+    _get_frames,
+    _initialize_frames,
 )
+
 # Update import aliases for clarity and to use as helpers
-from .video_file_frames._manage_frame_range import _extract_frame_range as _extract_frame_range_helper
-from .video_file_frames._manage_frame_range import _delete_frame_range as _delete_frame_range_helper
+from .video_file_frames._manage_frame_range import (
+    _delete_frame_range as _delete_frame_range_helper,
+)
+from .video_file_frames._manage_frame_range import (
+    _extract_frame_range as _extract_frame_range_helper,
+)
 from .video_file_io import (
     _delete_with_file,
     _get_base_frame_dir,
-    _set_frame_dir,
     _get_frame_dir_path,
-    _get_temp_anonymized_frame_dir,
-    _get_target_anonymized_video_path,
-    _get_raw_file_path,
     _get_processed_file_path,
+    _get_raw_file_path,
+    _get_target_anonymized_video_path,
+    _get_temp_anonymized_frame_dir,
+    _set_frame_dir,
 )
-from .video_file_ai import (
-    _predict_video_pipeline,
-    _extract_text_from_video_frames,
+from .video_file_meta import (
+    _get_crop_template,
+    _get_endo_roi,
+    _get_fps,
+    _initialize_video_specs,
+    _update_text_metadata,
+    _update_video_meta,
 )
-
-from .pipe_1 import _pipe_1, _test_after_pipe_1
-from .pipe_2 import _pipe_2
-
-from ...utils import VIDEO_DIR, ANONYM_VIDEO_DIR
-from ...state import VideoState
-from ...label import LabelVideoSegment, Label
-
 
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"
@@ -73,25 +74,27 @@ logger = logging.getLogger(__name__)  # Changed from "video_file"
 if TYPE_CHECKING:
     from endoreg_db.models import (
         Center,
-        Frame,
-        SensitiveMeta,
         EndoscopyProcessor,
-        VideoMeta,
-        PatientExamination,
-        Patient,
-        VideoState,
-        ModelMeta,
-        VideoImportMeta,
         FFMpegMeta,
-    )   
+        Frame,
+        ModelMeta,
+        Patient,
+        PatientExamination,
+        SensitiveMeta,
+        VideoImportMeta,
+        VideoMeta,
+        VideoState,
+    )
+
+
 class VideoQuerySet(models.QuerySet):
     def next_after(self, last_id=None):
         """
         Return the next VideoFile instance with a primary key greater than the given last_id.
-        
+
         Parameters:
             last_id (int or None): The primary key to start after. If None or invalid, returns the first instance.
-        
+
         Returns:
             VideoFile or None: The next VideoFile instance, or None if not found.
         """
@@ -103,9 +106,10 @@ class VideoQuerySet(models.QuerySet):
         q = self if last_id is None else self.filter(pk__gt=last_id)
         return q.order_by("pk").first()
 
+
 class VideoFile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    
+
     objects = VideoQuerySet.as_manager()
 
     raw_file = models.FileField(
@@ -121,55 +125,81 @@ class VideoFile(models.Model):
         blank=True,
     )
 
-    video_hash = models.CharField(max_length=255, unique=True, help_text="Hash of the raw video file.")
+    video_hash = models.CharField(
+        max_length=255, unique=True, help_text="Hash of the raw video file."
+    )
     processed_video_hash = models.CharField(
-        max_length=255, unique=True, null=True, blank=True, help_text="Hash of the processed video file, unique if not null."
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Hash of the processed video file, unique if not null.",
     )
 
     sensitive_meta = models.OneToOneField(
-        "SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
-    ) # type: ignore
-    center = models.ForeignKey("Center", on_delete=models.PROTECT) # type: ignore
+        "SensitiveMeta",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="video_file",
+    )  # type: ignore
+    center = models.ForeignKey("Center", on_delete=models.PROTECT)  # type: ignore
     processor = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True
-    ) # type: ignore
+    )  # type: ignore
     video_meta = models.OneToOneField(
-        "VideoMeta", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
-    ) # type: ignore
+        "VideoMeta",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="video_file",
+    )  # type: ignore
     examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
-    ) # type: ignore
+    )  # type: ignore
     patient = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
-    ) # type: ignore
+    )  # type: ignore
     ai_model_meta = models.ForeignKey(
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
-    ) # type: ignore
+    )  # type: ignore
     state = models.OneToOneField(
-        "VideoState", on_delete=models.SET_NULL, null=True, blank=True, related_name="video_file"
-    ) # type: ignore
+        "VideoState",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="video_file",
+    )  # type: ignore
     import_meta = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
-    ) # type: ignore
+    )  # type: ignore
 
     original_file_name = models.CharField(max_length=255, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    frame_dir = models.CharField(max_length=512, blank=True, help_text="Path to frames extracted from the raw video.")
+    frame_dir = models.CharField(
+        max_length=512,
+        blank=True,
+        help_text="Path to frames extracted from the raw video.",
+    )
     fps = models.FloatField(blank=True, null=True)
     duration = models.FloatField(blank=True, null=True)
     frame_count = models.IntegerField(blank=True, null=True)
     width = models.IntegerField(blank=True, null=True)
     height = models.IntegerField(blank=True, null=True)
     suffix = models.CharField(max_length=10, blank=True, null=True)
-    sequences = models.JSONField(default=dict, blank=True, help_text="AI prediction sequences based on raw frames.")
+    sequences = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="AI prediction sequences based on raw frames.",
+    )
     date = models.DateField(blank=True, null=True)
     meta = models.JSONField(blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
@@ -188,16 +218,16 @@ class VideoFile(models.Model):
         ai_model_meta: "ModelMeta"
         import_meta: "VideoImportMeta"
 
-
     @property
     def ffmpeg_meta(self) -> "FFMpegMeta":
         """
         Return the associated FFMpegMeta instance for this video, initializing video specs if necessary.
-        
+
         Returns:
             FFMpegMeta: The FFMpegMeta object containing metadata for this video.
         """
         from endoreg_db.models import FFMpegMeta
+
         if self.video_meta is not None:
             if self.video_meta.ffmpeg_meta is not None:
                 return self.video_meta.ffmpeg_meta
@@ -208,8 +238,8 @@ class VideoFile(models.Model):
             assert isinstance(ffmpeg_meta, FFMpegMeta), "Expected FFMpegMeta instance."
             return ffmpeg_meta
 
-
         # Exception message constants
+
     NO_ACTIVE_FILE = "Has no raw file"
     NO_FILE_ASSOCIATED = "Active file has no associated file."
 
@@ -227,7 +257,7 @@ class VideoFile(models.Model):
         assert _file is not None, self.NO_ACTIVE_FILE
         if not _file or not _file.name:
             raise ValueError(self.NO_FILE_ASSOCIATED)
-        return _file.url        
+        return _file.url
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -255,35 +285,39 @@ class VideoFile(models.Model):
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
 
-
-
     # Define new methods that call the helper functions
-    def extract_specific_frame_range(self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs) -> bool:
+    def extract_specific_frame_range(
+        self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs
+    ) -> bool:
         """
         Extract frames from the video within the specified frame range.
-        
+
         Parameters:
             start_frame (int): The starting frame number (inclusive).
             end_frame (int): The ending frame number (exclusive).
             overwrite (bool): Whether to overwrite existing frames in the range.
-        
+
         Returns:
             bool: True if frame extraction was successful, False otherwise.
-        
+
         Additional keyword arguments:
             quality (int, optional): Quality setting for extracted frames.
             ext (str, optional): File extension for extracted frames.
             verbose (bool, optional): Whether to enable verbose output.
         """
-        quality = kwargs.get('quality', 2)
-        ext = kwargs.get('ext', "jpg")
-        verbose = kwargs.get('verbose', False)
+        quality = kwargs.get("quality", 2)
+        ext = kwargs.get("ext", "jpg")
+        verbose = kwargs.get("verbose", False)
 
         # Log if unexpected kwargs are passed, beyond those used by the helper
-        expected_helper_kwargs = {'quality', 'ext', 'verbose'}
-        unexpected_kwargs = {k: v for k, v in kwargs.items() if k not in expected_helper_kwargs}
+        expected_helper_kwargs = {"quality", "ext", "verbose"}
+        unexpected_kwargs = {
+            k: v for k, v in kwargs.items() if k not in expected_helper_kwargs
+        }
         if unexpected_kwargs:
-            logger.warning(f"Unexpected keyword arguments for extract_specific_frame_range, will be ignored by helper: {unexpected_kwargs}")
+            logger.warning(
+                f"Unexpected keyword arguments for extract_specific_frame_range, will be ignored by helper: {unexpected_kwargs}"
+            )
 
         return _extract_frame_range_helper(
             video=self,
@@ -292,7 +326,7 @@ class VideoFile(models.Model):
             quality=quality,
             overwrite=overwrite,
             ext=ext,
-            verbose=verbose
+            verbose=verbose,
         )
 
     def delete_specific_frame_range(self, start_frame: int, end_frame: int) -> None:
@@ -300,9 +334,7 @@ class VideoFile(models.Model):
         Deletes frame files for a specific range [start_frame, end_frame).
         """
         _delete_frame_range_helper(
-            video=self,
-            start_frame=start_frame,
-            end_frame=end_frame
+            video=self, start_frame=start_frame, end_frame=end_frame
         )
 
     delete_with_file = _delete_with_file
@@ -320,8 +352,6 @@ class VideoFile(models.Model):
 
     predict_video = _predict_video_pipeline
     extract_text_from_frames = _extract_text_from_video_frames
-    
-
 
     @classmethod
     def check_hash_exists(cls, video_hash: str) -> bool:
@@ -340,16 +370,15 @@ class VideoFile(models.Model):
         Return True if a raw video file is associated with this instance.
         """
         return bool(self.raw_file and self.raw_file.name)
-    
 
     @property
     def active_file(self) -> FieldFile:
         """
         Return the active video file, preferring the processed file if available.
-        
+
         Returns:
             File: The processed file if present; otherwise, the raw file.
-        
+
         Raises:
             ValueError: If neither a processed nor a raw file is available.
         """
@@ -361,17 +390,18 @@ class VideoFile(models.Model):
         if isinstance(raw, FieldFile) and raw.name:
             return raw
 
-        raise ValueError("No active file available. VideoFile has neither raw nor processed file.")
-        
+        raise ValueError(
+            "No active file available. VideoFile has neither raw nor processed file."
+        )
 
     @property
     def active_file_path(self) -> Path:
         """
         Return the filesystem path of the active video file.
-        
+
         Returns:
             Path: The path to the processed file if available, otherwise the raw file.
-        
+
         Raises:
             ValueError: If neither a processed nor raw file is present.
         """
@@ -381,15 +411,18 @@ class VideoFile(models.Model):
         elif active is self.raw_file:
             path = _get_raw_file_path(self)
         else:
-            raise ValueError("No active file path available. VideoFile has neither raw nor processed file.")
+            raise ValueError(
+                "No active file path available. VideoFile has neither raw nor processed file."
+            )
 
         if path is None:
             raise ValueError("Active file path could not be resolved.")
         return path
 
-
     @classmethod
-    def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
+    def create_from_file(
+        cls, file_path: Union[str, Path], center_name: str, **kwargs
+    ) -> Optional["VideoFile"]:
         # Ensure file_path is a Path object
         if isinstance(file_path, str):
             file_path = Path(file_path)
@@ -398,7 +431,9 @@ class VideoFile(models.Model):
             try:
                 center_name = os.environ["CENTER_NAME"]
             except KeyError:
-                logger.error("Center name must be provided to create VideoFile from file. You can set CENTER_NAME in environment variables.")
+                logger.error(
+                    "Center name must be provided to create VideoFile from file. You can set CENTER_NAME in environment variables."
+                )
                 return None
         return _create_from_file(cls, file_path, center_name=center_name, **kwargs)
 
@@ -406,10 +441,10 @@ class VideoFile(models.Model):
     def create_from_file_initialized(
         cls,
         file_path: Union[str, Path],
-        center_name:str,
+        center_name: str,
         processor_name: Optional[str] = None,
-        delete_source:bool = False, 
-        save_video_file:bool = True, # Add this line
+        delete_source: bool = False,
+        save_video_file: bool = True,  # Add this line
     ):
         """
         Creates a VideoFile instance from a given video file path.
@@ -427,16 +462,16 @@ class VideoFile(models.Model):
             center_name=center_name,
             processor_name=processor_name,
             delete_source=delete_source,
-            save=save_video_file, # Add this line
+            save=save_video_file,  # Add this line
         )
 
         video_file = video_file.initialize()
         return video_file
-    
+
     def delete(self, using=None, keep_parents=False) -> tuple[int, dict[str, int]]:
         """
         Delete the VideoFile instance, including associated files and frames.
-        
+
         Overrides the default delete method to ensure proper cleanup of related resources.
         """
         # Ensure frames are deleted before the main instance
@@ -449,17 +484,18 @@ class VideoFile(models.Model):
         # Delete associated files if they exist
         if active_path.exists():
             active_path.unlink(missing_ok=True)
-        
-        
+
         # Delete file storage
         if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
             self.raw_file.storage.delete(self.raw_file.name)
-        if self.processed_file and self.processed_file.storage.exists(self.processed_file.name):
+        if self.processed_file and self.processed_file.storage.exists(
+            self.processed_file.name
+        ):
             self.processed_file.storage.delete(self.processed_file.name)
-        
+
         # Use proper database connection
         if using is None:
-            using = 'default'
+            using = "default"
 
         raw_file_path = self.get_raw_file_path()
         if raw_file_path:
@@ -471,7 +507,7 @@ class VideoFile(models.Model):
                     logger.info(f"Removed processing lock: {lock_path}")
                 except Exception as e:
                     logger.warning(f"Could not remove processing lock {lock_path}: {e}")
-                
+
         try:
             # Call parent delete with proper parameters
             result = super().delete(using=using, keep_parents=keep_parents)
@@ -481,41 +517,58 @@ class VideoFile(models.Model):
             logger.error(f"Error deleting VideoFile {self.uuid}: {e}")
             raise
 
-    def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
+    def validate_metadata_annotation(
+        self, extracted_data_dict: Optional[dict] = None
+    ) -> bool:
         """
         Validate the metadata of the VideoFile instance.
-        
+
         Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
         It also ensures the video file is properly saved after the metadata update.
         """
+        from datetime import date as dt_date
+
         from endoreg_db.models import SensitiveMeta
+
         if not self.sensitive_meta:
-            self.sensitive_meta = SensitiveMeta.objects.create(center=self.center)
-        
+            # CRITICAL FIX: Use create_from_dict with default patient data
+            default_data = {
+                "patient_first_name": "Patient",
+                "patient_last_name": "Unknown",
+                "patient_dob": dt_date(1990, 1, 1),
+                "examination_date": dt_date.today(),
+                "center": self.center,
+            }
+            self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
+
         # Delete the active file to ensure it is reprocessed with the new metadata
         if self.active_file_path.exists():
             self.active_file_path.unlink(missing_ok=True)
-        
+
         # Update sensitive metadata with user annotations
-        sensitive_meta = _update_text_metadata(self, extracted_data_dict, overwrite=True)
-        
+        sensitive_meta = _update_text_metadata(
+            self, extracted_data_dict, overwrite=True
+        )
+
         if sensitive_meta:
             # Mark as processed after validation
             self.get_or_create_state().mark_sensitive_meta_processed(save=True)
             # Save the VideoFile instance to persist changes
             self.save()
-            logger.info(f"Metadata annotation validated and saved for video {self.uuid}.")
+            logger.info(
+                f"Metadata annotation validated and saved for video {self.uuid}."
+            )
             return True
         else:
-            logger.error(f"Failed to validate metadata annotation for video {self.uuid}.")
+            logger.error(
+                f"Failed to validate metadata annotation for video {self.uuid}."
+            )
             return False
-        
-        
-    
+
     def initialize(self):
         """
         Initialize the VideoFile instance by updating metadata, setting up video specs, assigning frame directory, ensuring related state and sensitive metadata exist, saving the instance, and initializing frames.
-        
+
         Returns:
             VideoFile: The initialized VideoFile instance.
         """
@@ -535,7 +588,6 @@ class VideoFile(models.Model):
         # Initialize frames based on the video specs
         self.initialize_frames()
 
-
         return self
 
     def __str__(self):
@@ -544,7 +596,9 @@ class VideoFile(models.Model):
         """
         active_path = self.active_file_path
         file_name = active_path.name if active_path else "No file"
-        state = "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
+        state = (
+            "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
+        )
         return f"VideoFile ({state}): {file_name} (UUID: {self.uuid})"
 
     # --- Convenience state/meta helpers used in tests and admin workflows ---
@@ -573,7 +627,7 @@ class VideoFile(models.Model):
         # Now call the original save method
         """
         Saves the VideoFile instance to the database.
-        
+
         Overrides the default save method to persist changes to the VideoFile model.
         """
         super().save(*args, **kwargs)
@@ -605,23 +659,71 @@ class VideoFile(models.Model):
     def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
         """
         Retrieve the associated SensitiveMeta instance for this video, creating and assigning one if it does not exist.
-        
+
+        **Two-Phase Patient Data Pattern:**
+        This method implements a two-phase approach to handle incomplete patient data:
+
+        **Phase 1: Initial Creation (with defaults)**
+        - Creates SensitiveMeta with default patient data to prevent hash calculation errors
+        - Default values: patient_first_name="Patient", patient_last_name="Unknown", patient_dob=1990-01-01
+        - Allows video import to proceed even without extracted patient data
+        - Temporary hash and pseudo-entities are created
+
+        **Phase 2: Update (with extracted data)**
+        - Real patient data is extracted later (e.g., from video OCR via lx_anonymizer)
+        - update_from_dict() is called with actual patient information
+        - Hash is recalculated automatically using real data
+        - Correct pseudo-entities are created/linked based on new hash
+
+        **Example workflow:**
+        ```python
+        # Phase 1: Video creation
+        video = VideoFile.create_from_file_initialized(...)
+        video.initialize()  # Calls this method
+        # → SensitiveMeta created with defaults
+        # → Hash: sha256("Patient Unknown 1990-01-01...")
+
+        # Phase 2: Frame cleaning extracts real data
+        extracted = {"patient_first_name": "Max", "patient_last_name": "Mustermann", ...}
+        video.sensitive_meta.update_from_dict(extracted)
+        # → Hash: sha256("Max Mustermann 1985-03-15...") (RECALCULATED)
+        ```
+
         Returns:
             SensitiveMeta: The related SensitiveMeta instance.
+
+        See Also:
+            - sensitive_meta_logic.perform_save_logic() for hash calculation details
+            - sensitive_meta_logic.update_sensitive_meta_from_dict() for update mechanism
         """
+        from datetime import date as dt_date
+
         from endoreg_db.models import SensitiveMeta
+
         if self.sensitive_meta is None:
-            self.sensitive_meta = SensitiveMeta.objects.create(center = self.center)
-            # Do not mark processed here; it will be set after extraction/validation steps
+            # Use create_from_dict with default patient data
+            # to prevent "First name is required to calculate patient hash" error
+            default_data = {
+                "patient_first_name": "Patient",
+                "patient_last_name": "Unknown",
+                "patient_dob": dt_date(1990, 1, 1),
+                "examination_date": dt_date.today(),
+                "center": self.center,
+            }
+            self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
+            self.save(update_fields=["sensitive_meta"])
+            # Do not mark state as processed here; it will be set after extraction/validation steps
         return self.sensitive_meta
 
-    def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
+    def get_outside_segments(
+        self, only_validated: bool = False
+    ) -> models.QuerySet["LabelVideoSegment"]:
         """
         Return all video segments labeled as "outside" for this video.
-        
+
         Parameters:
             only_validated (bool): If True, only segments with a validated state are included.
-        
+
         Returns:
             QuerySet: A queryset of LabelVideoSegment instances labeled as "outside". Returns an empty queryset if the label does not exist or an error occurs.
         """
@@ -638,43 +740,48 @@ class VideoFile(models.Model):
             logger.warning("Outside label not found in the database.")
             return self.label_video_segments.none()
         except Exception as e:
-            logger.error("Error getting outside segments for video %s: %s", self.uuid, e, exc_info=True)
+            logger.error(
+                "Error getting outside segments for video %s: %s",
+                self.uuid,
+                e,
+                exc_info=True,
+            )
             return self.label_video_segments.none()
-    
+
     @classmethod
     def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
         """
         Returns a queryset containing all VideoFile records.
-        
+
         This class method retrieves every VideoFile instance in the database without filtering.
         """
         return cast(models.QuerySet["VideoFile"], cls.objects.all())
-        
+
     def count_unmodified_others(self) -> int:
         """
         Count the number of other VideoFile instances that have not been modified since creation.
-        
+
         Returns:
             int: The count of VideoFile records, excluding this instance, where the modification timestamp matches the creation timestamp.
         """
         return (
-            VideoFile.objects
-            .filter(date_modified=F('date_created'))  # compare the two fields in SQL
-            .exclude(pk=self.pk)                      # exclude this instance
-            .count()                                  # run a fast COUNT(*) on the filtered set
+            VideoFile.objects.filter(
+                date_modified=F("date_created")
+            )  # compare the two fields in SQL
+            .exclude(pk=self.pk)  # exclude this instance
+            .count()  # run a fast COUNT(*) on the filtered set
         )
-
 
     def frame_number_to_s(self, frame_number: int) -> float:
         """
         Convert a frame number to its corresponding time in seconds based on the video's frames per second (FPS).
-        
+
         Parameters:
             frame_number (int): The frame number to convert.
-        
+
         Returns:
             float: The time in seconds corresponding to the given frame number.
-        
+
         Raises:
             ValueError: If the video's FPS is not set or is less than or equal to zero.
         """
@@ -682,17 +789,17 @@ class VideoFile(models.Model):
         if fps is None or fps <= 0:
             raise ValueError("FPS must be set and greater than zero.")
         return frame_number / fps
-    
+
     def get_video_by_id(self, video_id: int) -> "VideoFile":
         """
         Retrieve a VideoFile instance by its primary key (ID).
-        
+
         Parameters:
             video_id (int): The primary key of the VideoFile to retrieve.
-        
+
         Returns:
             VideoFile: The VideoFile instance with the specified ID.
-        
+
         Raises:
             VideoFile.DoesNotExist: If no VideoFile with the given ID exists.
         """

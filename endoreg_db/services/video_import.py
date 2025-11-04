@@ -409,8 +409,7 @@ class VideoImportService:
         # Initialize video specifications
         video.initialize_video_specs()
 
-        # Initialize frame objects in database
-        video.initialize_frames()
+
 
         # Extract frames BEFORE processing to prevent pipeline 1 conflicts
         self.logger.info("Pre-extracting frames to avoid pipeline conflicts...")
@@ -419,6 +418,8 @@ class VideoImportService:
             if frames_extracted:
                 self.processing_context["frames_extracted"] = True
                 self.logger.info("Frame extraction completed successfully")
+                        # Initialize frame objects in database
+                video.initialize_frames(video.get_frame_paths())
 
                 # CRITICAL: Immediately save the frames_extracted state to database
                 # to prevent refresh_from_db() in pipeline 1 from overriding it
