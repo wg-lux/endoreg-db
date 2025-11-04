@@ -450,6 +450,7 @@ class VideoFile(models.Model):
         if active_path.exists():
             active_path.unlink(missing_ok=True)
         
+        
         # Delete file storage
         if self.raw_file and self.raw_file.storage.exists(self.raw_file.name):
             self.raw_file.storage.delete(self.raw_file.name)
