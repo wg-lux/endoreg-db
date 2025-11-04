@@ -765,17 +765,37 @@ def update_sensitive_meta_from_dict(
         k: v for k, v in data.items() if k in field_names and k not in excluded_fields
     }
 
-    # Handle potential Center update
+    # Handle potential Center update - accept both center_name (string) and center (object)
+    from ..administration import Center
+
+    center = data.get("center")  # First try direct Center object
     center_name = data.get("center_name")
-    if center_name:
+
+    if center is not None:
+        # Center object provided directly - validate and update
+        if isinstance(center, Center):
+            instance.center = center
+            logger.debug(f"Updated center from Center object: {center.name}")
+        else:
+            logger.warning(
+                f"Invalid center type {type(center)}, expected Center instance. Ignoring."
+            )
+        # Remove from selected_data to prevent override
+        selected_data.pop("center", None)
+    elif center_name:
+        # center_name string provided - resolve to Center object
         try:
-            center = Center.objects.get(name=center_name)
-            instance.center = center  # Update center directly
+            center_obj = Center.objects.get(name=center_name)
+            instance.center = center_obj
+            logger.debug(f"Updated center from center_name string: {center_name}")
         except Center.DoesNotExist:
             logger.warning(
                 f"Center '{center_name}' not found during update. Keeping existing center."
             )
-            selected_data.pop("center", None)  # Remove from dict if not found
+    else:
+        # Both are None/missing - remove 'center' from selected_data to preserve existing value
+        selected_data.pop("center", None)
+    # If both are None/missing, keep existing center (no update needed)
 
     # Set examiner names if provided, before calling save
     examiner_first_name = data.get("examiner_first_name")
@@ -858,6 +878,11 @@ def update_sensitive_meta_from_dict(
     # Update other attributes from selected_data
     patient_name_changed = False
     for k, v in selected_data.items():
+        # Skip None values to avoid overwriting existing data
+        if v is None:
+            logger.debug(f"Skipping field '{k}' during update because value is None")
+            continue
+
         # Avoid overwriting examiner names if they were just explicitly set
         if (
             k not in ["examiner_first_name", "examiner_last_name"]
