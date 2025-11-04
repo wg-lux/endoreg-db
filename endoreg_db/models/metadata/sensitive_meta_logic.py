@@ -215,7 +215,7 @@ def create_pseudo_examiner_logic(instance: "SensitiveMeta") -> "Examiner":
         )
         # Ensure default center exists or handle appropriately
         try:
-            default_center = Center.objects.get_by_natural_key("endoreg_db_demo")
+            default_center = Center.objects.get(name="endoreg_db_demo")
         except Center.DoesNotExist:
             logger.error(
                 "Default center 'endoreg_db_demo' not found. Cannot create default examiner."
@@ -448,7 +448,50 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 def create_sensitive_meta_from_dict(
     cls: Type["SensitiveMeta"], data: Dict[str, Any]
 ) -> "SensitiveMeta":
-    """Logic to create a SensitiveMeta instance from a dictionary."""
+    """
+    Create a SensitiveMeta instance from a dictionary.
+
+    **Center handling:**
+    This function accepts TWO ways to specify the center:
+    1. `center` (Center object) - Directly pass a Center instance
+    2. `center_name` (string) - Pass the center name as a string (will be resolved to Center object)
+
+    At least ONE of these must be provided.
+
+    **Example usage:**
+    ```python
+    # Option 1: With Center object
+    data = {
+        "patient_first_name": "Patient",
+        "patient_last_name": "Unknown",
+        "patient_dob": date(1990, 1, 1),
+        "examination_date": date.today(),
+        "center": center_obj,  # ← Center object
+    }
+    sm = SensitiveMeta.create_from_dict(data)
+
+    # Option 2: With center name string
+    data = {
+        "patient_first_name": "Patient",
+        "patient_last_name": "Unknown",
+        "patient_dob": date(1990, 1, 1),
+        "examination_date": date.today(),
+        "center_name": "university_hospital_wuerzburg",  # ← String
+    }
+    sm = SensitiveMeta.create_from_dict(data)
+    ```
+
+    Args:
+        cls: The SensitiveMeta class
+        data: Dictionary containing field values
+
+    Returns:
+        SensitiveMeta: The created instance
+
+    Raises:
+        ValueError: If neither center nor center_name is provided
+        ValueError: If center_name does not match any Center in database
+    """
 
     field_names = {
         f.name
@@ -585,15 +628,29 @@ def create_sensitive_meta_from_dict(
                 )
                 selected_data.pop("examination_date", None)
 
-    # Handle Center
+    # Handle Center - accept both center_name (string) and center (object)
+    from ..administration import Center
+
+    center = data.get("center")  # First try direct Center object
     center_name = data.get("center_name")
-    if not center_name:
-        raise ValueError("center_name is required in data dictionary.")
-    try:
-        center = Center.objects.get_by_natural_key(center_name)
+
+    if center is not None:
+        # Center object provided directly - validate it's a Center instance
+        if not isinstance(center, Center):
+            raise ValueError(f"'center' must be a Center instance, got {type(center)}")
         selected_data["center"] = center
-    except Center.DoesNotExist as exc:
-        raise ValueError(f"Center with name '{center_name}' does not exist.") from exc
+    elif center_name:
+        # center_name string provided - resolve to Center object
+        try:
+            center = Center.objects.get(name=center_name)
+            selected_data["center"] = center
+        except Center.DoesNotExist:
+            raise ValueError(f"Center with name '{center_name}' does not exist.")
+    else:
+        # Neither center nor center_name provided
+        raise ValueError(
+            "Either 'center' (Center object) or 'center_name' (string) is required in data dictionary."
+        )
 
     # Handle Names and Gender
     first_name = selected_data.get("patient_first_name") or DEFAULT_UNKNOWN_NAME
@@ -712,9 +769,9 @@ def update_sensitive_meta_from_dict(
     center_name = data.get("center_name")
     if center_name:
         try:
-            center = Center.objects.get_by_natural_key(center_name)
+            center = Center.objects.get(name=center_name)
             instance.center = center  # Update center directly
-        except Center.DoesNotExist as exc:
+        except Center.DoesNotExist:
             logger.warning(
                 f"Center '{center_name}' not found during update. Keeping existing center."
             )
