@@ -523,8 +523,13 @@ class VideoFile(models.Model):
         """
         Validate the metadata of the VideoFile instance.
 
-        Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
-        It also ensures the video file is properly saved after the metadata update.
+        Called after annotation in the frontend, this method:
+        1. Updates sensitive metadata with user-annotated data
+        2. Deletes the RAW video file (keeping only the anonymized version)
+        3. Marks the video as validated
+
+        **IMPORTANT:** Only the raw video is deleted. The processed (anonymized)
+        video is preserved as the final validated output.
         """
         from datetime import date as dt_date
 
@@ -541,9 +546,22 @@ class VideoFile(models.Model):
             }
             self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
 
-        # Delete the active file to ensure it is reprocessed with the new metadata
-        if self.active_file_path.exists():
-            self.active_file_path.unlink(missing_ok=True)
+        # CRITICAL FIX: Delete RAW video file, not the processed (anonymized) one
+        # After validation, only the anonymized video should remain
+        from .video_file_io import _get_raw_file_path
+
+        raw_path = _get_raw_file_path(self)
+        if raw_path and raw_path.exists():
+            logger.info(f"Deleting raw video file after validation: {raw_path}")
+            raw_path.unlink(missing_ok=True)
+            # Clear the raw_file field in database (use delete() to avoid save issues)
+            if self.raw_file:
+                self.raw_file.delete(save=False)
+            logger.info(
+                f"Raw video deleted for {self.uuid}. Anonymized video preserved."
+            )
+        else:
+            logger.warning(f"Raw video file not found for deletion: {self.uuid}")
 
         # Update sensitive metadata with user annotations
         sensitive_meta = _update_text_metadata(
