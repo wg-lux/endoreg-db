@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import uuid
 from typing import TYPE_CHECKING, Optional, Union, cast
+import os
 
 from django.db import models
 from django.core.files import File
@@ -208,46 +209,25 @@ class VideoFile(models.Model):
             return ffmpeg_meta
 
 
-    @property
-    def active_file_url(self) -> str:
-        """
-        Return the URL of the active processed file.
-        
-        Returns:
-            str: The URL of the active video file.
-        
-        Raises:
-            Value Error if no active VideoFile is available.
-        """
-        active = self.active_file
-        if not isinstance(active, FieldFile):
-            raise ValueError("Active file is not a stored FieldFile instance.")
-        if not active.name:
-            raise ValueError("Active file has no associated name.")
-        return active.url
-    
-    @property
-    def active_raw_file(self) -> FieldFile:
-        raw = self.raw_file
-        if isinstance(raw, FieldFile) and raw.name:
-            return raw
-        raise ValueError("No raw file available for this video")
-        
-    @property
-    def active_raw_file_url(self)-> str:
-        """
-        Return the path of the URL of the active raw file for name reading.
+        # Exception message constants
+    NO_ACTIVE_FILE = "Has no raw file"
+    NO_FILE_ASSOCIATED = "Active file has no associated file."
 
-        Raises:
-        ValueError("Active file has no associated file")
-        
-        Returns:
-        """
-        raw = self.active_raw_file
-        if not raw.name:
-            raise ValueError("Active raw file has no associated name.")
-        return raw.url
-        
+    @property
+    def active_raw_file(self) -> File:
+        """Return the raw file if available, otherwise raise ValueError."""
+        if self.has_raw:
+            return self.raw_file
+        raise ValueError(self.NO_ACTIVE_FILE)
+
+    @property
+    def active_raw_file_url(self) -> str:
+        """Return the URL of the active raw file, or raise ValueError if unavailable."""
+        _file = self.active_raw_file
+        assert _file is not None, self.NO_ACTIVE_FILE
+        if not _file or not _file.name:
+            raise ValueError(self.NO_FILE_ASSOCIATED)
+        return _file.url        
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -414,6 +394,12 @@ class VideoFile(models.Model):
         if isinstance(file_path, str):
             file_path = Path(file_path)
         # Pass center_name and other kwargs to the helper function
+        if not center_name:
+            try:
+                center_name = os.environ["CENTER_NAME"]
+            except KeyError:
+                logger.error("Center name must be provided to create VideoFile from file. You can set CENTER_NAME in environment variables.")
+                return None
         return _create_from_file(cls, file_path, center_name=center_name, **kwargs)
 
     @classmethod

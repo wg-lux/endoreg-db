@@ -11,23 +11,26 @@ Changelog:
 
 from datetime import date
 import logging
-import sys
 import os
+import random
 import shutil
+import sys
 import time
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
-from typing import Union, Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from django.db import transaction
+from django.db.models.fields.files import FieldFile
 from lx_anonymizer import FrameCleaner
 from moviepy import video
-from endoreg_db.models import VideoFile, SensitiveMeta
-from endoreg_db.utils.paths import STORAGE_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
-import random
+
+from endoreg_db.models import EndoscopyProcessor, SensitiveMeta, VideoFile
+from endoreg_db.models.media.video.video_file_anonymize import \
+    _cleanup_raw_assets
 from endoreg_db.utils.hashs import get_video_hash
-from endoreg_db.models.media.video.video_file_anonymize import _cleanup_raw_assets
-from django.db.models.fields.files import FieldFile
-from endoreg_db.models import EndoscopyProcessor
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, VIDEO_DIR
 
 # File lock configuration (matches PDF import)
 STALE_LOCK_SECONDS = 6000  # 100 minutes - reclaim locks older than this
@@ -895,20 +898,30 @@ class VideoImportService:
 
         sm = sensitive_meta
         updated_fields = []
-
+        
+        # Ensure center is set from video.center if not in extracted_metadata
+        metadata_to_update = extracted_metadata.copy()
+        if 'center_name' not in metadata_to_update and video.center:
+            metadata_to_update['center_name'] = video.center.name
+            self.logger.debug("Added center_name '%s' to metadata for SensitiveMeta update", video.center.name)
+        
         try:
-            sm.update_from_dict(extracted_metadata)
-            updated_fields = list(extracted_metadata.keys())
+            sm.update_from_dict(metadata_to_update)
+            updated_fields = list(extracted_metadata.keys())  # Only log originally extracted fields
         except KeyError as e:
             self.logger.warning(f"Failed to update SensitiveMeta field {e}")
 
         if updated_fields:
-            sm.save(update_fields=updated_fields)
-            self.logger.info("Updated SensitiveMeta fields for video %s: %s", video.uuid, updated_fields)
+            try:
+                sm.save()  # Remove update_fields to allow all necessary fields to be saved
+                self.logger.info("Updated SensitiveMeta fields for video %s: %s", video.uuid, updated_fields)
 
-            state = video.get_or_create_state()
-            state.mark_sensitive_meta_processed(save=True)
-            self.logger.info("Marked sensitive metadata as processed for video %s", video.uuid)
+                state = video.get_or_create_state()
+                state.mark_sensitive_meta_processed(save=True)
+                self.logger.info("Marked sensitive metadata as processed for video %s", video.uuid)
+            except Exception as e:
+                self.logger.error(f"Failed to save SensitiveMeta: {e}")
+                raise  # Re-raise to trigger fallback in calling method
         else:
             self.logger.info("No SensitiveMeta fields updated for video %s - all existing values preserved", video.uuid)
 
