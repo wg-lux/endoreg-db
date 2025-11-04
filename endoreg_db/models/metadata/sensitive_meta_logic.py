@@ -160,6 +160,9 @@ def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -
     if not center:
         raise ValueError("Center is required to calculate patient hash.")
 
+    assert first_name is not None, "First name is required to calculate patient hash."
+    assert last_name is not None, "Last name is required to calculate patient hash."
+    
     hash_str = get_patient_hash(
         first_name=first_name,
         last_name=last_name,

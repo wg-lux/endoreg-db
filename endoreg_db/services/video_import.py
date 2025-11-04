@@ -901,15 +901,31 @@ class VideoImportService:
         
         # Ensure center is set from video.center if not in extracted_metadata
         metadata_to_update = extracted_metadata.copy()
-        if 'center_name' not in metadata_to_update and video.center:
-            metadata_to_update['center_name'] = video.center.name
-            self.logger.debug("Added center_name '%s' to metadata for SensitiveMeta update", video.center.name)
+        
+        # FIX: Set center object instead of center_name string
+        if not hasattr(sm, 'center') or not sm.center:
+            if video.center:
+                metadata_to_update['center'] = video.center
+                self.logger.debug("Added center object '%s' to metadata for SensitiveMeta update", video.center.name)
+            else:
+                center_name = metadata_to_update.get('center_name')
+                if center_name:
+                    try:
+                        from ..models.administration import Center
+                        center_obj = Center.objects.get(name=center_name)
+                        metadata_to_update['center'] = center_obj
+                        self.logger.debug("Loaded center object '%s' from center_name", center_name)
+                        metadata_to_update.pop('center_name', None)
+                    except Center.DoesNotExist:
+                        self.logger.error("Center '%s' not found in database", center_name)
+                        return
         
         try:
             sm.update_from_dict(metadata_to_update)
             updated_fields = list(extracted_metadata.keys())  # Only log originally extracted fields
         except KeyError as e:
             self.logger.warning(f"Failed to update SensitiveMeta field {e}")
+            return
 
         if updated_fields:
             try:
