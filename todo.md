@@ -1,6 +1,11 @@
 # To-Do
 
 ## RequirementSet based Generator
+- [x] Draft recursive RequirementSet planner (`RequirementPlan`/`RequirementSetPlan`) and pretty-printer in `scripts/case_generator/prototype.py` for exploratory runs.
+- [ ] Flesh out artefact builders for lab values, medications, events, examinations, and findings leveraging existing factories under `endoreg_db/factories/`.
+- [ ] Implement `generate_patient_for_requirement_set` orchestrator that applies artefact builders, re-evaluates requirements, and honors RequirementSet type semantics.
+- [ ] Add validation/reporting hooks (vacuous success detection, retry diagnostics) plus optional dry-run mode.
+- [ ] Create pytest coverage in `tests/case_generator/test_requirement_generator.py` for representative sets (lab baseline, high bleed risk, timeframe operators, exactly/at least/at most variants).
 
 
 # For Later
