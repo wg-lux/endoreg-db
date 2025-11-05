@@ -1,5 +1,9 @@
-# Test suite standardization and efficiency
+# To-Do
 
+## RequirementSet based Generator
+
+
+# For Later
 ## Test Suite Standardization & Caching Plan
 1. Catalogue the current pytest suite structure (module layout, shared fixtures, caching usage) and record pain points from full-suite runs.
 *Result (Main messages):* documented in `docs/test_suite_review.md` — sprawling module layout, ad-hoc global caches lacking invalidation, inconsistent `RUN_VIDEO_TESTS` defaults causing flaky behaviour, and redundant fixture setup across domains.

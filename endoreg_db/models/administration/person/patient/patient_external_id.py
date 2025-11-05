@@ -13,7 +13,7 @@ class PatientExternalID(models.Model):
     Attributes:
         external_id (str): The external ID value.
     """
-    patient_id: models.CharField[str] = models.CharField(max_length=255, unique=True)
+    external_id: models.CharField = models.CharField(max_length=255, unique=True)
     patient = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,

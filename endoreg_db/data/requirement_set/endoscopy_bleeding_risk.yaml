@@ -9,8 +9,6 @@
     requirements:
       - "endoscopy_intervention_bleeding_risk_high"
 
-
-
 - models: endoreg_db.requirement_set
   fields:
     name: "endoscopy_bleeding_risk_low"
@@ -23,9 +21,6 @@
       - "endoscopy_intervention_bleeding_risk_low"
     links_to_sets: []
 
-
-
-    
 - models: endoreg_db.requirement_set
   fields:
     name: "patient_medication_indication_anticoagulation"
@@ -37,7 +32,6 @@
       - "indication_non_valvular_af_apixaban_is_defined_in_requirement"
       - "indication_after_hip_apixaban_is_defined_in_requirement"
       - "indication_after_knee_apixaban_is_defined_in_requirement"
-    
 
 - models: endoreg_db.requirement_set
   fields:

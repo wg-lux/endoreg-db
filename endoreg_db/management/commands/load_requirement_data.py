@@ -48,6 +48,26 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     RequirementSet.__name__,
 ]
 
+def _validate_requirement_configuration(fields: dict, *, entry: dict, model):
+    """Ensures requirement fixtures declare both requirement_types and operators."""
+    name = fields.get("name") or entry.get("pk") or "<unnamed>"
+
+    def _values_missing(key: str) -> bool:
+        value = fields.get(key)
+        if not isinstance(value, list):
+            return True
+        if not value:
+            return True
+        return any(not item for item in value)
+
+    missing = [key for key in ("requirement_types", "operators") if _values_missing(key)]
+    if missing:
+        missing_display = ", ".join(missing)
+        raise ValueError(
+            f"{model.__name__} '{name}' is missing required configuration for: {missing_display}."
+        )
+
+
 IMPORT_METADATA = {
     RequirementType.__name__: {
         "dir": REQUIREMENT_TYPE_DATA_DIR,  # e.g. "interventions"
@@ -117,6 +137,7 @@ IMPORT_METADATA = {
             MedicationIntakeTime,
             Gender
         ],
+        "validators": [_validate_requirement_configuration],
     },
     RequirementSetType.__name__: {
         "dir": REQUIREMENT_SET_TYPE_DATA_DIR,  # e.g. "interventions"

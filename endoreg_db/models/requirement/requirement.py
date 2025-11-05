@@ -371,6 +371,62 @@ class Requirement(models.Model):
         The returned dictionary includes only those related model lists that have at least one linked instance.
         """
         return self.links.active()
+
+    def _parse_string_values(self) -> Dict[str, str]:
+        """Parses the optional ``string_values`` field into a dictionary.
+
+        Values follow a simple ``key=value`` syntax separated by commas. Entries
+        without an equals sign are treated as boolean flags (value ``"true"``).
+        """
+        if not self.string_values:
+            return {}
+
+        parsed: Dict[str, str] = {}
+        for raw_entry in self.string_values.split(","):
+            entry = raw_entry.strip()
+            if not entry:
+                continue
+            if "=" in entry:
+                key, value = entry.split("=", 1)
+                parsed[key.strip()] = value.strip()
+            else:
+                parsed[entry] = "true"
+        return parsed
+
+    def _resolve_queryset_config(self, kwargs: Dict) -> tuple[str, int | None]:
+        """Derives queryset evaluation settings from kwargs or ``string_values``.
+
+        Supported modes:
+            - ``any`` (default): at least one item may satisfy the requirement.
+            - ``all``: every item in the queryset must satisfy the requirement.
+            - ``min_count``/``at_least``/``min``: at least *n* items must satisfy.
+        """
+        settings = self._parse_string_values()
+
+        mode_raw = kwargs.get("queryset_mode") or settings.get("qs_mode") or "any"
+        mode = str(mode_raw).strip().lower()
+        mode_aliases = {
+            "min": "min_count",
+            "at_least": "min_count",
+            "minimum": "min_count",
+        }
+        mode = mode_aliases.get(mode, mode)
+        if mode not in {"any", "all", "min_count"}:
+            mode = "any"
+
+        min_count_raw = kwargs.get("queryset_min_count")
+        if min_count_raw is None:
+            for candidate_key in ("qs_min_count", "qs_min", "qs_count", "qs_required"):
+                if candidate_key in settings:
+                    min_count_raw = settings[candidate_key]
+                    break
+
+        try:
+            min_count = int(min_count_raw) if min_count_raw is not None else None
+        except (TypeError, ValueError):
+            min_count = None
+
+        return mode, min_count
     
     
     def evaluate(self, *args, mode:str, **kwargs):
@@ -399,6 +455,11 @@ class Requirement(models.Model):
 
         requirement_req_links = self.links
         expected_models = self.expected_models
+
+        operators = list(self.operators.all())
+        has_operators = bool(operators)
+        requirement_has_conditions = bool(requirement_req_links.active())
+        queryset_mode, queryset_min_count = self._resolve_queryset_config(kwargs)
 
         # helpers to avoid passing a complex tuple to isinstance/issubclass which confuses type checkers
         def _is_expected_instance(obj) -> bool:
@@ -433,45 +494,71 @@ class Requirement(models.Model):
             if not _is_expected_instance(_input):
                 # Allow QuerySets of expected models
                 if _is_queryset_of_expected(_input):
-                    # For QuerySets, evaluate each item individually and return True if any matches
-                    if not _input.exists(): # Skip empty querysets
+                    if not _input.exists():
+                        # Empty queryset: enforce stricter modes immediately
+                        if queryset_mode == "all":
+                            return False
+                        if queryset_mode == "min_count":
+                            required = queryset_min_count if queryset_min_count is not None else 1
+                            if required > 0:
+                                return False
                         continue
-                    
-                    queryset_results = []
+
+                    queryset_results: List[bool] = []
+                    queryset_true_count = 0
+                    queryset_item_count = 0
+
                     for item in _input:
                         if not hasattr(item, 'links') or not isinstance(item.links, RequirementLinks):
                             raise TypeError(
                                 f"Item {item} of type {type(item)} in QuerySet does not have a valid .links attribute of type RequirementLinks."
                             )
-                        
-                        # Evaluate this single item against the requirement
-                        item_input_links = RequirementLinks(**item.links.active())
-                        
-                        # Evaluate all operators for this single item
-                        item_operator_results = []
-                        for operator in self.operators.all():
-                            try:
-                                operator_result = operator.evaluate(
-                                    requirement_links=requirement_req_links,
-                                    input_links=item_input_links,
-                                    requirement=self,
-                                    original_input_args=args,
-                                    **kwargs
-                                )
-                                item_operator_results.append(operator_result)
-                            except Exception as e:
-                                logger.debug(f"Operator {operator.name} evaluation failed for item {item}: {e}")
-                                item_operator_results.append(False)
-                        
-                        # Apply evaluation mode for this single item
-                        item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+
+                        item_active_links = item.links.active()
+                        item_input_links = RequirementLinks(**item_active_links)
+
+                        for link_key, link_list in item_active_links.items():
+                            if link_key not in aggregated_input_links_data:
+                                aggregated_input_links_data[link_key] = []
+                            aggregated_input_links_data[link_key].extend(link_list)
+
+                        per_item_args = tuple(item if arg is _input else arg for arg in args)
+                        op_kwargs = kwargs.copy()
+                        op_kwargs['requirement'] = self
+                        op_kwargs['original_input_args'] = per_item_args
+
+                        if has_operators:
+                            item_operator_results: List[bool] = []
+                            for operator in operators:
+                                try:
+                                    operator_result = operator.evaluate(
+                                        requirement_links=requirement_req_links,
+                                        input_links=item_input_links,
+                                        **op_kwargs
+                                    )
+                                    item_operator_results.append(operator_result)
+                                except Exception as exc:
+                                    logger.debug(f"Operator {operator.name} evaluation failed for item {item}: {exc}")
+                                    item_operator_results.append(False)
+                            item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+                        else:
+                            item_result = not requirement_has_conditions
+
                         queryset_results.append(item_result)
+                        if item_result:
+                            queryset_true_count += 1
+                        queryset_item_count += 1
                         processed_inputs_count += 1
-                    
-                    # If any item in the QuerySet matches, return True for the whole QuerySet evaluation
-                    if any(queryset_results):
-                        return True
-                    continue # Move to the next arg after processing queryset
+
+                    if queryset_mode == "all":
+                        if queryset_item_count == 0 or not all(queryset_results):
+                            return False
+                    elif queryset_mode == "min_count":
+                        required = queryset_min_count if queryset_min_count is not None else 1
+                        if queryset_true_count < max(required, 0):
+                            return False
+                    # queryset_mode == "any" imposes no extra constraint here
+                    continue  # Move to the next arg after processing queryset
                 else:
                     raise TypeError(
                         f"Input type {type(_input)} is not among expected models: {self.expected_models} "
@@ -528,17 +615,10 @@ class Requirement(models.Model):
             if not self.genders.filter(pk=patient.gender.pk).exists():
                 return False
 
-        operators = self.operators.all()
-        if not operators.exists(): # If a requirement has no operators, its evaluation is ambiguous.
-            # Consider if this should be True, False, or an error.
-            # For now, if no operators, and mode is strict, it's vacuously true. If loose, vacuously false.
-            # However, typically a requirement implies some condition.
-            # Let's assume if no operators, it cannot be satisfied unless it also has no specific links.
-            # This behavior might need further refinement based on business logic.
-            if not requirement_req_links.active(): # No conditions in requirement
+        if not has_operators: # If a requirement has no operators, its evaluation is ambiguous.
+            if not requirement_has_conditions: # No conditions in requirement
                  return True # Vacuously true if requirement itself is empty
             return False # Cannot be satisfied if requirement has conditions but no operators to check them
-
 
         operator_results = []
         for operator in operators:
@@ -583,6 +663,11 @@ class Requirement(models.Model):
         requirement_req_links = self.links
         expected_models = self.expected_models
 
+        operators = list(self.operators.all())
+        has_operators = bool(operators)
+        requirement_has_conditions = bool(requirement_req_links.active())
+        queryset_mode, queryset_min_count = self._resolve_queryset_config(kwargs)
+
         # helpers to avoid passing a complex tuple to isinstance/issubclass which confuses type checkers
         def _is_expected_instance(obj) -> bool:
             for cls in expected_models:
@@ -616,44 +701,71 @@ class Requirement(models.Model):
             if not _is_expected_instance(_input):
                 # Allow QuerySets of expected models
                 if _is_queryset_of_expected(_input):
-                    # For QuerySets, evaluate each item individually and return True if any matches
-                    if not _input.exists(): # Skip empty querysets
+                    if not _input.exists():
+                        if queryset_mode == "all":
+                            return False, "Queryset mode 'all' requires every item to satisfy the requirement, but the queryset is empty."
+                        if queryset_mode == "min_count":
+                            required = queryset_min_count if queryset_min_count is not None else 1
+                            if required > 0:
+                                return False, f"Queryset mode 'min_count' requires at least {required} matching items, but the queryset is empty."
                         continue
-                    
-                    queryset_results = []
+
+                    queryset_results: List[bool] = []
+                    queryset_true_count = 0
+                    queryset_item_count = 0
+
                     for item in _input:
                         if not hasattr(item, 'links') or not isinstance(item.links, RequirementLinks):
                             raise TypeError(
                                 f"Item {item} of type {type(item)} in QuerySet does not have a valid .links attribute of type RequirementLinks."
                             )
-                        
-                        # Evaluate this single item against the requirement
-                        item_input_links = RequirementLinks(**item.links.active())
-                        
-                        # Evaluate all operators for this single item
-                        item_operator_results = []
-                        for operator in self.operators.all():
-                            try:
-                                operator_result = operator.evaluate(
-                                    requirement_links=requirement_req_links,
-                                    input_links=item_input_links,
-                                    requirement=self,
-                                    original_input_args=args,
-                                    **kwargs
-                                )
-                                item_operator_results.append(operator_result)
-                            except Exception as e:
-                                logger.debug(f"Operator {operator.name} evaluation failed for item {item}: {e}")
-                                item_operator_results.append(False)
-                        
-                        # Apply evaluation mode for this single item
-                        item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+
+                        item_active_links = item.links.active()
+                        item_input_links = RequirementLinks(**item_active_links)
+
+                        for link_key, link_list in item_active_links.items():
+                            if link_key not in aggregated_input_links_data:
+                                aggregated_input_links_data[link_key] = []
+                            aggregated_input_links_data[link_key].extend(link_list)
+
+                        per_item_args = tuple(item if arg is _input else arg for arg in args)
+                        op_kwargs = kwargs.copy()
+                        op_kwargs['requirement'] = self
+                        op_kwargs['original_input_args'] = per_item_args
+
+                        if has_operators:
+                            item_operator_results: List[bool] = []
+                            for operator in operators:
+                                try:
+                                    operator_result = operator.evaluate(
+                                        requirement_links=requirement_req_links,
+                                        input_links=item_input_links,
+                                        **op_kwargs
+                                    )
+                                    item_operator_results.append(operator_result)
+                                except Exception as exc:
+                                    logger.debug(f"Operator {operator.name} evaluation failed for item {item}: {exc}")
+                                    item_operator_results.append(False)
+                            item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+                        else:
+                            item_result = not requirement_has_conditions
+
                         queryset_results.append(item_result)
+                        if item_result:
+                            queryset_true_count += 1
+                        queryset_item_count += 1
                         processed_inputs_count += 1
-                    
-                    # If any item in the QuerySet matches, return True for the whole QuerySet evaluation
-                    if any(queryset_results):
-                        return True
+
+                    if queryset_mode == "all":
+                        if queryset_item_count == 0 or not all(queryset_results):
+                            return False, "Queryset mode 'all' requires every item to satisfy the requirement."
+                    elif queryset_mode == "min_count":
+                        required = queryset_min_count if queryset_min_count is not None else 1
+                        if queryset_true_count < max(required, 0):
+                            return False, (
+                                f"Queryset mode 'min_count' requires at least {max(required, 0)} matching items "
+                                f"(found {queryset_true_count})."
+                            )
                     continue # Move to the next arg after processing queryset
                 else:
                     raise TypeError(
@@ -711,17 +823,10 @@ class Requirement(models.Model):
             if not self.genders.filter(pk=patient.gender.pk).exists():
                 return False
 
-        operators = self.operators.all()
-        if not operators.exists(): # If a requirement has no operators, its evaluation is ambiguous.
-            # Consider if this should be True, False, or an error.
-            # For now, if no operators, and mode is strict, it's vacuously true. If loose, vacuously false.
-            # However, typically a requirement implies some condition.
-            # Let's assume if no operators, it cannot be satisfied unless it also has no specific links.
-            # This behavior might need further refinement based on business logic.
-            if not requirement_req_links.active(): # No conditions in requirement
-                 return True # Vacuously true if requirement itself is empty
-            return False # Cannot be satisfied if requirement has conditions but no operators to check them
-
+        if not has_operators:
+            if not requirement_has_conditions: # No conditions in requirement
+                return True, "Keine Operatoren für die Bewertung verfügbar"
+            return False, "Requirement besitzt Verknüpfungen, aber keinen Operator zur Auswertung"
 
         operator_results = []
         operator_details = []
