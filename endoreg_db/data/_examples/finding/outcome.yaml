@@ -1,0 +1,12 @@
+- model: endoreg_db.finding
+  fields:
+    name: "colonoscopy_austria_screening_outcome"
+    description: "Outcome of colonoscopy Austria screening."
+    examinations:
+      [
+        "colonoscopy_austria_screening",
+      ]
+    finding_types: 
+      [
+        "summary"
+      ]

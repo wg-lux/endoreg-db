@@ -1,0 +1,129 @@
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_normal"
+    name_de: "Laborwert normal"
+    name_en: "Lab value normal"
+    description: "Make sure that the provided numeric lab value is within the normal range. The normal range is defined using the numeric_value_min and numeric_value_max fields. To work, the passed lab value must have a reference value"
+    
+# lab_numeric_increased
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_increased"
+    name_de: "Laborwert erhöht"
+    name_en: "Lab value increased"
+    description: "Make sure that the provided numeric lab value is above the normal range. The normal range is defined using the numeric_value_min and numeric_value_max fields."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_decreased"
+    name_de: "Laborwert verringert"
+    name_en: "Lab value decreased"
+    description: "Make sure that the provided numeric lab value is below the normal range. The normal range is defined using the numeric_value_min and numeric_value_max fields."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_decreased_factor"
+    name_de: "Laborwert um Faktor verringert"
+    name_en: "Lab value decreased by factor"
+    description: "Make sure that the provided numeric lab value is decreased by a factor. The factor is defined using the numeric_value_min field."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_increased_factor"
+    name_de: "Laborwert um Faktor erhöht"
+    name_en: "Lab value increased by factor"
+    description: "Make sure that the provided numeric lab value is increased by a factor. The factor is defined using the numeric_value_min field."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_lower_than_value"
+    name_de: "Laborwert kleiner als Wert"
+    name_en: "Lab value lower than value"
+    description: "Make sure that the provided numeric lab value is lower than the given value. The value is defined using the numeric_value_min field."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_greater_than_value"
+    name_de: "Laborwert größer als Wert"
+    name_en: "Lab value greater than value"
+    description: "Make sure that the provided numeric lab value is greater than the given value. The value is defined using the numeric_value_min field."
+    
+# Timeframe
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_normal_in_timeframe"
+    name_de: "Laborwert normal im angegebenen Zeitraum"
+    name_en: "Lab value normal in the given timeframe"
+    description: "Make sure that the provided numeric lab value is always within the normal range within the given timeframe. The normal range is defined using the numeric_value_min and numeric_value_max fields and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_decreased_factor_in_timeframe"
+    name_de: "Laborwert um Faktor verringert im angegebenen Zeitraum"
+    name_en: "Lab value decreased by factor in the given timeframe"
+    description: "Make sure that the provided numeric lab value is always decreased by a factor within the given timeframe. The factor is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_increased_factor_in_timeframe"
+    name_de: "Laborwert um Faktor erhöht im angegebenen Zeitraum"
+    name_en: "Lab value increased by factor in the given timeframe"
+    description: "Make sure that the provided numeric lab value is always increased by a factor within the given timeframe. The factor is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_lower_than_value_in_timeframe"
+    name_de: "Laborwert kleiner als Wert im angegebenen Zeitraum"
+    name_en: "Lab value lower than value in the given timeframe"
+    description: "Make sure that the provided numeric lab value is lower than the given value within the given timeframe. The value is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_numeric_greater_than_value_in_timeframe"
+    name_de: "Laborwert größer als Wert im angegebenen Zeitraum"
+    name_en: "Lab value greater than value in the given timeframe"
+    description: "Make sure that the provided numeric lab value is greater than the given value within the given timeframe. The value is defined using the numeric_value_min field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_categorical_match"
+    name_de: "Text-basierter Laborwert entspricht exakt"
+    name_en: "Text-based lab value matches exactly"
+    description: "Make sure that the provided categorical lab value matches exactly the given value. The value is defined using the string_value field."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_categorical_match_substring"
+    name_de: "Text-basierter Laborwert enthält Teilstring"
+    name_en: "Text-based lab value contains substring"
+    description: "Make sure that the provided categorical lab value contains the given substring. The substring is defined using the string_value field."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_categorical_match_regex"
+    name_de: "Text-basierter Laborwert entspricht Regex"
+    name_en: "Text-based lab value matches regex"
+    description: "Make sure that the provided categorical lab value matches the given regex. The regex is defined using the string_value field."
+    
+# Timeframe
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_categorical_match_in_timeframe"
+    name_de: "Text-basierter Laborwert entspricht exakt im angegebenen Zeitraum"
+    name_en: "Text-based lab value matches exactly in the given timeframe"
+    description: "Make sure that the provided categorical lab value matches exactly the given value within the given timeframe. The value is defined using the string_value field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_categorical_match_substring_in_timeframe"
+    name_de: "Text-basierter Laborwert enthält Teilstring im angegebenen Zeitraum"
+    name_en: "Text-based lab value contains substring in the given timeframe"
+    description: "Make sure that the provided categorical lab value contains the given substring within the given timeframe. The substring is defined using the string_value field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "lab_latest_categorical_match_regex_in_timeframe"
+    name_de: "Text-basierter Laborwert entspricht Regex im angegebenen Zeitraum"
+    name_en: "Text-based lab value matches regex in the given timeframe"
+    description: "Make sure that the provided categorical lab value matches the given regex within the given timeframe. The regex is defined using the string_value field and the timeframe is defined using numeric_value_min and numeric_value_max and setting the unit to a fitting one (e.g. week)."
+    

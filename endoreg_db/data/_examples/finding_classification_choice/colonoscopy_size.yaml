@@ -1,0 +1,82 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_diminutive"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "Diminutive (< 6 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_small"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "Small (6 - 9 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_medium"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "Medium (10 - 19 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_categorical_large"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "Large (> 19 mm)"
+
+##########
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_oval_mm"
+    name_de: "Formklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Shape Classification (categorical)"
+    description: "oval lesions"
+    numerical_descriptors:
+      largest_diameter_mm:
+        unit: "mm"
+        min: 0
+        max: 35
+        distribution: "normal"
+        mean: 5
+        std: 3
+        description: "Largest diameter of the lesion in mm"
+        required: true
+      perpendicular_diameter_mm:
+        unit: "mm"
+        min: 0
+        max: 35
+        description: "Perpendicular diameter of the lesion in mm"
+        required: false
+
+# Austria Screening Quality Assurance
+# "colon_lesion_size_austria_categorical_0_5",
+# "colon_lesion_size_austria_categorical_6_9",
+# "colon_lesion_size_austria_categorical_10_20",
+# "colon_lesion_size_austria_categorical_21_x"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_austria_categorical_0_5"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "0 - 5 mm"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_austria_categorical_6_9"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "6 - 9 mm"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_austria_categorical_10_20"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "10 - 20 mm"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_size_austria_categorical_21_x"
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    description: "> 20 mm"

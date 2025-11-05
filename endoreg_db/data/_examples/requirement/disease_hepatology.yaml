@@ -1,0 +1,12 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_liver_cirrhosis"
+    name_de: "Erkrankung Leberzirrhose"
+    name_en: "Disease Liver Cirrhosis"
+    description: "Disease Liver Cirrhosis"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "liver_cirrhosis"

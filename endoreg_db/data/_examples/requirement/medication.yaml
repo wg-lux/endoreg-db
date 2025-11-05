@@ -1,0 +1,93 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "medication_aspirin_is_defined_in_requirement"
+    requirement_types: ["medication"]
+    operators: ["models_match_any"]
+    medications: ["aspirin"]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "medication_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication"]
+    operators: ["models_match_any"]
+    medications: ["apixaban"]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_non_valvular_af_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication_indication"]
+    operators: ["models_match_any"]
+    medication_indications: ["te_prevention-non_valvular_af-apixaban"]
+
+# medication indication te_prevention-after_hip-apixaban
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_after_hip_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication_indication"]
+    operators: ["models_match_any"]
+    medication_indications: ["te_prevention-after_hip-apixaban"]
+
+# te_prevention-after_knee-apixaban
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_after_knee_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication_indication"]
+    operators: ["models_match_any"]
+    medication_indications: ["te_prevention-after_knee-apixaban"]
+
+# te_prevention-non_valvular_af-apixaban
+- model: endoreg_db.requirement
+  fields:
+    name: "intake_time_daily_morning_for_non_valvular_af_apixaban_is_defined_in_requirement"
+    requirement_types: ["medication_intake_time"]
+    operators: ["models_match_any"]
+    medication_intake_times: ["daily-morning"]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "intake_time_daily_morning_is_defined_in_requirement"
+    requirement_types: ["medication_intake_time"]
+    operators: ["models_match_any"]
+    medication_intake_times: ["daily-morning"]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "schedule_apixaban_5mg_bid_is_defined_in_requirement"
+    requirement_types: ["medication_schedule"]
+    operators: ["models_match_any"]
+    medication_schedules: ["apixaban-5mg-twice_daily"]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_medication_aspirin"
+    requirement_types: ["patient", "patient_medication", "patient_medication_schedule"]
+    operators: ["models_match_any"]
+    medications: ["aspirin"] # Checks against PatientMedication.medication
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_medication_apixaban_for_non_valvular_af"
+    requirement_types: ["patient", "patient_medication", "patient_medication_schedule"]
+    operators: ["models_match_any"]
+    medications: ["apixaban"]
+    medication_indications: ["te_prevention-non_valvular_af-apixaban"] # Checks against PatientMedication.medication_indication
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_medication_intake_includes_daily_morning"
+    requirement_types: [
+      "patient", 
+      "patient_medication",
+      "patient_medication_schedule" # Added
+    ]
+    operators: ["models_match_any"]
+    # This requirement implies that the operator will look into the
+    # PatientMedication.intake_times M2M field.
+    medication_intake_times: ["daily-morning"]
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_schedule_contains_apixaban_5mg_bid_profile"
+    requirement_types: ["patient", "patient_medication_schedule"]
+    operators: ["patient_medication_schedule_matches_template"] # Changed operator
+    medication_schedules: ["apixaban-5mg-twice_daily"]

@@ -1,0 +1,19 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "outcome_restitutio_ad_integrum"
+    description: "Outcome: Restitutio ad integrum"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "outcome_death"
+    description: "Outcome: Death"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "outcome_unknown"
+    description: "Outcome: Unknown"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "outcome_lasting_disability"
+    description: "Outcome: Lasting disability"

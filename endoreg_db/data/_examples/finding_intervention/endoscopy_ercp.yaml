@@ -1,0 +1,32 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: ercp
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: ercp_sphincterotomy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: ercp_stent
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: ercp_extraction
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: ercp_biopsy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: erc
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: erp
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: ercp_radiofrequency_ablation
+    # ...existing code...

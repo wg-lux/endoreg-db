@@ -1,0 +1,128 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_biopsy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_hp_biopsy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_injection_vasoactive
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_clip
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_over_the_scope_clip
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_varice_band_ligation
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_varice_sclerotherapy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_argon_plasma_coagulation
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_percutaneous_gastroenterostomy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_percutaneous_jejunostomy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_clip
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_varicosis_band_ligation
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_varicosis_sclerotherapy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_injection_vasoactive
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_injection_varicosis
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_polypectomy_cold_snare
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_polypectomy_hot_snare
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_polypectomy_forceps
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_injection_liftup
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_emr
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_esd
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_eftr
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_poem
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stepwise_biopsy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_esophagus_injection_botox
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stenosis_dilation
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stenosis_bougie
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stenosis_balloon
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stenosis_stent
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_radiofrequency_ablation
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_lesion_cryotherapy
+    # ...existing code...
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stenosis_laser
+    # ...existing code...

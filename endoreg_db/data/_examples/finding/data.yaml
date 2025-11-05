@@ -1,0 +1,105 @@
+- model: endoreg_db.finding
+  fields:
+    name: "placeholder"
+    name_de: "Platzhalter"
+    name_en: "Placeholder"
+    description: "This is a placeholder finding."
+
+- model: endoreg_db.finding
+  fields:
+    name: "post-intervention-wound"
+    name_de: "Postinterventionelle Wunde"
+    finding_interventions: ["colon_lesion_clip"]
+    examinations: [
+      "colonoscopy"
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "tumor"
+    name_de: "Tumor"
+    name_en: "Tumor"
+    finding_interventions: []
+    examinations:
+      [
+        "colonoscopy",
+        "endosonography_upper_gi",
+        "endosonography_lower_gi",
+        "ercp",
+        "small_bowel_endoscopy",
+        "capsule_endoscopy",
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "inflammation"
+    name_de: "Entzündung"
+    name_en: "Inflammation"
+    finding_interventions: []
+    examinations:
+      [
+        "colonoscopy",
+        "endosonography_upper_gi",
+        "endosonography_lower_gi",
+        "ercp",
+        "small_bowel_endoscopy",
+        "capsule_endoscopy",
+      ]
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "erosion"
+    name_de: "Erosion"
+    name_en: "Erosion"
+    finding_interventions: []
+    examinations:
+      [
+        "colonoscopy",
+        "endosonography_upper_gi",
+        "endosonography_lower_gi",
+        "ercp",
+        "small_bowel_endoscopy",
+        "capsule_endoscopy",
+      ]
+
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "ulcer"
+    name_de: "Ulcus"
+    name_en: "Ulcer"
+    finding_interventions: []
+    examinations:
+      [
+        "colonoscopy",
+        "endosonography_upper_gi",
+        "endosonography_lower_gi",
+        "ercp",
+        "small_bowel_endoscopy",
+        "capsule_endoscopy",
+      ]
+    finding_types: ["macroscopic"]
+
+- model: endoreg_db.finding
+  fields:
+    name: "scar"
+    name_de: "Narbe"
+    name_en: "Scar"
+    finding_interventions: []
+    examinations:
+      [
+        "colonoscopy",
+        "endosonography_upper_gi",
+        "endosonography_lower_gi",
+        "ercp",
+        "small_bowel_endoscopy",
+        "capsule_endoscopy",
+      ]
+
+    finding_types: ["macroscopic"]

@@ -1,0 +1,15 @@
+- model: endoreg_db.finding_intervention_type
+  fields:
+    name: "therapeutic"
+
+- model: endoreg_db.finding_intervention_type
+  fields:
+    name: "invasive"
+
+- model: endoreg_db.finding_intervention_type
+  fields:
+    name: "diagnostic"
+
+- model: endoreg_db.finding_intervention_type
+  fields:
+    name: "foreign_body"

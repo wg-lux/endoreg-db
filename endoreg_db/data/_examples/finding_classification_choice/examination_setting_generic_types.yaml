@@ -1,0 +1,15 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "examination_setting_generic_location_inpatient"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "examination_setting_generic_location_outpatient"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "examination_setting_operative"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "examination_setting_conservative"

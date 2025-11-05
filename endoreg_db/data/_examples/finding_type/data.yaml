@@ -1,0 +1,43 @@
+- model: endoreg_db.finding_type
+  fields:
+    name: "macroscopic"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "iatrogenic"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "postinterventional_immediate"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "postinterventional_delayed"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "bleeding"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "endoscopy_baseline"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "medication_related"
+    
+- model: endoreg_db.finding_type
+  fields:
+    name: "anatomy"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "anatomy_colon"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "summary"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "complication"

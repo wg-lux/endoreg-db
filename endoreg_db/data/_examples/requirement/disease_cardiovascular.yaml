@@ -1,0 +1,79 @@
+# KHK
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_coronary_artery_disease"
+    name_de: "Koronare Gefäßerkrankung"
+    name_en: "Coronary artery disease"
+    description: "Coronary artery disease"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "coronary_artery_disease"
+
+# Hypertension
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_hypertension"
+    name_de: "Arterielle Hypertonie"
+    name_en: "Hypertension"
+    description: "Hypertension"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "hypertension"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_congestive_heart_failure"
+    name_de: "Chron. Herzinsuffizienz"
+    name_en: "Congestive heart failure"
+    description: "Congestive heart failure"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "congestive_heart_failure"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_diabetes_mellitus_I"
+    name_de: "Diabetes mellitus Typ I"
+    name_en: "Diabetes mellitus type I"
+    description: "Diabetes mellitus type I"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "diabetes_mellitus_I"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_diabetes_mellitus_II"
+    name_de: "Diabetes mellitus Typ II"
+    name_en: "Diabetes mellitus type II"
+    description: "Diabetes mellitus type II"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "diabetes_mellitus_II"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_non_valvular_atrial_fibrillation"
+    name_de: "Nicht valvuläres Vorhofflimmern"
+    name_en: "Non valvular atrial fibrillation"
+    description: "Non valvular atrial fibrillation"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "non_valvular_atrial_fibrillation"

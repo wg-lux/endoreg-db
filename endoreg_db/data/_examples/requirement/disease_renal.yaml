@@ -1,0 +1,96 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_chronic_kidney_disease"
+    name_de: "Erkrankung chronische Nierenerkrankung"
+    name_en: "Disease Chronic Kidney Disease"
+    description: "Disease Chronic Kidney Disease"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "chronic_kidney_disease"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_classification_choice_is_ckd_kdigo_1"
+    name_de: "Erkrankung Klassifikation chronische Nierenerkrankung (KDIGO) (Stadium 1)"
+    name_en: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 1)"
+    description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 1)"
+    requirement_types:
+      - "patient_disease"
+      - "patient"
+    operators:
+      - models_match_all
+    disease_classification_choices:
+      - "ckd_kdigo_1"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_classification_choice_is_ckd_kdigo_2"
+    name_de: "Erkrankung Klassifikation chronische Nierenerkrankung (KDIGO) (Stadium 2)"
+    name_en: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 2)"
+    description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 2)"
+    requirement_types:
+      - "patient_disease"
+      - "patient"
+    operators:
+      - models_match_all
+    disease_classification_choices:
+      - "ckd_kdigo_2"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_classification_choice_is_ckd_kdigo_3a"
+    name_de: "Erkrankung Klassifikation chronische Nierenerkrankung (KDIGO) (Stadium 3a)"
+    name_en: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 3a)"
+    description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 3a)"
+    requirement_types:
+      - "patient_disease"
+      - "patient"
+    operators:
+      - models_match_all
+    disease_classification_choices:
+      - "ckd_kdigo_3a"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_classification_choice_is_ckd_kdigo_3b"
+    name_de: "Erkrankung Klassifikation chronische Nierenerkrankung (KDIGO) (Stadium 3b)"
+    name_en: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 3b)"
+    description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 3b)"
+    requirement_types:
+      - "patient_disease"
+      - "patient"
+    operators:
+      - models_match_all
+    disease_classification_choices:
+      - "ckd_kdigo_3b"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_classification_choice_is_ckd_kdigo_4"
+    name_de: "Erkrankung Klassifikation chronische Nierenerkrankung (KDIGO) (Stadium 4)"
+    name_en: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 4)"
+    description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 4)"
+    requirement_types:
+      - "patient_disease"
+      - "patient"
+    operators:
+      - models_match_all
+    disease_classification_choices:
+      - "ckd_kdigo_4"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_classification_choice_is_ckd_kdigo_5"
+    name_de: "Erkrankung Klassifikation chronische Nierenerkrankung (KDIGO) (Stadium 5)"
+    name_en: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 5)"
+    description: "Disease Classification Chronic Kidney Disease (KDIGO) (Stage 5)"
+    requirement_types:
+      - "patient_disease"
+      - "patient"
+    operators:
+      - models_match_all
+    disease_classification_choices:
+      - "ckd_kdigo_5"

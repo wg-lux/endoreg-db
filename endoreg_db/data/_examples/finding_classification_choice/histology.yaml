@@ -1,0 +1,24 @@
+# "histology_dysplasia_none",
+# "histology_dysplasia_low_grade",
+# "histology_dysplasia_high_grade",
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_dysplasia_none"
+    description: "Histology: No dysplasia"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_dysplasia_low_grade"
+    description: "Histology: Low-grade dysplasia"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_dysplasia_high_grade"
+    description: "Histology: High-grade dysplasia"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_dignity_benign"
+    description: "Histology: Benign"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_dignity_malign"
+    description: "Histology: Malign"

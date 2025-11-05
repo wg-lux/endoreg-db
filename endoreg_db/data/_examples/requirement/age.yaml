@@ -1,0 +1,26 @@
+# patient_age_gte_18
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_age_gte_18"
+    name_de: "Patientenalter >= 18 Jahre"
+    name_en: "Patient age >= 18 years"
+    description: "This requirement is used to indicate that the patient must be at least 18 years old."
+    requirement_types:
+      - "patient"
+    operators:
+      - age_gte
+    numeric_value: 18
+
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_age_lte_100"
+    name_de: "Patientenalter <= 100 Jahre"
+    name_en: "Patient age <= 100 years"
+    description: "This requirement is used to indicate that the patient must be at most 100 years old."
+    requirement_types:
+      - "patient"
+    operators:
+      - age_lte
+    numeric_value: 100
+    

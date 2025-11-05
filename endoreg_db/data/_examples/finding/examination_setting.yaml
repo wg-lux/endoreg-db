@@ -1,0 +1,16 @@
+- model: endoreg_db.finding
+  fields:
+    name: "examination_setting"
+    examinations: [
+      "gastroscopy",
+      "endosonography_upper_gi",
+      "endosonography_lower_gi",
+      "ercp",
+      "small_bowel_endoscopy",
+      "capsule_endoscopy",
+      "percutaneous_transhepatic_biliary_drainage",
+      "colonoscopy",
+      "colonoscopy_austria_screening",
+    ]
+
+    finding_types: ["summary"]

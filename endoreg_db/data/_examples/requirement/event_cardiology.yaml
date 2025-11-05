@@ -1,0 +1,251 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_implantation"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt"
+    name_en: "Event: Coronary Stent Implantation (DES) performed"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt"
+    operators:
+      - "models_match_any"
+    events:
+      - "coro_des_implantation"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_implantation_count_between_1_and_3 (exclusive)"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt zwischen 1 und 3 (exklusive)"
+    name_en: "Event: Coronary Stent Implantation (DES) performed between 1 and 3 (exclusive)"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt zwischen 1 und 3 (exklusive)"
+    operators:
+      - "models_match_count_in_range"
+    events:
+      - "coro_des_implantation"
+    numeric_value_min: 1
+    numeric_value_max: 3
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_implantation_count_greater_than_3"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt mehr als 3"
+    name_en: "Event: Coronary Stent Implantation (DES) performed more than 3"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt mehr als 3"
+    operators:
+      - "models_match_n_or_more"
+    events:
+      - "coro_des_implantation"
+    numeric_value: 3
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_bms_implantation"
+    name_de: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt"
+    name_en: "Event: Coronary Stent Implantation (BMS) performed"
+    description: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt"
+    operators:
+      - "models_match_any"
+    events:
+      - "coro_bms_implantation"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_complication_coro_stent_thrombosis"
+    name_de: "Ereignis: Komplikation Koronar Stent Thrombose"
+    name_en: "Event: Complication Coronary Stent Thrombosis"
+    description: "Ereignis: Komplikation Koronar Stent Thrombose"
+    operators:
+      - "models_match_any"
+    events:
+      - "complication_coro_stent_thrombosis"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_pulmonary_embolism"
+    name_de: "Ereignis: Lungenembolie"
+    name_en: "Event: Pulmonary Embolism"
+    description: "Ereignis: Lungenembolie"
+    operators:
+      - "models_match_any"
+    events:
+      - "pulmonary_embolism"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_deep_vein_thrombosis"
+    name_de: "Ereignis: Tiefe Beinvenenthrombose"
+    name_en: "Event: Deep Vein Thrombosis"
+    description: "Ereignis: Tiefe Beinvenenthrombose"
+    operators:
+      - "models_match_any"
+    events:
+      - "deep_vein_thrombosis"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_deep_vein_thrombosis_10_d"
+    name_de: "Ereignis: Tiefe Beinvenenthrombose innerhalb 10 Tage"
+    name_en: "Event: Deep Vein Thrombosis within 10 days"
+    description: "Ereignis: Tiefe Beinvenenthrombose innerhalb 10 Tage"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "deep_vein_thrombosis"
+    numeric_value_min: -10
+    numeric_value_max: 0
+    unit: "days"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_more_than_1_deep_vein_thrombosis"
+    name_de: "Ereignis: Mehr als 1 Tiefe Beinvenenthrombose"
+    name_en: "Event: More than 1 Deep Vein Thrombosis"
+    description: "Ereignis: Mehr als 1 Tiefe Beinvenenthrombose"
+    operators:
+      - "models_match_n_or_more"
+    events:
+      - "deep_vein_thrombosis"
+    numeric_value: 1
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_stent_implantation_30_d"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 30 Tage"
+    name_en: "Event: Coronary Stent Implantation (DES) performed within 30 days"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 30 Tage"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_des_implantation"
+    numeric_value_min: -30
+    numeric_value_max: 0
+    unit: "days"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_stent_implantation_6_w"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 6 Wochen"
+    name_en: "Event: Coronary Stent Implantation (DES) performed within 6 weeks"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 6 Wochen"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_des_implantation"
+    numeric_value_min: -6
+    numeric_value_max: 0
+    unit: "weeks"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_stent_implantation_6_m"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 6 Monate"
+    name_en: "Event: Coronary Stent Implantation (DES) performed within 6 months"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 6 Monate"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_des_implantation"
+    numeric_value_min: -6
+    numeric_value_max: 0
+    unit: "months"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_des_stent_implantation_1_y"
+    name_de: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 1 Jahr"
+    name_en: "Event: Coronary Stent Implantation (DES) performed within 1 year"
+    description: "Ereignis: Koronarstent-Implantation (DES) durchgeführt innerhalb 1 Jahr"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_des_implantation"
+    numeric_value_min: -1
+    numeric_value_max: 0
+    unit: "years"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_bms_stent_implantation_30_d"
+    name_de: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 30 Tage"
+    name_en: "Event: Coronary Stent Implantation (BMS) performed within 30 days"
+    description: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 30 Tage"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_bms_implantation"
+    numeric_value_min: -30
+    numeric_value_max: 0
+    unit: "days"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_bms_stent_implantation_6_w"
+    name_de: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 6 Wochen"
+    name_en: "Event: Coronary Stent Implantation (BMS) performed within 6 weeks"
+    description: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 6 Wochen"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_bms_implantation"
+    numeric_value_min: -6
+    numeric_value_max: 0
+    unit: "weeks"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_bms_stent_implantation_6_m"
+    name_de: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 6 Monate"
+    name_en: "Event: Coronary Stent Implantation (BMS) performed within 6 months"
+    description: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 6 Monate"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_bms_implantation"
+    numeric_value_min: -6
+    numeric_value_max: 0
+    unit: "months"
+    requirement_types:
+      - "patient"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "event_had_coro_bms_stent_implantation_1_y"
+    name_de: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 1 Jahr"
+    name_en: "Event: Coronary Stent Implantation (BMS) performed within 1 year"
+    description: "Ereignis: Koronarstent-Implantation (BMS) durchgeführt innerhalb 1 Jahr"
+    operators:
+      - "models_match_any_in_timeframe"
+    events:
+      - "coro_bms_implantation"
+    numeric_value_min: -1
+    numeric_value_max: 0
+    unit: "years"
+    requirement_types:
+      - "patient"

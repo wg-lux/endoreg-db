@@ -1,0 +1,80 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_location_default"
+    name_de: "Koloskopie Standard"
+    name_en: "Colonoscopy Default"
+    classification_types: [
+      "location",
+    ]
+    examinations: [
+      "colonoscopy"
+    ]
+    finding_types: [
+      "macroscopic"
+    ]
+    findings: [
+      "colon_polyp",
+      "tumor",
+      "erosion",
+      "ulcer",
+      "scar"
+    ]
+    choices: [
+      "terminal_ileum",
+      "cecum",
+      "ascending_colon",
+      "right_flexure",
+      "transverse_colon",
+      "descending_colon",
+      "sigmoid_colon",
+      "rectum",
+      "anal_canal"
+    ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_location_coarse"
+    name_de: "Koloskopie Grob"
+    name_en: "Colonoscopy Coarse"
+    classification_types: [
+      "location",
+    ]
+    examinations: [
+      "colonoscopy"
+    ]
+    finding_types: [
+      "macroscopic"
+    ]
+    findings: [
+      "colon_polyp",
+      # "tumor",
+      # "erosion",
+      # "ulcer",
+      # "scar"
+    ]
+    choices: [
+      "left_colon",
+      "right_colon",
+      "rectum"
+    ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_austria_screening_location"
+    name_de: "Koloskopie Österreich Screening Lokalisation"
+    name_en: "Colonoscopy Austria Screening Location"
+    classification_types: [
+      "location",
+    ]
+    examinations: [
+      "colonoscopy_austria_screening"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "left_colon",
+      "right_colon",
+      "sigmoid_colon",
+      "rectum",
+    ]

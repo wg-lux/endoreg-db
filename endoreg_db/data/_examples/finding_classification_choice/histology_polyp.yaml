@@ -1,0 +1,20 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_polyp_hyperplastic"
+    description: "Histology: Hyperplastic polyp"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_polyp_adenoma_tubular"
+    description: "Histology: Tubular adenoma"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_polyp_adenoma_tubulovillous"
+    description: "Histology: Tubulovillous adenoma"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_polyp_adenoma_villous"
+    description: "Histology: Villous adenoma"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_polyp_sessile_serrated_lesion"
+    description: "Histology: Sessile serrated lesion"

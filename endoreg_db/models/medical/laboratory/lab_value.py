@@ -248,7 +248,7 @@ class LabValue(models.Model):
 
         return {"min": min_value, "max": max_value}
 
-    def get_increased_value(self, patient: "Patient" = None):
+    def get_increased_value(self, patient: "Patient" = None):# -> Any | None:
         """
         Returns a value that is considered increased for this lab value.
         It prioritizes sampling from a numerical distribution if available,
