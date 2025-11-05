@@ -547,7 +547,13 @@ class VideoFile(models.Model):
             self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
 
         # CRITICAL FIX: Delete RAW video file, not the processed (anonymized) one
-        # After validation, only the anonymized video should remain
+        # CRITICAL: Update metadata BEFORE deleting raw video
+        # Metadata update may trigger frame extraction, which needs raw video
+        sensitive_meta = _update_text_metadata(
+            self, extracted_data_dict, overwrite=True
+        )
+
+        # After validation and metadata update, only the anonymized video should remain
         from .video_file_io import _get_raw_file_path
 
         raw_path = _get_raw_file_path(self)
@@ -562,11 +568,6 @@ class VideoFile(models.Model):
             )
         else:
             logger.warning(f"Raw video file not found for deletion: {self.uuid}")
-
-        # Update sensitive metadata with user annotations
-        sensitive_meta = _update_text_metadata(
-            self, extracted_data_dict, overwrite=True
-        )
 
         if sensitive_meta:
             # Mark as processed after validation

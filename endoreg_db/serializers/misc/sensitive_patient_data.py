@@ -80,7 +80,7 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
         elif isinstance(instance, RawPdfFile):
             # Generate PDF streaming URL using pdf_id (RawPdfFile.id)
-            pdf_stream_url = f"/api/pdfstream/{instance.pk}/"
+            pdf_stream_url = f"/api/media/pdfs/{instance.pk}/stream/"
             
             return {
                 "id": instance.pk,
