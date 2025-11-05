@@ -13,6 +13,7 @@ from django.http import Http404, FileResponse
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.db.models import Q
 
 from endoreg_db.models import RawPdfFile
@@ -133,7 +134,8 @@ class PdfMediaView(APIView):
                 {"error": "Failed to retrieve PDF details"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
+            
+    @xframe_options_exempt
     def _stream_pdf(self, pk):
         """
         Stream PDF file content for viewing/download.

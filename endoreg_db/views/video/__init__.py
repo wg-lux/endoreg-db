@@ -35,10 +35,8 @@ __all__ = [
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
     
-    # Phase 1.2: Media Management Views ✅ IMPLEMENTED
     'VideoMediaView',
     
-    # TODO Phase 1.2+: Future views
     'VideoCorrectionView',
     # 'TaskStatusView',
     # 'VideoDownloadProcessedView',

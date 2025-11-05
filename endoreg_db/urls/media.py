@@ -1,3 +1,4 @@
+from PIL.PdfParser import PdfStream
 from django.urls import path
 
 from endoreg_db.views.media import (
@@ -22,6 +23,7 @@ from endoreg_db.views import (
     VideoStreamView,
 )
 from endoreg_db.views.pdf.reimport import PdfReimportView
+from endoreg_db.views.pdf.pdf_stream import PdfStreamView
 from endoreg_db.views.video.reimport import VideoReimportView
 from endoreg_db.views.video.correction import (
     VideoMetadataView,
@@ -216,8 +218,7 @@ urlpatterns = [
     # PDF media endpoints
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
     path("media/pdfs/<int:pk>/", PdfMediaView.as_view(), name="pdf-detail"),
-    path("media/pdfs/<int:pk>/stream/", PdfMediaView.as_view(), name="pdf-stream"),
-
+    path("media/pdfs/<int:pk>/stream/", PdfStreamView.as_view(), name="pdf-stream"),  # Support ?type=raw|anonymized params
     # PDF Re-import API endpoint (modern media framework)
     # POST /api/media/pdfs/<int:pk>/reimport/
     # Re-imports a PDF file to regenerate metadata when OCR failed or data is incomplete
