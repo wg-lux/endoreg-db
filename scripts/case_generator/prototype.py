@@ -17,8 +17,11 @@ import django
 from icecream import ic
 
 
-# Ensure Django is ready before importing models
-DJANGO_SETTINGS_MODULE = "config.settings.case_gen"
+# Ensure Django is ready before importing models without clobbering preconfigured settings
+DJANGO_SETTINGS_MODULE = os.environ.setdefault(
+    "DJANGO_SETTINGS_MODULE",
+    "config.settings.case_gen",
+)
 django.setup()
 
 from endoreg_db.models import (  # noqa: E402
