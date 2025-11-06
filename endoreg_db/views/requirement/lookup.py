@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from endoreg_db.services import lookup_service as ls
 from endoreg_db.services.lookup_store import DEFAULT_TTL_SECONDS, LookupStore
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.models.other.tag import Tag
 
 ORIGIN_MAP_PREFIX = "lookup:origin:"
 ISSUED_MAP_PREFIX = "lookup:issued_for_internal:"
@@ -53,6 +54,8 @@ class LookupViewSet(viewsets.ViewSet):
         "selectedRequirementSetIds",
         "selectedChoices",
     }
+    
+    user_tags = Tag
 
     @action(detail=False, methods=["post"])
     def init(self, request):
@@ -131,7 +134,10 @@ class LookupViewSet(viewsets.ViewSet):
 
                 except Exception:
                     pass
-
+        
+        user_tags = request.data.get("user_tags", None)
+        if user_tags and not isinstance(user_tags, list):
+            user_tags = [user_tags]
         # Fallback to query params
         if raw_pe is None:
             raw_pe = request.query_params.get("patient_examination_id")
@@ -167,7 +173,7 @@ class LookupViewSet(viewsets.ViewSet):
 
         try:
             # Create internal session via service (may seed its own token/cache)
-            internal_token = ls.create_lookup_token_for_pe(pe_id)
+            internal_token = ls.create_lookup_token_for_pe(pe_id, user_tags=user_tags)
             internal_data = LookupStore(token=internal_token).get_all()
 
             issued_key = f"{ISSUED_MAP_PREFIX}{internal_token}"
@@ -254,7 +260,11 @@ class LookupViewSet(viewsets.ViewSet):
                             status=status.HTTP_404_NOT_FOUND,
                         )
 
-                    return Response(new_data, status=status.HTTP_200_OK)
+                    # Hydrate the original token with recovered data and refresh origin TTL
+                    store.set_many(new_data)
+                    cache.set(f"{ORIGIN_MAP_PREFIX}{pk}", pe_id, DEFAULT_TTL_SECONDS)
+                    return Response(store.get_all(), status=status.HTTP_200_OK)
+
 
                 except Exception:
                     pass

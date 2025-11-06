@@ -24,9 +24,10 @@ Architecture:
 # services/lookup_service.py
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import logging
+from typing import Any, Dict, List, Optional
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, QuerySet
 
 from endoreg_db.models.medical.examination import ExaminationRequirementSet
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
@@ -88,31 +89,43 @@ def load_patient_exam_for_eval(pk: int) -> PatientExamination:
     )
 
 
-def requirement_sets_for_patient_exam(pe: PatientExamination) -> List[RequirementSet]:
+def requirement_sets_for_patient_exam(
+    pe: PatientExamination, user_tags: Optional[List[str]] = None
+) -> QuerySet:
     """
-    Get all requirement sets applicable to a patient examination.
-
-    This function resolves requirement sets through the examination's requirement set links.
-    It follows the relationship: PatientExamination → Examination → ExaminationRequirementSet → RequirementSet
+    Retrieve all RequirementSets linked to a PatientExamination's examination.
 
     Args:
-        pe: PatientExamination instance to get requirement sets for
+        pe: PatientExamination instance
+        user_tags: Optional list of tag names to filter requirement sets
 
     Returns:
-        List of RequirementSet instances applicable to the examination, with related data prefetched
+        QuerySet of RequirementSet instances
     """
-    exam = pe.examination
-    if not exam:
-        return []
-    return list(
-        RequirementSet.objects.filter(reqset_exam_links__examinations=exam)
-        .select_related("requirement_set_type")
-        .prefetch_related("requirements")
-        .distinct()
-    )
+    if not pe or not pe.examination:
+        from endoreg_db.models import RequirementSet
+
+        return RequirementSet.objects.none()
+
+    # Start with examination-linked requirement sets
+    req_sets = pe.examination.exam_reqset_links.select_related(
+        "requirement_set"
+    ).values_list("requirement_set", flat=True)
+
+    from endoreg_db.models import RequirementSet
+
+    qs = RequirementSet.objects.filter(pk__in=req_sets)
+
+    # Apply tag filtering if provided
+    if user_tags:
+        qs = qs.filter(tags__name__in=user_tags).distinct()
+
+    return qs
 
 
-def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
+def build_initial_lookup(
+    pe: PatientExamination, user_tags: Optional[List[str]] = None
+) -> Dict[str, Any]:
     """
     Build the initial lookup dictionary for a patient examination.
 
@@ -153,7 +166,7 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     required_findings: List[int] = []  # fill by scanning requirements below
 
     # Requirement sets: ids + meta
-    rs_objs = requirement_sets_for_patient_exam(pe)
+    rs_objs = requirement_sets_for_patient_exam(pe, user_tags=user_tags)
     requirement_sets = [
         {
             "id": rs.id,
@@ -202,7 +215,9 @@ def build_initial_lookup(pe: PatientExamination) -> Dict[str, Any]:
     }
 
 
-def create_lookup_token_for_pe(pe_id: int) -> str:
+def create_lookup_token_for_pe(
+    pe_id: int, user_tags: Optional[List[str]] = None
+) -> str:
     """
     Create a lookup token for a patient examination.
 
@@ -220,7 +235,7 @@ def create_lookup_token_for_pe(pe_id: int) -> str:
         Exception: For any other errors during initialization
     """
     pe = load_patient_exam_for_eval(pe_id)
-    token = LookupStore().init(build_initial_lookup(pe))
+    token = LookupStore().init(build_initial_lookup(pe, user_tags=user_tags))
     return token
 
 
@@ -255,8 +270,6 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
     Raises:
         ValueError: If lookup data is invalid or patient examination not found
     """
-    import logging
-
     logger = logging.getLogger(__name__)
 
     store = LookupStore(token=token)

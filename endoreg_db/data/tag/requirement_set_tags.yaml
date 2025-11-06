@@ -9,3 +9,24 @@
 - model: endoreg_db.tag
   fields:
     name: "colonoscopy_austria"
+
+# User role tags for requirement set filtering
+- model: endoreg_db.tag
+  fields:
+    name: "Gastroenterologist"
+
+- model: endoreg_db.tag
+  fields:
+    name: "Student"
+
+- model: endoreg_db.tag
+  fields:
+    name: "Professor"
+
+- model: endoreg_db.tag
+  fields:
+    name: "Terminology Expert"
+
+- model: endoreg_db.tag
+  fields:
+    name: "Default Prototype"
