@@ -173,7 +173,11 @@ class LookupViewSet(viewsets.ViewSet):
 
         try:
             # Create internal session via service (may seed its own token/cache)
-            internal_token = ls.create_lookup_token_for_pe(pe_id, user_tags=user_tags)
+            service_kwargs = {}
+            if user_tags:
+                service_kwargs["user_tags"] = user_tags
+
+            internal_token = ls.create_lookup_token_for_pe(pe_id, **service_kwargs)
             internal_data = LookupStore(token=internal_token).get_all()
 
             issued_key = f"{ISSUED_MAP_PREFIX}{internal_token}"
