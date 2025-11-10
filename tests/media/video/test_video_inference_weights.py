@@ -44,6 +44,7 @@ def test_predict_video_with_huggingface_weights(base_db_data):
     model_meta = ModelMeta.setup_default_from_huggingface(
         model_id="wg-lux/colo_segmentation_RegNetX800MF_base",
         labelset_name="multilabel_classification_colonoscopy_default",
+        labelset_version=1,
     )
 
     weights_path = Path(model_meta.weights.path)
@@ -102,6 +103,7 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
         meta_name=meta_name,
         model_name="image_multilabel_classification_colonoscopy_default",
         labelset_name="multilabel_classification_colonoscopy_default",
+        labelset_version=1,
         weights_file=str(fixture_path),
         requested_version="1",
         bump_if_exists=True,

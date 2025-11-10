@@ -62,6 +62,7 @@ def create_from_file_logic(
     model_name: str,
     labelset_name: str,
     weights_file: str,
+    labelset_version: Optional[int | str] = None,
     requested_version: Optional[str] = None,
     bump_if_exists: bool = False,
     **kwargs: Any,
@@ -77,10 +78,27 @@ def create_from_file_logic(
     except AiModel.DoesNotExist as exc:
         raise ValueError(f"AiModel with name '{model_name}' not found.") from exc
 
+    labelset_qs = LabelSet.objects.filter(name=labelset_name)
+    if labelset_version not in (None, "", -1):
+        try:
+            version_value = int(labelset_version)
+        except (TypeError, ValueError):
+            version_value = labelset_version
+        labelset_qs = labelset_qs.filter(version=version_value)
+
     try:
-        label_set = LabelSet.objects.get(name=labelset_name)
+        label_set = labelset_qs.get()
     except LabelSet.DoesNotExist as exc:
-        raise ValueError(f"LabelSet with name '{labelset_name}' not found.") from exc
+        raise ValueError(
+            f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
+        ) from exc
+    except LabelSet.MultipleObjectsReturned:
+        # Prefer the highest version when duplicates remain and no explicit version requested
+        label_set = labelset_qs.order_by("-version").first()
+        if not label_set:
+            raise ValueError(
+                f"LabelSet '{labelset_name}' could not be resolved."
+            )
 
     # --- Determine Version ---
     target_version: str
@@ -377,7 +395,12 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
     }
 
 
-def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str | None = None):
+def setup_default_from_huggingface_logic(
+    cls,
+    model_id: str,
+    labelset_name: str | None = None,
+    labelset_version: Optional[int | str] = None,
+):
     """
     Downloads model weights from Hugging Face and auto-fills ModelMeta fields.
     """
@@ -402,7 +425,18 @@ def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str 
         if not labelset:
             raise ValueError("No labelset found and no labelset_name provided")
     else:
-        labelset = LabelSet.objects.get(name=labelset_name)
+        labelset_qs = LabelSet.objects.filter(name=labelset_name)
+        if labelset_version not in (None, "", -1):
+            try:
+                version_value = int(labelset_version)
+            except (TypeError, ValueError):
+                version_value = labelset_version
+            labelset_qs = labelset_qs.filter(version=version_value)
+        labelset = labelset_qs.order_by("-version").first()
+        if not labelset:
+            raise ValueError(
+                f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
+            )
 
     ModelMeta = _get_model_meta_class()
     model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
@@ -414,7 +448,8 @@ def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str 
         cls,
         meta_name=meta["name"],
         model_name=ai_model.name,
-        labelset_name=labelset.name,
+    labelset_name=labelset.name,
+    labelset_version=labelset.version,
         weights_file=weights_path,
         activation=meta["activation"],
         mean=meta["mean"],

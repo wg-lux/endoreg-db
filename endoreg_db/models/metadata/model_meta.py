@@ -115,6 +115,7 @@ class ModelMeta(models.Model):
         model_name: str,
         labelset_name: str,
         weights_file: str,
+        labelset_version: Optional[int | str] = None,
         requested_version: Optional[str] = None,
         bump_if_exists: bool = False,
         **kwargs: Any,
@@ -124,8 +125,15 @@ class ModelMeta(models.Model):
         """
         # Delegate to logic function, passing the class (cls)
         return logic.create_from_file_logic(
-            cls, meta_name, model_name, labelset_name, weights_file,
-            requested_version, bump_if_exists, **kwargs
+            cls,
+            meta_name,
+            model_name,
+            labelset_name,
+            weights_file,
+            labelset_version=labelset_version,
+            requested_version=requested_version,
+            bump_if_exists=bump_if_exists,
+            **kwargs,
         )
         
     @classmethod
@@ -133,12 +141,18 @@ class ModelMeta(models.Model):
         cls: Type["ModelMeta"],
         model_id: str = "wg-lux/colo_segmentation_RegNetX800MF_base",
         labelset_name: Optional[str] = None,
+        labelset_version: Optional[int | str] = None,
     ) -> "ModelMeta":
         """
         Downloads a pretrained model from Hugging Face and initializes ModelMeta automatically.
         """
         # If labelset_name is not provided, handle default logic here if needed
-        return logic.setup_default_from_huggingface_logic(cls, model_id, labelset_name)
+        return logic.setup_default_from_huggingface_logic(
+            cls,
+            model_id=model_id,
+            labelset_name=labelset_name,
+            labelset_version=labelset_version,
+        )
 
 
 
