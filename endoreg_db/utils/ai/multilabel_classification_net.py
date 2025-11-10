@@ -1,8 +1,12 @@
+import logging
+from pathlib import Path
+
 import torch
 from torchvision import models
 import torch.nn as nn
 from pytorch_lightning import LightningModule
 import numpy as np
+from safetensors.torch import load_file
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 try:  # Torchvision >= 0.13 exposes explicit weight enums
@@ -10,6 +14,8 @@ try:  # Torchvision >= 0.13 exposes explicit weight enums
 except ImportError:  # pragma: no cover - compatibility with older torchvision
     EfficientNet_B4_Weights = None
     RegNet_X_800MF_Weights = None
+
+logger = logging.getLogger(__name__)
 
 METRICS_ON_STEP = False
 
@@ -79,9 +85,11 @@ class MultiLabelClassificationNet(LightningModule):
         pos_weight=2,
         model_type="EfficientNetB4",
         load_imagenet_weights: bool = False,
+        track_hparams: bool = True,
     ):
         super().__init__()
-        self.save_hyperparameters()
+        if track_hparams:
+            self.save_hyperparameters()
         if labels is None:
             raise ValueError("labels must be provided to initialize MultiLabelClassificationNet")
 
@@ -119,10 +127,47 @@ class MultiLabelClassificationNet(LightningModule):
 
     @classmethod
     def load_from_checkpoint(cls, checkpoint_path, *args, **kwargs):
-        instance = super(MultiLabelClassificationNet, cls).load_from_checkpoint(
+        path = Path(checkpoint_path)
+        suffix = path.suffix.lower()
+
+        if suffix == ".safetensors":
+            map_location = kwargs.pop("map_location", "cpu")
+            strict = kwargs.pop("strict", True)
+            labels = kwargs.pop("labels", None)
+            if not labels:
+                raise ValueError("labels must be provided when loading .safetensors checkpoints")
+            model_type = kwargs.pop("model_type", None) or "EfficientNetB4"
+            load_imagenet = kwargs.pop("load_imagenet_weights", False)
+
+            device = torch.device(map_location) if map_location is not None else torch.device("cpu")
+            if isinstance(device, torch.device):
+                device_hint = f"{device.type}:{device.index}" if device.index is not None else device.type
+            else:
+                device_hint = device
+
+            state_dict = load_file(path, device=device_hint)
+
+            instance = cls(
+                labels=labels,
+                model_type=model_type,
+                load_imagenet_weights=load_imagenet,
+                track_hparams=False,
+                *args,
+                **kwargs,
+            )
+            missing, unexpected = instance.load_state_dict(state_dict, strict=strict)
+
+            if missing:
+                logger.warning("Missing parameters when loading %s: %s", path, missing)
+            if unexpected:
+                logger.warning("Unexpected parameters when loading %s: %s", path, unexpected)
+
+            instance.to(device)
+            return instance
+
+        return super(MultiLabelClassificationNet, cls).load_from_checkpoint(
             checkpoint_path, *args, **kwargs
         )
-        return instance
 
     def forward(self, x):  # pylint: disable=arguments-differ
         x = self.model(x)
