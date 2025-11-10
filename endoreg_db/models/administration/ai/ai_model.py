@@ -54,7 +54,7 @@ class AiModel(models.Model):
     name = models.CharField(max_length=255, unique=True)
 
     description = models.TextField(blank=True, null=True)
-    model_type:Optional[models.ForeignKey[Union["ModelType", None]]] = models.ForeignKey(
+    model_type = models.ForeignKey(
         "ModelType",
         on_delete=models.CASCADE,
         related_name="ai_models",
@@ -62,14 +62,14 @@ class AiModel(models.Model):
         null=True,
     )
     model_subtype = models.CharField(max_length=255, blank=True, null=True)
-    video_segmentation_labelset:Optional[models.ForeignKey[Union["VideoSegmentationLabelSet", None]]] = models.ForeignKey(
+    video_segmentation_labelset = models.ForeignKey(
         "VideoSegmentationLabelSet",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    active_meta:Optional[models.ForeignKey[Union["ModelMeta", None]]] = models.ForeignKey(
+    active_meta = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
         related_name="active_model", 
@@ -79,7 +79,9 @@ class AiModel(models.Model):
 
     if TYPE_CHECKING:
         metadata_versions: models.QuerySet["ModelMeta"]
-
+        model_type:models.ForeignKey["ModelType|None"]
+        active_meta:models.ForeignKey["ModelMeta|None"]
+        video_segmentation_labelset:models.ForeignKey["VideoSegmentationLabelSet|None"]
 
     def get_version(self, version: int) -> "ModelMeta":
         """
