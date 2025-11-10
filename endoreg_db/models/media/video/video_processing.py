@@ -121,8 +121,12 @@ class VideoProcessingHistory(models.Model):
         ]
     
     def __str__(self):
-        # return f"{self.get_operation_display()} on {self.video.uuid} - {self.get_status_display()}"
-        return f"VideoProcessingHistory(id={self.pk}, operation={self.operation}, video={self.video.uuid}, status={self.status})"
+        operation_display = getattr(self, "get_operation_display", None)
+        status_display = getattr(self, "get_status_display", None)
+
+        operation = operation_display() if callable(operation_display) else self.operation
+        status = status_display() if callable(status_display) else self.status
+        return f"{operation} on {self.video.uuid} - {status}"
     
     def mark_running(self, save=True):
         """Mark operation as running."""

@@ -257,7 +257,10 @@ class VideoFile(models.Model):
         assert _file is not None, self.NO_ACTIVE_FILE
         if not _file or not _file.name:
             raise ValueError(self.NO_FILE_ASSOCIATED)
-        return _file.url
+        url = getattr(_file, "url", None)
+        if not url:
+            raise ValueError("Active raw file URL could not be resolved.")
+        return str(url)
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -420,6 +423,29 @@ class VideoFile(models.Model):
                 "Active file path could not be resolved. VideoFile raw file is missing."
             )
         return path
+
+    @property
+    def active_file_url(self) -> str:
+        """Return the URL of the active video file, if available."""
+        file_obj = self.active_file
+        if not isinstance(file_obj, FieldFile):
+            raise ValueError("Active file is not a valid Django FieldFile instance.")
+        try:
+            url = getattr(file_obj, "url", None)
+        except Exception as exc:  # storage backends may raise when missing
+            logger.warning(
+                "Active file URL unavailable for video %s: %s",
+                self.uuid,
+                exc,
+            )
+            raise ValueError(
+                "Active file URL could not be resolved for this VideoFile."
+            ) from exc
+
+        if not url:
+            raise ValueError("Active file URL is empty for this VideoFile.")
+
+        return str(url)
 
     @classmethod
     def create_from_file(

@@ -19,8 +19,8 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
     with download URLs for processed files.
     """
     download_url = serializers.SerializerMethodField()
-    operation_display = serializers.CharField(source='operation', read_only=True)
-    status_display = serializers.CharField(source='status', read_only=True)
+    operation_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     duration = serializers.ReadOnlyField()
     is_complete = serializers.ReadOnlyField()
     
@@ -68,6 +68,16 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
             )
         
         return f'/api/media/processed-videos/{obj.video.id}/{obj.id}/'
+
+    def get_operation_display(self, obj) -> str:
+        display = getattr(obj, "get_operation_display", None)
+        result = display() if callable(display) else obj.operation
+        return str(result)
+
+    def get_status_display(self, obj) -> str:
+        display = getattr(obj, "get_status_display", None)
+        result = display() if callable(display) else obj.status
+        return str(result)
     
     def validate_operation(self, value):
         """
