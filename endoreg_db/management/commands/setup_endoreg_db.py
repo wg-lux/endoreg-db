@@ -158,9 +158,9 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("\n🎉 EndoReg DB embedded app setup completed successfully!"))
         self.stdout.write("\nNext steps:")
-        self.stdout.write("1. Run migrations: python manage.py migrate")
-        self.stdout.write("2. Create superuser: python manage.py createsuperuser")
-        self.stdout.write("3. Start development server: python manage.py runserver")
+        # self.stdout.write("1. Run migrations: python manage.py migrate")
+        self.stdout.write("1. Create superuser: python manage.py createsuperuser")
+        self.stdout.write("2. Start development server: python manage.py runserver")
 
     def _find_model_weights_file(self):
         """Find the model weights file using configurable search patterns and directories."""

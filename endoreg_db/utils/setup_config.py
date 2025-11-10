@@ -60,13 +60,13 @@ class SetupConfig:
             "huggingface_fallback": {
                 "enabled": True,
                 "repo_id": "wg-lux/colo_segmentation_RegNetX800MF_base",
-                "filename": "colo_segmentation_RegNetX800MF_base.ckpt",
+                "filename": "colo_segmentation_RegNetX800MF_base.safetensors",
                 "labelset_name": "multilabel_classification_colonoscopy_default",
             },
             "weights_search_patterns": [
-                "colo_segmentation_RegNetX800MF_*.ckpt",
-                "image_multilabel_classification_colonoscopy_default_*.ckpt",
-                "*_colonoscopy_*.ckpt",
+                "colo_segmentation_RegNetX800MF_*.safetensors",
+                "image_multilabel_classification_colonoscopy_default_*.safetensors",
+                "*_colonoscopy_*.safetensors",
             ],
             "weights_search_dirs": ["tests/assets", "assets", "data/storage/model_weights", "${STORAGE_DIR}/model_weights"],
             "auto_generation_defaults": {
@@ -95,7 +95,10 @@ class SetupConfig:
 
     def get_weights_search_patterns(self) -> List[str]:
         """Get weight file search patterns."""
-        return self._config.get("weights_search_patterns", ["colo_segmentation_RegNetX800MF_*.ckpt", "*_colonoscopy_*.ckpt"])
+        return self._config.get(
+            "weights_search_patterns",
+            ["colo_segmentation_RegNetX800MF_*.safetensors", "*_colonoscopy_*.safetensors"],
+        )
 
     def get_weights_search_dirs(self) -> List[Path]:
         """

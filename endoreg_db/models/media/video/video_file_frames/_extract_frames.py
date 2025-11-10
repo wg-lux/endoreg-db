@@ -63,33 +63,22 @@ def _extract_frames(
             "Frames already extracted or files exist for video %s, and overwrite=False. Skipping extraction.",
             video.uuid,
         )
-        if state.frames_extracted and frames_exist_in_db:
-            with transaction.atomic():
+        with transaction.atomic():
+            state.refresh_from_db()
+            if frames_exist_in_db:
                 updated_count = Frame.objects.filter(video=video, is_extracted=False).update(is_extracted=True)
                 if updated_count > 0:
                     logger.info(
-                        "Marked %d existing Frame objects as extracted for video %s based on state.",
+                        "Marked %d existing Frame objects as extracted for video %s based on current records.",
                         updated_count,
                         video.uuid,
                     )
-        elif not state.frames_extracted and files_exist_on_disk:
-            logger.warning(
-                "Files exist on disk for video %s but state.frames_extracted is False. Correcting state to match disk.",
-                video.uuid,
-            )
-            # Fix inconsistent state: files exist but state.frames_extracted is False
-            state.frames_extracted = True
-            state.save(update_fields=['frames_extracted'])
-            
-            # Also update Frame objects to be consistent
-            with transaction.atomic():
-                updated_count = Frame.objects.filter(video=video, is_extracted=False).update(is_extracted=True)
-                if updated_count > 0:
-                    logger.info(
-                        "Marked %d existing Frame objects as extracted for video %s after state correction.",
-                        updated_count,
-                        video.uuid,
-                    )
+            if files_exist_on_disk and not state.frames_extracted:
+                logger.warning(
+                    "Files exist on disk for video %s but state.frames_extracted is False. Persisting corrected state.",
+                    video.uuid,
+                )
+                state.mark_frames_extracted(save=True)
         return True
 
     # Overwrite: delete existing frames/files before re-extraction.
@@ -153,9 +142,8 @@ def _extract_frames(
                         )
                 except Exception as update_e:
                     logger.error("Failed to update is_extracted flag for frames of video %s: %s", video.uuid, update_e, exc_info=True)
-            if extracted_paths:
-                state.refresh_from_db()
-                state.mark_frames_extracted()
+            state.refresh_from_db()
+            state.mark_frames_extracted()
         return True
 
     except Exception as e:

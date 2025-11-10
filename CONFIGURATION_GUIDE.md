@@ -94,7 +94,7 @@ The system looks for model weights in these locations (in order of preference):
 
 ### Required Model Files
 For colonoscopy video processing, the following model file is required:
-- `colo_segmentation_RegNetX800MF_6.ckpt` - Multilabel classification model for colonoscopy
+- `colo_segmentation_RegNetX800MF_6.safetensors` - Multilabel classification model for colonoscopy
 
 ### Automatic Setup
 The `setup_endoreg_db` command automatically:

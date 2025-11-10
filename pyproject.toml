@@ -73,6 +73,7 @@ dependencies = [
   "vocos==0.1.0",
   "decord==0.6.0",
   "moviepy==2.2.1",
+  "safetensors>=0.4.5",
   "celery>=5.5.3",
   "python-magic>=0.4.27",
   "django-modeltranslation>=0.19.16",

@@ -307,12 +307,18 @@ def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str 
     """
     meta = infer_default_model_meta_from_hf(model_id)
 
-    # Download weights
-    weights_path = hf_hub_download(
-        repo_id=model_id,
-        filename="colo_segmentation_RegNetX800MF_base.ckpt",
-        local_dir=WEIGHTS_DIR,
-    )
+    # Download safetensor weights; raise a clear error if unavailable
+    try:
+        weights_path = hf_hub_download(
+            repo_id=model_id,
+            filename="colo_segmentation_RegNetX800MF_base.safetensors",
+            local_dir=WEIGHTS_DIR,
+        )
+    except Exception as exc:  # pragma: no cover - network errors
+        raise RuntimeError(
+            "Failed to download safetensor weights from Hugging Face; ensure the repository provides "
+            "a .safetensors artifact."
+        ) from exc
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
     if not labelset_name:

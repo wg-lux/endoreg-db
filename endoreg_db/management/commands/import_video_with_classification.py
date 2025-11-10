@@ -99,7 +99,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--model_path",
             type=str,
-            default="./data/models/colo_segmentation_RegNetX800MF_6.ckpt",
+            default="./data/models/colo_segmentation_RegNetX800MF_6.safetensors",
             help="Path to the model file",
         )
         

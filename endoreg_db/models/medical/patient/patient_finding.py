@@ -48,7 +48,7 @@ class PatientFinding(models.Model):
                 name='unique_active_finding_per_examination'
             ),
             models.CheckConstraint(
-                check=models.Q(
+                check=models.Q( # called .check in future?
                     deactivated_at__isnull=True,
                     deactivated_by__isnull=True
                 ) | models.Q(

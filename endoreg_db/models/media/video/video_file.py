@@ -409,7 +409,10 @@ class VideoFile(models.Model):
         if active is self.processed_file:
             path = _get_processed_file_path(self)
         elif active is self.raw_file:
-            path = _get_raw_file_path(self)
+            try:
+                path = _get_raw_file_path(self)
+            except FileNotFoundError as exc:
+                raise ValueError(str(exc)) from exc
         else:
             raise ValueError(
                 "No active file path available. VideoFile has neither raw nor processed file."
@@ -478,11 +481,16 @@ class VideoFile(models.Model):
         _delete_frames(self)
 
         # Call the original delete method to remove the instance from the database
-        active_path = self.active_file_path
-        logger.info(f"Deleting VideoFile: {self.uuid} - {active_path}")
+        try:
+            active_path = self.active_file_path
+            logger.info(f"Deleting VideoFile: {self.uuid} - {active_path}")
+
+        except ValueError:
+            logger.info(f"Deleting VideoFile: {self.uuid} - No active file path found.")
+            active_path = None
 
         # Delete associated files if they exist
-        if active_path.exists():
+        if active_path and active_path.exists():
             active_path.unlink(missing_ok=True)
 
         # Delete file storage
@@ -556,7 +564,16 @@ class VideoFile(models.Model):
         # After validation and metadata update, only the anonymized video should remain
         from .video_file_io import _get_raw_file_path
 
-        raw_path = _get_raw_file_path(self)
+        try:
+            raw_path = _get_raw_file_path(self)
+        except FileNotFoundError as exc:
+            logger.warning(
+                "Raw video file not found for deletion during validation %s: %s",
+                self.uuid,
+                exc,
+            )
+            raw_path = None
+
         if raw_path and raw_path.exists():
             logger.info(f"Deleting raw video file after validation: {raw_path}")
             raw_path.unlink(missing_ok=True)

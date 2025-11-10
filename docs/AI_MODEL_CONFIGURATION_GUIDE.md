@@ -34,7 +34,7 @@ image_multilabel_classification_colonoscopy_default:
   activation: softmax
   normalization_mean: [0.485, 0.456, 0.406]
   normalization_std: [0.229, 0.224, 0.225]
-  weights: model_weights/image_multilabel_classification_colonoscopy_default_v1_colo_segmentation_RegNetX800MF_6.ckpt
+   weights: model_weights/image_multilabel_classification_colonoscopy_default_v1_colo_segmentation_RegNetX800MF_6.safetensors
   created_at: "2024-01-01T00:00:00Z"
   updated_at: "2024-01-01T00:00:00Z"
 ```
@@ -58,7 +58,7 @@ IMPORT_METADATA = {
         "dir": AI_MODEL_META_DATA_DIR,
         "model": ModelMeta,
         "foreign_keys": ["labelset", "model"],
-        "foreign_key_models": [VideoSegmentationLabelSet, AiModel],
+        "foreign_key_models": [LabelSet, AiModel],
     },
     # ... other models
 }

@@ -38,21 +38,29 @@ def _update_text_metadata(
         logger.warning(f"Frames not extracted for video {video.uuid}. Attempting automatic frame extraction...")
         try:
             success = video.extract_frames(overwrite=False)
-            if success:
-                # Refresh state after frame extraction
-                state.refresh_from_db()
-                if state.frames_extracted:
-                    logger.info(f"Successfully extracted frames for video {video.uuid}")
-                else:
-                    # Force update the state if extraction was successful but state wasn't updated
-                    state.frames_extracted = True
-                    state.save(update_fields=['frames_extracted'])
-                    logger.info(f"Corrected frames_extracted state for video {video.uuid}")
-            else:
-                raise ValueError(f"Cannot update text metadata for video {video.uuid}: Frame extraction failed.")
-        except Exception as e:
-            logger.error(f"Failed to extract frames for video {video.uuid}: {e}")
-            raise ValueError(f"Cannot update text metadata for video {video.uuid}: Frames not extracted and automatic extraction failed: {e}")
+        except (FileNotFoundError, RuntimeError, ValueError, OSError) as exc:
+            logger.error(
+                "Failed to extract frames for video %s: %s",
+                video.uuid,
+                exc,
+                exc_info=True,
+            )
+            raise ValueError(
+                f"Cannot update text metadata for video {video.uuid}: Frames not extracted and automatic extraction failed"
+            ) from exc
+
+        if not success:
+            raise ValueError(
+                f"Cannot update text metadata for video {video.uuid}: Frame extraction returned False"
+            )
+
+        state.refresh_from_db()
+        if not state.frames_extracted:
+            raise ValueError(
+                f"Cannot update text metadata for video {video.uuid}: Frame extraction completed but state was not updated"
+            )
+
+        logger.info(f"Successfully extracted frames for video {video.uuid}")
 
     if state.text_meta_extracted and not overwrite:
         logger.info("Text already extracted for video %s and overwrite=False. Skipping.", video.uuid) # Changed to info

@@ -23,7 +23,7 @@
 # ColoSegmentation Model Supply
 To consolidate our framework, we should create a fixed model_meta .yaml file for our current colonoscopy segmentation model. For this, we should implement a new feature which allows a model_meta entry to store a hugging face url. The current model should be supplied as default model when we run load_base_db_data. On first usage, the model should be downloaded if not already available.
 
-The colonoscopy_default_segmentation model is available on huggingface here: https://huggingface.co/wg-lux/colo_segmentation_RegNetX800MF_base/resolve/main/colo_segmentation_RegNetX800MF_base.ckpt
+The colonoscopy_default_segmentation model is available on Hugging Face here: https://huggingface.co/wg-lux/colo_segmentation_RegNetX800MF_base/resolve/main/colo_segmentation_RegNetX800MF_base.safetensors
 
 # Establish CI/CD Best-Practices
 to be done

@@ -9,15 +9,15 @@ default_models:
 huggingface_fallback:
   enabled: true
   repo_id: "wg-lux/colo_segmentation_RegNetX800MF_base"
-  filename: "colo_segmentation_RegNetX800MF_base.ckpt"
+  filename: "colo_segmentation_RegNetX800MF_base.safetensors"
   labelset_name: "multilabel_classification_colonoscopy_default"
 
 # Local weights search patterns
 weights_search_patterns:
   # Primary model weight filename patterns (supports wildcards)
-  - "colo_segmentation_RegNetX800MF_*.ckpt"
-  - "image_multilabel_classification_colonoscopy_default_*.ckpt"
-  - "*_colonoscopy_*.ckpt"
+  - "colo_segmentation_RegNetX800MF_*.safetensors"
+  - "image_multilabel_classification_colonoscopy_default_*.safetensors"
+  - "*_colonoscopy_*.safetensors"
 
 # Search directories for local weights (relative to project root)
 weights_search_dirs:

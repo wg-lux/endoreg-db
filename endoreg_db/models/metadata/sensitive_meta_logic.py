@@ -4,7 +4,7 @@ import random
 import re  # Neu hinzugefügt für Regex-Pattern
 from datetime import date, datetime, timedelta
 from hashlib import sha256
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
 
 from django.db import transaction
 from django.utils import timezone
@@ -192,6 +192,11 @@ def calculate_examination_hash(
     if not center:
         raise ValueError("Center is required to calculate examination hash.")
 
+    if not first_name:
+        raise ValueError("First name is required to calculate examination hash.")
+    if not last_name:
+        raise ValueError("Last name is required to calculate examination hash.")
+
     hash_str = get_patient_examination_hash(
         first_name=first_name,
         last_name=last_name,
@@ -233,7 +238,7 @@ def create_pseudo_examiner_logic(instance: "SensitiveMeta") -> "Examiner":
     return examiner
 
 
-def get_or_create_pseudo_patient_logic(instance: "SensitiveMeta") -> "Patient":
+def get_or_create_pseudo_patient_logic(instance: "SensitiveMeta"):
     """Gets or creates the pseudo patient based on instance data."""
     # Ensure necessary fields are set
     if not instance.patient_hash:
@@ -256,12 +261,12 @@ def get_or_create_pseudo_patient_logic(instance: "SensitiveMeta") -> "Patient":
         birth_year=year,
         birth_month=month,
     )
-    return patient
+    return patient, _created
 
 
 def get_or_create_pseudo_patient_examination_logic(
     instance: "SensitiveMeta",
-) -> "PatientExamination":
+):
     """Gets or creates the pseudo patient examination based on instance data."""
     # Ensure necessary fields are set
     if not instance.patient_hash:
@@ -270,9 +275,9 @@ def get_or_create_pseudo_patient_examination_logic(
         instance.examination_hash = calculate_examination_hash(instance)
 
     # Ensure the pseudo patient exists first, as PatientExamination might depend on it
-    if not instance.pseudo_patient_id:
-        pseudo_patient = get_or_create_pseudo_patient_logic(instance)
-        instance.pseudo_patient_id = pseudo_patient.pk  # Assign FK directly
+    if not instance.pseudo_patient:
+        pseudo_patient, _created = get_or_create_pseudo_patient_logic(instance)
+        instance.pseudo_patient = pseudo_patient  # Assign FK directly
 
     patient_examination, _created = (
         PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
@@ -282,7 +287,7 @@ def get_or_create_pseudo_patient_examination_logic(
             # pseudo_patient=instance.pseudo_patient
         )
     )
-    return patient_examination
+    return patient_examination, _created
 
 
 @transaction.atomic  # Ensure all operations within save succeed or fail together
@@ -426,13 +431,13 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 
     # 5. Get or Create Pseudo Patient (depends on hash, center, gender, dob)
     # Assign directly to the FK field to avoid premature saving issues
-    pseudo_patient = get_or_create_pseudo_patient_logic(instance)
-    instance.pseudo_patient_id = pseudo_patient.pk
+    pseudo_patient, _created = get_or_create_pseudo_patient_logic(instance)
+    instance.pseudo_patient = pseudo_patient
 
     # 6. Get or Create Pseudo Examination (depends on hashes)
     # Assign directly to the FK field
-    pseudo_examination = get_or_create_pseudo_patient_examination_logic(instance)
-    instance.pseudo_examination_id = pseudo_examination.pk
+    pseudo_examination, _created = get_or_create_pseudo_patient_examination_logic(instance)
+    instance.pseudo_examination = pseudo_examination
 
     # 7. Get or Create Pseudo Examiner (depends on names, center)
     # This needs to happen *after* the main instance has a PK for M2M linking.
@@ -1023,15 +1028,21 @@ def update_or_create_sensitive_meta_from_dict(
     cls: Type["SensitiveMeta"],
     data: Dict[str, Any],
     instance: Optional["SensitiveMeta"] = None,
-) -> "SensitiveMeta":
+):
     """Logic to update or create a SensitiveMeta instance from a dictionary."""
     # Check if the instance already exists based on unique fields
+    sensitive_meta: "SensitiveMeta"
+    _created: bool
     if instance:
         # Update the existing instance
-        return update_sensitive_meta_from_dict(instance, data), False
+        sensitive_meta = update_sensitive_meta_from_dict(instance, data)
+        _created = False
+       
     else:
         # Create a new instance
-        return create_sensitive_meta_from_dict(cls, data), True
+        sensitive_meta = create_sensitive_meta_from_dict(cls, data)
+        _created = True
+    return sensitive_meta, _created
 
 
 def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:

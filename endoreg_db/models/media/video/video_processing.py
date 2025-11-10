@@ -4,9 +4,18 @@ Video Processing History Model
 Tracks all video correction operations (masking, frame removal, reprocessing).
 Created as part of Phase 1.1: Video Correction API Endpoints.
 """
+from pathlib import Path
+from typing import Optional
+
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
 from .video_file import VideoFile
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 class VideoProcessingHistory(models.Model):
     """
@@ -112,7 +121,8 @@ class VideoProcessingHistory(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.get_operation_display()} on {self.video.uuid} - {self.get_status_display()}"
+        # return f"{self.get_operation_display()} on {self.video.uuid} - {self.get_status_display()}"
+        return f"VideoProcessingHistory(id={self.pk}, operation={self.operation}, video={self.video.uuid}, status={self.status})"
     
     def mark_running(self, save=True):
         """Mark operation as running."""
@@ -120,12 +130,34 @@ class VideoProcessingHistory(models.Model):
         if save:
             self.save(update_fields=['status'])
     
+    @staticmethod
+    def _normalize_output_path(path: str | Path | None) -> str:
+        """Return a path relative to MEDIA_ROOT when possible."""
+        if not path:
+            return ""
+
+        raw_path = Path(path)
+        if not raw_path.is_absolute():
+            return raw_path.as_posix()
+        media_root = Path(settings.MEDIA_ROOT)
+
+        try:
+            relative = raw_path.resolve().relative_to(media_root.resolve())
+            return relative.as_posix()
+        except (ValueError, RuntimeError):
+            logger.warning(
+                "Storing absolute output path '%s' because it is outside MEDIA_ROOT (%s).",
+                raw_path,
+                media_root,
+            )
+            return raw_path.as_posix()
+
     def mark_success(self, output_file=None, details=None, save=True):
         """Mark operation as successful."""
         self.status = self.STATUS_SUCCESS
         self.completed_at = timezone.now()
         if output_file:
-            self.output_file = output_file
+            self.output_file = self._normalize_output_path(output_file)
         if details:
             self.details = details
         if save:

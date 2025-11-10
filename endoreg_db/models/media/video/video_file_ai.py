@@ -350,6 +350,7 @@ def _predict_video_pipeline(
             )
             fps = 30 # Default FPS if unknown
 
+        fps = int(fps)
         smooth_merged_predictions = {}
         for key in merged_predictions.keys():
             smooth_merged_predictions[key] = make_smooth_preds(

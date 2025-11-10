@@ -445,9 +445,7 @@ class VideoImportService:
     def _process_frames_and_metadata(self):
         """Process frames and extract metadata with anonymization."""
         # Check frame cleaning availability
-        frame_cleaning_available, frame_cleaner = (
-            self._ensure_frame_cleaning_available()
-        )
+        frame_cleaning_available, frame_cleaner = self._ensure_frame_cleaning_available()
         video = self._require_current_video()
 
         raw_file_field = video.raw_file
@@ -818,12 +816,23 @@ class VideoImportService:
         source_path: Path | None = None
         try:
             if raw_field and raw_field.path:
-                source_path = Path(raw_field.path)
+                candidate_path = Path(raw_field.path)
+                if candidate_path.exists():
+                    source_path = candidate_path
         except Exception:
             source_path = None
 
         if source_path is None and file_path is not None:
-            source_path = Path(file_path)
+            file_candidate = Path(file_path)
+            if file_candidate.exists():
+                source_path = file_candidate
+
+        if source_path is None:
+            context_path = self.processing_context.get("raw_video_path")
+            if context_path:
+                context_candidate = Path(context_path)
+                if context_candidate.exists():
+                    source_path = context_candidate
 
         if source_path is None:
             raise ValueError("No file path available for creating sensitive file")
@@ -837,21 +846,27 @@ class VideoImportService:
             self.logger.info("Creating sensitive file directory: %s", target_dir)
             os.makedirs(target_dir, exist_ok=True)
 
-        target_file_path = target_dir / source_path.name
-        try:
-            shutil.move(str(source_path), str(target_file_path))
-            self.logger.info(
-                "Moved raw file to sensitive directory: %s", target_file_path
-            )
-        except Exception as exc:
-            self.logger.warning(
-                "Failed to move raw file to sensitive dir, copying instead: %s", exc
-            )
-            shutil.copy(str(source_path), str(target_file_path))
+        target_name = source_path.name or "raw_video"
+        target_file_path = target_dir / target_name
+        if source_path != target_file_path:
             try:
-                os.remove(source_path)
-            except FileNotFoundError:
-                pass
+                shutil.copy2(str(source_path), str(target_file_path))
+                self.logger.info(
+                    "Copied raw file to sensitive directory: %s", target_file_path
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "Failed to copy raw file to sensitive dir: %s", exc
+                )
+                shutil.copy(str(source_path), str(target_file_path))
+                self.logger.info(
+                    "Fallback copy succeeded for sensitive directory: %s",
+                    target_file_path,
+                )
+        else:
+            self.logger.debug(
+                "Source path already in sensitive directory: %s", target_file_path
+            )
 
         try:
             from endoreg_db.utils import data_paths
@@ -995,25 +1010,26 @@ class VideoImportService:
             Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
         """
         try:
-            # Check if we can find lx-anonymizer
-            from lx_anonymizer import FrameCleaner  # type: ignore[import]
-
-            if FrameCleaner:
-                return True, FrameCleaner()
-
+            from lx_anonymizer import FrameCleaner  
         except Exception as e:
             self.logger.warning(
                 f"Frame cleaning not available: {e} Please install or update lx_anonymizer."
             )
+            _available = False
+            FrameCleaner = None
 
-        return False, None
+        assert FrameCleaner is not None
+        frame_cleaner = FrameCleaner()
+        _available = True
+
+        return _available, frame_cleaner
 
     def _perform_frame_cleaning(self, endoscope_data_roi_nested, endoscope_image_roi):
         """Perform frame cleaning and anonymization."""
         # Instantiate frame cleaner
         is_available, frame_cleaner = self._ensure_frame_cleaning_available()
 
-        if not is_available:
+        if not is_available or frame_cleaner is None:
             raise RuntimeError("Frame cleaning not available")
 
         # Prepare parameters for frame cleaning

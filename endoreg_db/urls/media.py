@@ -1,5 +1,4 @@
 from django.urls import path
-from PIL.PdfParser import PdfStream
 
 from endoreg_db.views import VideoStreamView
 from endoreg_db.views.media import (

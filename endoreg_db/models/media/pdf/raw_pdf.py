@@ -149,7 +149,10 @@ class RawPdfFile(models.Model):
         """
         Sets the file path of the anonymized PDF file.
         """
-        self.anonymized_file = File(file_path)  # type: ignore
+        # self.anonymized_file = File(file_path)  # type: ignore
+        with open(file_path, "rb") as f:
+            django_file = File(f, name=file_path.name)
+            self.anonymized_file = django_file 
         self.save(update_fields=["anonymized_file"])
 
     def get_raw_file_path(self) -> Optional[Path]:

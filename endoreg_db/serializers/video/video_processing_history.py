@@ -4,7 +4,10 @@ Video Processing History Serializer
 Serializes VideoProcessingHistory model for API responses.
 Created as part of Phase 1.1: Video Correction API Endpoints.
 """
+from collections.abc import Mapping
+
 from rest_framework import serializers
+
 from endoreg_db.models import VideoProcessingHistory
 
 
@@ -16,8 +19,8 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
     with download URLs for processed files.
     """
     download_url = serializers.SerializerMethodField()
-    operation_display = serializers.CharField(source='get_operation_display', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    operation_display = serializers.CharField(source='operation', read_only=True)
+    status_display = serializers.CharField(source='status', read_only=True)
     duration = serializers.ReadOnlyField()
     is_complete = serializers.ReadOnlyField()
     
@@ -57,7 +60,8 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
         
         # Build URL to download endpoint (to be implemented)
         # Format: /api/media/processed-videos/{video_id}/{history_id}/
-        request = self.context.get('request')
+        context = self.context if isinstance(self.context, Mapping) else None
+        request = context.get('request') if context else None
         if request:
             return request.build_absolute_uri(
                 f'/api/media/processed-videos/{obj.video.id}/{obj.id}/'
@@ -120,8 +124,9 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
         """
         if not isinstance(value, dict):
             raise serializers.ValidationError("config must be a dictionary")
-        
-        operation = self.initial_data.get('operation')
+
+        initial = self.initial_data if isinstance(self.initial_data, Mapping) else {}
+        operation = initial.get('operation')
         
         # Validate masking config
         if operation == VideoProcessingHistory.OPERATION_MASKING:

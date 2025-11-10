@@ -103,7 +103,7 @@ req_set.tags.remove(gastro_tag)  # Einen Tag entfernen
 curl -X POST http://localhost:8000/api/lookup/init/ \
   -H "Content-Type: application/json" \
   -d '{
-    "patient_exam_id": 123,
+    "patient_examination_id": 123,
     "user_tags": ["Gastroenterologist", "Professor"]
   }'
 ```

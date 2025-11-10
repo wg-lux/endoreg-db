@@ -171,7 +171,7 @@ def base_db_data(django_db_setup, cache):
                 description="Stub model meta for fast tests",
             )
             if not model_meta.weights:
-                weights_name = f"model_weights/{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.ckpt"
+                weights_name = f"model_weights/{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.safetensors"
                 if not default_storage.exists(weights_name):
                     default_storage.save(weights_name, ContentFile(b"stub-weights"))
                 model_meta.weights.name = weights_name
@@ -197,7 +197,7 @@ def base_db_data(django_db_setup, cache):
                 description="Stub alt model meta for fast tests",
             )
             if not model_meta_alt.weights:
-                weights_name_alt = "model_weights/test_segmentation_model_stub.ckpt"
+                weights_name_alt = "model_weights/test_segmentation_model_stub.safetensors"
                 if not default_storage.exists(weights_name_alt):
                     default_storage.save(weights_name_alt, ContentFile(b"stub-weights"))
                 model_meta_alt.weights.name = weights_name_alt
@@ -721,7 +721,7 @@ def mock_ai_model(base_db_data):
         ai_model=ai_model,
         version=1,
         defaults={
-            'model_path': '/tmp/test_model.ckpt',
+            'model_path': '/tmp/test_model.safetensors',
             'is_active': True,
             'batch_size': 16,
             'image_size_x': 716,
