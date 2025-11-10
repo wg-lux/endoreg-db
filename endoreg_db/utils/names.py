@@ -55,22 +55,28 @@ def create_mock_patient_name(gender: str) -> tuple[str, str]:
 
 
 def guess_name_gender(name: str) -> str:
-    """
-    Guesses the gender for a given name by using a gender detector and retrieving the corresponding Gender model instance.
-    Parameters:
-        name (str): The name for which the gender is to be determined.
-    Returns:
-        Gender: The Gender object corresponding to the detected gender name.
-    Raises:
-        Gender.DoesNotExist: If no Gender object matching the detected gender is found.
-        Exception: For any other exceptions that occur during gender detection or database lookup.
-    """
+    """Return a normalized gender slug (male|female|unknown) for the given name.
 
-    from endoreg_db.models import Gender
+    Uses :mod:`gender_guesser` to infer gender without touching the database. All
+    detector outputs are mapped onto our canonical slugs so callers can perform
+    their own model lookups or fall back safely.
+    """
 
     detector = gender_detector.Detector(case_sensitive=False)
-    gender_name = detector.get_gender(name)
-    gender = Gender.objects.get(name=gender_name)
-    if not gender:
-        gender = Gender.objects.get(name="unknown")
-    return gender
+    try:
+        detected = detector.get_gender(name or "")
+    except Exception:  # pragma: no cover - defensive, detector is pure-Python
+        detected = None
+
+    if not detected:
+        return "unknown"
+
+    normalized = detected.lower()
+    if normalized in {"male", "mostly_male"}:
+        return "male"
+    if normalized in {"female", "mostly_female"}:
+        return "female"
+
+    # gender-guesser returns "andy" for androgynous names and "unknown" for
+    # unrecognised inputs – both should map to our "unknown" slug.
+    return "unknown"

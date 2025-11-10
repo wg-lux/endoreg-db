@@ -45,12 +45,13 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
         if direct_path.exists():
             return direct_path.resolve()
 
-    message = (
-        f"Raw video file '{rel_name}' not found under {data_paths['video']} "
-        f"or via stored FileField path for video {video.uuid}."
+    logger.warning(
+        "Raw video file '%s' not found under %s or via stored FileField path for video %s.",
+        rel_name,
+        data_paths["video"],
+        video.uuid,
     )
-    logger.error(message)
-    raise FileNotFoundError(message)
+    return None
 
 def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     """Returns the absolute Path object for the processed file, if it exists."""
@@ -76,15 +77,12 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         logger.error("Error during frame file/state deletion for video %s: %s", video.uuid, frame_del_e, exc_info=True)
 
     # 2. Delete Raw File
-    try:
-        raw_file_path = _get_raw_file_path(video)
-    except FileNotFoundError as exc:
+    raw_file_path = _get_raw_file_path(video)
+    if raw_file_path is None:
         logger.warning(
-            "Raw video file not found during deletion for video %s: %s",
+            "Raw video file not found during deletion for video %s.",
             video.uuid,
-            exc,
         )
-        raw_file_path = None
     if raw_file_path:
         try:
             if raw_file_path.exists():

@@ -679,7 +679,18 @@ def create_sensitive_meta_from_dict(
                 f"Gender with name '{patient_gender_input}' provided but not found. Attempting to guess or use default."
             )
             # Fall through to guessing logic if provided string name is invalid
-            patient_gender_input = None  # Reset to trigger guessing
+            normalized = (patient_gender_input or "").lower()
+            if normalized in {"male", "female", "unknown"}:
+                gender_obj, _ = Gender.objects.get_or_create(
+                    name=normalized,
+                    defaults={
+                        "abbreviation": normalized[:1].upper() or None,
+                        "description": "Auto-created default gender entry",
+                    },
+                )
+                selected_data["patient_gender"] = gender_obj
+            else:
+                patient_gender_input = None  # Reset to trigger guessing
 
     if not isinstance(
         selected_data.get("patient_gender"), Gender
@@ -695,10 +706,14 @@ def create_sensitive_meta_from_dict(
                 name=gender_name_to_use
             )
         except Gender.DoesNotExist:
-            # This should ideally not happen if "unknown" gender is guaranteed to exist
-            raise ValueError(
-                f"Default or guessed gender '{gender_name_to_use}' does not exist in Gender table."
+            gender_obj, _ = Gender.objects.get_or_create(
+                name=gender_name_to_use,
+                defaults={
+                    "abbreviation": gender_name_to_use[:1].upper() or None,
+                    "description": "Auto-created default gender entry",
+                },
             )
+            selected_data["patient_gender"] = gender_obj
 
     # Update name DB
     update_name_db(first_name, last_name)

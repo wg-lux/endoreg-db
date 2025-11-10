@@ -13,6 +13,12 @@ import pytest
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 
 
+@pytest.fixture(autouse=True)
+def ensure_reference_data(base_db_data):
+    """Populate default lookup data (centers, genders, etc.) required by validation flows."""
+    return base_db_data
+
+
 @pytest.mark.django_db
 class TestVideoValidationDeletionBehavior:
     """

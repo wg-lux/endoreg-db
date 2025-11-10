@@ -1,4 +1,30 @@
-# Test suite standardization and efficiency
+# Test Errors
+
+## Findings
+- tests/media/video/test_video_file_extracted.py::VideoFileModelExtractedTest::test_pipeline_real_operations – VideoFile.pipe_1 now bails out with False; the new _pipe_1 logic exits when prerequisites fail (likely the VideoPredictionMeta lookup inside the transaction). Need to inspect logs/DB state to confirm why that get(...) misses right after predict_video’s get_or_create, or whether earlier steps (frame extraction/text metadata) still leave state flags unset.
+
+- tests/models/... delete/validation suites – _get_raw_file_path now raises FileNotFoundError whenever the backing file is absent. Callers like VideoFile.delete() expect a tolerant helper and don’t guard; propagated exceptions break metadata and processing-history cascade tests. Same stricter path lookup also feeds frame extraction/validation, so it probably underpins other regressions.
+
+- test_validation_deletion.py – guess_name_gender currently hits Gender.objects.get(...), so fresh test DBs without seeded genders raise Gender.DoesNotExist. Downstream logic expects a plain name string ("male", "unknown") to resolve later; the function should return a slug/fallback instead of touching the DB directly.
+
+- tests/models/video/test_video_processing_history.py & tests/serializers/video/... – VideoProcessingHistory.__str__ now returns a debug dump and the serializer exposes raw enums by setting operation_display/status_display to the same field. Both regressions violate the human-readable API contract.
+
+- test_whitenoise_file_serving.py – VideoFile lost its active_file_url convenience property; file-server tests instantiate real objects and expect to call it for signed/static URLs.
+
+- test_requirement_lookup.py – LookupViewSet.init always passes user_tags= into create_lookup_token_for_pe. Test stubs that only accept pe_id now fail with unexpected kwarg; we should preserve backward compatibility by only passing the keyword when tags are provided.
+
+## Plan
+- Patch _get_raw_file_path to log-and-return None instead of raising; review every caller to ensure they handle None gracefully and adjust any new call sites accordingly.
+
+- Fix guess_name_gender to return a detected slug with safe fallbacks (unknown), avoiding DB lookups; confirm SensitiveMeta creation tolerates missing gender rows (lazily create default if still absent).
+
+- Restore user-friendly strings: revert VideoProcessingHistory.__str__ to the get_*_display() format and update the serializer to source those display methods.
+
+- Reintroduce VideoFile.active_file_url (wrapping self.active_file.url with proper error handling) so WhiteNoise tests and downstream code regain the expected API.
+
+- Update LookupViewSet.init (and any other entry points) to only include user_tags in the service call when non-empty, keeping mocks without that parameter working.
+
+- Investigate the Pipe 1 regression once the foundational path/metadata fixes land—rerun the integration test with logging to see whether the failure stems from state flags, prediction metadata creation, or another new guard—and address whatever condition remains.
 
 ## Test Suite Standardization & Caching Plan
 1. Catalogue the current pytest suite structure (module layout, shared fixtures, caching usage) and record pain points from full-suite runs.

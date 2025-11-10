@@ -409,17 +409,16 @@ class VideoFile(models.Model):
         if active is self.processed_file:
             path = _get_processed_file_path(self)
         elif active is self.raw_file:
-            try:
-                path = _get_raw_file_path(self)
-            except FileNotFoundError as exc:
-                raise ValueError(str(exc)) from exc
+            path = _get_raw_file_path(self)
         else:
             raise ValueError(
                 "No active file path available. VideoFile has neither raw nor processed file."
             )
 
         if path is None:
-            raise ValueError("Active file path could not be resolved.")
+            raise ValueError(
+                "Active file path could not be resolved. VideoFile raw file is missing."
+            )
         return path
 
     @classmethod
@@ -564,15 +563,7 @@ class VideoFile(models.Model):
         # After validation and metadata update, only the anonymized video should remain
         from .video_file_io import _get_raw_file_path
 
-        try:
-            raw_path = _get_raw_file_path(self)
-        except FileNotFoundError as exc:
-            logger.warning(
-                "Raw video file not found for deletion during validation %s: %s",
-                self.uuid,
-                exc,
-            )
-            raw_path = None
+        raw_path = _get_raw_file_path(self)
 
         if raw_path and raw_path.exists():
             logger.info(f"Deleting raw video file after validation: {raw_path}")
@@ -584,7 +575,10 @@ class VideoFile(models.Model):
                 f"Raw video deleted for {self.uuid}. Anonymized video preserved."
             )
         else:
-            logger.warning(f"Raw video file not found for deletion: {self.uuid}")
+            logger.warning(
+                "Raw video file not found for deletion during validation %s.",
+                self.uuid,
+            )
 
         if sensitive_meta:
             # Mark as processed after validation
