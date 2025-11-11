@@ -5,6 +5,7 @@
     version: "1"
     model: "image_multilabel_classification_colonoscopy_default"
     labelset: "multilabel_classification_colonoscopy_default"
+    labelset_version: 1
     activation: "sigmoid"
     mean: "0.485,0.456,0.406" # ImageNet defaults
     std: "0.229,0.224,0.225" # ImageNet defaults
@@ -20,8 +21,8 @@
   setup_config:
     is_primary_model: true # Mark this as the primary model for setup
     weight_filenames: # Specific weight file patterns for this model
-      - "colo_segmentation_RegNetX800MF_6.ckpt"
-      - "image_multilabel_classification_colonoscopy_default_v1_*.ckpt"
+      - "colo_segmentation_RegNetX800MF_6.safetensors"
+      - "image_multilabel_classification_colonoscopy_default_v1_*.safetensors"
     huggingface_fallback: # HF configuration for this model
       repo_id: "wg-lux/colo_segmentation_RegNetX800MF_base"
-      filename: "colo_segmentation_RegNetX800MF_base.ckpt"
+      filename: "colo_segmentation_RegNetX800MF_base.safetensors"

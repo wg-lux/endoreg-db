@@ -108,8 +108,8 @@ from .patient_finding_classification import (
 )
 
 from .pdf import (
-    ClosingFileWrapper,
-    PDFMediaView,
+    PdfReimportView,
+    PdfStreamView,
 )
 
 from .report import (
@@ -240,7 +240,9 @@ __all__ = [
     "create_patient_finding_classification",
 
     # PDF
-    "ClosingFileWrapper",
+    "PdfMediaView",
+    "PdfReimportView",
+    "PdfStreamView",
 
     # Report
     "ReportListView",

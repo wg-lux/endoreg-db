@@ -43,7 +43,9 @@ class PdfImportService:
     - 'cropping': Advanced mode that crops sensitive regions to separate images
     """
 
-    def __init__(self, allow_meta_overwrite: bool = False, processing_mode: str = "blackening"):
+    def __init__(
+        self, allow_meta_overwrite: bool = False, processing_mode: str = "blackening"
+    ):
         """
         Initialize the PDF import service.
 
@@ -59,7 +61,9 @@ class PdfImportService:
         # Validate and set processing mode
         valid_modes = ["blackening", "cropping"]
         if processing_mode not in valid_modes:
-            raise ValueError(f"Invalid processing_mode '{processing_mode}'. Must be one of: {valid_modes}")
+            raise ValueError(
+                f"Invalid processing_mode '{processing_mode}'. Must be one of: {valid_modes}"
+            )
         self.processing_mode = processing_mode
 
         # Central PDF instance management
@@ -77,7 +81,9 @@ class PdfImportService:
         Returns:
             PdfImportService instance configured for blackening mode
         """
-        return cls(allow_meta_overwrite=allow_meta_overwrite, processing_mode="blackening")
+        return cls(
+            allow_meta_overwrite=allow_meta_overwrite, processing_mode="blackening"
+        )
 
     @classmethod
     def with_cropping(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
@@ -90,7 +96,9 @@ class PdfImportService:
         Returns:
             PdfImportService instance configured for cropping mode
         """
-        return cls(allow_meta_overwrite=allow_meta_overwrite, processing_mode="cropping")
+        return cls(
+            allow_meta_overwrite=allow_meta_overwrite, processing_mode="cropping"
+        )
 
     @contextmanager
     def _file_lock(self, path: Path):
@@ -115,10 +123,16 @@ class PdfImportService:
 
                 if age is not None and age > STALE_LOCK_SECONDS:
                     try:
-                        logger.warning("Stale lock detected for %s (age %.0fs). Reclaiming lock...", path, age)
+                        logger.warning(
+                            "Stale lock detected for %s (age %.0fs). Reclaiming lock...",
+                            path,
+                            age,
+                        )
                         lock_path.unlink()
                     except Exception as e:
-                        logger.warning("Failed to remove stale lock %s: %s", lock_path, e)
+                        logger.warning(
+                            "Failed to remove stale lock %s: %s", lock_path, e
+                        )
                     # retry acquire
                     fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
                 else:
@@ -233,12 +247,16 @@ class PdfImportService:
                 try:
                     mod = importlib.import_module("lx_anonymizer")
                     ReportReader = getattr(mod, "ReportReader")
-                    logger.info("Imported lx_anonymizer.ReportReader via LX_ANONYMIZER_PATH")
+                    logger.info(
+                        "Imported lx_anonymizer.ReportReader via LX_ANONYMIZER_PATH"
+                    )
                     self._report_reader_available = True
                     self._report_reader_class = ReportReader
                     return True, ReportReader
                 except Exception as e:
-                    logger.warning("Failed importing lx_anonymizer via LX_ANONYMIZER_PATH: %s", e)
+                    logger.warning(
+                        "Failed importing lx_anonymizer via LX_ANONYMIZER_PATH: %s", e
+                    )
                 finally:
                     # Keep path for future imports if it worked; otherwise remove.
                     if "ReportReader" not in locals() and extra in sys.path:
@@ -259,11 +277,15 @@ class PdfImportService:
         """
         pdf_file = pdf_instance or self.current_pdf
         if not pdf_file:
-            logger.warning("No PDF instance available for ensuring default patient data")
+            logger.warning(
+                "No PDF instance available for ensuring default patient data"
+            )
             return
 
         if not pdf_file.sensitive_meta:
-            logger.info(f"No SensitiveMeta found for PDF {pdf_file.pdf_hash}, creating default")
+            logger.info(
+                f"No SensitiveMeta found for PDF {pdf_file.pdf_hash}, creating default"
+            )
 
             # Create default SensitiveMeta with placeholder data
             default_data = {
@@ -271,16 +293,22 @@ class PdfImportService:
                 "patient_last_name": "Unknown",
                 "patient_dob": date(1990, 1, 1),  # Default DOB
                 "examination_date": date.today(),
-                "center_name": pdf_file.center.name if pdf_file.center else "university_hospital_wuerzburg",
+                "center_name": pdf_file.center.name
+                if pdf_file.center
+                else "university_hospital_wuerzburg",
             }
 
             try:
                 sensitive_meta = SensitiveMeta.create_from_dict(default_data)
                 pdf_file.sensitive_meta = sensitive_meta
                 pdf_file.save(update_fields=["sensitive_meta"])
-                logger.info(f"Created default SensitiveMeta for PDF {pdf_file.pdf_hash}")
+                logger.info(
+                    f"Created default SensitiveMeta for PDF {pdf_file.pdf_hash}"
+                )
             except Exception as e:
-                logger.error(f"Failed to create default SensitiveMeta for PDF {pdf_file.pdf_hash}: {e}")
+                logger.error(
+                    f"Failed to create default SensitiveMeta for PDF {pdf_file.pdf_hash}: {e}"
+                )
 
     def import_and_anonymize(
         self,
@@ -311,7 +339,9 @@ class PdfImportService:
         """
         try:
             # Initialize processing context
-            self._initialize_processing_context(file_path, center_name, delete_source, retry)
+            self._initialize_processing_context(
+                file_path, center_name, delete_source, retry
+            )
 
             # Step 1: Validate and prepare file
             self._validate_and_prepare_file()
@@ -321,7 +351,9 @@ class PdfImportService:
 
             # Early return check - if no PDF instance was created, return None
             if not self.current_pdf:
-                logger.warning(f"No PDF instance created for {file_path}, returning None")
+                logger.warning(
+                    f"No PDF instance created for {file_path}, returning None"
+                )
                 return None
 
             # Step 3: Setup processing environment
@@ -353,7 +385,13 @@ class PdfImportService:
             # Always cleanup context
             self._cleanup_processing_context()
 
-    def _initialize_processing_context(self, file_path: Union[Path, str], center_name: str, delete_source: bool, retry: bool):
+    def _initialize_processing_context(
+        self,
+        file_path: Union[Path, str],
+        center_name: str,
+        delete_source: bool,
+        retry: bool,
+    ):
         """Initialize the processing context for the current PDF."""
         self.processing_context = {
             "file_path": Path(file_path),
@@ -370,7 +408,9 @@ class PdfImportService:
 
         # Check if already processed (only during current session to prevent race conditions)
         if str(file_path) in self.processed_files:
-            logger.info(f"File {file_path} already being processed in current session, skipping")
+            logger.info(
+                f"File {file_path} already being processed in current session, skipping"
+            )
             raise ValueError("File already being processed")
 
         logger.info(f"Starting import and processing for: {file_path}")
@@ -406,7 +446,9 @@ class PdfImportService:
                 if existing:
                     logger.info(f"Found existing RawPdfFile {existing.pdf_hash}")
                     if existing.text:
-                        logger.info(f"Existing PDF {existing.pdf_hash} already processed - returning")
+                        logger.info(
+                            f"Existing PDF {existing.pdf_hash} already processed - returning"
+                        )
                         self.current_pdf = existing
                         return
                     else:
@@ -428,11 +470,15 @@ class PdfImportService:
             else:
                 # Retrieve existing for retry
                 self.current_pdf = RawPdfFile.objects.get(pdf_hash=file_hash)
-                logger.info(f"Retrying import for existing RawPdfFile {self.current_pdf.pdf_hash}")
+                logger.info(
+                    f"Retrying import for existing RawPdfFile {self.current_pdf.pdf_hash}"
+                )
 
                 # Check if retry is actually needed
                 if self.current_pdf.text:
-                    logger.info(f"Existing PDF {self.current_pdf.pdf_hash} already processed during retry - returning")
+                    logger.info(
+                        f"Existing PDF {self.current_pdf.pdf_hash} already processed during retry - returning"
+                    )
                     return
 
             if not self.current_pdf:
@@ -459,7 +505,9 @@ class PdfImportService:
         self.processing_context["file_path"] = self.current_pdf.file.path
         self.processing_context["sensitive_copy_created"] = True
         try:
-            self.processing_context["sensitive_file_path"] = Path(self.current_pdf.file.path)
+            self.processing_context["sensitive_file_path"] = Path(
+                self.current_pdf.file.path
+            )
         except Exception:
             self.processing_context["sensitive_file_path"] = None
 
@@ -490,10 +538,16 @@ class PdfImportService:
             return
 
         try:
-            logger.info(f"Starting text extraction and metadata processing with ReportReader (mode: {self.processing_mode})...")
+            logger.info(
+                f"Starting text extraction and metadata processing with ReportReader (mode: {self.processing_mode})..."
+            )
 
             # Initialize ReportReader
-            report_reader = ReportReader(report_root_path=str(path_utils.STORAGE_DIR), locale="de_DE", text_date_format="%d.%m.%Y")
+            report_reader = ReportReader(
+                report_root_path=str(path_utils.STORAGE_DIR),
+                locale="de_DE",
+                text_date_format="%d.%m.%Y",
+            )
 
             if self.processing_mode == "cropping":
                 # Use advanced cropping method (existing implementation)
@@ -519,8 +573,12 @@ class PdfImportService:
         anonymized_output_path = anonymized_dir / f"{pdf_hash}_anonymized.pdf"
 
         # Process with enhanced process_report method (returns 4-tuple now)
-        original_text, anonymized_text, extracted_metadata, anonymized_pdf_path = report_reader.process_report(
-            pdf_path=self.processing_context["file_path"], create_anonymized_pdf=True, anonymized_pdf_output_path=str(anonymized_output_path)
+        original_text, anonymized_text, extracted_metadata, anonymized_pdf_path = (
+            report_reader.process_report(
+                pdf_path=self.processing_context["file_path"],
+                create_anonymized_pdf=True,
+                anonymized_pdf_output_path=str(anonymized_output_path),
+            )
         )
 
         # Store results in context
@@ -560,7 +618,13 @@ class PdfImportService:
         anonymized_dir.mkdir(parents=True, exist_ok=True)
 
         # Process with cropping (returns 5-tuple)
-        original_text, anonymized_text, extracted_metadata, cropped_regions, anonymized_pdf_path = report_reader.process_report_with_cropping(
+        (
+            original_text,
+            anonymized_text,
+            extracted_metadata,
+            cropped_regions,
+            anonymized_pdf_path,
+        ) = report_reader.process_report_with_cropping(
             pdf_path=self.processing_context["file_path"],
             crop_sensitive_regions=True,
             crop_output_dir=str(crops_dir),
@@ -661,7 +725,11 @@ class PdfImportService:
                     new_value = raw_value
 
                 # Configurable overwrite policy
-                should_overwrite = self.allow_meta_overwrite or not old_value or old_value in ["Patient", "Unknown"]
+                should_overwrite = (
+                    self.allow_meta_overwrite
+                    or not old_value
+                    or old_value in ["Patient", "Unknown"]
+                )
                 if new_value and should_overwrite:
                     setattr(sm, sm_field, new_value)
                     updated_fields.append(sm_field)
@@ -676,7 +744,11 @@ class PdfImportService:
             if isinstance(raw_value, str):
                 # Skip if the value is just the field name itself
                 if raw_value == meta_key:
-                    logger.warning("Skipping date field %s - got field name '%s' instead of actual date", sm_field, raw_value)
+                    logger.warning(
+                        "Skipping date field %s - got field name '%s' instead of actual date",
+                        sm_field,
+                        raw_value,
+                    )
                     return None
 
                 # Try common date formats
@@ -687,7 +759,9 @@ class PdfImportService:
                     except ValueError:
                         continue
 
-                logger.warning("Could not parse date '%s' for field %s", raw_value, sm_field)
+                logger.warning(
+                    "Could not parse date '%s' for field %s", raw_value, sm_field
+                )
                 return None
 
             elif hasattr(raw_value, "date"):
@@ -721,7 +795,10 @@ class PdfImportService:
 
         anonymized_path = Path(anonymized_pdf_path)
         if not anonymized_path.exists():
-            logger.warning("Anonymized PDF path returned but file does not exist: %s", anonymized_path)
+            logger.warning(
+                "Anonymized PDF path returned but file does not exist: %s",
+                anonymized_path,
+            )
             return
 
         logger.info("Anonymized PDF created by ReportReader at: %s", anonymized_path)
@@ -746,7 +823,9 @@ class PdfImportService:
             # If your model has a field for this, persist there; otherwise we just log.
             cropped_regions = self.processing_context.get("cropped_regions")
             if cropped_regions:
-                logger.debug("Cropped regions recorded (%d regions).", len(cropped_regions))
+                logger.debug(
+                    "Cropped regions recorded (%d regions).", len(cropped_regions)
+                )
 
             # Save model changes
             update_fields = ["anonymized_file"]
@@ -759,7 +838,10 @@ class PdfImportService:
             if state and not state.anonymized:
                 state.mark_anonymized(save=True)
 
-            logger.info("Updated anonymized_file reference to: %s", self.current_pdf.anonymized_file.name)
+            logger.info(
+                "Updated anonymized_file reference to: %s",
+                self.current_pdf.anonymized_file.name,
+            )
 
         except Exception as e:
             logger.warning("Could not set anonymized file reference: %s", e)
@@ -777,6 +859,14 @@ class PdfImportService:
             if self.processing_context.get("text_extracted") and state:
                 state.mark_anonymized()
 
+            # Mark as ready for validation after successful anonymization
+            if self.processing_context.get("anonymization_completed") and state:
+                state.mark_sensitive_meta_processed()
+                logger.info(
+                    f"PDF {self.current_pdf.pdf_hash} processing completed - "
+                    f"ready for validation (status: {state.anonymization_status})"
+                )
+
             # Save all changes
             with transaction.atomic():
                 self.current_pdf.save()
@@ -790,7 +880,9 @@ class PdfImportService:
     def _mark_processing_incomplete(self, reason: str):
         """Mark processing as incomplete with reason."""
         if not self.current_pdf:
-            logger.warning(f"Cannot mark processing incomplete - no PDF instance available. Reason: {reason}")
+            logger.warning(
+                f"Cannot mark processing incomplete - no PDF instance available. Reason: {reason}"
+            )
             return
 
         try:
@@ -809,22 +901,44 @@ class PdfImportService:
             logger.warning(f"Failed to mark processing incomplete: {e}")
 
     def _retry_existing_pdf(self, existing_pdf):
-        """Retry processing for existing PDF."""
+        """
+        Retry processing for existing PDF.
+
+        Uses get_raw_file_path() to find the original raw file instead of
+        relying on the file field which may point to a deleted sensitive file.
+        """
         try:
+            # ✅ FIX: Use get_raw_file_path() to find original file
+            raw_file_path = existing_pdf.get_raw_file_path()
+
+            if not raw_file_path or not raw_file_path.exists():
+                logger.error(
+                    f"Cannot retry PDF {existing_pdf.pdf_hash}: Raw file not found. "
+                    f"Please re-upload the original PDF file."
+                )
+                self.current_pdf = existing_pdf
+                return existing_pdf
+
+            logger.info(f"Found raw file for retry at: {raw_file_path}")
+
             # Remove from processed files to allow retry
-            file_path_str = str(existing_pdf.file.path) if existing_pdf.file else None
-            if file_path_str and file_path_str in self.processed_files:
+            file_path_str = str(raw_file_path)
+            if file_path_str in self.processed_files:
                 self.processed_files.remove(file_path_str)
                 logger.debug(f"Removed {file_path_str} from processed files for retry")
 
             return self.import_and_anonymize(
-                file_path=existing_pdf.file.path,
-                center_name=existing_pdf.center.name if existing_pdf.center else "unknown_center",
-                delete_source=False,
+                file_path=raw_file_path,  # ✅ Use raw file path, not sensitive path
+                center_name=existing_pdf.center.name
+                if existing_pdf.center
+                else "unknown_center",
+                delete_source=False,  # Never delete during retry
                 retry=True,
             )
         except Exception as e:
-            logger.error(f"Failed to re-import existing PDF {existing_pdf.pdf_hash}: {e}")
+            logger.error(
+                f"Failed to re-import existing PDF {existing_pdf.pdf_hash}: {e}"
+            )
             self.current_pdf = existing_pdf
             return existing_pdf
 
@@ -852,26 +966,51 @@ class PdfImportService:
                         if file_field and getattr(file_field, "name", None):
                             storage_name = file_field.name
                             file_field.delete(save=False)
-                            logger.debug("Deleted sensitive copy %s during error cleanup", storage_name)
+                            logger.debug(
+                                "Deleted sensitive copy %s during error cleanup",
+                                storage_name,
+                            )
                 except Exception as cleanup_exc:
-                    logger.warning("Failed to remove sensitive copy during error cleanup: %s", cleanup_exc)
+                    logger.warning(
+                        "Failed to remove sensitive copy during error cleanup: %s",
+                        cleanup_exc,
+                    )
 
             # Always clean up processed files set to prevent blocks
             file_path = self.processing_context.get("file_path")
             if file_path and str(file_path) in self.processed_files:
                 self.processed_files.remove(str(file_path))
-                logger.debug(f"Removed {file_path} from processed files during error cleanup")
+                logger.debug(
+                    f"Removed {file_path} from processed files during error cleanup"
+                )
 
             try:
                 original_path = self.processing_context.get("original_file_path")
-                logger.debug("PDF cleanup original path: %s (%s)", original_path, type(original_path))
-                raw_dir = original_path.parent if isinstance(original_path, Path) else None
-                if isinstance(original_path, Path) and original_path.exists() and not self.processing_context.get("sensitive_copy_created"):
+                logger.debug(
+                    "PDF cleanup original path: %s (%s)",
+                    original_path,
+                    type(original_path),
+                )
+                raw_dir = (
+                    original_path.parent if isinstance(original_path, Path) else None
+                )
+                if (
+                    isinstance(original_path, Path)
+                    and original_path.exists()
+                    and not self.processing_context.get("sensitive_copy_created")
+                ):
                     try:
                         original_path.unlink()
-                        logger.info("Removed original file %s during error cleanup", original_path)
+                        logger.info(
+                            "Removed original file %s during error cleanup",
+                            original_path,
+                        )
                     except Exception as remove_exc:
-                        logger.warning("Could not remove original file %s during error cleanup: %s", original_path, remove_exc)
+                        logger.warning(
+                            "Could not remove original file %s during error cleanup: %s",
+                            original_path,
+                            remove_exc,
+                        )
                 pdf_dir = self._get_pdf_dir()
                 if not pdf_dir and raw_dir:
                     base_dir = raw_dir.parent
@@ -888,7 +1027,12 @@ class PdfImportService:
 
                 # Remove empty PDF subdirectories that might have been created during setup
                 if pdf_dir and pdf_dir.exists():
-                    for subdir_name in ("sensitive", "cropped_regions", "anonymized", "_processing"):
+                    for subdir_name in (
+                        "sensitive",
+                        "cropped_regions",
+                        "anonymized",
+                        "_processing",
+                    ):
                         subdir_path = pdf_dir / subdir_name
                         if subdir_path.exists() and subdir_path.is_dir():
                             try:
@@ -896,22 +1040,49 @@ class PdfImportService:
                             except StopIteration:
                                 try:
                                     subdir_path.rmdir()
-                                    logger.debug("Removed empty directory %s during error cleanup", subdir_path)
+                                    logger.debug(
+                                        "Removed empty directory %s during error cleanup",
+                                        subdir_path,
+                                    )
                                 except OSError as rm_err:
-                                    logger.debug("Could not remove directory %s: %s", subdir_path, rm_err)
+                                    logger.debug(
+                                        "Could not remove directory %s: %s",
+                                        subdir_path,
+                                        rm_err,
+                                    )
                             except Exception as iter_err:
-                                logger.debug("Could not inspect directory %s: %s", subdir_path, iter_err)
+                                logger.debug(
+                                    "Could not inspect directory %s: %s",
+                                    subdir_path,
+                                    iter_err,
+                                )
 
-                raw_count = len(list(raw_dir.glob("*"))) if raw_dir and raw_dir.exists() else None
-                pdf_count = len(list(pdf_dir.glob("*"))) if pdf_dir and pdf_dir.exists() else None
+                raw_count = (
+                    len(list(raw_dir.glob("*")))
+                    if raw_dir and raw_dir.exists()
+                    else None
+                )
+                pdf_count = (
+                    len(list(pdf_dir.glob("*")))
+                    if pdf_dir and pdf_dir.exists()
+                    else None
+                )
 
                 sensitive_path = self.processing_context.get("sensitive_file_path")
                 if sensitive_path:
                     sensitive_parent = Path(sensitive_path).parent
-                    sensitive_count = len(list(sensitive_parent.glob("*"))) if sensitive_parent.exists() else None
+                    sensitive_count = (
+                        len(list(sensitive_parent.glob("*")))
+                        if sensitive_parent.exists()
+                        else None
+                    )
                 else:
                     sensitive_dir = pdf_dir / "sensitive" if pdf_dir else None
-                    sensitive_count = len(list(sensitive_dir.glob("*"))) if sensitive_dir and sensitive_dir.exists() else None
+                    sensitive_count = (
+                        len(list(sensitive_dir.glob("*")))
+                        if sensitive_dir and sensitive_dir.exists()
+                        else None
+                    )
 
                 logger.info(
                     "PDF import error cleanup counts - raw: %s, pdf: %s, sensitive: %s",
@@ -944,7 +1115,9 @@ class PdfImportService:
             self.current_pdf = None
             self.processing_context = {}
 
-    def import_simple(self, file_path: Union[Path, str], center_name: str, delete_source: bool = False) -> "RawPdfFile":
+    def import_simple(
+        self, file_path: Union[Path, str], center_name: str, delete_source: bool = False
+    ) -> "RawPdfFile":
         """
         Simple PDF import without text processing or anonymization.
         Uses centralized PDF instance management pattern.
@@ -959,7 +1132,9 @@ class PdfImportService:
         """
         try:
             # Initialize simple processing context
-            self._initialize_processing_context(file_path, center_name, delete_source, False)
+            self._initialize_processing_context(
+                file_path, center_name, delete_source, False
+            )
 
             # Validate file
             self._validate_and_prepare_file()
@@ -991,7 +1166,10 @@ class PdfImportService:
             with transaction.atomic():
                 self.current_pdf.save()
 
-            logger.info("Simple import completed for RawPdfFile hash: %s", self.current_pdf.pdf_hash)
+            logger.info(
+                "Simple import completed for RawPdfFile hash: %s",
+                self.current_pdf.pdf_hash,
+            )
             return self.current_pdf
 
         except Exception as e:
@@ -1001,7 +1179,9 @@ class PdfImportService:
         finally:
             self._cleanup_processing_context()
 
-    def check_storage_capacity(self, file_path: Union[Path, str], storage_root, min_required_space) -> None:
+    def check_storage_capacity(
+        self, file_path: Union[Path, str], storage_root, min_required_space
+    ) -> None:
         """
         Check if there is sufficient storage capacity for the PDF file.
 
@@ -1031,12 +1211,18 @@ class PdfImportService:
 
         # Check if there is enough space
         if file_size > free:
-            raise InsufficientStorageError(f"Not enough space to store PDF file: {file_path}")
-        logger.info(f"Storage check passed for {file_path}: {file_size} bytes, {free} bytes available")
+            raise InsufficientStorageError(
+                f"Not enough space to store PDF file: {file_path}"
+            )
+        logger.info(
+            f"Storage check passed for {file_path}: {file_size} bytes, {free} bytes available"
+        )
 
         return True
 
-    def create_sensitive_file(self, pdf_instance: "RawPdfFile" = None, file_path: Union[Path, str] = None) -> None:
+    def create_sensitive_file(
+        self, pdf_instance: "RawPdfFile" = None, file_path: Union[Path, str] = None
+    ) -> None:
         """
         Create a copy of the PDF file in the sensitive directory and update the file reference.
         Delete the source path to avoid duplicates.
@@ -1045,7 +1231,9 @@ class PdfImportService:
         Ensures the FileField points to the file under STORAGE_DIR/pdfs/sensitive and never back to raw_pdfs.
         """
         pdf_file = pdf_instance or self.current_pdf
-        source_path = Path(file_path) if file_path else self.processing_context.get("file_path")
+        source_path = (
+            Path(file_path) if file_path else self.processing_context.get("file_path")
+        )
 
         if not pdf_file:
             raise ValueError("No PDF instance available for creating sensitive file")
@@ -1068,14 +1256,20 @@ class PdfImportService:
                     try:
                         target.unlink()
                     except Exception as e:
-                        logger.warning("Could not remove existing sensitive target %s: %s", target, e)
+                        logger.warning(
+                            "Could not remove existing sensitive target %s: %s",
+                            target,
+                            e,
+                        )
                 shutil.move(str(source_path), str(target))
                 logger.info(f"Moved PDF to sensitive directory: {target}")
 
             # Update FileField to reference the file under STORAGE_DIR
             # We avoid re-saving file content (the file is already at target); set .name relative to STORAGE_DIR
             try:
-                relative_name = str(target.relative_to(path_utils.STORAGE_DIR))  # Point Django FileField to sensitive storage
+                relative_name = str(
+                    target.relative_to(path_utils.STORAGE_DIR)
+                )  # Point Django FileField to sensitive storage
             except ValueError:
                 # Fallback: if target is not under STORAGE_DIR, store absolute path (not ideal)
                 relative_name = str(target)
@@ -1084,9 +1278,15 @@ class PdfImportService:
             if getattr(pdf_file.file, "name", None) != relative_name:
                 pdf_file.file.name = relative_name
                 pdf_file.save(update_fields=["file"])
-                logger.info("Updated PDF FileField reference to sensitive path: %s", pdf_file.file.path)
+                logger.info(
+                    "Updated PDF FileField reference to sensitive path: %s",
+                    pdf_file.file.path,
+                )
             else:
-                logger.debug("PDF FileField already points to sensitive path: %s", pdf_file.file.path)
+                logger.debug(
+                    "PDF FileField already points to sensitive path: %s",
+                    pdf_file.file.path,
+                )
 
             # Best-effort: if original source still exists (e.g., copy), remove it to avoid re-triggers
             try:
@@ -1097,10 +1297,17 @@ class PdfImportService:
                 logger.warning(f"Could not delete original PDF file {source_path}: {e}")
 
         except Exception as e:
-            logger.warning(f"Could not create sensitive file copy for {pdf_file.pdf_hash}: {e}", exc_info=True)
+            logger.warning(
+                f"Could not create sensitive file copy for {pdf_file.pdf_hash}: {e}",
+                exc_info=True,
+            )
 
     def archive_or_quarantine_file(
-        self, pdf_instance: "RawPdfFile" = None, source_file_path: Union[Path, str] = None, quarantine_reason: str = None, is_pdf_problematic: bool = None
+        self,
+        pdf_instance: "RawPdfFile" = None,
+        source_file_path: Union[Path, str] = None,
+        quarantine_reason: str = None,
+        is_pdf_problematic: bool = None,
     ) -> bool:
         """
         Archive or quarantine file based on the state of the PDF processing.
@@ -1116,8 +1323,14 @@ class PdfImportService:
             bool: True if file was quarantined, False if archived successfully
         """
         pdf_file = pdf_instance or self.current_pdf
-        file_path = Path(source_file_path) if source_file_path else self.processing_context.get("file_path")
-        quarantine_reason = quarantine_reason or self.processing_context.get("error_reason")
+        file_path = (
+            Path(source_file_path)
+            if source_file_path
+            else self.processing_context.get("file_path")
+        )
+        quarantine_reason = quarantine_reason or self.processing_context.get(
+            "error_reason"
+        )
 
         if not pdf_file:
             raise ValueError("No PDF instance available for archiving/quarantine")
@@ -1125,24 +1338,34 @@ class PdfImportService:
             raise ValueError("No file path available for archiving/quarantine")
 
         # Determine if the PDF is problematic
-        pdf_problematic = is_pdf_problematic if is_pdf_problematic is not None else pdf_file.is_problematic
+        pdf_problematic = (
+            is_pdf_problematic
+            if is_pdf_problematic is not None
+            else pdf_file.is_problematic
+        )
 
         if pdf_problematic:
             # Quarantine the file
-            logger.warning(f"Quarantining problematic PDF: {pdf_file.pdf_hash}, reason: {quarantine_reason}")
+            logger.warning(
+                f"Quarantining problematic PDF: {pdf_file.pdf_hash}, reason: {quarantine_reason}"
+            )
             quarantine_dir = path_utils.PDF_DIR / "quarantine"
             os.makedirs(quarantine_dir, exist_ok=True)
 
             quarantine_path = quarantine_dir / f"{pdf_file.pdf_hash}.pdf"
             try:
                 shutil.move(file_path, quarantine_path)
-                pdf_file.quarantine_reason = quarantine_reason or "File processing failed"
+                pdf_file.quarantine_reason = (
+                    quarantine_reason or "File processing failed"
+                )
                 pdf_file.save(update_fields=["quarantine_reason"])
                 logger.info(f"Moved problematic PDF to quarantine: {quarantine_path}")
                 return True
             except Exception as e:
                 logger.error(f"Failed to quarantine PDF {pdf_file.pdf_hash}: {e}")
-                return True  # Still consider as quarantined to prevent further processing
+                return (
+                    True  # Still consider as quarantined to prevent further processing
+                )
         else:
             # Archive the file normally
             logger.info(f"Archiving successfully processed PDF: {pdf_file.pdf_hash}")

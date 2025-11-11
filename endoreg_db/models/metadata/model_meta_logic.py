@@ -1,7 +1,7 @@
 import shutil
 from logging import getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Type
 
 from django.core.files import File
 from django.db import transaction
@@ -62,6 +62,7 @@ def create_from_file_logic(
     model_name: str,
     labelset_name: str,
     weights_file: str,
+    labelset_version: Optional[int | str] = None,
     requested_version: Optional[str] = None,
     bump_if_exists: bool = False,
     **kwargs: Any,
@@ -77,10 +78,27 @@ def create_from_file_logic(
     except AiModel.DoesNotExist as exc:
         raise ValueError(f"AiModel with name '{model_name}' not found.") from exc
 
+    labelset_qs = LabelSet.objects.filter(name=labelset_name)
+    if labelset_version not in (None, "", -1):
+        try:
+            version_value = int(labelset_version)
+        except (TypeError, ValueError):
+            version_value = labelset_version
+        labelset_qs = labelset_qs.filter(version=version_value)
+
     try:
-        label_set = LabelSet.objects.get(name=labelset_name)
+        label_set = labelset_qs.get()
     except LabelSet.DoesNotExist as exc:
-        raise ValueError(f"LabelSet with name '{labelset_name}' not found.") from exc
+        raise ValueError(
+            f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
+        ) from exc
+    except LabelSet.MultipleObjectsReturned:
+        # Prefer the highest version when duplicates remain and no explicit version requested
+        label_set = labelset_qs.order_by("-version").first()
+        if not label_set:
+            raise ValueError(
+                f"LabelSet '{labelset_name}' could not be resolved."
+            )
 
     # --- Determine Version ---
     target_version: str
@@ -172,16 +190,92 @@ def get_activation_function_logic(activation_name: str):
 
 
 # Placeholder for get_inference_dataset_config_logic
+def _normalise_scalar_sequence(value: Any) -> str | None:
+    """Serialise sequence-like values into the canonical comma-separated form."""
+
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def _parse_float_sequence(value: Any, *, fallback: Iterable[float]) -> list[float]:
+    """Coerce stored normalisation strings/iterables to float lists."""
+
+    if value in (None, ""):
+        return list(fallback)
+
+    tokens: Iterable[Any]
+    if isinstance(value, str):
+        tokens = [tok.strip() for tok in value.split(",") if tok.strip()]
+    elif isinstance(value, (list, tuple)):
+        tokens = value
+    else:
+        tokens = [value]
+
+    parsed: list[float] = []
+    for token in tokens:
+        try:
+            parsed.append(float(token))
+        except (TypeError, ValueError):
+            logger.warning("Failed to parse normalisation value %r; using fallback", token)
+            return list(fallback)
+
+    return parsed or list(fallback)
+
+
+def _parse_axes(axes_value: str | Iterable[Any]) -> list[int]:
+    """Normalise stored axis notation to integer indices.
+
+    Historic metadata mixes numeric strings ("2,0,1") with symbolic tokens
+    ("CHW", "HWC"). The inference code ultimately expects a list of integers,
+    so we coerce common symbolic forms to their numeric equivalents and fall
+    back to sequential indices when the format is unknown.
+    """
+
+    if not axes_value:
+        return [0, 1, 2]
+
+    if isinstance(axes_value, str):
+        token_source = axes_value.strip()
+        if "," in token_source:
+            tokens = [token.strip() for token in token_source.split(",") if token.strip()]
+        else:
+            tokens = [char for char in token_source if char.strip()]
+    else:
+        tokens = [str(token).strip() for token in axes_value if str(token).strip()]
+
+    symbol_map = {"C": 0, "H": 1, "W": 2}
+    parsed_axes: list[int] = []
+
+    for idx, token in enumerate(tokens):
+        normalised = token.upper()
+        if normalised.lstrip("+-").isdigit():
+            parsed_axes.append(int(normalised))
+        elif normalised in symbol_map:
+            parsed_axes.append(symbol_map[normalised])
+        else:
+            logger.warning("Unknown axes token '%s'; defaulting to index order", token)
+            parsed_axes.append(idx)
+
+    return parsed_axes or [0, 1, 2]
+
+
 def get_inference_dataset_config_logic(model_meta: "ModelMeta") -> dict:
     # This would typically extract relevant fields from model_meta
     # for configuring a dataset during inference
+    DEFAULT_MEAN = (0.45211223, 0.27139644, 0.19264949)
+    DEFAULT_STD = (0.31418097, 0.21088019, 0.16059452)
+
     return {
-        "mean": [float(x) for x in model_meta.mean.split(",")],
-        "std": [float(x) for x in model_meta.std.split(",")],
-        "size_y": model_meta.size_y,  # Add size_y key
-        "size_x": model_meta.size_x,  # Add size_x key
-        "axes": [int(x) for x in model_meta.axes.split(",")],
-        # Add other relevant config like normalization type, etc.
+        "mean": _parse_float_sequence(model_meta.mean, fallback=DEFAULT_MEAN),
+        "std": _parse_float_sequence(model_meta.std, fallback=DEFAULT_STD),
+        "size_y": int(model_meta.size_y) if model_meta.size_y else 716,
+        "size_x": int(model_meta.size_x) if model_meta.size_x else 716,
+        "axes": _parse_axes(model_meta.axes),
     }
 
 
@@ -301,18 +395,29 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
     }
 
 
-def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str | None = None):
+def setup_default_from_huggingface_logic(
+    cls,
+    model_id: str,
+    labelset_name: str | None = None,
+    labelset_version: Optional[int | str] = None,
+):
     """
     Downloads model weights from Hugging Face and auto-fills ModelMeta fields.
     """
     meta = infer_default_model_meta_from_hf(model_id)
 
-    # Download weights
-    weights_path = hf_hub_download(
-        repo_id=model_id,
-        filename="colo_segmentation_RegNetX800MF_base.ckpt",
-        local_dir=WEIGHTS_DIR,
-    )
+    # Download safetensor weights; raise a clear error if unavailable
+    try:
+        weights_path = hf_hub_download(
+            repo_id=model_id,
+            filename="colo_segmentation_RegNetX800MF_base.safetensors",
+            local_dir=WEIGHTS_DIR,
+        )
+    except Exception as exc:  # pragma: no cover - network errors
+        raise RuntimeError(
+            "Failed to download safetensor weights from Hugging Face; ensure the repository provides "
+            "a .safetensors artifact."
+        ) from exc
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
     if not labelset_name:
@@ -320,7 +425,18 @@ def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str 
         if not labelset:
             raise ValueError("No labelset found and no labelset_name provided")
     else:
-        labelset = LabelSet.objects.get(name=labelset_name)
+        labelset_qs = LabelSet.objects.filter(name=labelset_name)
+        if labelset_version not in (None, "", -1):
+            try:
+                version_value = int(labelset_version)
+            except (TypeError, ValueError):
+                version_value = labelset_version
+            labelset_qs = labelset_qs.filter(version=version_value)
+        labelset = labelset_qs.order_by("-version").first()
+        if not labelset:
+            raise ValueError(
+                f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
+            )
 
     ModelMeta = _get_model_meta_class()
     model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
@@ -332,7 +448,8 @@ def setup_default_from_huggingface_logic(cls, model_id: str, labelset_name: str 
         cls,
         meta_name=meta["name"],
         model_name=ai_model.name,
-        labelset_name=labelset.name,
+    labelset_name=labelset.name,
+    labelset_version=labelset.version,
         weights_file=weights_path,
         activation=meta["activation"],
         mean=meta["mean"],

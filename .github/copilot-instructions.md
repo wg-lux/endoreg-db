@@ -13,6 +13,7 @@
 - **External repos**: LX anonymizer support is expected (`lx-anonymizer>=0.8.2.1`); the Nix enter hook can clone it—check this before debugging anonymization failures.
 
 ## Testing
+- **Copilot test instructions**: Use `uv run pytest` to run tests since other test discovery causes issues
 - **Test runner**: Prefer `uv run python runtests.py` to execute curated suites; arguments map to subpackages under `tests/` (e.g. `runtests helpers`).
 - **Pytest direct**: For ad-hoc cases run `uv run pytest tests/path::TestClass -k keyword`; `pytest.ini` already points at the Django settings.
 - **Video guards**: GPU/ffmpeg-heavy specs are behind `RUN_VIDEO_TESTS`; default false—set `RUN_VIDEO_TESTS=true` when required assets in `tests/assets/` are available.

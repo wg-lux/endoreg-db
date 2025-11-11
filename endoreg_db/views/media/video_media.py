@@ -30,7 +30,7 @@ class VideoMediaView(APIView):
     - GET /api/media/videos/ - List all videos with filtering
     - GET /api/media/videos/{id}/ - Get video details
     - PATCH /api/media/videos/{id}/ - Update video metadata (future)
-    - DELETE /api/media/videos/{id}/ - Delete video (future)
+    - DELETE /api/media/videos/{id}/ - Delete video 
     
     Query Parameters:
     - status: Filter by processing status (not_started, processing, done, failed, validated)

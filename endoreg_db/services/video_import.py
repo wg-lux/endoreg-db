@@ -9,29 +9,32 @@ Changelog:
                       during concurrent video imports (matches PDF import pattern)
 """
 
-from datetime import date
 import logging
-import sys
 import os
+import random
 import shutil
+import sys
 import time
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
-from typing import Union, Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from django.db import transaction
+from django.db.models.fields.files import FieldFile
 from lx_anonymizer import FrameCleaner
 from moviepy import video
-from endoreg_db.models import VideoFile, SensitiveMeta
-from endoreg_db.utils.paths import STORAGE_DIR, VIDEO_DIR, ANONYM_VIDEO_DIR
-import random
-from endoreg_db.utils.hashs import get_video_hash
+
+from endoreg_db.models import EndoscopyProcessor, SensitiveMeta, VideoFile
 from endoreg_db.models.media.video.video_file_anonymize import _cleanup_raw_assets
-from django.db.models.fields.files import FieldFile
-from endoreg_db.models import EndoscopyProcessor
+from endoreg_db.utils.hashs import get_video_hash
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, VIDEO_DIR
 
 # File lock configuration (matches PDF import)
 STALE_LOCK_SECONDS = 6000  # 100 minutes - reclaim locks older than this
-MAX_LOCK_WAIT_SECONDS = 90  # New: wait up to 90s for a non-stale lock to clear before skipping
+MAX_LOCK_WAIT_SECONDS = (
+    90  # New: wait up to 90s for a non-stale lock to clear before skipping
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +63,10 @@ class VideoImportService:
             # Ensure anonym_video directory exists before listing files
             anonym_video_dir = Path(ANONYM_VIDEO_DIR)
             if anonym_video_dir.exists():
-                self.processed_files = set(str(anonym_video_dir / file) for file in os.listdir(ANONYM_VIDEO_DIR))
+                self.processed_files = set(
+                    str(anonym_video_dir / file)
+                    for file in os.listdir(ANONYM_VIDEO_DIR)
+                )
             else:
                 logger.info(f"Creating anonym_videos directory: {anonym_video_dir}")
                 anonym_video_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +83,9 @@ class VideoImportService:
 
         self.logger = logging.getLogger(__name__)
 
-        self.cleaner = None  # This gets instantiated in the perform_frame_cleaning method
+        self.cleaner = (
+            None  # This gets instantiated in the perform_frame_cleaning method
+        )
 
     def _require_current_video(self) -> VideoFile:
         """Return the current VideoFile or raise if it has not been initialized."""
@@ -116,10 +124,16 @@ class VideoImportService:
 
                     if age is not None and age > STALE_LOCK_SECONDS:
                         try:
-                            logger.warning("Stale lock detected for %s (age %.0fs). Reclaiming lock...", path, age)
+                            logger.warning(
+                                "Stale lock detected for %s (age %.0fs). Reclaiming lock...",
+                                path,
+                                age,
+                            )
                             lock_path.unlink()
                         except Exception as e:
-                            logger.warning("Failed to remove stale lock %s: %s", lock_path, e)
+                            logger.warning(
+                                "Failed to remove stale lock %s: %s", lock_path, e
+                            )
                         # Loop continues and retries acquire immediately
                         continue
 
@@ -162,7 +176,9 @@ class VideoImportService:
 
         try:
             # Initialize processing context
-            self._initialize_processing_context(file_path, center_name, processor_name, save_video, delete_source)
+            self._initialize_processing_context(
+                file_path, center_name, processor_name, save_video, delete_source
+            )
 
             # Validate and prepare file (may raise ValueError if another worker holds a non-stale lock)
             try:
@@ -196,17 +212,28 @@ class VideoImportService:
 
         except Exception as e:
             # Safe file path access - handles cases where processing_context wasn't initialized
-            safe_file_path = getattr(self, "processing_context", {}).get("file_path", file_path)
+            safe_file_path = getattr(self, "processing_context", {}).get(
+                "file_path", file_path
+            )
             # Debug: Log context state for troubleshooting
             context_keys = list(getattr(self, "processing_context", {}).keys())
             self.logger.debug(f"Context keys during error: {context_keys}")
-            self.logger.error(f"Video import and anonymization failed for {safe_file_path}: {e}")
+            self.logger.error(
+                f"Video import and anonymization failed for {safe_file_path}: {e}"
+            )
             self._cleanup_on_error()
             raise
         finally:
             self._cleanup_processing_context()
 
-    def _initialize_processing_context(self, file_path: Union[Path, str], center_name: str, processor_name: str, save_video: bool, delete_source: bool):
+    def _initialize_processing_context(
+        self,
+        file_path: Union[Path, str],
+        center_name: str,
+        processor_name: str,
+        save_video: bool,
+        delete_source: bool,
+    ):
         """Initialize the processing context for the current video import."""
         self.processing_context = {
             "file_path": Path(file_path),
@@ -319,12 +346,23 @@ class VideoImportService:
         except Exception:
             stored_raw_path = None
 
-        # Fallback: derive from UUID + suffix
+        # Fallback: derive from UUID + suffix - ALWAYS use UUID for consistency
         if not stored_raw_path:
             suffix = source_path.suffix or ".mp4"
             uuid_str = getattr(_current_video, "uuid", None)
-            filename = f"{uuid_str}{suffix}" if uuid_str else source_path.name
+            if uuid_str:
+                filename = f"{uuid_str}{suffix}"
+            else:
+                # Emergency fallback with timestamp to avoid conflicts
+                import time
+
+                timestamp = int(time.time())
+                filename = f"video_{timestamp}{suffix}"
+                self.logger.warning(
+                    "No UUID available, using timestamp-based filename: %s", filename
+                )
             stored_raw_path = videos_dir / filename
+            self.logger.debug("Using UUID-based raw filename: %s", filename)
 
         delete_source = bool(self.processing_context.get("delete_source", True))
         stored_raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -339,7 +377,9 @@ class VideoImportService:
                 except Exception:
                     shutil.copy2(source_path, stored_raw_path)
                     os.remove(source_path)
-                    self.logger.info("Copied & removed raw video to: %s", stored_raw_path)
+                    self.logger.info(
+                        "Copied & removed raw video to: %s", stored_raw_path
+                    )
             else:
                 shutil.copy2(source_path, stored_raw_path)
                 self.logger.info("Copied raw video to: %s", stored_raw_path)
@@ -369,8 +409,7 @@ class VideoImportService:
         # Initialize video specifications
         video.initialize_video_specs()
 
-        # Initialize frame objects in database
-        video.initialize_frames()
+
 
         # Extract frames BEFORE processing to prevent pipeline 1 conflicts
         self.logger.info("Pre-extracting frames to avoid pipeline conflicts...")
@@ -379,6 +418,8 @@ class VideoImportService:
             if frames_extracted:
                 self.processing_context["frames_extracted"] = True
                 self.logger.info("Frame extraction completed successfully")
+                        # Initialize frame objects in database
+                video.initialize_frames(video.get_frame_paths())
 
                 # CRITICAL: Immediately save the frames_extracted state to database
                 # to prevent refresh_from_db() in pipeline 1 from overriding it
@@ -391,7 +432,9 @@ class VideoImportService:
                 self.logger.warning("Frame extraction failed, but continuing...")
                 self.processing_context["frames_extracted"] = False
         except Exception as e:
-            self.logger.warning(f"Frame extraction failed during setup: {e}, but continuing...")
+            self.logger.warning(
+                f"Frame extraction failed during setup: {e}, but continuing..."
+            )
             self.processing_context["frames_extracted"] = False
 
         # Ensure default patient data
@@ -406,34 +449,54 @@ class VideoImportService:
         video = self._require_current_video()
 
         raw_file_field = video.raw_file
-        has_raw_file = isinstance(raw_file_field, FieldFile) and bool(raw_file_field.name)
+        has_raw_file = isinstance(raw_file_field, FieldFile) and bool(
+            raw_file_field.name
+        )
 
         if not (frame_cleaning_available and has_raw_file):
-            self.logger.warning("Frame cleaning not available or conditions not met, using fallback anonymization.")
+            self.logger.warning(
+                "Frame cleaning not available or conditions not met, using fallback anonymization."
+            )
             self._fallback_anonymize_video()
             return
 
         try:
-            self.logger.info("Starting frame-level anonymization with processor ROI masking...")
+            self.logger.info(
+                "Starting frame-level anonymization with processor ROI masking..."
+            )
 
             # Get processor ROI information
-            endoscope_data_roi_nested, endoscope_image_roi = self._get_processor_roi_info()
+            endoscope_data_roi_nested, endoscope_image_roi = (
+                self._get_processor_roi_info()
+            )
 
             # Perform frame cleaning with timeout to prevent blocking
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+            from concurrent.futures import ThreadPoolExecutor
+            from concurrent.futures import TimeoutError as FutureTimeoutError
 
             with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(self._perform_frame_cleaning, endoscope_data_roi_nested, endoscope_image_roi)
+                future = executor.submit(
+                    self._perform_frame_cleaning,
+                    endoscope_data_roi_nested,
+                    endoscope_image_roi,
+                )
                 try:
                     # Increased timeout to better accommodate ffmpeg + OCR
                     future.result(timeout=50000)
                     self.processing_context["anonymization_completed"] = True
-                    self.logger.info("Frame cleaning completed successfully within timeout")
+                    self.logger.info(
+                        "Frame cleaning completed successfully within timeout"
+                    )
                 except FutureTimeoutError:
-                    self.logger.warning("Frame cleaning timed out; entering grace period check for cleaned output")
+                    self.logger.warning(
+                        "Frame cleaning timed out; entering grace period check for cleaned output"
+                    )
                     # Grace period: detect if cleaned file appears shortly after timeout
                     raw_video_path = self.processing_context.get("raw_video_path")
-                    video_filename = self.processing_context.get("video_filename", Path(raw_video_path).name if raw_video_path else "video.mp4")
+                    video_filename = self.processing_context.get(
+                        "video_filename",
+                        Path(raw_video_path).name if raw_video_path else "video.mp4",
+                    )
                     grace_seconds = 60
                     expected_cleaned_path: Optional[Path] = None
                     processed_field = video.processed_file
@@ -446,27 +509,42 @@ class VideoImportService:
                     if expected_cleaned_path is not None:
                         for _ in range(grace_seconds):
                             if expected_cleaned_path.exists():
-                                self.processing_context["cleaned_video_path"] = expected_cleaned_path
-                                self.processing_context["anonymization_completed"] = True
-                                self.logger.info("Detected cleaned video during grace period: %s", expected_cleaned_path)
+                                self.processing_context["cleaned_video_path"] = (
+                                    expected_cleaned_path
+                                )
+                                self.processing_context["anonymization_completed"] = (
+                                    True
+                                )
+                                self.logger.info(
+                                    "Detected cleaned video during grace period: %s",
+                                    expected_cleaned_path,
+                                )
                                 found = True
                                 break
                             time.sleep(1)
                     else:
                         self._fallback_anonymize_video()
                     if not found:
-                        raise TimeoutError("Frame cleaning operation timed out - likely Ollama connection issue")
+                        raise TimeoutError(
+                            "Frame cleaning operation timed out - likely Ollama connection issue"
+                        )
 
         except Exception as e:
-            self.logger.warning("Frame cleaning failed (reason: %s), falling back to simple copy", e)
+            self.logger.warning(
+                "Frame cleaning failed (reason: %s), falling back to simple copy", e
+            )
             # Try fallback anonymization when frame cleaning fails
             try:
                 self._fallback_anonymize_video()
             except Exception as fallback_error:
-                self.logger.error("Fallback anonymization also failed: %s", fallback_error)
+                self.logger.error(
+                    "Fallback anonymization also failed: %s", fallback_error
+                )
                 # If even fallback fails, mark as not anonymized but continue import
                 self.processing_context["anonymization_completed"] = False
-                self.processing_context["error_reason"] = f"Frame cleaning failed: {e}, Fallback failed: {fallback_error}"
+                self.processing_context["error_reason"] = (
+                    f"Frame cleaning failed: {e}, Fallback failed: {fallback_error}"
+                )
 
     def _save_anonymized_video(self):
         original_raw_file_path_to_delete = None
@@ -475,14 +553,24 @@ class VideoImportService:
         anonymized_video_path = video.get_target_anonymized_video_path()
 
         if not anonymized_video_path.exists():
-            raise RuntimeError(f"Processed video file not found after assembly for {video.uuid}: {anonymized_video_path}")
+            raise RuntimeError(
+                f"Processed video file not found after assembly for {video.uuid}: {anonymized_video_path}"
+            )
 
         new_processed_hash = get_video_hash(anonymized_video_path)
-        if video.__class__.objects.filter(processed_video_hash=new_processed_hash).exclude(pk=video.pk).exists():
-            raise ValueError(f"Processed video hash {new_processed_hash} already exists for another video (Video: {video.uuid}).")
+        if (
+            video.__class__.objects.filter(processed_video_hash=new_processed_hash)
+            .exclude(pk=video.pk)
+            .exists()
+        ):
+            raise ValueError(
+                f"Processed video hash {new_processed_hash} already exists for another video (Video: {video.uuid})."
+            )
 
         video.processed_video_hash = new_processed_hash
-        video.processed_file.name = anonymized_video_path.relative_to(STORAGE_DIR).as_posix()
+        video.processed_file.name = anonymized_video_path.relative_to(
+            STORAGE_DIR
+        ).as_posix()
 
         update_fields = [
             "processed_video_hash",
@@ -500,7 +588,9 @@ class VideoImportService:
 
             transaction.on_commit(
                 lambda: _cleanup_raw_assets(
-                    video_uuid=video.uuid, raw_file_path=original_raw_file_path_to_delete, raw_frame_dir=original_raw_frame_dir_to_delete
+                    video_uuid=video.uuid,
+                    raw_file_path=original_raw_file_path_to_delete,
+                    raw_frame_dir=original_raw_frame_dir_to_delete,
                 )
             )
 
@@ -518,15 +608,23 @@ class VideoImportService:
             self.logger.info("Attempting fallback video anonymization...")
             video = self.current_video
             if video is None:
-                self.logger.warning("No VideoFile instance available for fallback anonymization")
+                self.logger.warning(
+                    "No VideoFile instance available for fallback anonymization"
+                )
 
             # Strategy 2: Simple copy (no processing, just copy raw to processed)
-            self.logger.info("Using simple copy fallback (raw video will be used as 'processed' video)")
+            self.logger.info(
+                "Using simple copy fallback (raw video will be used as 'processed' video)"
+            )
             self.processing_context["anonymization_completed"] = False
             self.processing_context["use_raw_as_processed"] = True
-            self.logger.warning("Fallback: Video will be imported without anonymization (raw copy used)")
+            self.logger.warning(
+                "Fallback: Video will be imported without anonymization (raw copy used)"
+            )
         except Exception as e:
-            self.logger.error(f"Error during fallback anonymization: {e}", exc_info=True)
+            self.logger.error(
+                f"Error during fallback anonymization: {e}", exc_info=True
+            )
             self.processing_context["anonymization_completed"] = False
             self.processing_context["error_reason"] = str(e)
 
@@ -539,7 +637,11 @@ class VideoImportService:
             try:
                 video.refresh_from_db()
             except Exception as refresh_error:
-                self.logger.warning("Could not refresh VideoFile %s from DB: %s", video.uuid, refresh_error)
+                self.logger.warning(
+                    "Could not refresh VideoFile %s from DB: %s",
+                    video.uuid,
+                    refresh_error,
+                )
 
             state = video.get_or_create_state()
 
@@ -556,12 +658,18 @@ class VideoImportService:
             state.text_meta_extracted = True
 
             # ✅ FIX: Only mark as processed if anonymization actually completed
-            anonymization_completed = self.processing_context.get("anonymization_completed", False)
+            anonymization_completed = self.processing_context.get(
+                "anonymization_completed", False
+            )
             if anonymization_completed:
                 state.mark_sensitive_meta_processed(save=False)
-                self.logger.info("Anonymization completed - marking sensitive meta as processed")
+                self.logger.info(
+                    "Anonymization completed - marking sensitive meta as processed"
+                )
             else:
-                self.logger.warning(f"Anonymization NOT completed - NOT marking as processed. Reason: {self.processing_context.get('error_reason', 'Unknown')}")
+                self.logger.warning(
+                    f"Anonymization NOT completed - NOT marking as processed. Reason: {self.processing_context.get('error_reason', 'Unknown')}"
+                )
                 # Explicitly mark as NOT processed
                 state.sensitive_meta_processed = False
 
@@ -587,12 +695,15 @@ class VideoImportService:
         else:
             raw_video_path = self.processing_context.get("raw_video_path")
             if raw_video_path and Path(raw_video_path).exists():
-                video_filename = self.processing_context.get("video_filename", Path(raw_video_path).name)
-                processed_filename = f"processed_{video_filename}"
+                # Use UUID-based naming to avoid conflicts
+                suffix = Path(raw_video_path).suffix or ".mp4"
+                processed_filename = f"processed_{video.uuid}{suffix}"
                 processed_video_path = Path(raw_video_path).parent / processed_filename
                 try:
                     shutil.copy2(str(raw_video_path), str(processed_video_path))
-                    self.logger.info("Copied raw video for processing: %s", processed_video_path)
+                    self.logger.info(
+                        "Copied raw video for processing: %s", processed_video_path
+                    )
                 except Exception as exc:
                     self.logger.error("Failed to copy raw video: %s", exc)
                     processed_video_path = None
@@ -612,10 +723,16 @@ class VideoImportService:
                         relative_path = anonym_target_path.relative_to(storage_root)
                         video.processed_file.name = str(relative_path)
                         video.save(update_fields=["processed_file"])
-                        self.logger.info("Updated processed_file path to: %s", relative_path)
+                        self.logger.info(
+                            "Updated processed_file path to: %s", relative_path
+                        )
                     except Exception as exc:
-                        self.logger.error("Failed to update processed_file path: %s", exc)
-                        video.processed_file.name = f"anonym_videos/{anonym_video_filename}"
+                        self.logger.error(
+                            "Failed to update processed_file path: %s", exc
+                        )
+                        video.processed_file.name = (
+                            f"anonym_videos/{anonym_video_filename}"
+                        )
                         video.save(update_fields=["processed_file"])
                         self.logger.info(
                             "Updated processed_file path using fallback: %s",
@@ -624,17 +741,26 @@ class VideoImportService:
 
                     self.processing_context["anonymization_completed"] = True
                 else:
-                    self.logger.warning("Processed video file not found after move: %s", anonym_target_path)
+                    self.logger.warning(
+                        "Processed video file not found after move: %s",
+                        anonym_target_path,
+                    )
             except Exception as exc:
-                self.logger.error("Failed to move processed video to anonym_videos: %s", exc)
+                self.logger.error(
+                    "Failed to move processed video to anonym_videos: %s", exc
+                )
         else:
-            self.logger.warning("No processed video available - processed_file will remain empty")
+            self.logger.warning(
+                "No processed video available - processed_file will remain empty"
+            )
 
         try:
             from endoreg_db.utils.paths import RAW_FRAME_DIR
 
             shutil.rmtree(RAW_FRAME_DIR, ignore_errors=True)
-            self.logger.debug("Cleaned up temporary frames directory: %s", RAW_FRAME_DIR)
+            self.logger.debug(
+                "Cleaned up temporary frames directory: %s", RAW_FRAME_DIR
+            )
         except Exception as exc:
             self.logger.warning("Failed to remove directory %s: %s", RAW_FRAME_DIR, exc)
 
@@ -644,10 +770,14 @@ class VideoImportService:
                 os.remove(source_path)
                 self.logger.info("Removed remaining source file: %s", source_path)
             except Exception as exc:
-                self.logger.warning("Failed to remove source file %s: %s", source_path, exc)
+                self.logger.warning(
+                    "Failed to remove source file %s: %s", source_path, exc
+                )
 
         if not video.processed_file or not Path(video.processed_file.path).exists():
-            self.logger.warning("No processed_file found after cleanup - video will be unprocessed")
+            self.logger.warning(
+                "No processed_file found after cleanup - video will be unprocessed"
+            )
             try:
                 video.anonymize(delete_original_raw=self.delete_source)
                 video.save(update_fields=["processed_file"])
@@ -662,10 +792,14 @@ class VideoImportService:
 
         with transaction.atomic():
             video.refresh_from_db()
-            if hasattr(video, "state") and self.processing_context.get("anonymization_completed"):
+            if hasattr(video, "state") and self.processing_context.get(
+                "anonymization_completed"
+            ):
                 video.state.mark_sensitive_meta_processed(save=True)
 
-        self.logger.info("Import and anonymization completed for VideoFile UUID: %s", video.uuid)
+        self.logger.info(
+            "Import and anonymization completed for VideoFile UUID: %s", video.uuid
+        )
         self.logger.info("Raw video stored in: /data/videos")
         self.logger.info("Processed video stored in: /data/anonym_videos")
 
@@ -682,34 +816,57 @@ class VideoImportService:
         source_path: Path | None = None
         try:
             if raw_field and raw_field.path:
-                source_path = Path(raw_field.path)
+                candidate_path = Path(raw_field.path)
+                if candidate_path.exists():
+                    source_path = candidate_path
         except Exception:
             source_path = None
 
         if source_path is None and file_path is not None:
-            source_path = Path(file_path)
+            file_candidate = Path(file_path)
+            if file_candidate.exists():
+                source_path = file_candidate
+
+        if source_path is None:
+            context_path = self.processing_context.get("raw_video_path")
+            if context_path:
+                context_candidate = Path(context_path)
+                if context_candidate.exists():
+                    source_path = context_candidate
 
         if source_path is None:
             raise ValueError("No file path available for creating sensitive file")
         if not raw_field:
-            raise ValueError("VideoFile must have a raw_file to create a sensitive file")
+            raise ValueError(
+                "VideoFile must have a raw_file to create a sensitive file"
+            )
 
         target_dir = VIDEO_DIR / "sensitive"
         if not target_dir.exists():
             self.logger.info("Creating sensitive file directory: %s", target_dir)
             os.makedirs(target_dir, exist_ok=True)
 
-        target_file_path = target_dir / source_path.name
-        try:
-            shutil.move(str(source_path), str(target_file_path))
-            self.logger.info("Moved raw file to sensitive directory: %s", target_file_path)
-        except Exception as exc:
-            self.logger.warning("Failed to move raw file to sensitive dir, copying instead: %s", exc)
-            shutil.copy(str(source_path), str(target_file_path))
+        target_name = source_path.name or "raw_video"
+        target_file_path = target_dir / target_name
+        if source_path != target_file_path:
             try:
-                os.remove(source_path)
-            except FileNotFoundError:
-                pass
+                shutil.copy2(str(source_path), str(target_file_path))
+                self.logger.info(
+                    "Copied raw file to sensitive directory: %s", target_file_path
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "Failed to copy raw file to sensitive dir: %s", exc
+                )
+                shutil.copy(str(source_path), str(target_file_path))
+                self.logger.info(
+                    "Fallback copy succeeded for sensitive directory: %s",
+                    target_file_path,
+                )
+        else:
+            self.logger.debug(
+                "Source path already in sensitive directory: %s", target_file_path
+            )
 
         try:
             from endoreg_db.utils import data_paths
@@ -718,7 +875,10 @@ class VideoImportService:
             relative_path = target_file_path.relative_to(storage_root)
             video.raw_file.name = str(relative_path)
             video.save(update_fields=["raw_file"])
-            self.logger.info("Updated video.raw_file to point to sensitive location: %s", relative_path)
+            self.logger.info(
+                "Updated video.raw_file to point to sensitive location: %s",
+                relative_path,
+            )
         except Exception as exc:
             self.logger.warning("Failed to set relative path, using fallback: %s", exc)
             video.raw_file.name = f"videos/sensitive/{target_file_path.name}"
@@ -731,10 +891,14 @@ class VideoImportService:
         self.processing_context["raw_video_path"] = target_file_path
         self.processing_context["video_filename"] = target_file_path.name
 
-        self.logger.info("Created sensitive file for %s at %s", video.uuid, target_file_path)
+        self.logger.info(
+            "Created sensitive file for %s at %s", video.uuid, target_file_path
+        )
         return target_file_path
 
-    def _get_processor_roi_info(self) -> Tuple[Optional[List[List[Dict[str, Any]]]], Optional[Dict[str, Any]]]:
+    def _get_processor_roi_info(
+        self,
+    ) -> Tuple[Optional[List[List[Dict[str, Any]]]], Optional[Dict[str, Any]]]:
         """Get processor ROI information for masking."""
         endoscope_data_roi_nested = None
         endoscope_image_roi = None
@@ -745,10 +909,15 @@ class VideoImportService:
             video_meta = getattr(video, "video_meta", None)
             processor = getattr(video_meta, "processor", None) if video_meta else None
             if processor:
-                assert isinstance(processor, EndoscopyProcessor), "Processor is not of type EndoscopyProcessor"
+                assert isinstance(processor, EndoscopyProcessor), (
+                    "Processor is not of type EndoscopyProcessor"
+                )
                 endoscope_image_roi = processor.get_roi_endoscope_image()
                 endoscope_data_roi_nested = processor.get_sensitive_rois()
-                self.logger.info("Retrieved processor ROI information: endoscope_image_roi=%s", endoscope_image_roi)
+                self.logger.info(
+                    "Retrieved processor ROI information: endoscope_image_roi=%s",
+                    endoscope_image_roi,
+                )
             else:
                 self.logger.warning(
                     "No processor found for video %s, proceeding without ROI masking",
@@ -770,28 +939,40 @@ class VideoImportService:
 
         return endoscope_data_roi_nested, endoscope_image_roi
 
-    def _ensure_default_patient_data(self, video_instance: VideoFile | None = None) -> None:
+    def _ensure_default_patient_data(
+        self, video_instance: VideoFile | None = None
+    ) -> None:
         """Ensure minimum patient data is present on the video's SensitiveMeta."""
 
         video = video_instance or self._require_current_video()
 
         sensitive_meta = getattr(video, "sensitive_meta", None)
         if not sensitive_meta:
-            self.logger.info("No SensitiveMeta found for video %s, creating default", video.uuid)
+            self.logger.info(
+                "No SensitiveMeta found for video %s, creating default", video.uuid
+            )
             default_data = {
                 "patient_first_name": "Patient",
                 "patient_last_name": "Unknown",
                 "patient_dob": date(1990, 1, 1),
                 "examination_date": date.today(),
-                "center_name": video.center.name if video.center else "university_hospital_wuerzburg",
+                "center_name": video.center.name
+                if video.center
+                else "university_hospital_wuerzburg",
             }
             try:
                 sensitive_meta = SensitiveMeta.create_from_dict(default_data)
                 video.sensitive_meta = sensitive_meta
                 video.save(update_fields=["sensitive_meta"])
-                self.logger.info("Created default SensitiveMeta for video %s", video.uuid)
+                self.logger.info(
+                    "Created default SensitiveMeta for video %s", video.uuid
+                )
             except Exception as exc:
-                self.logger.error("Failed to create default SensitiveMeta for video %s: %s", video.uuid, exc)
+                self.logger.error(
+                    "Failed to create default SensitiveMeta for video %s: %s",
+                    video.uuid,
+                    exc,
+                )
                 return
         else:
             update_data: Dict[str, Any] = {}
@@ -815,7 +996,11 @@ class VideoImportService:
                         list(update_data.keys()),
                     )
                 except Exception as exc:
-                    self.logger.error("Failed to update SensitiveMeta for video %s: %s", video.uuid, exc)
+                    self.logger.error(
+                        "Failed to update SensitiveMeta for video %s: %s",
+                        video.uuid,
+                        exc,
+                    )
 
     def _ensure_frame_cleaning_available(self):
         """
@@ -825,23 +1010,26 @@ class VideoImportService:
             Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
         """
         try:
-            # Check if we can find lx-anonymizer
-            from lx_anonymizer import FrameCleaner  # type: ignore[import]
-
-            if FrameCleaner:
-                return True, FrameCleaner()
-
+            from lx_anonymizer import FrameCleaner  
         except Exception as e:
-            self.logger.warning(f"Frame cleaning not available: {e} Please install or update lx_anonymizer.")
+            self.logger.warning(
+                f"Frame cleaning not available: {e} Please install or update lx_anonymizer."
+            )
+            _available = False
+            FrameCleaner = None
 
-        return False, None
+        assert FrameCleaner is not None
+        frame_cleaner = FrameCleaner()
+        _available = True
+
+        return _available, frame_cleaner
 
     def _perform_frame_cleaning(self, endoscope_data_roi_nested, endoscope_image_roi):
         """Perform frame cleaning and anonymization."""
         # Instantiate frame cleaner
         is_available, frame_cleaner = self._ensure_frame_cleaning_available()
 
-        if not is_available:
+        if not is_available or frame_cleaner is None:
             raise RuntimeError("Frame cleaning not available")
 
         # Prepare parameters for frame cleaning
@@ -854,12 +1042,17 @@ class VideoImportService:
             except Exception:
                 raise RuntimeError(f"Raw video path not found: {raw_video_path}")
 
-        # Create temporary output path for cleaned video
-        video_filename = self.processing_context.get("video_filename", Path(raw_video_path).name)
-        cleaned_filename = f"cleaned_{video_filename}"
+        # Create temporary output path for cleaned video using UUID to avoid naming conflicts
+        video = self._require_current_video()
+        # Ensure raw_video_path is not None
         if not raw_video_path:
-            raise RuntimeError("raw_video_path is None after fallback, cannot construct cleaned_video_path")
+            raise RuntimeError(
+                "raw_video_path is None, cannot construct cleaned_video_path"
+            )
+        suffix = Path(raw_video_path).suffix or ".mp4"
+        cleaned_filename = f"cleaned_{video.uuid}{suffix}"
         cleaned_video_path = Path(raw_video_path).parent / cleaned_filename
+        self.logger.debug("Using UUID-based cleaned filename: %s", cleaned_filename)
 
         # Clean video with ROI masking (heavy I/O operation)
         actual_cleaned_path, extracted_metadata = frame_cleaner.clean_video(
@@ -876,9 +1069,13 @@ class VideoImportService:
 
         # Update sensitive metadata with extracted information
         self._update_sensitive_metadata(extracted_metadata)
-        self.logger.info(f"Extracted metadata from frame cleaning: {extracted_metadata}")
+        self.logger.info(
+            f"Extracted metadata from frame cleaning: {extracted_metadata}"
+        )
 
-        self.logger.info(f"Frame cleaning with ROI masking completed: {actual_cleaned_path}")
+        self.logger.info(
+            f"Frame cleaning with ROI masking completed: {actual_cleaned_path}"
+        )
         self.logger.info("Cleaned video will be moved to anonym_videos during cleanup")
 
     def _update_sensitive_metadata(self, extracted_metadata: Dict[str, Any]):
@@ -896,21 +1093,66 @@ class VideoImportService:
         sm = sensitive_meta
         updated_fields = []
 
+        # Ensure center is set from video.center if not in extracted_metadata
+        metadata_to_update = extracted_metadata.copy()
+
+        # FIX: Set center object instead of center_name string
+        if not hasattr(sm, "center") or not sm.center:
+            if video.center:
+                metadata_to_update["center"] = video.center
+                self.logger.debug(
+                    "Added center object '%s' to metadata for SensitiveMeta update",
+                    video.center.name,
+                )
+            else:
+                center_name = metadata_to_update.get("center_name")
+                if center_name:
+                    try:
+                        from ..models.administration import Center
+
+                        center_obj = Center.objects.get(name=center_name)
+                        metadata_to_update["center"] = center_obj
+                        self.logger.debug(
+                            "Loaded center object '%s' from center_name", center_name
+                        )
+                        metadata_to_update.pop("center_name", None)
+                    except Center.DoesNotExist:
+                        self.logger.error(
+                            "Center '%s' not found in database", center_name
+                        )
+                        return
+
         try:
-            sm.update_from_dict(extracted_metadata)
-            updated_fields = list(extracted_metadata.keys())
+            sm.update_from_dict(metadata_to_update)
+            updated_fields = list(
+                extracted_metadata.keys()
+            )  # Only log originally extracted fields
         except KeyError as e:
             self.logger.warning(f"Failed to update SensitiveMeta field {e}")
+            return
 
         if updated_fields:
-            sm.save(update_fields=updated_fields)
-            self.logger.info("Updated SensitiveMeta fields for video %s: %s", video.uuid, updated_fields)
+            try:
+                sm.save()  # Remove update_fields to allow all necessary fields to be saved
+                self.logger.info(
+                    "Updated SensitiveMeta fields for video %s: %s",
+                    video.uuid,
+                    updated_fields,
+                )
 
-            state = video.get_or_create_state()
-            state.mark_sensitive_meta_processed(save=True)
-            self.logger.info("Marked sensitive metadata as processed for video %s", video.uuid)
+                state = video.get_or_create_state()
+                state.mark_sensitive_meta_processed(save=True)
+                self.logger.info(
+                    "Marked sensitive metadata as processed for video %s", video.uuid
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to save SensitiveMeta: {e}")
+                raise  # Re-raise to trigger fallback in calling method
         else:
-            self.logger.info("No SensitiveMeta fields updated for video %s - all existing values preserved", video.uuid)
+            self.logger.info(
+                "No SensitiveMeta fields updated for video %s - all existing values preserved",
+                video.uuid,
+            )
 
     def _signal_completion(self):
         """Signal completion to the tracking system."""
@@ -925,14 +1167,25 @@ class VideoImportService:
                 except (ValueError, OSError):
                     raw_exists = False
 
-            video_processing_complete = video.sensitive_meta is not None and video.video_meta is not None and raw_exists
+            video_processing_complete = (
+                video.sensitive_meta is not None
+                and video.video_meta is not None
+                and raw_exists
+            )
 
             if video_processing_complete:
-                self.logger.info("Video %s processing completed successfully - ready for validation", video.uuid)
+                self.logger.info(
+                    "Video %s processing completed successfully - ready for validation",
+                    video.uuid,
+                )
 
                 # Update completion flags if they exist
                 completion_fields = []
-                for field_name in ["import_completed", "processing_complete", "ready_for_validation"]:
+                for field_name in [
+                    "import_completed",
+                    "processing_complete",
+                    "ready_for_validation",
+                ]:
                     if hasattr(video, field_name):
                         setattr(video, field_name, True)
                         completion_fields.append(field_name)
@@ -989,7 +1242,9 @@ class VideoImportService:
                 file_path_str = str(file_path)
                 if file_path_str in self.processed_files:
                     self.processed_files.remove(file_path_str)
-                    self.logger.info(f"Removed {file_path_str} from processed files (failed processing)")
+                    self.logger.info(
+                        f"Removed {file_path_str} from processed files (failed processing)"
+                    )
 
         except Exception as e:
             self.logger.warning(f"Error during context cleanup: {e}")

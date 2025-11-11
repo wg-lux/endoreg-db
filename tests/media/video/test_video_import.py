@@ -192,7 +192,7 @@ class TestVideoImportFileMovement(TestCase):
         test_video_path = self.create_test_video_file("original_name.mp4")
         
         with patch.object(VideoImportService, '_ensure_frame_cleaning_available') as mock_frame_cleaning:
-            mock_frame_cleaning.return_value = (False, None, None)
+            mock_frame_cleaning.return_value = (False, None)
             
             with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
                 # Create side effect with proper validation
@@ -389,11 +389,31 @@ class DummySensitiveMeta:
 
 
 class DummyProcessor:
+    """Lightweight stand-in for EndoscopyProcessor with ROI helpers."""
+
+    def __init__(self):
+        # Mirror shape of actual ROI dictionaries used by the service
+        self._endoscope_roi = {"x": 1, "y": 2, "width": 3, "height": 4}
+        base_sensitive_roi = {"x": 5, "y": 6, "width": 7, "height": 8}
+        self._sensitive_rois = {
+            "patient_first_name": base_sensitive_roi,
+            "patient_last_name": base_sensitive_roi,
+            "patient_dob": base_sensitive_roi,
+            "examination_date": base_sensitive_roi,
+            "examination_time": None,
+        }
+
     def get_roi_endoscope_image(self):
-        return {"x": 1, "y": 2, "w": 3, "h": 4}
+        return self._endoscope_roi
 
     def get_rois(self):
-        return [{"roi": "region"}]
+        return {
+            "endoscope_image": self._endoscope_roi,
+            **self._sensitive_rois,
+        }
+
+    def get_sensitive_rois(self):
+        return self._sensitive_rois
 
 
 class DummyVideoMeta:
@@ -505,7 +525,7 @@ def test_file_lock_acquire_and_release(patch_env,dummy_file):
 def test_move_to_final_storage_copy(patch_env, dummy_file):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidX", patch_env)
-    svc.current_video = v
+    svc.current_video = v  # type: ignore
     svc.processing_context = {"file_path": dummy_file, "delete_source": False}
     svc._move_to_final_storage()
     dest = svc.processing_context["raw_video_path"]
@@ -517,7 +537,7 @@ def test_move_to_final_storage_copy(patch_env, dummy_file):
 def test_move_to_final_storage_delete_source(patch_env, dummy_file):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidY", patch_env)
-    svc.current_video = v
+    svc.current_video = v # type: ignore
     svc.processing_context = {"file_path": dummy_file, "delete_source": True}
     svc._move_to_final_storage()
     dest = svc.processing_context["raw_video_path"]
@@ -529,7 +549,7 @@ def test_create_sensitive_file_moves(patch_env, dummy_file):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidZ", patch_env)
     v.raw_file.path = dummy_file
-    svc.current_video = v
+    svc.current_video = v 
     target = svc._create_sensitive_file(v)
     assert target.exists()
     assert target.parent.name == "sensitive"
@@ -538,7 +558,7 @@ def test_create_sensitive_file_moves(patch_env, dummy_file):
 
 def test_fallback_anonymize_sets_flags(patch_env):
     svc = vis.VideoImportService()
-    svc.current_video = DummyVideoFile("uuidF", Path(tempfile.gettempdir()))
+    svc.current_video = DummyVideoFile("uuidF", Path(tempfile.gettempdir()))  # type: ignore
     svc._fallback_anonymize_video()
     ctx = svc.processing_context
     assert ctx.get("use_raw_as_processed", True)

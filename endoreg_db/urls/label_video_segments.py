@@ -8,6 +8,8 @@ from endoreg_db.views import (
     get_lvs_by_name_and_video_id
 )
 
+
+
 url_patterns = [
     path(
         "lvs/by-label-name/<str:label_name>/by-video-id/<int:video_id>/",

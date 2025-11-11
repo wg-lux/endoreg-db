@@ -20,14 +20,14 @@ default_models:
 huggingface_fallback:
   enabled: true
   repo_id: "wg-lux/colo_segmentation_RegNetX800MF_base"
-  filename: "colo_segmentation_RegNetX800MF_base.ckpt"
+  filename: "colo_segmentation_RegNetX800MF_base.safetensors"
   labelset_name: "multilabel_classification_colonoscopy_default"
 
 # Weight file search patterns (supports wildcards)
 weights_search_patterns:
-  - "colo_segmentation_RegNetX800MF_*.ckpt"
-  - "image_multilabel_classification_colonoscopy_default_*.ckpt"
-  - "*_colonoscopy_*.ckpt"
+  - "colo_segmentation_RegNetX800MF_*.safetensors"
+  - "image_multilabel_classification_colonoscopy_default_*.safetensors"
+  - "*_colonoscopy_*.safetensors"
   
 # Search directories for local weights
 weights_search_dirs:
@@ -65,11 +65,11 @@ Model metadata files can now include setup-specific configuration:
   setup_config:
     is_primary_model: true  # Mark as primary model for setup
     weight_filenames:       # Specific weight file patterns
-      - "your_model_weights_*.ckpt"
+  - "your_model_weights_*.safetensors"
       - "custom_model_v1_*.pth"
     huggingface_fallback:   # HF configuration for this model
       repo_id: "your-org/your-model-repo"
-      filename: "model_weights.ckpt"
+  filename: "model_weights.safetensors"
 ```
 
 ## Configuration API
@@ -109,7 +109,7 @@ default_models:
 
 weights_search_patterns:
   - "segmentation_transformer_*.pth"
-  - "video_seg_*.ckpt"
+  - "video_seg_*.safetensors"
 
 auto_generation_defaults:
   activation: "softmax"
@@ -130,7 +130,7 @@ default_models:
   primary_labelset: "advanced_colonoscopy_labels"
 
 weights_search_patterns:
-  - "*_colonoscopy_*.ckpt"  # Catches all colonoscopy models
+  - "*_colonoscopy_*.safetensors"  # Catches all colonoscopy models
   - "*_classification_*.pth"
   - "model_*.weights"
 ```
@@ -142,7 +142,7 @@ weights_search_patterns:
 huggingface_fallback:
   enabled: true
   repo_id: "your-organization/custom-endoscopy-model"
-  filename: "best_model.ckpt"
+  filename: "best_model.safetensors"
   labelset_name: "custom_endoscopy_labels"
 ```
 
@@ -204,9 +204,9 @@ The system automatically discovers weight files using glob patterns:
 
 ```python
 # Finds files like:
-# - colo_segmentation_RegNetX800MF_v1.ckpt
-# - colo_segmentation_RegNetX800MF_best.ckpt
-# - image_multilabel_classification_colonoscopy_default_final.ckpt
+# - colo_segmentation_RegNetX800MF_v1.safetensors
+# - colo_segmentation_RegNetX800MF_best.safetensors
+# - image_multilabel_classification_colonoscopy_default_final.safetensors
 ```
 
 ### 2. Environment Variable Substitution
@@ -226,7 +226,7 @@ Override global settings per model in the model YAML:
 ```yaml
 setup_config:
   weight_filenames:
-    - "special_model_*.ckpt"  # Override global patterns
+  - "special_model_*.safetensors"  # Override global patterns
   huggingface_fallback:
     repo_id: "different-org/special-model"  # Override global HF config
 ```

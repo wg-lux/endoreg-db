@@ -75,9 +75,9 @@ class Case(models.Model):
     )
 
     if TYPE_CHECKING:
-        patient: "Patient"
-        patient_examinations: models.QuerySet["PatientExamination"]
-
+        patient: models.ForeignKey["Patient"]
+        patient_examinations: models.ManyToManyField["PatientExamination", "PatientExamination"]
+        
     class Meta:
         ordering = ['-start_date', 'patient']
         verbose_name = "Case"

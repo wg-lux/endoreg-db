@@ -65,10 +65,10 @@ class ModelMeta(models.Model):
     )
     weights = models.FileField(
         upload_to=WEIGHTS_DIR.name,  # Use .name for relative path
-        validators=[FileExtensionValidator(allowed_extensions=["ckpt"])],
+            validators=[FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])],
         null=True,
         blank=True,
-        help_text="Path to the model weights file (.ckpt), relative to MEDIA_ROOT.",
+        help_text="Path to the model weights file (.safetensors), relative to MEDIA_ROOT.",
     )
 
     # --- Normalization and Input Shape ---
@@ -101,8 +101,8 @@ class ModelMeta(models.Model):
 
     # --- Type Hinting for Related Fields ---
     if TYPE_CHECKING:
-        labelset: "LabelSet"
-        model: "AiModel"  # Corrected from ai_model to match field name
+        labelset: models.ForeignKey["LabelSet"]
+        model: models.ForeignKey["AiModel"]  # Corrected from ai_model to match field name
 
     class Meta:
         """Metadata options for the ModelMeta model."""
@@ -115,6 +115,7 @@ class ModelMeta(models.Model):
         model_name: str,
         labelset_name: str,
         weights_file: str,
+        labelset_version: Optional[int | str] = None,
         requested_version: Optional[str] = None,
         bump_if_exists: bool = False,
         **kwargs: Any,
@@ -124,8 +125,15 @@ class ModelMeta(models.Model):
         """
         # Delegate to logic function, passing the class (cls)
         return logic.create_from_file_logic(
-            cls, meta_name, model_name, labelset_name, weights_file,
-            requested_version, bump_if_exists, **kwargs
+            cls,
+            meta_name,
+            model_name,
+            labelset_name,
+            weights_file,
+            labelset_version=labelset_version,
+            requested_version=requested_version,
+            bump_if_exists=bump_if_exists,
+            **kwargs,
         )
         
     @classmethod
@@ -133,12 +141,18 @@ class ModelMeta(models.Model):
         cls: Type["ModelMeta"],
         model_id: str = "wg-lux/colo_segmentation_RegNetX800MF_base",
         labelset_name: Optional[str] = None,
+        labelset_version: Optional[int | str] = None,
     ) -> "ModelMeta":
         """
         Downloads a pretrained model from Hugging Face and initializes ModelMeta automatically.
         """
         # If labelset_name is not provided, handle default logic here if needed
-        return logic.setup_default_from_huggingface_logic(cls, model_id, labelset_name)
+        return logic.setup_default_from_huggingface_logic(
+            cls,
+            model_id=model_id,
+            labelset_name=labelset_name,
+            labelset_version=labelset_version,
+        )
 
 
 
@@ -152,7 +166,7 @@ class ModelMeta(models.Model):
 
 
     @staticmethod
-    def get_activation_function(activation_name: str) -> "TorchModule":
+    def get_activation_function(activation_name: str):
         """
         Retrieves a PyTorch activation function using external logic.
         """
@@ -166,12 +180,12 @@ class ModelMeta(models.Model):
         # Delegate to logic function
         return logic.get_inference_dataset_config_logic(self)
 
-    def natural_key(self) -> Tuple[str, str]:
+    def natural_key(self) -> Tuple[str, str, str]:
         """
         Returns the natural key for serialization.
         """
         # Assuming natural key is based on name and version, linked to model name
-        return (self.name, self.version, self.model.natural_key())
+        return (self.name, self.version, self.model.natural_key()[0])
 
     def __str__(self) -> str:
         """String representation of the ModelMeta instance."""

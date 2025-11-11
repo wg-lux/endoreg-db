@@ -128,19 +128,60 @@ def load_data_with_foreign_keys(
                     related_objects.append(obj)
                 m2m_relationships[fk_field] = related_objects
             else:  # Single foreign key relationship
-                try:
-                    obj = fk_model.objects.get_by_natural_key(target_keys)
-                except ObjectDoesNotExist:
-                    if verbose:
-                        command.stdout.write(
-                            command.style.WARNING(
-                                f"{fk_model.__name__} with key {target_keys} not found"
+                if (
+                    model.__name__ == "ModelMeta"
+                    and fk_field == "labelset"
+                ):
+                    labelset_version = fields.pop("labelset_version", None)
+
+                    if isinstance(target_keys, (tuple, list)):
+                        labelset_name = target_keys[0] if target_keys else None
+                        if len(target_keys) > 1 and labelset_version in (None, ""):
+                            labelset_version = target_keys[1]
+                    else:
+                        labelset_name = target_keys
+
+                    if not labelset_name:
+                        if verbose:
+                            command.stdout.write(
+                                command.style.WARNING("LabelSet name missing for ModelMeta entry")
                             )
-                        )
-                    continue
-                fields[fk_field] = obj
+                        continue
+
+                    queryset = fk_model.objects.filter(name=labelset_name)
+                    if labelset_version not in (None, "", -1):
+                        try:
+                            version_value = int(labelset_version)
+                        except (TypeError, ValueError):
+                            version_value = labelset_version
+                        queryset = queryset.filter(version=version_value)
+
+                    obj = queryset.order_by("-version").first()
+                    if obj is None:
+                        if verbose:
+                            command.stdout.write(
+                                command.style.WARNING(
+                                    f"LabelSet '{labelset_name}' (version={labelset_version}) not found"
+                                )
+                            )
+                        continue
+                    fields[fk_field] = obj
+                else:
+                    try:
+                        obj = fk_model.objects.get_by_natural_key(target_keys)
+                    except ObjectDoesNotExist:
+                        if verbose:
+                            command.stdout.write(
+                                command.style.WARNING(
+                                    f"{fk_model.__name__} with key {target_keys} not found"
+                                )
+                            )
+                        continue
+                    fields[fk_field] = obj
 
         # Create or update the main object (avoid update_or_create to prevent SQLite locks)
+        version_value = fields.get("version")
+
         def _save_instance():
             if name is None:
                 # Try to find an existing object by all provided fields
@@ -151,7 +192,11 @@ def load_data_with_foreign_keys(
                 else:
                     created = False
             else:
-                obj = model.objects.filter(name=name).first()
+                lookup_kwargs = {"name": name}
+                if model.__name__ == "LabelSet" and version_value is not None:
+                    lookup_kwargs["version"] = version_value
+
+                obj = model.objects.filter(**lookup_kwargs).first()
                 if obj is None:
                     obj = model.objects.create(name=name, **fields)
                     created = True

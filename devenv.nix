@@ -18,7 +18,7 @@ let
   confDir = "./conf"; # Define confDir here
 
   # Pin to specific Python 3.12 version to match pyproject.toml
-  python = pkgs.python3.withPackages(ps: with ps; [tkinter]); #known devenv issue with python3Packages since python3Full was deprecated
+  python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
   uvPackage = pkgs.uv;
   
   buildInputs = with pkgs; [

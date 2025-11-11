@@ -16,49 +16,42 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     The FileField stores a path relative to the storage root. We need to join
     that relative path onto the actual video directory under STORAGE_DIR.
     """
-    try:
-        if video.has_raw and video.raw_file.name:
-            # raw_file.name is a relative storage path like 'videos/<filename>'
-            raw_rel = Path(video.raw_file.name)
-            
-            # If it already contains the video directory name, keep the tail
-            rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
-            full_path = data_paths["video"] / rel_name
-            
-            # If primary path doesn't exist, check alternative locations
-            if not full_path.exists():
-                # Check if file is in sensitive subdirectory
-                sensitive_path = data_paths["video"] / "sensitive" / rel_name
-                if sensitive_path.exists():
-                    return sensitive_path.resolve()
-                
-                # Check direct raw_file.path if available
-                # Check direct raw_file.path if available
-                try:
-                    direct_path = Path(video.raw_file.path)
-                    if direct_path.exists():
-                        return direct_path.resolve()
-                except Exception as e:
-                    logger.debug("Could not access direct raw_file.path for video %s: %s", video.uuid, e)
-                    # Fallback to checking alternative paths
-                
-                # Check common alternative paths
-                alternative_paths = [
-                    Path("/home/admin/dev/lx-annotate/libs/data/videos") / rel_name,
-                    Path("/home/admin/dev/lx-annotate/libs/data/videos/sensitive") / rel_name,
-                    data_paths["video"].parent / "libs" / "data" / "videos" / rel_name,
-                ]
-                
-                for alt_path in alternative_paths:
-                    if alt_path.exists():
-                        return alt_path.resolve()
-            
-            return full_path.resolve()
-        else:
-            return None
-    except Exception as e:
-        logger.warning("Could not get path for raw file of VideoFile %s: %s", video.uuid, e)
+    if not (video.has_raw and video.raw_file.name):
         return None
+
+    # raw_file.name is a relative storage path like 'videos/<filename>'
+    raw_rel = Path(video.raw_file.name)
+
+    # If it already contains the video directory name, keep the tail
+    rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
+    full_path = data_paths["video"] / rel_name
+
+    if full_path.exists():
+        return full_path.resolve()
+
+    sensitive_path = data_paths["video"] / "sensitive" / rel_name
+    if sensitive_path.exists():
+        return sensitive_path.resolve()
+
+    try:
+        direct_path = Path(video.raw_file.path)
+    except Exception as exc:
+        logger.debug(
+            "Could not access direct raw_file.path for video %s: %s",
+            video.uuid,
+            exc,
+        )
+    else:
+        if direct_path.exists():
+            return direct_path.resolve()
+
+    logger.warning(
+        "Raw video file '%s' not found under %s or via stored FileField path for video %s.",
+        rel_name,
+        data_paths["video"],
+        video.uuid,
+    )
+    return None
 
 def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     """Returns the absolute Path object for the processed file, if it exists."""
@@ -85,6 +78,11 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
 
     # 2. Delete Raw File
     raw_file_path = _get_raw_file_path(video)
+    if raw_file_path is None:
+        logger.warning(
+            "Raw video file not found during deletion for video %s.",
+            video.uuid,
+        )
     if raw_file_path:
         try:
             if raw_file_path.exists():

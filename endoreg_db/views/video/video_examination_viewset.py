@@ -1,329 +1,242 @@
-# endoreg_db/views/examination_views.py
-from rest_framework.viewsets import ModelViewSet
-from rest_framework import status
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
+# endoreg_db/views/video/video_examination_viewset.py
+"""
+Video Examination ViewSet
+
+Provides REST API endpoints for managing video-based patient examinations.
+Handles CRUD operations for PatientExamination records linked to VideoFile instances.
+
+**API Endpoints:**
+- GET /api/video-examinations/ - List all video examinations
+- GET /api/video-examinations/{id}/ - Get examination details
+- POST /api/video-examinations/ - Create new examination
+- PATCH /api/video-examinations/{id}/ - Update examination
+- DELETE /api/video-examinations/{id}/ - Delete examination
+- GET /api/video/{video_id}/examinations/ - List examinations for specific video
+
+**Frontend Integration:**
+Used by VideoExaminationAnnotation.vue for annotation workflow.
+"""
+
+import logging
+
+from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
-from endoreg_db.models import (
-    Examination, 
-    VideoFile,
-    FindingClassification,
-    FindingClassificationChoice,
-    FindingIntervention,
-    Finding
-)
-from ...serializers.examination import (
-    ExaminationSerializer as ExaminationSerializer,
-    # FindingSerializer as FindingSerializer,
+from endoreg_db.models import PatientExamination, VideoFile
+
+from ...serializers.video_examination import (
+    VideoExaminationCreateSerializer,
+    VideoExaminationSerializer,
+    VideoExaminationUpdateSerializer,
 )
 
-
-class ExaminationViewSet(ModelViewSet):
-    queryset = Examination.objects.all()
-    serializer_class = ExaminationSerializer
+logger = logging.getLogger(__name__)
 
 
-# NEW: Video Examination CRUD ViewSet
 class VideoExaminationViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for Video Examination CRUD operations
-    Handles POST and PATCH for video examinations at timestamps
+    ViewSet for Video Examination CRUD operations.
+
+    Provides comprehensive API for managing patient examinations within
+    the video annotation workflow. Supports filtering by video, patient,
+    and examination type.
+
+    **Usage Example:**
+    ```python
+    # Frontend (JavaScript)
+    // Get examinations for video 123
+    const response = await api.get('/api/video/123/examinations/');
+
+    // Create new examination
+    await api.post('/api/video-examinations/', {
+        video_id: 123,
+        examination_id: 5,
+        date_start: '2024-01-15'
+    });
+    ```
     """
-    
+
+    queryset = PatientExamination.objects.select_related(
+        "patient", "examination", "video"
+    ).prefetch_related("patient_findings")
+    serializer_class = VideoExaminationSerializer
+
+    def get_serializer_class(self):
+        """
+        Return appropriate serializer based on action.
+
+        - create: VideoExaminationCreateSerializer (handles complex creation logic)
+        - update/partial_update: VideoExaminationUpdateSerializer
+        - list/retrieve: VideoExaminationSerializer (read-only with nested data)
+        """
+        if self.action == "create":
+            return VideoExaminationCreateSerializer
+        elif self.action in ["update", "partial_update"]:
+            return VideoExaminationUpdateSerializer
+        return VideoExaminationSerializer
+
     def get_queryset(self):
-        # Return empty queryset as we handle retrieval manually
-        return []
-    
+        """
+        Filter examinations based on query parameters.
+
+        **Supported filters:**
+        - ?video_id=123 - Get examinations for specific video
+        - ?patient_id=456 - Get examinations for specific patient
+        - ?examination_id=789 - Get examinations of specific type
+        """
+        queryset = super().get_queryset()
+
+        # Filter by video if provided
+        video_id = self.request.query_params.get("video_id")
+        if video_id:
+            queryset = queryset.filter(video_id=video_id)
+
+        # Filter by patient if provided
+        patient_id = self.request.query_params.get("patient_id")
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
+
+        # Filter by examination type if provided
+        examination_id = self.request.query_params.get("examination_id")
+        if examination_id:
+            queryset = queryset.filter(examination_id=examination_id)
+
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="video/(?P<video_id>[^/.]+)")
+    def by_video(self, request, video_id=None):
+        """
+        Get all examinations for a specific video.
+
+        **Endpoint:** GET /api/video-examinations/video/{video_id}/
+        **Alternative:** GET /api/video/{video_id}/examinations/
+
+        Args:
+            video_id: ID of the video
+
+        Returns:
+            200: List of examinations for the video
+            404: Video not found
+        """
+        # Validate video exists
+        video = get_object_or_404(VideoFile, id=video_id)
+
+        # Get examinations for this video
+        examinations = self.queryset.filter(video=video)
+
+        serializer = self.get_serializer(examinations, many=True)
+        return Response(serializer.data)
+
     def create(self, request, *args, **kwargs):
         """
-        Create a new video examination
-        POST /api/examinations/
-        
-        Expected payload:
+        Create a new video examination.
+
+        **Endpoint:** POST /api/video-examinations/
+
+        **Payload:**
+        ```json
         {
-            "videoId": 123,
-            "timestamp": 45.5,
-            "examinationTypeId": 1,
-            "findingId": 2,
-            "locationClassificationId": 3,
-            "locationChoiceId": 4,
-            "morphologyClassificationId": 5,
-            "morphologyChoiceId": 6,
-            "interventionIds": [7, 8],
-            "notes": "Sample notes"
+            "video_id": 123,
+            "examination_id": 5,
+            "date_start": "2024-01-15",
+            "date_end": "2024-01-15"
         }
+        ```
+
+        Returns:
+            201: Examination created successfully
+            400: Invalid data (missing required fields, validation errors)
+            404: Video or examination type not found
         """
-        from django.db import transaction
-        import logging
-        
-        logger = logging.getLogger(__name__)
-        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
         try:
-            data = request.data
-            
-            # Validate required fields
-            required_fields = ['videoId', 'timestamp', 'examinationTypeId', 'findingId']
-            for field in required_fields:
-                if field not in data or data[field] is None:
-                    return Response(
-                        {'error': f'Missing or null required field: {field}'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            
-            # Validate data types
-            try:
-                video_id = int(data['videoId'])
-                timestamp = float(data['timestamp'])
-                examination_type_id = int(data['examinationTypeId'])
-                finding_id = int(data['findingId'])
-            except (ValueError, TypeError) as e:
-                return Response(
-                    {'error': f'Invalid data type in request: {str(e)}'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Validate timestamp is not negative
-            if timestamp < 0:
-                return Response(
-                    {'error': 'Timestamp cannot be negative'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
             with transaction.atomic():
-                # Get video
-                try:
-                    video = VideoFile.objects.get(id=video_id)
-                except VideoFile.DoesNotExist:
-                    return Response(
-                        {'error': 'Video not found'}, 
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                
-                # Get examination type
-                try:
-                    examination = Examination.objects.get(id=examination_type_id)
-                except Examination.DoesNotExist:
-                    return Response(
-                        {'error': 'Examination type not found'}, 
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                
-                # Get finding
-                try:
-                    finding = Finding.objects.get(id=finding_id)
-                except Finding.DoesNotExist:
-                    return Response(
-                        {'error': 'Finding not found'}, 
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                
-                # Validate optional foreign keys if provided
-                if data.get('locationClassificationId'):
-                    try:
-                        FindingClassification.objects.get(id=data['locationClassificationId'], classification_types__name__iexact="location")
-                    except FindingClassification.DoesNotExist:
-                        return Response(
-                            {'error': 'Location classification not found'}, 
-                            status=status.HTTP_404_NOT_FOUND
-                        )
-                
-                if data.get('morphologyClassificationId'):
-                    try:
-                        FindingClassification.objects.get(
-                            id=data['morphologyClassificationId'],
-                            classification_types__name__iexact="morphology"
-                        )
-                    except FindingClassification.DoesNotExist:
-                        return Response(
-                            {'error': 'Morphology classification not found'}, 
-                            status=status.HTTP_404_NOT_FOUND
-                        )
-                
-                # Create examination record
-                examination_data = {
-                    'id': f"exam_{video.id}_{timestamp}_{examination.id}",
-                    'video_id': video_id,
-                    'timestamp': timestamp,
-                    'examination_type': examination.name,
-                    'finding': finding.name,
-                    'location_classification': data.get('locationClassificationId'),
-                    'location_choice': data.get('locationChoiceId'),
-                    'morphology_classification': data.get('morphologyClassificationId'),
-                    'morphology_choice': data.get('morphologyChoiceId'),
-                    'interventions': data.get('interventionIds', []),
-                    'notes': data.get('notes', ''),
-                    'created_at': '2024-01-01T00:00:00Z'  # Placeholder timestamp
-                }
-                
-                logger.info(f"Created video examination for video {video_id} at timestamp {timestamp}")
-                return Response(examination_data, status=status.HTTP_201_CREATED)
-            
+                patient_exam = serializer.save()
+
+                # Return created examination with full serialization
+                response_serializer = VideoExaminationSerializer(patient_exam)
+                logger.info(
+                    f"Created video examination: video={request.data.get('video_id')}, "
+                    f"exam={request.data.get('examination_id')}"
+                )
+                return Response(
+                    response_serializer.data, status=status.HTTP_201_CREATED
+                )
         except Exception as e:
-            logger.error(f"Unexpected error creating examination: {str(e)}")
+            logger.error(f"Error creating video examination: {str(e)}")
             return Response(
-                {'error': 'Internal server error while creating examination'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Internal server error while creating examination"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    
+
     def update(self, request, *args, **kwargs):
         """
-        Update an existing video examination
-        PATCH /api/examinations/{id}/
+        Update an existing video examination.
+
+        **Endpoint:** PATCH /api/video-examinations/{id}/
+
+        **Payload:**
+        ```json
+        {
+            "examination_id": 6,
+            "date_start": "2024-01-16"
+        }
+        ```
+
+        Returns:
+            200: Examination updated successfully
+            400: Invalid data
+            404: Examination not found
         """
-        from django.db import transaction
-        import logging
-        
-        logger = logging.getLogger(__name__)
-        
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
         try:
-            examination_id = kwargs.get('pk')
-            if not examination_id:
-                return Response(
-                    {'error': 'Examination ID is required'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            data = request.data
-            
-            # Validate data types for provided fields
-            if 'videoId' in data:
-                try:
-                    data['videoId'] = int(data['videoId'])
-                except (ValueError, TypeError):
-                    return Response(
-                        {'error': 'Invalid videoId format'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            
-            if 'timestamp' in data:
-                try:
-                    timestamp = float(data['timestamp'])
-                    if timestamp < 0:
-                        return Response(
-                            {'error': 'Timestamp cannot be negative'}, 
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    data['timestamp'] = timestamp
-                except (ValueError, TypeError):
-                    return Response(
-                        {'error': 'Invalid timestamp format'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            
             with transaction.atomic():
-                # Validate foreign keys if provided
-                if 'videoId' in data:
-                    try:
-                        VideoFile.objects.get(id=data['videoId'])
-                    except VideoFile.DoesNotExist:
-                        return Response(
-                            {'error': 'Video not found'}, 
-                            status=status.HTTP_404_NOT_FOUND
-                        )
-                
-                if 'examinationTypeId' in data:
-                    try:
-                        examination_type_id = int(data['examinationTypeId'])
-                        Examination.objects.get(id=examination_type_id)
-                    except (ValueError, TypeError):
-                        return Response(
-                            {'error': 'Invalid examination type ID format'}, 
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    except Examination.DoesNotExist:
-                        return Response(
-                            {'error': 'Examination type not found'}, 
-                            status=status.HTTP_404_NOT_FOUND
-                        )
-                
-                if 'findingId' in data:
-                    try:
-                        finding_id = int(data['findingId'])
-                        Finding.objects.get(id=finding_id)
-                    except (ValueError, TypeError):
-                        return Response(
-                            {'error': 'Invalid finding ID format'}, 
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                    except Finding.DoesNotExist:
-                        return Response(
-                            {'error': 'Finding not found'}, 
-                            status=status.HTTP_404_NOT_FOUND
-                        )
-                
-                # Return updated examination data
-                examination_data = {
-                    'id': examination_id,
-                    'video_id': data.get('videoId'),
-                    'timestamp': data.get('timestamp'),
-                    'examination_type': data.get('examinationTypeId'),
-                    'finding': data.get('findingId'),
-                    'location_classification': data.get('locationClassificationId'),
-                    'location_choice': data.get('locationChoiceId'),
-                    'morphology_classification': data.get('morphologyClassificationId'),
-                    'morphology_choice': data.get('morphologyChoiceId'),
-                    'interventions': data.get('interventionIds', []),
-                    'notes': data.get('notes', ''),
-                    'updated_at': '2024-01-01T00:00:00Z'  # Placeholder timestamp
-                }
-                
-                logger.info(f"Updated video examination {examination_id}")
-                return Response(examination_data, status=status.HTTP_200_OK)
-            
+                patient_exam = serializer.save()
+
+                # Return updated examination
+                response_serializer = VideoExaminationSerializer(patient_exam)
+                logger.info(f"Updated video examination {instance.id}")
+                return Response(response_serializer.data)
         except Exception as e:
-            logger.error(f"Unexpected error updating examination {examination_id}: {str(e)}")
+            logger.error(f"Error updating video examination {instance.id}: {str(e)}")
             return Response(
-                {'error': 'Internal server error while updating examination'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Internal server error while updating examination"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    
+
     def destroy(self, request, *args, **kwargs):
         """
-        Delete a video examination
-        DELETE /api/examinations/{id}/
+        Delete a video examination.
+
+        **Endpoint:** DELETE /api/video-examinations/{id}/
+
+        Returns:
+            204: Examination deleted successfully
+            404: Examination not found
         """
-        from django.db import transaction
-        import logging
-        
-        logger = logging.getLogger(__name__)
-        
+        instance = self.get_object()
+        examination_id = instance.id
+
         try:
-            examination_id = kwargs.get('pk')
-            if not examination_id:
-                return Response(
-                    {'error': 'Examination ID is required'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Validate examination_id format
-            try:
-                # For now, we're using string IDs, so just validate it's not empty
-                if not str(examination_id).strip():
-                    return Response(
-                        {'error': 'Invalid examination ID format'}, 
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            except (ValueError, TypeError):
-                return Response(
-                    {'error': 'Invalid examination ID format'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
             with transaction.atomic():
-                # For now, we simulate successful deletion
-                # TODO: Implement actual examination record deletion when persistence is added
-                
+                instance.delete()
                 logger.info(f"Deleted video examination {examination_id}")
                 return Response(
-                    {'message': f'Examination {examination_id} deleted successfully'}, 
-                    status=status.HTTP_204_NO_CONTENT
+                    {"message": f"Examination {examination_id} deleted successfully"},
+                    status=status.HTTP_204_NO_CONTENT,
                 )
-            
         except Exception as e:
-            logger.error(f"Unexpected error deleting examination {examination_id}: {str(e)}")
+            logger.error(f"Error deleting examination {examination_id}: {str(e)}")
             return Response(
-                {'error': 'Internal server error while deleting examination'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Internal server error while deleting examination"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

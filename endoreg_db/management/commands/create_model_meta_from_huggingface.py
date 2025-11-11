@@ -5,7 +5,7 @@ Django management command to create ModelMeta from Hugging Face model.
 from pathlib import Path
 
 from django.core.files.base import ContentFile
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from huggingface_hub import hf_hub_download
 
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
@@ -39,12 +39,19 @@ class Command(BaseCommand):
             default="1",
             help="Version for the model meta",
         )
+        parser.add_argument(
+            "--labelset_version",
+            type=int,
+            default=None,
+            help="LabelSet version; if omitted, the latest by name is used",
+        )
 
     def handle(self, *args, **options):
         model_id = options["model_id"]
         model_name = options["model_name"]
         labelset_name = options["labelset_name"]
         version = options["meta_version"]
+        labelset_version = options.get("labelset_version")
 
         self.stdout.write(f"Downloading model {model_id} from Hugging Face...")
 
@@ -52,7 +59,7 @@ class Command(BaseCommand):
             # Download the model weights
             weights_path = hf_hub_download(
                 repo_id=model_id,
-                filename="colo_segmentation_RegNetX800MF_base.ckpt",
+                filename="colo_segmentation_RegNetX800MF_base.safetensors",
                 local_dir="/tmp",
             )
             self.stdout.write(f"Downloaded weights to: {weights_path}")
@@ -64,14 +71,17 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created AI model: {ai_model.name}")
 
-            # Get labelset
-            try:
-                labelset = LabelSet.objects.get(name=labelset_name)
-            except LabelSet.DoesNotExist:
-                self.stdout.write(
-                    self.style.ERROR(f"LabelSet '{labelset_name}' not found")
+            # Get labelset (optionally by version); fail with non-zero exit
+            labelset_qs = LabelSet.objects.filter(name=labelset_name)
+            if labelset_version is not None:
+                labelset_qs = labelset_qs.filter(version=labelset_version)
+            labelset = labelset_qs.order_by("-version").first()
+            if labelset is None:
+                raise CommandError(
+                    f"LabelSet '{labelset_name}'"
+                    + (f" v{labelset_version}" if labelset_version is not None else "")
+                    + " not found"
                 )
-                return
 
             # Create ModelMeta
             model_meta, created = ModelMeta.objects.get_or_create(
@@ -95,7 +105,7 @@ class Command(BaseCommand):
             # Save the weights file to the model
             with open(weights_path, "rb") as f:
                 model_meta.weights.save(
-                    f"{model_name}_v{version}_pytorch_model.bin", ContentFile(f.read())
+                    f"{model_name}_v{version}.safetensors", ContentFile(f.read())
                 )
 
             # Set as active meta
@@ -113,3 +123,4 @@ class Command(BaseCommand):
             import traceback
 
             traceback.print_exc()
+            raise CommandError("ModelMeta creation failed") from e

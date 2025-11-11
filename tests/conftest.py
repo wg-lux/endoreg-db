@@ -162,7 +162,18 @@ def base_db_data(django_db_setup, cache):
             defaults={"model_type": model_type},
         )
 
-        if not ai_model.metadata_versions.exists():
+        def ensure_stub_weights(meta: ModelMeta, *, suffix: str) -> None:
+            """Attach lightweight stub weights to the provided ModelMeta if missing."""
+            if meta.weights:
+                return
+            weights_name = f"model_weights/{suffix}"
+            if not default_storage.exists(weights_name):
+                default_storage.save(weights_name, ContentFile(b"stub-weights"))
+            meta.weights.name = weights_name
+            meta.save(update_fields=["weights"])
+
+        metadata_qs = ai_model.metadata_versions.all()
+        if not metadata_qs.exists():
             model_meta = ModelMeta.objects.create(
                 name=f"{DEFAULT_SEGMENTATION_MODEL_NAME}_default",
                 version="1",
@@ -170,17 +181,21 @@ def base_db_data(django_db_setup, cache):
                 labelset=labelset,
                 description="Stub model meta for fast tests",
             )
-            if not model_meta.weights:
-                weights_name = f"model_weights/{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.ckpt"
-                if not default_storage.exists(weights_name):
-                    default_storage.save(weights_name, ContentFile(b"stub-weights"))
-                model_meta.weights.name = weights_name
-                model_meta.save(update_fields=["weights"])
+            ensure_stub_weights(
+                model_meta,
+                suffix=f"{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.safetensors",
+            )
             ai_model.active_meta = model_meta
             ai_model.save(update_fields=["active_meta"])
-        elif ai_model.active_meta is None:
-            ai_model.active_meta = ai_model.metadata_versions.first()
-            ai_model.save(update_fields=["active_meta"])
+        else:
+            for meta in metadata_qs:
+                ensure_stub_weights(
+                    meta,
+                    suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
+                )
+            if ai_model.active_meta is None:
+                ai_model.active_meta = metadata_qs.first()
+                ai_model.save(update_fields=["active_meta"])
 
         # Additional model for compatibility
         ai_model_alt, _ = AiModel.objects.get_or_create(
@@ -188,7 +203,8 @@ def base_db_data(django_db_setup, cache):
             defaults={"model_type": model_type},
         )
 
-        if not ai_model_alt.metadata_versions.exists():
+        metadata_alt_qs = ai_model_alt.metadata_versions.all()
+        if not metadata_alt_qs.exists():
             model_meta_alt = ModelMeta.objects.create(
                 name="test_segmentation_model_default",
                 version="1",
@@ -196,17 +212,21 @@ def base_db_data(django_db_setup, cache):
                 labelset=labelset,
                 description="Stub alt model meta for fast tests",
             )
-            if not model_meta_alt.weights:
-                weights_name_alt = "model_weights/test_segmentation_model_stub.ckpt"
-                if not default_storage.exists(weights_name_alt):
-                    default_storage.save(weights_name_alt, ContentFile(b"stub-weights"))
-                model_meta_alt.weights.name = weights_name_alt
-                model_meta_alt.save(update_fields=["weights"])
+            ensure_stub_weights(
+                model_meta_alt,
+                suffix="test_segmentation_model_stub.safetensors",
+            )
             ai_model_alt.active_meta = model_meta_alt
             ai_model_alt.save(update_fields=["active_meta"])
-        elif ai_model_alt.active_meta is None:
-            ai_model_alt.active_meta = ai_model_alt.metadata_versions.first()
-            ai_model_alt.save(update_fields=["active_meta"])
+        else:
+            for meta in metadata_alt_qs:
+                ensure_stub_weights(
+                    meta,
+                    suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
+                )
+            if ai_model_alt.active_meta is None:
+                ai_model_alt.active_meta = metadata_alt_qs.first()
+                ai_model_alt.save(update_fields=["active_meta"])
                 
     except Exception as e:
         # Log but don't fail - tests can still run with mocks
@@ -721,7 +741,7 @@ def mock_ai_model(base_db_data):
         ai_model=ai_model,
         version=1,
         defaults={
-            'model_path': '/tmp/test_model.ckpt',
+            'model_path': '/tmp/test_model.safetensors',
             'is_active': True,
             'batch_size': 16,
             'image_size_x': 716,

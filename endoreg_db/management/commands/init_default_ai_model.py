@@ -75,7 +75,7 @@ class Command(BaseCommand):
         self.stdout.write("Creating default model metadata...")
         
         # Use a dummy weights file path for now - in production this should point to actual model weights
-        dummy_weights_path = Path(__file__).parent.parent.parent / "assets" / "dummy_model.ckpt"
+        dummy_weights_path = Path(__file__).parent.parent.parent / "assets" / "dummy_model.safetensors"
         
         # Create the dummy weights file if it doesn't exist
         dummy_weights_path.parent.mkdir(parents=True, exist_ok=True)

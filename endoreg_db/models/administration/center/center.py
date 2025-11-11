@@ -52,7 +52,7 @@ class Center(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
-        return str(object=self.display_name or self.name)
+        return str(self.display_name or self.name)
 
     def get_first_names(self):
         return self.first_names.all()
