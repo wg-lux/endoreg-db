@@ -23,13 +23,14 @@ from .center import (
 # from .permissions import ()
 # Person
 from .person import (
-    Person,
+    Employee,
+    EmployeeQualification,
+    EmployeeType,
     Examiner,
-    Patient,
-    PortalUserInfo,
     FirstName,
     LastName,
     Patient,
+    PatientExternalID,
     Person,
     PortalUserInfo,
     Profession,
