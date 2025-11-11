@@ -1,15 +1,12 @@
-from .media import (
-    VideoMediaView,
-    VideoCorrectionView,
+from .correction import (
     VideoMetadataView,
     VideoProcessingHistoryView,
-    VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
-    VideoReprocessView,
-    TaskStatusView,
-    VideoDownloadProcessedView,
+    VideoCorrectionView,
 )
+
+from ..media.video_media import VideoMediaView
 
 from .reimport import (
     VideoReimportView
@@ -17,13 +14,13 @@ from .reimport import (
 
 from .segmentation import (
     VideoViewSet,
-    VideoStreamView,
     VideoLabelView,
     UpdateLabelSegmentsView,
     rerun_segmentation,
-
-
 )
+
+# Phase 3.2: VideoStreamView moved to dedicated module
+from .video_stream import VideoStreamView
 
 from .timeline import (
     video_timeline_view
@@ -32,17 +29,17 @@ from .timeline import (
 from .video_examination_viewset import VideoExaminationViewSet
 
 __all__ = [
-    # Media views
-    'VideoMediaView',
-    'VideoCorrectionView',
+    # Video Correction (Phase 1.1) - Implemented
     'VideoMetadataView',
     'VideoProcessingHistoryView',
-    'VideoAnalyzeView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
-    'VideoReprocessView',
-    'TaskStatusView',
-    'VideoDownloadProcessedView',
+    
+    'VideoMediaView',
+    
+    'VideoCorrectionView',
+    # 'TaskStatusView',
+    # 'VideoDownloadProcessedView',
 
     # Reimport views
     'VideoReimportView',

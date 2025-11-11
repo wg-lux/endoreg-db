@@ -1,0 +1,38 @@
+# EndoReg DB Setup Configuration
+# This file defines which models should be used for setup and their fallback configurations
+
+default_models:
+  primary_classification_model: "image_multilabel_classification_colonoscopy_default"
+  primary_labelset: "multilabel_classification_colonoscopy_default"
+
+# HuggingFace fallback configuration
+huggingface_fallback:
+  enabled: true
+  repo_id: "wg-lux/colo_segmentation_RegNetX800MF_base"
+  filename: "colo_segmentation_RegNetX800MF_base.safetensors"
+  labelset_name: "multilabel_classification_colonoscopy_default"
+
+# Local weights search patterns
+weights_search_patterns:
+  # Primary model weight filename patterns (supports wildcards)
+  - "colo_segmentation_RegNetX800MF_*.safetensors"
+  - "image_multilabel_classification_colonoscopy_default_*.safetensors"
+  - "*_colonoscopy_*.safetensors"
+
+# Search directories for local weights (relative to project root)
+weights_search_dirs:
+  - "tests/assets"
+  - "assets"
+  - "data/storage/model_weights"
+  - "${STORAGE_DIR}/model_weights" # Environment variable substitution
+
+# Auto-generation defaults when creating metadata
+auto_generation_defaults:
+  activation: "sigmoid"
+  mean: "0.485,0.456,0.406" # ImageNet defaults
+  std: "0.229,0.224,0.225" # ImageNet defaults
+  size_x: 224
+  size_y: 224
+  axes: "CHW"
+  batchsize: 32
+  num_workers: 4

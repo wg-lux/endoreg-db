@@ -6,7 +6,8 @@ from endoreg_db.views.anonymization import (
     anonymization_current,
     anonymization_status,
     polling_coordinator_info,
-    clear_processing_locks
+    clear_processing_locks,
+    has_raw_video_file,
 )
 from endoreg_db.views.anonymization import media_management
 
@@ -20,6 +21,8 @@ url_patterns = [
         # Polling Coordination API (new endpoints)
     path('anonymization/polling-info/', polling_coordinator_info, name='polling_coordinator_info'),
     path('anonymization/clear-locks/', clear_processing_locks, name='clear_processing_locks'),
+    path('anonymization/<int:file_id>/has-raw/', has_raw_video_file, name='has_raw_video_file'),
+
     
     # Media Management API (new endpoints)
     path('media-management/status/', media_management.MediaManagementView.as_view(), name='media_management_status'),

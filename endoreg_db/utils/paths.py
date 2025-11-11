@@ -6,37 +6,27 @@ It provides a unified dictionary 'data_paths' for accessing all path objects.
 """
 
 from logging import getLogger
+
+from sphinx.search import no
 logger = getLogger(__name__)
 
-import os
 from pathlib import Path
 from typing import Dict
-import dotenv
+import os
+# Alternative approach using env_path helper, deprecated since monorepo setup. Alright for single install, env is always preferred.
+#from endoreg_db.config.env import env_path
 
-# Only load .env in non-pytest contexts to avoid leaking dev settings into tests
-if not os.environ.get("PYTEST_CURRENT_TEST"):
-    dotenv.load_dotenv()
-else:
-    logger.debug("Skipping .env load under pytest")
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "storage"))
 
-# Define BASE_DIR as the project root (endoreg_db/utils -> endoreg_db -> repo root)
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
-# Resolve STORAGE_DIR from env or default under BASE_DIR
-def _resolve_storage_dir() -> Path:
-    env_val = os.getenv("STORAGE_DIR")
-    if env_val:
-        p = Path(env_val)
-        return p if p.is_absolute() else (BASE_DIR / p).resolve()
-    # Do not import django.conf.settings here to avoid early settings configuration.
-    # Fall back to a local storage directory under the repo.
-    return (BASE_DIR / "storage").resolve()
-
-STORAGE_DIR = _resolve_storage_dir()
-STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+storage_dir_env = os.getenv("STORAGE_DIR")
+if storage_dir_env is None:
+    raise RuntimeError("STORAGE_DIR environment variable is not set.")
+storage_dir_str = Path(storage_dir_env)
+STORAGE_DIR = storage_dir_str
+if not STORAGE_DIR.exists():
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 PREFIX_RAW = "raw_"
-STORAGE_DIR_NAME = "data"
 IMPORT_DIR_NAME = "import"
 EXPORT_DIR_NAME = "export"
 
@@ -99,6 +89,7 @@ data_paths:Dict[str,Path] = {
 logger.info(f"Storage directory: {STORAGE_DIR.resolve()}")
 logger.info(f"Export directory: {EXPORT_DIR.resolve()}")
 
-for key, path in data_paths.items():
-    path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"{key.capitalize()} directory: {path.resolve()}")
+# for key, path in data_paths.items():
+#     path.mkdir(parents=True, exist_ok=True)
+
+#     logger.info(f"{key.capitalize()} directory: {path.resolve()}")

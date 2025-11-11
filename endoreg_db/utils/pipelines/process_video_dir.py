@@ -20,7 +20,7 @@ DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data/study
 CENTER_NAME = os.environ.get("CENTER_NAME", "university_hospital_wuerzburg")
 ENDOSCOPY_PROCESSOR_NAME = os.environ.get("ENDOSCOPY_PROCESSOR_NAME", "olympus_cv_1500")
 MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
-MODEL_WEIGHTS_PATH = "./tests/assets/colo_segmentation_RegNetX800MF_6.ckpt"
+MODEL_WEIGHTS_PATH = "./tests/assets/colo_segmentation_RegNetX800MF_6.safetensors"
 ic(DEFAULT_DIR)
 
 

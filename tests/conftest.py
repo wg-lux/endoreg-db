@@ -12,9 +12,11 @@ import logging
 
 import pytest
 from django.test import override_settings
+from django.core.files.base import ContentFile
 
-# Global session cache for expensive operations (video processing, etc.)
-_session_cache = {}
+pytest_plugins = [
+    "tests.plugins.cache",
+]
 
 # Disable faker logging immediately on import
 def disable_faker_logging():
@@ -47,6 +49,7 @@ os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings.test"
 # Performance optimization settings
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "false").lower() == "false" and False or os.environ.get("RUN_VIDEO_TESTS", "false").lower() == "true"
+USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
 # Set up storage directory for tests
 TEST_STORAGE_DIR = Path(__file__).parent.parent / "storage" / "tests"
@@ -84,21 +87,27 @@ def django_db_setup():
     """
     pass
 
-# Base data loading - now using function scope but with caching
-_base_data_loaded = False
+# Base data loading - now using centralized caching
 
 @pytest.fixture(scope="function")
-def base_db_data(django_db_setup):
+def base_db_data(django_db_setup, cache):
     """
     Load base database data once per session using global caching.
     This reduces repeated database loading in individual tests.
     """
-    global _base_data_loaded
-    
-    # Only load data once per test session, even with function scope
-    if _base_data_loaded:
+    from tests.helpers.default_objects import DEFAULT_CENTER_NAME, DEFAULT_SEGMENTATION_MODEL_NAME
+    from endoreg_db.models import Center
+
+    db_cache = cache.namespace("db")
+    loaded_flag = db_cache.get("base_data_loaded")
+    center_available = Center.objects.filter(name=DEFAULT_CENTER_NAME).exists()
+
+    if loaded_flag and center_available:
         return True
-    
+
+    if loaded_flag and not center_available:
+        db_cache.invalidate("base_data_loaded")
+
     from tests.helpers.data_loader import (
         load_gender_data,
         load_disease_data,
@@ -112,7 +121,9 @@ def base_db_data(django_db_setup):
         load_default_ai_model,
         load_base_db_data,
     )
+    from django.core.files.storage import default_storage
     from endoreg_db.models import AiModel, ModelMeta, ModelType
+    from endoreg_db.models.label import LabelSet
     
     # Load all required base data once
     load_base_db_data()
@@ -125,67 +136,97 @@ def base_db_data(django_db_setup):
     load_endoscope_data()
     load_ai_model_label_data()
     load_ai_model_data()
-    load_default_ai_model()
+    if not SKIP_EXPENSIVE_TESTS and not USE_STUB_MODEL_META:
+        load_default_ai_model()
     
     # Ensure AI models have proper metadata for testing with smart caching
     try:
         # Create test segmentation model if it doesn't exist with metadata
         model_type, _ = ModelType.objects.get_or_create(
-            name='image_multilabel_classification',
-            defaults={'description': 'Test model type'}
+            name="image_multilabel_classification",
+            defaults={"description": "Test model type"},
         )
-        
+
+        labelset = LabelSet.objects.filter(name=DEFAULT_SEGMENTATION_MODEL_NAME).first()
+        if labelset is None:
+            labelset, _ = LabelSet.objects.get_or_create(
+                name=DEFAULT_SEGMENTATION_MODEL_NAME,
+                defaults={
+                    "description": "Stub labelset for fast tests",
+                    "version": 1,
+                },
+            )
+
         ai_model, _ = AiModel.objects.get_or_create(
-            name='image_multilabel_classification_colonoscopy_default',
-            defaults={'model_type': model_type}
+            name=DEFAULT_SEGMENTATION_MODEL_NAME,
+            defaults={"model_type": model_type},
         )
-        
-        # Ensure model has metadata with proper relationships
-        if not hasattr(ai_model, 'active_meta') or ai_model.active_meta is None:
-            # Check if any metadata exists first
-            existing_meta = ModelMeta.objects.filter(ai_model=ai_model).first()
-            if existing_meta:
-                ai_model.active_meta = existing_meta
-                ai_model.save()
-            else:
-                # Create new metadata
-                model_meta = ModelMeta.objects.create(
-                    ai_model=ai_model,
-                    version=1,
-                    model_path='/tmp/test_model.ckpt',
-                    is_active=True,
-                    batch_size=16,
-                    image_size_x=716,
-                    image_size_y=716,
-                    labels=['blood', 'polyp', 'normal', 'abnormal', 'artifact']
+
+        def ensure_stub_weights(meta: ModelMeta, *, suffix: str) -> None:
+            """Attach lightweight stub weights to the provided ModelMeta if missing."""
+            if meta.weights:
+                return
+            weights_name = f"model_weights/{suffix}"
+            if not default_storage.exists(weights_name):
+                default_storage.save(weights_name, ContentFile(b"stub-weights"))
+            meta.weights.name = weights_name
+            meta.save(update_fields=["weights"])
+
+        metadata_qs = ai_model.metadata_versions.all()
+        if not metadata_qs.exists():
+            model_meta = ModelMeta.objects.create(
+                name=f"{DEFAULT_SEGMENTATION_MODEL_NAME}_default",
+                version="1",
+                model=ai_model,
+                labelset=labelset,
+                description="Stub model meta for fast tests",
+            )
+            ensure_stub_weights(
+                model_meta,
+                suffix=f"{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.safetensors",
+            )
+            ai_model.active_meta = model_meta
+            ai_model.save(update_fields=["active_meta"])
+        else:
+            for meta in metadata_qs:
+                ensure_stub_weights(
+                    meta,
+                    suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
                 )
-                ai_model.active_meta = model_meta
-                ai_model.save()
-        
-        # Additional model for compatibility  
+            if ai_model.active_meta is None:
+                ai_model.active_meta = metadata_qs.first()
+                ai_model.save(update_fields=["active_meta"])
+
+        # Additional model for compatibility
         ai_model_alt, _ = AiModel.objects.get_or_create(
-            name='test_segmentation_model',
-            defaults={'model_type': model_type}
+            name="test_segmentation_model",
+            defaults={"model_type": model_type},
         )
-        
-        if not hasattr(ai_model_alt, 'active_meta') or ai_model_alt.active_meta is None:
-            existing_meta_alt = ModelMeta.objects.filter(ai_model=ai_model_alt).first()
-            if existing_meta_alt:
-                ai_model_alt.active_meta = existing_meta_alt
-                ai_model_alt.save()
-            else:
-                model_meta_alt = ModelMeta.objects.create(
-                    model=ai_model_alt,
-                    version=1,
-                    model_path='/tmp/test_model_alt.ckpt',
-                    is_active=True,
-                    batch_size=16,
-                    image_size_x=716,
-                    image_size_y=716,
-                    labels=['blood', 'polyp', 'normal', 'abnormal', 'artifact']
+
+        metadata_alt_qs = ai_model_alt.metadata_versions.all()
+        if not metadata_alt_qs.exists():
+            model_meta_alt = ModelMeta.objects.create(
+                name="test_segmentation_model_default",
+                version="1",
+                model=ai_model_alt,
+                labelset=labelset,
+                description="Stub alt model meta for fast tests",
+            )
+            ensure_stub_weights(
+                model_meta_alt,
+                suffix="test_segmentation_model_stub.safetensors",
+            )
+            ai_model_alt.active_meta = model_meta_alt
+            ai_model_alt.save(update_fields=["active_meta"])
+        else:
+            for meta in metadata_alt_qs:
+                ensure_stub_weights(
+                    meta,
+                    suffix=f"{meta.name}_v{meta.version}_stub.safetensors",
                 )
-                ai_model_alt.active_meta = model_meta_alt
-                ai_model_alt.save()
+            if ai_model_alt.active_meta is None:
+                ai_model_alt.active_meta = metadata_alt_qs.first()
+                ai_model_alt.save(update_fields=["active_meta"])
                 
     except Exception as e:
         # Log but don't fail - tests can still run with mocks
@@ -193,7 +234,7 @@ def base_db_data(django_db_setup):
         logger = logging.getLogger(__name__)
         logger.warning(f"Could not set up AI model metadata: {e}")
     
-    _base_data_loaded = True
+    db_cache.set("base_data_loaded", True)
     # Return loaded data indicators
     return True
 
@@ -201,46 +242,61 @@ def base_db_data(django_db_setup):
 # Video File Optimization Fixtures  
 # ==========================================
 
-# Global cache for video files
-_session_video_file = None
-_session_processed_video_file = None
-
 @pytest.fixture(scope="function")
-def sample_video_file(base_db_data):
+def sample_video_file(base_db_data, cache):
     """
     Create a single video file for the entire test session with caching.
     This eliminates repeated video initialization across tests.
     """
-    global _session_video_file
-    
     if SKIP_EXPENSIVE_TESTS or not RUN_VIDEO_TESTS:
         pytest.skip("Skipping video file creation (expensive test mode)")
-    
-    # Return cached video file if available
-    if _session_video_file is not None:
-        return _session_video_file
+
+    video_cache = cache.namespace("video")
+    cached = video_cache.get("sample")
+    if cached is not None:
+        try:
+            cached.refresh_from_db()
+        except Exception:
+            pass
+        return cached
     
     from tests.helpers.default_objects import get_default_video_file
     
     # Create video file once per session
-    _session_video_file = get_default_video_file()
-    
-    return _session_video_file
+    video_file = get_default_video_file()
+    video_cache.set("sample", video_file)
+    return video_file
+
+
+@pytest.fixture(scope="session", autouse=True)
+def configure_optimized_video_helper_cache(cache):
+    """Bind optimized video helpers to the shared cache namespace."""
+
+    from tests.helpers import optimized_video_fixtures as optimized_helpers
+
+    namespace = cache.namespace("optimized_video_helper")
+    optimized_helpers.configure_cache(namespace)
+    yield
+    optimized_helpers.clear_cache()
+    optimized_helpers.configure_cache(None)
 
 @pytest.fixture(scope="function")
-def processed_video_file(sample_video_file, base_db_data):
+def processed_video_file(sample_video_file, base_db_data, cache):
     """
     Create a fully processed video file for the entire test session with caching.
     This eliminates repeated pipeline processing across tests.
     """
-    global _session_processed_video_file
-    
     if SKIP_EXPENSIVE_TESTS or not RUN_VIDEO_TESTS:
         pytest.skip("Skipping video processing (expensive test mode)")
-    
-    # Return cached processed video if available
-    if _session_processed_video_file is not None:
-        return _session_processed_video_file
+
+    video_cache = cache.namespace("video")
+    cached = video_cache.get("processed")
+    if cached is not None:
+        try:
+            cached.refresh_from_db()
+        except Exception:
+            pass
+        return cached
     
     from tests.helpers.default_objects import get_latest_segmentation_model
     from tests.media.video.mock_video_anonym_annotation import mock_video_anonym_annotation
@@ -251,19 +307,20 @@ def processed_video_file(sample_video_file, base_db_data):
     try:
         # Get AI model - ensure model metadata exists
         ai_model_meta = get_latest_segmentation_model()
-        
+
         # Run Pipe 1 (frame extraction + AI inference)
         video_file.pipe_1(model=ai_model_meta, delete_frames_after=False)
-        
+
         # Mock validation
         mock_video_anonym_annotation(video_file)
-        
+
         # Run Pipe 2 (video anonymization)
         video_file.pipe_2()
-        
-        _session_processed_video_file = video_file
+
+        video_cache.set("processed", video_file)
         return video_file
     except Exception as e:
+        video_cache.invalidate("processed")
         pytest.skip(f"Failed to process video file: {e}")
 
 @pytest.fixture
@@ -382,7 +439,7 @@ def session_mocker():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_environment():
+def setup_test_environment(cache):
     """
     Set up the test environment once per session.
     """
@@ -399,7 +456,7 @@ def setup_test_environment():
     os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings.test"
     
     # Apply global video operation safety mocks
-    _apply_global_video_mocks()
+    _apply_global_video_mocks(cache)
     
     yield
     
@@ -407,12 +464,14 @@ def setup_test_environment():
     if TEST_STORAGE_DIR.exists():
         shutil.rmtree(TEST_STORAGE_DIR, ignore_errors=True)
 
-def _apply_global_video_mocks():
+def _apply_global_video_mocks(cache):
     """Apply comprehensive video mocking system with intelligent caching and real-code-first approach."""
     
     # Import here to avoid import issues
     from unittest import mock
     from pathlib import Path
+
+    ffmpeg_cache = cache.namespace("ffmpeg")
     
     def cached_get_stream_info_with_fallback(file_path):
         """
@@ -422,9 +481,10 @@ def _apply_global_video_mocks():
         print(f"MOCK CALLED: cached_get_stream_info_with_fallback for {file_path}")  # Debug
         file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
         cache_key = f"stream_info_{file_path}"
-        if cache_key in _session_cache:
+        cached = ffmpeg_cache.get(cache_key)
+        if cached is not None:
             print(f"CACHE HIT: {cache_key}")  # Debug
-            return _session_cache[cache_key]
+            return cached
             
         try:
             # Try real operation first - direct call to avoid import loops
@@ -444,7 +504,7 @@ def _apply_global_video_mocks():
                 
                 # Cache successful real result
                 print(f"REAL ffprobe SUCCESS, caching result for {file_path}")  # Debug
-                _session_cache[cache_key] = stream_info
+                ffmpeg_cache.set(cache_key, stream_info)
                 return stream_info
         except Exception as e:
             # Real operation failed, fall back to mock
@@ -464,7 +524,7 @@ def _apply_global_video_mocks():
                 "duration": "10.0"
             }]
         }
-        _session_cache[cache_key] = mock_stream_info
+        ffmpeg_cache.set(cache_key, mock_stream_info)
         return mock_stream_info
 
     def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
@@ -473,8 +533,9 @@ def _apply_global_video_mocks():
         output_path = Path(output_path) if not isinstance(output_path, Path) else output_path
         
         cache_key = f"transcode_{input_path}_{output_path}"
-        if cache_key in _session_cache:
-            return _session_cache[cache_key]
+        cached = ffmpeg_cache.get(cache_key)
+        if cached is not None:
+            return cached
         
         try:
             # For test scenarios, just return input path if it's compliant
@@ -490,13 +551,13 @@ def _apply_global_video_mocks():
                     # Check if transcoding is needed based on standard requirements
                     if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
                         # Already compliant, return input
-                        _session_cache[cache_key] = input_path
+                        ffmpeg_cache.set(cache_key, input_path)
                         return input_path
         except Exception as e:
             print(f"Smart transcoding check failed for {input_path}: {e}")
         
         # Fallback: return input path (assume no transcoding needed for tests)
-        _session_cache[cache_key] = input_path
+        ffmpeg_cache.set(cache_key, input_path)
         return input_path
 
     # Apply smart mocks that preserve real functionality where possible
@@ -680,7 +741,7 @@ def mock_ai_model(base_db_data):
         ai_model=ai_model,
         version=1,
         defaults={
-            'model_path': '/tmp/test_model.ckpt',
+            'model_path': '/tmp/test_model.safetensors',
             'is_active': True,
             'batch_size': 16,
             'image_size_x': 716,
@@ -782,13 +843,15 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
 
 
 @pytest.fixture
-def smart_video_mocks(monkeypatch):
+def smart_video_mocks(monkeypatch, cache):
     """
     Intelligent video operation mocks with real-code-first caching.
     This fixture takes precedence over other video mocks.
     """
     from pathlib import Path
     
+    ffmpeg_cache = cache.namespace("ffmpeg")
+
     def cached_get_stream_info_with_fallback(file_path):
         """
         Smart caching system that tries real operations first, falls back to mocks.
@@ -797,9 +860,10 @@ def smart_video_mocks(monkeypatch):
         print(f"SMART MOCK CALLED: cached_get_stream_info_with_fallback for {file_path}")  # Debug
         file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
         cache_key = f"stream_info_{file_path}"
-        if cache_key in _session_cache:
+        cached = ffmpeg_cache.get(cache_key)
+        if cached is not None:
             print(f"CACHE HIT: {cache_key}")  # Debug
-            return _session_cache[cache_key]
+            return cached
             
         # For tests, use mock data immediately - don't try real operations
         # since that's what's causing the failures
@@ -816,7 +880,7 @@ def smart_video_mocks(monkeypatch):
                 "duration": "10.0"
             }]
         }
-        _session_cache[cache_key] = mock_stream_info
+        ffmpeg_cache.set(cache_key, mock_stream_info)
         return mock_stream_info
 
     def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
@@ -826,9 +890,10 @@ def smart_video_mocks(monkeypatch):
         output_path = Path(output_path) if not isinstance(output_path, Path) else output_path
         
         cache_key = f"transcode_{input_path}_{output_path}"
-        if cache_key in _session_cache:
+        cached = ffmpeg_cache.get(cache_key)
+        if cached is not None:
             print(f"TRANSCODE CACHE HIT: {cache_key}")  # Debug
-            return _session_cache[cache_key]
+            return cached
         
         # Get mock stream info to determine if transcoding would be needed
         stream_info = cached_get_stream_info_with_fallback(input_path)
@@ -844,7 +909,7 @@ def smart_video_mocks(monkeypatch):
                 if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
                     # Already compliant, return input
                     print(f"Video is compliant, returning input path: {input_path}")  # Debug
-                    _session_cache[cache_key] = input_path
+                    ffmpeg_cache.set(cache_key, input_path)
                     return input_path
         
         # If transcoding is needed, simulate it by copying to output path
@@ -854,15 +919,15 @@ def smart_video_mocks(monkeypatch):
                 import shutil
                 shutil.copy2(input_path, output_path)
                 print(f"Mock transcoding: copied {input_path} to {output_path}")
-                _session_cache[cache_key] = output_path
+                ffmpeg_cache.set(cache_key, output_path)
                 return output_path
             else:
                 print(f"Input file {input_path} does not exist, returning input path anyway")
-                _session_cache[cache_key] = input_path
+                ffmpeg_cache.set(cache_key, input_path)
                 return input_path
         except Exception as e:
             print(f"Mock transcoding error: {e}, returning input path")
-            _session_cache[cache_key] = input_path
+            ffmpeg_cache.set(cache_key, input_path)
             return input_path
 
     # Apply the smart mocks with higher precedence - patch at multiple strategic locations

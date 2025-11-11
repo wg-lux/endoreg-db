@@ -1,78 +1,61 @@
 from .administration import (
+    ActiveModelSerializer,
+    AiModelSerializer,
     CenterSerializer,
     GenderSerializer,
-    ActiveModelSerializer,
     ModelTypeSerializer,
-    AiModelSerializer
 )
-
 from .examination import (
+    ExaminationDropdownSerializer,
     ExaminationSerializer,
     ExaminationTypeSerializer,
-    ExaminationDropdownSerializer
 )
-
 from .finding import FindingSerializer
-
 from .finding_classification import (
     FindingClassificationChoiceSerializer,
-    FindingClassificationSerializer
+    FindingClassificationSerializer,
 )
-
-from .label import (
-    LabelSerializer,
-    ImageClassificationAnnotationSerializer
-)
-
+from .label import ImageClassificationAnnotationSerializer, LabelSerializer
 from .label_video_segment import (
-    LabelVideoSegmentSerializer,
     LabelVideoSegmentAnnotationSerializer,
+    LabelVideoSegmentSerializer,
 )
-
 from .meta import (
-    ReportMetaSerializer,
     PDFFileForMetaSerializer,
+    ReportMetaSerializer,
     SensitiveMetaDetailSerializer,
     SensitiveMetaUpdateSerializer,
     SensitiveMetaVerificationSerializer,
     VideoMetaSerializer,
 )
-
 from .misc import (
     FileOverviewSerializer,
-    VoPPatientDataSerializer,
     StatsSerializer,
-    UploadJobStatusSerializer,
+    TranslatableFieldMixin,
     UploadCreateResponseSerializer,
-    TranslatableFieldMixin
+    UploadJobStatusSerializer,
+    VoPPatientDataSerializer,
 )
-
-from .patient import (
-    PatientSerializer,
-    PatientDropdownSerializer,
-)
-
-from .patient_examination import (
-    PatientExaminationSerializer,
-)
-
+from .patient import PatientDropdownSerializer, PatientSerializer
+from .patient_examination import PatientExaminationSerializer
 from .patient_finding import (
-    PatientFindingSerializer,
     PatientFindingClassificationSerializer,
     PatientFindingDetailSerializer,
     PatientFindingInterventionSerializer,
     PatientFindingListSerializer,
+    PatientFindingSerializer,
     PatientFindingWriteSerializer,
 )
+from .pdf import RawPdfAnonyTextSerializer
+from .report import ReportDataSerializer, ReportListSerializer, SecureFileUrlSerializer
+from .video.video_metadata import VideoMetadataSerializer
+from .video.video_processing_history import VideoProcessingHistorySerializer
+from .video_examination import (
+    VideoExaminationCreateSerializer,
+    VideoExaminationSerializer,
+    VideoExaminationUpdateSerializer,
+)
 
-from .pdf import (
-    RawPdfAnonyTextSerializer
-)
-from .report import (
-    ReportListSerializer,
-    ReportDataSerializer,
-    SecureFileUrlSerializer
-)
 __all__ = [
     # Administration
     "CenterSerializer",
@@ -80,24 +63,19 @@ __all__ = [
     "ActiveModelSerializer",
     "ModelTypeSerializer",
     "AiModelSerializer",
-
     # Examination
     "ExaminationSerializer",
     "ExaminationTypeSerializer",
     "ExaminationDropdownSerializer",
-
     # Finding
-    'FindingSerializer',
-    'FindingClassificationSerializer',
+    "FindingSerializer",
+    "FindingClassificationSerializer",
     "FindingClassificationChoiceSerializer",
-
     "LabelSerializer",
     "ImageClassificationAnnotationSerializer",
-
     # LabelVideoSegment
     "LabelVideoSegmentSerializer",
     "LabelVideoSegmentAnnotationSerializer",
-
     # Meta
     "PDFFileForMetaSerializer",
     "ReportMetaSerializer",
@@ -105,7 +83,6 @@ __all__ = [
     "SensitiveMetaUpdateSerializer",
     "SensitiveMetaVerificationSerializer",
     "VideoMetaSerializer",
-
     # Misc
     "FileOverviewSerializer",
     "VoPPatientDataSerializer",
@@ -113,14 +90,11 @@ __all__ = [
     "UploadJobStatusSerializer",
     "UploadCreateResponseSerializer",
     "TranslatableFieldMixin",
-
     # Patient
     "PatientSerializer",
     "PatientDropdownSerializer",
-
     # Patient Examination
     "PatientExaminationSerializer",
-
     # Patient Finding
     "PatientFindingSerializer",
     "PatientFindingClassificationSerializer",
@@ -128,12 +102,17 @@ __all__ = [
     "PatientFindingInterventionSerializer",
     "PatientFindingListSerializer",
     "PatientFindingWriteSerializer",
-
     # PDF
     "RawPdfAnonyTextSerializer",
-
     # Report
     "ReportListSerializer",
     "ReportDataSerializer",
-    "SecureFileUrlSerializer"
+    "SecureFileUrlSerializer",
+    # Video Correction (Phase 1.1)
+    "VideoMetadataSerializer",
+    "VideoProcessingHistorySerializer",
+    # Video Examination
+    "VideoExaminationSerializer",
+    "VideoExaminationCreateSerializer",
+    "VideoExaminationUpdateSerializer",
 ]

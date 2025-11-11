@@ -205,7 +205,7 @@ class Command(BaseCommand):
                 # Assert Center exists -> Does not exist methods are deprecated
         try:
             center = Center.objects.get(name=center_name)
-            self.stdout.write(self.style.SUCCESS(f"Using center: {center.name_en}"))
+            self.stdout.write(self.style.SUCCESS(f"Using center: {center_name}"))
         except Center.DoesNotExist:
             self.stdout.write(self.style.ERROR(f"Center not found: {center_name}"))
             return
@@ -289,15 +289,31 @@ class Command(BaseCommand):
                 report_reader = ReportReader(
                     report_root_path=str(video_file_obj.raw_file.path),
                     locale="de_DE",  # Default German locale for medical data
-                    text_date_format="%d.%m.%Y"  # Common German date format
+                    text_date_format="%d.%m.%Y",  # Common German date format
                 )
-                
+                # TODO Maybe move to .get_rois()
+                endoscope_image_roi = (
+                    video_file_obj.processor.get_roi_endoscope_image()
+                    if video_file_obj.processor
+                    else None
+                )
+                endoscope_data_roi_nested = None
+                if video_file_obj.processor:
+                    raw_rois = video_file_obj.processor.get_rois()
+                    # Filter undefined ROIs to satisfy typing expectations of FrameCleaner
+                    endoscope_data_roi_nested = {
+                        key: value
+                        for key, value in raw_rois.items()
+                        if value is not None
+                    } or None
+
                 # Updated to handle new return signature (path, metadata)
                 cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
-                    Path(video_file_obj.raw_file.path),
-                    video_file_obj=video_file_obj,  # Pass VideoFile object to store metadata
-                    report_reader=report_reader,
-                    device_name=processor_name
+                    video_path=Path(video_file_obj.raw_file.path),
+                    endoscope_image_roi=endoscope_image_roi,
+                    endoscope_data_roi_nested=endoscope_data_roi_nested,
+                    output_path=video_file_obj.get_processed_file_path(),
+                    technique="mask_overlay"  # Use mask overlay technique as default, if not set this will be inferred.
                 )
                 
                 # Save the cleaned video using Django's FileField

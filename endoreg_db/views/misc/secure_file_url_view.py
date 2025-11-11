@@ -13,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import logging
+from ...utils.paths import data_paths  # Added for centralized path management
 logger = logging.getLogger(__name__)
 
 class SecureFileUrlView(APIView):

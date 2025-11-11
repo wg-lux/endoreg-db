@@ -71,7 +71,6 @@ def _pipe_2(video_file:"VideoFile") -> bool:
         else:
             logger.info("Pipe 2: Video already anonymized.")
         
-        # state.sensitive_meta_processed = True  # Move this into the atomic block below
 
         # --- Part 3: Final DB operations (now in its own atomic transaction) ---
         with transaction.atomic():

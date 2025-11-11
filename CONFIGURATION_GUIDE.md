@@ -50,6 +50,20 @@ As an embedded app in a host project:
 - Add 'endoreg_db' to INSTALLED_APPS in the host settings.
 - Define STORAGE_DIR in the host environment.
 - Run migrations in the host project (this app contributes its migrations).
+- Run the complete setup command: `python manage.py setup_endoreg_db`
+
+The `setup_endoreg_db` command performs all necessary initialization:
+1. Loads base database data (medical vocabularies, centers, etc.)
+2. Creates Django cache table for API functionality (only when using database-backed caching)
+3. Sets up AI models and labels (unless --skip-ai-setup is used)
+4. Creates AI model metadata with weights
+5. Verifies the setup was successful
+
+The command automatically detects your cache configuration:
+- For LocMemCache (default): Skips cache table creation
+- For database caching: Creates the required cache tables
+
+Use `--skip-ai-setup` if AI video processing features are not needed, or `--force-recreate` to recreate AI metadata.
 
 This repo standalone (local):
 - Development server: DJANGO_SETTINGS_MODULE=config.settings.dev python manage.py runserver
@@ -68,12 +82,39 @@ CI tips
 - Replace imports of prod_settings, dev/dev_settings.py, tests/test_settings.py with config.settings.prod/dev/test.
 - Update scripts: scripts/django_setup.py, check_video_files.py, etc., to default to config.settings.dev/test.
 
-## Troubleshooting
-- If numpy/opencv import errors appear in VS Code discovery, ensure the editor inherits direnv env (Direnv extension) or use a pytest wrapper.
-- If tests fail with missing tables, recreate test DB with: pytest --reuse-db --create-db.
-- Run migrations and seed base data for tests when needed:
-  - DJANGO_SETTINGS_MODULE=config.settings.test python manage.py migrate
-  - DJANGO_SETTINGS_MODULE=config.settings.test python manage.py load_base_db_data
+## AI Model Setup (for video processing features)
+
+When using EndoReg DB's AI-powered video processing features, ensure model weights are available:
+
+### Model Weights Location
+The system looks for model weights in these locations (in order of preference):
+1. `STORAGE_DIR/model_weights/` (recommended for production)
+2. `tests/assets/` (for development/testing)
+3. `assets/` (fallback location)
+
+### Required Model Files
+For colonoscopy video processing, the following model file is required:
+- `colo_segmentation_RegNetX800MF_6.safetensors` - Multilabel classification model for colonoscopy
+
+### Automatic Setup
+The `setup_endoreg_db` command automatically:
+- Loads AI model definitions and labels
+- Creates model metadata with weights
+- Sets up the default AI model for video processing
+
+### Manual Setup (if needed)
+If automatic setup fails, run these commands individually:
+```bash
+python manage.py load_ai_model_data
+python manage.py load_ai_model_label_data
+python manage.py createcachetable
+python manage.py create_multilabel_model_meta --model_name image_multilabel_classification_colonoscopy_default --model_meta_version 1 --image_classification_labelset_name multilabel_classification_colonoscopy_default
+```
+
+### Troubleshooting AI Setup
+- **"Model file not found"**: Ensure model weights are in one of the expected locations
+- **"No model metadata found"**: Run the setup commands or use `--force-recreate`
+- **Import errors**: Check that the `EndoscopyProcessor` import fix is applied in `video_import.py`
 
 ## Production checklist
 - Set DJANGO_SECRET_KEY to a strong random value (never commit). 

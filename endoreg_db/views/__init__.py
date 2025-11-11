@@ -108,8 +108,8 @@ from .patient_finding_classification import (
 )
 
 from .pdf import (
-    ClosingFileWrapper,
-    PDFMediaView,
+    PdfReimportView,
+    PdfStreamView,
 )
 
 from .report import (
@@ -124,16 +124,13 @@ from .requirement import (
 )
 
 from .video import (
-    VideoMediaView,
-    VideoCorrectionView,
+    # Video Correction (Phase 1.1) - Implemented
     VideoMetadataView,
     VideoProcessingHistoryView,
-    VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
-    VideoReprocessView,
-    TaskStatusView,
-    VideoDownloadProcessedView,
+    
+    # Existing views
     VideoReimportView,
     VideoViewSet,
     VideoStreamView,
@@ -142,6 +139,7 @@ from .video import (
     rerun_segmentation,
     video_timeline_view,
     VideoExaminationViewSet,
+    VideoCorrectionView,
 )
 
 __all__ = [
@@ -242,7 +240,9 @@ __all__ = [
     "create_patient_finding_classification",
 
     # PDF
-    "ClosingFileWrapper",
+    "PdfMediaView",
+    "PdfReimportView",
+    "PdfStreamView",
 
     # Report
     "ReportListView",
@@ -254,17 +254,15 @@ __all__ = [
     "evaluate_requirements",
     "LookupViewSet",
 
-    # Video Views
-    'VideoMediaView',
-    'VideoCorrectionView',
+    # Video Views (Phase 1.1 - Implemented)
     'VideoMetadataView',
     'VideoProcessingHistoryView',
-    'VideoAnalyzeView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
-    'VideoReprocessView',
-    'TaskStatusView',
-    'VideoDownloadProcessedView',
+
+    'VideoCorrectionView',
+    
+    # Video Views (Existing)
     'VideoReimportView',
     'VideoViewSet',
     'VideoStreamView',

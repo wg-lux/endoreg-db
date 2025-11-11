@@ -12,7 +12,7 @@ def load_default_ai_model():
     The function constructs the path to the default AI model checkpoint and invokes the
     Django management command `create_multilabel_model_meta` to register the model.
     """
-    model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.ckpt"
+    model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.safetensors"
     # Pass arguments individually to call_command
     call_command(
         "create_multilabel_model_meta",
@@ -108,7 +108,8 @@ def load_requirement_data():
 def load_ai_model_label_data():
     call_command("load_ai_model_label_data", )
 
-def load_ai_model_data():    
+def load_ai_model_data(): 
+    call_command("load_ai_model_label_data", )   
     call_command("load_ai_model_data", )
 
 def load_green_endoscopy_wuerzburg_data():

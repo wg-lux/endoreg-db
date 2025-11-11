@@ -19,25 +19,28 @@ class VideoReimportView(APIView):
         super().__init__(**kwargs)
         self.video_service = VideoImportService()
 
-    def post(self, request, video_id):
+    def post(self, request, pk):
         """
         Re-import a video file to regenerate SensitiveMeta and other metadata.
         Instead of creating a new video, this updates the existing one.
+        
+        Args:
+            pk (int): Primary key of the VideoFile to reimport
         """
-        # Validate video_id parameter
-        if not video_id or not isinstance(video_id, int):
+        # Validate pk parameter
+        if not pk or not isinstance(pk, int):
             return Response(
                 {"error": "Invalid video ID provided."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            video = VideoFile.objects.get(id=video_id)
-            logger.info(f"Found video {video.uuid} (ID: {video_id}) for re-import")
+            video = VideoFile.objects.get(id=pk)
+            logger.info(f"Found video {video.uuid} (ID: {pk}) for re-import")
         except VideoFile.DoesNotExist:
-            logger.warning(f"Video with ID {video_id} not found")
+            logger.warning(f"Video with ID {pk} not found")
             return Response(
-                {"error": f"Video with ID {video_id} not found."}, 
+                {"error": f"Video with ID {pk} not found."}, 
                 status=status.HTTP_404_NOT_FOUND
             )
 
@@ -67,7 +70,7 @@ class VideoReimportView(APIView):
             )
 
         try:
-            logger.info(f"Starting in-place re-import for video {video.uuid} (ID: {video_id})")
+            logger.info(f"Starting in-place re-import for video {video.uuid} (ID: {pk})")
             
             with transaction.atomic():
                 # Clear existing metadata to force regeneration
@@ -126,13 +129,13 @@ class VideoReimportView(APIView):
                 # Use VideoImportService for anonymization
                 try:
                     processor_name = video.video_meta.processor.name if video.video_meta and video.video_meta.processor else "Unknown"
-                    
                     logger.info(f"Starting anonymization using VideoImportService for {video.uuid}")
-                    self.video_service.anonymize(
-                        video_file_obj=video,
+                    self.video_service.import_and_anonymize(
+                        file_path=raw_file_path,
+                        center_name=video.center.name,
                         processor_name=processor_name,
-                        just_anonymization=True,
-                        method="masking"
+                        save_video=True,
+                        delete_source=False
                     )
                     
                     logger.info(f"VideoImportService anonymization completed for {video.uuid}")
@@ -140,7 +143,7 @@ class VideoReimportView(APIView):
                     
                     return Response({
                         "message": "Video re-import with VideoImportService completed successfully.",
-                        "video_id": video_id,
+                        "video_id": pk,
                         "uuid": str(video.uuid),
                         "frame_cleaning_applied": True,
                         "sensitive_meta_created": video.sensitive_meta is not None,
@@ -161,7 +164,7 @@ class VideoReimportView(APIView):
             
             return Response({
                 "message": "Video re-import completed successfully.",
-                "video_id": video_id,
+                "video_id": pk,
                 "uuid": str(video.uuid),
                 "sensitive_meta_created": video.sensitive_meta is not None,
                 "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
@@ -179,7 +182,7 @@ class VideoReimportView(APIView):
                 return Response({
                     "error": f"Storage error during re-import: {error_msg}",
                     "error_type": "storage_error",
-                    "video_id": video_id,
+                    "video_id": pk,
                     "uuid": str(video.uuid)
                 }, status=status.HTTP_507_INSUFFICIENT_STORAGE)
             else:
@@ -187,6 +190,6 @@ class VideoReimportView(APIView):
                 return Response({
                     "error": f"Re-import failed: {error_msg}",
                     "error_type": "processing_error", 
-                    "video_id": video_id,
+                    "video_id": pk,
                     "uuid": str(video.uuid)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
