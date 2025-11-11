@@ -1,0 +1,20 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_nice"
+    classification_types: [
+      "colon_lesion_advanced_imaging",
+      "morphology"
+    ]
+    name_de: "Kolonläsion - NICE"
+    name_en: "Colon lesion - NICE"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_NICE_type_1",
+      "colon_lesion_NICE_type_2",
+      "colon_lesion_NICE_type_3"
+    ]

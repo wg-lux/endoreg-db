@@ -1,0 +1,64 @@
+- model: endoreg_db.event
+  fields:
+    name: "coro_des_implantation"
+    name_de: "Koronarstent-Implantation (DES)"
+    name_en: "Coronary Stent Implantation (DES)"
+
+- model: endoreg_db.event
+  fields:
+    name: "coro_bms_implantation"
+    name_de: "Koronarstent-Implantation (BMS)"
+    name_en: "Coronary Stent Implantation (BMS)"
+
+- model: endoreg_db.event
+  fields:
+    name: "complication_coro_stent_thrombosis"
+    name_de: "Komplikation: Koronar Stent Thrombose"
+    name_en: "Complication: Coronary Stent Thrombosis"
+
+- model: endoreg_db.event
+  fields:
+    name: "stroke"
+    name_de: "Schlaganfall"
+    name_en: "Stroke"
+
+- model: endoreg_db.event
+  fields:
+    name: "transient_ischemic_attack"
+    name_de: "Transitorische ischämische Attacke"
+    name_en: "Transient Ischemic Attack"
+
+- model: endoreg_db.event
+  fields:
+    name: "hip_replacement_surgery"
+    name_de: "Hüft-TEP Operation"
+    name_en: "Hip replacement surgery"
+    description: "Hip replacement surgery"
+
+- model: endoreg_db.event
+  fields:
+    name: "knee_replacement_surgery"
+    name_de: "Knie-TEP Operation"
+    name_en: "Knee replacement surgery"
+    description: "Knee replacement surgery"
+
+- model: endoreg_db.event
+  fields:
+    name: "deep_vein_thrombosis"
+    name_de: "Tiefe Beinvenenthrombose"
+    name_en: "Deep Vein Thrombosis"
+    description: "Deep Vein Thrombosis"
+
+- model: endoreg_db.event
+  fields:
+    name: "pulmonary_embolism"
+    name_de: "Lungenembolie"
+    name_en: "Pulmonary Embolism"
+    description: "Pulmonary Embolism"
+
+- model: endoreg_db.event
+  fields:
+    name: "recurrent_thrombembolism"
+    name_de: "Rezidivierende Thrombembolien"
+    name_en: "Recurrent Thrombembolism"
+    description: "Recurrent Thrombembolism"

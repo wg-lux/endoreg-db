@@ -1,0 +1,168 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_polypectomy_cold_snare
+    description:
+      Cold snare polypectomy is a technique used to remove small polyps
+      from the colon. It is performed using a snare wire loop that is passed through
+      the colonoscope and used to remove the polyp by cutting it off at the base.
+      The procedure is usually done without the need for sedation and is considered
+      to be a safe and effective way to remove small polyps from the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_polypectomy_hot_snare
+    description:
+      Hot snare polypectomy is a technique used to remove small polyps
+      from the colon. It is performed using a snare wire loop that is passed through
+      the colonoscope and used to remove the polyp by cutting it off at the base.
+      The procedure is usually done without the need for sedation and is considered
+      to be a safe and effective way to remove small polyps from the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_injection_liftup
+    description:
+      Lift-up injection is a technique used to lift up a lesion in the
+      colon. It is performed by injecting a solution under the lesion to create a
+      cushion of fluid that lifts the lesion away from the colon wall. This allows
+      the lesion to be removed more easily and reduces the risk of complications during
+      the procedure.
+    intervention_types:
+      - diagnostic
+      - invasive
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_injection_vasoactive
+    description:
+      Vasoactive injection is a technique used to reduce bleeding from
+      a lesion in the colon. It is performed by injecting a solution into the lesion
+      that causes the blood vessels to constrict, reducing the flow of blood to the
+      area. This can help to stop bleeding and make it easier to remove the lesion
+      during the procedure.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_biopsy
+    description:
+      Biopsy is a technique used to take a small sample of tissue from
+      a lesion in the colon. It is performed by inserting a small instrument through
+      the colonoscope and removing a small piece of tissue from the lesion. The tissue
+      sample is then sent to a laboratory for analysis to determine if the lesion
+      is cancerous or benign.
+    intervention_types:
+      - diagnostic
+      - invasive
+    required_lab_values: []
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_emr
+    description:
+      Endoscopic mucosal resection (EMR) is a technique used to remove
+      large polyps or early-stage cancers from the colon. It is performed by injecting
+      a solution under the lesion to create a cushion of fluid that lifts the lesion
+      away from the colon wall. A snare wire loop is then used to remove the lesion
+      by cutting it off at the base. The procedure is usually done under sedation
+      and is considered to be a safe and effective way to remove large polyps or early-stage
+      cancers from the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_esd
+    description:
+      Endoscopic submucosal dissection (ESD) is a technique used to remove
+      large polyps or early-stage cancers from the colon. It is performed by injecting
+      a solution under the lesion to create a cushion of fluid that lifts the lesion
+      away from the colon wall. A snare wire loop is then used to remove the lesion
+      by cutting it off at the base. The procedure is usually done under sedation
+      and is considered to be a safe and effective way to remove large polyps or early-stage
+      cancers from the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_clip
+    description:
+      Clip closure is a technique used to close a defect in the colon wall
+      after a polyp has been removed. It is performed by placing a small metal clip
+      over the defect to seal it and prevent bleeding or perforation. The clip is
+      left in place until the defect has healed, usually within a few days.
+    intervention_types:
+      - therapeutic
+      - invasive
+      - foreign_body
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_over_the_scope_clip
+    description:
+      Over-the-scope clip (OTSC) is a clipping system used to close defects
+      in the GI tract.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: colon_lesion_eftr
+    description:
+      Endoscopic full-thickness resection (EFTR) is a technique used to
+      remove lesions in the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+    required_lab_values:
+      - hemoglobin
+      - platelets
+      - international_normalized_ratio
+    contraindications:
+      - anticoagulation-therapeutic
+      - thrombocytopenia-severe

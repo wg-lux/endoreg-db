@@ -11,6 +11,7 @@ from .administration import (
     Employee,
     EmployeeQualification,
     EmployeeType,
+    PatientExternalID,
     Examiner,
     FirstName,
     LastName,
@@ -174,6 +175,7 @@ __all__ = [
     # Person
     "Person",
     "Patient",
+    "PatientExternalID",
     "Examiner",
     "PortalUserInfo",
     "FirstName",

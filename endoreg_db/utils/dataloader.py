@@ -20,6 +20,7 @@ def load_model_data_from_yaml(command, model_name, metadata, verbose):
     dir_path = metadata["dir"]
     foreign_keys = metadata["foreign_keys"]
     foreign_key_models = metadata["foreign_key_models"]
+    validators = metadata.get("validators", [])
 
     _files = [f for f in os.listdir(dir_path) if f.endswith(".yaml")]
     # sort
@@ -29,12 +30,18 @@ def load_model_data_from_yaml(command, model_name, metadata, verbose):
             yaml_data = yaml.safe_load(file)
 
         load_data_with_foreign_keys(
-            command, model, yaml_data, foreign_keys, foreign_key_models, verbose
+            command, model, yaml_data, foreign_keys, foreign_key_models, validators, verbose
         )
 
 
 def load_data_with_foreign_keys(
-    command, model, yaml_data, foreign_keys, foreign_key_models, verbose
+    command,
+    model,
+    yaml_data,
+    foreign_keys,
+    foreign_key_models,
+    validators,
+    verbose,
 ):
     """
     Load YAML data into Django model instances with FK and M2M support.
@@ -52,10 +59,18 @@ def load_data_with_foreign_keys(
         yaml_data: A list of dictionaries representing YAML entries.
         foreign_keys: A list of foreign key field names to process from each entry.
         foreign_key_models: The corresponding Django model classes for each foreign key.
+        validators: A sequence of callables invoked before persisting each entry. Each
+            validator receives a shallow copy of the entry's field dictionary along with
+            the original entry and model for context.
         verbose: If True, prints detailed output and warnings during processing.
     """
     for entry in yaml_data:
-        fields = entry.get("fields", {})
+        raw_fields = entry.get("fields", {})
+
+        for validator in validators:
+            validator(dict(raw_fields), entry=entry, model=model)
+
+        fields = dict(raw_fields)
         name = fields.pop("name", None)
 
 

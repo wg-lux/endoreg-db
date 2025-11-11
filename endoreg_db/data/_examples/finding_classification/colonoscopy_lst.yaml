@@ -1,0 +1,21 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_lst"
+    classification_types: [
+      "colon_lesion_shape",
+      "morphology"
+    ]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_lst_granular_homogeneous",
+      "colon_lesion_lst_granular_nodular_mixed",
+      "colon_lesion_lst_non_granular_flat_elevated",
+      "colon_lesion_lst_non_granular_pseudodepressed"
+    ]

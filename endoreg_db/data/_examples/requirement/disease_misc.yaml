@@ -1,0 +1,12 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "disease_is_malignoma_unspecified"
+    name_de: "Malignom, nicht näher bezeichnet"
+    name_en: "Malignoma, unspecified"
+    description: "Malignoma, unspecified"
+    requirement_types:
+      - "patient"
+    operators:
+      - models_match_all
+    diseases:
+      - "disease_is_malignoma_unspecified"

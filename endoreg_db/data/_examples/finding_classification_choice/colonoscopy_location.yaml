@@ -1,0 +1,229 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "terminal_ileum"
+    name_de: "terminales Ileum"
+    name_en: "Terminal Ileum"
+    subcategories:
+      description: {
+        choices: ["unspecified"],
+        required: false
+      }
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 0
+        max: 180
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "cecum"
+    name_de: "Caecum"
+    name_en: "Cecum"
+    subcategories:
+      description:
+        choices: ["unspecified", "ileocecal-valve", "peri-appendicular"]
+        default: "unspecified"
+        probability: [0.5, 0.3, 0.2]
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 60
+        max: 140
+        distribution: "uniform"
+        std: null
+        mean: null
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "ascending_colon"
+    name_de: "Colon ascendens"
+    name_en: "Ascending Colon"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 40
+        max: 100
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "right_flexure"
+    name_de: "Rechte Flexur"
+    name_en: "Right Flexure"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 80
+        max: 180
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "transverse_colon"
+    name_de: "Colon transversum"
+    name_en: "Transverse Colon"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 40
+        max: 80
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "descending_colon"
+    name_de: "Colon descendens"
+    name_en: "Descending Colon"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 35
+        max: 70
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "sigmoid_colon"
+    name_de: "Colon sigmoideum"
+    name_en: "Sigmoid Colon"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 20
+        max: 50
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: true
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "rectum"
+    name_de: "Rektum"
+    name_en: "Rectum"
+    subcategories:
+      description:
+        choices: ["1/3", "2/3", "3/3"]
+        probability: [0.3, 0.3, 0.4]
+        default: "3/3"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 5
+        max: 20
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: true
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "anal_canal"
+    name_de: "Analkanal"
+    name_en: "Anal Canal"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: false
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 0
+        max: 3
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: true
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "left_colon"
+    name_de: "linkes Kolon"
+    name_en: "Left Colon"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.3, 0.3, 0.3]
+        default: "proximal"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 0
+        max: 180
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "right_colon"
+    name_de: "rechtes Kolon"
+    name_en: "Right Colon"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.3, 0.3, 0.3]
+        default: "proximal"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 0
+        max: 180
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false

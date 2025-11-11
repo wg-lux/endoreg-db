@@ -1,0 +1,43 @@
+# --- Begin kept interventions ---
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: percutaneous_transhepatic_cholangiography
+    description: "TODO: Add description"
+    intervention_types: []
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: sonography_guided_liver_punction
+    description: "TODO: Add description"
+    intervention_types: []
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: xray_guided_liver_punction
+    description: "TODO: Add description"
+    intervention_types: []
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: percutaneous_transhepatic_biliary_drainage
+    description: "TODO: Add description"
+    intervention_types: []
+    required_lab_values: []
+    contraindications: []
+- model: endoreg_db.finding_intervention
+  fields:
+    name: biliary_stent
+    description: "TODO: Add description"
+    intervention_types: []
+    required_lab_values: []
+    contraindications: []
+# --- End kept interventions ---
+
+# --- Removed interventions moved to other files ---
+# Removed: all items with names starting with "egd_"
+# Removed: all items with names starting with "erc", "ercp", "erp"
+# Removed: all items with names starting with "endosonography_upper_gi_"

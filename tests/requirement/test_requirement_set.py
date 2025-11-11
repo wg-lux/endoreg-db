@@ -1,4 +1,5 @@
 import logging
+from typing import cast
 from django.test import TestCase
 from django.utils import timezone
 import datetime
@@ -105,6 +106,29 @@ class RequirementSetEvaluationTest(TestCase):
             datetime=timezone.now() - datetime.timedelta(days=days_ago)
         )
 
+    def _create_helper_sets(self, prefix: str):
+        """Create paired helper requirement sets yielding deterministic True/False evaluations."""
+        all_type = RequirementSetType.objects.get(name="all")
+        any_type = RequirementSetType.objects.get(name="any")
+        true_set = RequirementSet.objects.create(
+            name=f"{prefix}_true",
+            requirement_set_type=all_type,
+        )
+        false_set = RequirementSet.objects.create(
+            name=f"{prefix}_false",
+            requirement_set_type=any_type,
+        )
+        return true_set, false_set
+
+    def _link_sets(self, target_set: RequirementSet, *linked_sets: RequirementSet) -> None:
+        """Attach linked requirement sets while silencing typing noise for add()."""
+        target_set.links_to_sets.add(*linked_sets)  # type: ignore[attr-defined]
+
+    def _requirement_set_type(self, req_set: RequirementSet) -> RequirementSetType:
+        req_set_type = req_set.requirement_set_type
+        self.assertIsNotNone(req_set_type)
+        return cast(RequirementSetType, req_set_type)
+
     def test_basic_lab_values_normal_set_all_normal(self):
         """
         Verifies that the "basic_lab_values_normal" RequirementSet evaluates to True when all associated lab values for a patient are within normal ranges.
@@ -127,8 +151,9 @@ class RequirementSetEvaluationTest(TestCase):
         self._create_patient_lab_value(patient, self.inr, _value_inr, days_ago=0)        # Normal
 
         req_set = RequirementSet.objects.get(name="basic_lab_values_normal")
-        self.assertEqual(req_set.requirement_set_type.name, "all")
-        
+        req_set_type = self._requirement_set_type(req_set)
+        self.assertEqual(req_set_type.name, "all")
+
         is_fulfilled = req_set.evaluate(patient)
         self.assertTrue(is_fulfilled, "Set 'basic_lab_values_normal' should be true when all labs are normal.")
 
@@ -148,7 +173,8 @@ class RequirementSetEvaluationTest(TestCase):
         self._create_patient_lab_value(patient, self.inr, 1.0)        # Normal
 
         req_set = RequirementSet.objects.get(name="basic_lab_values_normal")
-        self.assertEqual(req_set.requirement_set_type.name, "all")
+        req_set_type = self._requirement_set_type(req_set)
+        self.assertEqual(req_set_type.name, "all")
 
         is_fulfilled = req_set.evaluate(patient)
         self.assertFalse(is_fulfilled, "Set 'basic_lab_values_normal' should be false when one lab is abnormal.")
@@ -168,8 +194,9 @@ class RequirementSetEvaluationTest(TestCase):
         # For example, "patient_gender_is_male" might check patient.gender == "male_gender_natural_key"
 
         req_set = RequirementSet.objects.get(name="patient_gender_generic")
-        self.assertEqual(req_set.requirement_set_type.name, "any")
-        
+        req_set_type = self._requirement_set_type(req_set)
+        self.assertEqual(req_set_type.name, "any")
+
         is_fulfilled = req_set.evaluate(patient)
         self.assertTrue(is_fulfilled, "Set 'patient_gender_generic' should be true for male patient.")
 
@@ -183,7 +210,8 @@ class RequirementSetEvaluationTest(TestCase):
         patient.save()
 
         req_set = RequirementSet.objects.get(name="patient_gender_generic")
-        self.assertEqual(req_set.requirement_set_type.name, "any")
+        req_set_type = self._requirement_set_type(req_set)
+        self.assertEqual(req_set_type.name, "any")
 
         is_fulfilled = req_set.evaluate(patient)
         self.assertTrue(is_fulfilled, "Set 'patient_gender_generic' should be true for female patient.")
@@ -199,7 +227,8 @@ class RequirementSetEvaluationTest(TestCase):
         patient.save()
 
         req_set = RequirementSet.objects.get(name="patient_gender_generic")
-        self.assertEqual(req_set.requirement_set_type.name, "any")
+        req_set_type = self._requirement_set_type(req_set)
+        self.assertEqual(req_set_type.name, "any")
 
         # This depends on how "patient_gender_is_male/female" requirements are implemented.
         # If they strictly check for "male" or "female" and the patient's gender is "other",
@@ -254,4 +283,69 @@ class RequirementSetEvaluationTest(TestCase):
         patient.save()
         self.assertTrue(empty_set.evaluate(patient), "'none' type set with no requirements should be True.")
         empty_set.delete()
+
+    def test_requirement_set_type_exactly_one(self):
+        patient = generate_patient()
+        patient.save()
+
+        exactly_one_type = RequirementSetType.objects.get(name="exactly_1")
+        true_set, false_set = self._create_helper_sets("rs_exactly_one_base")
+
+        passing_set = RequirementSet.objects.create(
+            name="rs_exactly_one_pass",
+            requirement_set_type=exactly_one_type,
+        )
+        self._link_sets(passing_set, true_set, false_set)
+        self.assertTrue(passing_set.evaluate(patient), "'exactly_1' set should pass with exactly one True input.")
+
+        second_true, _ = self._create_helper_sets("rs_exactly_one_extra")
+        failing_set = RequirementSet.objects.create(
+            name="rs_exactly_one_fail",
+            requirement_set_type=exactly_one_type,
+        )
+        self._link_sets(failing_set, true_set, second_true)
+        self.assertFalse(failing_set.evaluate(patient), "'exactly_1' set should fail with more than one True input.")
+
+    def test_requirement_set_type_at_least_one(self):
+        patient = generate_patient()
+        patient.save()
+
+        at_least_one_type = RequirementSetType.objects.get(name="at_least_1")
+        true_set, false_set = self._create_helper_sets("rs_at_least_one")
+
+        failing_set = RequirementSet.objects.create(
+            name="rs_at_least_one_fail",
+            requirement_set_type=at_least_one_type,
+        )
+        self._link_sets(failing_set, false_set)
+        self.assertFalse(failing_set.evaluate(patient), "'at_least_1' set should fail when all inputs are False.")
+
+        passing_set = RequirementSet.objects.create(
+            name="rs_at_least_one_pass",
+            requirement_set_type=at_least_one_type,
+        )
+        self._link_sets(passing_set, false_set, true_set)
+        self.assertTrue(passing_set.evaluate(patient), "'at_least_1' set should pass when at least one input is True.")
+
+    def test_requirement_set_type_at_most_one(self):
+        patient = generate_patient()
+        patient.save()
+
+        at_most_one_type = RequirementSetType.objects.get(name="at_most_1")
+        true_set, false_set = self._create_helper_sets("rs_at_most_one")
+
+        passing_set = RequirementSet.objects.create(
+            name="rs_at_most_one_pass",
+            requirement_set_type=at_most_one_type,
+        )
+        self._link_sets(passing_set, true_set, false_set)
+        self.assertTrue(passing_set.evaluate(patient), "'at_most_1' set should pass with at most one True input.")
+
+        second_true, _ = self._create_helper_sets("rs_at_most_one_extra")
+        failing_set = RequirementSet.objects.create(
+            name="rs_at_most_one_fail",
+            requirement_set_type=at_most_one_type,
+        )
+        self._link_sets(failing_set, true_set, second_true)
+        self.assertFalse(failing_set.evaluate(patient), "'at_most_1' set should fail with more than one True input.")
 

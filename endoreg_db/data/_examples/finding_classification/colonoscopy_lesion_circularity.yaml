@@ -1,0 +1,20 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_circularity_default"
+    name_de: "Kolonläsion - Zirkularität"
+    name_en: "Colon lesion - circularity"
+    classification_types: [
+      "colon_lesion_circularity",
+      "morphology"
+    ]    
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_circularity_false",
+      "colon_lesion_circularity_true"
+    ]

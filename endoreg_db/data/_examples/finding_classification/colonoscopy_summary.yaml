@@ -1,0 +1,53 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_not_complete_reason"
+    classification_types: []
+    examinations: [
+      "colonoscopy",
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colonoscopy_complete",
+    ]
+    choices: [
+      "colonoscopy_incomplete_insufficient_preparation",
+      "colonoscopy_incomplete_complication",
+      "colonoscopy_incomplete_pain",
+      "colonoscopy_incomplete_stenosis",
+      "colonoscopy_incomplete_other",
+    ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_austria_screening_findings_summary_worst"
+    classification_types: []
+    examinations: [
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colonoscopy_austria_screening_findings_summary",
+    ]
+    choices: [
+      "colonoscopy_worst_finding_colon_cancer",
+      "colonoscopy_worst_finding_other",
+      "colonoscopy_worst_finding_polyp",
+      "colonoscopy_worst_finding_rectum_cancer",
+    ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_screening_outcome_overall"
+    classification_types: []
+    examinations: [
+      "colonoscopy_austria_screening",
+    ]
+    findings: [
+      "colonoscopy_austria_screening_outcome",
+    ]
+    choices: [
+      "outcome_restitutio_ad_integrum",
+      "outcome_death",
+      "outcome_unknown",
+      "outcome_lasting_disability",
+    ]

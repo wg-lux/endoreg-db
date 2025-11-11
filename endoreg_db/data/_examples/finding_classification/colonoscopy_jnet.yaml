@@ -1,0 +1,22 @@
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_jnet"
+    name_de: "Kolonläsion - JNET"
+    name_en: "Colon lesion - JNET"
+    classification_types: [
+      "morphology",
+      "colon_lesion_advanced_imaging",
+    ]    
+    examinations: [
+      "colonoscopy"
+    ]
+    findings: [
+      "colon_polyp",
+    ]
+    choices: [
+      "colon_lesion_jnet_1",
+      "colon_lesion_jnet_2a",
+      "colon_lesion_jnet_2b",
+      "colon_lesion_jnet_3",
+    ]

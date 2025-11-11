@@ -1,0 +1,52 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "endoscopy_bleeding_risk_high"
+    name_de: "Endoskopie - Blutungsrisiko: hoch"
+    name_en: "Endoscopy - Bleeding Risk: High"
+    description: "Endoskopie - Blutungsrisiko: hoch"
+    # linked_sets: [] # if this rule depends on others
+    requirement_set_type: "any"
+    requirements:
+      - "endoscopy_intervention_bleeding_risk_high"
+
+
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "endoscopy_bleeding_risk_low"
+    name_de: "Endoskopie - Blutungsrisiko: niedrig"
+    name_en: "Endoscopy - Bleeding Risk: Low"
+    description: "Endoskopie - Blutungsrisiko: niedrig"
+    # linked_sets: [] # if this rule depends on others
+    requirement_set_type: "any"
+    requirements:
+      - "endoscopy_intervention_bleeding_risk_low"
+    links_to_sets: []
+
+
+
+    
+- models: endoreg_db.requirement_set
+  fields:
+    name: "patient_medication_indication_anticoagulation"
+    name_de: "Patientenmedikation - Antikoagulation"
+    name_en: "Patient Medication - Anticoagulation"
+    description: "Patient medication - anticoagulation"
+    requirement_set_type: "any"
+    requirements:
+      - "indication_non_valvular_af_apixaban_is_defined_in_requirement"
+      - "indication_after_hip_apixaban_is_defined_in_requirement"
+      - "indication_after_knee_apixaban_is_defined_in_requirement"
+    
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "high_bleed_risk_endoscopy_w_patient_w_anticoagulation"
+    name_de: "Endoskopie - hohes Blutungsrisiko mit generischen Patientenanforderungen"
+    name_en: "High Bleed Risk Endoscopy with Generic Patient Requirements"
+    description: "High bleed risk endoscopy with generic patient requirements"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "endoscopy_bleeding_risk_high"
+      - "generic_patient"
+      - "patient_medication_indication_anticoagulation"

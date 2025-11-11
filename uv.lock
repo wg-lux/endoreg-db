@@ -789,6 +789,7 @@ dependencies = [
     { name = "dotenv" },
     { name = "faker" },
     { name = "flake8" },
+    { name = "googlemaps" },
     { name = "gunicorn" },
     { name = "icecream" },
     { name = "librosa" },
@@ -853,6 +854,7 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "faker", specifier = ">=37.6.0" },
     { name = "flake8", specifier = ">=7.3.0" },
+    { name = "googlemaps", specifier = ">=4.10.0" },
     { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "icecream", specifier = ">=2.1.4" },
     { name = "librosa", specifier = "==0.11.0" },
@@ -1091,6 +1093,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/a8/dc/69939b7af56b7adf3
 wheels = [
     { url = "https://files.pythonhosted.org/packages/13/fb/3f2aac40cd2421e164cab1668e0ca10685fcf896bd6b3671088f8aab356e/gender_guesser-0.4.0-py2.py3-none-any.whl", hash = "sha256:7cb01ce5d8d43b94573498bc02c959b622872abd399622ca67d1b73ba6e7e222", size = 379297, upload-time = "2016-12-05T11:41:47.759Z" },
 ]
+
+[[package]]
+name = "googlemaps"
+version = "4.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fe/26/bca4d737a9acea25e94c19940a780bbf0be64a691f7caf3a68467d3a5838/googlemaps-4.10.0.tar.gz", hash = "sha256:3055fcbb1aa262a9159b589b5e6af762b10e80634ae11c59495bd44867e47d88", size = 33056, upload-time = "2023-01-26T16:45:02.501Z" }
 
 [[package]]
 name = "gunicorn"

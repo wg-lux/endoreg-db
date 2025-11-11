@@ -1,0 +1,55 @@
+- model: endoreg_db.disease
+  fields:
+    name: "hypertension"
+    name_de: "Arterielle Hypertonie"
+    name_en: "Hypertension"
+
+- model: endoreg_db.disease
+  fields:
+    name: "coronary_artery_disease"
+    name_de: "Koronare Herzkrankheit"
+    name_en: "Coronary Artery Disease"
+
+- model: endoreg_db.disease
+  fields:
+    name: "congestive_heart_failure"
+    name_de: "Chron. Herzinsuffizienz"
+    name_en: "Congestive Heart Failure"
+
+# diabetes mellitus I
+- model: endoreg_db.disease
+  fields:
+    name: "diabetes_mellitus_I"
+    name_de: "Diabetes mellitus Typ I"
+    name_en: "Diabetes Mellitus Type I"
+
+# diabetes mellitus II
+- model: endoreg_db.disease
+  fields:
+    name: "diabetes_mellitus_II"
+    name_de: "Diabetes mellitus Typ II"
+    name_en: "Diabetes Mellitus Type II"
+
+- model: endoreg_db.disease
+  fields:
+    name: "non_valvular_atrial_fibrillation"
+    name_de: "nicht valvuläres Vorhofflimmern"
+    name_en: "non valvular Atrial Fibrillation"
+
+- model: endoreg_db.disease
+  fields:
+    name: "liver_cirrhosis"
+    name_de: "Leberzirrhose"
+    name_en: "Liver Cirrhosis"
+
+- model: endoreg_db.disease
+  fields:
+    name: "disease_is_malignoma_unspecified"
+    name_de: "Malignom, nicht näher bezeichnet"
+    name_en: "Malignoma, unspecified"
+
+- model: endoreg_db.disease
+  fields:
+    name: "chronic_kidney_disease"
+    name_de: "Chronische Nierenerkrankung"
+    name_en: "Chronic Kidney Disease"

@@ -1,0 +1,59 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "endoscopy_intervention_bleeding_risk_high"
+    name_de: "Endoskopische Intervention - Blutungsrisiko: hoch"
+    name_en: "Endoscopy Intervention - Bleeding Risk: High"
+    description: "Endoskopische Intervention - Blutungsrisiko: hoch"
+    requirement_types:
+      - "examination_indication"
+    operators:
+      - "models_match_any"
+    finding_interventions:
+      - "egd_lesion_polypectomy_cold_snare"
+      - "egd_lesion_polypectomy_hot_snare"
+      - "colon_lesion_polypectomy_cold_snare"
+      - "colon_lesion_polypectomy_hot_snare"
+      - "colon_lesion_emr"
+      - "colon_lesion_esd"
+      - "colon_lesion_eftr"
+      - "egd_lesion_emr"
+      - "egd_lesion_esd"
+      - "egd_poem"
+      - "ercp_sphincterotomy"
+      - "egd_varice_band_ligation"
+      - "egd_varice_sclerotherapy"
+      - "egd_percutaneous_gastroenterostomy"
+      - "percutaneous_transhepatic_cholangiography"
+      - "percutaneous_transhepatic_biliary_drainage"
+      - "ercp_radiofrequency_ablation"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "endoscopy_intervention_bleeding_risk_low"
+    name_de: "Endoskopische Intervention - Blutungsrisiko: niedrig"
+    name_en: "Endoscopy Intervention - Bleeding Risk: Low"
+    description: "Endoskopische Intervention - Blutungsrisiko: niedrig"
+    requirement_types:
+      - "examination_indication"
+    operators:
+      - "models_match_any"
+    finding_interventions:
+      - "egd_lesion_biopsy"
+      - "colon_lesion_biopsy"
+      - "ercp"
+      - "egd_argon_plasma_coagulation"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "indication_is_colon_emr"
+    name_de: "Indikation Kolon EMR"
+    name_en: "Indication colon EMR"
+    description: "This functions evaluates whether the input ()"
+    requirement_types:
+      - "examination_indication"
+    operators:
+      - "models_match_any"
+    # when creating a requirement involving other models,
+    # we need to create the relationship here:
+    examination_indications:
+      - "colonoscopy_lesion_removal_emr"

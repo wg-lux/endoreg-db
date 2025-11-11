@@ -1,0 +1,15 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_lst_granular_homogeneous"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_lst_granular_nodular_mixed"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_lst_non_granular_flat_elevated"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_lst_non_granular_pseudodepressed"

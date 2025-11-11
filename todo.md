@@ -26,6 +26,17 @@
 
 - Investigate the Pipe 1 regression once the foundational path/metadata fixes land—rerun the integration test with logging to see whether the failure stems from state flags, prediction metadata creation, or another new guard—and address whatever condition remains.
 
+# To-Do
+
+## RequirementSet based Generator
+- [x] Draft recursive RequirementSet planner (`RequirementPlan`/`RequirementSetPlan`) and pretty-printer in `scripts/case_generator/prototype.py` for exploratory runs.
+- [ ] Flesh out artefact builders for lab values, medications, events, examinations, and findings leveraging existing factories under `endoreg_db/factories/`.
+- [ ] Implement `generate_patient_for_requirement_set` orchestrator that applies artefact builders, re-evaluates requirements, and honors RequirementSet type semantics.
+- [ ] Add validation/reporting hooks (vacuous success detection, retry diagnostics) plus optional dry-run mode.
+- [ ] Create pytest coverage in `tests/case_generator/test_requirement_generator.py` for representative sets (lab baseline, high bleed risk, timeframe operators, exactly/at least/at most variants).
+
+
+# For Later
 ## Test Suite Standardization & Caching Plan
 1. Catalogue the current pytest suite structure (module layout, shared fixtures, caching usage) and record pain points from full-suite runs.
 *Result (Main messages):* documented in `docs/test_suite_review.md` — sprawling module layout, ad-hoc global caches lacking invalidation, inconsistent `RUN_VIDEO_TESTS` defaults causing flaky behaviour, and redundant fixture setup across domains.

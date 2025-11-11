@@ -1,0 +1,78 @@
+# Boston
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_boston_0"
+    name_de: "0"
+    name_en: "bowel_prep_boston_0"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_boston_1"
+    name_de: "1"
+    name_en: "bowel_prep_boston_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_boston_2"
+    name_de: "2"
+    name_en: "bowel_prep_boston_2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_boston_3"
+    name_de: "3"
+    name_en: "bowel_prep_boston_3"
+
+# Aronchick
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_aronchick_0"
+    name_de: "Inadäquat"
+    name_en: "Inadequate"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_aronchick_1"
+    name_en: "Fair"
+    name_de: "Ausreichend"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_aronchick_2"
+    name_en: "Good"
+    name_de: "Gut"
+    
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_aronchick_3"
+    name_en: "Excellent"
+    name_de: "Exzellent"
+
+# Screening Austria
+# Choices are "bowel_prep_perfect", "bowel_prep_good", 
+# "bowel_prep_fair", "bowel_prep_poor", "bowel_prep_poor_in_rc_only"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_perfect"
+    name_de: "Perfekt"
+    name_en: "Perfect"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_good"
+    name_de: "Gut"
+    name_en: "Good"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_fair"
+    name_de: "Befriedigend"
+    name_en: "Fair"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_poor"
+    name_de: "Schlecht"
+    name_en: "Poor"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "bowel_prep_poor_in_rc_only"
+    name_de: "Schlecht (nur rechtes Kolon)"
+    name_en: "Poor (Right Colon Only)"  

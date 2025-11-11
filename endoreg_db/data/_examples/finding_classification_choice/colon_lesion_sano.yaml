@@ -1,0 +1,14 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_3a"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_3b"

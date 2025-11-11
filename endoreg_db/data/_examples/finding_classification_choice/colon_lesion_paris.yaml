@@ -1,0 +1,57 @@
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_Is"
+    name_de: "Kolonläsion Formklassifikation (Paris Is)"
+    name_en: "Colon Lesion Shape Classification (Paris Is)"
+    description: "Shape classification for colon lesions (Paris Is)"
+
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_Ip"
+    name_de: "Kolonläsion Formklassifikation (Paris Ip)"
+    name_en: "Colon Lesion Shape Classification (Paris Ip)"
+    description: "Shape classification for colon lesions (Paris Ip)"
+
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_IIa"
+    name_de: "Kolonläsion Formklassifikation (Paris IIa)"
+    name_en: "Colon Lesion Shape Classification (Paris IIa)"
+    description: "Shape classification for colon lesions (Paris IIa)"
+
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_IIb"
+    name_de: "Kolonläsion Formklassifikation (Paris IIb)"
+    name_en: "Colon Lesion Shape Classification (Paris IIb)"
+    description: "Shape classification for colon lesions (Paris IIb)"
+
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_IIc"
+    name_de: "Kolonläsion Formklassifikation (Paris IIc)"
+    name_en: "Colon Lesion Shape Classification (Paris IIc)"
+    description: "Shape classification for colon lesions (Paris IIc)"
+
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_III"
+    name_de: "Kolonläsion Formklassifikation (Paris III)"
+    name_en: "Colon Lesion Shape Classification (Paris III)"
+    description: "Shape classification for colon lesions (Paris III)"
+
+# IIa+IIc
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_IIa_IIc"
+    name_de: "Kolonläsion Formklassifikation (Paris IIa+IIc)"
+    name_en: "Colon Lesion Shape Classification (Paris IIa+IIc)"
+    description: "Shape classification for colon lesions (Paris IIa+IIc)"
+
+# IIb+IIc
+- model: endoreg_db.finiding_morphology_classification_choice
+  fields:
+    name: "colon_paris_IIb_IIc"
+    name_de: "Kolonläsion Formklassifikation (Paris IIb+IIc)"
+    name_en: "Colon Lesion Shape Classification (Paris IIb+IIc)"
+    description: "Shape classification for colon lesions (Paris IIb+IIc)"

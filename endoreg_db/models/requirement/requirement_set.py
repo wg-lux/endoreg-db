@@ -187,9 +187,13 @@ class RequirementSet(models.Model):
         
         # Handle PatientExamination -> PatientFinding conversion
         if isinstance(input_object, PatientExamination):
-            # If requirement expects PatientFinding, return the examination's findings
+            # If the requirement expects PatientFinding instances, scope queryset to relevant findings
             if PatientFinding in expected_models:
-                return input_object.patient_findings.all()
+                findings_qs = input_object.patient_findings.all()
+                required_findings = list(requirement.findings.all())
+                if required_findings:
+                    findings_qs = findings_qs.filter(finding__in=required_findings)
+                return findings_qs
 
         
         # Handle other model conversions as needed in the future

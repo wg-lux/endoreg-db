@@ -1,0 +1,13 @@
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "age_gte"
+    name_de: "Alter >="
+    name_en: "Age >="
+    description: "Make sure that the provided age is greater than or equal to the given value. The value is defined using the numeric_value_min field."
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "age_lte"
+    name_de: "Alter <="
+    name_en: "Age <="
+    description: "Make sure that the provided age is less than or equal to the given value. The value is defined using the numeric_value_max field."

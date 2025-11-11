@@ -1,0 +1,441 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_creatinine_above_normal"
+    name_de: "Laborwert über Normalwert"
+    name_en: "Lab value above normal"
+    description: "Lab value above normal"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_increased
+    lab_values:
+      - "creatinine"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_hb_below_normal"
+    name_de: "Laborwert Hämoglobin unter Normalwert"
+    name_en: "Lab value hemoglobin below normal"
+    description: "Lab value hemoglobin below normal"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_decreased
+    lab_values:
+      - "hemoglobin"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_hb_below_8"
+    name_de: "Laborwert Hämoglobin unter 8"
+    name_en: "Lab value hemoglobin below 8"
+    description: "Lab value hemoglobin below 8"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_lower_than_value
+    lab_values:
+      - "hemoglobin"
+    numeric_value: 8
+    unit: "gram per deciliter"
+
+# acute kidney injury
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_creatinine_above_1_5"
+    name_de: "Laborwert Kreatinin über 1,5"
+    name_en: "Lab value creatinine above 1.5"
+    description: "Lab value creatinine above 1.5"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_greater_than_value
+    lab_values:
+      - "creatinine"
+    numeric_value: 1.5
+    unit: "miligram per deciliter"
+
+- model: endoreg_db.requirement
+  fields: # increase by factor 1.5 in 3 days
+    name: "lab_value_latest_creatinine_increased_factor_1_5_in_3_days"
+    name_de: "Laborwert Kreatinin um Faktor 1,5 erhöht innerhalb 3 Tage"
+    name_en: "Lab value creatinine increased by factor 1.5 within 3 days"
+    description: "Lab value creatinine increased by factor 1.5 within 3 days"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_increased_factor_in_timeframe # Corrected operator name
+    lab_values:
+      - "creatinine"
+    numeric_value: 1.5
+    numeric_value_min: -3
+    numeric_value_max: 0
+    unit: "days"
+
+# Coagulation
+## Prothrombin time above normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_prothrombin_time_above_normal"
+    name_de: "Laborwert Prothrombinzeit über Normalwert"
+    name_en: "Lab value prothrombin time above normal"
+    description: "Lab value prothrombin time above normal"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_increased
+    lab_values:
+      - "prothrombin_time"
+
+## Activated partial thromboplastin time (aPTT) above normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_activated_partial_thromboplastin_time_above_normal"
+    name_de: "Laborwert aktivierte partielle Thromboplastinzeit über Normalwert"
+    name_en: "Lab value activated partial thromboplastin time above normal"
+    description: "Lab value activated partial thromboplastin time above normal"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_increased
+    lab_values:
+      - "activated_partial_thromboplastin_time"
+
+## Fibrinogen below normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_alkaline_phosphatase_below_normal"
+    name_de: "Laborwert Alkalische Phosphatase unter Normalwert"
+    name_en: "Lab value alkaline phosphatase below normal"
+    description: "Lab value alkaline phosphatase below normal"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_decreased
+    lab_values:
+      - "alkaline_phosphatase"
+
+## INR above normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_international_normalized_ratio_above_normal"
+    name_de: "Laborwert International Normalisierte Ratio über Normalwert"
+    name_en: "Lab value international normalized ratio above normal"
+    description: "Lab value international normalized ratio above normal"
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_increased
+    lab_values:
+      - "international_normalized_ratio"
+
+# New Requirement for lab_latest_numeric_normal
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_leukocytes_normal"
+    name_de: "Laborwert Leukozyten im Normalbereich"
+    name_en: "Lab value leukocytes normal"
+    description: "Checks if the latest leukocyte count is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+      - "patient_examination"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "white_blood_cells" # Changed from leukocyte_count
+
+# New examples for missing operators
+
+# lab_latest_numeric_decreased_factor_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_latest_platelets_decreased_factor_2_in_7_days"
+    name_de: "Laborwert Thrombozyten um Faktor 2 verringert innerhalb 7 Tage"
+    name_en: "Lab value platelets decreased by factor 2 within 7 days"
+    description: "Lab value platelets decreased by factor 2 within 7 days. Indicates potential significant drop."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_decreased_factor_in_timeframe
+    lab_values:
+      - "platelets" # Changed from platelet_count
+    numeric_value: 2 # Factor
+    numeric_value_min: -7 # Days ago (start of timeframe)
+    numeric_value_max: 0  # Days ago (end of timeframe, i.e., today)
+    unit: "days" # Unit for timeframe
+
+# lab_latest_numeric_normal_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_potassium_normal_in_last_24_hours"
+    name_de: "Laborwert Kalium im Normalbereich innerhalb der letzten 24 Stunden"
+    name_en: "Lab value potassium normal within the last 24 hours"
+    description: "Checks if potassium was normal at any point in the last 24 hours."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal_in_timeframe
+    lab_values:
+      - "potassium"
+    numeric_value_min: -1 # Days ago (start of timeframe, 24 hours)
+    numeric_value_max: 0  # Days ago (end of timeframe, i.e., today)
+    unit: "days"
+
+# lab_latest_numeric_lower_than_value_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_glucose_below_70_in_last_3_days"
+    name_de: "Laborwert Glukose unter 70 mg/dL innerhalb der letzten 3 Tage"
+    name_en: "Lab value glucose below 70 mg/dL within the last 3 days"
+    description: "Checks for any hypoglycemic event (glucose < 70) in the last 3 days."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_lower_than_value_in_timeframe
+    lab_values:
+      - "glucose"
+    numeric_value: 70 # Threshold value
+    numeric_value_min: -3 # Days ago
+    numeric_value_max: 0  # Days ago
+    unit: "miligram per deciliter" # Unit of the numeric_value, contextually
+
+# lab_latest_numeric_greater_than_value_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_crp_above_10_in_last_week"
+    name_de: "Laborwert CRP über 10 mg/L innerhalb der letzten Woche"
+    name_en: "Lab value CRP above 10 mg/L within the last week"
+    description: "Checks for elevated CRP (>10 mg/L) at any point in the last week, indicating inflammation."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_greater_than_value_in_timeframe
+    lab_values:
+      - "c_reactive_protein"
+    numeric_value: 10 # Threshold value
+    numeric_value_min: -7 # Days ago
+    numeric_value_max: 0  # Days ago
+    unit: "miligram per liter" # Unit of the numeric_value, contextually
+
+# lab_latest_categorical_match
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_blood_group_A"
+    name_de: "Laborwert Blutgruppe A"
+    name_en: "Lab value blood group A"
+    description: "Checks if the latest blood group determination is 'A'."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_categorical_match
+    lab_values:
+      - "blood_group" # Assuming 'blood_group' is a LabValue that stores categorical string
+    string_value: "A"
+
+# lab_latest_categorical_match_substring
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_urine_bacteria_positive"
+    name_de: "Laborwert Urin Bakterien positiv"
+    name_en: "Lab value urine bacteria positive"
+    description: "Checks if the latest urine bacteria result contains 'positiv'."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_categorical_match_substring
+    lab_values:
+      - "urine_bacteria_culture" # Example LabValue name
+    string_value: "positiv" # Substring to search for
+
+# lab_latest_categorical_match_regex
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_pathogen_detected_staph_aureus"
+    name_de: "Laborwert Erreger Staphylococcus aureus nachgewiesen"
+    name_en: "Lab value pathogen detected Staphylococcus aureus"
+    description: "Checks if 'Staphylococcus aureus' (case-insensitive) is mentioned in the latest pathogen report."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_categorical_match_regex
+    lab_values:
+      - "microbiology_pathogen_report" # Example LabValue name
+    string_value: "(?i)Staphylococcus\\s+aureus" # Regex for case-insensitive match
+
+# lab_latest_categorical_match_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_drug_test_positive_in_last_month"
+    name_de: "Laborwert Drogentest positiv im letzten Monat"
+    name_en: "Lab value drug test positive in the last month"
+    description: "Checks if any drug test was 'positiv' in the last 30 days."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_categorical_match_in_timeframe
+    lab_values:
+      - "drug_screening_urine" # Example LabValue name
+    string_value: "positiv"
+    numeric_value_min: -30 # Days ago
+    numeric_value_max: 0   # Days ago
+    unit: "days"
+
+# lab_latest_categorical_match_substring_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_antibiotic_resistance_gentamicin_in_last_year"
+    name_de: "Laborwert Antibiotikaresistenz Gentamicin im letzten Jahr"
+    name_en: "Lab value antibiotic resistance Gentamicin in the last year"
+    description: "Checks if 'Gentamicin' resistance was mentioned in any report in the last year."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_categorical_match_substring_in_timeframe
+    lab_values:
+      - "antibiotic_resistance_report" # Example LabValue name
+    string_value: "Gentamicin"
+    numeric_value_min: -365 # Days ago
+    numeric_value_max: 0    # Days ago
+    unit: "days"
+
+# lab_latest_categorical_match_regex_in_timeframe
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_abnormal_cells_detected_in_cytology_last_6_months"
+    name_de: "Laborwert atypische Zellen in Zytologie in letzten 6 Monaten nachgewiesen"
+    name_en: "Lab value abnormal cells detected in cytology in last 6 months"
+    description: "Checks for mention of 'atypical' or 'malignant' cells in cytology reports in the last 6 months."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_categorical_match_regex_in_timeframe
+    lab_values:
+      - "cytology_report" # Example LabValue name
+    string_value: "(?i)(atypical|malignant)" # Regex for 'atypical' or 'malignant'
+    numeric_value_min: -180 # Days ago (approx 6 months)
+    numeric_value_max: 0    # Days ago
+    unit: "days"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_hb_normal"
+    name_de: "Hämoglobin im Normalbereich"
+    name_en: "Hemoglobin normal"
+    description: "Checks if the latest hemoglobin is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "hemoglobin"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_leukocytes_normal"
+    name_de: "Leukozyten im Normalbereich"
+    name_en: "Leukocytes normal"
+    description: "Checks if the latest leukocyte count is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "white_blood_cells"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_platelets_normal"
+    name_de: "Thrombozyten im Normalbereich"
+    name_en: "Platelets normal"
+    description: "Checks if the latest platelet count is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "platelets"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_creatinine_normal"
+    name_de: "Kreatinin im Normalbereich"
+    name_en: "Creatinine normal"
+    description: "Checks if the latest creatinine is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "creatinine"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "lab_value_inr_normal"
+    name_de: "INR im Normalbereich"
+    name_en: "INR normal"
+    description: "Checks if the latest INR is within the normal range."
+    requirement_types:
+      - "patient"
+      - "patient_lab_sample"
+      - "patient_lab_value"
+    operators:
+      - lab_latest_numeric_normal
+    lab_values:
+      - "international_normalized_ratio"
