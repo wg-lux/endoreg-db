@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
-from ....utils import ensure_local_file, storage_file_exists
+from ....utils import delete_field_file, ensure_local_file, storage_file_exists
 from ...utils import (
     ANONYM_VIDEO_DIR,
     VIDEO_DIR,
@@ -70,17 +70,30 @@ def _ensure_local_raw_file(video: "VideoFile") -> Iterator[Path]:
 
 def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     """Returns the absolute Path object for the processed file, if it exists."""
-    if not (video.is_processed and video.processed_file and video.processed_file.name):
+    processed_field = getattr(video, "processed_file", None)
+    if not (video.is_processed and processed_field and processed_field.name):
         return None
     try:
-        return Path(video.processed_file.path)
+        direct_path = Path(processed_field.path)
+        if direct_path.exists():
+            return direct_path.resolve()
     except Exception as exc:
-        logger.warning(
-            "Could not get path for processed file of VideoFile %s: %s",
+        logger.debug(
+            "Could not access direct processed_file.path for video %s: %s",
             video.uuid,
             exc,
         )
-        return None
+        direct_path = None
+
+    if processed_field and storage_file_exists(processed_field):
+        logger.debug("Processed file for %s available only via storage backend", video.uuid)
+    else:
+        logger.warning(
+            "Could not get path for processed file of VideoFile %s: %s",
+            video.uuid,
+            "path unavailable",
+        )
+    return None
 
 
 @contextmanager
@@ -107,11 +120,6 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
 
     # 2. Delete Raw File
     raw_file_path = _get_raw_file_path(video)
-    if raw_file_path is None:
-        logger.warning(
-            "Raw video file not found during deletion for video %s.",
-            video.uuid,
-        )
     if raw_file_path:
         try:
             if raw_file_path.exists():
@@ -123,6 +131,11 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         except Exception as e:
             # Log error but continue
             logger.error("Error deleting raw video file %s for video %s: %s", raw_file_path, video.uuid, e, exc_info=True)
+    else:
+        if delete_field_file(getattr(video, "raw_file", None), save=False):
+            logger.info("Deleted raw file from storage for video %s", video.uuid)
+        else:
+            logger.warning("Raw video file not found during deletion for video %s.", video.uuid)
 
     # 3. Delete Processed File
     processed_file_path = _get_processed_file_path(video)
@@ -136,6 +149,11 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         except Exception as e:
             # Log error but continue
             logger.error("Error deleting processed video file %s for video %s: %s", processed_file_path, video.uuid, e, exc_info=True)
+    else:
+        if delete_field_file(getattr(video, "processed_file", None), save=False):
+            logger.info("Deleted processed file from storage for video %s", video.uuid)
+        else:
+            logger.warning("Processed file missing in storage for video %s", video.uuid)
 
     # 4. Delete Database Record
     try:

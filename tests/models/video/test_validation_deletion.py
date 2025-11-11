@@ -5,6 +5,7 @@ This test ensures the critical bug fix where validate_metadata_annotation()
 was incorrectly deleting the processed video instead of the raw video.
 """
 
+import shutil
 from datetime import date
 from unittest.mock import Mock, patch
 
@@ -33,9 +34,7 @@ class TestVideoValidationDeletionBehavior:
     @pytest.fixture
     def center(self):
         """Create test center."""
-        return Center.objects.create(
-            name="test_center_validation", display_name="Test Center Validation"
-        )
+        return Center.objects.create(name="test_center_validation", display_name="Test Center Validation")
 
     @pytest.fixture
     def processor(self, center):
@@ -80,7 +79,7 @@ class TestVideoValidationDeletionBehavior:
         processor.centers.add(center)
         return processor
 
-    def test_validation_deletes_raw_video_only(self, center, processor, tmp_path):
+    def test_validation_deletes_raw_video_only(self, center, processor, tmp_path, video_asset_file):
         """
         Test that validation deletes RAW video but preserves PROCESSED video.
 
@@ -90,18 +89,14 @@ class TestVideoValidationDeletionBehavior:
         3. Verify RAW file is deleted
         4. Verify PROCESSED file is preserved
         """
-        # Create mock video file paths
+        # Create mock video file paths populated with actual test assets
         raw_video_path = tmp_path / "raw_video.mp4"
         processed_video_path = tmp_path / "processed_video.mp4"
-
-        # Create actual files
-        raw_video_path.write_text("raw video content")
-        processed_video_path.write_text("processed video content")
+        shutil.copy2(video_asset_file, raw_video_path)
+        shutil.copy2(video_asset_file, processed_video_path)
 
         # Create VideoFile instance
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-validation"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-validation")
 
         # Mock the file paths and _update_text_metadata
         with (
@@ -113,9 +108,7 @@ class TestVideoValidationDeletionBehavior:
                 "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
                 return_value=processed_video_path,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             # Mock sensitive meta update
             mock_sm = Mock()
@@ -123,9 +116,7 @@ class TestVideoValidationDeletionBehavior:
 
             # Verify both files exist before validation
             assert raw_video_path.exists(), "Raw video should exist before validation"
-            assert processed_video_path.exists(), (
-                "Processed video should exist before validation"
-            )
+            assert processed_video_path.exists(), "Processed video should exist before validation"
 
             # Run validation
             validation_data = {
@@ -139,13 +130,9 @@ class TestVideoValidationDeletionBehavior:
             assert result is True, "Validation should succeed"
 
             # CRITICAL ASSERTIONS: Verify correct file deletion
-            assert not raw_video_path.exists(), (
-                "❌ BUG: Raw video should be DELETED after validation"
-            )
+            assert not raw_video_path.exists(), "❌ BUG: Raw video should be DELETED after validation"
 
-            assert processed_video_path.exists(), (
-                "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
-            )
+            assert processed_video_path.exists(), "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
 
     def test_validation_handles_missing_raw_video(self, center, processor):
         """
@@ -157,9 +144,7 @@ class TestVideoValidationDeletionBehavior:
         3. Verify validation succeeds without errors
         4. Verify processed file is still preserved
         """
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-no-raw"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-no-raw")
 
         # Mock: raw_file doesn't exist, only processed
         with (
@@ -167,22 +152,16 @@ class TestVideoValidationDeletionBehavior:
                 "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
                 return_value=None,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             mock_sm = Mock()
             mock_update.return_value = mock_sm
 
             # Run validation
-            result = video.validate_metadata_annotation(
-                {"patient_first_name": "Test", "patient_last_name": "User"}
-            )
+            result = video.validate_metadata_annotation({"patient_first_name": "Test", "patient_last_name": "User"})
 
             # Should succeed even without raw file
-            assert result is True, (
-                "Validation should succeed even when raw file is missing"
-            )
+            assert result is True, "Validation should succeed even when raw file is missing"
 
     def test_validation_with_only_raw_video(self, center, processor, tmp_path):
         """
@@ -199,9 +178,7 @@ class TestVideoValidationDeletionBehavior:
         raw_video_path = tmp_path / "only_raw.mp4"
         raw_video_path.write_text("raw content")
 
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-only-raw"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-only-raw")
 
         with (
             patch(
@@ -212,9 +189,7 @@ class TestVideoValidationDeletionBehavior:
                 "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
                 return_value=None,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             mock_sm = Mock()
             mock_update.return_value = mock_sm
@@ -225,9 +200,7 @@ class TestVideoValidationDeletionBehavior:
             result = video.validate_metadata_annotation({})
 
             # Verify raw is deleted
-            assert not raw_video_path.exists(), (
-                "Raw video should be deleted even when it's the only file"
-            )
+            assert not raw_video_path.exists(), "Raw video should be deleted even when it's the only file"
 
             assert result is True, "Validation should succeed"
 
@@ -282,26 +255,18 @@ class TestActiveFileLogicWithValidation:
         """
         from django.core.files.base import ContentFile
 
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-active-file"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-active-file")
 
         # Simulate both files existing
         video.raw_file.save("raw.mp4", ContentFile(b"raw"), save=False)
-        video.processed_file.save(
-            "processed.mp4", ContentFile(b"processed"), save=False
-        )
+        video.processed_file.save("processed.mp4", ContentFile(b"processed"), save=False)
         video.save()
 
         # active_file should return processed file
         active = video.active_file
-        assert active is video.processed_file, (
-            "active_file should return processed_file when both exist"
-        )
+        assert active is video.processed_file, "active_file should return processed_file when both exist"
 
-    def test_validation_uses_raw_file_path_not_active(
-        self, center, processor, tmp_path
-    ):
+    def test_validation_uses_raw_file_path_not_active(self, center, processor, tmp_path):
         """
         Verify that validation explicitly uses raw_file_path, not active_file_path.
 
@@ -313,9 +278,7 @@ class TestActiveFileLogicWithValidation:
         raw_path.write_text("raw")
         processed_path.write_text("processed")
 
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-explicit-raw"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-explicit-raw")
 
         with (
             patch(
@@ -326,9 +289,7 @@ class TestActiveFileLogicWithValidation:
                 "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
                 return_value=processed_path,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             mock_update.return_value = Mock()
 
@@ -355,9 +316,7 @@ class TestValidationDeletion:
     @pytest.fixture
     def center(self):
         """Create test center."""
-        return Center.objects.create(
-            name="test_center_validation_del", display_name="Test Center Validation Del"
-        )
+        return Center.objects.create(name="test_center_validation_del", display_name="Test Center Validation Del")
 
     @pytest.fixture
     def processor(self, center):
@@ -421,9 +380,7 @@ class TestValidationDeletion:
         processed_video_path.write_text("processed video content")
 
         # Create VideoFile instance
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-validation"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-validation")
 
         # Mock the file paths and _update_text_metadata
         with (
@@ -435,9 +392,7 @@ class TestValidationDeletion:
                 "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
                 return_value=processed_video_path,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             # Mock sensitive meta update
             mock_sm = Mock()
@@ -445,9 +400,7 @@ class TestValidationDeletion:
 
             # Verify both files exist before validation
             assert raw_video_path.exists(), "Raw video should exist before validation"
-            assert processed_video_path.exists(), (
-                "Processed video should exist before validation"
-            )
+            assert processed_video_path.exists(), "Processed video should exist before validation"
 
             # Run validation
             validation_data = {
@@ -461,13 +414,9 @@ class TestValidationDeletion:
             assert result is True, "Validation should succeed"
 
             # CRITICAL ASSERTIONS: Verify correct file deletion
-            assert not raw_video_path.exists(), (
-                "❌ BUG: Raw video should be DELETED after validation"
-            )
+            assert not raw_video_path.exists(), "❌ BUG: Raw video should be DELETED after validation"
 
-            assert processed_video_path.exists(), (
-                "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
-            )
+            assert processed_video_path.exists(), "✅ CORRECT: Processed (anonymized) video should be PRESERVED after validation"
 
     def test_validation_handles_missing_raw_video(self, center, processor):
         """
@@ -479,9 +428,7 @@ class TestValidationDeletion:
         3. Verify validation succeeds without errors
         4. Verify processed file is still preserved
         """
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-no-raw"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-no-raw")
 
         # Mock: raw_file doesn't exist, only processed
         with (
@@ -489,22 +436,16 @@ class TestValidationDeletion:
                 "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
                 return_value=None,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             mock_sm = Mock()
             mock_update.return_value = mock_sm
 
             # Run validation
-            result = video.validate_metadata_annotation(
-                {"patient_first_name": "Test", "patient_last_name": "User"}
-            )
+            result = video.validate_metadata_annotation({"patient_first_name": "Test", "patient_last_name": "User"})
 
             # Should succeed even without raw file
-            assert result is True, (
-                "Validation should succeed even when raw file is missing"
-            )
+            assert result is True, "Validation should succeed even when raw file is missing"
 
     def test_validation_with_only_raw_video(self, center, processor, tmp_path):
         """
@@ -521,9 +462,7 @@ class TestValidationDeletion:
         raw_video_path = tmp_path / "only_raw.mp4"
         raw_video_path.write_text("raw content")
 
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-only-raw"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-only-raw")
 
         with (
             patch(
@@ -534,9 +473,7 @@ class TestValidationDeletion:
                 "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
                 return_value=None,
             ),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update,
         ):
             mock_sm = Mock()
             mock_update.return_value = mock_sm
@@ -547,15 +484,11 @@ class TestValidationDeletion:
             result = video.validate_metadata_annotation({})
 
             # Verify raw is deleted
-            assert not raw_video_path.exists(), (
-                "Raw video should be deleted even when it's the only file"
-            )
+            assert not raw_video_path.exists(), "Raw video should be deleted even when it's the only file"
 
             assert result is True, "Validation should succeed"
 
-    def test_validation_extracts_frames_before_deleting_raw(
-        self, center, processor, tmp_path, base_db_data
-    ):
+    def test_validation_extracts_frames_before_deleting_raw(self, center, processor, tmp_path, base_db_data):
         """
         Test that frame extraction happens BEFORE raw video deletion.
 
@@ -575,9 +508,7 @@ class TestValidationDeletion:
         processed_video_path.write_text("processed video content")
 
         # Create VideoFile instance
-        video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-frame-order"
-        )
+        video = VideoFile.objects.create(center=center, processor=processor, video_hash="test-hash-frame-order")
 
         # Create mock state that indicates frames not yet extracted
         state = video.get_or_create_state()
@@ -610,9 +541,7 @@ class TestValidationDeletion:
                 return_value=processed_video_path,
             ),
             patch.object(video, "extract_frames", mock_extract_frames),
-            patch(
-                "endoreg_db.models.media.video.video_file._update_text_metadata"
-            ) as mock_update_meta,
+            patch("endoreg_db.models.media.video.video_file._update_text_metadata") as mock_update_meta,
         ):
             # Mock sensitive meta update - ensure it calls extract_frames
             def mock_update_text_metadata(video_obj, data, overwrite=False):
@@ -638,17 +567,14 @@ class TestValidationDeletion:
 
             # CRITICAL: Verify raw video existed when extraction was called
             assert raw_existed_during_extraction, (
-                "❌ BUG: Raw video must exist during frame extraction! "
-                "Metadata update (which extracts frames) must happen BEFORE raw deletion."
+                "❌ BUG: Raw video must exist during frame extraction! Metadata update (which extracts frames) must happen BEFORE raw deletion."
             )
 
             # Verify validation succeeded
             assert result is True, "Validation should succeed"
 
             # Verify raw video was deleted AFTER frame extraction
-            assert not raw_video_path.exists(), (
-                "Raw video should be deleted after validation"
-            )
+            assert not raw_video_path.exists(), "Raw video should be deleted after validation"
 
             # Verify processed video still exists
             assert processed_video_path.exists(), "Processed video should still exist"
