@@ -340,7 +340,7 @@ class Command(BaseCommand):
                 "patient_last_name": None, 
                 "patient_dob": None,
                 "examination_date": None,
-                "center_name": video_file.center.name if video_file.center else 
+                "center_name": video_file.center.name if video_file.center else "unknown",
             }
             
             try:
