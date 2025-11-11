@@ -2,7 +2,6 @@ import logging
 import tempfile
 import textwrap
 from pathlib import Path
-from logging import getLogger
 from unittest.mock import patch
 
 import yaml
@@ -12,8 +11,10 @@ from django.test import TestCase
 from endoreg_db.data import REQUIREMENT_DATA_DIR
 from endoreg_db.management.commands import load_requirement_data as load_requirement_command
 from endoreg_db.management.commands.load_requirement_data import (
-    Command as LoadRequirementCommand,
     IMPORT_METADATA,
+)
+from endoreg_db.management.commands.load_requirement_data import (
+    Command as LoadRequirementCommand,
 )
 from endoreg_db.models import (
     Requirement,
@@ -25,12 +26,12 @@ from endoreg_db.utils import load_model_data_from_yaml
 from ..helpers.data_loader import load_data
 from ..helpers.default_objects import generate_patient
 
-logger = getLogger(__name__)
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
 class RequirementTest(TestCase):
-    def setUp(self):  
+    def setUp(self):
         load_data()
 
         self.patient = generate_patient()
@@ -43,8 +44,7 @@ class RequirementTest(TestCase):
         # fetch all requirements and make sure they are linked to at least one requirement_type
         for req in self.requirements:
             logger.info(f"Testing requirement: {req.name}")
-            self.assertTrue(req.requirement_types.exists(), 
-                            f"Requirement '{req.name}' should have a linked RequirementType. Check data fixtures.")
+            self.assertTrue(req.requirement_types.exists(), f"Requirement '{req.name}' should have a linked RequirementType. Check data fixtures.")
 
 
 class RequirementLoaderValidationTests(TestCase):
@@ -129,9 +129,7 @@ class RequirementFixtureAuditTests(TestCase):
 
         if missing_entries:
             formatted = "\n".join(sorted(missing_entries))
-            self.fail(
-                "Requirement fixtures are missing required configuration values:\n" + formatted
-            )
+            self.fail("Requirement fixtures are missing required configuration values:\n" + formatted)
 
     def test_management_command_flags_missing_configuration(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -156,10 +154,13 @@ class RequirementFixtureAuditTests(TestCase):
             requirement_metadata["dir"] = tmp_dir
             metadata_override[Requirement.__name__] = requirement_metadata
 
-            with patch.object(load_requirement_command, "IMPORT_METADATA", metadata_override), patch.object(
-                load_requirement_command,
-                "IMPORT_MODELS",
-                [Requirement.__name__],
+            with (
+                patch.object(load_requirement_command, "IMPORT_METADATA", metadata_override),
+                patch.object(
+                    load_requirement_command,
+                    "IMPORT_MODELS",
+                    [Requirement.__name__],
+                ),
             ):
                 with self.assertRaises(ValueError) as exc:
                     call_command("load_requirement_data")

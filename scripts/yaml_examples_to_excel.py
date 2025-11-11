@@ -1,21 +1,17 @@
 from pathlib import Path
-import yaml
-import pandas
 
-# I want to create a results table for a manuscript featuring this manuscript. 
-# can you create a script which iterates over all directories and files in ./endoreg_db/data/_examples/ 
-# As Output i would like to have a, excel file with one sheet for each distinct model. 
-# Each sheet should represent all entries of this model in the table. 
-# for fields containing lists, i would like to store them as comma separated list strings.
+import pandas
+import yaml
 
 SOURCE_DIR = Path("./endoreg_db/data/_examples")
 OUTPUT_FILE = SOURCE_DIR / "yaml_examples.xlsx"
+
 
 def gather_yaml_data(source_dir):
     model_data = {}
 
     for yaml_file in source_dir.rglob("*.yaml"):
-        with open(yaml_file, "r") as f:
+        with open(yaml_file, "r", encoding="utf-8") as f:
             for document in yaml.safe_load_all(f):
                 if not document:
                     continue
@@ -32,14 +28,12 @@ def gather_yaml_data(source_dir):
                     if not model_name or not isinstance(fields, dict):
                         continue
 
-                    normalized_fields = {
-                        key: ", ".join(map(str, value)) if isinstance(value, list) else value
-                        for key, value in fields.items()
-                    }
+                    normalized_fields = {key: ", ".join(map(str, value)) if isinstance(value, list) else value for key, value in fields.items()}
 
                     model_data.setdefault(model_name, []).append(normalized_fields)
 
     return model_data
+
 
 def write_to_excel(model_data, output_file):
     if not model_data:
@@ -62,16 +56,18 @@ def write_to_excel(model_data, output_file):
             # Ensure sheet names remain unique after truncation.
             while sheet_name in sheet_names:
                 suffix = f"_{counter}"
-                sheet_name = f"{base_name[:31 - len(suffix)]}{suffix}"
+                sheet_name = f"{base_name[: 31 - len(suffix)]}{suffix}"
                 counter += 1
 
             sheet_names[sheet_name] = True
             df.to_excel(writer, sheet_name=sheet_name, index=False)
 
+
 def main():
     model_data = gather_yaml_data(SOURCE_DIR)
     write_to_excel(model_data, OUTPUT_FILE)
     print(f"Data written to {OUTPUT_FILE}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,25 +1,18 @@
-from pathlib import Path
-import pandas as pd
-import json
+from .utils.export import export2json
+from .utils.process_fu_tx_distance import fu_tx_distance_df_etl
 from .utils.process_lab_data import lab_data_etl
 from .utils.process_patients import patient_df_etl
 from .utils.process_readout import readout_df_etl
-from .utils.process_fu_tx_distance import fu_tx_distance_df_etl
-from .utils.export import export2dfs, export2json
 from .utils.utils import processed_data_dir
 
 readout_df, readout_data_list = readout_df_etl()
 lab_df, lab_data_list = lab_data_etl()
 
 # patient_data_list = []
-patient_data_list, readout_data_list, lab_data_list = patient_df_etl(
-    readout_data_list = readout_data_list,
-    lab_data_list = lab_data_list
-)
+patient_data_list, readout_data_list, lab_data_list = patient_df_etl(readout_data_list=readout_data_list, lab_data_list=lab_data_list)
 
 # fu_tx_data_list = []
 fu_tx_data_list = fu_tx_distance_df_etl(patient_data_list)
-
 
 
 # Export all DataFrames to a dictionary
@@ -40,10 +33,7 @@ fu_tx_data_list = fu_tx_distance_df_etl(patient_data_list)
 
 # Export all Data to JSONL strings
 exported_jsonl = export2json(
-    patient_data_list=patient_data_list,
-    readout_data_list=readout_data_list,
-    lab_data_list=lab_data_list,
-    fu_tx_data_list=fu_tx_data_list
+    patient_data_list=patient_data_list, readout_data_list=readout_data_list, lab_data_list=lab_data_list, fu_tx_data_list=fu_tx_data_list
 )
 
 # write to jsonl files

@@ -30,14 +30,3 @@ CACHES = {
     }
 }
 
-# # Faster password hashing
-# PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-
-# # Toggle migrations via env
-# if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
-#     class DisableMigrations:  # type: ignore
-#         def __contains__(self, item):
-#             return True
-#         def __getitem__(self, item):
-#             return None
-#     MIGRATION_MODULES = DisableMigrations()  # type: ignore

@@ -1,10 +1,12 @@
-from scripts.ntx_data.utils import processed_data_dir
-from scripts.ntx_data.utils.datamodels import ReadoutData
 import json
-from tqdm import tqdm
 from typing import List
-from icecream import ic
+
 import pandas as pd
+from icecream import ic
+from tqdm import tqdm
+
+from scripts.ntx_data.utils.datamodels import ReadoutData
+from scripts.ntx_data.utils.utils import processed_data_dir
 
 post_code_distances_cache_path = processed_data_dir / "post_code_distances_cache copy.json"
 readout_data_path = processed_data_dir / "readout_data.jsonl"
@@ -31,17 +33,15 @@ with open(post_code_distances_cache_path, "r", encoding="utf-8") as f:
 
 with open(readout_data_path, "r", encoding="utf-8") as f:
     for line in tqdm(f):
-            readout_data_list.append(ReadoutData.model_validate_json(line))
+        readout_data_list.append(ReadoutData.model_validate_json(line))
 
 # Distance Categories
 # < 50 km: "0-50 km"
 # 50-100 km: "50-100 km"
 # > 100 km: ">100 km"
 
-def add_distances_to_readout_data(
-    readout_data:ReadoutData,
-    post_code_distances_cache: dict
-    ):
+
+def add_distances_to_readout_data(readout_data: ReadoutData, post_code_distances_cache: dict):
     plz = readout_data.post_code
 
     distance_dict = post_code_distances_cache.get(plz, None)
@@ -63,10 +63,7 @@ def add_distances_to_readout_data(
 
 
 for readout_data in tqdm(readout_data_list):
-    add_distances_to_readout_data(
-        readout_data,
-        post_code_distances_cache
-    )
+    add_distances_to_readout_data(readout_data, post_code_distances_cache)
 
 # dump to jsonl, csv, excel
 
@@ -77,9 +74,7 @@ with open(readout_df_jsonl_export_path, "w", encoding="utf-8") as f:
 ic(f"Exported readout data with distances to {readout_df_jsonl_export_path}.")
 
 # create dataframe
-readout_df = pd.DataFrame(
-    [readout.model_dump() for readout in readout_data_list]
-)
+readout_df = pd.DataFrame([readout.model_dump() for readout in readout_data_list])
 
 ic(f"Exporting readout dataframe with distances to {readout_df_excel_export_path}...")
 readout_df.to_excel(readout_df_excel_export_path, index=False)

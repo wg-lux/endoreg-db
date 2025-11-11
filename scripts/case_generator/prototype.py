@@ -16,7 +16,6 @@ from typing import Iterable, List, Optional
 import django
 from icecream import ic
 
-
 # Ensure Django is ready before importing models without clobbering preconfigured settings
 DJANGO_SETTINGS_MODULE = os.environ.setdefault(
     "DJANGO_SETTINGS_MODULE",
@@ -24,20 +23,21 @@ DJANGO_SETTINGS_MODULE = os.environ.setdefault(
 )
 django.setup()
 
+from django.utils import timezone
+
 from endoreg_db.models import (  # noqa: E402
     Center,
+    Examination,
     Gender,
     Patient,
     PatientEvent,
     PatientExamination,
-    Examination,
     PatientFinding,
     PatientLabValue,
     PatientMedication,
     Requirement,
     RequirementSet,
 )
-from django.utils import timezone
 
 
 @dataclass
@@ -176,7 +176,6 @@ class GenerationContext:
         return self.patient
 
     def ensure_examination(self, examination_model: Optional[Examination] = None) -> PatientExamination:
-        target_exam = None
         if examination_model is not None:
             for existing in self.examinations:
                 if existing.examination and existing.examination.pk == examination_model.pk:
@@ -235,9 +234,7 @@ def satisfy_requirement(plan: RequirementPlan, context: GenerationContext) -> No
 
     requirement = plan.requirement
     links = requirement.links.active()
-    context.add_note(
-        f"Processing requirement '{requirement.name}' with operators={plan.operators}"
-    )
+    context.add_note(f"Processing requirement '{requirement.name}' with operators={plan.operators}")
     for note in plan.notes:
         context.add_note(f"  hint: {note}")
 
@@ -268,21 +265,15 @@ def ensure_lab_values(context: GenerationContext, patient: Patient, links: dict)
 
     sample = None
     for lab_value in lab_values:
-        existing = PatientLabValue.objects.filter(
-            patient=patient, lab_value=lab_value
-        ).first()
+        existing = PatientLabValue.objects.filter(patient=patient, lab_value=lab_value).first()
         if existing:
             context.lab_values.append(existing)
-            context.add_note(
-                f"  reused patient lab value '{lab_value.name}' (id={existing.pk})"
-            )
+            context.add_note(f"  reused patient lab value '{lab_value.name}' (id={existing.pk})")
             continue
 
         if sample is None:
             sample = patient.create_lab_sample()
-            context.add_note(
-                f"  created lab sample id={sample.pk} for lab value generation"
-            )
+            context.add_note(f"  created lab sample id={sample.pk} for lab value generation")
 
         value = lab_value.get_normal_value(patient=patient)
         if value is None:
@@ -302,9 +293,7 @@ def ensure_lab_values(context: GenerationContext, patient: Patient, links: dict)
         )
         patient_lab_value.set_norm_values_from_default()
         context.lab_values.append(patient_lab_value)
-        context.add_note(
-            f"  created patient lab value '{lab_value.name}' -> {patient_lab_value.get_value()}"
-        )
+        context.add_note(f"  created patient lab value '{lab_value.name}' -> {patient_lab_value.get_value()}")
 
 
 def ensure_medications(context: GenerationContext, patient: Patient, links: dict) -> None:
@@ -334,13 +323,9 @@ def ensure_medications(context: GenerationContext, patient: Patient, links: dict
 
         if created:
             context.medications.append(patient_medication)
-            context.add_note(
-                f"  created patient medication '{medication.name}' (id={patient_medication.pk})"
-            )
+            context.add_note(f"  created patient medication '{medication.name}' (id={patient_medication.pk})")
         else:
-            context.add_note(
-                f"  ensured patient medication '{medication.name}' exists (id={patient_medication.pk})"
-            )
+            context.add_note(f"  ensured patient medication '{medication.name}' exists (id={patient_medication.pk})")
 
 
 def ensure_events(context: GenerationContext, patient: Patient, links: dict) -> None:
@@ -358,13 +343,9 @@ def ensure_events(context: GenerationContext, patient: Patient, links: dict) -> 
         )
         if created:
             context.events.append(patient_event)
-            context.add_note(
-                f"  created patient event '{event.name}' on {patient_event.date_start}"
-            )
+            context.add_note(f"  created patient event '{event.name}' on {patient_event.date_start}")
         else:
-            context.add_note(
-                f"  reused patient event '{event.name}' (id={patient_event.pk})"
-            )
+            context.add_note(f"  reused patient event '{event.name}' (id={patient_event.pk})")
 
 
 def ensure_examinations_and_findings(context: GenerationContext, links: dict) -> None:
@@ -385,13 +366,9 @@ def ensure_examinations_and_findings(context: GenerationContext, links: dict) ->
         if not patient_finding:
             patient_finding = patient_exam.create_finding(finding)
             context.findings.append(patient_finding)
-            context.add_note(
-                f"  created patient finding '{finding.name}' in exam id={patient_exam.pk}"
-            )
+            context.add_note(f"  created patient finding '{finding.name}' in exam id={patient_exam.pk}")
         else:
-            context.add_note(
-                f"  reused patient finding '{finding.name}' (id={patient_finding.pk})"
-            )
+            context.add_note(f"  reused patient finding '{finding.name}' (id={patient_finding.pk})")
 
         for choice in classification_choices:
             classification = choice.classifications.first()
@@ -401,15 +378,11 @@ def ensure_examinations_and_findings(context: GenerationContext, links: dict) ->
                 classification_id=classification.id,
                 classification_choice_id=choice.id,
             )
-            context.add_note(
-                f"    attached classification choice '{choice.name}'"
-            )
+            context.add_note(f"    attached classification choice '{choice.name}'")
 
         for intervention in interventions:
             patient_finding.add_intervention(intervention_id=intervention.id, state="completed")
-            context.add_note(
-                f"    attached intervention '{intervention.name}'"
-            )
+            context.add_note(f"    attached intervention '{intervention.name}'")
 
 
 def execute_generation_plan(plan: RequirementSetPlan) -> GenerationContext:

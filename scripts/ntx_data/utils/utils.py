@@ -3,9 +3,9 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from .utils.datamodels import PatientData, ReadoutData, LabData
-
 from endoreg_db.utils.hashs import get_patient_hash
+
+from .datamodels import LabData, PatientData, ReadoutData
 
 ###################################################
 raw_data_dir = Path("./data/ntx-data/raw")
@@ -20,7 +20,7 @@ rename_patient_df_dict = {
     "ID": "patient_id_ntx",
     "PLZ": "post_code",
     "Wohnort": "city",
-    "Strasse": "street",   
+    "Strasse": "street",
 }
 
 readout_df_path = raw_data_dir / "readout.xlsx"
@@ -145,7 +145,7 @@ rename_transplant_df_dict = {
     "Erneute Dialyse seit:": "dialysis_restart_date",
     "Dialysezentrum:": "dialysis_center",
     "Malignom": "malignancy",
-    "Gesamt-Tx-Laufzeit:": "total_transplant_duration"
+    "Gesamt-Tx-Laufzeit:": "total_transplant_duration",
 }
 
 lab_df_path = raw_data_dir / "Labore.xlsx"
@@ -154,37 +154,32 @@ rename_lab_df_dict = {
     "fallnr": "case_id_ukw",
     "Leistungstext": "test_name",
     "messwert": "test_value",
-    "Erbringungszeit": "test_datetime"
+    "Erbringungszeit": "test_datetime",
 }
 
 ###################################################
 LAB_DF_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
-def load_dataframe(df_path:Path, rename_dict:Dict[str,str]):
+
+
+def load_dataframe(df_path: Path, rename_dict: Dict[str, str]):
     assert df_path.exists(), f"Dataframe path {df_path} does not exist."
     df = pd.read_excel(df_path)
     df = df.rename(columns=rename_dict)
 
     # if first_name or last_name columns exist, replace special characters
-    if 'first_name' in df.columns:
+    if "first_name" in df.columns:
         df["first_name"] = df["first_name"].apply(replace_special_characters)
-    if 'last_name' in df.columns:
+    if "last_name" in df.columns:
         df["last_name"] = df["last_name"].apply(replace_special_characters)
 
-    if 'dob' in df.columns:
+    if "dob" in df.columns:
         # expected format is <YYYY-MM-DD>
-        df["dob"] = pd.to_datetime(
-            df["dob"], errors='coerce', dayfirst=True, format="%Y-%m-%d"
-        )
+        df["dob"] = pd.to_datetime(df["dob"], errors="coerce", dayfirst=True, format="%Y-%m-%d")
 
     if "test_datetime" in df.columns:
         # expected format is <YYYY-MM-DD HH:MM:SS.sss>
         # Example: 2014-11-27 12:08:00.000
-        df["test_datetime"] = pd.to_datetime(
-            df["test_datetime"], 
-            errors='coerce', 
-            dayfirst=True, 
-            format=LAB_DF_DATETIME_FORMAT
-        )
+        df["test_datetime"] = pd.to_datetime(df["test_datetime"], errors="coerce", dayfirst=True, format=LAB_DF_DATETIME_FORMAT)
 
     for date_column in (
         "transplant_date",
@@ -194,13 +189,14 @@ def load_dataframe(df_path:Path, rename_dict:Dict[str,str]):
         "dialysis_restart_date",
     ):
         if date_column in df.columns:
-            df[date_column] = pd.to_datetime(df[date_column], errors='coerce', dayfirst=True)
+            df[date_column] = pd.to_datetime(df[date_column], errors="coerce", dayfirst=True)
 
     if "first_name" in df.columns and "last_name" in df.columns and "dob" in df.columns:
         # apply function to each row
         df["patient_hash"] = df.apply(compute_patient_hash, axis=1)
 
     return df
+
 
 def replace_special_characters(text):
     if not text:
@@ -212,20 +208,19 @@ def replace_special_characters(text):
     text = text.replace("ß", "ss")
     return text
 
+
 def compute_patient_hash(row):
     first_name = row["first_name"]
     last_name = row["last_name"]
-    dob = row["dob"]    # fixed salt for ntx data
+    dob = row["dob"]  # fixed salt for ntx data
 
-    patient_hash = get_patient_hash(
-        first_name=first_name,
-        last_name=last_name,
-        dob=dob,
-        center = "ntx-ukw"
-    )
+    patient_hash = get_patient_hash(first_name=first_name, last_name=last_name, dob=dob, center="ntx-ukw")
     return patient_hash
 
+
 from icecream import ic
+
+
 def serialize_patient_df(df) -> List[PatientData]:
     data_list = []
     patients_dict_preparation = {}
@@ -253,7 +248,6 @@ def serialize_patient_df(df) -> List[PatientData]:
 
             else:
                 post_code = "NA"
-            
 
             patients_dict_preparation[patient_id_ntx] = {
                 "first_name": row["first_name"],
@@ -280,12 +274,9 @@ def serialize_patient_df(df) -> List[PatientData]:
             street=data["street"],
         )
         data_list.append(patient_data)
-        
-    assert len(data_list) == n_unique_patient_id_ntx, (
-        f"Expected {n_unique_patient_id_ntx} unique PatientData entries, but got {len(data_list)}."
-    )
-    return data_list
 
+    assert len(data_list) == n_unique_patient_id_ntx, f"Expected {n_unique_patient_id_ntx} unique PatientData entries, but got {len(data_list)}."
+    return data_list
 
 
 def serialize_readout_df(df: pd.DataFrame) -> List[ReadoutData]:
@@ -309,7 +300,7 @@ def serialize_readout_df(df: pd.DataFrame) -> List[ReadoutData]:
         sanitized = _sanitize(value)
         if sanitized is None:
             return None
-        post_code_str = str(sanitized).replace('"', '').strip()
+        post_code_str = str(sanitized).replace('"', "").strip()
         if not post_code_str:
             return None
         if post_code_str.isdigit() and len(post_code_str) <= 5:
@@ -545,10 +536,8 @@ def serialize_fu_tx_distance_df(df: pd.DataFrame) -> List[ReadoutData]:
         fu_tx_distance_data_list.append(fu_tx_distance_data)
     return fu_tx_distance_data_list
 
-def create_lookup_patient_hash_for_transplant_id(
-        patient_data_by_hash: Dict[str, PatientData]
-    ) -> Dict[str, str]:
 
+def create_lookup_patient_hash_for_transplant_id(patient_data_by_hash: Dict[str, PatientData]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
     for patient_hash, patient_data in patient_data_by_hash.items():
         transplant_ids = patient_data.transplant_ids
@@ -556,10 +545,8 @@ def create_lookup_patient_hash_for_transplant_id(
             lookup[transplant_id] = patient_hash
     return lookup
 
-def create_lookup_patient_hash_for_patient_id_ukw(
-        patient_data_by_hash: Dict[str, PatientData]
-    ) -> Dict[str, str]:
 
+def create_lookup_patient_hash_for_patient_id_ukw(patient_data_by_hash: Dict[str, PatientData]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
     for patient_hash, patient_data in patient_data_by_hash.items():
         patient_ids_ukw = patient_data.patient_ids_ukw
@@ -568,9 +555,8 @@ def create_lookup_patient_hash_for_patient_id_ukw(
 
     return lookup
 
-def create_case_to_patient_id_ukw_lookup(
-        lab_data_list: List[LabData]
-    ) -> Dict[str, str]:
+
+def create_case_to_patient_id_ukw_lookup(lab_data_list: List[LabData]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
     for lab_data in lab_data_list:
         lookup[lab_data.case_id_ukw] = lab_data.patient_id_ukw
