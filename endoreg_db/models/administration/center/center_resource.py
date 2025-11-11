@@ -33,17 +33,21 @@ class CenterResource(models.Model):
         unit: models.ForeignKey["Unit|None"]
 
     def __str__(self):
-        result_string = ""
+        return f"CenterResource {self.pk} - {self.name if self.name else 'No Name'}"
 
-        if self.name is not None:
-            result_string += self.name + ":\n"
+    def display_str(self) -> str:
+        """Return a verbose description of the center resource."""
+        result_string = f"{self.name}:\n"
 
         result_string += "\tCenter\t-\t" + str(self.center) + "\n"
         result_string += "\tResource\t-\t" + str(self.resource) + "\n"
         result_string += "\tQuantity\t-\t" + str(self.quantity) + "\n"
         result_string += "\tYear\t-\t" + str(self.year) + "\n"
         result_string += "\tUnit\t-\t" + str(self.unit) + "\n"
-        result_string += "\tTransport Emission Factor\t-\t" + str(self.transport_emission_factor) + "\n"
+
+        if self.transport_emission_factor is not None:
+            result_string += "\tTransport Emission Factor\t-\t" + str(self.transport_emission_factor) + "\n"
+
         result_string += "\tUse Emission Factor\t-\t" + str(self.use_emission_factor) + "\n"
 
         result_string += "\n"
