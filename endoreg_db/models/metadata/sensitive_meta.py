@@ -2,12 +2,15 @@ from django.db import models
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
 from typing import TYPE_CHECKING, Dict, Any, Type, Self
-import logging # Add logging import
+import logging
+
+from numpy import True_ # Add logging import
 
 # Import logic functions
 from . import sensitive_meta_logic as logic
 # Import models needed for type hints and FKs
 from ..state import SensitiveMetaState # Needed for post-save state check
+from ..administration.person.patient import PatientExternalID
 
 if TYPE_CHECKING:
     from ..administration import (
@@ -30,20 +33,20 @@ class SensitiveMeta(models.Model):
     Stores potentially sensitive information extracted from media.
     Logic for creation, hashing, pseudo-anonymization, and saving is in sensitive_meta_logic.py.
     """
+
+    # --- Examination and Patient Info ---
     examination_date = models.DateField(blank=True, null=True)
+    examination_time = models.TimeField(blank=True, null=True)
+    casenumber = models.CharField(max_length=255, blank=True, null=True)
+    file_path = models.CharField(max_length=1024, blank=True, null=True)
+
+    # --- Core FKs ---
     pseudo_patient = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         help_text="FK to the pseudo-anonymized Patient record."
-    ) # type: ignore
-    patient_first_name = models.CharField(max_length=255, blank=True, null=True)
-    patient_last_name = models.CharField(max_length=255, blank=True, null=True)
-    patient_dob = models.DateTimeField(
-        blank=True,
-        null=True,
-        help_text="Date of birth (can be auto-generated if missing)."
     )
     pseudo_examination = models.ForeignKey(
         "PatientExamination",
@@ -51,37 +54,42 @@ class SensitiveMeta(models.Model):
         blank=True,
         null=True,
         help_text="FK to the pseudo-anonymized PatientExamination record."
-    ) # type: ignore
-    patient_gender = models.ForeignKey(
-        "Gender",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-    ) # type: ignore
-    examiners = models.ManyToManyField(
-        "Examiner",
-        blank=True,
-        help_text="Pseudo-anonymized examiner(s) associated with the examination."
-    ) # type: ignore
-    center = models.ForeignKey(
-        "Center",
-        on_delete=models.CASCADE,
-        blank=True, # Should ideally be False if always required before save
-        null=True,  # Should ideally be False
-    ) # type: ignore
+    )
+    patient_gender = models.ForeignKey("Gender", on_delete=models.CASCADE, blank=True, null=True)
+    examiners = models.ManyToManyField("Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)")
+    center = models.ForeignKey("Center", on_delete=models.CASCADE)
 
-    # Raw examiner names stored temporarily until pseudo-examiner is created/linked
+    # --- Names and DOB ---
+    patient_first_name = models.CharField(max_length=255, blank=True, null=True)
+    patient_last_name = models.CharField(max_length=255, blank=True, null=True)
+    patient_dob = models.DateTimeField(blank=True, null=True, help_text="Date of birth (can be auto-generated).")
+
     examiner_first_name = models.CharField(max_length=255, blank=True, null=True, editable=False)
     examiner_last_name = models.CharField(max_length=255, blank=True, null=True, editable=False)
 
-    # Hashes calculated and stored by save logic
-    examination_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, db_index=True) # Use 64 for sha256 hex
-    patient_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, db_index=True) # Use 64 for sha256 hex
+    # --- Hashes ---
+    patient_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, db_index=True)
+    examination_hash = models.CharField(max_length=64, blank=True, null=True, editable=False, db_index=True)
 
+    # --- Endoscope Info ---
     endoscope_type = models.CharField(max_length=255, blank=True, null=True)
     endoscope_sn = models.CharField(max_length=255, blank=True, null=True)
 
-    # Removed state_verified property, assuming state is handled via the related SensitiveMetaState model
+    # --- External patient ID ---
+    external_id = models.ForeignKey("PatientExternalID", on_delete=models.CASCADE, blank=True, null=True)
+    @property
+    def external_id_origin(self) -> str | None:
+        """Returns the origin system from the linked external ID, if available."""
+        if self.external_id:
+            return self.external_id.origin
+        return None
+    
+    # --- Text Fields ---
+    text = models.TextField(blank=True, null=True)
+    anonymized_text = models.TextField(blank=True, null=True)
+
+    # --- State ---
+    state_verified = SensitiveMetaState.is_verified  # convenience alias
 
     if TYPE_CHECKING:
         examiners: models.QuerySet["Examiner"]

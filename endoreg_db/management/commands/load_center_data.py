@@ -14,22 +14,22 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
 
 IMPORT_METADATA = {
     FirstName.__name__: {
-        "dir": NAMES_FIRST_DATA_DIR,  # e.g. "interventions"
-        "model": FirstName,  # e.g. Intervention
-        "foreign_keys": [],  # e.g. ["intervention_types"]
-        "foreign_key_models": [],  # e.g. [InterventionType]
+        "dir": NAMES_FIRST_DATA_DIR,  # e.g. "first names"
+        "model": FirstName,  # e.g. first name
+        "foreign_keys": [],
+        "foreign_key_models": [],
     },
     LastName.__name__: {
-        "dir": NAMES_LAST_DATA_DIR,  # e.g. "interventions"
-        "model": LastName,  # e.g. Intervention
-        "foreign_keys": [],  # e.g. ["intervention_types"]
-        "foreign_key_models": [],  # e.g. [InterventionType]
+        "dir": NAMES_LAST_DATA_DIR,  # e.g. "last names"
+        "model": LastName,  # e.g. last name
+        "foreign_keys": [],  # e.g. ["last name_types"]
+        "foreign_key_models": [],  # e.g. [last nameType]
     },
     Center.__name__: {
-        "dir": SOURCE_DIR,  # e.g. "interventions"
-        "model": Center,  # e.g. Intervention
-        "foreign_keys": ["first_names", "last_names"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [FirstName, LastName],  # e.g. [InterventionType]
+        "dir": SOURCE_DIR,  # e.g. "centers"
+        "model": Center,  # e.g. center
+        "foreign_keys": ["first_names", "last_names"],
+        "foreign_key_models": [FirstName, LastName],
     },
 }
 

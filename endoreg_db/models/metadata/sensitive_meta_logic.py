@@ -25,7 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
-DEFAULT_UNKNOWN_NAME = "unknown"
+DEFAULT_UNKNOWN = "unknown"
+
 
 # Regex-Pattern für verschiedene Datumsformate
 ISO_RX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -386,19 +387,19 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
     # Updated:  patient_first_name = "Max"     → hash = sha256("Max Mustermann...")
     #
     if not instance.patient_first_name:
-        instance.patient_first_name = DEFAULT_UNKNOWN_NAME
+        instance.patient_first_name = DEFAULT_UNKNOWN
         logger.debug(
             "SensitiveMeta (pk=%s): Patient first name missing, set to default '%s'.",
             instance.pk or "new",
-            DEFAULT_UNKNOWN_NAME,
+            DEFAULT_UNKNOWN,
         )
 
     if not instance.patient_last_name:
-        instance.patient_last_name = DEFAULT_UNKNOWN_NAME
+        instance.patient_last_name = DEFAULT_UNKNOWN
         logger.debug(
             "SensitiveMeta (pk=%s): Patient last name missing, set to default '%s'.",
             instance.pk or "new",
-            DEFAULT_UNKNOWN_NAME,
+            DEFAULT_UNKNOWN,
         )
 
     # 3. Ensure Gender exists (should be set before calling save, e.g., during creation/update)
@@ -472,6 +473,8 @@ def create_sensitive_meta_from_dict(
         "patient_dob": date(1990, 1, 1),
         "examination_date": date.today(),
         "center": center_obj,  # ← Center object
+        "text": text from extraction
+        
     }
     sm = SensitiveMeta.create_from_dict(data)
 
@@ -482,6 +485,7 @@ def create_sensitive_meta_from_dict(
         "patient_dob": date(1990, 1, 1),
         "examination_date": date.today(),
         "center_name": "university_hospital_wuerzburg",  # ← String
+        "anonymized_text": anonymized text
     }
     sm = SensitiveMeta.create_from_dict(data)
     ```
@@ -625,6 +629,7 @@ def create_sensitive_meta_from_dict(
                             exam_date,
                         )
                         selected_data.pop("examination_date", None)
+                
             except Exception as e:
                 logger.warning(
                     "Error parsing examination_date string '%s': %s, removing from data",
@@ -658,8 +663,8 @@ def create_sensitive_meta_from_dict(
         )
 
     # Handle Names and Gender
-    first_name = selected_data.get("patient_first_name") or DEFAULT_UNKNOWN_NAME
-    last_name = selected_data.get("patient_last_name") or DEFAULT_UNKNOWN_NAME
+    first_name = selected_data.get("patient_first_name") or DEFAULT_UNKNOWN
+    last_name = selected_data.get("patient_last_name") or DEFAULT_UNKNOWN
     selected_data["patient_first_name"] = first_name  # Ensure defaults are set
     selected_data["patient_last_name"] = last_name
 
@@ -714,6 +719,48 @@ def create_sensitive_meta_from_dict(
                 },
             )
             selected_data["patient_gender"] = gender_obj
+            
+    # Handle Text
+    selected_data["text"] = data.get("text") or DEFAULT_UNKNOWN
+    
+    selected_data["file_path"] = data.get("file_path")
+    # --- Add missing optional fields safely ---
+    file_path = data.get("file_path")
+    if file_path:
+        selected_data["file_path"] = str(file_path)
+        logger.debug(f"Set file_path: {file_path}")
+
+    casenumber = data.get("casenumber")
+    if casenumber:
+        selected_data["casenumber"] = str(casenumber).strip()
+        logger.debug(f"Set casenumber: {casenumber}")
+
+    exam_time = data.get("examination_time")
+    if exam_time:
+        try:
+            from datetime import time as dt_time
+            # Accepts strings like "14:35" or full datetime
+            if isinstance(exam_time, str):
+                h, m = exam_time.strip().split(":")[:2]
+                selected_data["examination_time"] = dt_time(int(h), int(m))
+            elif isinstance(exam_time, datetime):
+                selected_data["examination_time"] = exam_time.time()
+            elif isinstance(exam_time, date):
+                # no time info — ignore
+                logger.debug(f"examination_time value {exam_time} has no time component; skipping")
+            else:
+                selected_data["examination_time"] = exam_time
+        except Exception as e:
+            logger.warning(f"Invalid examination_time '{exam_time}': {e}")
+
+    anonymized_text = data.get("anonymized_text") or data.get("anonym_text")
+    if anonymized_text:
+        if isinstance(anonymized_text, (str, bytes)):
+            selected_data["anonymized_text"] = anonymized_text.decode() if isinstance(anonymized_text, bytes) else anonymized_text
+        else:
+            selected_data["anonymized_text"] = str(anonymized_text)
+        logger.debug("Set anonymized_text (length=%d)", len(selected_data["anonymized_text"]))
+
 
     # Update name DB
     update_name_db(first_name, last_name)
@@ -894,6 +941,26 @@ def update_sensitive_meta_from_dict(
                 f"Error handling patient_gender '{patient_gender_input}': {e}. Skipping gender update."
             )
             selected_data.pop("patient_gender", None)
+            
+    #TODO Review: Handle new optional fields on update
+    for key in ("file_path", "casenumber", "examination_time", "anonymized_text", "anonym_text"):
+        if key in data and data[key] is not None:
+            val = data[key]
+            if key in ("file_path", "casenumber"):
+                setattr(instance, key, str(val))
+            elif key in ("anonymized_text", "anonym_text"):
+                setattr(instance, "anonymized_text", val if isinstance(val, str) else str(val))
+            elif key == "examination_time":
+                try:
+                    from datetime import time as dt_time
+                    if isinstance(val, str) and ":" in val:
+                        h, m = val.strip().split(":")[:2]
+                        setattr(instance, "examination_time", dt_time(int(h), int(m)))
+                    elif isinstance(val, datetime):
+                        setattr(instance, "examination_time", val.time())
+                except Exception as e:
+                    logger.warning(f"Skipping invalid examination_time '{val}': {e}")
+
 
     # Update other attributes from selected_data
     patient_name_changed = False
