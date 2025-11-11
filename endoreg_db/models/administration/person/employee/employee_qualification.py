@@ -1,9 +1,10 @@
 from typing import TYPE_CHECKING, cast
 
 from django.db import models
-from django.db.models.manager import RelatedManager
 
 if TYPE_CHECKING:
+    from django.db.models.manager import RelatedManager
+
     from endoreg_db.models import (
         Employee,
         Qualification,

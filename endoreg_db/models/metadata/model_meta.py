@@ -4,20 +4,24 @@ including versioning, configuration, and associated weights files.
 Logic is primarily handled in model_meta_logic.py.
 """
 
-from typing import Optional, TYPE_CHECKING, Tuple, Dict, Any, Type
-# Removed shutil import, now in logic
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, cast
 
-from django.db import models
 from django.core.validators import FileExtensionValidator
+
+# Removed shutil import, now in logic
+from django.db import models
+
 # Removed torch import, now in logic
 # from torch import nn
+from ..utils import WEIGHTS_DIR
 
-from ..utils import WEIGHTS_DIR, STORAGE_DIR
 # Import logic functions
 from . import model_meta_logic as logic
 
 if TYPE_CHECKING:
-    from endoreg_db.models import LabelSet, AiModel  # pylint: disable=import-outside-toplevel
+    from django.db.models.fields.files import FieldFile
+
+    from endoreg_db.models import AiModel, LabelSet  # pylint: disable=import-outside-toplevel
 
 
 class ModelMetaManager(models.Manager):
@@ -26,6 +30,7 @@ class ModelMetaManager(models.Manager):
 
     Provides methods for retrieving ModelMeta instances using natural keys.
     """
+
     # ... existing code ...
 
 
@@ -50,7 +55,6 @@ class ModelMeta(models.Model):
         on_delete=models.CASCADE,
         related_name="metadata_versions",
         help_text="The base AI model architecture this metadata belongs to.",
-
     )
 
     # --- Model Configuration ---
@@ -60,12 +64,10 @@ class ModelMeta(models.Model):
         related_name="model_metadata",
         help_text="The set of labels this model version predicts.",
     )
-    activation = models.CharField(
-        max_length=50, default="sigmoid", help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none')."
-    )
+    activation = models.CharField(max_length=50, default="sigmoid", help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none').")
     weights = models.FileField(
         upload_to=WEIGHTS_DIR.name,  # Use .name for relative path
-            validators=[FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])],
+        validators=[FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])],
         null=True,
         blank=True,
         help_text="Path to the model weights file (.safetensors), relative to MEDIA_ROOT.",
@@ -84,9 +86,7 @@ class ModelMeta(models.Model):
     )
     size_x = models.IntegerField(default=716, help_text="Expected input image width.")
     size_y = models.IntegerField(default=716, help_text="Expected input image height.")
-    axes = models.CharField(
-        max_length=10, default="2,0,1", help_text="Comma-separated target axis order (e.g., '2,0,1' for CHW)."
-    )
+    axes = models.CharField(max_length=10, default="2,0,1", help_text="Comma-separated target axis order (e.g., '2,0,1' for CHW).")
 
     # --- Inference Parameters ---
     batchsize = models.IntegerField(default=16, help_text="Default batch size for inference.")
@@ -96,16 +96,17 @@ class ModelMeta(models.Model):
     description = models.TextField(blank=True, null=True, help_text="Optional description.")
     date_created = models.DateTimeField(auto_now_add=True)
 
-
     objects = ModelMetaManager()
 
     # --- Type Hinting for Related Fields ---
     if TYPE_CHECKING:
         labelset: models.ForeignKey["LabelSet"]
         model: models.ForeignKey["AiModel"]  # Corrected from ai_model to match field name
+        weights = cast(FieldFile, weights)
 
     class Meta:
         """Metadata options for the ModelMeta model."""
+
         # ... existing code ...
 
     @classmethod
@@ -135,7 +136,7 @@ class ModelMeta(models.Model):
             bump_if_exists=bump_if_exists,
             **kwargs,
         )
-        
+
     @classmethod
     def setup_default_from_huggingface(
         cls: Type["ModelMeta"],
@@ -154,8 +155,6 @@ class ModelMeta(models.Model):
             labelset_version=labelset_version,
         )
 
-
-
     @classmethod
     def get_latest_version_number(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
         """
@@ -163,7 +162,6 @@ class ModelMeta(models.Model):
         """
         # Delegate to logic function
         return logic.get_latest_version_number_logic(cls, meta_name, model_name)
-
 
     @staticmethod
     def get_activation_function(activation_name: str):

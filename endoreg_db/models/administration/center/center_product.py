@@ -1,8 +1,9 @@
-from django.db import models
 from typing import TYPE_CHECKING
 
+from django.db import models
+
 if TYPE_CHECKING:
-    from ..product import Product, ProductGroup, ReferenceProduct
+    from ..product import Product
     from .center import Center
 
 
@@ -15,10 +16,11 @@ class CenterProduct(models.Model):
         date_used (date): The date the product was used.
         center (Center): The center where the product was used.
     """
+
     product = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
-        related_name="center_products" # Changed related_name for clarity
+        related_name="center_products",  # Changed related_name for clarity
     )
     date_used = models.DateField()
     center = models.ForeignKey(
@@ -32,12 +34,13 @@ class CenterProduct(models.Model):
         center: models.ForeignKey["Center"]
 
     class Meta:
-        ordering = ['center', '-date_used', 'product']
+        ordering = ["center", "-date_used", "product"]
         verbose_name = "Center Product Usage"
         verbose_name_plural = "Center Product Usages"
 
     def __str__(self) -> str:
         return f"{self.product} - {self.center} - {self.date_used}"
+
     def get_product_name(self) -> str:
         """Returns the name of the product."""
         return self.product.name
@@ -55,7 +58,7 @@ class CenterProduct(models.Model):
 
     def get_product_weight(self):
         product = self.product
-        
+
         return product.get_product_weight()
 
     def get_package_weight(self):

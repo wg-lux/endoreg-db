@@ -5,7 +5,6 @@ from django.db import models
 from endoreg_db.models.other.unit import Unit
 
 if TYPE_CHECKING:
-    from ...other.emission import EmissionFactor
     from ...other.material import Material
     from ...other.unit import Unit
     from .product import Product
