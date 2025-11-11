@@ -142,7 +142,7 @@ class VideoFile(models.Model):
         null=True,
         blank=True,
         related_name="video_file",
-    )  # type: ignore
+    )
     center = models.ForeignKey("Center", on_delete=models.PROTECT)  # type: ignore
     processor = models.ForeignKey("EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True)  # type: ignore
     video_meta = models.OneToOneField(
@@ -151,21 +151,21 @@ class VideoFile(models.Model):
         null=True,
         blank=True,
         related_name="video_file",
-    )  # type: ignore
+    )
     examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
-    )  # type: ignore
+    )
     patient = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
-    )  # type: ignore
+    )
     ai_model_meta = models.ForeignKey("ModelMeta", on_delete=models.SET_NULL, blank=True, null=True)  # type: ignore
     state = models.OneToOneField(
         "VideoState",
@@ -173,7 +173,7 @@ class VideoFile(models.Model):
         null=True,
         blank=True,
         related_name="video_file",
-    )  # type: ignore
+    )
     import_meta = models.OneToOneField("VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True)  # type: ignore
 
     original_file_name = models.CharField(max_length=255, blank=True, null=True)
