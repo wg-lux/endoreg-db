@@ -1,11 +1,14 @@
 from django.db import models
 
+
 class VideoSegmentationLabelManager(models.Manager):
     """
     Manager for VideoSegmentationLabel with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "VideoSegmentationLabel":
         return self.get(name=name)
+
 
 class VideoSegmentationLabel(models.Model):
     """
@@ -17,6 +20,7 @@ class VideoSegmentationLabel(models.Model):
         color (str): The color associated with the label.
         order_priority (int): The priority for ordering labels.
     """
+
     objects = VideoSegmentationLabelManager()
 
     name = models.CharField(max_length=255)

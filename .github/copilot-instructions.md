@@ -10,6 +10,9 @@
 
 **Implementation Examples**:
 ```python
+from django.db import models
+from typing import TYPE_CHECKING, cast
+
 class ExampleClass1(models.Model):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
@@ -52,13 +55,12 @@ class ExampleClass1(models.Model):
         example_2: models.OneToOneField["ExampleClass2"]
 
         # Many to Many
-        example_3: models.ManyToManyField["ExampleClass2"]
+        example_3 = cast(models.manager.RelatedManager["ExampleClass2"], example_3)
 
         # Nullable ForeignKey
         example_4: models.ForeignKey["ExampleClass2|None"]
 
 class ExampleClass2(models.Model):
-    objects = CenterManager()
     name = models.CharField(max_length=255)
 
     if TYPE_CHECKING:

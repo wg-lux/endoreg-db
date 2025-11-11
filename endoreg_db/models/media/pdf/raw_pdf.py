@@ -11,14 +11,10 @@ from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
-from numpy import isin  # Import Django File
 
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import PDF_DIR, RAW_PDF_DIR
-
-# Use the specific paths from the centralized paths module
-from ...utils import PDF_DIR
+from endoreg_db.utils.paths import PDF_DIR
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.person import (
@@ -28,7 +24,6 @@ if TYPE_CHECKING:
 
     from ...administration import Center
     from ...medical.patient import PatientExamination
-    from ...metadata.pdf_meta import PdfType
     from ...state import RawPdfState
     from .report_file import AnonymExaminationReport
 
@@ -80,7 +75,7 @@ class RawPdfFile(models.Model):
         # Use the relative path from the specific PDF_DIR
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
-    )  # type: ignore
+    )
 
     anonymized_file = models.FileField(
         upload_to=PDF_DIR.name,

@@ -1,10 +1,12 @@
 from typing import TYPE_CHECKING
+
 from django.db import models
-from django.db.models import Q, CheckConstraint, F
+from django.db.models import CheckConstraint, F, Q
 
 if TYPE_CHECKING:
     from ...media.video.video_file import VideoFile
     from ..video_segmentation_label import VideoSegmentationLabel
+
 
 class VideoSegmentationAnnotation(models.Model):
     """
@@ -20,6 +22,7 @@ class VideoSegmentationAnnotation(models.Model):
         stop_time (float): The stop time of the annotation in seconds.
         is_true (bool): Indicates if the annotation is valid (defaults to True).
     """
+
     # Foreign key to the unified VideoFile model.
     video_file = models.ForeignKey(
         "VideoFile",
@@ -35,14 +38,14 @@ class VideoSegmentationAnnotation(models.Model):
     is_true = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
-        video_file: "VideoFile"
-        label: "VideoSegmentationLabel"
+        video_file: models.ForeignKey["VideoFile"]
+        label: models.ForeignKey["VideoSegmentationLabel"]
 
     def __str__(self) -> str:
         """
         String representation of the annotation.
         """
-        video_repr = self.get_video() # Get the actual video object for representation
+        video_repr = self.get_video()  # Get the actual video object for representation
         return f"{video_repr} - {self.label.name} - {self.start_time} to {self.stop_time}"
 
     def get_video(self) -> "VideoFile":
@@ -60,7 +63,7 @@ class VideoSegmentationAnnotation(models.Model):
     class Meta:
         constraints = [
             CheckConstraint(
-                condition=Q(start_time__lt=F("stop_time")),
+                check=Q(start_time__lt=F("stop_time")),
                 name="start_time_less_than_stop_time",
             ),
         ]
