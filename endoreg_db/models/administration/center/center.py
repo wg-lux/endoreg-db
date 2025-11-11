@@ -1,13 +1,12 @@
-from django.db import models
 from typing import TYPE_CHECKING
 
+from django.db import models
+
 if TYPE_CHECKING:
-    from ...medical import Endoscope, EndoscopyProcessor
-    from ...administration import (
-        CenterProduct,
-        CenterWaste, CenterResource
-    )
+    from ...administration import CenterProduct, CenterResource, CenterWaste
     from ...media import AnonymExaminationReport, AnonymHistologyReport
+    from ...medical import Endoscope, EndoscopyProcessor
+
 
 class CenterManager(models.Manager):
     def get_by_natural_key(self, name) -> "Center":
@@ -16,8 +15,6 @@ class CenterManager(models.Manager):
 
 class Center(models.Model):
     objects = CenterManager()
-
-    # import_id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=255)
     display_name = models.CharField(max_length=255, blank=True, default="")
 
@@ -28,16 +25,22 @@ class Center(models.Model):
     last_names = models.ManyToManyField("LastName", related_name="centers")
 
     if TYPE_CHECKING:
-    #     first_names: RelatedManager["FirstName"]
-    #     last_names: RelatedManager["LastName"]
-        center_products: models.QuerySet["CenterProduct"]
-        center_resources: models.QuerySet["CenterResource"]
-        center_wastes: models.QuerySet["CenterWaste"]
-        endoscopy_processors: models.QuerySet["EndoscopyProcessor"]
-        endoscopes: models.QuerySet["Endoscope"]
-        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
-        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
-        
+        from django.db.models.manager import RelatedManager
+
+        @property
+        def center_products(self) -> RelatedManager[CenterProduct]: ...
+        @property
+        def center_resources(self) -> RelatedManager[CenterResource]: ...
+        @property
+        def center_wastes(self) -> RelatedManager[CenterWaste]: ...
+        @property
+        def endoscopy_processors(self) -> RelatedManager[EndoscopyProcessor]: ...
+        @property
+        def endoscopes(self) -> RelatedManager[Endoscope]: ...
+        @property
+        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
+        @property
+        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
 
     @classmethod
     def get_by_name(cls, name):

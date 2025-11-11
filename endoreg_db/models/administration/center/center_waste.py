@@ -1,12 +1,14 @@
-from django.db import models
 from typing import TYPE_CHECKING
 
+from django.db import models
+
 if TYPE_CHECKING:
-    from .center import Center
-    from ...other.waste import Waste
-    from ...other.unit import Unit
     from ...other.emission import EmissionFactor
-    
+    from ...other.unit import Unit
+    from ...other.waste import Waste
+    from .center import Center
+
+
 class CenterWaste(models.Model):
     center: models.ForeignKey["Center"] = models.ForeignKey(
         "Center",
@@ -16,9 +18,15 @@ class CenterWaste(models.Model):
     year = models.IntegerField()
     waste: models.ForeignKey["Waste"] = models.ForeignKey("Waste", on_delete=models.CASCADE)
     quantity = models.FloatField()
-    unit: models.ForeignKey["Unit"] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    emission_factor: models.ForeignKey["EmissionFactor"] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
-    
+    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+
+    if TYPE_CHECKING:
+        center: models.ForeignKey["Center"]
+        waste: models.ForeignKey["Waste"]
+        unit: models.ForeignKey["Unit|None"]
+        emission_factor: models.ForeignKey["EmissionFactor|None"]
+
     def __str__(self) -> str:
         """
         Returns a formatted string summarizing the waste record, including quantity, unit,

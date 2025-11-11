@@ -1,16 +1,20 @@
-from django.db import models
+from typing import TYPE_CHECKING, cast
 
-from typing import TYPE_CHECKING
+from django.db import models
+from django.db.models.manager import RelatedManager
+
 if TYPE_CHECKING:
     from endoreg_db.models import (
         Employee,
         Qualification,
     )
 
+
 class EmployeeQualification(models.Model):
     """
     Model representing an employee's qualification.
     """
+
     employee = models.OneToOneField(
         "Employee",
         on_delete=models.CASCADE,
@@ -23,12 +27,12 @@ class EmployeeQualification(models.Model):
 
     if TYPE_CHECKING:
         employee: models.ForeignKey["Employee"]
-        qualifications: models.QuerySet["Qualification"]
+        qualifications = cast(RelatedManager[Qualification], qualifications)
 
     def __str__(self):
         """
         Returns a human-readable string summarizing the employee and their qualifications.
-        
+
         If the employee has qualifications, lists them separated by commas; otherwise, indicates that no qualifications are assigned.
         """
         qualification_list = self.qualifications.all()

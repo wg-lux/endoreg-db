@@ -1,11 +1,13 @@
-from ..person import Person
-from django.db import models
-from faker import Faker
-import random
-from datetime import datetime, date
-from typing import TYPE_CHECKING, List, Optional  # Added List
 import logging
+import random
+from datetime import date, datetime
+from typing import TYPE_CHECKING, List, Optional  # Added List
+
+from django.db import models
 from django.utils import timezone  # Add this import
+from faker import Faker
+
+from ..person import Person
 
 # Import RequirementLinks and Disease for the links property
 
@@ -13,18 +15,21 @@ logger = logging.getLogger("patient")
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
-        ExaminationIndication,
-        PatientEvent, PatientDisease,
-        Gender,
-        PatientExamination,
-        Center,
         AnonymExaminationReport,
-        AnonymHistologyReport, RawPdfFile,
+        AnonymHistologyReport,
+        Center,
+        ExaminationIndication,
+        Gender,
+        PatientDisease,
+        PatientEvent,
+        PatientExamination,
         PatientExternalID,
-        PatientMedication,
         PatientLabValue,
+        PatientMedication,
+        RawPdfFile,
     )
     from endoreg_db.utils.links.requirement_link import RequirementLinks
+
 
 class Patient(Person):
     """
@@ -40,13 +45,13 @@ class Patient(Person):
 
     """
 
-    first_name = models.CharField(max_length=100) # type: ignore[assignment]
-    last_name = models.CharField(max_length=100) # type: ignore[assignment]
-    dob = models.DateField(null=True, blank=True) # type: ignore[assignment]
-    gender = models.ForeignKey( # type: ignore[assignment]
+    first_name = models.CharField(max_length=100)  # type: ignore[assignment]
+    last_name = models.CharField(max_length=100)  # type: ignore[assignment]
+    dob = models.DateField(null=True, blank=True)  # type: ignore[assignment]
+    gender = models.ForeignKey(  # type: ignore[assignment]
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
     )
-    center = models.ForeignKey( # type: ignore[assignment]
+    center = models.ForeignKey(  # type: ignore[assignment]
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
@@ -81,7 +86,8 @@ class Patient(Person):
         birth_month: Optional[int] = None,
         birth_year: Optional[int] = None,
     ):
-        from endoreg_db.utils import random_day_by_year, create_mock_patient_name
+        from endoreg_db.utils import create_mock_patient_name, random_day_by_year
+
         from ....other import Gender  # Import Gender model
 
         created = False
@@ -95,9 +101,7 @@ class Patient(Person):
         # If no patient with the given hash exists, create a new pseudo patient
         assert center, "Center must be provided to create a new pseudo patient"
         assert gender, "Gender must be provided to create a new pseudo patient"
-        assert birth_month, (
-            "Birth month must be provided to create a new pseudo patient"
-        )
+        assert birth_month, "Birth month must be provided to create a new pseudo patient"
         assert birth_year, "Birth year must be provided to create a new pseudo patient"
 
         # Ensure gender is a Gender object
@@ -146,8 +150,8 @@ class Patient(Person):
     ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
         from ....medical import Examination, PatientExamination
-        if examination_name_str:
 
+        if examination_name_str:
             examination = Examination.objects.get(name=examination_name_str)
             patient_examination = PatientExamination(
                 patient=self,
@@ -157,21 +161,17 @@ class Patient(Person):
             )
 
         else:
-            patient_examination = PatientExamination(
-                patient=self, date_start=date_start, date_end=date_end
-            )
+            patient_examination = PatientExamination(patient=self, date_start=date_start, date_end=date_end)
 
         if save:
             patient_examination.save()
 
         return patient_examination
 
-    def create_examination_by_indication(
-        self, indication: "ExaminationIndication", date_start: Optional[datetime] = None, date_end: datetime = None
-    ):
+    def create_examination_by_indication(self, indication: "ExaminationIndication", date_start: Optional[datetime] = None, date_end: Optional[datetime] = None):
         from ....medical import (
-            PatientExaminationIndication,
             PatientExamination,
+            PatientExaminationIndication,
         )
 
         examination = indication.get_examination()
@@ -185,9 +185,7 @@ class Patient(Person):
 
         patient_examination.save()
 
-        patient_examination_indication = PatientExaminationIndication.objects.create(
-            patient_examination=patient_examination, examination_indication=indication
-        )
+        patient_examination_indication = PatientExaminationIndication.objects.create(patient_examination=patient_examination, examination_indication=indication)
         patient_examination_indication.save()
 
         return patient_examination, patient_examination_indication
@@ -201,7 +199,7 @@ class Patient(Person):
     ):
         """
         Creates a patient event with the specified event name and start date.
-        
+
         If no start date is provided, the current datetime is used. Returns the created PatientEvent instance.
         """
         from ....medical import Event, PatientEvent
@@ -222,16 +220,17 @@ class Patient(Person):
     def create_examination_by_pdf(self, pdf: "RawPdfFile"):
         """
         Creates a patient examination and associates it with the provided PDF report file.
-        
+
         The examination is created for this patient, saved, and linked to the given RawPdfFile instance. The PDF's examination field is updated and saved. Returns the created examination instance.
-        
+
         Args:
             pdf: The RawPdfFile to associate with the new examination.
-        
+
         Returns:
             The created PatientExamination instance.
         """
         from ....medical import PatientExamination
+
         patient_examination = PatientExamination(patient=self)
         patient_examination.save()
         pdf.examination = patient_examination
@@ -262,9 +261,7 @@ class Patient(Person):
         return gender_obj
 
     @classmethod
-    def get_random_age(
-        cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
-    ):
+    def get_random_age(cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"):
         """
         Get a random age based on the given distribution.
 
@@ -344,7 +341,7 @@ class Patient(Person):
             last_name=last_name,
             dob=dob,
             gender=gender,
-            center=center_obj, # Assign the center object
+            center=center_obj,  # Assign the center object
         )
         # No need to call save() again after create()
         return patient
@@ -366,11 +363,7 @@ class Patient(Person):
         dob = self.dob
         # Ensure dob is not None before calculation
         if dob:
-            age = (
-                current_date.year
-                - dob.year
-                - ((current_date.month, current_date.day) < (dob.month, dob.day))
-            )
+            age = current_date.year - dob.year - ((current_date.month, current_date.day) < (dob.month, dob.day))
             return age
         return None  # Or handle the case where dob is None appropriately
 
@@ -394,17 +387,11 @@ class Patient(Person):
 
         if isinstance(sample_type, str):
             sample_type = PatientLabSampleType.objects.get(name=sample_type)
-            assert sample_type is not None, (
-                f"Sample type with name '{sample_type}' not found."
-            )
+            assert sample_type is not None, f"Sample type with name '{sample_type}' not found."
         elif not isinstance(sample_type, PatientLabSampleType):
-            raise ValueError(
-                "Sample type must be either a string or a PatientLabSampleType object."
-            )
+            raise ValueError("Sample type must be either a string or a PatientLabSampleType object.")
 
-        patient_lab_sample = PatientLabSample.objects.create(
-            patient=self, sample_type=sample_type, date=date
-        )
+        patient_lab_sample = PatientLabSample.objects.create(patient=self, sample_type=sample_type, date=date)
 
         return patient_lab_sample
 
@@ -415,50 +402,50 @@ class Patient(Person):
         as a RequirementLinks object. For a Patient, this includes their diseases, associated classification choices,
         all their lab values, and medication information.
         """
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
         from endoreg_db.models.medical.disease import Disease, DiseaseClassificationChoice
-        
+
         # Imports for medication related models
         from endoreg_db.models.medical.medication.medication import Medication
         from endoreg_db.models.medical.medication.medication_indication import MedicationIndication
         from endoreg_db.models.medical.medication.medication_intake_time import MedicationIntakeTime
+        from endoreg_db.utils.links.requirement_link import RequirementLinks
         # PatientMedication objects are retrieved via self.patientmedication_set
         # PatientLabValue objects are retrieved via self.lab_values
 
-        patient_disease_instances = list(self.diseases.all()) # These are PatientDisease model instances
+        patient_disease_instances = list(self.diseases.all())  # These are PatientDisease model instances
         actual_diseases: List[Disease] = []
         all_classification_choices: List[DiseaseClassificationChoice] = []
 
         for pd_instance in patient_disease_instances:
-            if pd_instance.disease: # pd_instance.disease is a Disease instance
+            if pd_instance.disease:  # pd_instance.disease is a Disease instance
                 actual_diseases.append(pd_instance.disease)
             all_classification_choices.extend(list(pd_instance.classification_choices.all()))
-        
+
         # Assuming self.lab_values is a related manager for PatientLabValue instances
-        patient_lab_value_instances = list(self.lab_values.all()) # These are PatientLabValue model instances
+        patient_lab_value_instances = list(self.lab_values.all())  # These are PatientLabValue model instances
 
         # Medication information
         # self.patientmedication_set gives a QuerySet of PatientMedication
-        patient_medication_instances = list(self.patientmedication_set.all()) 
-        
+        patient_medication_instances = list(self.patientmedication_set.all())
+
         actual_medications: List[Medication] = []
         med_indications: List[MedicationIndication] = []
         med_intake_times: List[MedicationIntakeTime] = []
 
         for pm_instance in patient_medication_instances:
-            if pm_instance.medication: # pm_instance.medication is a Medication instance
+            if pm_instance.medication:  # pm_instance.medication is a Medication instance
                 actual_medications.append(pm_instance.medication)
-            if pm_instance.medication_indication: # pm_instance.medication_indication is a MedicationIndication instance
+            if pm_instance.medication_indication:  # pm_instance.medication_indication is a MedicationIndication instance
                 med_indications.append(pm_instance.medication_indication)
-            med_intake_times.extend(list(pm_instance.intake_times.all())) # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
+            med_intake_times.extend(list(pm_instance.intake_times.all()))  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
         return RequirementLinks(
-            diseases=list(set(actual_diseases)), 
-            patient_diseases=patient_disease_instances, 
-            disease_classification_choices=list(set(all_classification_choices)), 
+            diseases=list(set(actual_diseases)),
+            patient_diseases=patient_disease_instances,
+            disease_classification_choices=list(set(all_classification_choices)),
             patient_lab_values=patient_lab_value_instances,
-            medications=list(set(actual_medications)), 
+            medications=list(set(actual_medications)),
             patient_medications=patient_medication_instances,
             medication_indications=list(set(med_indications)),
-            medication_intake_times=list(set(med_intake_times))
+            medication_intake_times=list(set(med_intake_times)),
         )
