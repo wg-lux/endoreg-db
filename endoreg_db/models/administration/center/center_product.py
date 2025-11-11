@@ -2,7 +2,7 @@ from django.db import models
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..product import Product, ProductGroup
+    from ..product import Product, ProductGroup, ReferenceProduct
     from .center import Center
 
 
@@ -28,8 +28,8 @@ class CenterProduct(models.Model):
     )
 
     if TYPE_CHECKING:
-        product: "Product"
-        center: "Center"
+        product: models.ForeignKey["Product"]
+        center: models.ForeignKey["Center"]
 
     class Meta:
         ordering = ['center', '-date_used', 'product']
@@ -42,11 +42,11 @@ class CenterProduct(models.Model):
         """Returns the name of the product."""
         return self.product.name
 
-    def get_product_group(self) -> "ProductGroup | None":
+    def get_product_group(self):
         """Returns the ProductGroup associated with this product."""
         return self.product.product_group
 
-    def get_reference_product(self) -> "Product | None":
+    def get_reference_product(self):
         """Returns the reference Product for this product's group."""
         product_group = self.get_product_group()
         if product_group:
