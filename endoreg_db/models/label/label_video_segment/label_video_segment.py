@@ -175,8 +175,6 @@ class LabelVideoSegment(models.Model):
 
         Overrides the default save behavior to guarantee that a related LabelVideoSegmentState is created or retrieved after saving.
         """
-        from endoreg_db.models import LabelVideoSegmentState
-
         # Call the original save method first
         super().save(*args, **kwargs)
 

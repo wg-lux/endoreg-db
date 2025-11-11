@@ -7,7 +7,7 @@ import numpy as np
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import ImageClassificationAnnotation, Label, VideoFile
+    from endoreg_db.models import ImageClassificationAnnotation, VideoFile
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,6 @@ class Frame(models.Model):
 
     if TYPE_CHECKING:
         image_classification_annotations: models.QuerySet["ImageClassificationAnnotation"]
-        labels: models.QuerySet["Label"]
         video: models.ForeignKey["VideoFile"]
 
     class Meta:

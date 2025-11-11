@@ -1,21 +1,4 @@
 # ReportReaderConfig Class
-# Description: This class is used to store the configuration of the ReportReader
-
-# PATIENT_INFO_LINE_FLAG = "Patient: "
-# ENDOSCOPE_INFO_LINE_FLAG = "Gerät: "
-# EXAMINER_INFO_LINE_FLAG = "1. Unters.:"
-# CUT_OFF_BELOW_LINE_FLAG = "________________"
-
-
-# CUT_OFF_ABOVE_LINE_FLAGS = [
-#     ENDOSCOPE_INFO_LINE_FLAG,
-#     EXAMINER_INFO_LINE_FLAG,
-# ]
-
-# CUT_OFF_BELOW_LINE_FLAGS = [
-#         CUT_OFF_BELOW_LINE_FLAG
-#     ]
-
 from typing import TYPE_CHECKING, cast
 
 from django.db import models

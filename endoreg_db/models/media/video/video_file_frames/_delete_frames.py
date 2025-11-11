@@ -1,16 +1,18 @@
-
-from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path, _get_temp_anonymized_frame_dir
-from django.db import transaction
-
+import logging
 import shutil
 from typing import TYPE_CHECKING
 
-import logging
+from django.db import transaction
+
+from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path, _get_temp_anonymized_frame_dir
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoState
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["_delete_frames"]
+
 
 @transaction.atomic
 def _delete_frames(video: "VideoFile") -> str:
@@ -21,6 +23,7 @@ def _delete_frames(video: "VideoFile") -> str:
     Raises RuntimeError if state update fails.
     """
     from endoreg_db.models.media.frame import Frame
+
     deleted_messages = []
     error_messages = []
     state_updated = False
@@ -44,7 +47,6 @@ def _delete_frames(video: "VideoFile") -> str:
         msg = f"Frame directory path not set for video {video.uuid}, cannot delete standard frames."
         logger.warning(msg)
 
-
     temp_anonym_frame_dir = None
     try:
         temp_anonym_frame_dir = _get_temp_anonymized_frame_dir(video)
@@ -58,13 +60,12 @@ def _delete_frames(video: "VideoFile") -> str:
         logger.error(msg, exc_info=True)
         error_messages.append(msg)
 
-
     try:
         state: "VideoState" = video.get_or_create_state()
         update_fields_state = []
         if state.frames_extracted:
             state.frames_extracted = False
-            update_fields_state.append('frames_extracted')
+            update_fields_state.append("frames_extracted")
 
         if update_fields_state:
             state.save(update_fields=update_fields_state)
