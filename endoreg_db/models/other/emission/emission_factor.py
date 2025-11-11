@@ -1,20 +1,25 @@
-from django.db import models
 from typing import TYPE_CHECKING, List
+
+from django.db import models
 
 if TYPE_CHECKING:
     from ...administration import ReferenceProduct
     from ..unit import Unit
 
+
 class EmissionFactorManager(models.Manager):
     """
     Manager for EmissionFactor with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "EmissionFactor":
         return self.get(name=name)
+
 
 # get debug from settings
 # from django.conf import settings
 # DEBUG = settings.DEBUG
+
 
 class EmissionFactor(models.Model):
     """
@@ -25,6 +30,7 @@ class EmissionFactor(models.Model):
         unit (ForeignKey): The unit associated with the emission factor.
         value (float): The value of the emission factor.
     """
+
     objects = EmissionFactorManager()
 
     name = models.CharField(max_length=255)
@@ -32,13 +38,11 @@ class EmissionFactor(models.Model):
     value = models.FloatField()
 
     if TYPE_CHECKING:
-        unit: "Unit"
+        unit: models.ForeignKey["Unit|None"]
         reference_products: models.QuerySet["ReferenceProduct"]
         reference_product_package: models.QuerySet["ReferenceProduct"]
         reference_product_product: models.QuerySet["ReferenceProduct"]
 
-        
-    
     def natural_key(self) -> tuple:
         """
         Returns the natural key for the emission factor.
@@ -65,7 +69,7 @@ class EmissionFactor(models.Model):
                 result += f"\n\t\t{source}"
 
         return result
-    
+
     def get_reference_products(self) -> List["ReferenceProduct"]:
         """
         Retrieves all reference products associated with the emission factor.

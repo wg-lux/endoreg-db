@@ -42,6 +42,7 @@ logger = logging.getLogger("raw_pdf")
 
 
 class RawPdfFile(models.Model):
+    objects = models.Manager()
     # Fields from AbstractPdfFile
     pdf_hash = models.CharField(max_length=255, unique=True)
     pdf_type = models.ForeignKey(
@@ -55,7 +56,7 @@ class RawPdfFile(models.Model):
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-    )  # type: ignore
+    )
     examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
@@ -72,9 +73,7 @@ class RawPdfFile(models.Model):
     text = models.TextField(blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
-    anonymized = models.BooleanField(
-        default=False, help_text="True if the PDF has been anonymized."
-    )
+    anonymized = models.BooleanField(default=False, help_text="True if the PDF has been anonymized.")
 
     # Fields specific to RawPdfFile (keeping existing related_names)
     file = models.FileField(
@@ -98,7 +97,44 @@ class RawPdfFile(models.Model):
         related_name="raw_pdf_file",
     )  # type: ignore
 
-    objects = models.Manager()
+    patient = models.ForeignKey(
+        "Patient",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="raw_pdf_files",
+    )  # type: ignore
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta",
+        on_delete=models.SET_NULL,
+        related_name="raw_pdf_files",
+        null=True,
+        blank=True,
+    )  # type: ignore
+    state_report_processing_required = models.BooleanField(default=True)
+    state_report_processed = models.BooleanField(default=False)
+    raw_meta = models.JSONField(blank=True, null=True)
+    anonym_examination_report = models.OneToOneField(
+        "AnonymExaminationReport",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="raw_pdf_file",
+    )  # type: ignore
+    anonymized_text = models.TextField(blank=True, null=True)
+
+    # Type hinting is needed, improve and use correct django types
+    if TYPE_CHECKING:
+        file: Optional[Union[models.FieldFile, models.FileField]]
+        anonymized_file: Optional[Union[models.FieldFile, models.FileField]]
+        pdf_type: Optional[models.ForeignKey]
+        examination: Optional[models.ForeignKey["PatientExamination"]]
+        examiner: Optional[models.ForeignKey["Examiner"]]
+        patient: Optional[models.ForeignKey["Patient"]]
+        center: models.ForeignKey["Center|None"]
+        anonym_examination_report: Optional[models.OneToOneField["AnonymExaminationReport"]]
+        sensitive_meta: Optional[models.ForeignKey["SensitiveMeta"]]
+        state: Optional[models.ForeignKey["RawPdfState"]]
 
     @property
     def uuid(self):
@@ -152,7 +188,7 @@ class RawPdfFile(models.Model):
         # self.anonymized_file = File(file_path)  # type: ignore
         with open(file_path, "rb") as f:
             django_file = File(f, name=file_path.name)
-            self.anonymized_file = django_file 
+            self.anonymized_file = django_file
         self.save(update_fields=["anonymized_file"])
 
     def get_raw_file_path(self) -> Optional[Path]:
@@ -231,54 +267,9 @@ class RawPdfFile(models.Model):
         Returns the URL of the stored PDF file if available; otherwise, returns None.
         """
         try:
-            return (
-                self.anonymized_file.url
-                if self.anonymized_file and self.anonymized_file.name
-                else None
-            )
+            return self.anonymized_file.url if self.anonymized_file and self.anonymized_file.name else None
         except (ValueError, AttributeError):
             return None
-
-    patient = models.ForeignKey(
-        "Patient",
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name="raw_pdf_files",
-    )  # type: ignore
-    sensitive_meta = models.ForeignKey(
-        "SensitiveMeta",
-        on_delete=models.SET_NULL,
-        related_name="raw_pdf_files",
-        null=True,
-        blank=True,
-    )  # type: ignore
-    state_report_processing_required = models.BooleanField(default=True)
-    state_report_processed = models.BooleanField(default=False)
-    raw_meta = models.JSONField(blank=True, null=True)
-    anonym_examination_report = models.OneToOneField(
-        "AnonymExaminationReport",
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name="raw_pdf_file",
-    )  # type: ignore
-    anonymized_text = models.TextField(blank=True, null=True)
-
-    # Type hinting is needed, improve and use correct django types
-    if TYPE_CHECKING:
-        file: Optional[Union[models.FieldFile, models.FileField]]
-        anonymized_file: Optional[Union[models.FieldFile, models.FileField]]
-        pdf_type: Optional[models.ForeignKey]
-        examination: Optional[models.ForeignKey["PatientExamination"]]
-        examiner: Optional[models.ForeignKey["Examiner"]]
-        patient: Optional[models.ForeignKey["Patient"]]
-        center: Optional[models.ForeignKey["Center"]]
-        anonym_examination_report: Optional[
-            models.OneToOneField["AnonymExaminationReport"]
-        ]
-        sensitive_meta: Optional[models.ForeignKey["SensitiveMeta"]]
-        state: Optional[models.ForeignKey["RawPdfState"]]
 
     def __str__(self):
         """
@@ -300,16 +291,12 @@ class RawPdfFile(models.Model):
                     os.remove(Path(self.file_path))
                     logger.info("Original file removed: %s", self.file)
             except Exception as e:
-                logger.warning(
-                    f"Could not get file path for {self.file.name} before deletion: {e}"
-                )
+                logger.warning(f"Could not get file path for {self.file.name} before deletion: {e}")
         if self.anonymized_file:
             try:
                 if self.anonymized_file_path:
                     os.remove(Path(self.anonymized_file_path))
-                    logger.info(
-                        "Anonymized file removed: %s", self.anonymized_file.name
-                    )
+                    logger.info("Anonymized file removed: %s", self.anonymized_file.name)
             except OSError as e:
                 logger.error(
                     "Error removing anonymized file %s: %s",
@@ -319,9 +306,7 @@ class RawPdfFile(models.Model):
 
         super().delete(*args, **kwargs)
 
-    def validate_metadata_annotation(
-        self, extracted_data_dict: Optional[dict] = None
-    ) -> bool:
+    def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
         """
         Validate the metadata of the RawPdf instance.
 
@@ -358,9 +343,7 @@ class RawPdfFile(models.Model):
             try:
                 os.unlink(self.anonymized_file_path)
             except OSError as e:
-                logger.error(
-                    f"Error removing anonymized file {self.anonymized_file_path}: {e}"
-                )
+                logger.error(f"Error removing anonymized file {self.anonymized_file_path}: {e}")
 
         self.save()  # Save the model to persist the cleared file fields
 
@@ -460,13 +443,9 @@ class RawPdfFile(models.Model):
                         )
                         # Re-save the file from the source to potentially fix it
                         with file_path.open("rb") as f:
-                            django_file = File(
-                                f, name=Path(_file.name).name
-                            )  # Use existing name if possible
+                            django_file = File(f, name=Path(_file.name).name)  # Use existing name if possible
                             existing_pdf_file.file = django_file  # type: ignore
-                            existing_pdf_file.save(
-                                update_fields=["file"]
-                            )  # Only update file field
+                            existing_pdf_file.save(update_fields=["file"])  # Only update file field
                     else:
                         pass
                         # logger.debug("File for existing RawPdfFile %s already exists in storage.", pdf_hash)
@@ -522,9 +501,7 @@ class RawPdfFile(models.Model):
                     "File was not saved correctly to storage path %s after model save.",
                     _file.name,
                 )
-                raise IOError(
-                    f"File not found at expected storage path after save: {_file.name}"
-                )
+                raise IOError(f"File not found at expected storage path after save: {_file.name}")
 
             try:
                 logger.info("File saved to absolute path: %s", _file.path)
@@ -535,18 +512,14 @@ class RawPdfFile(models.Model):
                 )
 
         except Exception as e:
-            logger.error(
-                "Error processing or saving file %s for new record: %s", file_path, e
-            )
+            logger.error("Error processing or saving file %s for new record: %s", file_path, e)
             raise
 
         # Delete source file *after* successful save and verification
         if delete_source:
             try:
                 file_path.unlink()
-                logger.info(
-                    "Deleted source file %s after creating new record.", file_path
-                )
+                logger.info("Deleted source file %s after creating new record.", file_path)
             except OSError as e:
                 logger.error("Error deleting source file %s: %s", file_path, e)
 
@@ -569,9 +542,7 @@ class RawPdfFile(models.Model):
                 # Read from the file object before it's saved by storage
                 self.file.open("rb")  # Ensure file is open
                 self.file.seek(0)  # Go to beginning
-                self.pdf_hash = get_pdf_hash(
-                    file_path
-                )  # Assuming get_pdf_hash can handle file obj
+                self.pdf_hash = get_pdf_hash(file_path)  # Assuming get_pdf_hash can handle file obj
                 self.file.seek(0)  # Reset position
                 self.file.close()  # Close after reading
                 logger.info(f"Calculated hash during pre-save for {self.file.name}")
@@ -591,23 +562,14 @@ class RawPdfFile(models.Model):
         # If hash is still missing after potential creation logic (e.g., direct instantiation)
         # and the file exists in storage, try calculating it from storage path.
         # This is less ideal as it requires the file to be saved first.
-        if (
-            not self.pdf_hash
-            and self.pk
-            and self.file
-            and self.file.storage.exists(self.file.name)
-        ):
+        if not self.pdf_hash and self.pk and self.file and self.file.storage.exists(self.file.name):
             try:
                 file_path = Path(self.file.path).resolve()
                 if not file_path.exists():
                     raise FileNotFoundError(f"File path does not exist: {file_path}")
-                logger.warning(
-                    f"Hash missing for saved file {self.file.name}. Recalculating."
-                )
+                logger.warning(f"Hash missing for saved file {self.file.name}. Recalculating.")
                 with self.file.storage.open(self.file.name, "rb") as f:
-                    self.pdf_hash = get_pdf_hash(
-                        file_path
-                    )  # Assuming get_pdf_hash handles file obj
+                    self.pdf_hash = get_pdf_hash(file_path)  # Assuming get_pdf_hash handles file obj
                 # No need to save again just for hash unless update_fields is used carefully
                 # Let the main super().save() handle saving the hash if it changed
             except Exception as e:
@@ -666,18 +628,12 @@ class RawPdfFile(models.Model):
         assert _file is not None
         try:
             if not _file.field.storage.exists(_file.name):
-                logger.warning(
-                    f"File missing at storage path {_file.name}. Attempting copy from fallback {fallback_file}"
-                )
+                logger.warning(f"File missing at storage path {_file.name}. Attempting copy from fallback {fallback_file}")
                 if fallback_file.exists():
                     with fallback_file.open("rb") as f:
                         # Use save method which handles storage backend
-                        _file.save(
-                            Path(_file.name).name, File(f), save=True
-                        )  # Re-save the file content
-                    logger.info(
-                        f"Successfully restored file from fallback {fallback_file} to {_file.name}"
-                    )
+                        _file.save(Path(_file.name).name, File(f), save=True)  # Re-save the file content
+                    logger.info(f"Successfully restored file from fallback {fallback_file} to {_file.name}")
                 else:
                     logger.error(f"Fallback file {fallback_file} does not exist.")
         except Exception as e:

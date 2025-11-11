@@ -15,7 +15,6 @@ class PatientExternalID(models.Model):
         external_id (str): The external ID value.
     """
 
-    external_id: models.CharField = models.CharField(max_length=255, unique=True)
     external_id: models.CharField = models.CharField(max_length=255)
     patient = models.ForeignKey(
         "Patient",
