@@ -53,13 +53,9 @@ class PdfReimportView(APIView):
         raw_file_path = pdf.get_raw_file_path()
 
         if not raw_file_path or not raw_file_path.exists():
-            logger.error(
-                f"Raw PDF file not found for hash {pdf.pdf_hash}: {raw_file_path}"
-            )
+            logger.error(f"Raw PDF file not found for hash {pdf.pdf_hash}: {raw_file_path}")
             return Response(
-                {
-                    "error": f"Raw PDF file not found for PDF {pdf.pdf_hash}. Please upload the original file again."
-                },
+                {"error": f"Raw PDF file not found for PDF {pdf.pdf_hash}. Please upload the original file again."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -79,10 +75,8 @@ class PdfReimportView(APIView):
                 old_meta_id = None
                 if pdf.sensitive_meta:
                     old_meta_id = pdf.sensitive_meta.pk
-                    logger.info(
-                        f"Clearing existing SensitiveMeta {old_meta_id} for PDF {pdf.pdf_hash}"
-                    )
-                    pdf.sensitive_meta = None  # type: ignore
+                    logger.info(f"Clearing existing SensitiveMeta {old_meta_id} for PDF {pdf.pdf_hash}")
+                    pdf.sensitive_meta = None
                     pdf.save(update_fields=["sensitive_meta"])
 
                     # Delete the old SensitiveMeta record
@@ -90,15 +84,11 @@ class PdfReimportView(APIView):
                         SensitiveMeta.objects.filter(pk=old_meta_id).delete()
                         logger.info(f"Deleted old SensitiveMeta {old_meta_id}")
                     except Exception as e:
-                        logger.warning(
-                            f"Could not delete old SensitiveMeta {old_meta_id}: {e}"
-                        )
+                        logger.warning(f"Could not delete old SensitiveMeta {old_meta_id}: {e}")
 
                 # Use PdfImportService for reprocessing
                 try:
-                    logger.info(
-                        f"Starting reprocessing using PdfImportService for {pdf.pdf_hash}"
-                    )
+                    logger.info(f"Starting reprocessing using PdfImportService for {pdf.pdf_hash}")
                     self.pdf_service.import_and_anonymize(
                         file_path=raw_file_path,
                         center_name=pdf.center.name,
@@ -106,9 +96,7 @@ class PdfReimportView(APIView):
                         retry=True,  # Mark as retry attempt
                     )
 
-                    logger.info(
-                        f"PdfImportService reprocessing completed for {pdf.pdf_hash}"
-                    )
+                    logger.info(f"PdfImportService reprocessing completed for {pdf.pdf_hash}")
 
                     # Refresh to get updated state
                     pdf.refresh_from_db()
@@ -119,9 +107,7 @@ class PdfReimportView(APIView):
                             "pdf_id": pdf_id,
                             "pdf_hash": str(pdf.pdf_hash),
                             "sensitive_meta_created": pdf.sensitive_meta is not None,
-                            "sensitive_meta_id": pdf.sensitive_meta.pk
-                            if pdf.sensitive_meta
-                            else None,
+                            "sensitive_meta_id": pdf.sensitive_meta.pk if pdf.sensitive_meta else None,
                             "text_extracted": bool(pdf.text),
                             "anonymized": pdf.anonymized,
                             "status": "done",
@@ -130,9 +116,7 @@ class PdfReimportView(APIView):
                     )
 
                 except Exception as e:
-                    logger.exception(
-                        f"PdfImportService reprocessing failed for PDF {pdf.pdf_hash}: {e}"
-                    )
+                    logger.exception(f"PdfImportService reprocessing failed for PDF {pdf.pdf_hash}: {e}")
                     return Response(
                         {
                             "error": f"Reprocessing failed: {str(e)}",
@@ -144,16 +128,11 @@ class PdfReimportView(APIView):
                     )
 
         except Exception as e:
-            logger.error(
-                f"Failed to re-import PDF {pdf.pdf_hash}: {str(e)}", exc_info=True
-            )
+            logger.error(f"Failed to re-import PDF {pdf.pdf_hash}: {str(e)}", exc_info=True)
 
             # Handle specific error types
             error_msg = str(e)
-            if any(
-                phrase in error_msg.lower()
-                for phrase in ["insufficient storage", "no space left", "disk full"]
-            ):
+            if any(phrase in error_msg.lower() for phrase in ["insufficient storage", "no space left", "disk full"]):
                 # Storage error - return specific error message
                 return Response(
                     {

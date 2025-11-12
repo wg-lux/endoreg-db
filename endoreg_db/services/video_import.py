@@ -517,7 +517,7 @@ class VideoImportService:
             original_raw_file_path_to_delete = video.get_raw_file_path()
             original_raw_frame_dir_to_delete = video.get_frame_dir_path()
 
-            video.raw_file.name = None  # type: ignore[assignment]
+            video.raw_file.name = None[assignment]
 
             update_fields.extend(["raw_file", "video_hash"])
 

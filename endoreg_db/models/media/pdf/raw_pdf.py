@@ -57,13 +57,13 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
         related_name="raw_pdf_files",
-    )  # type: ignore
+    )
     examiner = models.ForeignKey(
         "Examiner",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-    )  # type: ignore
+    )
     text = models.TextField(blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
@@ -81,15 +81,14 @@ class RawPdfFile(models.Model):
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         null=True,
         blank=True,
-    )  # type: ignore
-
+    )
     state = models.OneToOneField(
         "RawPdfState",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_file",
-    )  # type: ignore
+    )
 
     patient = models.ForeignKey(
         "Patient",
@@ -97,14 +96,14 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
         related_name="raw_pdf_files",
-    )  # type: ignore
+    )
     sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
         on_delete=models.SET_NULL,
         related_name="raw_pdf_files",
         null=True,
         blank=True,
-    )  # type: ignore
+    )
     state_report_processing_required = models.BooleanField(default=True)
     state_report_processed = models.BooleanField(default=False)
     raw_meta = models.JSONField(blank=True, null=True)
@@ -114,12 +113,12 @@ class RawPdfFile(models.Model):
         blank=True,
         null=True,
         related_name="raw_pdf_file",
-    )  # type: ignore
+    )
     anonymized_text = models.TextField(blank=True, null=True)
 
     # Type hinting is needed, improve and use correct django types
     if TYPE_CHECKING:
-        state: Optional[RawPdfState]
+        state: models.OneToOneField[RawPdfState | None]
         file = cast(FieldFile, file)
         anonymized_file = cast(FieldFile, anonymized_file)
 
@@ -414,7 +413,7 @@ class RawPdfFile(models.Model):
                         # Re-save the file from the source to potentially fix it
                         with file_path.open("rb") as f:
                             django_file = File(f, name=Path(_file.name).name)  # Use existing name if possible
-                            existing_pdf_file.file = django_file  # type: ignore
+                            existing_pdf_file.file = django_file
                             existing_pdf_file.save(update_fields=["file"])  # Only update file field
                     else:
                         pass

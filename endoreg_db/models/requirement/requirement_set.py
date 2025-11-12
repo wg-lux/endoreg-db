@@ -82,36 +82,36 @@ class RequirementSet(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    requirements = models.ManyToManyField(  # type: ignore[assignment]
+    requirements = models.ManyToManyField(  [assignment]
         "Requirement",
         blank=True,
         related_name="requirement_sets",
     )
-    links_to_sets = models.ManyToManyField(  # type: ignore[assignment]
+    links_to_sets = models.ManyToManyField(  [assignment]
         "RequirementSet",
         blank=True,
         related_name="links_from_sets",
     )
-    requirement_set_type = models.ForeignKey(  # type: ignore[assignment]
+    requirement_set_type = models.ForeignKey(  [assignment]
         "RequirementSetType",
         on_delete=models.CASCADE,
         related_name="requirement_sets",
         blank=True,
         null=True,
     )
-    information_sources = models.ManyToManyField(  # type: ignore[assignment]
+    information_sources = models.ManyToManyField(  [assignment]
         "InformationSource",
         related_name="requirement_sets",
         blank=True,
     )
     
-    reqset_exam_links = models.ManyToManyField(  # type: ignore[assignment]
+    reqset_exam_links = models.ManyToManyField(  [assignment]
         "ExaminationRequirementSet",
         related_name="requirement_set",
         blank=True,
     )
     
-    tags = models.ManyToManyField(  # type: ignore[assignment]
+    tags = models.ManyToManyField(  [assignment]
         "Tag",
         related_name="requirement_sets",
         blank=True,

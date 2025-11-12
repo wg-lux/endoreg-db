@@ -147,13 +147,13 @@ class Requirement(models.Model):
 
     objects = RequirementManager()
 
-    requirement_types = models.ManyToManyField( # type: ignore[assignment]
+    requirement_types = models.ManyToManyField( [assignment]
         "RequirementType",
         blank=True,
         related_name="linked_requirements",
     )
 
-    operators = models.ManyToManyField( # type: ignore[assignment]
+    operators = models.ManyToManyField( [assignment]
         "RequirementOperator",
         blank=True,
         related_name="required_in",
@@ -167,91 +167,91 @@ class Requirement(models.Model):
         null=True,
     )
 
-    examinations = models.ManyToManyField( # type: ignore[assignment]
+    examinations = models.ManyToManyField( [assignment]
         "Examination",
         blank=True,
         related_name="required_in",
     )
 
-    examination_indications = models.ManyToManyField( # type: ignore[assignment]
+    examination_indications = models.ManyToManyField( [assignment]
         "ExaminationIndication",
         blank=True,
         related_name="required_in",
     )
 
-    diseases = models.ManyToManyField( # type: ignore[assignment]
+    diseases = models.ManyToManyField( [assignment]
         "Disease",
         blank=True,
         related_name="required_in",
     )
 
-    disease_classification_choices = models.ManyToManyField( # type: ignore[assignment]
+    disease_classification_choices = models.ManyToManyField( [assignment]
         "DiseaseClassificationChoice",
         blank=True,
         related_name="required_in",
     )
 
-    events = models.ManyToManyField( # type: ignore[assignment]
+    events = models.ManyToManyField( [assignment]
         "Event",
         blank=True,
         related_name="required_in",
     )
 
-    lab_values = models.ManyToManyField( # type: ignore[assignment]
+    lab_values = models.ManyToManyField( [assignment]
         "LabValue",
         blank=True,
         related_name="required_in",
     )
 
-    findings = models.ManyToManyField( # type: ignore[assignment]
+    findings = models.ManyToManyField( [assignment]
         "Finding",
         blank=True,
         related_name="required_in",
     )
 
-    finding_classifications = models.ManyToManyField( # type: ignore[assignment]
+    finding_classifications = models.ManyToManyField( [assignment]
         "FindingClassification",
         blank=True,
         related_name="required_in",
     )
 
-    finding_classification_choices = models.ManyToManyField( # type: ignore[assignment]
+    finding_classification_choices = models.ManyToManyField( [assignment]
         "FindingClassificationChoice",
         blank=True,
         related_name="required_in",
     )
 
-    finding_interventions = models.ManyToManyField( # type: ignore[assignment]
+    finding_interventions = models.ManyToManyField( [assignment]
         "FindingIntervention",
         blank=True,
         related_name="required_in",
     )
 
-    medications = models.ManyToManyField( # type: ignore[assignment]
+    medications = models.ManyToManyField( [assignment]
         "Medication",
         blank=True,
         related_name="required_in",
     )
 
-    medication_indications = models.ManyToManyField( # type: ignore[assignment]
+    medication_indications = models.ManyToManyField( [assignment]
         "MedicationIndication",
         blank=True,
         related_name="required_in",
     )
 
-    medication_intake_times = models.ManyToManyField( # type: ignore[assignment]
+    medication_intake_times = models.ManyToManyField( [assignment]
         "MedicationIntakeTime",
         blank=True,
         related_name="required_in",
     )
 
-    medication_schedules = models.ManyToManyField( # type: ignore[assignment]
+    medication_schedules = models.ManyToManyField( [assignment]
         "MedicationSchedule",
         blank=True,
         related_name="required_in",
     )
 
-    genders = models.ManyToManyField( # type: ignore[assignment]
+    genders = models.ManyToManyField( [assignment]
         "Gender",
         blank=True,
         related_name="required_in",

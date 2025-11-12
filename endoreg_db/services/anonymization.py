@@ -148,7 +148,7 @@ class AnonymizationService:
                     pdf.state.processing_started = True
                     pdf.state.save(update_fields=["processing_started"])
                 elif pdf.sensitive_meta and hasattr(pdf.sensitive_meta, "anonymization_started"):
-                    pdf.sensitive_meta.anonymization_started = True  # type: ignore[attr-defined]
+                    pdf.sensitive_meta.anonymization_started = True[attr - defined]
                     pdf.sensitive_meta.save(update_fields=["anonymization_started"])
 
                 with ensure_local_file(file_field) as local_path:
@@ -164,10 +164,10 @@ class AnonymizationService:
                 logger.error(f"Failed to process RawPdfFile {file_id}: {e}")
                 # Mark as failed if state exists
                 if pdf.state and hasattr(pdf.state, "processing_failed"):
-                    pdf.state.processing_failed = True  # type: ignore[attr-defined]
+                    pdf.state.processing_failed = True[attr - defined]
                     pdf.state.save(update_fields=["processing_failed"])
                 elif pdf.sensitive_meta and hasattr(pdf.sensitive_meta, "processing_failed"):
-                    pdf.sensitive_meta.processing_failed = True  # type: ignore[attr-defined]
+                    pdf.sensitive_meta.processing_failed = True[attr - defined]
                     pdf.sensitive_meta.save(update_fields=["processing_failed"])
                 raise
 
@@ -181,14 +181,14 @@ class AnonymizationService:
         if vf:
             state = vf.state or vf.get_or_create_state()
             if hasattr(state, "mark_anonymization_validated"):
-                state.mark_anonymization_validated()  # type: ignore[attr-defined]
+                state.mark_anonymization_validated()[attr - defined]
             return "video"
 
         pdf = RawPdfFile.objects.select_related("state").filter(pk=file_id).first()
         if pdf:
             state = pdf.state or pdf.get_or_create_state()
             if hasattr(state, "mark_anonymization_validated"):
-                state.mark_anonymization_validated()  # type: ignore[attr-defined]
+                state.mark_anonymization_validated()[attr - defined]
             return "pdf"
 
         return None

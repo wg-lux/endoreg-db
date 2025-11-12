@@ -15,10 +15,10 @@ class PatientExamination(models.Model):
     patient = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="patient_examinations"
     )
-    examination = models.ForeignKey( # type: ignore[assignment]
+    examination = models.ForeignKey( [assignment]
         "Examination", on_delete=models.CASCADE, null=True, blank=True
     )
-    video = models.OneToOneField( # type: ignore[assignment]
+    video = models.OneToOneField( [assignment]
         "VideoFile",
         on_delete=models.CASCADE,
         null=True,

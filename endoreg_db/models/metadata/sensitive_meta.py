@@ -1,29 +1,33 @@
-from django.db import models
-# Removed hash utils, datetime, random, os, timezone, sha256 imports
-# Removed icecream import (was used in old save logic)
-from typing import TYPE_CHECKING, Dict, Any, Type, Self
 import logging
 
+# Removed hash utils, datetime, random, os, timezone, sha256 imports
+# Removed icecream import (was used in old save logic)
+from typing import TYPE_CHECKING, Any, Dict, Self, Type
+
+from django.db import models
+
+from ..administration.person.patient import PatientExternalID
+
+# Import models needed for type hints and FKs
+from ..state import SensitiveMetaState  # Needed for post-save state check
 
 # Import logic functions
 from . import sensitive_meta_logic as logic
-# Import models needed for type hints and FKs
-from ..state import SensitiveMetaState # Needed for post-save state check
-from ..administration.person.patient import PatientExternalID
 
 if TYPE_CHECKING:
     from ..administration import (
         Center,
         Examiner,
-        Patient   # Keep for type hinting if needed
+        Patient,  # Keep for type hinting if needed
     )
-    from ..other import Gender
     from ..medical import PatientExamination
+    from ..other import Gender
     # from ..state import SensitiveMetaState # Already imported above
 
-logger = logging.getLogger(__name__) # Add logger instance
+logger = logging.getLogger(__name__)  # Add logger instance
 
 # SECRET_SALT moved to logic
+
 
 class SensitiveMeta(models.Model):
     """
@@ -38,19 +42,9 @@ class SensitiveMeta(models.Model):
     file_path = models.CharField(max_length=1024, blank=True, null=True)
 
     # --- Core FKs ---
-    pseudo_patient = models.ForeignKey(
-        "Patient",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        help_text="FK to the pseudo-anonymized Patient record."
-    )
+    pseudo_patient = models.ForeignKey("Patient", on_delete=models.CASCADE, blank=True, null=True, help_text="FK to the pseudo-anonymized Patient record.")
     pseudo_examination = models.ForeignKey(
-        "PatientExamination",
-        on_delete=models.CASCADE,
-        blank=True,
-        null=True,
-        help_text="FK to the pseudo-anonymized PatientExamination record."
+        "PatientExamination", on_delete=models.CASCADE, blank=True, null=True, help_text="FK to the pseudo-anonymized PatientExamination record."
     )
     patient_gender = models.ForeignKey("Gender", on_delete=models.CASCADE, blank=True, null=True)
     examiners = models.ManyToManyField("Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)")
@@ -74,13 +68,14 @@ class SensitiveMeta(models.Model):
 
     # --- External patient ID ---
     external_id = models.ForeignKey("PatientExternalID", on_delete=models.CASCADE, blank=True, null=True)
+
     @property
     def external_id_origin(self) -> str | None:
         """Returns the origin system from the linked external ID, if available."""
         if self.external_id:
             return self.external_id.origin
         return None
-    
+
     # --- Text Fields ---
     text = models.TextField(blank=True, null=True)
     anonymized_text = models.TextField(blank=True, null=True)
@@ -101,7 +96,7 @@ class SensitiveMeta(models.Model):
         pseudo_patient: "Patient"
         patient_gender: "Gender"
         pseudo_examination: "PatientExamination"
-        state: "SensitiveMetaState" # Assuming related_name='state' is defined on SensitiveMetaState.origin
+        state: "SensitiveMetaState"  # Assuming related_name='state' is defined on SensitiveMetaState.origin
         center: "Center"
 
     @staticmethod
@@ -126,7 +121,7 @@ class SensitiveMeta(models.Model):
         """Returns the linked pseudo examiner, if one exists."""
         if self.pk:
             return self.examiners.first()
-        return None # Cannot determine before saving and linking
+        return None  # Cannot determine before saving and linking
 
     # --- Update method delegates to logic ---
     def update_from_dict(self, data: Dict[str, Any]):
@@ -139,7 +134,7 @@ class SensitiveMeta(models.Model):
         # Keep this method for basic representation, ensure fields are accessed safely
         center_name = self.center.name if self.center else "None"
         gender_str = str(self.patient_gender) if self.patient_gender else "None"
-        dob_str = str(self.patient_dob.date()) if self.patient_dob else "None" # Show only date part
+        dob_str = str(self.patient_dob.date()) if self.patient_dob else "None"  # Show only date part
         exam_date_str = str(self.examination_date) if self.examination_date else "None"
 
         examiners_str = "[Not saved yet]"
@@ -152,19 +147,18 @@ class SensitiveMeta(models.Model):
 
         state_verified = "Unknown"
         if self.pk:
-                # Access state verification through the related state object
-                state_verified = str(self.is_verified)
+            # Access state verification through the related state object
+            state_verified = str(self.is_verified)
         else:
             state_verified = "[Not saved yet]"
-
 
         return (
             f"SensitiveMeta(pk={self.pk}): "
             f"Patient={self.patient_last_name}, {self.patient_first_name} (*{dob_str}, {gender_str}), "
             f"ExamDate={exam_date_str}, Center={center_name}, "
             f"Examiners={examiners_str}, StateVerified={state_verified}, "
-            f"PatientHash={str(self.patient_hash)[-8:] if self.patient_hash else 'None'}, " # Show last 8 chars
-            f"ExamHash={str(self.examination_hash)[-8:] if self.examination_hash else 'None'}" # Show last 8 chars
+            f"PatientHash={str(self.patient_hash)[-8:] if self.patient_hash else 'None'}, "  # Show last 8 chars
+            f"ExamHash={str(self.examination_hash)[-8:] if self.examination_hash else 'None'}"  # Show last 8 chars
         )
 
     @property
@@ -242,22 +236,22 @@ class SensitiveMeta(models.Model):
     def save(self, *args, **kwargs):
         """
         Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external logic.
-        
+
         This method performs pre-save operations via external logic, persists the instance, ensures the related SensitiveMetaState exists, and links the appropriate examiner to the instance.
         """
         # 1. Call the main logic function to perform pre-save checks, data generation,
         #    and creation/linking of pseudo patient/examination FKs.
         #    This function modifies the instance fields (hashes, FKs, dates).
         #    It returns the examiner instance to be linked *after* saving.
-        examiner_to_link = logic.perform_save_logic(self) # Pass only self
+        examiner_to_link = logic.perform_save_logic(self)  # Pass only self
 
         # 2. Call the original Django save method to save the instance itself
         #    (including updated FKs, hashes, dates).
-        super().save(*args, **kwargs) # Pass original args/kwargs
+        super().save(*args, **kwargs)  # Pass original args/kwargs
 
         # 3. Ensure SensitiveMetaState exists *after* saving the main instance
         #    Use related name 'state' if defined, otherwise access via manager.
-        if self.pk: # Ensure we have a PK
+        if self.pk:  # Ensure we have a PK
             try:
                 # Check if the related state object already exists using the related manager
                 _ = self.state
@@ -265,13 +259,13 @@ class SensitiveMeta(models.Model):
                 # If not, create a new one, linking it to the saved instance
                 SensitiveMetaState.objects.create(origin=self)
             except AttributeError:
-                 # Fallback check if 'state' related_name is missing
-                 if not SensitiveMetaState.objects.filter(origin=self).exists():
+                # Fallback check if 'state' related_name is missing
+                if not SensitiveMetaState.objects.filter(origin=self).exists():
                     SensitiveMetaState.objects.create(origin=self)
 
         # 4. Handle ManyToMany linking (examiners) *after* the instance has a PK.
         if examiner_to_link and self.pk and not self.examiners.filter(pk=examiner_to_link.pk).exists():
-            self.examiners.add(examiner_to_link) # type: ignore
+            self.examiners.add(examiner_to_link)
             # Adding to M2M handles its own DB interaction, no second super().save() needed.
 
     def mark_dob_verified(self):
@@ -284,7 +278,7 @@ class SensitiveMeta(models.Model):
     def mark_names_verified(self):
         """
         Mark the patient's names as verified in the associated verification state.
-        
+
         This method ensures the related SensitiveMetaState exists and updates its status to indicate that the patient's names have been verified.
         """
         state = self.get_or_create_state()
@@ -295,7 +289,7 @@ class SensitiveMeta(models.Model):
         # Delegate to logic
         """
         Update the name database with the provided first and last names using external logic.
-        
+
         This method delegates the update operation to the external logic module responsible for managing name data.
         """
         logic.update_name_db(first_name, last_name)

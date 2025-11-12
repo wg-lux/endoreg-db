@@ -45,13 +45,13 @@ class Patient(Person):
 
     """
 
-    first_name = models.CharField(max_length=100)  # type: ignore[assignment]
-    last_name = models.CharField(max_length=100)  # type: ignore[assignment]
-    dob = models.DateField(null=True, blank=True)  # type: ignore[assignment]
-    gender = models.ForeignKey(  # type: ignore[assignment]
+    first_name = models.CharField(max_length=100)  [assignment]
+    last_name = models.CharField(max_length=100)  [assignment]
+    dob = models.DateField(null=True, blank=True)  [assignment]
+    gender = models.ForeignKey(  [assignment]
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
     )
-    center = models.ForeignKey(  # type: ignore[assignment]
+    center = models.ForeignKey(  [assignment]
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
@@ -249,7 +249,7 @@ class Patient(Person):
 
         patient_examination = PatientExamination(patient=self)
         patient_examination.save()
-        pdf.examination = patient_examination  # type: ignore[assignment]
+        pdf.examination = patient_examination  [assignment]
         pdf.save()
 
         return patient_examination

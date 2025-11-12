@@ -143,8 +143,8 @@ class VideoFile(models.Model):
         blank=True,
         related_name="video_file",
     )
-    center = models.ForeignKey("Center", on_delete=models.PROTECT)  # type: ignore
-    processor = models.ForeignKey("EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True)  # type: ignore
+    center = models.ForeignKey("Center", on_delete=models.PROTECT)
+    processor = models.ForeignKey("EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True)
     video_meta = models.OneToOneField(
         "VideoMeta",
         on_delete=models.SET_NULL,
@@ -166,7 +166,7 @@ class VideoFile(models.Model):
         null=True,
         related_name="video_files",
     )
-    ai_model_meta = models.ForeignKey("ModelMeta", on_delete=models.SET_NULL, blank=True, null=True)  # type: ignore
+    ai_model_meta = models.ForeignKey("ModelMeta", on_delete=models.SET_NULL, blank=True, null=True)
     state = models.OneToOneField(
         "VideoState",
         on_delete=models.SET_NULL,
@@ -174,7 +174,7 @@ class VideoFile(models.Model):
         blank=True,
         related_name="video_file",
     )
-    import_meta = models.OneToOneField("VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True)  # type: ignore
+    import_meta = models.OneToOneField("VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True)
 
     original_file_name = models.CharField(max_length=255, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -208,7 +208,7 @@ class VideoFile(models.Model):
         @property
         def frames(self) -> RelatedManager[Frame]: ...
 
-        center: "Center"
+        center: models.ForeignKey["Center"]
         processor: models.ForeignKey["EndoscopyProcessor | None"]
         video_meta: models.OneToOneField["VideoMeta | None"]
         examination: models.ForeignKey["PatientExamination | None"]

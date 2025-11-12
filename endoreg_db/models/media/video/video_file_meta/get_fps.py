@@ -108,7 +108,7 @@ def _get_fps(video: "VideoFile") -> float:
 
 
 # TODO Refactor to utils / check if similar function exists in utils
-def _get_fps_from_property(cap) -> float:
+def _get_fps_from_property(cap: cv2.VideoCapture) -> float:
     """
     Retrieve the frames per second (FPS) from an OpenCV video capture object using the appropriate property for the OpenCV version.
 
@@ -118,10 +118,7 @@ def _get_fps_from_property(cap) -> float:
     Returns:
         float: The FPS value obtained from the video capture properties, or 0.0 if unavailable.
     """
-    if hasattr(cv2, "CAP_PROP_FPS"):
-        return cap.get(cv2.CAP_PROP_FPS)
-    # For older OpenCV versions
-    return cap.get(cv2.cv.CV_CAP_PROP_FPS)  # type: ignore
+    return cap.get(cv2.CAP_PROP_FPS)
 
 
 def _calculate_fps_manually(cap, video_path: Path) -> float:
