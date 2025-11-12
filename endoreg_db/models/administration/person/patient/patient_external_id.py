@@ -35,5 +35,3 @@ class PatientExternalID(models.Model):
         patient: models.ForeignKey["Patient"]
         origin: models.CharField[str]
         
-    def get_origin(self):
-        return self.origin
