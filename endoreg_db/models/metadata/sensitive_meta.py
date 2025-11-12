@@ -56,7 +56,7 @@ class SensitiveMeta(models.Model):
     )
     patient_gender = models.ForeignKey("Gender", on_delete=models.CASCADE, blank=True, null=True)
     examiners = models.ManyToManyField("Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)")
-    center = models.ForeignKey("Center", on_delete=models.CASCADE)
+    center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
 
     # --- Names and DOB ---
     patient_first_name = models.CharField(max_length=255, blank=True, null=True)
