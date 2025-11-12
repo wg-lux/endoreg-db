@@ -473,7 +473,7 @@ def create_sensitive_meta_from_dict(
         "patient_dob": date(1990, 1, 1),
         "examination_date": date.today(),
         "center": center_obj,  # ← Center object
-        "text": text from extraction
+        "text": text #from extraction
         
     }
     sm = SensitiveMeta.create_from_dict(data)
