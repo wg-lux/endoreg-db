@@ -30,7 +30,7 @@ def file_exists(field_file: Optional[FieldFile]) -> bool:
     if not _has_field_file(field_file):
         return False
     try:
-        return field_file.storage.exists(field_file.name)[union - attr]
+        return field_file.storage.exists(field_file.name)
     except Exception as exc:  # pragma: no cover - storage backend failure
         logger.warning("Failed to check file existence for %s: %s", field_file, exc)
         return False
@@ -77,7 +77,7 @@ def delete_field_file(
     if not _has_field_file(field_file):
         return False
     try:
-        field_file.delete(save=save)[union - attr]
+        field_file.delete(save=save)
         return True
     except FileNotFoundError:
         if missing_ok:
