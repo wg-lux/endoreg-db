@@ -87,7 +87,7 @@ class Command(BaseCommand):
             help="Display verbose output",
         )
         parser.add_argument(
-            "--center_name",
+            "--",
             type=str,
             default="university_hospital_wuerzburg",
             help="Name of the center to associate with video",
