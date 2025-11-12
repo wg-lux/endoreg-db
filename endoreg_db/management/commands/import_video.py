@@ -87,7 +87,7 @@ class Command(BaseCommand):
             help="Display verbose output",
         )
         parser.add_argument(
-            "--center_name",
+            "--",
             type=str,
             default="university_hospital_wuerzburg",
             help="Name of the center to associate with video",
@@ -205,7 +205,7 @@ class Command(BaseCommand):
                 # Assert Center exists -> Does not exist methods are deprecated
         try:
             center = Center.objects.get(name=center_name)
-            self.stdout.write(self.style.SUCCESS(f"Using center: {center_name}"))
+            self.stdout.write(self.style.SUCCESS(f"Using center: {center.name}"))
         except Center.DoesNotExist:
             self.stdout.write(self.style.ERROR(f"Center not found: {center_name}"))
             return
@@ -289,29 +289,14 @@ class Command(BaseCommand):
                 report_reader = ReportReader(
                     report_root_path=str(video_file_obj.raw_file.path),
                     locale="de_DE",  # Default German locale for medical data
-                    text_date_format="%d.%m.%Y",  # Common German date format
+                    text_date_format="%d.%m.%Y"  # Common German date format
                 )
-                # TODO Maybe move to .get_rois()
-                endoscope_image_roi = (
-                    video_file_obj.processor.get_roi_endoscope_image()
-                    if video_file_obj.processor
-                    else None
-                )
-                endoscope_data_roi_nested = None
-                if video_file_obj.processor:
-                    raw_rois = video_file_obj.processor.get_rois()
-                    # Filter undefined ROIs to satisfy typing expectations of FrameCleaner
-                    endoscope_data_roi_nested = {
-                        key: value
-                        for key, value in raw_rois.items()
-                        if value is not None
-                    } or None
-
+                
                 # Updated to handle new return signature (path, metadata)
                 cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
                     video_path=Path(video_file_obj.raw_file.path),
-                    endoscope_image_roi=endoscope_image_roi,
-                    endoscope_data_roi_nested=endoscope_data_roi_nested,
+                    endoscope_image_roi=video_file_obj.processor.get_roi_endoscope_image() if video_file_obj.processor else None,
+                    endoscope_data_roi_nested=video_file_obj.processor.get_rois() if video_file_obj.processor else None,
                     output_path=video_file_obj.get_processed_file_path(),
                     technique="mask_overlay"  # Use mask overlay technique as default, if not set this will be inferred.
                 )
@@ -351,11 +336,11 @@ class Command(BaseCommand):
             
             # Create default SensitiveMeta with placeholder data
             default_data = {
-                "patient_first_name": "Patient",
-                "patient_last_name": "Unknown", 
-                "patient_dob": date(1990, 1, 1),  # Default DOB
-                "examination_date": date.today(),
-                "center_name": video_file.center.name if video_file.center else "university_hospital_wuerzburg"
+                "patient_first_name": None,
+                "patient_last_name": None, 
+                "patient_dob": None,
+                "examination_date": None,
+                "center_name": video_file.center.name if video_file.center else "unknown",
             }
             
             try:

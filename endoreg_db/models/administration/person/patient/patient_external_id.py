@@ -34,3 +34,4 @@ class PatientExternalID(models.Model):
     if TYPE_CHECKING:
         patient: models.ForeignKey["Patient"]
         origin: models.CharField[str]
+        

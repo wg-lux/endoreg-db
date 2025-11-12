@@ -542,21 +542,10 @@ class VideoFile(models.Model):
         **IMPORTANT:** Only the raw video is deleted. The processed (anonymized)
         video is preserved as the final validated output.
         """
-        from datetime import date as dt_date
 
-        from endoreg_db.models import SensitiveMeta
 
         if not self.sensitive_meta:
-            # CRITICAL FIX: Use create_from_dict with default patient data
-            default_data = {
-                "patient_first_name": "Patient",
-                "patient_last_name": "Unknown",
-                "patient_dob": dt_date(1990, 1, 1),
-                "examination_date": dt_date.today(),
-                "center": self.center,
-            }
-            self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
-
+            return False
         # CRITICAL FIX: Delete RAW video file, not the processed (anonymized) one
         # CRITICAL: Update metadata BEFORE deleting raw video
         # Metadata update may trigger frame extraction, which needs raw video
