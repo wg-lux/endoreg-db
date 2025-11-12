@@ -88,7 +88,15 @@ class SensitiveMeta(models.Model):
     anonymized_text = models.TextField(blank=True, null=True)
 
     # --- State ---
-    state_verified = SensitiveMetaState.is_verified  # convenience alias
+    @property
+    def state_verified(self) -> bool | None:
+        """
+        Convenience alias to check if the related state is verified.
+        Returns None if state is not set.
+        """
+        if hasattr(self, "state") and self.state is not None:
+            return self.state.is_verified
+        return None
 
     if TYPE_CHECKING:
         examiners: models.QuerySet["Examiner"]
