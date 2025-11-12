@@ -68,14 +68,11 @@ class RawPdfFile(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
     anonymized = models.BooleanField(default=False, help_text="True if the PDF has been anonymized.")
-
-    # Fields specific to RawPdfFile (keeping existing related_names)
     file = models.FileField(
         # Use the relative path from the specific PDF_DIR
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
-
     anonymized_file = models.FileField(
         upload_to=PDF_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
@@ -89,7 +86,6 @@ class RawPdfFile(models.Model):
         null=True,
         related_name="raw_pdf_file",
     )
-
     patient = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
@@ -118,7 +114,23 @@ class RawPdfFile(models.Model):
 
     # Type hinting is needed, improve and use correct django types
     if TYPE_CHECKING:
-        state: models.OneToOneField[RawPdfState | None]
+        from endoreg_db.models import (
+            AnonymExaminationReport,
+            Center,
+            Examiner,
+            Patient,
+            PatientExamination,
+            RawPdfState,
+            SensitiveMeta,
+        )
+
+        center: models.ForeignKey["Center | None"]
+        examination: models.ForeignKey["PatientExamination | None"]
+        examiner: models.ForeignKey["Examiner | None"]
+        state: models.ForeignKey["RawPdfState | None"]
+        patient: models.ForeignKey["Patient | None"]
+        sensitive_meta: models.ForeignKey["SensitiveMeta | None"]
+        anonym_examination_report: models.OneToOneField["AnonymExaminationReport | None"]
         file = cast(FieldFile, file)
         anonymized_file = cast(FieldFile, anonymized_file)
 

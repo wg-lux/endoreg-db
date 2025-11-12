@@ -517,7 +517,7 @@ class VideoImportService:
             original_raw_file_path_to_delete = video.get_raw_file_path()
             original_raw_frame_dir_to_delete = video.get_frame_dir_path()
 
-            video.raw_file.name = None[assignment]
+            video.raw_file.name = ""
 
             update_fields.extend(["raw_file", "video_hash"])
 
@@ -530,10 +530,15 @@ class VideoImportService:
             )
 
         video.save(update_fields=update_fields)
-        video.state.mark_anonymized(save=True)
-        video.refresh_from_db()
-        self.current_video = video
-        return True
+        if video.state is None:
+            raise RuntimeError(f"Video state not found for video {video.uuid}")
+
+        else:
+            video.state.mark_anonymized(save=True)
+            video.refresh_from_db()
+            self.current_video = video
+
+            return True
 
     def _fallback_anonymize_video(self):
         """
@@ -696,6 +701,9 @@ class VideoImportService:
         with transaction.atomic():
             video.refresh_from_db()
             if hasattr(video, "state") and self.processing_context.get("anonymization_completed"):
+                if video.state is None:
+                    raise RuntimeError(f"Video state not found for video {video.uuid}")
+
                 video.state.mark_sensitive_meta_processed(save=True)
 
         self.logger.info("Import and anonymization completed for VideoFile UUID: %s", video.uuid)
@@ -1075,6 +1083,9 @@ class VideoImportService:
     def _cleanup_on_error(self):
         """Cleanup processing context on error."""
         if self.current_video and hasattr(self.current_video, "state"):
+            if self.current_video.state is None:
+                self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
+                return
             try:
                 if self.processing_context.get("processing_started"):
                     self.current_video.state.frames_extracted = False

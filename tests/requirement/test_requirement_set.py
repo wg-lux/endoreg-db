@@ -139,7 +139,7 @@ class RequirementSetEvaluationTest(TestCase):
 
     def _link_sets(self, target_set: RequirementSet, *linked_sets: RequirementSet) -> None:
         """Attach linked requirement sets while silencing typing noise for add()."""
-        target_set.links_to_sets.add(*linked_sets)[attr - defined]
+        target_set.links_to_sets.add(*linked_sets)
 
     def _requirement_set_type(self, req_set: RequirementSet) -> RequirementSetType:
         req_set_type = req_set.requirement_set_type
@@ -150,7 +150,7 @@ class RequirementSetEvaluationTest(TestCase):
         """
         Verifies that the "basic_lab_values_normal" RequirementSet evaluates to True when all associated lab values for a patient are within normal ranges.
         """
-        patient = generate_patient()
+        patient = generate_patient(gender="female")
         patient.save()
 
         # use LabValue.get_normal_value() to get the normal values for each lab value

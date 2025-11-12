@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 
 class PatientFinding(models.Model):
-    patient_examination = models.ForeignKey("PatientExamination", on_delete=models.CASCADE, related_name="patient_findings")[assignment]
-    finding = models.ForeignKey("Finding", on_delete=models.CASCADE, related_name="finding_patient_findings")[assignment]
+    patient_examination = models.ForeignKey("PatientExamination", on_delete=models.CASCADE, related_name="patient_findings")
+    finding = models.ForeignKey("Finding", on_delete=models.CASCADE, related_name="finding_patient_findings")
 
     # Audit-Felder für medizinische Nachverfolgung
     created_at = models.DateTimeField(auto_now_add=True)

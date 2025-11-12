@@ -1,5 +1,5 @@
 # Class to represent findings of examinations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, cast
 
 from django.db import models
 
@@ -29,10 +29,17 @@ class Finding(models.Model):
             PatientFindingClassification,
         )
 
-        finding_classifications: models.QuerySet["FindingClassification"]
-        examinations: models.QuerySet[Examination]
-        finding_types: models.QuerySet[FindingType]
-        finding_interventions: models.QuerySet[FindingIntervention]
+        finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
+        examinations = cast(models.manager.RelatedManager["Examination"], examinations)
+        finding_interventions = cast(models.manager.RelatedManager["FindingIntervention"], finding_interventions)
+
+        @property
+        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+
+        # finding_classifications: models.QuerySet["FindingClassification"]
+        # examinations: models.QuerySet[Examination]
+        # finding_types: models.QuerySet[FindingType]
+        # finding_interventions: models.QuerySet[FindingIntervention]
 
     def natural_key(self):
         """
@@ -55,7 +62,7 @@ class Finding(models.Model):
         """
         return self.finding_types.all()
 
-    def get_classifications(self, classification_type: str = None) -> models.QuerySet["FindingClassification"]:
+    def get_classifications(self, classification_type: Optional[str] = None) -> models.QuerySet["FindingClassification"]:
         """
         Retrieve all classifications associated with this finding, optionally filtered by classification type.
 

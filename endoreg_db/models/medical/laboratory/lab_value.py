@@ -1,20 +1,23 @@
-from django.db import models
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
+from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models.other.unit import Unit
-    from ...other.distribution import (
-        SingleCategoricalValueDistribution,
-        NumericValueDistribution,
-        MultipleCategoricalValueDistribution,
+    from endoreg_db.models import (
         DateValueDistribution,
+        Gender,
+        MultipleCategoricalValueDistribution,
+        NumericValueDistribution,
+        Patient,
+        SingleCategoricalValueDistribution,
+        Unit,
     )
-    from ...administration.person.patient import Patient  # Added Patient for type hinting
 
 LANG = "de"
 
 from pydantic import BaseModel, ConfigDict
+
 
 class CommonLabValues(BaseModel):
     """
@@ -22,6 +25,7 @@ class CommonLabValues(BaseModel):
     It is used to provide a structured way to access common lab values like
     hemoglobin, creatinine, and others
     """
+
     hb: "LabValue"
     wbc: "LabValue"
     plt: "LabValue"
@@ -32,31 +36,27 @@ class CommonLabValues(BaseModel):
     inr: "LabValue"
     crp: "LabValue"
 
-    model_config = ConfigDict(
-        from_attributes = True,
-        arbitrary_types_allowed = True
-    )
+    model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
+
 
 class LabValueManager(models.Manager):
     def get_by_natural_key(self, name):
         """
         Retrieves a LabValue instance by its unique name.
-        
+
         Args:
             name: The unique name of the LabValue.
-        
+
         Returns:
             The LabValue instance with the specified name.
         """
         return self.get(name=name)
-    
+
 
 class LabValue(models.Model):
-    name = models.CharField(max_length=255, unique=True) 
+    name = models.CharField(max_length=255, unique=True)
     abbreviation = models.CharField(max_length=10, blank=True, null=True)
-    default_unit = models.ForeignKey(
-        "Unit", on_delete=models.CASCADE, blank=True, null=True
-    )
+    default_unit = models.ForeignKey("Unit", on_delete=models.CASCADE, blank=True, null=True)
     numeric_precision = models.IntegerField(default=3)
     default_single_categorical_value_distribution = models.ForeignKey(
         "SingleCategoricalValueDistribution",
@@ -91,23 +91,22 @@ class LabValue(models.Model):
     normal_range_gender_dependent = models.BooleanField(default=False)
     normal_range_special_case = models.BooleanField(default=False)
     bound_adjustment_factor = models.FloatField(
-        default=0.1,
-        help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%."
+        default=0.1, help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%."
     )
     objects = LabValueManager()
 
     if TYPE_CHECKING:
-        default_unit: "Unit"
-        default_single_categorical_value_distribution: "SingleCategoricalValueDistribution"
-        default_numerical_value_distribution: "NumericValueDistribution"
-        default_multiple_categorical_value_distribution: "MultipleCategoricalValueDistribution"
-        default_date_value_distribution: "DateValueDistribution"
+        default_unit: models.ForeignKey["Unit|None"]
+        default_single_categorical_value_distribution: models.ForeignKey["SingleCategoricalValueDistribution|None"]
+        default_numerical_value_distribution: models.ForeignKey["NumericValueDistribution|None"]
+        default_multiple_categorical_value_distribution: models.ForeignKey["MultipleCategoricalValueDistribution|None"]
+        default_date_value_distribution: models.ForeignKey["DateValueDistribution|None"]
 
     @classmethod
     def get_common_lab_values(cls):
         """
         Retrieves a structured set of common laboratory values as a CommonLabValues instance.
-        
+
         Returns:
             A CommonLabValues Pydantic model populated with LabValue objects for hemoglobin, white blood cells, platelets, creatinine, sodium, potassium, glucose, international normalized ratio, and C-reactive protein.
         """
@@ -122,9 +121,8 @@ class LabValue(models.Model):
             k=cls.objects.get(name="potassium"),
             glc=cls.objects.get(name="glucose"),
             inr=cls.objects.get(name="international_normalized_ratio"),
-            crp=cls.objects.get(name="c_reactive_protein")
+            crp=cls.objects.get(name="c_reactive_protein"),
         )
-
 
     def natural_key(self):
         """Returns a tuple containing the unique name of this lab value instance."""
@@ -160,13 +158,13 @@ class LabValue(models.Model):
             warnings.warn("No default distribution set for lab value")
             return None
 
-    def get_normal_range(self, age: int = None, gender=None):
+    def get_normal_range(self, age: Optional[int] = None, gender: Optional["Gender"] = None):
         """
         Returns the normal range for this lab value, considering age and gender dependencies.
-        
+
         If the normal range is gender-dependent, attempts to use the provided gender; defaults to "male" if gender is missing or unknown. Falls back to general min/max values if gender-specific data is unavailable. Issues warnings for unimplemented age-dependent or special case ranges, and when min or max values cannot be determined. Returns a dictionary with keys "min" and "max", which may be None if the range is not defined.
         """
-        from ...other.gender import Gender
+        from endoreg_db.models import Gender
 
         assert isinstance(age, int) or age is None
         assert isinstance(gender, Gender) or gender is None
@@ -181,20 +179,15 @@ class LabValue(models.Model):
 
         gender_name_to_use = None
         if gender_dependent:
-            if gender and hasattr(gender, 'name') and gender.name:
+            if gender and hasattr(gender, "name") and gender.name:
                 gender_name_to_use = gender.name
                 if gender_name_to_use not in current_range_source:
                     warnings.warn(
-                        f"Normal range for gender '{gender_name_to_use}' not found for LabValue '{self.name}'. "
-                        f"Defaulting to 'male' range.",
-                        UserWarning
+                        f"Normal range for gender '{gender_name_to_use}' not found for LabValue '{self.name}'. Defaulting to 'male' range.", UserWarning
                     )
                     gender_name_to_use = "male"
             else:
-                warnings.warn(
-                    f"Gender not provided for gender-dependent LabValue '{self.name}'. Defaulting to 'male' range.",
-                    UserWarning
-                )
+                warnings.warn(f"Gender not provided for gender-dependent LabValue '{self.name}'. Defaulting to 'male' range.", UserWarning)
                 gender_name_to_use = "male"
 
             # Attempt gender-specific lookup
@@ -204,9 +197,8 @@ class LabValue(models.Model):
                 max_value = gender_specific_data.get("max")
             else:
                 warnings.warn(
-                    f"No gender-specific data found for '{gender_name_to_use}' in LabValue '{self.name}'. "
-                    f"Falling back to general range if available.",
-                    UserWarning
+                    f"No gender-specific data found for '{gender_name_to_use}' in LabValue '{self.name}'. Falling back to general range if available.",
+                    UserWarning,
                 )
 
         # Fallback to general min/max if needed
@@ -229,16 +221,14 @@ class LabValue(models.Model):
         if min_value is None:
             context_parts = []
             if gender_dependent:
-                gender_repr = (gender.name if gender and hasattr(gender, 'name') else 'None')
+                gender_repr = gender.name if gender and hasattr(gender, "name") else "None"
                 if gender_name_to_use and gender_name_to_use != gender_repr:
                     gender_repr = f"{gender_repr} (lookup attempted for: {gender_name_to_use})"
                 context_parts.append(f"gender: {gender_repr}")
             if age_dependent:
                 context_parts.append(f"age: {age}")
 
-            warning_message = (
-                f"Could not determine a 'min' normal range for LabValue '{self.name}'"
-            )
+            warning_message = f"Could not determine a 'min' normal range for LabValue '{self.name}'"
             if context_parts:
                 warning_message += f" with context ({', '.join(context_parts)})."
             else:
@@ -248,7 +238,7 @@ class LabValue(models.Model):
 
         return {"min": min_value, "max": max_value}
 
-    def get_increased_value(self, patient: "Patient" = None):# -> Any | None:
+    def get_increased_value(self, patient: Optional["Patient"] = None):  # -> Any | None:
         """
         Returns a value that is considered increased for this lab value.
         It prioritizes sampling from a numerical distribution if available,
@@ -263,19 +253,17 @@ class LabValue(models.Model):
             if patient:
                 # Attempt to sample above the upper bound, or a high value if no bound
                 for _ in range(10):  # Try a few times to get a value if bounds are restrictive
-                    generated_value = self.default_numerical_value_distribution.generate_value(
-                        lab_value=self, patient=patient
-                    )
+                    generated_value = self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
                     if upper_bound is not None:
                         if generated_value > upper_bound:
                             return generated_value
                     # Heuristic for "high" if no upper_bound, compare against mean + stddev
-                    elif hasattr(self.default_numerical_value_distribution, "mean") and \
-                            hasattr(self.default_numerical_value_distribution, "stddev") and \
-                            self.default_numerical_value_distribution.mean is not None and \
-                            self.default_numerical_value_distribution.stddev is not None and \
-                            generated_value > (
-                            self.default_numerical_value_distribution.mean + self.default_numerical_value_distribution.stddev
+                    elif (
+                        hasattr(self.default_numerical_value_distribution, "mean")
+                        and hasattr(self.default_numerical_value_distribution, "stddev")
+                        and self.default_numerical_value_distribution.mean is not None
+                        and self.default_numerical_value_distribution.stddev is not None
+                        and generated_value > (self.default_numerical_value_distribution.mean + self.default_numerical_value_distribution.stddev)
                     ):
                         return generated_value
                 # Fallback if sampling fails to produce a clearly increased value
@@ -290,23 +278,19 @@ class LabValue(models.Model):
                 if upper_bound is not None:
                     return upper_bound + (abs(upper_bound * self.bound_adjustment_factor) if upper_bound != 0 else 1)
                 else:
-                    warnings.warn(
-                        f"Cannot determine an increased value for {self.name} without an upper normal range or patient context for distribution."
-                    )
+                    warnings.warn(f"Cannot determine an increased value for {self.name} without an upper normal range or patient context for distribution.")
                     return None
 
         elif upper_bound is not None:
             return upper_bound + (abs(upper_bound * self.bound_adjustment_factor) if upper_bound != 0 else 1)
         else:
-            warnings.warn(
-                f"Cannot determine an increased value for {self.name} without a numerical distribution or an upper normal range."
-            )
+            warnings.warn(f"Cannot determine an increased value for {self.name} without a numerical distribution or an upper normal range.")
             return None
 
-    def get_normal_value(self, patient: "Patient" = None):
+    def get_normal_value(self, patient: Optional["Patient"] = None):
         """
         Returns a value considered normal for this lab value.
-        
+
         If a numerical distribution and patient context are available, attempts to generate a value within the normal range. Falls back to the midpoint of the normal range or to available bounds if sampling fails or context is insufficient. Returns None if neither a normal range nor a distribution is available.
         """
         _age = patient.age() if patient else None
@@ -318,9 +302,7 @@ class LabValue(models.Model):
         if self.default_numerical_value_distribution:
             if patient:
                 for _ in range(10):  # Try a few times
-                    generated_value = self.default_numerical_value_distribution.generate_value(
-                        lab_value=self, patient=patient
-                    )
+                    generated_value = self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
                     if lower_bound is not None and upper_bound is not None:
                         if lower_bound <= generated_value <= upper_bound:
                             return generated_value
@@ -346,10 +328,7 @@ class LabValue(models.Model):
                 elif upper_bound is not None:
                     return upper_bound
                 else:
-                    warnings.warn(
-                        f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution.",
-                        UserWarning
-                    )
+                    warnings.warn(f"Cannot determine a normal value for {self.name} without a normal range or patient context for distribution.", UserWarning)
                     return None
 
         elif lower_bound is not None and upper_bound is not None:
@@ -359,12 +338,10 @@ class LabValue(models.Model):
         elif upper_bound is not None:  # Only max is defined
             return upper_bound
         else:
-            warnings.warn(
-                f"Cannot determine a normal value for {self.name} without a numerical distribution or a normal range."
-            )
+            warnings.warn(f"Cannot determine a normal value for {self.name} without a numerical distribution or a normal range.")
             return None
 
-    def get_decreased_value(self, patient: "Patient" = None):
+    def get_decreased_value(self, patient: Optional["Patient"] = None):
         """
         Returns a value that is considered decreased for this lab value.
         It prioritizes sampling from a numerical distribution if available,
@@ -378,19 +355,17 @@ class LabValue(models.Model):
         if self.default_numerical_value_distribution:
             if patient:
                 for _ in range(10):  # Try a few times
-                    generated_value = self.default_numerical_value_distribution.generate_value(
-                        lab_value=self, patient=patient
-                    )
+                    generated_value = self.default_numerical_value_distribution.generate_value(lab_value=self, patient=patient)
                     if lower_bound is not None:
                         if generated_value < lower_bound:
                             return generated_value
                     # Heuristic for "low" if no lower_bound, compare against mean - stddev
-                    elif hasattr(self.default_numerical_value_distribution, "mean") and \
-                            hasattr(self.default_numerical_value_distribution, "stddev") and \
-                            self.default_numerical_value_distribution.mean is not None and \
-                            self.default_numerical_value_distribution.stddev is not None and \
-                            generated_value < (
-                            self.default_numerical_value_distribution.mean - self.default_numerical_value_distribution.stddev
+                    elif (
+                        hasattr(self.default_numerical_value_distribution, "mean")
+                        and hasattr(self.default_numerical_value_distribution, "stddev")
+                        and self.default_numerical_value_distribution.mean is not None
+                        and self.default_numerical_value_distribution.stddev is not None
+                        and generated_value < (self.default_numerical_value_distribution.mean - self.default_numerical_value_distribution.stddev)
                     ):
                         return generated_value
                 # Fallback
@@ -405,15 +380,11 @@ class LabValue(models.Model):
                 if lower_bound is not None:
                     return lower_bound - (abs(lower_bound * self.bound_adjustment_factor) if lower_bound != 0 else 1)
                 else:
-                    warnings.warn(
-                        f"Cannot determine a decreased value for {self.name} without a lower normal range or patient context for distribution."
-                    )
+                    warnings.warn(f"Cannot determine a decreased value for {self.name} without a lower normal range or patient context for distribution.")
                     return None
 
         elif lower_bound is not None:
             return lower_bound - (abs(lower_bound * self.bound_adjustment_factor) if lower_bound != 0 else 1)
         else:
-            warnings.warn(
-                f"Cannot determine a decreased value for {self.name} without a numerical distribution or a lower normal range."
-            )
+            warnings.warn(f"Cannot determine a decreased value for {self.name} without a numerical distribution or a lower normal range.")
             return None
