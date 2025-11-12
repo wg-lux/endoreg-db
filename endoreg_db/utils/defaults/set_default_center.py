@@ -11,7 +11,8 @@ proc = subprocess.Popen(
     bufsize=1
 )
 
-proc.stdout.write("print(Trying to extract...)")
+proc.stdin.write("print('Trying to extract...')\n")
+proc.stdin.flush()
 subprocess.run(["python", "manage.py", "load_center_data"])
 
 try:
