@@ -723,7 +723,6 @@ def create_sensitive_meta_from_dict(
     # Handle Text
     selected_data["text"] = data.get("text") or DEFAULT_UNKNOWN
     
-    selected_data["file_path"] = data.get("file_path")
     # --- Add missing optional fields safely ---
     file_path = data.get("file_path")
     if file_path:
