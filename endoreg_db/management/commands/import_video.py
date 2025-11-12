@@ -205,7 +205,7 @@ class Command(BaseCommand):
                 # Assert Center exists -> Does not exist methods are deprecated
         try:
             center = Center.objects.get(name=center_name)
-            self.stdout.write(self.style.SUCCESS(f"Using center: {center.name_en}"))
+            self.stdout.write(self.style.SUCCESS(f"Using center: {center.name}"))
         except Center.DoesNotExist:
             self.stdout.write(self.style.ERROR(f"Center not found: {center_name}"))
             return
