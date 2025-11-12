@@ -4,7 +4,6 @@ from django.db import models
 from typing import TYPE_CHECKING, Dict, Any, Type, Self
 import logging
 
-from numpy import True_ # Add logging import
 
 # Import logic functions
 from . import sensitive_meta_logic as logic
