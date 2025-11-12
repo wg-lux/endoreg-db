@@ -543,9 +543,9 @@ class VideoFile(models.Model):
         video is preserved as the final validated output.
         """
 
-
         if not self.sensitive_meta:
-            return False
+            # Ensure a SensitiveMeta exists so validation can proceed.
+            self.sensitive_meta = self.get_or_create_sensitive_meta()
         # CRITICAL FIX: Delete RAW video file, not the processed (anonymized) one
         # CRITICAL: Update metadata BEFORE deleting raw video
         # Metadata update may trigger frame extraction, which needs raw video
