@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
@@ -6,6 +6,8 @@ if TYPE_CHECKING:
     from ...administration import CenterProduct, CenterResource, CenterWaste
     from ...media import AnonymExaminationReport, AnonymHistologyReport
     from ...medical import Endoscope, EndoscopyProcessor
+    from ..person.names.first_name import FirstName
+    from ..person.names.last_name import LastName
 
 
 class CenterManager(models.Manager):
@@ -27,20 +29,29 @@ class Center(models.Model):
     if TYPE_CHECKING:
         from django.db.models.manager import RelatedManager
 
-        @property
-        def center_products(self) -> RelatedManager[CenterProduct]: ...
-        @property
-        def center_resources(self) -> RelatedManager[CenterResource]: ...
-        @property
-        def center_wastes(self) -> RelatedManager[CenterWaste]: ...
-        @property
-        def endoscopy_processors(self) -> RelatedManager[EndoscopyProcessor]: ...
-        @property
-        def endoscopes(self) -> RelatedManager[Endoscope]: ...
-        @property
-        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
-        @property
-        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
+    first_names = cast(RelatedManager[FirstName], first_names)
+    last_names = cast(RelatedManager[LastName], last_names)
+
+    @property
+    def center_products(self) -> RelatedManager[CenterProduct]: ...
+
+    @property
+    def center_resources(self) -> RelatedManager[CenterResource]: ...
+
+    @property
+    def center_wastes(self) -> RelatedManager[CenterWaste]: ...
+
+    @property
+    def endoscopy_processors(self) -> RelatedManager[EndoscopyProcessor]: ...
+
+    @property
+    def endoscopes(self) -> RelatedManager[Endoscope]: ...
+
+    @property
+    def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
+
+    @property
+    def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
 
     @classmethod
     def get_by_name(cls, name):

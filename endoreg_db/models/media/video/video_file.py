@@ -200,17 +200,23 @@ class VideoFile(models.Model):
     date_modified = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        label_video_segments: "models.QuerySet[LabelVideoSegment]"
-        frames: "models.QuerySet[Frame]"
+        from django.db.models.manager import RelatedManager
+
+        @property
+        def label_video_segments(self) -> RelatedManager[LabelVideoSegment]: ...
+
+        @property
+        def frames(self) -> RelatedManager[Frame]: ...
+
         center: "Center"
-        processor: "EndoscopyProcessor"
-        video_meta: "VideoMeta"
-        examination: "PatientExamination"
-        patient: "Patient"
-        sensitive_meta: "SensitiveMeta"
-        state: "VideoState"
-        ai_model_meta: "ModelMeta"
-        import_meta: "VideoImportMeta"
+        processor: models.ForeignKey["EndoscopyProcessor | None"]
+        video_meta: models.OneToOneField["VideoMeta | None"]
+        examination: models.ForeignKey["PatientExamination | None"]
+        patient: models.ForeignKey["Patient | None"]
+        sensitive_meta: models.OneToOneField["SensitiveMeta | None"]
+        state: models.OneToOneField["VideoState | None"]
+        ai_model_meta: models.ForeignKey["ModelMeta | None"]
+        import_meta: models.OneToOneField["VideoImportMeta | None"]
         raw_file = cast(FieldFile, raw_file)
         processed_file = cast(FieldFile, processed_file)
 

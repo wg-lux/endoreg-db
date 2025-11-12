@@ -59,20 +59,37 @@ class Patient(Person):
     objects = models.Manager()  # Default manager
 
     if TYPE_CHECKING:
+        from django.db.models.manager import RelatedManager
+
         first_name: str
         last_name: str
-        dob: date
-        gender: "Gender"
-        center: "Center"
-        events: models.QuerySet["PatientEvent"]
-        diseases: models.QuerySet["PatientDisease"]
-        patient_examinations: models.QuerySet["PatientExamination"]
-        anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
-        anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
-        external_ids: models.QuerySet["PatientExternalID"]
+        dob: date | None
+        gender: models.ForeignKey["Gender | None"]
+        center: models.ForeignKey["Center | None"]
 
-        patientmedication_set: models.QuerySet["PatientMedication"]
-        lab_values: models.QuerySet["PatientLabValue"]
+        @property
+        def events(self) -> RelatedManager[PatientEvent]: ...
+
+        @property
+        def diseases(self) -> RelatedManager[PatientDisease]: ...
+
+        @property
+        def patient_examinations(self) -> RelatedManager[PatientExamination]: ...
+
+        @property
+        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
+
+        @property
+        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
+
+        @property
+        def external_ids(self) -> RelatedManager[PatientExternalID]: ...
+
+        @property
+        def patientmedication_set(self) -> RelatedManager[PatientMedication]: ...
+
+        @property
+        def lab_values(self) -> RelatedManager[PatientLabValue]: ...
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
@@ -133,9 +150,8 @@ class Patient(Person):
 
         return patient, created
 
-    def get_dob(self) -> date:
-        dob: date = self.dob
-        return dob
+    def get_dob(self) -> date | None:
+        return self.dob
 
     def get_patient_examinations(self):  # field: self.patient_examinations
         """Returns all patient examinations for this patient ordered by date (most recent is first)."""
@@ -233,7 +249,7 @@ class Patient(Person):
 
         patient_examination = PatientExamination(patient=self)
         patient_examination.save()
-        pdf.examination = patient_examination
+        pdf.examination = patient_examination  # type: ignore[assignment]
         pdf.save()
 
         return patient_examination
