@@ -13,9 +13,9 @@ proc = subprocess.Popen(
 
 proc.stdin.write("print('Trying to extract...')\n")
 proc.stdin.flush()
-subprocess.run(["python", "manage.py", "load_center_data"])
 
 try:
+    subprocess.run(["python", "manage.py", "load_center_data"], check=True)
     proc.stdout.write("print('found center')")
 except subprocess.CalledProcessError as e:
     proc.stdout.write("print('Didn't find center. Please add it to endoreg_db luxnix or via export DEFAULT_CENTER")
