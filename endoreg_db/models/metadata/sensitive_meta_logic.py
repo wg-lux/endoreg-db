@@ -485,7 +485,7 @@ def create_sensitive_meta_from_dict(
         "patient_dob": date(1990, 1, 1),
         "examination_date": date.today(),
         "center_name": "university_hospital_wuerzburg",  # ← String
-        "anonymized_text": anonymized text
+        "anonymized_text": "anonymized text"
     }
     sm = SensitiveMeta.create_from_dict(data)
     ```
