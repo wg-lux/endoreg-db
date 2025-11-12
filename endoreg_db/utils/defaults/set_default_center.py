@@ -1,7 +1,5 @@
 import subprocess
 from endoreg_db.models.administration.center import center
-from endoreg_db.utils.dataloader
-from django.exceptions
 
 # Start process with interactive pipes
 proc = subprocess.Popen(
