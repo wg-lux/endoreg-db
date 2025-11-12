@@ -4,7 +4,7 @@ import random
 import re  # Neu hinzugefügt für Regex-Pattern
 from datetime import date, datetime, timedelta
 from hashlib import sha256
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, Optional, Type
 
 from django.db import transaction
 from django.utils import timezone
@@ -18,7 +18,6 @@ from endoreg_db.utils.hashs import get_patient_examination_hash, get_patient_has
 from ..administration import Center, Examiner, FirstName, LastName, Patient
 from ..medical import PatientExamination
 from ..other import Gender
-from ..state import SensitiveMetaState
 
 if TYPE_CHECKING:
     from .sensitive_meta import SensitiveMeta  # Import model for type hinting

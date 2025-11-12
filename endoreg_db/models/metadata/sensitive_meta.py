@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from ..administration import (
         Center,
         Examiner,
-        Patient,
-        FirstName, # Keep for type hinting if needed
-        LastName   # Keep for type hinting if needed
+        Patient   # Keep for type hinting if needed
     )
     from ..other import Gender
     from ..medical import PatientExamination

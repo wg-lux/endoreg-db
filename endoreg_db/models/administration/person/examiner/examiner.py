@@ -1,20 +1,23 @@
-from django.db import models
-from ..person import Person
-from endoreg_db.utils import get_examiner_hash, create_mock_examiner_name
 from typing import TYPE_CHECKING
 
+from django.db import models
+
+from endoreg_db.utils import create_mock_examiner_name, get_examiner_hash
+
 from ....utils import DJANGO_NAME_SALT
+from ..person import Person
+
 if TYPE_CHECKING:
     from endoreg_db.models import administration
+
+
 class Examiner(Person):
-    center = models.ForeignKey(
-        "Center", on_delete=models.CASCADE, blank=True, null=True
-    )
+    center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
     hash = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        center: "administration.Center"
-        portal_user_info: "administration.PortalUserInfo"
+        center: models.ForeignKey["administration.Center|None"]
+        portal_user_info: models.OneToOneField["administration.PortalUserInfo"]
 
     def __str__(self):
         return self.first_name + " " + self.last_name
@@ -28,10 +31,9 @@ class Examiner(Person):
 
         if isinstance(first_name, FirstName):
             first_name = str(first_name.name)
-        
+
         if isinstance(last_name, LastName):
             last_name = str(last_name.name)
-
 
         real_hash = get_examiner_hash(
             first_name=first_name,
@@ -42,7 +44,7 @@ class Examiner(Person):
 
         if substitute_names:
             name_tuple = create_mock_examiner_name()
-        
+
         else:
             name_tuple = (first_name, last_name)
         defaults = dict(

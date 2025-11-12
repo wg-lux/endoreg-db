@@ -1,10 +1,12 @@
-from django.db import models
 from typing import TYPE_CHECKING
 
+from django.db import models
 
 if TYPE_CHECKING:
-    from .label_type import LabelType
     from .label_set import LabelSet
+    from .label_type import LabelType
+
+
 class LabelManager(models.Manager):
     """Manager class for handling Label model operations."""
 
@@ -25,16 +27,16 @@ class Label(models.Model):
     """
 
     name = models.CharField(max_length=255)
-    label_type = models.ForeignKey(
-        "LabelType", on_delete=models.CASCADE, related_name="labels", blank=True, null=True
-    )
+    label_type = models.ForeignKey("LabelType", on_delete=models.CASCADE, related_name="labels", blank=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     objects = LabelManager()
 
     if TYPE_CHECKING:
-        label_type: "LabelType"
-        label_sets: models.QuerySet["LabelSet"]
+        label_type: models.ForeignKey["LabelType|None"]
+
+        @property
+        def label_sets(self) -> models.QuerySet["LabelSet"]: ...
 
     def natural_key(self):
         """Return the natural key of this label"""
@@ -42,7 +44,7 @@ class Label(models.Model):
 
     def __str__(self):
         return str(self.name)
-    
+
     @classmethod
     def get_outside_label(cls):
         """
@@ -57,7 +59,7 @@ class Label(models.Model):
     def get_low_quality_label(cls):
         """
         Retrieve the label instance with the name 'low_quality'.
-        
+
         Raises:
             ValueError: If a label with the name 'low_quality' does not exist.
         """
@@ -65,19 +67,17 @@ class Label(models.Model):
             return cls.objects.get(name="low_quality")
         except Exception as exc:
             raise ValueError("'low_quality' label does not exist in the database") from exc
-        
+
     @classmethod
-    def get_or_create_from_name(cls, name:str):
+    def get_or_create_from_name(cls, name: str):
         """
         Retrieve or create a Label instance with the specified name.
-        
+
         Parameters:
             name (str): The name of the label to retrieve or create.
-        
+
         Returns:
             tuple: A tuple containing the Label instance and a boolean indicating whether the instance was created (True) or retrieved (False).
         """
         label, _created = cls.objects.get_or_create(name=name)
         return label, _created
-
-

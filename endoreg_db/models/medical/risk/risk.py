@@ -1,5 +1,5 @@
 from django.db import models
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 
 class RiskManager(models.Manager):

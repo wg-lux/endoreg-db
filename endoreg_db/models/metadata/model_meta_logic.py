@@ -3,7 +3,6 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Type
 
-from django.core.files import File
 from django.db import transaction
 from huggingface_hub import hf_hub_download
 

@@ -1,6 +1,5 @@
 # Class to represent findings of examinations
 from django.db import models
-from typing import List
 
 from typing import TYPE_CHECKING
 

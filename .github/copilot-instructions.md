@@ -5,6 +5,81 @@
 - **Knowledge base**: Medical vocabularies live in YAML under `endoreg_db/data/`; management commands in `endoreg_db/management/commands/load_*` hydrate models from those files—keep YAML schema changes aligned with the commands.
 - **Async flows**: `celery_app.py` wires Celery but operational imports use Redis Queue (`endoreg_db/tasks/video_ingest.py`); align new background work with that queue unless migrating everything to Celery.
 
+## Django Db Model Type Hinting:
+- **TYPE_CHECKING**: Use `if TYPE_CHECKING:` blocks to declare model attributes for type checkers without runtime overhead.
+
+**Implementation Examples**:
+```python
+from django.db import models
+from typing import TYPE_CHECKING, cast
+
+class ExampleClass1(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+
+    # One-to-many relationship
+    example_1 = models.ForeignKey(
+        "ExampleClass2",
+        on_delete=models.CASCADE,
+        related_name="example_class_1_set",
+    )
+
+    # One-to-one relationship
+    example_2 = models.OneToOneField(
+        "ExampleClass2",
+        on_delete=models.CASCADE,
+        related_name="example_class_1_one_to_one",
+    )
+
+    # Many to Many
+    example_3 = models.ManyToManyField(
+        "ExampleClass2",
+        related_name="example_class_1_many_to_many_set",
+    )
+
+    # Nullable ForeignKey
+    example_4 = models.ForeignKey(
+        "ExampleClass2",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="example_class_1_nullable_foreign_key_set",
+    )
+
+    if TYPE_CHECKING:
+
+        # One-to-manyrelationship
+        example_1: models.ForeignKey["ExampleClass2"]
+
+        # One-to-one relationship
+        example_2: models.OneToOneField["ExampleClass2"]
+
+        # Many to Many
+        example_3 = cast(models.manager.RelatedManager["ExampleClass2"], example_3)
+
+        # Nullable ForeignKey
+        example_4: models.ForeignKey["ExampleClass2|None"]
+
+class ExampleClass2(models.Model):
+    name = models.CharField(max_length=255)
+
+    if TYPE_CHECKING:
+        # Reverse relation for one-to-many relationship
+        @property
+        def example_class_1_set(self) -> models.RelatedManager["ExampleClass1"]: ...
+
+        # Reverse relation for one-to-one relationship
+        example_class_1_one_to_one: models.OneToOneField["ExampleClass1"]
+
+        # Reverse relation for many-to-many relationship
+        @property
+        def example_class_1_many_to_many_set(self) -> models.RelatedManager["ExampleClass1"]: ...
+
+        # Reverse relation for nullable ForeignKey
+        @property
+        def example_class_1_nullable_foreign_key_set(self) -> models.RelatedManager["ExampleClass1"]: ... 
+
+```
 ## Environment & Tooling
 - **Platform baseline**: Most development happens on NixOS; run `devenv up` (or allow via `direnv`) before any command so the pinned toolchain and `uv` environment from `devenv.nix` activate.
 - **Dev shell**: Once inside the shell, use `devenv task run env:build` to refresh `.env` via `env_setup.py`; the task relies on `.devenv-vars.json` generated during shell entry.

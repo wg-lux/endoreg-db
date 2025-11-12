@@ -1,9 +1,10 @@
-from django.db import models
+from typing import TYPE_CHECKING, cast
 
-from typing import TYPE_CHECKING
+from django.db import models
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoSegmentationLabel
+
 
 class VideoSegmentationLabelSetManager(models.Manager):
     def get_by_natural_key(self, name):
@@ -18,7 +19,7 @@ class VideoSegmentationLabelSet(models.Model):
     objects = VideoSegmentationLabelSetManager()
 
     if TYPE_CHECKING:
-        labels: models.QuerySet["VideoSegmentationLabel"]
+        labels = cast(models.manager.RelatedManager["VideoSegmentationLabel"], labels)
 
     def natural_key(self):
         return (self.name,)

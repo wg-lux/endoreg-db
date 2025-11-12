@@ -1,10 +1,11 @@
 import logging
-from typing import TYPE_CHECKING, Optional, Dict
+from typing import TYPE_CHECKING, Dict, Optional
 
 if TYPE_CHECKING:
     from ..video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
 
 def _get_endo_roi(video: "VideoFile") -> Optional[Dict[str, int]]:
     """
@@ -26,8 +27,9 @@ def _get_endo_roi(video: "VideoFile") -> Optional[Dict[str, int]]:
             and all(k in endo_roi for k in ("x", "y", "width", "height"))
             and all(isinstance(v, int) and not isinstance(v, bool) for v in endo_roi.values())
         ):
-            logger.debug("Retrieved endo ROI for video %s: %s", video.uuid, endo_roi)
-            return endo_roi
+            cleaned_roi = {k: int(endo_roi[k] or 0) for k in ("x", "y", "width", "height")}
+            logger.debug("Retrieved endo ROI for video %s: %s", video.uuid, cleaned_roi)
+            return cleaned_roi
         else:
             logger.warning("Endo ROI not fully defined or invalid in VideoMeta for video %s. ROI: %s", video.uuid, endo_roi)
             return None

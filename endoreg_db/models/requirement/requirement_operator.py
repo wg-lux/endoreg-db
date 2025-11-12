@@ -1,5 +1,5 @@
 from django.db import models
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 from logging import getLogger # Added logger
 
 # see how operator evaluation function is fetched, add to docs #TODO

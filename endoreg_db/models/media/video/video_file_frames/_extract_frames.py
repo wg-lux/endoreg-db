@@ -1,16 +1,18 @@
 import logging
+from typing import TYPE_CHECKING
+
 from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path
 from endoreg_db.utils.video.ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
+import shutil
+
 from django.db import transaction
 
-
-import shutil
 logger = logging.getLogger(__name__)
+
 
 def _extract_frames(
     video: "VideoFile",
@@ -21,25 +23,26 @@ def _extract_frames(
 ) -> bool:
     """
     Extract frames from a raw video file, update frame extraction status in the database, and manage related file system operations.
-    
+
     This function checks for existing extracted frames and skips extraction if appropriate, unless overwriting is requested. It handles deletion of existing frames when overwriting, invokes ffmpeg to extract frames, parses extracted frame numbers, updates corresponding database records, and manages video extraction state. Robust error handling ensures cleanup and state rollback on failure.
-    
+
     Parameters:
         video (VideoFile): The video object from which frames are to be extracted.
         quality (int, optional): Quality parameter for ffmpeg extraction. Defaults to 2.
         overwrite (bool, optional): Whether to overwrite existing extracted frames. Defaults to False.
         ext (str, optional): File extension for extracted frames. Defaults to "jpg".
-    
+
     Returns:
         bool: True if extraction and updates succeed.
-    
+
     Raises:
         FileNotFoundError: If the raw video file is missing.
         RuntimeError: If extraction or database update fails.
         ValueError: If the frame directory path cannot be determined.
     """
-    from ._delete_frames import _delete_frames
     from endoreg_db.models.media.frame import Frame
+
+    from ._delete_frames import _delete_frames
 
     # Pre-validation checks (outside any transaction)
     if not video.has_raw:
@@ -111,16 +114,14 @@ def _extract_frames(
                 video.uuid,
             )
             if video.frame_count is not None and video.frame_count > 0:
-                raise RuntimeError(
-                    f"ffmpeg_extract_frames returned no paths for video {video.uuid}, but {video.frame_count} frames were expected."
-                )
+                raise RuntimeError(f"ffmpeg_extract_frames returned no paths for video {video.uuid}, but {video.frame_count} frames were expected.")
 
         logger.info("Successfully extracted %d frames using ffmpeg for video %s.", len(extracted_paths), video.uuid)
 
         extracted_frame_numbers = []
         for frame_path in extracted_paths:
             try:
-                frame_number = int(frame_path.stem.split('_')[-1])
+                frame_number = int(frame_path.stem.split("_")[-1])
                 extracted_frame_numbers.append(frame_number)
             except (ValueError, IndexError) as e:
                 logger.warning("Could not parse frame number from extracted file %s: %s", frame_path.name, e)
@@ -129,9 +130,7 @@ def _extract_frames(
         with transaction.atomic():
             if extracted_frame_numbers:
                 try:
-                    update_count = Frame.objects.filter(
-                        video=video, frame_number__in=extracted_frame_numbers
-                    ).update(is_extracted=True)
+                    update_count = Frame.objects.filter(video=video, frame_number__in=extracted_frame_numbers).update(is_extracted=True)
                     logger.info("Marked %d Frame objects as is_extracted=True for video %s.", update_count, video.uuid)
                     if update_count != len(extracted_frame_numbers):
                         logger.warning(

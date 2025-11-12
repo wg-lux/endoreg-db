@@ -1,5 +1,6 @@
 import logging
-from typing import TYPE_CHECKING, Optional, List, Dict
+from typing import TYPE_CHECKING, List, Optional
+
 from .get_endo_roi import _get_endo_roi
 
 if TYPE_CHECKING:
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
     """Generates a crop template [y1, y2, x1, x2] from the endo ROI."""
-    endo_roi = _get_endo_roi(video) # Use the helper function
+    endo_roi = _get_endo_roi(video)  # Use the helper function
     if not endo_roi:
         logger.warning("Cannot generate crop template for video %s: Endo ROI not available.", video.uuid)
         return None
@@ -39,7 +40,6 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
     else:
         # Proceed without boundary check if image dimensions unknown
         crop_template = [y, y + height, x, x + width]
-
 
     logger.debug("Generated crop template for video %s: %s", video.uuid, crop_template)
     return crop_template

@@ -1,12 +1,13 @@
-from django.db import models
-
 from typing import TYPE_CHECKING
 
+from django.db import models
+
 if TYPE_CHECKING:
-    from ..label import Label
     from ...media.frame import Frame
     from ...metadata import ModelMeta
     from ...other.information_source import InformationSource
+    from ..label import Label
+
 
 class ImageClassificationAnnotation(models.Model):
     """
@@ -64,15 +65,15 @@ class ImageClassificationAnnotation(models.Model):
     )
 
     if TYPE_CHECKING:
-        frame: "Frame"  # Updated type hint
-        label: "Label"
-        information_source: "InformationSource"
-        model_meta: "ModelMeta"  # Added for completeness
+        frame: models.ForeignKey["Frame"]
+        label: models.ForeignKey["Label"]
+        information_source: models.ForeignKey["InformationSource|None"]
+        model_meta: models.ForeignKey["ModelMeta|None"]
 
     class Meta:
         indexes = [
-            models.Index(fields=['frame', 'label']),
-            models.Index(fields=['frame']),
+            models.Index(fields=["frame", "label"]),
+            models.Index(fields=["frame"]),
         ]
 
     def __str__(self) -> str:

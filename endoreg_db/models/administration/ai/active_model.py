@@ -1,5 +1,5 @@
 from django.db import models
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models.metadata import ModelMeta

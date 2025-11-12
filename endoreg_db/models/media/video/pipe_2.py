@@ -1,16 +1,16 @@
-from itertools import filterfalse
 import logging
 from typing import TYPE_CHECKING
+
 from django.db import transaction
 
-
 # Configure logging
-logger = logging.getLogger(__name__) # Changed from "video_file"
+logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoState
 
-def _pipe_2(video_file:"VideoFile") -> bool:
+
+def _pipe_2(video_file: "VideoFile") -> bool:
     """
     Process the given video file through pipeline 2 operations which include frame extraction,
     anonymization of the video, and deletion of sensitive meta data.
@@ -70,11 +70,10 @@ def _pipe_2(video_file:"VideoFile") -> bool:
                 logger.info("Pipe 2: Anonymization complete.")
         else:
             logger.info("Pipe 2: Video already anonymized.")
-        
 
         # --- Part 3: Final DB operations (now in its own atomic transaction) ---
         with transaction.atomic():
-            video_file.refresh_from_db() # Ensure we have the latest video_file state for these ops
+            video_file.refresh_from_db()  # Ensure we have the latest video_file state for these ops
 
             # Set sensitive_meta_processed True atomically
             state: "VideoState" = video_file.get_or_create_state()
@@ -86,8 +85,8 @@ def _pipe_2(video_file:"VideoFile") -> bool:
                 try:
                     sm_pk = video_file.sensitive_meta.pk
                     video_file.sensitive_meta.delete()
-                    video_file.sensitive_meta = None # Important after SET_NULL
-                    video_file.save(update_fields=['sensitive_meta']) # Persist the null relation
+                    video_file.sensitive_meta = None  # Important after SET_NULL
+                    video_file.save(update_fields=["sensitive_meta"])  # Persist the null relation
                     logger.info("Pipe 2: Deleted sensitive meta object (PK: %s).", sm_pk)
                 except Exception as e:
                     logger.error("Pipe 2: Failed to delete sensitive meta object: %s", e, exc_info=True)

@@ -3,14 +3,9 @@ from django.test import TestCase
 from endoreg_db.models import (
     Center,
     CenterResource,
-    CenterWaste,
     EmissionFactor,
     Resource,
     Unit,
-)
-
-from ...helpers.data_loader import (
-    load_center_data,
 )
 
 
