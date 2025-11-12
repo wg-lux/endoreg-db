@@ -1,5 +1,7 @@
 # stats/models.py
-import hashlib, json, uuid
+import hashlib
+import json
+import uuid
 from django.db import models
 from django.utils import timezone
 from django.conf import settings

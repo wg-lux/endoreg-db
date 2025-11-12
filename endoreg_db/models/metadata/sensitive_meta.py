@@ -1,7 +1,7 @@
 from django.db import models
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
-from typing import TYPE_CHECKING, Dict, Any, Type, Self
+from typing import TYPE_CHECKING, Dict, Any, Type
 import logging # Add logging import
 
 # Import logic functions
@@ -13,9 +13,7 @@ if TYPE_CHECKING:
     from ..administration import (
         Center,
         Examiner,
-        Patient,
-        FirstName, # Keep for type hinting if needed
-        LastName   # Keep for type hinting if needed
+        Patient   # Keep for type hinting if needed
     )
     from ..other import Gender
     from ..medical import PatientExamination

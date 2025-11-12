@@ -6,7 +6,6 @@ import uuid
 from django.db import transaction
 import cv2
 from tqdm import tqdm
-from django.conf import settings
 
 
 

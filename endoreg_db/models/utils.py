@@ -6,13 +6,12 @@ from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 import io
 import os
-from tqdm import tqdm
 import numpy as np
 import cv2
 from typing import TYPE_CHECKING, List, Tuple
 from pathlib import Path
 if TYPE_CHECKING:
-    from ..models.media import VideoFile
+    pass
 
 from logging import getLogger
 

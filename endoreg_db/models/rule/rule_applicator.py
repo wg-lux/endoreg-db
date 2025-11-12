@@ -141,7 +141,7 @@ class RuleApplicator:
         - event_rules
         - disease_rules
         """
-        from endoreg_db.models import Patient, PatientEvent, PatientDisease, Case
+        from endoreg_db.models import Patient, Case
 
         # Check if the 
         obj:Case = obj

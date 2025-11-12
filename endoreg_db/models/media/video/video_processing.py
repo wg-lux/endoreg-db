@@ -5,7 +5,6 @@ Tracks all video correction operations (masking, frame removal, reprocessing).
 Created as part of Phase 1.1: Video Correction API Endpoints.
 """
 from pathlib import Path
-from typing import Optional
 
 from django.conf import settings
 from django.db import models

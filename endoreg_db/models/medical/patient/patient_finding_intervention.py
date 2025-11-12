@@ -1,4 +1,3 @@
-from operator import is_
 from django.db import models 
 from typing import TYPE_CHECKING
 

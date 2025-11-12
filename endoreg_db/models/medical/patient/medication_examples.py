@@ -1,12 +1,8 @@
 from endoreg_db.models import (
-    Patient,
-    PatientMedication,
-    PatientMedicationSchedule,
     Medication, 
     MedicationIndication, 
     MedicationIndicationType, 
-    MedicationIntakeTime, 
-    MedicationSchedule
+    MedicationIntakeTime
 )
 from endoreg_db.helpers.default_objects import generate_patient
 

@@ -529,7 +529,8 @@ def _predict_video_pipeline(
         logger.error("Inference failed for video %s: %s", video.uuid, e, exc_info=True)
         # CUDA-OOM Fallback: Speicher freigeben und CPU versuchen
         try:
-            import torch, gc
+            import torch
+            import gc
             is_oom = isinstance(e, (getattr(torch.cuda, 'OutOfMemoryError', RuntimeError), RuntimeError)) and (
                 'out of memory' in str(e).lower() or 'cuda out of memory' in str(e).lower()
             )

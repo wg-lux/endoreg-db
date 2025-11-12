@@ -2,7 +2,6 @@
 Defines state tracking models related to video processing.
 """
 from django.db import models
-from .abstract import AbstractState
 from typing import TYPE_CHECKING, Optional
 import logging
 from enum import Enum

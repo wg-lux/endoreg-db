@@ -1,5 +1,5 @@
 from django.db import models
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 class FindingClassificationTypeManager(models.Manager):
     def get_by_natural_key(self, name):

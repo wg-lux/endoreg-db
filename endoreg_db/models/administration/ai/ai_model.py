@@ -1,10 +1,9 @@
 """
 Django model for AI models.
 """
-from importlib import metadata
 from django.db import models
 from icecream import ic
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .model_type import ModelType
