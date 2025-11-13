@@ -111,6 +111,7 @@ def _update_text_metadata(
                 if extracted_date:  # Ensure date is not None or empty
                     video.date = extracted_date
                     update_fields_video.append("date")
+                    
 
             # Save VideoFile if fields changed
             if update_fields_video:

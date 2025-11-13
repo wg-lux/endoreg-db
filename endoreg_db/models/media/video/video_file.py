@@ -548,8 +548,10 @@ class VideoFile(models.Model):
             return False
         # CRITICAL FIX: Delete RAW video file, not the processed (anonymized) one
         # CRITICAL: Update metadata BEFORE deleting raw video
-        # Metadata update may trigger frame extraction, which needs raw video
-        sensitive_meta = _update_text_metadata(self, extracted_data_dict, overwrite=True)
+        if extracted_data_dict:
+            self.sensitive_meta.update_from_dict(extracted_data_dict)
+        else:
+            return False
 
         # After validation and metadata update, only the anonymized video should remain
         from .video_file_io import _get_raw_file_path

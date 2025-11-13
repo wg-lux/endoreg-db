@@ -300,8 +300,10 @@ class RawPdfFile(models.Model):
             logger.error("No extracted data provided for validation.")
             return False
 
-        # Update sensitive meta with the provided data
-        self.sensitive_meta.update_from_dict(extracted_data_dict)
+        if extracted_data_dict:
+            self.sensitive_meta.update_from_dict(extracted_data_dict)
+        else:
+            return False
 
         # Save the sensitive meta to ensure changes are persisted
         self.sensitive_meta.save()
