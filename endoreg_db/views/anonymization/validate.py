@@ -64,10 +64,12 @@ class AnonymizationValidateView(APIView):
                 if not ok:
                     return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
                 else:
+                    video.sensitive_meta.get_or_create_state()
                     video.sensitive_meta.state.refresh_from_db()
                     video.sensitive_meta.state.mark_dob_verified()
                     video.sensitive_meta.state.mark_names_verified()
                     video.sensitive_meta.create_anonymized_record()
+                    video.sensitive_meta.state.anonymized = True
                     video.sensitive_meta.state.save()
                 return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
 
@@ -91,11 +93,12 @@ class AnonymizationValidateView(APIView):
                 if not ok:
                     return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
                 else:
-                    pdf.sensitive_meta = SensitiveMeta.objects.get(pk=pdf.pk)
+                    pdf.sensitive_meta.get_or_create_state()
                     pdf.sensitive_meta.state.refresh_from_db()
                     pdf.sensitive_meta.state.mark_dob_verified()
                     pdf.sensitive_meta.state.mark_names_verified()
                     pdf.sensitive_meta.create_anonymized_record()
+                    pdf.sensitive_meta.state.anonymized = True
                     pdf.sensitive_meta.state.save()
 
                 return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)

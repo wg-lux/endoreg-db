@@ -4,13 +4,15 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union, cast
+from typing import TYPE_CHECKING, Optional, Self, Union, cast
 
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import F
 from django.db.models.fields.files import FieldFile
+from librosa import frames_to_samples
+from pandas.core import frame
 
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
 
@@ -27,7 +29,9 @@ from .video_file_anonymize import (
     _anonymize,
     _cleanup_raw_assets,
     _create_anonymized_frame_files,
+    _censor_outside_frames
 )
+from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 from .video_file_frames import (
     _bulk_create_frames,
     _create_frame_object,
@@ -571,7 +575,7 @@ class VideoFile(models.Model):
                 self.uuid,
             )
 
-        if sensitive_meta:
+        if self.sensitive_meta:
             # Mark as processed after validation
             self.get_or_create_state().mark_sensitive_meta_processed(save=True)
             # Save the VideoFile instance to persist changes
@@ -760,6 +764,65 @@ class VideoFile(models.Model):
                 exc_info=True,
             )
             return self.label_video_segments.none()
+        
+    @classmethod
+    def create_video_without_outside_frames(cls, instance: "VideoFile", only_validated: bool = False) -> bool:
+        """
+        Creates a new video by excluding frames that belong to 'outside' segments.
+        
+        Parameters:
+            only_validated (bool): If True, only validated segments are considered for frame exclusion.
+
+        Returns:
+            VideoFile: A new VideoFile instance with the frames excluding those labeled as 'outside'.
+        """
+        video = instance
+        
+        if not video:
+            logger.warning("No processed video file available for VideoFile %s.", cls.uuid)
+            return False
+        try:
+            extracted = video.extract_frames(quality=2,
+                                        overwrite=False,
+                                        ext="jpg",
+                                        verbose=False,
+                                        from_processed=True)
+            assert(extracted is True)
+        except AssertionError:
+            # Use default anonymization here
+            video.anonymize
+            extracted = video.extract_frames(quality=2,
+                                        overwrite=False,
+                                        ext="jpg",
+                                        verbose=False,
+                                        from_processed=True)
+            assert(extracted is True)
+        try:
+            # Step 1: Get the "outside" labeled frames
+            censored = _censor_outside_frames(video)
+            frames = [instance.get_frame_dir_path()]
+            assert (len(frames) != 0)
+            fps = video.fps if video.fps else 120.0  # Default to 30 FPS if fps is not set
+            assert(fps is not None)
+            assert(video.width is not None)
+            assert(video.height is not None)
+
+            # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
+            output_video_path = Path(f"/path/to/output/{cls.uuid}_filtered.mp4")
+            fps = cls.fps if cls.fps else 30.0  # Default to 30 FPS if fps is not set
+            new_video_file = assemble_video_from_frames(frames, output_video_path, fps, width=video.width, height=video.height)
+            video.processed_file = new_video_file
+            return True
+        except AssertionError as ae:
+            logger.error(f"Assertion error while creating video without 'outside' frames for VideoFile {cls.uuid}: {ae}", exc_info=True)
+            return False
+        except Label.DoesNotExist:
+            logger.warning("Outside label not found in the database.")
+            return False
+        except Exception as e:
+            logger.error(f"Error creating video without 'outside' frames for VideoFile {cls.uuid}: {e}", exc_info=True)
+            return False
+    
 
     @classmethod
     def get_all_videos(cls) -> models.QuerySet["VideoFile"]:

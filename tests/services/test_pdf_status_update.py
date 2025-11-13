@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from endoreg_db.models import Center
-from endoreg_db.models.state.raw_pdf import AnonymizationStatus
+from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.services.pdf_import import PdfImportService
 
 
@@ -25,7 +25,7 @@ class TestPdfStatusAfterAnonymization:
 
     def test_status_becomes_done_after_anonymization(self, center, tmp_path):
         """
-        Test that after successful PDF anonymization, the status becomes 'done'
+        Test that after successful PDF anonymization, the status becomes 'done_processing_anonymization'
         (ready for validation) instead of remaining at 'not_started'.
         """
         # Create a test PDF file
@@ -71,14 +71,16 @@ class TestPdfStatusAfterAnonymization:
                 "PDF should be marked as ready for validation"
             )
 
-            # Verify status is DONE (ready for validation)
+            # Verify status is DONE_PROCESSING_ANONYMIZATION (ready for validation)
             status = state.anonymization_status
-            assert status == AnonymizationStatus.DONE, (
-                f"Expected status DONE, got {status}"
+            assert status == AnonymizationState.DONE_PROCESSING_ANONYMIZATION, (
+                f"Expected status DONE_PROCESSING_ANONYMIZATION, got {status}"
             )
 
             # Verify the status string representation
-            assert status.value == "done", f"Expected 'done', got '{status.value}'"
+            assert status.value == "done", (
+                f"Expected 'done_processing_anonymization', got '{status.value}'"
+            )
 
     def test_status_progression_blackening_mode(self, center, tmp_path):
         """
@@ -108,8 +110,11 @@ class TestPdfStatusAfterAnonymization:
 
             state = pdf.get_or_create_state()
 
-            # After successful processing, status should be DONE
-            assert state.anonymization_status == AnonymizationStatus.DONE
+            # After successful processing, status should be DONE_PROCESSING_ANONYMIZATION
+            assert (
+                state.anonymization_status
+                == AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+            )
             assert state.anonymized is True
             assert state.sensitive_meta_processed is True
 
@@ -139,7 +144,10 @@ class TestPdfStatusAfterAnonymization:
 
             state = pdf.get_or_create_state()
 
-            # After successful processing, status should be DONE
-            assert state.anonymization_status == AnonymizationStatus.DONE
+            # After successful processing, status should be DONE_PROCESSING_ANONYMIZATION
+            assert (
+                state.anonymization_status
+                == AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+            )
             assert state.anonymized is True
             assert state.sensitive_meta_processed is True

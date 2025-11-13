@@ -8,20 +8,12 @@ from typing import TYPE_CHECKING, Optional
 
 from django.db import models
 
+from endoreg_db.models.state.anonymization import AnonymizationState
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..media import VideoFile
-
-
-class AnonymizationStatus(str, Enum):
-    NOT_STARTED = "not_started"
-    EXTRACTING_FRAMES = "extracting_frames"
-    PROCESSING_ANONYMIZING = "processing_anonymization"
-    DONE = "done"
-    VALIDATED = "validated"
-    FAILED = "failed"
-    STARTED = "started"
 
 
 class VideoState(models.Model):
@@ -29,6 +21,7 @@ class VideoState(models.Model):
     Tracks the processing state of a VideoFile instance.
     Uses BooleanFields for clear, distinct states.
     """
+
 
     # Frame related states
     if TYPE_CHECKING:
@@ -39,8 +32,13 @@ class VideoState(models.Model):
     frame_count = models.PositiveIntegerField(null=True, blank=True, help_text="Number of frames extracted/initialized.")
 
     # Metadata related states
-    video_meta_extracted = models.BooleanField(default=False, help_text="True if VideoMeta (technical specs) has been extracted.")
-    text_meta_extracted = models.BooleanField(default=False, help_text="True if text metadata (OCR) has been extracted.")
+    video_meta_extracted = models.BooleanField(
+        default=False,
+        help_text="True if VideoMeta (technical specs) has been extracted.",
+    )
+    text_meta_extracted = models.BooleanField(
+        default=False, help_text="True if text metadata (OCR) has been extracted."
+    )
 
     # AI / Annotation related states
     initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
@@ -76,8 +74,10 @@ class VideoState(models.Model):
         try:
             # Access the related VideoFile via the reverse relation 'video_file'
             if hasattr(self, "video_file") and self.video_file:
+            if hasattr(self, "video_file") and self.video_file:
                 video_uuid = self.video_file.uuid
         except Exception:
+            pass  # Ignore errors if relation doesn't exist or causes issues
             pass  # Ignore errors if relation doesn't exist or causes issues
 
         states = [
@@ -90,7 +90,9 @@ class VideoState(models.Model):
             f"Anonymized={self.anonymized}",
             f"AnonymizationValidated={self.anonymization_validated}",
             f"SensitiveMetaProcessed={self.sensitive_meta_processed}",
-            f"FrameCount={self.frame_count}" if self.frame_count is not None else "FrameCount=None",
+            f"FrameCount={self.frame_count}"
+            if self.frame_count is not None
+            else "FrameCount=None",
             f"SegmentAnnotationsCreated={self.segment_annotations_created}",
             f"SegmentAnnotationsValidated={self.segment_annotations_validated}",
             f"DateCreated={self.date_created.isoformat()}",
@@ -99,23 +101,25 @@ class VideoState(models.Model):
         return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
 
     @property
-    def anonymization_status(self) -> AnonymizationStatus:
+    def anonymization_status(self) -> AnonymizationState:
         """
         Fast, side‑effect‑free status resolution used by API & UI.
         """
         if self.anonymization_validated:
-            return AnonymizationStatus.VALIDATED
+            return AnonymizationState.VALIDATED
         if self.sensitive_meta_processed:
-            return AnonymizationStatus.DONE
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
         if self.frames_extracted and not self.anonymized:
-            return AnonymizationStatus.PROCESSING_ANONYMIZING
+            return AnonymizationState.PROCESSING_ANONYMIZING
         if self.was_created and not self.frames_extracted:
-            return AnonymizationStatus.EXTRACTING_FRAMES
+            return AnonymizationState.EXTRACTING_FRAMES
         if getattr(self, "processing_error", False):
-            return AnonymizationStatus.FAILED
+            return AnonymizationState.FAILED
         if self.processing_started:
-            return AnonymizationStatus.STARTED
-        return AnonymizationStatus.NOT_STARTED
+            return AnonymizationState.STARTED
+        if self.anonymized:
+            return AnonymizationState.ANONYMIZED
+        return AnonymizationState.NOT_STARTED
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:

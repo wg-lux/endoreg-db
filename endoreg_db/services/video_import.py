@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-
+import subprocess
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
 
@@ -72,6 +72,7 @@ class VideoImportService:
         self.processing_context: Dict[str, Any] = {}
 
         self.delete_source = True
+        self.original_file_path = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -228,6 +229,7 @@ class VideoImportService:
             "anonymization_completed": False,
             "error_reason": None,
         }
+        self.original_file_path = str(file_path)
 
         self.logger.info(f"Initialized processing context for: {file_path}")
 
@@ -1086,6 +1088,21 @@ class VideoImportService:
             if self.current_video.state is None:
                 self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
                 return
+            self.current_video.state = self.current_video.get_or_create_state()
+            try:
+                if self.original_file_path is not None:
+                    assert Path(self.original_file_path).exists()
+                else:
+                    self.logger.warning("Original file path is None")
+                self.logger.info("Marked video import as failed in state")
+                raw_file_path = getattr(self.current_video.raw_file, "path", None)
+                original_file_path = self.original_file_path
+                if raw_file_path and original_file_path:
+                    shutil.copy2(str(raw_file_path), str(original_file_path))
+                else:
+                    self.logger.warning("Cannot restore original raw file: path is None")
+            except AssertionError:
+                self.logger.warning("Original file path does not exist")
             try:
                 if self.processing_context.get("processing_started"):
                     self.current_video.state.frames_extracted = False
@@ -1093,8 +1110,10 @@ class VideoImportService:
                     self.current_video.state.video_meta_extracted = False
                     self.current_video.state.text_meta_extracted = False
                     self.current_video.state.save()
+                
             except Exception as e:
                 self.logger.warning(f"Error during cleanup: {e}")
+            
 
     def _cleanup_processing_context(self):
         """

@@ -8,19 +8,12 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 
+from endoreg_db.models.state.anonymization import AnonymizationState
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..media import RawPdfFile
-
-
-class AnonymizationStatus(str, Enum):
-    NOT_STARTED = "not_started"
-    PROCESSING_ANONYMIZING = "processing_anonymization"
-    DONE = "done"
-    VALIDATED = "validated"
-    FAILED = "failed"
-    STARTED = "started"
 
 
 class RawPdfState(models.Model):
@@ -32,7 +25,9 @@ class RawPdfState(models.Model):
     text_meta_extracted = models.BooleanField(default=False, help_text="True if text metadata (OCR) has been extracted.")
 
     # AI / Annotation related states
-    initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
+    initial_prediction_completed = models.BooleanField(
+        default=False, help_text="True if initial AI prediction has run."
+    )
 
     # Processing state
     sensitive_meta_processed = models.BooleanField(
@@ -54,7 +49,9 @@ class RawPdfState(models.Model):
     was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
 
     # PDF metadata extraction state
-    pdf_meta_extracted = models.BooleanField(default=False, help_text="True if PDF metadata has been extracted.")
+    pdf_meta_extracted = models.BooleanField(
+        default=False, help_text="True if PDF metadata has been extracted."
+    )
 
     if TYPE_CHECKING:
         raw_pdf_file: "RawPdfFile"
@@ -80,28 +77,26 @@ class RawPdfState(models.Model):
         return f"RawPdfState(Pdf:{uuid}): {', '.join(states)}"
 
     @property
-    def anonymization_status(self) -> AnonymizationStatus:
+    def anonymization_status(self) -> AnonymizationState:
         """
         Determines the current anonymization workflow status for the PDF processing state.
 
         Returns:
             AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
         """
-        if getattr(self, "processing_error", False):
-            return AnonymizationStatus.FAILED
         if self.anonymization_validated:
-            return AnonymizationStatus.VALIDATED
+            return AnonymizationState.VALIDATED
         if self.sensitive_meta_processed:
-            return AnonymizationStatus.DONE
-        if self.anonymized:
-            return AnonymizationStatus.DONE
-        if self.initial_prediction_completed:
-            return AnonymizationStatus.PROCESSING_ANONYMIZING
-        if self.pdf_meta_extracted:
-            return AnonymizationStatus.NOT_STARTED
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+        if self.processing_started and not self.processing_error and not self.anonymized:
+            return AnonymizationState.PROCESSING_ANONYMIZING
+        if getattr(self, "processing_error", False):
+            return AnonymizationState.FAILED
         if self.processing_started:
-            return AnonymizationStatus.STARTED
-        return AnonymizationStatus.NOT_STARTED
+            return AnonymizationState.STARTED
+        if self.anonymized:
+            return AnonymizationState.ANONYMIZED
+        return AnonymizationState.NOT_STARTED
 
     def mark_processing_started(self, *, save: bool = True) -> None:
         """

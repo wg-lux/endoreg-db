@@ -149,7 +149,7 @@ def _censor_outside_frames(video: "VideoFile", outside_label_name: str = "outsid
     return error_count == 0
 
 
-def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Path]]:
+def _make_temporary_anonymized_frames(video: "VideoFile", roi_processing = True) -> Tuple[Path, List[Path]]:
     """
     Creates temporary anonymized frames in a separate directory.
     Requires raw file and extracted frames. Raises ValueError or RuntimeError on failure.
@@ -166,11 +166,15 @@ def _make_temporary_anonymized_frames(video: "VideoFile") -> Tuple[Path, List[Pa
     temp_anonym_frame_dir = video.get_temp_anonymized_frame_dir()
     temp_anonym_frame_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Creating temporary anonymized frames for video %s in %s", video.uuid, temp_anonym_frame_dir)
-
-    endo_roi = video.get_endo_roi()
-    if not validate_endo_roi(endo_roi_dict=endo_roi):
-        raise ValueError(f"Endoscope ROI is not valid for video {video.uuid}")
+    if roi_processing:
+        endo_roi = video.get_endo_roi()
+        if not validate_endo_roi(endo_roi_dict=endo_roi):
+            raise ValueError(f"Endoscope ROI is not valid for video {video.uuid}")
+    else:
+        endo_roi = {"x": 0, "y": 0, "width": 0, "height": 0}  # Dummy ROI to skip processing
     assert endo_roi is not None  # For type checker
+    
+        
 
     state = video.get_or_create_state()
     if not state.frames_extracted:
