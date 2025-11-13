@@ -48,7 +48,6 @@ from .patient_finding import (
 )
 from .pdf import RawPdfAnonyTextSerializer
 from .report import ReportDataSerializer, ReportListSerializer, SecureFileUrlSerializer
-from .video.video_metadata import VideoMetadataSerializer
 from .video.video_processing_history import VideoProcessingHistorySerializer
 from .video_examination import (
     VideoExaminationCreateSerializer,
@@ -109,7 +108,6 @@ __all__ = [
     "ReportDataSerializer",
     "SecureFileUrlSerializer",
     # Video Correction (Phase 1.1)
-    "VideoMetadataSerializer",
     "VideoProcessingHistorySerializer",
     # Video Examination
     "VideoExaminationSerializer",

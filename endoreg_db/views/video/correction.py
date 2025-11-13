@@ -21,7 +21,7 @@ import json
 import logging
 
 from endoreg_db.models import VideoFile, VideoMetadata, VideoProcessingHistory, LabelVideoSegment
-from endoreg_db.serializers import VideoMetadataSerializer, VideoProcessingHistorySerializer
+from endoreg_db.serializers import VideoMetaSerializer, VideoProcessingHistorySerializer
 from lx_anonymizer import FrameCleaner
 
 from endoreg_db.models import VideoFile
@@ -173,7 +173,7 @@ class VideoMetadataView(APIView):
         # Get or create metadata record
         metadata, created = VideoMetadata.objects.get_or_create(video=video)
         
-        serializer = VideoMetadataSerializer(metadata, context={'request': request})
+        serializer = VideoMetaSerializer(metadata, context={'request': request})
         return Response(serializer.data)
 
 

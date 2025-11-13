@@ -20,6 +20,7 @@ def _extract_frames(
     overwrite: bool = False,
     ext="jpg",
     verbose=False,
+    from_processed: bool = False,
 ) -> bool:
     """
     Extract frames from a raw video file, update frame extraction status in the database, and manage related file system operations.
@@ -44,13 +45,18 @@ def _extract_frames(
 
     from ._delete_frames import _delete_frames
 
-    # Pre-validation checks (outside any transaction)
-    if not video.has_raw:
-        raise FileNotFoundError(f"Raw video file not available for {video.uuid}. Cannot extract frames.")
+    if from_processed:
+        raw_file_path = video.get_processed_file_path()
+        if not raw_file_path or not raw_file_path.exists():
+            raise FileNotFoundError(f"Processed video file not found at {raw_file_path} for video {video.uuid}. Cannot extract frames.")
+    else:
+        # Pre-validation checks (outside any transaction)
+        if not video.has_raw:
+            raise FileNotFoundError(f"Raw video file not available for {video.uuid}. Cannot extract frames.")
 
-    raw_file_path = video.get_raw_file_path()
-    if not raw_file_path or not raw_file_path.exists():
-        raise FileNotFoundError(f"Raw video file not found at {raw_file_path} for video {video.uuid}. Cannot extract frames.")
+        raw_file_path = video.get_raw_file_path()
+        if not raw_file_path or not raw_file_path.exists():
+            raise FileNotFoundError(f"Raw video file not found at {raw_file_path} for video {video.uuid}. Cannot extract frames.")
 
     frame_dir = _get_frame_dir_path(video)
     if not frame_dir:

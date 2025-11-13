@@ -144,7 +144,7 @@ from .requirement import (
     RequirementType,
 )
 from .state import (
-    AnonymizationStatus,
+    AnonymizationState,
     LabelVideoSegmentState,
     RawPdfState,
     SensitiveMetaState,
@@ -309,6 +309,6 @@ __all__ = [
     "SensitiveMetaState",
     "VideoState",
     "LabelVideoSegmentState",
-    "AnonymizationStatus",
+    "AnonymizationState",
     "RawPdfState",
 ]

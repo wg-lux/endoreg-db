@@ -3,12 +3,8 @@ from typing import TYPE_CHECKING
 from rest_framework import serializers
 
 from endoreg_db.models.media import RawPdfFile, VideoFile
-from endoreg_db.models.state.raw_pdf import (
-    AnonymizationStatus as PdfAnonymizationStatus,
-)
-from endoreg_db.models.state.video import (
-    AnonymizationStatus as VideoAnonymizationStatus,
-)
+from endoreg_db.models.state.anonymization import AnonymizationState as PdfAnonymizationState
+from endoreg_db.models.state.anonymization import AnonymizationState as VideoAnonymizationState
 
 if TYPE_CHECKING:
     pass
@@ -28,7 +24,6 @@ class FileOverviewSerializer(serializers.Serializer):
     anonymizationStatus = serializers.CharField(read_only=True)
     annotationStatus = serializers.CharField(read_only=True)
     createdAt = serializers.DateTimeField(read_only=True)
-
 
     # --- converting DB objects to that shape -----------------------
     def to_representation(self, instance):
@@ -61,7 +56,7 @@ class FileOverviewSerializer(serializers.Serializer):
             # ------- anonymization status using VideoState model
             vs = instance.state
             anonym_status = (
-                vs.anonymization_status if vs else VideoAnonymizationStatus.NOT_STARTED
+                vs.anonymization_status if vs else VideoAnonymizationState.NOT_STARTED
             )
 
             # ------- annotation status (validated label segments)
@@ -69,7 +64,7 @@ class FileOverviewSerializer(serializers.Serializer):
                 annot_status = "done"
             else:
                 annot_status = "not_started"
-                
+
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
             created_at = instance.date_created
@@ -78,14 +73,11 @@ class FileOverviewSerializer(serializers.Serializer):
             # ------- anonymization status using RawPdfState model
             rps = getattr(instance, "state", None)
             anonym_status = (
-                rps.anonymization_status
-                if rps
-                else PdfAnonymizationStatus.NOT_STARTED
+                rps.anonymization_status if rps else PdfAnonymizationState.NOT_STARTED
             )
 
             # ------- annotation status (not applicable for PDFs)
             annot_status = "not_applicable"
-
 
         else:  # shouldn't happen
             raise TypeError(f"Unsupported instance for overview: {type(instance)}")

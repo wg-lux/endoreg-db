@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
-
+import subprocess
 from django.db import transaction
 
 from endoreg_db.models import SensitiveMeta
@@ -68,7 +68,9 @@ class PdfImportService:
 
         # Central PDF instance management
         self.current_pdf = None
+        self.current_pdf_state = None
         self.processing_context = {}
+        self.original_path = None
 
     @classmethod
     def with_blackening(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
@@ -137,6 +139,7 @@ class PdfImportService:
                     fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
                 else:
                     # Another worker is processing this file
+                    
                     raise ValueError(f"File already being processed: {path}")
 
             os.write(fd, b"lock")
@@ -209,14 +212,10 @@ class PdfImportService:
         if hasattr(pdf_file, "get_or_create_state"):
             state = pdf_file.get_or_create_state()
             pdf_file.state = state
+            self.current_pdf_state = state
+            assert isinstance(self.current_pdf_state, RawPdfState)
             return state
-        # Very defensive fallback
-        try:
-            state, _ = pdf_file.get_or_create_state(raw_pdf_file=pdf_file)
-            pdf_file.state = state
-            return state
-        except Exception:
-            return None
+
 
     def _ensure_report_reading_available(self):
         """
@@ -405,6 +404,7 @@ class PdfImportService:
             "metadata_processed": False,
             "anonymization_completed": False,
         }
+        self.original_path = Path(file_path)
 
         # Check if already processed (only during current session to prevent race conditions)
         if str(file_path) in self.processed_files:
@@ -497,7 +497,11 @@ class PdfImportService:
     def _setup_processing_environment(self):
         """Setup processing environment and state."""
         original_path = self.processing_context.get("file_path")
-
+        if not original_path or not self.current_pdf:
+            try:
+                self.current_pdf = RawPdfFile.objects.get(pdf_hash=self.processing_context["file_hash"])
+            except RawPdfFile.DoesNotExist:
+                raise RuntimeError("Processing environment setup failed")
         # Create sensitive file copy
         self.create_sensitive_file(self.current_pdf, original_path)
 
@@ -526,7 +530,7 @@ class PdfImportService:
     def _process_text_and_metadata(self):
         """Process text extraction and metadata using ReportReader."""
         report_reading_available, ReportReader = self._ensure_report_reading_available()
-
+        assert ReportReader is not None and report_reading_available
         if not report_reading_available:
             logger.warning("Report reading not available (lx_anonymizer not found)")
             self._mark_processing_incomplete("no_report_reader")
@@ -835,8 +839,9 @@ class PdfImportService:
 
             # Mark state as anonymized immediately; this keeps downstream flows working
             state = self._ensure_state(self.current_pdf)
-            if state and not state.anonymized:
-                state.mark_anonymized(save=True)
+            
+            if state and not state.processing_started:
+                state.mark_processing_started()
 
             logger.info(
                 "Updated anonymized_file reference to: %s",
@@ -947,10 +952,17 @@ class PdfImportService:
         try:
             if self.current_pdf and hasattr(self.current_pdf, "state"):
                 state = self._ensure_state(self.current_pdf)
+                raw_file_path = self.current_pdf.get_raw_file_path()
+                original_path = self.original_path
+                if raw_file_path is not None and original_path is not None:
+                    # Ensure reprocessing for next attempt by restoring original file
+                    shutil.copy2(str(raw_file_path), str(original_path))
+                
                 if state and self.processing_context.get("processing_started"):
                     state.text_meta_extracted = False
                     state.pdf_meta_extracted = False
                     state.sensitive_meta_processed = False
+                    state.anonymized = False
                     state.save()
                     logger.debug("Updated PDF state to indicate processing failure")
         except Exception as e:
@@ -985,32 +997,10 @@ class PdfImportService:
                 )
 
             try:
-                original_path = self.processing_context.get("original_file_path")
-                logger.debug(
-                    "PDF cleanup original path: %s (%s)",
-                    original_path,
-                    type(original_path),
-                )
                 raw_dir = (
                     original_path.parent if isinstance(original_path, Path) else None
                 )
-                if (
-                    isinstance(original_path, Path)
-                    and original_path.exists()
-                    and not self.processing_context.get("sensitive_copy_created")
-                ):
-                    try:
-                        original_path.unlink()
-                        logger.info(
-                            "Removed original file %s during error cleanup",
-                            original_path,
-                        )
-                    except Exception as remove_exc:
-                        logger.warning(
-                            "Could not remove original file %s during error cleanup: %s",
-                            original_path,
-                            remove_exc,
-                        )
+
                 pdf_dir = self._get_pdf_dir()
                 if not pdf_dir and raw_dir:
                     base_dir = raw_dir.parent
