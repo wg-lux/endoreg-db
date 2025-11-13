@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.models import RawPdfFile, VideoFile
+from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.serializers.anonymization import SensitiveMetaValidateSerializer
 
 
@@ -62,7 +63,11 @@ class AnonymizationValidateView(APIView):
 
                 if not ok:
                     return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
-
+                else:
+                    video.sensitive_meta.state.refresh_from_db()
+                    video.sensitive_meta.state.mark_dob_verified()
+                    video.sensitive_meta.state.mark_names_verified()
+                    video.sensitive_meta.state.save()
                 return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
 
             if file_type == "video":
@@ -84,6 +89,12 @@ class AnonymizationValidateView(APIView):
 
                 if not ok:
                     return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    pdf.sensitive_meta = SensitiveMeta.objects.get(pk=pdf.pk)
+                    pdf.sensitive_meta.state.refresh_from_db()
+                    pdf.sensitive_meta.state.mark_dob_verified()
+                    pdf.sensitive_meta.state.mark_names_verified()
+                    pdf.sensitive_meta.state.save()
 
                 return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
 

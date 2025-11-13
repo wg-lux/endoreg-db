@@ -7,7 +7,6 @@ Unterstützt DD.MM.YYYY als Primärformat und YYYY-MM-DD als Fallback.
 from rest_framework import serializers
 from endoreg_db.models.metadata.sensitive_meta_logic import parse_any_date
 
-
 class SensitiveMetaValidateSerializer(serializers.Serializer):
     """
     Serializer für SensitiveMeta-Validierung mit deutscher Datums-Priorität.
@@ -19,11 +18,11 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
     Alle Datumsfelder werden in date-Objekte konvertiert.
     """
     
-    patient_first_name = serializers.CharField(required=False, allow_blank=True)
-    patient_last_name = serializers.CharField(required=False, allow_blank=True)
-    patient_dob = serializers.CharField(required=False, allow_blank=True)
-    examination_date = serializers.CharField(required=False, allow_blank=True)
-    casenumber = serializers.CharField(required=False, allow_blank=True)
+    patient_first_name = serializers.CharField(required=True, allow_blank=True)
+    patient_last_name = serializers.CharField(required=True, allow_blank=True)
+    patient_dob = serializers.CharField(required=True, allow_blank=True)
+    examination_date = serializers.CharField(required=True, allow_blank=True)
+    casenumber = serializers.CharField(required=True, allow_blank=True)
     anonymized_text = serializers.CharField(required=False, allow_blank=True)
     patient_gender = serializers.CharField(required=False, allow_blank=True)
     center_name = serializers.CharField(required=False, allow_blank=True)
@@ -31,6 +30,10 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
     file_type = serializers.ChoiceField(
         choices=['video', 'pdf'], required=False
     )  # Optional: "video" oder "pdf"
+    center_name = serializers.CharField(required=False, allow_blank=True)
+    external_id = serializers.CharField(required=False, allow_blank=True)
+    external_id_origin = serializers.CharField(required=False, allow_blank=True)
+    
 
     def validate_patient_dob(self, value):
         """
