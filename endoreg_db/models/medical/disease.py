@@ -1,5 +1,6 @@
+from typing import TYPE_CHECKING, List
+
 from django.db import models
-from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .patient import PatientDisease
@@ -27,6 +28,7 @@ class Disease(models.Model):
 
     Can define associated subcategories and numerical descriptors applicable to the disease itself.
     """
+
     name = models.CharField(max_length=255, unique=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
@@ -34,8 +36,12 @@ class Disease(models.Model):
     objects = DiseaseManager()
 
     if TYPE_CHECKING:
-        disease_classifications: models.QuerySet["DiseaseClassification"]
-        patient_diseases: models.QuerySet["PatientDisease"]
+
+        @property
+        def disease_classifications(self) -> models.QuerySet["DiseaseClassification"]: ...
+
+        @property
+        def patient_diseases(self) -> models.QuerySet["PatientDisease"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
@@ -52,9 +58,7 @@ class Disease(models.Model):
         Returns:
             List[DiseaseClassification]: A list of related disease classification objects.
         """
-        classifications: List[DiseaseClassification] = [
-            _ for _ in self.disease_classifications.all()
-        ]
+        classifications: List[DiseaseClassification] = [_ for _ in self.disease_classifications.all()]
         return classifications
 
 
@@ -78,17 +82,18 @@ class DiseaseClassification(models.Model):
     """
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
     """
+
     name = models.CharField(max_length=255, unique=True)
 
-    disease = models.ForeignKey(
-        Disease, on_delete=models.CASCADE, related_name="disease_classifications"
-    )
+    disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="disease_classifications")
 
     objects = DiseaseClassificationManager()
 
     if TYPE_CHECKING:
-        disease: "Disease"
-        disease_classification_choices: models.QuerySet["DiseaseClassificationChoice"]
+        disease: models.ForeignKey["Disease"]
+
+        @property
+        def disease_classification_choices(self) -> models.manager.RelatedManager["DiseaseClassificationChoice"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
@@ -105,9 +110,7 @@ class DiseaseClassification(models.Model):
         Returns:
             List[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
-        choices: List[DiseaseClassificationChoice] = [
-            _ for _ in self.disease_classification_choices.all()
-        ]
+        choices: List[DiseaseClassificationChoice] = [_ for _ in self.disease_classification_choices.all()]
         return choices
 
 
@@ -133,6 +136,7 @@ class DiseaseClassificationChoice(models.Model):
     """
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
     """
+
     name = models.CharField(max_length=255, unique=True)
 
     disease_classification = models.ForeignKey(
@@ -144,8 +148,10 @@ class DiseaseClassificationChoice(models.Model):
     objects = DiseaseClassificationChoiceManager()
 
     if TYPE_CHECKING:
-        disease_classification: "DiseaseClassification"
-        patient_diseases: models.QuerySet["PatientDisease"]
+        disease_classification: models.ForeignKey["DiseaseClassification"]
+
+        @property
+        def patient_diseases(self) -> models.manager.RelatedManager["PatientDisease"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""

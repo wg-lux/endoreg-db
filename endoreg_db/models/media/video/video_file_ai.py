@@ -1,17 +1,18 @@
 import logging
+from collections import Counter, defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, List, Dict, Tuple
-from collections import defaultdict, Counter
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from ...utils import TEST_RUN as GLOBAL_TEST_RUN, TEST_RUN_FRAME_NUMBER as GLOBAL_N_TEST_FRAMES
 import numpy as np
 from safetensors import safe_open
 
 from ...metadata import ModelMeta, VideoPredictionMeta
+from ...utils import TEST_RUN as GLOBAL_TEST_RUN
+from ...utils import TEST_RUN_FRAME_NUMBER as GLOBAL_N_TEST_FRAMES
 
 if TYPE_CHECKING:
-    from .video_file import VideoFile
     from ...medical.hardware import EndoscopyProcessor
+    from .video_file import VideoFile
 
 logger = logging.getLogger(__name__)
 
@@ -166,9 +167,7 @@ def _remap_prediction_dict(predictions: Dict[str, Any], mapping: Dict[str, List[
     return remapped
 
 
-def _extract_text_from_video_frames(
-    video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15
-) -> Optional[Dict[str, str]]:
+def _extract_text_from_video_frames(video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15) -> Optional[Dict[str, str]]:
     """
     Extracts text from a sample of video frames using OCR based on processor ROIs.
     Requires frames to be extracted. Raises ValueError on pre-condition failure.
@@ -182,7 +181,7 @@ def _extract_text_from_video_frames(
         extract_text_from_rois,
     )  # Local import for dependency isolation
 
-    state = video.get_or_create_state() # Use State helper
+    state = video.get_or_create_state()  # Use State helper
     # --- Pre-condition Check ---
     if not state.frames_extracted:
         # Raise exception
@@ -195,7 +194,7 @@ def _extract_text_from_video_frames(
         raise ValueError(f"Processor not set for video {video.uuid}. Cannot extract text.")
 
     try:
-        frame_paths = video.get_frame_paths() # Use Frame helper
+        frame_paths = video.get_frame_paths()  # Use Frame helper
     except Exception as e:
         logger.error("Error getting frame paths for video %s: %s", video.uuid, e, exc_info=True)
         raise RuntimeError(f"Could not get frame paths for video {video.uuid}") from e
@@ -203,7 +202,7 @@ def _extract_text_from_video_frames(
     n_frames = len(frame_paths)
     if n_frames == 0:
         logger.warning("No frame paths found for video %s during text extraction.", video.uuid)
-        return None # Return None if no frames, not an error condition for this function
+        return None  # Return None if no frames, not an error condition for this function
 
     # Determine number of frames to process
     n_frames_to_process = max(1, int(frame_fraction * n_frames))
@@ -231,10 +230,8 @@ def _extract_text_from_video_frames(
                     rois_texts[roi].append(text)
         except Exception as e:
             # Log error but continue processing other frames
-            logger.error(
-                "Error extracting text from frame %s for video %s: %s", frame_path, video.uuid, e, exc_info=True
-            )
-            errors_encountered = True # Flag that an error occurred
+            logger.error("Error extracting text from frame %s for video %s: %s", frame_path, video.uuid, e, exc_info=True)
+            errors_encountered = True  # Flag that an error occurred
 
     # Determine the most frequent text for each ROI
     most_frequent_texts = {}
@@ -250,17 +247,15 @@ def _extract_text_from_video_frames(
             else:
                 most_frequent_texts[roi] = None
         except Exception as e:
-            logger.error(
-                "Error finding most common text for ROI %s: %s", roi, e, exc_info=True
-            )
+            logger.error("Error finding most common text for ROI %s: %s", roi, e, exc_info=True)
             most_frequent_texts[roi] = None
 
     if errors_encountered:
         logger.warning("Errors occurred during text extraction for some frames of video %s. Results may be incomplete.", video.uuid)
 
     if not most_frequent_texts:
-         logger.info("No text extracted for any ROI for video %s.", video.uuid)
-         return None # Return None if no text found
+        logger.info("No text extracted for any ROI for video %s.", video.uuid)
+        return None  # Return None if no text found
 
     logger.info("Extracted text for video %s: %s", video.uuid, most_frequent_texts)
     return most_frequent_texts
@@ -274,7 +269,7 @@ def _predict_video_pipeline(
     binarize_threshold: float = 0.5,
     test_run: bool = False,
     n_test_frames: int = 10,
-) -> Dict[str, List[Tuple[int, int]]]: # Changed return type to non-optional
+) -> Dict[str, List[Tuple[int, int]]]:  # Changed return type to non-optional
     """
     Executes the video prediction pipeline using an AI model.
     Requires frames to be extracted. Raises exceptions on failure.
@@ -285,13 +280,13 @@ def _predict_video_pipeline(
     """
     # Import heavy dependencies locally
     from ...administration.ai import AiModel
-    try:
-        from ....utils.ai import InferenceDataset, MultiLabelClassificationNet, Classifier
 
+    try:
+        from ....utils.ai import Classifier, InferenceDataset, MultiLabelClassificationNet
         from ....utils.ai.postprocess import (
             concat_pred_dicts,
-            make_smooth_preds,
             find_true_pred_sequences,
+            make_smooth_preds,
         )
     except ImportError as e:
         logger.error("Failed to import endo_ai components: %s. Prediction unavailable.", e, exc_info=True)
@@ -303,7 +298,7 @@ def _predict_video_pipeline(
         n_test_frames = GLOBAL_N_TEST_FRAMES
         logger.info("Using global TEST_RUN settings for prediction pipeline.")
 
-    state = video.get_or_create_state() # Use State helper
+    state = video.get_or_create_state()  # Use State helper
     # --- Pre-condition Check ---
     if not state.frames_extracted:
         # Raise exception
@@ -311,7 +306,7 @@ def _predict_video_pipeline(
     # --- End Pre-condition Check ---
 
     # Frame directory check
-    frame_dir = video.get_frame_dir_path() # Use IO helper
+    frame_dir = video.get_frame_dir_path()  # Use IO helper
     if not frame_dir or not frame_dir.exists() or not any(frame_dir.iterdir()):
         # Raise exception
         raise FileNotFoundError(f"Frame directory {frame_dir} is empty or does not exist for video {video.uuid}. Prediction aborted.")
@@ -333,9 +328,7 @@ def _predict_video_pipeline(
 
     # Get or create VideoPredictionMeta
     try:
-        _video_prediction_meta, created = VideoPredictionMeta.objects.get_or_create(
-            video_file=video, model_meta=model_meta
-        )
+        _video_prediction_meta, created = VideoPredictionMeta.objects.get_or_create(video_file=video, model_meta=model_meta)
         if created:
             logger.info(
                 "Created new VideoPredictionMeta for video %s, model %s.",
@@ -350,9 +343,7 @@ def _predict_video_pipeline(
             )
         # video_prediction_meta.save() # Save is handled by get_or_create
     except Exception as e:
-        logger.error(
-            "Failed to get or create VideoPredictionMeta for video %s, model %s: %s", video.uuid, model_meta.name, e, exc_info=True
-        )
+        logger.error("Failed to get or create VideoPredictionMeta for video %s, model %s: %s", video.uuid, model_meta.name, e, exc_info=True)
         # Raise exception
         raise RuntimeError("Failed to get or create VideoPredictionMeta") from e
 
@@ -375,34 +366,30 @@ def _predict_video_pipeline(
         raise ValueError(f"Dataset class '{dataset_name}' not found for video {video.uuid}. Prediction aborted.")
 
     try:
-        paths = video.get_frame_paths() # Use Frame helper
+        paths = video.get_frame_paths()  # Use Frame helper
         if not paths:
             raise FileNotFoundError(f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.uuid})")
     except Exception as e:
-        logger.error(
-            "Error listing or getting frame files from %s for video %s: %s", frame_dir, video.uuid, e, exc_info=True
-        )
+        logger.error("Error listing or getting frame files from %s for video %s: %s", frame_dir, video.uuid, e, exc_info=True)
         raise RuntimeError(f"Error getting frame paths from {frame_dir}") from e
 
     logger.info("Found %d frame files in %s for video %s.", len(paths), frame_dir, video.uuid)
 
-    crop_template = video.get_crop_template() # Use Meta helper
+    crop_template = video.get_crop_template()  # Use Meta helper
     string_paths = [p.as_posix() for p in paths]
-    crops = [crop_template] * len(paths) # Assuming same crop for all frames
+    crops = [crop_template] * len(paths)  # Assuming same crop for all frames
 
     if test_run:
         logger.info("TEST RUN: Using first %d frames for video %s.", n_test_frames, video.uuid)
         string_paths = string_paths[:n_test_frames]
         crops = crops[:n_test_frames]
         if not string_paths:
-             # Raise exception
+            # Raise exception
             raise ValueError(f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.uuid}.")
 
     label_names = _resolve_label_names(model_meta)
     if not label_names:
-        raise ValueError(
-            f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured."
-        )
+        raise ValueError(f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured.")
 
     outputs_hint = _infer_output_classes(weights_path)
 
@@ -443,7 +430,7 @@ def _predict_video_pipeline(
         ds = dataset_model_class(string_paths, crops, config=ds_config)
         logger.info("Created dataset '%s' with %d items for video %s.", dataset_name, len(ds), video.uuid)
         if len(ds) > 0:
-            sample = ds[0] # Get a sample for debugging shape
+            sample = ds[0]  # Get a sample for debugging shape
             logger.debug("Sample shape: %s", getattr(sample, "shape", None))
 
         try:
@@ -464,9 +451,7 @@ def _predict_video_pipeline(
             "labels": network_labels,
         }
     except Exception as e:
-        logger.error(
-            "Failed to create dataset '%s' for video %s: %s", dataset_name, video.uuid, e, exc_info=True
-        )
+        logger.error("Failed to create dataset '%s' for video %s: %s", dataset_name, video.uuid, e, exc_info=True)
         # Raise exception
         raise RuntimeError(f"Failed to create dataset '{dataset_name}'") from e
 
@@ -510,13 +495,11 @@ def _predict_video_pipeline(
             )
             ai_model_instance = ai_model_instance.to(device)
 
-        _ = ai_model_instance.eval() # Set to evaluation mode
+        _ = ai_model_instance.eval()  # Set to evaluation mode
         classifier = Classifier(ai_model_instance, config=classifier_config or {}, verbose=True)
         logger.info("AI model loaded successfully for video %s from %s.", video.uuid, weights_path)
     except Exception as e:
-        logger.error(
-            "Failed to load AI model for video %s from %s: %s", video.uuid, weights_path, e, exc_info=True
-        )
+        logger.error("Failed to load AI model for video %s from %s: %s", video.uuid, weights_path, e, exc_info=True)
         # Raise exception
         raise RuntimeError(f"Failed to load AI model from {weights_path}") from e
 
@@ -529,16 +512,19 @@ def _predict_video_pipeline(
         logger.error("Inference failed for video %s: %s", video.uuid, e, exc_info=True)
         # CUDA-OOM Fallback: Speicher freigeben und CPU versuchen
         try:
-            import torch
             import gc
-            is_oom = isinstance(e, (getattr(torch.cuda, 'OutOfMemoryError', RuntimeError), RuntimeError)) and (
-                'out of memory' in str(e).lower() or 'cuda out of memory' in str(e).lower()
+
+            import torch
+
+            is_oom = isinstance(e, (getattr(torch.cuda, "OutOfMemoryError", RuntimeError), RuntimeError)) and (
+                "out of memory" in str(e).lower() or "cuda out of memory" in str(e).lower()
             )
         except Exception:
             is_oom = False
-        if 'torch' in globals() or 'torch' in locals():
+        if "torch" in globals() or "torch" in locals():
             try:
                 import torch  # ensure available in this scope
+
                 if torch.cuda.is_available() and is_oom:
                     logger.warning("CUDA OOM detected. Freeing CUDA cache and retrying on CPU…")
                     try:
@@ -571,19 +557,17 @@ def _predict_video_pipeline(
         logger.info("Post-processing predictions for video %s...", video.uuid)
         readable_predictions = [classifier.readable(p) for p in predictions]
         if label_mapping:
-            readable_predictions = [
-                _remap_prediction_dict(prediction, label_mapping) for prediction in readable_predictions
-            ]
+            readable_predictions = [_remap_prediction_dict(prediction, label_mapping) for prediction in readable_predictions]
 
         merged_predictions = concat_pred_dicts(readable_predictions)
 
-        fps = video.get_fps() # Use Meta helper
+        fps = video.get_fps()  # Use Meta helper
         if not fps:
             logger.warning(
                 "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default 30 FPS.",
                 video.uuid,
             )
-            fps = 30 # Default FPS if unknown
+            fps = 30  # Default FPS if unknown
 
         fps = int(fps)
         smooth_merged_predictions = {}
@@ -596,9 +580,7 @@ def _predict_video_pipeline(
 
         binary_smooth_merged_predictions = {}
         for key in smooth_merged_predictions.keys():
-            binary_smooth_merged_predictions[key] = (
-                smooth_merged_predictions[key] > binarize_threshold
-            )
+            binary_smooth_merged_predictions[key] = smooth_merged_predictions[key] > binarize_threshold
 
         sequences = {}
         for label, prediction_array in binary_smooth_merged_predictions.items():
@@ -626,10 +608,10 @@ def _predict_video_entry(
     binarize_threshold: float = 0.5,
     test_run: bool = GLOBAL_TEST_RUN,
     n_test_frames: int = GLOBAL_N_TEST_FRAMES,
-    save_results: bool = True, # Note: save_results is handled in video_file.py now
+    save_results: bool = True,  # Note: save_results is handled in video_file.py now
 ):
     """Entry point called from VideoFile.predict_video. Imports and calls the main prediction logic."""
-    from endoreg_db.models import AiModel, ModelMeta # Local import
+    from endoreg_db.models import AiModel, ModelMeta  # Local import
 
     try:
         ai_model = AiModel.objects.get(name=model_name)
@@ -648,7 +630,7 @@ def _predict_video_entry(
     # --- Explicitly pass only the arguments expected by _predict_video_pipeline ---
     predicted_sequences = _predict_video_pipeline(
         video=video,
-        model_meta=model_meta, # Pass the fetched ModelMeta object
+        model_meta=model_meta,  # Pass the fetched ModelMeta object
         dataset_name=dataset_name,
         smooth_window_size_s=smooth_window_size_s,
         binarize_threshold=binarize_threshold,
@@ -661,15 +643,11 @@ def _predict_video_entry(
     return predicted_sequences, model_meta
 
 
-def _extract_text_information(
-    video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15
-) -> Optional[Dict[str, str]]:
+def _extract_text_information(video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15) -> Optional[Dict[str, str]]:
     """Facade function to call the text extraction logic."""
     logger.info("Attempting text extraction for video %s.", video.uuid)
 
-    extracted_data = _extract_text_from_video_frames(
-        video=video, frame_fraction=frame_fraction, cap=cap
-    )
+    extracted_data = _extract_text_from_video_frames(video=video, frame_fraction=frame_fraction, cap=cap)
 
     if extracted_data is not None:
         logger.info("Text extraction successful for video %s.", video.uuid)

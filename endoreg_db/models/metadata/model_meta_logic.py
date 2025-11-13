@@ -88,16 +88,12 @@ def create_from_file_logic(
     try:
         label_set = labelset_qs.get()
     except LabelSet.DoesNotExist as exc:
-        raise ValueError(
-            f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
-        ) from exc
+        raise ValueError(f"LabelSet '{labelset_name}' with version '{labelset_version}' not found.") from exc
     except LabelSet.MultipleObjectsReturned:
         # Prefer the highest version when duplicates remain and no explicit version requested
         label_set = labelset_qs.order_by("-version").first()
         if not label_set:
-            raise ValueError(
-                f"LabelSet '{labelset_name}' could not be resolved."
-            )
+            raise ValueError(f"LabelSet '{labelset_name}' could not be resolved.")
 
     # --- Determine Version ---
     target_version: str
@@ -413,10 +409,7 @@ def setup_default_from_huggingface_logic(
             local_dir=WEIGHTS_DIR,
         )
     except Exception as exc:  # pragma: no cover - network errors
-        raise RuntimeError(
-            "Failed to download safetensor weights from Hugging Face; ensure the repository provides "
-            "a .safetensors artifact."
-        ) from exc
+        raise RuntimeError("Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact.") from exc
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
     if not labelset_name:
@@ -433,9 +426,7 @@ def setup_default_from_huggingface_logic(
             labelset_qs = labelset_qs.filter(version=version_value)
         labelset = labelset_qs.order_by("-version").first()
         if not labelset:
-            raise ValueError(
-                f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
-            )
+            raise ValueError(f"LabelSet '{labelset_name}' with version '{labelset_version}' not found.")
 
     ModelMeta = _get_model_meta_class()
     model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
@@ -447,8 +438,8 @@ def setup_default_from_huggingface_logic(
         cls,
         meta_name=meta["name"],
         model_name=ai_model.name,
-    labelset_name=labelset.name,
-    labelset_version=labelset.version,
+        labelset_name=labelset.name,
+        labelset_version=labelset.version,
         weights_file=weights_path,
         activation=meta["activation"],
         mean=meta["mean"],

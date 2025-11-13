@@ -39,9 +39,15 @@ class EmissionFactor(models.Model):
 
     if TYPE_CHECKING:
         unit: models.ForeignKey["Unit|None"]
-        reference_products: models.QuerySet["ReferenceProduct"]
-        reference_product_package: models.QuerySet["ReferenceProduct"]
-        reference_product_product: models.QuerySet["ReferenceProduct"]
+
+        @property
+        def reference_products(self) -> models.QuerySet["ReferenceProduct"]: ...
+
+        @property
+        def reference_product_package(self) -> models.QuerySet["ReferenceProduct"]: ...
+
+        @property
+        def reference_product_product(self) -> models.QuerySet["ReferenceProduct"]: ...
 
     def natural_key(self) -> tuple:
         """

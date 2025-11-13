@@ -1,5 +1,6 @@
+from typing import TYPE_CHECKING, List
+
 from django.db import models
-from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models import PatientEvent
@@ -13,14 +14,14 @@ class EventManager(models.Manager):
     def get_by_natural_key(self, name: str) -> "Event":
         """
         Retrieves an Event instance using its natural key.
-        
+
         This method returns the event whose name matches the provided natural key.
-        It is primarily used to support Django's natural key serialization during 
+        It is primarily used to support Django's natural key serialization during
         data import/export and deserialization processes.
-        
+
         Args:
             name: The unique event name serving as the natural key.
-        
+
         Returns:
             The Event object corresponding to the given name.
         """
@@ -38,22 +39,19 @@ class Event(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    event_classification: models.ForeignKey["EventClassification"] = models.ForeignKey(
-        "EventClassification",
-        on_delete=models.CASCADE,
-        related_name="events",
-        null=True,
-        blank=True,
-    )
+
     objects = EventManager()
 
     if TYPE_CHECKING:
-        patient_events: models.QuerySet["PatientEvent"]
+        patient_events: models.ForeignKey["PatientEvent"]
+
+        @property
+        def event_classifications(self) -> models.QuerySet["EventClassification"]: ...
 
     def natural_key(self):
         """
         Returns a tuple representing the natural key for this instance.
-        
+
         The natural key consists of the instance's unique name.
         """
         return (self.name,)
@@ -61,7 +59,7 @@ class Event(models.Model):
     def __str__(self):
         """
         Return a string representation of the instance's name.
-        
+
         This method converts the 'name' attribute to a string, providing a human-readable
         representation of the model instance.
         """
@@ -85,6 +83,18 @@ class EventClassification(models.Model):
 
     objects = EventClassificationManager()
 
+    event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name="event_classifications",
+    )
+
+    if TYPE_CHECKING:
+        event: models.ForeignKey["Event"]
+
+        @property
+        def event_classification_choices(self) -> models.QuerySet["EventClassificationChoice"]: ...
+
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
         return (self.name,)
@@ -95,9 +105,7 @@ class EventClassification(models.Model):
 
     def get_choices(self) -> List["EventClassificationChoice"]:
         """Retrieves all choices associated with this classification."""
-        choices: List[EventClassificationChoice] = [
-            _ for _ in self.event_classification_choices.all()
-        ]
+        choices: List[EventClassificationChoice] = [_ for _ in self.event_classification_choices.all()]
         return choices
 
 

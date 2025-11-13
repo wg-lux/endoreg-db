@@ -3,12 +3,12 @@ from datetime import date
 from django.test import TestCase
 
 from endoreg_db.models import (
-    Requirement,
-    RequirementType,
-    RequirementOperator,
+    Medication,
     Patient,
     PatientMedication,
-    Medication,
+    Requirement,
+    RequirementOperator,
+    RequirementType,
     Unit,
 )
 
@@ -35,8 +35,8 @@ class RequirementQuerysetEvaluationTests(TestCase):
         patient_med = self._create_patient_medication(medication)
 
         requirement = Requirement.objects.create(name="req_no_ops")
-        requirement.requirement_types.add(self.req_type_pm) # type: ignore
-        requirement.medications.add(medication) # type: ignore
+        requirement.requirement_types.add(self.req_type_pm)
+        requirement.medications.add(medication)
 
         qs = PatientMedication.objects.filter(pk__in=[patient_med.pk])
         self.assertFalse(requirement.evaluate(qs, mode="loose"))
@@ -52,17 +52,15 @@ class RequirementQuerysetEvaluationTests(TestCase):
             name="req_qs_all",
             string_values="qs_mode=all",
         )
-        requirement.requirement_types.add(self.req_type_pm) # type: ignore
-        requirement.operators.add(self.op_match_any) # type: ignore
-        requirement.medications.add(med_target) # type: ignore
+        requirement.requirement_types.add(self.req_type_pm)
+        requirement.operators.add(self.op_match_any)
+        requirement.medications.add(med_target)
 
         qs_mixed = PatientMedication.objects.filter(pk__in=[matching_pm.pk, non_matching_pm.pk])
         self.assertFalse(requirement.evaluate(qs_mixed, mode="strict"))
 
         another_matching_pm = self._create_patient_medication(med_target)
-        qs_all_match = PatientMedication.objects.filter(
-            pk__in=[matching_pm.pk, another_matching_pm.pk]
-        )
+        qs_all_match = PatientMedication.objects.filter(pk__in=[matching_pm.pk, another_matching_pm.pk])
         self.assertTrue(requirement.evaluate(qs_all_match, mode="strict"))
 
     def test_queryset_mode_min_count_requires_threshold(self):
@@ -77,9 +75,9 @@ class RequirementQuerysetEvaluationTests(TestCase):
             name="req_qs_min_count",
             string_values="qs_mode=min_count,qs_min_count=2",
         )
-        requirement.requirement_types.add(self.req_type_pm) # type: ignore
-        requirement.operators.add(self.op_match_any) # type: ignore
-        requirement.medications.add(med_target) # type: ignore
+        requirement.requirement_types.add(self.req_type_pm)
+        requirement.operators.add(self.op_match_any)
+        requirement.medications.add(med_target)
 
         qs_two_matching = PatientMedication.objects.filter(pk__in=[pm1.pk, pm2.pk, pm3.pk])
         self.assertTrue(requirement.evaluate(qs_two_matching, mode="loose"))

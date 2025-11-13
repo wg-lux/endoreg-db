@@ -5,11 +5,12 @@ This module is the single place to read environment variables and .env files.
 It avoids loading .env during pytest, and provides typed helpers.
 No Django imports here to prevent early settings configuration.
 """
+
 from __future__ import annotations
 
-from pathlib import Path
 import os
-from typing import Optional, Dict, Any
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 # Detect pytest early to avoid loading .env in test runs
 IS_PYTEST = bool(os.environ.get("PYTEST_CURRENT_TEST"))
@@ -21,7 +22,8 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 _DOTENV_LOADED = False
 try:
     if not IS_PYTEST:
-        import dotenv  # type: ignore
+        import dotenv
+
         dotenv.load_dotenv()
         _DOTENV_LOADED = True
 except Exception:
@@ -90,12 +92,15 @@ def snapshot() -> Dict[str, Any]:
         "SKIP_EXPENSIVE_TESTS",
     ]
     data: Dict[str, Any] = {k: os.environ.get(k) for k in keys}
-    data.update({
-        "IS_PYTEST": IS_PYTEST,
-        "DOTENV_LOADED": _DOTENV_LOADED,
-        "BASE_DIR": str(BASE_DIR),
-    })
+    data.update(
+        {
+            "IS_PYTEST": IS_PYTEST,
+            "DOTENV_LOADED": _DOTENV_LOADED,
+            "BASE_DIR": str(BASE_DIR),
+        }
+    )
     return data
+
 
 # Back-compat short aliases used by settings modules
 ENV = os.environ.get

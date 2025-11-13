@@ -72,8 +72,8 @@ class EndoscopyProcessor(models.Model):
         return (self.name,)
 
     @classmethod
-    def get_by_name(self, name):
-        return self.objects.get(name=name)
+    def get_by_name(cls, name):
+        return cls.objects.get(name=name)
 
     def __str__(self) -> str:
         if self.name is None:

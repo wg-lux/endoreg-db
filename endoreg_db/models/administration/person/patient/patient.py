@@ -45,15 +45,11 @@ class Patient(Person):
 
     """
 
-    first_name = models.CharField(max_length=100)  # type: ignore[assignment]
-    last_name = models.CharField(max_length=100)  # type: ignore[assignment]
-    dob = models.DateField(null=True, blank=True)  # type: ignore[assignment]
-    gender = models.ForeignKey(  # type: ignore[assignment]
-        "Gender", on_delete=models.SET_NULL, null=True, blank=True
-    )
-    center = models.ForeignKey(  # type: ignore[assignment]
-        "Center", on_delete=models.SET_NULL, null=True, blank=True
-    )
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    dob = models.DateField(null=True, blank=True)
+    gender = models.ForeignKey("Gender", on_delete=models.SET_NULL, null=True, blank=True)
+    center = models.ForeignKey("Center", on_delete=models.SET_NULL, null=True, blank=True)
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
 
     objects = models.Manager()  # Default manager
@@ -61,9 +57,9 @@ class Patient(Person):
     if TYPE_CHECKING:
         from django.db.models.manager import RelatedManager
 
-        first_name: str
-        last_name: str
-        dob: date | None
+        first_name: models.CharField[str]
+        last_name: models.CharField[str]
+        dob: models.DateField[date | None]
         gender: models.ForeignKey["Gender | None"]
         center: models.ForeignKey["Center | None"]
 
@@ -249,7 +245,7 @@ class Patient(Person):
 
         patient_examination = PatientExamination(patient=self)
         patient_examination.save()
-        pdf.examination = patient_examination  # type: ignore[assignment]
+        pdf.examination = patient_examination
         pdf.save()
 
         return patient_examination

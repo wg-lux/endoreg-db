@@ -1,24 +1,26 @@
 """
 Defines state tracking models related to PDF processing, including extraction of text and metadata, AI predictions, and anonymization status for RawPdfFile instances.
 """
-from django.db import models
-from typing import TYPE_CHECKING
+
 import logging
 from enum import Enum
+from typing import TYPE_CHECKING
+
+from django.db import models
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..media import RawPdfFile
-    
+
 
 class AnonymizationStatus(str, Enum):
-    NOT_STARTED             = "not_started"
-    PROCESSING_ANONYMIZING  = "processing_anonymization"
-    DONE                    = "done"
-    VALIDATED               = "validated"
-    FAILED                  = "failed"
-    STARTED                = "started"
+    NOT_STARTED = "not_started"
+    PROCESSING_ANONYMIZING = "processing_anonymization"
+    DONE = "done"
+    VALIDATED = "validated"
+    FAILED = "failed"
+    STARTED = "started"
 
 
 class RawPdfState(models.Model):
@@ -26,26 +28,29 @@ class RawPdfState(models.Model):
     Tracks the processing state of a RawPdfFile instance.
     Uses BooleanFields for clear, distinct states.
     """
+
     text_meta_extracted = models.BooleanField(default=False, help_text="True if text metadata (OCR) has been extracted.")
 
     # AI / Annotation related states
     initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
 
     # Processing state
-    sensitive_meta_processed = models.BooleanField(default=False, help_text="True if the video has been fully processed, meaning a anonymized person was created.")
+    sensitive_meta_processed = models.BooleanField(
+        default=False, help_text="True if the video has been fully processed, meaning a anonymized person was created."
+    )
 
     # Anonymization state
     anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
     anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
-    
+
     # Processing state
     processing_started = models.BooleanField(default=False, help_text="True if the processing has started, but not yet completed.")
     processing_error = models.BooleanField(default=False, help_text="True if an error occurred during processing.")
-    
+
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
-    
+
     was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
 
     # PDF metadata extraction state
@@ -59,7 +64,7 @@ class RawPdfState(models.Model):
         Return a string summarizing the RawPdfState instance, including the related PDF file UUID and key processing state flags with timestamps.
         """
         try:
-            uuid = self.raw_pdf_file.id
+            uuid = self.raw_pdf_file.pk
         except Exception:
             uuid = None
 
@@ -70,7 +75,7 @@ class RawPdfState(models.Model):
             f"AnonymizationValidated={self.anonymization_validated}",
             f"SensitiveMetaProcessed={self.sensitive_meta_processed}",
             f"DateCreated={self.date_created.isoformat()}",
-            f"DateModified={self.date_modified.isoformat()}"
+            f"DateModified={self.date_modified.isoformat()}",
         ]
         return f"RawPdfState(Pdf:{uuid}): {', '.join(states)}"
 
@@ -78,7 +83,7 @@ class RawPdfState(models.Model):
     def anonymization_status(self) -> AnonymizationStatus:
         """
         Determines the current anonymization workflow status for the PDF processing state.
-        
+
         Returns:
             AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
         """
@@ -97,13 +102,11 @@ class RawPdfState(models.Model):
         if self.processing_started:
             return AnonymizationStatus.STARTED
         return AnonymizationStatus.NOT_STARTED
-    
 
-    
     def mark_processing_started(self, *, save: bool = True) -> None:
         """
         Mark the processing as started and optionally save the updated state.
-        
+
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
@@ -115,7 +118,7 @@ class RawPdfState(models.Model):
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
         """
         Mark the sensitive metadata processing step as completed for this PDF state.
-        
+
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
@@ -126,7 +129,7 @@ class RawPdfState(models.Model):
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
         """
         Mark the anonymization as validated for this PDF processing state.
-        
+
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
@@ -137,7 +140,7 @@ class RawPdfState(models.Model):
     def mark_anonymized(self, *, save: bool = True) -> None:
         """
         Mark the PDF as anonymized and optionally save the updated state.
-        
+
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
@@ -148,7 +151,7 @@ class RawPdfState(models.Model):
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
         """
         Mark the initial AI prediction step as completed for this PDF processing state.
-        
+
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
@@ -159,7 +162,7 @@ class RawPdfState(models.Model):
     def mark_pdf_meta_extracted(self, *, save: bool = True) -> None:
         """
         Mark the PDF metadata extraction step as completed for this state.
-        
+
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
@@ -170,18 +173,14 @@ class RawPdfState(models.Model):
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
         """
         Mark the text metadata extraction step as completed for this PDF processing state.
-        
+
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
         self.text_meta_extracted = True
         if save:
             self.save(update_fields=["text_meta_extracted", "date_modified"])
-    
-    
 
     class Meta:
         verbose_name = "Raw PDF Processing State"
         verbose_name_plural = "Raw PDF Processing States"
-
-

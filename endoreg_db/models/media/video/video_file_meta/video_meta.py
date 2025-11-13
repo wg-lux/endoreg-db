@@ -50,7 +50,9 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
                 processor=video.processor,
                 save_instance=True,  # Let create_from_file handle saving
             )
-            logger.info("Created and linked VideoMeta (PK: %s) for video %s.", video.video_meta.pk, video.uuid)
+            vm = video.video_meta
+            assert vm is not None  # For type checker
+            logger.info("Created and linked VideoMeta (PK: %s) for video %s.", vm.pk, video.uuid)
 
         # Save the VideoFile instance itself if requested and if video_meta was linked/updated
         if save_instance:

@@ -96,10 +96,10 @@ class RequirementOperatorCountTests(TestCase):
             numeric_value_max=numeric_value_max,
             unit=unit,
         )
-        requirement.requirement_types.add(self.rt_patient, self.rt_patient_event)  # type: ignore[attr-defined]
-        requirement.operators.add(self.operators[operator_name])  # type: ignore[attr-defined]
+        requirement.requirement_types.add(self.rt_patient, self.rt_patient_event)
+        requirement.operators.add(self.operators[operator_name])
         for event in events:
-            requirement.events.add(event)  # type: ignore[attr-defined]
+            requirement.events.add(event)
         return requirement
 
     def _evaluate(self, requirement: Requirement, patient: Patient, *patient_events: PatientEvent) -> bool:

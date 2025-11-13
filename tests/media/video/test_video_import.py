@@ -6,39 +6,40 @@ The goal is that after processing:
 - A processed video with file_path in /data/anonym_videos
 - No video should remain in /data/raw_videos
 """
-import tempfile
+
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import TestCase
 
-from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.models import Center, EndoscopyProcessor
+from endoreg_db.services.video_import import VideoImportService
 
-from ...helpers.default_objects import get_default_processor, get_default_center
+from ...helpers.default_objects import get_default_center, get_default_processor
 
 
 @pytest.mark.usefixtures("base_db_data")
 class TestVideoImportFileMovement(TestCase):
     """Test video import service file movement and organization."""
-    
+
     def setUp(self):
         """Set up test environment."""
         # Create test video file data (minimal MP4 header)
-        self.test_video_data = b'\x00\x00\x00\x20ftypmp42\x00\x00\x00\x00mp42isom' + b'\x00' * 1000
-        
+        self.test_video_data = b"\x00\x00\x00\x20ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 1000
+
         # Create temporary directories for testing
         self.temp_storage = Path(tempfile.mkdtemp())
-        self.temp_raw_videos = self.temp_storage / 'raw_videos'
-        self.temp_videos = self.temp_storage / 'videos'
-        self.temp_anonym_videos = self.temp_storage / 'anonym_videos'
-        
+        self.temp_raw_videos = self.temp_storage / "raw_videos"
+        self.temp_videos = self.temp_storage / "videos"
+        self.temp_anonym_videos = self.temp_storage / "anonym_videos"
+
         # Create all directories
         for dir_path in [self.temp_raw_videos, self.temp_videos, self.temp_anonym_videos]:
             dir_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Create test center and processor
         # self.center = Center.objects.create(
         #     name="test_center",
@@ -46,7 +47,7 @@ class TestVideoImportFileMovement(TestCase):
         # )
         self.center = get_default_center()
         self.center_name = self.center.name
-        
+
         # self.processor = EndoscopyProcessor.objects.create(
         #     name="test_processor",
         # )
@@ -55,40 +56,40 @@ class TestVideoImportFileMovement(TestCase):
 
         self.processor = get_default_processor()
         self.processor_name = self.processor.name
-    
+
     def tearDown(self):
         """Clean up test environment."""
         if self.temp_storage.exists():
             shutil.rmtree(self.temp_storage)
-    
+
     def create_test_video_file(self, filename: str = "test_video.mp4") -> Path:
         """Create a test video file in raw_videos directory."""
         video_path = self.temp_raw_videos / filename
-        with open(video_path, 'wb') as f:
+        with open(video_path, "wb") as f:
             f.write(self.test_video_data)
         return video_path
-    
-    @patch('endoreg_db.utils.data_paths')
+
+    @patch("endoreg_db.utils.data_paths")
     def test_video_file_movement_flow(self, mock_data_paths):
         """Test complete video file movement flow."""
         # Mock data_paths to use our temp directories
         mock_data_paths.__getitem__.side_effect = lambda key: {
-            'storage': self.temp_storage,
-            'video': self.temp_videos,
-            'anonym_video': self.temp_anonym_videos,
-            'raw_video': self.temp_raw_videos,
+            "storage": self.temp_storage,
+            "video": self.temp_videos,
+            "anonym_video": self.temp_anonym_videos,
+            "raw_video": self.temp_raw_videos,
         }.get(key)
-        
+
         # Create test video file
         test_video_path = self.create_test_video_file("test_input.mp4")
         self.assertTrue(test_video_path.exists(), "Test video file should be created")
-        
+
         # Mock frame cleaning to avoid dependencies
-        with patch.object(VideoImportService, '_ensure_frame_cleaning_available') as mock_frame_cleaning:
+        with patch.object(VideoImportService, "_ensure_frame_cleaning_available") as mock_frame_cleaning:
             mock_frame_cleaning.return_value = (False, None)
-            
+
             # Mock video creation methods with proper center/processor handling
-            with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
+            with patch("endoreg_db.models.VideoFile.create_from_file_initialized") as mock_create_video:
                 # Create side effect that validates keyword-based API
                 def create_video_side_effect(
                     *,
@@ -131,70 +132,64 @@ class TestVideoImportFileMovement(TestCase):
                     return mock_video
 
                 mock_create_video.side_effect = create_video_side_effect
-                
+
                 # Mock state management
                 mock_state = MagicMock()
-                with patch('endoreg_db.models.VideoFile.get_or_create_state') as mock_get_state:
+                with patch("endoreg_db.models.VideoFile.get_or_create_state") as mock_get_state:
                     mock_get_state.return_value = mock_state
-                    
+
                     # Initialize service and run import
                     service = VideoImportService()
-                    
+
                     result_video = service.import_and_anonymize(
                         file_path=test_video_path,
                         center_name=self.center.name,  # ✅ Service converts string → Center object
                         processor_name=self.processor.name,  # ✅ Service converts string → Processor object
                         save_video=True,
-                        delete_source=True
+                        delete_source=True,
                     )
-                    
+
                     # Verify the result
                     self.assertIsNotNone(result_video, "Video import should return a video instance")
                     assert result_video is not None
                     # ✅ Verify center/processor were correctly passed
-                    self.assertEqual(result_video.center, self.center, 
-                                    "Result video should have correct center")
-                    self.assertEqual(result_video.processor, self.processor,
-                                     "Result video should have correct processor")
-        
+                    self.assertEqual(result_video.center, self.center, "Result video should have correct center")
+                    self.assertEqual(result_video.processor, self.processor, "Result video should have correct processor")
+
         # CRITICAL TESTS: Verify file movements
-        
+
         # 1. Original file should be moved FROM raw_videos
-        self.assertFalse(test_video_path.exists(), 
-                        f"Original file should be moved from raw_videos: {test_video_path}")
-        
+        self.assertFalse(test_video_path.exists(), f"Original file should be moved from raw_videos: {test_video_path}")
+
         # 2. Raw video should exist in /data/videos
         expected_raw_path = self.temp_videos / "test-uuid-123.mp4"
-        self.assertTrue(expected_raw_path.exists(),
-                        f"Raw video should be renamed to UUID in videos directory: {expected_raw_path}")
-        
-        # 3. Processed video should exist in /data/anonym_videos  
+        self.assertTrue(expected_raw_path.exists(), f"Raw video should be renamed to UUID in videos directory: {expected_raw_path}")
+
+        # 3. Processed video should exist in /data/anonym_videos
         expected_anonym_path = self.temp_anonym_videos / "anonym_test-uuid-123.mp4"
-        self.assertTrue(expected_anonym_path.exists(),
-                        f"Processed video should be renamed with anonym prefix: {expected_anonym_path}")
-        
+        self.assertTrue(expected_anonym_path.exists(), f"Processed video should be renamed with anonym prefix: {expected_anonym_path}")
+
         # 4. raw_videos directory should be empty
         remaining_files = list(self.temp_raw_videos.glob("*"))
-        self.assertEqual(len(remaining_files), 0,
-                        f"raw_videos should be empty after processing: {remaining_files}")
-    
-    @patch('endoreg_db.utils.data_paths')
+        self.assertEqual(len(remaining_files), 0, f"raw_videos should be empty after processing: {remaining_files}")
+
+    @patch("endoreg_db.utils.data_paths")
     def test_file_naming_conventions(self, mock_data_paths):
         """Test that files are named correctly with UUID prefixes."""
         # Mock data_paths
         mock_data_paths.__getitem__.side_effect = lambda key: {
-            'storage': self.temp_storage,
-            'video': self.temp_videos,
-            'anonym_video': self.temp_anonym_videos,
-            'raw_video': self.temp_raw_videos,
+            "storage": self.temp_storage,
+            "video": self.temp_videos,
+            "anonym_video": self.temp_anonym_videos,
+            "raw_video": self.temp_raw_videos,
         }.get(key)
-        
+
         test_video_path = self.create_test_video_file("original_name.mp4")
-        
-        with patch.object(VideoImportService, '_ensure_frame_cleaning_available') as mock_frame_cleaning:
+
+        with patch.object(VideoImportService, "_ensure_frame_cleaning_available") as mock_frame_cleaning:
             mock_frame_cleaning.return_value = (False, None)
-            
-            with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
+
+            with patch("endoreg_db.models.VideoFile.create_from_file_initialized") as mock_create_video:
                 # Create side effect with proper validation
                 def create_video_side_effect(
                     *,
@@ -230,95 +225,84 @@ class TestVideoImportFileMovement(TestCase):
                     mock_video.save = MagicMock()
                     mock_video.refresh_from_db = MagicMock()
                     return mock_video
-                
+
                 mock_create_video.side_effect = create_video_side_effect
-                
-                # Mock state management  
+
+                # Mock state management
                 mock_state = MagicMock()
-                with patch('endoreg_db.models.VideoFile.get_or_create_state') as mock_get_state:
+                with patch("endoreg_db.models.VideoFile.get_or_create_state") as mock_get_state:
                     mock_get_state.return_value = mock_state
-                    
+
                     service = VideoImportService()
                     service.import_and_anonymize(
                         file_path=test_video_path,
                         center_name=self.center.name,  # ✅ Service converts string → Center
-                        processor_name=self.processor.name  # ✅ Service converts string → Processor
+                        processor_name=self.processor.name,  # ✅ Service converts string → Processor
                     )
-        
+
         # Check UUID-based naming in videos directory
         expected_raw_path = self.temp_videos / "test-uuid-456.mp4"
-        self.assertTrue(expected_raw_path.exists(),
-                        "Raw video should be renamed with UUID only")
-        
+        self.assertTrue(expected_raw_path.exists(), "Raw video should be renamed with UUID only")
+
         # Check anonym prefix in anonym_videos directory
         expected_anonym_path = self.temp_anonym_videos / "anonym_test-uuid-456.mp4"
-        self.assertTrue(expected_anonym_path.exists(),
-                        "Processed video should be named with 'anonym_' prefix and UUID")
-    
-    @patch('endoreg_db.utils.data_paths')
+        self.assertTrue(expected_anonym_path.exists(), "Processed video should be named with 'anonym_' prefix and UUID")
+
+    @patch("endoreg_db.utils.data_paths")
     def test_error_handling_preserves_file_structure(self, mock_data_paths):
         """Test that errors during processing don't leave files in wrong locations."""
         mock_data_paths.__getitem__.side_effect = lambda key: {
-            'storage': self.temp_storage,
-            'video': self.temp_videos,
-            'anonym_video': self.temp_anonym_videos,
-            'raw_video': self.temp_raw_videos,
+            "storage": self.temp_storage,
+            "video": self.temp_videos,
+            "anonym_video": self.temp_anonym_videos,
+            "raw_video": self.temp_raw_videos,
         }.get(key)
-        
+
         test_video_path = self.create_test_video_file("error_test.mp4")
-        
+
         # Mock frame cleaning to fail
-        with patch.object(VideoImportService, '_ensure_frame_cleaning_available') as mock_frame_cleaning:
+        with patch.object(VideoImportService, "_ensure_frame_cleaning_available") as mock_frame_cleaning:
             mock_frame_cleaning.return_value = (False, None, None)
-            
+
             # Mock video creation to fail
-            with patch('endoreg_db.models.VideoFile.create_from_file_initialized') as mock_create_video:
+            with patch("endoreg_db.models.VideoFile.create_from_file_initialized") as mock_create_video:
                 mock_create_video.side_effect = Exception("Simulated creation error")
-                
+
                 service = VideoImportService()
-                
+
                 # Import should fail gracefully
                 with self.assertRaises(Exception):
-                    service.import_and_anonymize(
-                        file_path=test_video_path,
-                        center_name=self.center.name,
-                        processor_name=self.processor.name
-                    )
-        
+                    service.import_and_anonymize(file_path=test_video_path, center_name=self.center.name, processor_name=self.processor.name)
+
         # Even on error, original file location may have changed based on where the error occurred
         # The key is that we don't have orphaned files in multiple locations
-        total_files = (
-            len(list(self.temp_raw_videos.glob("*"))) +
-            len(list(self.temp_videos.glob("*"))) + 
-            len(list(self.temp_anonym_videos.glob("*")))
-        )
-        
+        total_files = len(list(self.temp_raw_videos.glob("*"))) + len(list(self.temp_videos.glob("*"))) + len(list(self.temp_anonym_videos.glob("*")))
+
         # Should have at most 1 file total (the original, moved somewhere)
-        self.assertLessEqual(total_files, 1,
-                           "Error handling should not create duplicate files")
-    
+        self.assertLessEqual(total_files, 1, "Error handling should not create duplicate files")
+
     def test_directory_structure_validation(self):
         """Test that required directories are created if missing."""
         # Remove a directory
         shutil.rmtree(self.temp_anonym_videos)
         self.assertFalse(self.temp_anonym_videos.exists())
-        
-        with patch('endoreg_db.utils.data_paths') as mock_data_paths:
+
+        with patch("endoreg_db.utils.data_paths") as mock_data_paths:
             mock_data_paths.__getitem__.side_effect = lambda key: {
-                'storage': self.temp_storage,
-                'video': self.temp_videos,
-                'anonym_video': self.temp_anonym_videos,
-                'raw_video': self.temp_raw_videos,
+                "storage": self.temp_storage,
+                "video": self.temp_videos,
+                "anonym_video": self.temp_anonym_videos,
+                "raw_video": self.temp_raw_videos,
             }.get(key)
-            
+
             service = VideoImportService()
-            
+
             # The _cleanup_and_archive method should create missing directories
             service.processing_context = {
-                'file_path': self.create_test_video_file(),
-                'video_filename': 'test.mp4',
-                'cleaned_video_path': None,
-                'delete_source': False,
+                "file_path": self.create_test_video_file(),
+                "video_filename": "test.mp4",
+                "cleaned_video_path": None,
+                "delete_source": False,
             }
             service.current_video = MagicMock()
             service.current_video.uuid = "test-uuid"
@@ -326,24 +310,25 @@ class TestVideoImportFileMovement(TestCase):
             service.current_video.save = MagicMock()
             service.current_video.refresh_from_db = MagicMock()
             service.processed_files = set()
-            
+
             # This should create the missing directory
             service._cleanup_and_archive()
-            
+
             # Directory should now exist
-            self.assertTrue(self.temp_anonym_videos.exists(),
-                           "Missing directories should be created automatically")
+            self.assertTrue(self.temp_anonym_videos.exists(), "Missing directories should be created automatically")
+
 
 from pathlib import Path
 from types import SimpleNamespace
+
 import pytest
 
 import endoreg_db.services.video_import as vis
 
-
 # ---------------------------------------------------------------------
 # 🔧 Lightweight Mocks
 # ---------------------------------------------------------------------
+
 
 class DummyState:
     def __init__(self):
@@ -478,6 +463,7 @@ class DummyVideoFile:
 # 🧩 Fixtures
 # ---------------------------------------------------------------------
 
+
 @pytest.fixture
 def patch_env(monkeypatch, tmp_path):
     """Prepare isolated environment."""
@@ -495,11 +481,14 @@ def patch_env(monkeypatch, tmp_path):
     monkeypatch.setattr("endoreg_db.models.media.video.video_file_anonymize._cleanup_raw_assets", lambda **_: None)
     monkeypatch.setattr("endoreg_db.models.EndoscopyProcessor", DummyProcessor)
     monkeypatch.setattr("endoreg_db.services.video_import.EndoscopyProcessor", DummyProcessor, raising=False)
-    monkeypatch.setattr("endoreg_db.utils.data_paths", {
-        "video": video_dir,
-        "storage": storage_dir,
-        "anonym_video": anon_dir,
-    })
+    monkeypatch.setattr(
+        "endoreg_db.utils.data_paths",
+        {
+            "video": video_dir,
+            "storage": storage_dir,
+            "anonym_video": anon_dir,
+        },
+    )
 
     return tmp_path
 
@@ -515,7 +504,8 @@ def dummy_file(tmp_path):
 # ✅ Tests
 # ---------------------------------------------------------------------
 
-def test_file_lock_acquire_and_release(patch_env,dummy_file):
+
+def test_file_lock_acquire_and_release(patch_env, dummy_file):
     svc = vis.VideoImportService()
     with svc._file_lock(dummy_file):
         assert (dummy_file.with_suffix(".mp4.lock")).exists()
@@ -525,7 +515,7 @@ def test_file_lock_acquire_and_release(patch_env,dummy_file):
 def test_move_to_final_storage_copy(patch_env, dummy_file):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidX", patch_env)
-    svc.current_video = v  # type: ignore
+    svc.current_video = v
     svc.processing_context = {"file_path": dummy_file, "delete_source": False}
     svc._move_to_final_storage()
     dest = svc.processing_context["raw_video_path"]
@@ -537,7 +527,7 @@ def test_move_to_final_storage_copy(patch_env, dummy_file):
 def test_move_to_final_storage_delete_source(patch_env, dummy_file):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidY", patch_env)
-    svc.current_video = v # type: ignore
+    svc.current_video = v
     svc.processing_context = {"file_path": dummy_file, "delete_source": True}
     svc._move_to_final_storage()
     dest = svc.processing_context["raw_video_path"]
@@ -549,7 +539,7 @@ def test_create_sensitive_file_moves(patch_env, dummy_file):
     svc = vis.VideoImportService()
     v = DummyVideoFile("uuidZ", patch_env)
     v.raw_file.path = dummy_file
-    svc.current_video = v 
+    svc.current_video = v
     target = svc._create_sensitive_file(v)
     assert target.exists()
     assert target.parent.name == "sensitive"
@@ -558,7 +548,7 @@ def test_create_sensitive_file_moves(patch_env, dummy_file):
 
 def test_fallback_anonymize_sets_flags(patch_env):
     svc = vis.VideoImportService()
-    svc.current_video = DummyVideoFile("uuidF", Path(tempfile.gettempdir()))  # type: ignore
+    svc.current_video = DummyVideoFile("uuidF", Path(tempfile.gettempdir()))
     svc._fallback_anonymize_video()
     ctx = svc.processing_context
     assert ctx.get("use_raw_as_processed", True)

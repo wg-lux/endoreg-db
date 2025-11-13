@@ -319,7 +319,7 @@ def ensure_medications(context: GenerationContext, patient: Patient, links: dict
             patient_medication.save(update_fields=["medication_indication"])
 
         if intake_times:
-            patient_medication.intake_times.add(*intake_times)  # type: ignore[attr-defined]
+            patient_medication.intake_times.add(*intake_times)
 
         if created:
             context.medications.append(patient_medication)
