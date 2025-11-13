@@ -3,6 +3,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 
+from endoreg_db.authz.views_auth import auth_bootstrap
+
 from endoreg_db.views import (
     VideoViewSet,
     ExaminationViewSet,
@@ -53,6 +55,7 @@ router.register(r'patient-examinations', PatientExaminationViewSet)
 
 # Export raw API urlpatterns (no prefix). The project-level endoreg_db/urls.py mounts these under /api/.
 urlpatterns = [
+    path("auth/bootstrap", auth_bootstrap, name="auth-bootstrap"),
     path('', include(router.urls)),  
     path('', include(api_urls)),
 ]

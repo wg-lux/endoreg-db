@@ -28,14 +28,28 @@
 from rest_framework.permissions import BasePermission
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import cached_property
-
 from endoreg_db.utils.permissions import is_debug_mode
 from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies
+import logging
 
-# OPTIONAL: simple decision log during development (see LOGGING config)
-# import logging
-# logger = logging.getLogger("endoreg_db.authz")
+logger = logging.getLogger(__name__)
 
+def _normalized_route_name(request, view) -> str:
+    """
+    Return a stable, de-namespaced route name, e.g. 'patient-list'.
+    Prefer resolver_match.view_name (may be 'endoreg_db:patient-list'),
+    fallback to url_name, then class name.
+    """
+    rm = getattr(request, "resolver_match", None)
+    if rm:
+        # Try namespaced form first (strip namespace)
+        view_name = getattr(rm, "view_name", "") or ""
+        if view_name:
+            return view_name.split(":")[-1]
+        url_name = getattr(rm, "url_name", "") or ""
+        if url_name:
+            return url_name
+    return view.__class__.__name__
 
 def _route_name(request, view):
     """
@@ -76,46 +90,35 @@ class PolicyPermission(BasePermission):
         return REQUIRED_ROLES
 
     def has_permission(self, request, view):
-        # 1) Dev convenience: in DEBUG we don't block anything here.
-        #    (EnvironmentAwarePermission already enforces "auth in prod"; both align.)
+        route = _normalized_route_name(request, view)
+        method = (request.method or "").upper()
+
+        # 1) DEBUG bypass
         if is_debug_mode():
+            logger.info("RBAC BYPASS (DEBUG): route=%s method=%s user=%s",
+                        route, method, getattr(getattr(request, "user", None), "username", "anon"))
             return True
 
-        # 2) Must be an authenticated user in PROD.
+        # 2) Must be authenticated
         user = getattr(request, "user", None)
         if not user or isinstance(user, AnonymousUser) or not user.is_authenticated:
-            # Not logged in → no permission. (Browser will have been redirected earlier by middleware;
-            # token clients will see 401/403.)
+            logger.info("RBAC DENY (UNAUTH): route=%s method=%s", route, method)
             return False
 
-        # 3) Figure out which "route name" we are handling (e.g., "patient-list").
-        route = _route_name(request, view)
-
-        # 4) Look up the required role:
-        #    - First, try explicit REQUIRED_ROLES mapping for this route.
-        #    - If absent, fall back to DEFAULT_ROLE_BY_METHOD (e.g., GET→"data:read").
-        needed = self._required_roles.get(route) or DEFAULT_ROLE_BY_METHOD.get(request.method)
-
-        # If we couldn't determine a role (e.g., unusual HTTP verb not in fallback),
-        # deny safely rather than accidentally allowing.
+        # 3) Determine needed role
+        needed = self._required_roles.get(route) or DEFAULT_ROLE_BY_METHOD.get(method)
         if not needed:
+            logger.info("RBAC DENY (NO-NORM): route=%s method=%s reason=no role mapping", route, method)
             return False
 
-        # 5) Collect the user's roles from Django Groups, which mirror Keycloak realm roles.
-        user_roles = set(request.user.groups.values_list("name", flat=True))
-
-        # 6) Apply your satisfaction rule: exact match OR (write ⇒ read).
+        # 4) Collect roles and decide
+        user_roles = set(user.groups.values_list("name", flat=True))
         allowed = satisfies(user_roles, needed)
 
-        # OPTIONAL: emit a one-line decision log while testing
-        # logger.info(
-        #     "RBAC %s %s need=%s user=%s roles=%s => %s",
-        #     request.method,
-        #     route,
-        #     needed,
-        #     getattr(request.user, "username", "anon"),
-        #     sorted(user_roles),
-        #     "ALLOW" if allowed else "DENY",
-        # )
+        logger.info(
+            "RBAC DECISION: route=%s method=%s need=%s user=%s roles=%s => %s",
+            route, method, needed, getattr(user, "username", "anon"),
+            sorted(user_roles), "ALLOW" if allowed else "DENY"
+        )
 
         return allowed

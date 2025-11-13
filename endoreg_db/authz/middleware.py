@@ -26,23 +26,18 @@ from urllib.parse import urlencode
 # Any URL path that starts with one of these prefixes is considered "protected" for browser UX.
 # You can add more prefixes if you want the same login-redirect behavior elsewhere
 # (e.g., PROTECTED_PREFIXES = ("/api/", "/reports/", "/dashboard/")).
-PROTECTED_PREFIXES = (
-    "/api/",
-    "/",                      # homepage/dashboard (if your SPA shell is mounted at /)
-    "/annotationen",
-    "/video-untersuchung",
-    "/ueber-uns",
-    "/uebersicht",
-    "/untersuchung",
-    "/patient",
-    "/patienten",
-    "/profil",
-    "/anonymisierung",
-    "/anonymisierung/uebersicht",
-    "/anonymisierung/validierung",
-    "/anonymisierung/korrektur/",
-    "/validierung",
-    "/report-generator",
+#PROTECTED_PREFIXES = ("/api/",)
+
+# Protect the SPA shell too (everything except static/assets/oidc)
+PROTECTED_PREFIXES = ("/",)  # catch-all; we'll skip known public paths below
+
+PUBLIC_PREFIXES = (
+    "/static/",
+    "/assets/",
+    "/media/",
+    "/favicon.ico",
+    "/oidc/",          # OIDC endpoints must stay public
+    "/__vite",         # if Vite dev assets ever used
 )
 
 class LoginRequiredForAPIsMiddleware:
@@ -53,51 +48,36 @@ class LoginRequiredForAPIsMiddleware:
     For API clients:
       - If the request has an "Authorization: Bearer <token>" header, do not redirect;
         let DRF auth handle it (token flows expect 401/403, not 302).
+
     """
 
-    def __init__(self, get_response):
-        # Standard Django middleware signature. We store the callable that processes the request
-        # once our check is done (or skipped).
-        self.get_response = get_response
+    def __init__(self, get_response): self.get_response = get_response
 
     def __call__(self, request):
         # request.path is the URL path without scheme/host/query (e.g., "/api/patients/").
         # If for any reason it's None/empty, coerce to empty string so startswith won’t explode.
         path = request.path or ""
+        # --- Exclusions so we don't block assets, HMR, OIDC endpoints, favicon, etc.
+        # Allow static, assets, vite HMR, favicon, and OIDC endpoints without redirect
+        # Skip public stuff
+        if path.startswith(PUBLIC_PREFIXES):
+            return self.get_response(request)
 
-        # 1) If the path isn't in a "protected" area, we do nothing and pass through.
-        #    This keeps non-API pages (like the public home) unaffected by this middleware.
+        # If not protected, pass through (shouldn’t happen with PROTECTED_PREFIXES=('/' ,))
         if not path.startswith(PROTECTED_PREFIXES):
             return self.get_response(request)
 
-        # 2) Detect token-based API calls. API clients should *not* be redirected to a login page.
-        #    They expect proper HTTP codes from DRF (401/403) based on Bearer token validity.
-        #    NOTE: HTTP headers come in via request.META with "HTTP_" prefix by convention.
+        # API/token clients never get redirected
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         if auth.startswith("Bearer "):
-            # Let the request continue to DRF; authentication classes will validate the JWT.
             return self.get_response(request)
 
-        # 3) Browser path under /api/ without a Django session → redirect to OIDC login.
-        #    request.user is set by AuthenticationMiddleware. If not authenticated, we bounce
-        #    to settings.LOGIN_URL (mozilla-django-oidc's /oidc/authenticate/) with ?next=<full path>.
+        # 3) Browser without session → redirect to OIDC
         if not request.user.is_authenticated:
-            # request.get_full_path() returns the path *including* the query string,
-            # e.g., "/api/patients/?page=2&search=abc". This preserves pagination/filters after login.
-            next_value = request.get_full_path()
-
-            # --- Optional hardening (uncomment to enforce relative "next"):
-            # from django.utils.http import url_has_allowed_host_and_scheme
-            # if not url_has_allowed_host_and_scheme(
-            #     url=next_value,
-            #     allowed_hosts={request.get_host()},  # only allow current host
-            #     require_https=request.is_secure(),
-            # ):
-            #     next_value = "/"  # fallback to a safe default
-
-            # Build the query string (?next=...) and redirect to the OIDC login view.
-            params = urlencode({"next": next_value})
+            from django.conf import settings
+            from urllib.parse import urlencode
+            params = urlencode({"next": request.get_full_path()})
             return redirect(f"{settings.LOGIN_URL}?{params}")
 
-        # 4) Already authenticated in the browser? Great—just continue to the view.
+        # 4) Authenticated → pass through
         return self.get_response(request)
