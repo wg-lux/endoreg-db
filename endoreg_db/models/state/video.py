@@ -74,7 +74,6 @@ class VideoState(models.Model):
         try:
             # Access the related VideoFile via the reverse relation 'video_file'
             if hasattr(self, "video_file") and self.video_file:
-            if hasattr(self, "video_file") and self.video_file:
                 video_uuid = self.video_file.uuid
         except Exception:
             pass  # Ignore errors if relation doesn't exist or causes issues
