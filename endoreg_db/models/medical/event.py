@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List, cast
+from typing import TYPE_CHECKING, List
 
 from django.db import models
 

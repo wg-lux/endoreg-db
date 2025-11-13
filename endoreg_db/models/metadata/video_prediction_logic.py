@@ -1,20 +1,22 @@
 import logging
-from typing import TYPE_CHECKING, List, Tuple, Optional
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
 import numpy as np
+
+from ..label.label_video_segment import LabelVideoSegment
 
 # Import necessary models and utils used by the logic
 from ..utils import find_segments_in_prediction_array
-from ..label.label_video_segment import LabelVideoSegment
-
 
 logger = logging.getLogger(__name__)
 
+# TODO configure via settings
 DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from .video_prediction_meta import VideoPredictionMeta
     from ..label import Label
+    from .video_prediction_meta import VideoPredictionMeta
 
 
 def apply_running_mean_logic(instance: "VideoPredictionMeta", confidence_array: np.ndarray, window_size_in_seconds: Optional[float] = None) -> np.ndarray:
@@ -63,6 +65,7 @@ def calculate_prediction_array_logic(instance: "VideoPredictionMeta", window_siz
     Does not save the array itself.
     """
     from ..label import ImageClassificationAnnotation
+
     video_obj = instance.get_video()
     model_meta = instance.model_meta
     label_list = instance.get_label_list()
@@ -78,15 +81,10 @@ def calculate_prediction_array_logic(instance: "VideoPredictionMeta", window_siz
 
     prediction_array = np.zeros((num_frames, len(label_list)))
 
-    base_pred_qs = ImageClassificationAnnotation.objects.filter(
-        model_meta=model_meta,
-        frame__video_file=video_obj
-    )
+    base_pred_qs = ImageClassificationAnnotation.objects.filter(model_meta=model_meta, frame__video_file=video_obj)
 
     for i, label in enumerate(label_list):
-        predictions = base_pred_qs.filter(label=label).order_by("frame__frame_number").values_list(
-            "frame__frame_number", "confidence"
-        )
+        predictions = base_pred_qs.filter(label=label).order_by("frame__frame_number").values_list("frame__frame_number", "confidence")
 
         # Initialize with 0.5 (neutral confidence)
         confidences = np.full(num_frames, 0.5)
@@ -96,14 +94,12 @@ def calculate_prediction_array_logic(instance: "VideoPredictionMeta", window_siz
                 confidences[frame_num] = confidence
                 found_predictions = True
             else:
-                logger.warning(f"Prediction found for out-of-bounds frame number {frame_num} (max: {num_frames-1}). Skipping.")
+                logger.warning(f"Prediction found for out-of-bounds frame number {frame_num} (max: {num_frames - 1}). Skipping.")
 
         if not found_predictions:
             logger.warning(f"No predictions found for label '{label.name}' in {video_obj}. Using default confidence.")
 
-        smooth_confidences = apply_running_mean_logic(
-            instance, confidences, window_size_in_seconds
-        )
+        smooth_confidences = apply_running_mean_logic(instance, confidences, window_size_in_seconds)
         # Threshold smoothed confidences
         binary_predictions = smooth_confidences > 0.5
         prediction_array[:, i] = binary_predictions
@@ -116,6 +112,7 @@ def create_video_segments_for_label_logic(instance: "VideoPredictionMeta", segme
     Creates LabelVideoSegment instances for the given label and segments.
     """
     from ..other import InformationSource
+
     video_obj = instance.get_video()
     information_source, _ = InformationSource.objects.get_or_create(name="prediction")
 
@@ -131,11 +128,7 @@ def create_video_segments_for_label_logic(instance: "VideoPredictionMeta", segme
         }
         # Check for existence before creating the object instance
         if not LabelVideoSegment.objects.filter(
-            video_file=video_obj,
-            prediction_meta=instance,
-            label=label,
-            start_frame_number=start_frame,
-            end_frame_number=end_frame
+            video_file=video_obj, prediction_meta=instance, label=label, start_frame_number=start_frame, end_frame_number=end_frame
         ).exists():
             segments_to_create.append(LabelVideoSegment(**segment_data))
 
@@ -161,7 +154,7 @@ def create_video_segments_logic(instance: "VideoPredictionMeta", segment_length_
         return
 
     min_frame_length = int(segment_length_threshold_in_s * fps)
-    min_frame_length = max(min_frame_length, 1) # Ensure minimum length is at least 1
+    min_frame_length = max(min_frame_length, 1)  # Ensure minimum length is at least 1
 
     label_list = instance.get_label_list()
     if not label_list:
@@ -171,8 +164,8 @@ def create_video_segments_logic(instance: "VideoPredictionMeta", segment_length_
     prediction_array = instance.get_prediction_array()
     if prediction_array is None:
         logger.info(f"Prediction array not found for {instance}. Calculating...")
-        instance.calculate_prediction_array() # This will save the array internally
-        prediction_array = instance.get_prediction_array() # Fetch again
+        instance.calculate_prediction_array()  # This will save the array internally
+        prediction_array = instance.get_prediction_array()  # Fetch again
         if prediction_array is None:
             logger.error(f"Failed to get or calculate prediction array for {instance}. Cannot create segments.")
             return

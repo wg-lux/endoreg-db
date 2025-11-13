@@ -2,7 +2,7 @@ import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
-from typing import TYPE_CHECKING, Any, Dict, Self, Type
+from typing import TYPE_CHECKING, Any, Dict, Self, Type, cast
 
 from django.db import models
 
@@ -69,6 +69,16 @@ class SensitiveMeta(models.Model):
     # --- External patient ID ---
     external_id = models.ForeignKey("PatientExternalID", on_delete=models.CASCADE, blank=True, null=True)
 
+    if TYPE_CHECKING:
+        pseudo_patient: models.ForeignKey["Patient|None"]
+
+        patient_gender: models.ForeignKey["Gender|None"]
+        pseudo_examination: models.ForeignKey["PatientExamination|None"]
+        state: models.ForeignKey["SensitiveMetaState|None"]  # Assuming related_name='state' is defined on SensitiveMetaState.origin
+        center: models.ForeignKey["Center|None"]
+
+        examiners = cast(models.manager.RelatedManager["Examiner"], examiners)
+
     @property
     def external_id_origin(self) -> str | None:
         """Returns the origin system from the linked external ID, if available."""
@@ -90,14 +100,6 @@ class SensitiveMeta(models.Model):
         if hasattr(self, "state") and self.state is not None:
             return self.state.is_verified
         return None
-
-    if TYPE_CHECKING:
-        examiners: models.QuerySet["Examiner"]
-        pseudo_patient: "Patient"
-        patient_gender: "Gender"
-        pseudo_examination: "PatientExamination"
-        state: "SensitiveMetaState"  # Assuming related_name='state' is defined on SensitiveMetaState.origin
-        center: "Center"
 
     @staticmethod
     def _generate_random_dob():
@@ -162,6 +164,13 @@ class SensitiveMeta(models.Model):
         )
 
     @property
+    def state_safe(self) -> "SensitiveMetaState":
+        state = self.state
+        if not state:
+            raise SensitiveMetaState.DoesNotExist("SensitiveMetaState does not exist for this SensitiveMeta instance.")
+        return state
+
+    @property
     def is_verified(self):
         """
         Checks if the instance is verified based on the related state object.
@@ -170,7 +179,7 @@ class SensitiveMeta(models.Model):
         try:
             # Access the related state object directly via the 'state' attribute
             # This assumes the related_name on SensitiveMetaState.origin is 'state'
-            return self.state.is_verified
+            return self.state_safe.is_verified
         except SensitiveMetaState.DoesNotExist:
             # If the state object doesn't exist, it's not verified
             return False
@@ -184,11 +193,9 @@ class SensitiveMeta(models.Model):
         Does not save the SensitiveMeta instance itself.
         """
         try:
-            # Try accessing the state via the related name 'state'
-            # This assumes the OneToOneField on SensitiveMetaState pointing to SensitiveMeta
-            # has related_name='state'
-            if self.state:
-                return self.state
+            state = self.state_safe
+            return state
+
         except SensitiveMetaState.DoesNotExist:
             # If it doesn't exist, create it
             logger.info("Creating new SensitiveMetaState for SensitiveMeta %s", self.pk)
@@ -211,9 +218,6 @@ class SensitiveMeta(models.Model):
             else:
                 # Cannot create state if the main instance has no PK
                 raise ValueError("Cannot get or create state for an unsaved SensitiveMeta instance.")
-
-        # If self.state existed initially, return it
-        return self.state
 
     def __repr__(self):
         return self.__str__()

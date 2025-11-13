@@ -31,7 +31,23 @@ class ModelMetaManager(models.Manager):
     Provides methods for retrieving ModelMeta instances using natural keys.
     """
 
-    # ... existing code ...
+    def get_by_natural_key(self, name: str, version: str, model_name: str) -> "ModelMeta":
+        """
+        Retrieves a ModelMeta instance using its natural key.
+
+        This method returns the ModelMeta whose name, version, and associated model's name
+        match the provided natural key. It is primarily used to support Django's natural key
+        serialization during data import/export and deserialization processes.
+
+        Args:
+            name: The name of the ModelMeta.
+            version: The version identifier of the ModelMeta.
+            model_name: The name of the associated AiModel.
+
+        Returns:
+            The ModelMeta object corresponding to the given natural key.
+        """
+        return self.get(name=name, version=version, model__name=model_name)
 
 
 class ModelMeta(models.Model):
@@ -107,7 +123,10 @@ class ModelMeta(models.Model):
     class Meta:
         """Metadata options for the ModelMeta model."""
 
-        # ... existing code ...
+        unique_together = (("name", "version", "model"),)
+        ordering = ["-date_created"]
+        verbose_name = "Model Metadata"
+        verbose_name_plural = "Model Metadata"
 
     @classmethod
     def create_from_file(
