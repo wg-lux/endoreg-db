@@ -3,8 +3,12 @@
 import numpy as np
 from django.db import models
 from scipy.stats import skewnorm
+from typing import TYPE_CHECKING
 
 from .base_value_distribution import BaseValueDistribution
+
+if TYPE_CHECKING:
+    from endoreg_db.models import LabValue, Patient
 
 
 class NumericValueDistributionManager(models.Manager):
@@ -37,13 +41,39 @@ class NumericValueDistribution(BaseValueDistribution):
     std_dev = models.FloatField(blank=True, null=True, help_text="Standard deviation for bell-shaped distributions")
     skewness = models.FloatField(blank=True, null=True, help_text="Shape parameter for skewed normal distributions")
 
-    def generate_value(self, lab_value, patient):
-        """Generate a value based on the distribution rules."""
-        # FIXME
-        from endoreg_db.models import LabValue, Patient
+    @property
+    def min_value_safe(self):
+        if self.min_value is None:
+            raise ValueError("min_value is not set")
+        return self.min_value
 
-        assert isinstance(patient, Patient)
-        assert isinstance(lab_value, LabValue)
+    @property
+    def max_value_safe(self):
+        if self.max_value is None:
+            raise ValueError("max_value is not set")
+        return self.max_value
+
+    @property
+    def mean_safe(self):
+        if self.mean is None:
+            raise ValueError("mean is not set")
+        return self.mean
+
+    @property
+    def std_dev_safe(self):
+        if self.std_dev is None:
+            raise ValueError("std_dev is not set")
+        return self.std_dev
+
+    @property
+    def skewness_safe(self):
+        if self.skewness is None:
+            raise ValueError("skewness is not set")
+        return self.skewness
+
+    def generate_value(self, lab_value: "LabValue", patient: "Patient"):
+        """Generate a value based on the distribution rules."""
+
         default_normal_range_dict = lab_value.get_normal_range(patient.age_safe, patient.gender)
         assert isinstance(default_normal_range_dict, dict)
 
