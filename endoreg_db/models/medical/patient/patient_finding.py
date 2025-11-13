@@ -31,11 +31,17 @@ class PatientFinding(models.Model):
     deactivated_by = models.ForeignKey("auth.User", on_delete=models.PROTECT, related_name="deactivated_findings", null=True, blank=True)
 
     if TYPE_CHECKING:
-        patient_examination: "PatientExamination"
-        finding: "Finding"
-        classifications: models.QuerySet["PatientFindingClassification"]
-        interventions: models.QuerySet["PatientFindingIntervention"]
-        video_segments: models.QuerySet["LabelVideoSegment"]
+        patient_examination: models.ForeignKey["PatientExamination"]
+        finding: models.ForeignKey["Finding"]
+
+        @property
+        def video_segments(self) -> models.manager.RelatedManager["LabelVideoSegment"]: ...
+
+        @property
+        def interventions(self) -> models.manager.RelatedManager["PatientFindingIntervention"]: ...
+
+        @property
+        def classifications(self) -> models.manager.RelatedManager["PatientFindingClassification"]: ...
 
     class Meta:
         verbose_name = "Patient Finding"
@@ -83,10 +89,10 @@ class PatientFinding(models.Model):
 
         # Prüfe ob Finding für diese Examination erlaubt ist
         if self.finding and self.patient_examination:
-            available_findings = self.patient_examination.examination.get_available_findings()
+            available_findings = self.patient_examination.examination_safe.get_available_findings()
             if self.finding not in available_findings:
                 raise ValidationError(
-                    {"finding": f'Finding "{self.finding.name}" ist nicht für Examination "{self.patient_examination.examination.name}" erlaubt.'}
+                    {"finding": f'Finding "{self.finding.name}" ist nicht für Examination "{self.patient_examination.examination_safe.name}" erlaubt.'}
                 )
 
         # Prüfe Required Findings Logic

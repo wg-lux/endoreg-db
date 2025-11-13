@@ -1,11 +1,11 @@
 """Model for the medication schedule."""
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import MedicationIntakeTime
+    from endoreg_db.models import Medication, MedicationIntakeTime, Unit
 
 
 class MedicationScheduleManager(models.Manager):
@@ -39,6 +39,11 @@ class MedicationSchedule(models.Model):
 
     objects = MedicationScheduleManager()
 
+    if TYPE_CHECKING:
+        unit: models.ForeignKey["Unit"]
+        medication: models.ForeignKey["Medication"]
+        intake_times = cast("models.manager.RelatedManager[MedicationIntakeTime]", intake_times)
+
     def natural_key(self):
         """Return the natural key for the medication schedule."""
         return (self.name,)
@@ -48,4 +53,4 @@ class MedicationSchedule(models.Model):
 
     def get_intake_times(self) -> List["MedicationIntakeTime"]:
         """Return a list of all intake times for this medication schedule."""
-        return [_ for _ in self.intake_times.all()]  # pylint: disable=E1101
+        return [_ for _ in self.intake_times.all()]

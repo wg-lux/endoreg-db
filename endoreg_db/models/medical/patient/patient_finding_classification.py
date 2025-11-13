@@ -27,9 +27,9 @@ class PatientFindingClassification(models.Model):
     numerical_descriptors = models.JSONField(blank=True, null=True)
 
     if TYPE_CHECKING:
-        finding: "PatientFinding"
-        classification: "FindingClassification"
-        classification_choice: "FindingClassificationChoice"
+        finding: models.ForeignKey["PatientFinding"]
+        classification: models.ForeignKey["FindingClassification"]
+        classification_choice: models.ForeignKey["FindingClassificationChoice"]
 
     class Meta:
         verbose_name = "Patient Finding Classification"
@@ -80,7 +80,7 @@ class PatientFindingClassification(models.Model):
             self.save()
         return self.numerical_descriptors
 
-    def set_subcategory(self, subcategory_name: str, subcategory_value: Dict):
+    def set_subcategory(self, subcategory_name: str, subcategory_value: Dict[str, dict]):
         """
         Update the value of a specified subcategory and save the classification.
 
@@ -91,6 +91,7 @@ class PatientFindingClassification(models.Model):
         Returns:
             dict: The updated subcategory dictionary.
         """
+        assert self.subcategories, "Subcategories must be initialized."
         assert subcategory_name in self.subcategories, "Subcategory must be in subcategories."
         self.subcategories[subcategory_name]["value"] = subcategory_value
         self.save()
@@ -106,10 +107,12 @@ class PatientFindingClassification(models.Model):
         Returns:
             dict: The updated subcategories with random values assigned where needed.
         """
+
         if not self.subcategories or not self.numerical_descriptors:
             self.save()
 
         self.refresh_from_db()
+        assert self.subcategories is not None, "Subcategories must be initialized."
 
         for subcategory_name, subcategory_dict in self.subcategories.items():
             if subcategory_dict["required"] and not subcategory_dict.get("value", None):
@@ -133,6 +136,7 @@ class PatientFindingClassification(models.Model):
         Raises:
             ValueError: If the descriptor's distribution type is not supported.
         """
+        assert self.numerical_descriptors is not None, "Numerical descriptors must be initialized."
         assert descriptor_name in self.numerical_descriptors, "Descriptor must be in numerical descriptors."
         descriptor = self.numerical_descriptors[descriptor_name]
         min_val = descriptor.get("min", 0)
@@ -169,7 +173,7 @@ class PatientFindingClassification(models.Model):
             raise ValueError("Descriptor name must be in numerical descriptors.")
 
         value = self.get_random_value_for_numerical_descriptor(descriptor_name)
-
+        assert self.numerical_descriptors is not None, "Numerical descriptors must be initialized."
         self.numerical_descriptors[descriptor_name]["value"] = value
         if save:
             self.save()
@@ -185,6 +189,8 @@ class PatientFindingClassification(models.Model):
         """
         if not self.subcategories or not self.numerical_descriptors:
             self.save()
+
+        assert self.numerical_descriptors is not None, "Numerical descriptors must be initialized."
 
         numerical_descriptors = self.numerical_descriptors
 

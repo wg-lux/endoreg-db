@@ -32,13 +32,19 @@ class PatientExamination(models.Model):
 
     if TYPE_CHECKING:
         patient: "models.ForeignKey[Patient]"
-        examination: "models.ForeignKey[Examination]"
-        video: "models.OneToOneField[VideoFile]"
+        examination: "models.ForeignKey[Examination|None]"
+        video: "models.OneToOneField[VideoFile|None]"
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]
         anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
         anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
+
+    @property
+    def examination_safe(self):
+        if self.examination is None:
+            raise ValueError("Examination is not set for this PatientExamination.")
+        return self.examination
 
     # report_files
     class Meta:
@@ -103,6 +109,8 @@ class PatientExamination(models.Model):
         patient: Patient = self.patient
         dob = patient.get_dob()
         date_start = self.date_start
+        assert dob is not None
+        assert date_start is not None
         return (date_start - dob).days // 365
 
     def get_available_findings(self):
@@ -110,6 +118,7 @@ class PatientExamination(models.Model):
         Returns all findings that are associated with the examination of this patient examination.
         """
 
+        assert self.examination is not None
         return self.examination.get_available_findings()
 
     def get_findings(self) -> models.QuerySet["PatientFinding"]:
@@ -140,7 +149,7 @@ class PatientExamination(models.Model):
         if not self.objects.filter(pk=pk).exists():
             return None
         else:
-            return self.objects.filter(pk=pk)
+            return self.objects.filter(pk=pk).first()
 
     @property
     def links(self) -> "RequirementLinks":
@@ -224,8 +233,8 @@ class PatientExamination(models.Model):
         """
         from .patient_finding import PatientFinding
 
-        examination: Examination = self.examination
-        assert examination
+        examination = self.examination
+        assert examination is not None
 
         patient_finding = PatientFinding.objects.create(patient_examination=self, finding=finding)
 

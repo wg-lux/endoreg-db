@@ -1,5 +1,7 @@
 """Model for medication indication."""
 
+from typing import TYPE_CHECKING, cast
+
 from django.db import models
 
 
@@ -25,10 +27,34 @@ class MedicationIndication(models.Model):
     )
     diseases = models.ManyToManyField("Disease")
     events = models.ManyToManyField("Event")
-    disease_classification_choices = models.ManyToManyField(
-        "DiseaseClassificationChoice"
-    )
+    disease_classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
     sources = models.ManyToManyField("InformationSource")
+
+    if TYPE_CHECKING:
+        from endoreg_db.models import (
+            Disease,
+            DiseaseClassificationChoice,
+            Event,
+            InformationSource,
+            MedicationIndicationType,
+            MedicationSchedule,
+        )
+
+        indication_type: models.ForeignKey["MedicationIndicationType"]
+        medication_schedules = cast(
+            "models.manager.RelatedManager[MedicationSchedule]",
+            medication_schedules,
+        )
+        diseases = cast("models.manager.RelatedManager[Disease]", diseases)
+        events = cast("models.manager.RelatedManager[Event]", events)
+        disease_classification_choices = cast(
+            "models.manager.RelatedManager[DiseaseClassificationChoice]",
+            disease_classification_choices,
+        )
+        sources = cast(
+            "models.manager.RelatedManager[InformationSource]",
+            sources,
+        )
 
     def get_indication_links(self) -> dict:
         """Return a dictionary of all linked objects for this medication indication."""
