@@ -67,6 +67,7 @@ class AnonymizationValidateView(APIView):
                     video.sensitive_meta.state.refresh_from_db()
                     video.sensitive_meta.state.mark_dob_verified()
                     video.sensitive_meta.state.mark_names_verified()
+                    video.sensitive_meta.create_anonymized_record()
                     video.sensitive_meta.state.save()
                 return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
 
@@ -94,6 +95,7 @@ class AnonymizationValidateView(APIView):
                     pdf.sensitive_meta.state.refresh_from_db()
                     pdf.sensitive_meta.state.mark_dob_verified()
                     pdf.sensitive_meta.state.mark_names_verified()
+                    pdf.sensitive_meta.create_anonymized_record()
                     pdf.sensitive_meta.state.save()
 
                 return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)

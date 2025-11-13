@@ -1138,3 +1138,28 @@ def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
         if gender_lower in variants:
             return standard
     return None
+
+def _create_anonymized_record(instance: "SensitiveMeta", DEFAULT_ANONYMIZED=None, DEFAULT_ANONYMIZED_DATE=timezone.make_aware(datetime(1900, 1, 1))) -> None:
+    """
+    Create a SensitiveMeta instance with all sensitive fields set to anonymized defaults.
+    This is only called after anonymization and will delete all data that can identify a patient from the database.
+    What is left will only be the patient hash.
+    
+    Args:
+        instance: The existing SensitiveMeta instance to anonymize
+        DEFAULT_ANONYMIZED: Usually None, The default string to use for anonymized fields (e.g., "anonymized,")
+    """
+    
+    instance.refresh_from_db()
+    instance.get_patient_hash()    
+    instance.get_patient_examination_hash()
+
+    anonymized_data = {
+        "patient_first_name": DEFAULT_ANONYMIZED,
+        "patient_last_name": DEFAULT_ANONYMIZED,
+        "patient_dob": DEFAULT_ANONYMIZED_DATE,
+        "examination_date": DEFAULT_ANONYMIZED_DATE,
+    }
+    sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)
+    
+    sensitive_meta.save()

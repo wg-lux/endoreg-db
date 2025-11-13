@@ -86,6 +86,9 @@ class SensitiveMeta(models.Model):
     # --- Text Fields ---
     text = models.TextField(blank=True, null=True)
     anonymized_text = models.TextField(blank=True, null=True)
+    
+    # --- Anonymization helper method ---
+    create_anonymized_record = logic._create_anonymized_record
 
     # --- State ---
     @property
