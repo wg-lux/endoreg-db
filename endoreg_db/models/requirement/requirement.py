@@ -40,7 +40,7 @@ if TYPE_CHECKING:
         PatientLabValue,
         PatientMedicationSchedule,  # Added PatientMedicationSchedule
         RequirementOperator,
-        RequirementSet,
+        # RequirementSet,
     )
     # from endoreg_db.utils.links.requirement_link import RequirementLinks # Already imported above
 
