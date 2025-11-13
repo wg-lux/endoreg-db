@@ -36,7 +36,6 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
         model = SensitiveMeta
         fields = [
             "id",
-            "file_path",
             "casenumber",
             "patient_first_name",
             "patient_last_name",
@@ -100,9 +99,9 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
     def get_anonymized_text(self, obj):
         return obj.anonymized_text if isinstance(obj.anonymized_text, str) else None
     
-    def get_external_id(self, obj) -> str | None:
-        return obj.external_id if isinstance(obj.external_id, str) else None
+    def get_external_id(self, obj) -> str | None:  
+        return obj.external_id if isinstance(obj.external_id, str) else None  
     
-    def get_external_id_origin(self, obj) -> str | None:
+    def get_external_id_origin(self, obj) -> str | None:  
         return obj.external_id_origin if isinstance(obj.external_id_origin, str) else None 
 
