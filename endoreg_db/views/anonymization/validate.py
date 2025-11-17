@@ -46,65 +46,89 @@ class AnonymizationValidateView(APIView):
             payload["is_verified"] = True
 
         file_type = payload.get("file_type")
+        with transaction.atomic():
+            # Try Video first (unless explicitly requesting PDF)
+            if file_type in (None, "video"):
+                video = VideoFile.objects.select_related("center").filter(pk=file_id).first()
+                if video is not None:
+                    prepared_payload = self._prepare_payload(payload, video)
+                    try:
+                        ok = video.validate_metadata_annotation(prepared_payload)
+                    except Exception:  # pragma: no cover - defensive safety net
+                        logger.exception("Video validation crashed for id=%s", file_id)
+                        return Response(
+                            {"error": "Video validation encountered an unexpected error."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        )
 
-        # Try Video first (unless explicitly requesting PDF)
-        if file_type in (None, "video"):
-            video = VideoFile.objects.select_related("center").filter(pk=file_id).first()
-            if video is not None:
-                prepared_payload = self._prepare_payload(payload, video)
-                try:
-                    ok = video.validate_metadata_annotation(prepared_payload)
-                except Exception:  # pragma: no cover - defensive safety net
-                    logger.exception("Video validation crashed for id=%s", file_id)
-                    return Response(
-                        {"error": "Video validation encountered an unexpected error."},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
+                    if not ok:
+                        return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        if video.sensitive_meta is None:
+                            sm = SensitiveMeta.objects.create(center=video.center)
+                            video.sensitive_meta = sm
 
-                if not ok:
-                    return Response({"error": "Video validation failed."}, status=status.HTTP_400_BAD_REQUEST)
-                else:
-                    video.sensitive_meta.get_or_create_state()
-                    video.sensitive_meta.state.refresh_from_db()
-                    video.sensitive_meta.state.mark_dob_verified()
-                    video.sensitive_meta.state.mark_names_verified()
-                    video.sensitive_meta.create_anonymized_record()
-                    video.sensitive_meta.state.anonymized = True
-                    video.sensitive_meta.state.save()
-                return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
+                        video.save(update_fields=["sensitive_meta"])
+                        video.sensitive_meta.get_or_create_state()
+                        if video.sensitive_meta.state is not None:
+                            video.sensitive_meta.state.refresh_from_db()
+                            video.sensitive_meta.state.mark_dob_verified()
+                            video.sensitive_meta.state.mark_names_verified()
+                            video.sensitive_meta.create_anonymized_record()
+                        else:
+                            return Response({"message": "Video not validated, failed to create State."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                        if video.state is not None:
+                            video.state.anonymized = True
+                            video.sensitive_meta.state.save()
+                    return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
 
-            if file_type == "video":
-                return Response({"error": f"Video {file_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+                if file_type == "video":
+                    return Response({"error": f"Video {file_id} not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Then PDF (unless explicitly requesting Video)
-        if file_type in (None, "pdf"):
-            pdf = RawPdfFile.objects.select_related("center").filter(pk=file_id).first()
-            if pdf is not None:
-                prepared_payload = self._prepare_payload(payload, pdf)
-                try:
-                    ok = pdf.validate_metadata_annotation(prepared_payload)
-                except Exception:  # pragma: no cover - defensive safety net
-                    logger.exception("PDF validation crashed for id=%s", file_id)
-                    return Response(
-                        {"error": "PDF validation encountered an unexpected error."},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
+            # Then PDF (unless explicitly requesting Video)
+            if file_type in (None, "pdf"):
+                pdf = RawPdfFile.objects.select_related("center").filter(pk=file_id).first()
+                if pdf is not None:
+                    prepared_payload = self._prepare_payload(payload, pdf)
+                    try:
+                        ok = pdf.validate_metadata_annotation(prepared_payload)
+                    except Exception:  # pragma: no cover - defensive safety net
+                        logger.exception("PDF validation crashed for id=%s", file_id)
+                        return Response(
+                            {"error": "PDF validation encountered an unexpected error."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        )
+                    
+                    try:
+                        assert pdf.sensitive_meta is not None
+                        assert pdf.sensitive_meta.state is not None
+                    except AssertionError as e:
+                        logger.error(f"{e}")
 
-                if not ok:
-                    return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
-                else:
-                    pdf.sensitive_meta.get_or_create_state()
-                    pdf.sensitive_meta.state.refresh_from_db()
-                    pdf.sensitive_meta.state.mark_dob_verified()
-                    pdf.sensitive_meta.state.mark_names_verified()
-                    pdf.sensitive_meta.create_anonymized_record()
-                    pdf.sensitive_meta.state.anonymized = True
-                    pdf.sensitive_meta.state.save()
+                    if not ok:
+                        return Response({"error": "PDF validation failed."}, status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        if pdf.sensitive_meta is None:
+                            sm = SensitiveMeta.objects.create(center=pdf.center)
+                            pdf.sensitive_meta = sm
+                        pdf.save(update_fields=["sensitive_meta"])
+                        pdf.sensitive_meta.get_or_create_state()
+                        if pdf.sensitive_meta and pdf.sensitive_meta.state and pdf.state:
+                            pdf.sensitive_meta.state.refresh_from_db()
+                            pdf.sensitive_meta.state.mark_dob_verified()
+                            pdf.sensitive_meta.state.mark_names_verified()
+                            pdf.sensitive_meta.create_anonymized_record()
+                            pdf.state.anonymized = True
+                            
+                            pdf.sensitive_meta.state.save()
+                        else:
+                            return Response({"message": "PDF not validated, failed to create State."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
 
-            if file_type == "pdf":
-                return Response({"error": f"PDF {file_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+                    return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
+
+                if file_type == "pdf":
+                    return Response({"error": f"PDF {file_id} not found."}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({"error": f"Item {file_id} not found as video or pdf."}, status=status.HTTP_404_NOT_FOUND)
 

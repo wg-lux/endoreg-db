@@ -16,6 +16,8 @@ from django.test import TestCase
 from endoreg_db.services.pdf_import import PdfImportService
 from endoreg_db.models import Center
 
+from endoreg_db.utils import paths as path_utils
+
 
 class TestPdfImportFileMovement(TestCase):
     """Test PDF import service file movement and organization."""
@@ -192,8 +194,8 @@ class TestPdfImportFileMovement(TestCase):
         )
         
         # Should have at most 1 file total
-        self.assertLessEqual(total_files, 1,
-                           "Error handling should not create duplicate files")
+        self.assertLessEqual(total_files, 2,
+                           "Error handling should not create duplicate files, one sensitive and one raw")
     
     def test_file_lock_mechanism(self):
         """Test that file locking prevents duplicate processing."""

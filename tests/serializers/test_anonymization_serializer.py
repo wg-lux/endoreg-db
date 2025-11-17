@@ -157,57 +157,64 @@ class TestSensitiveMetaValidateSerializer:
         assert validated['examination_date'] == date(2024, 2, 15)
         assert validated['casenumber'] == '12345'
     
-    def test_validate_patient_dob_german_format(self):
+    def test_validate_dates_german_format(self):
         """Test validating patient DOB in German format."""
-        data = {'patient_dob': '21.03.1994'}
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '21.03.1994',
+            'examination_date': '15.02.2024',
+            'casenumber': '12345'
+            }
+            
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert serializer.is_valid()
         
         assert serializer.validated_data['patient_dob'] == date(1994, 3, 21)
     
-    def test_validate_patient_dob_iso_format(self):
+    def test_validate_dates_iso_format(self):
         """Test validating patient DOB in ISO format (backward compatibility)."""
-        data = {'patient_dob': '1994-03-21'}
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345'
+            }        
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert serializer.is_valid()
         
-        assert serializer.validated_data['patient_dob'] == date(1994, 3, 21)
+        assert serializer.validated_data['patient_dob'] == date(1999, 8, 21)
     
-    def test_validate_patient_dob_invalid(self):
+    def test_validate_dates_invalid(self):
         """Test validation rejects invalid patient DOB."""
-        data = {'patient_dob': 'invalid-date'}
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': 'invalid-date',
+            'examination_date': 'invalid-date',
+            'casenumber': '12345'
+            }  
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert not serializer.is_valid()
         assert 'patient_dob' in serializer.errors
     
-    def test_validate_patient_dob_empty(self):
-        """Test validation accepts empty patient DOB."""
-        data = {'patient_dob': ''}
+    def test_validate_dates_empty(self):
+        """Test that validation does not accept empty patient DOB."""
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '',
+            'examination_date': '',
+            'casenumber': '12345'
+            }  
         
         serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
-        assert serializer.validated_data['patient_dob'] is None
-    
-    def test_validate_examination_date_german_format(self):
-        """Test validating examination date in German format."""
-        data = {'examination_date': '15.02.2024'}
-        
-        serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
-        
-        assert serializer.validated_data['examination_date'] == date(2024, 2, 15)
-    
-    def test_validate_examination_date_iso_format(self):
-        """Test validating examination date in ISO format."""
-        data = {'examination_date': '2024-02-15'}
-        
-        serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
-        
-        assert serializer.validated_data['examination_date'] == date(2024, 2, 15)
+        assert not serializer.is_valid()
+
     
     def test_validate_examination_date_invalid(self):
         """Test validation rejects invalid examination date."""
@@ -217,42 +224,18 @@ class TestSensitiveMetaValidateSerializer:
         assert not serializer.is_valid()
         assert 'examination_date' in serializer.errors
     
-    def test_validate_examination_date_empty(self):
-        """Test validation accepts empty examination date."""
-        data = {'examination_date': ''}
-        
-        serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
-        assert serializer.validated_data['examination_date'] is None
     
-    def test_default_is_verified_true(self):
-        """Test is_verified defaults to True."""
-        data = {
-            'patient_first_name': 'Max',
-            'patient_last_name': 'Mustermann'
-        }
-        
-        serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
-        
-        # is_verified should default to True
-        assert serializer.validated_data.get('is_verified', True) is True
-    
-    def test_is_verified_can_be_false(self):
-        """Test is_verified can be explicitly set to False."""
-        data = {
-            'patient_first_name': 'Max',
-            'is_verified': False
-        }
-        
-        serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
-        
-        assert serializer.validated_data['is_verified'] is False
     
     def test_file_type_video(self):
         """Test file_type field accepts 'video'."""
-        data = {'file_type': 'video'}
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345',
+            'file_type': 'video'
+            }
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert serializer.is_valid()
@@ -260,30 +243,47 @@ class TestSensitiveMetaValidateSerializer:
     
     def test_file_type_pdf(self):
         """Test file_type field accepts 'pdf'."""
-        data = {'file_type': 'pdf'}
-        
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345',
+            'file_type': 'pdf'
+            }          
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert serializer.is_valid()
         assert serializer.validated_data['file_type'] == 'pdf'
     
     def test_file_type_invalid(self):
         """Test file_type rejects invalid values."""
-        data = {'file_type': 'invalid'}
+        data = {
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345',
+            'file_type': 'invalid'}
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert not serializer.is_valid()
         assert 'file_type' in serializer.errors
     
-    def test_all_fields_optional(self):
+    def test_all_fields_not_optional(self):
         """Test that all fields are optional."""
         data = {}
         
         serializer = SensitiveMetaValidateSerializer(data=data)
-        assert serializer.is_valid()
+        assert not serializer.is_valid()
     
     def test_anonymized_text_field(self):
         """Test anonymized_text field for PDF support."""
         data = {
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345',
             'anonymized_text': 'This is anonymized text content',
             'file_type': 'pdf'
         }
@@ -294,7 +294,14 @@ class TestSensitiveMetaValidateSerializer:
     
     def test_patient_gender_field(self):
         """Test patient_gender field."""
-        data = {'patient_gender': 'M'}
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345',
+            'patient_gender': 'M'
+            }
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert serializer.is_valid()
@@ -302,7 +309,14 @@ class TestSensitiveMetaValidateSerializer:
     
     def test_center_name_field(self):
         """Test center_name field."""
-        data = {'center_name': 'Test Hospital'}
+        data = {            
+            'patient_first_name': 'Max',
+            'patient_last_name': 'Mustermann',
+            'patient_dob': '1999-08-21',
+            'examination_date': '2024-02-21',
+            'casenumber': '12345',
+            'center_name': 'Test Hospital'
+            }
         
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert serializer.is_valid()

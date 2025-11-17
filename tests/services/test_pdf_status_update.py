@@ -78,7 +78,7 @@ class TestPdfStatusAfterAnonymization:
             )
 
             # Verify the status string representation
-            assert status.value == "done", (
+            assert status.value == "done_processing_anonymization", (
                 f"Expected 'done_processing_anonymization', got '{status.value}'"
             )
 

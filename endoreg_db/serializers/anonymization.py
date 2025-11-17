@@ -43,8 +43,11 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
         - DD.MM.YYYY (z.B. "21.03.1994")
         - YYYY-MM-DD (z.B. "1994-03-21")
         """
-        if not value:
-            return None
+
+        if value == '' or not value:
+            raise serializers.ValidationError(
+                "Ungültiges Datum. Kein Input! Erlaubte Formate: DD.MM.YYYY oder YYYY-MM-DD."
+            ) 
             
         parsed_date = parse_any_date(value)
         if not parsed_date:
@@ -61,8 +64,10 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
         - DD.MM.YYYY (z.B. "15.02.2024")
         - YYYY-MM-DD (z.B. "2024-02-15")
         """
-        if not value:
-            return None
+        if value == '' or not value:
+            raise serializers.ValidationError(
+                "Ungültiges Datum. Kein Input! Erlaubte Formate: DD.MM.YYYY oder YYYY-MM-DD."
+            ) 
             
         parsed_date = parse_any_date(value)
         if not parsed_date:

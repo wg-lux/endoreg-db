@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Union
 import subprocess
 from django.db import transaction
+import lx_anonymizer
 
 from endoreg_db.models import SensitiveMeta
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -203,6 +204,10 @@ class PdfImportService:
                 shutil.move(str(source), str(target))
             else:
                 raise
+        lock_path = Path(str(source) + ".lock")
+        if lock_path.exists():
+            lock_path.unlink()
+
         return target
 
     def _ensure_state(self, pdf_file: "RawPdfFile"):
@@ -370,7 +375,7 @@ class PdfImportService:
             # Handle "File already being processed" case specifically
             if "already being processed" in str(e):
                 logger.info(f"Skipping file {file_path}: {e}")
-                return None
+                None
             else:
                 logger.error(f"PDF import failed for {file_path}: {e}")
                 self._cleanup_on_error()
@@ -500,9 +505,15 @@ class PdfImportService:
         if not original_path or not self.current_pdf:
             try:
                 self.current_pdf = RawPdfFile.objects.get(pdf_hash=self.processing_context["file_hash"])
+                self.original_path = Path(str(self.current_pdf.file.path))
+                    
             except RawPdfFile.DoesNotExist:
                 raise RuntimeError("Processing environment setup failed")
         # Create sensitive file copy
+        try:
+            assert original_path is not None
+        except AssertionError as e:
+            logger.error(f"No original path {e}")
         self.create_sensitive_file(self.current_pdf, original_path)
 
         # Update file path to point to sensitive copy
@@ -529,13 +540,17 @@ class PdfImportService:
 
     def _process_text_and_metadata(self):
         """Process text extraction and metadata using ReportReader."""
-        report_reading_available, ReportReader = self._ensure_report_reading_available()
-        assert ReportReader is not None and report_reading_available
+        report_reading_available, ReportReaderCls = self._ensure_report_reading_available()
+        try:
+            assert ReportReaderCls is not None and report_reading_available
+            assert self.current_pdf is not None 
+        except AssertionError as e:
+            logger.error(f"PDF Import failed on Error:{e} Ensure the pdf was passed correctly and report reading is available in function _process_text_and_metadata() ")
         if not report_reading_available:
             logger.warning("Report reading not available (lx_anonymizer not found)")
             self._mark_processing_incomplete("no_report_reader")
-            return
-
+            return 
+        assert self.current_pdf is not None
         if not self.current_pdf.file:
             logger.warning("No file available for text processing")
             self._mark_processing_incomplete("no_file")
@@ -545,9 +560,10 @@ class PdfImportService:
             logger.info(
                 f"Starting text extraction and metadata processing with ReportReader (mode: {self.processing_mode})..."
             )
+            ReportReaderCls = lx_anonymizer.ReportReader            
 
             # Initialize ReportReader
-            report_reader = ReportReader(
+            report_reader = ReportReaderCls(
                 report_root_path=str(path_utils.STORAGE_DIR),
                 locale="de_DE",
                 text_date_format="%d.%m.%Y",
@@ -571,7 +587,7 @@ class PdfImportService:
         # Setup anonymized directory
         anonymized_dir = path_utils.PDF_DIR / "anonymized"
         anonymized_dir.mkdir(parents=True, exist_ok=True)
-
+        assert self.current_pdf is not None
         # Generate output path for anonymized PDF
         pdf_hash = self.current_pdf.pdf_hash
         anonymized_output_path = anonymized_dir / f"{pdf_hash}_anonymized.pdf"
@@ -949,14 +965,29 @@ class PdfImportService:
 
     def _cleanup_on_error(self):
         """Cleanup processing context on error."""
+        original_path = self.original_path
         try:
             if self.current_pdf and hasattr(self.current_pdf, "state"):
                 state = self._ensure_state(self.current_pdf)
                 raw_file_path = self.current_pdf.get_raw_file_path()
-                original_path = self.original_path
                 if raw_file_path is not None and original_path is not None:
                     # Ensure reprocessing for next attempt by restoring original file
                     shutil.copy2(str(raw_file_path), str(original_path))
+                    
+                # Ensure no two files can remain
+                if raw_file_path == original_path and raw_file_path is not None and original_path is not None:
+                    os.remove(str(raw_file_path))
+                    
+                    
+                # Remove Lock file also
+                lock_path = Path(str(path_utils.PDF_DIR) + ".lock")
+                try:
+                    if lock_path.exists():
+                        lock_path.unlink()
+                        logger.info("Removed lock file during quarantine: %s", lock_path)
+                except Exception as e:
+                    logger.warning("Could not remove lock file during quarantine: %s", e)
+
                 
                 if state and self.processing_context.get("processing_started"):
                     state.text_meta_extracted = False
@@ -965,6 +996,35 @@ class PdfImportService:
                     state.anonymized = False
                     state.save()
                     logger.debug("Updated PDF state to indicate processing failure")
+            else:
+                # 🔧 Early failure: no current_pdf (or no state).
+                # In this case we want to make sure we don't leave stray files
+                # under PDF_DIR or PDF_DIR/sensitive.
+
+                pdf_dir = self._get_pdf_dir()
+                if pdf_dir and pdf_dir.exists():
+                    for candidate_dir in (pdf_dir, pdf_dir / "sensitive"):
+                        if candidate_dir.exists():
+                            for candidate in candidate_dir.glob("*.pdf"):
+                                # Don't delete the original ingress file
+                                if (
+                                    original_path is not None
+                                    and candidate.resolve() == Path(original_path).resolve()
+                                ):
+                                    continue
+                                try:
+                                    candidate.unlink()
+                                    logger.debug(
+                                        "Removed stray PDF during early error cleanup: %s",
+                                        candidate,
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        "Failed to remove stray PDF %s: %s",
+                                        candidate,
+                                        e,
+                                    )
+
         except Exception as e:
             logger.warning(f"Error during cleanup: {e}")
         finally:
@@ -987,6 +1047,25 @@ class PdfImportService:
                         "Failed to remove sensitive copy during error cleanup: %s",
                         cleanup_exc,
                     )
+                pdf_dir = self._get_pdf_dir()
+                if original_path and pdf_dir:
+                    # Try to remove any extra file that was created during import
+                    # Simplest heuristic: same basename as original, but in pdf dir or pdf/sensitive dir
+                    for candidate_dir in (pdf_dir, pdf_dir / "sensitive"):
+                        candidate = candidate_dir / original_path.name
+                        if candidate.exists() and candidate != original_path:
+                            try:
+                                candidate.unlink()
+                                logger.debug(
+                                    "Removed stray PDF copy during early error cleanup: %s",
+                                    candidate,
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    "Failed to remove stray PDF copy %s: %s",
+                                    candidate,
+                                    e,
+                                )
 
             # Always clean up processed files set to prevent blocks
             file_path = self.processing_context.get("file_path")
@@ -1318,9 +1397,9 @@ class PdfImportService:
             if source_file_path
             else self.processing_context.get("file_path")
         )
-        quarantine_reason = quarantine_reason or self.processing_context.get(
+        quarantine_reason = str(quarantine_reason or self.processing_context.get(
             "error_reason"
-        )
+        ))
 
         if not pdf_file:
             raise ValueError("No PDF instance available for archiving/quarantine")

@@ -40,6 +40,8 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
         # Optionally, check content type or partial content
 
     def test_pdf_file_accessible_via_url(self):
+        if self.pdf_url is None:
+            self.fail("PDF file URL is None.")
         full_url = self.live_server_url + self.pdf_url
         print(f"DEBUG: Testing full URL for PDF: {full_url}")
         response = requests.head(full_url)
