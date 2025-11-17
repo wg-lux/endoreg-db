@@ -136,6 +136,11 @@ class EventClassificationChoice(models.Model):
 
     objects = EventClassificationChoiceManager()
 
+    @property
+    def event(self):
+        """Returns the associated Event instance."""
+        return self.event_classification.event
+
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
         return (self.name,)

@@ -15,6 +15,7 @@ from librosa import frames_to_samples
 from pandas.core import frame
 
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
+from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 
 from ...label import Label, LabelVideoSegment
 from ...state import VideoState
@@ -25,13 +26,7 @@ from .create_from_file import _create_from_file
 from .pipe_1 import _pipe_1, _test_after_pipe_1
 from .pipe_2 import _pipe_2
 from .video_file_ai import _extract_text_from_video_frames, _predict_video_pipeline
-from .video_file_anonymize import (
-    _anonymize,
-    _cleanup_raw_assets,
-    _create_anonymized_frame_files,
-    _censor_outside_frames
-)
-from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
+from .video_file_anonymize import _anonymize, _censor_outside_frames, _cleanup_raw_assets, _create_anonymized_frame_files
 from .video_file_frames import (
     _bulk_create_frames,
     _create_frame_object,
@@ -764,12 +759,12 @@ class VideoFile(models.Model):
                 exc_info=True,
             )
             return self.label_video_segments.none()
-        
+
     @classmethod
     def create_video_without_outside_frames(cls, instance: "VideoFile", only_validated: bool = False) -> bool:
         """
         Creates a new video by excluding frames that belong to 'outside' segments.
-        
+
         Parameters:
             only_validated (bool): If True, only validated segments are considered for frame exclusion.
 
@@ -777,35 +772,27 @@ class VideoFile(models.Model):
             VideoFile: A new VideoFile instance with the frames excluding those labeled as 'outside'.
         """
         video = instance
-        
+
         if not video:
             logger.warning("No processed video file available for VideoFile %s.", cls.uuid)
             return False
         try:
-            extracted = video.extract_frames(quality=2,
-                                        overwrite=False,
-                                        ext="jpg",
-                                        verbose=False,
-                                        from_processed=True)
-            assert(extracted is True)
+            extracted = video.extract_frames(quality=2, overwrite=False, ext="jpg", verbose=False, from_processed=True)
+            assert extracted is True
         except AssertionError:
             # Use default anonymization here
             video.anonymize
-            extracted = video.extract_frames(quality=2,
-                                        overwrite=False,
-                                        ext="jpg",
-                                        verbose=False,
-                                        from_processed=True)
-            assert(extracted is True)
+            extracted = video.extract_frames(quality=2, overwrite=False, ext="jpg", verbose=False, from_processed=True)
+            assert extracted is True
         try:
             # Step 1: Get the "outside" labeled frames
             censored = _censor_outside_frames(video)
             frames = [instance.get_frame_dir_path()]
-            assert (len(frames) != 0)
+            assert len(frames) != 0
             fps = video.fps if video.fps else 120.0  # Default to 30 FPS if fps is not set
-            assert(fps is not None)
-            assert(video.width is not None)
-            assert(video.height is not None)
+            assert fps is not None
+            assert video.width is not None
+            assert video.height is not None
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
             output_video_path = Path(f"/path/to/output/{cls.uuid}_filtered.mp4")
@@ -822,7 +809,6 @@ class VideoFile(models.Model):
         except Exception as e:
             logger.error(f"Error creating video without 'outside' frames for VideoFile {cls.uuid}: {e}", exc_info=True)
             return False
-    
 
     @classmethod
     def get_all_videos(cls) -> models.QuerySet["VideoFile"]:
