@@ -9,6 +9,15 @@ from endoreg_db.utils.links.requirement_link import RequirementLinks
 logger = logging.getLogger(__name__)
 
 
+def _validate_requirement_configuration(instance: "Requirement") -> bool:
+    """Ensures requirement fixtures declare both requirement_types and operators."""
+    if not instance.requirement_types.exists():
+        raise ValueError(f"Requirement '{instance.name}' must be associated with at least one RequirementType.")
+    if not instance.operators.exists():
+        raise ValueError(f"Requirement '{instance.name}' must be associated with at least one RequirementOperator.")
+    return True
+
+
 QuerySet = models.QuerySet
 
 if TYPE_CHECKING:
@@ -286,6 +295,13 @@ class Requirement(models.Model):
     def __str__(self):
         """Returns the name of the requirement as its string representation."""
         return str(self.name)
+
+    # override save method to add a validation step; requirements need at least one operator and at least one requirement type
+    def save(self, *args, **kwargs):
+        _valid = _validate_requirement_configuration(
+            self,
+        )
+        super().save(*args, **kwargs)
 
     @property
     def expected_models(
