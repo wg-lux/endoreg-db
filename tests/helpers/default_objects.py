@@ -33,7 +33,7 @@ DEFAULT_ENDOSCOPE_NAME = "test_endoscope"
 DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
 
 DEFAULT_EGD_PATH = Path("tests/assets/lux-gastro-report.pdf")
-DEFAULT_GENDERS = ["male", "female", "unknown"]
+DEFAULT_GENDERS = ["male", "female"]
 DEFAULT_EXAMINATIONS = ["colonoscopy"]
 DEFAULT_INDICATIONS = [
     "colonoscopy",

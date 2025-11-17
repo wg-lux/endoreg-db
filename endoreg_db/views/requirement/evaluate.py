@@ -1,8 +1,9 @@
 from endoreg_db.models.requirement.requirement import Requirement
+from endoreg_db.views.requirement.requirement_utils import safe_evaluate_requirement
 from endoreg_db.models.requirement.requirement_set import RequirementSet
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 
-
+import json
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -143,7 +144,7 @@ def evaluate_requirements(request):
                 requirement_obj = req
 
             try:
-                met, details = requirement_obj.evaluate_with_details(pe.patient, mode="strict")
+                met, details, error = safe_evaluate_requirement(requirement_obj, pe.patient, mode="strict")
                 # normalize details to a string for the frontend
                 if isinstance(details, str):
                     details_str = details
@@ -159,7 +160,7 @@ def evaluate_requirements(request):
                     "requirement_name": getattr(requirement_obj, "name", "unknown"),
                     "met": bool(met),
                     "details": details_str if details_str else ("Voraussetzung erfüllt" if met else "Voraussetzung nicht erfüllt"),
-                    "error": None
+                    "error": error
                 })
             except (TypeError, ValueError) as e:
                 msg = f"Fehler bei der Bewertung der Voraussetzung: {e}"
@@ -216,64 +217,76 @@ def evaluate_requirements(request):
 
 def evaluate_requirement_set(request) -> Response:
     """
-    Evaluate a specific RequirementSet based on provided RequirementLinks data.
-
-    Expects a JSON payload with the following structure:
-    {
-        "requirement_set_ids": [<requirement_set_ids>],
-        "patient_examination_id": <patient_examination_id>
-    }
-
-    Returns a JSON response with the evaluation results for the specified RequirementSet:
-    {
-        "results": [
-            {
-                "requirement_name": <requirement_name>,
-                "met": <true/false>,
-                "details": <additional_details>
-            },
-            ...
-        ]
-    }
+    Evaluate specific RequirementSets for a given PatientExamination.
     """
     try:
         data = request.data
-        requirement_set_ids = data.get("requirement_set_ids", None)
+        requirement_set_ids = data.get("requirement_set_ids")
         patient_examination_id = data.get("patient_examination_id")
 
         if not requirement_set_ids:
-            return Response({"error": "requirement_set_ids is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {"error": "requirement_set_ids is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if not patient_examination_id:
-            return Response({"error": "patient_examination_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "patient_examination_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Get the patient examination
         try:
-            patient_examination = PatientExamination.objects.get(id=patient_examination_id)
+            patient_examination = PatientExamination.objects.select_related("patient").get(
+                id=patient_examination_id
+            )
         except PatientExamination.DoesNotExist:
-            return Response({"error": f"PatientExamination with id {patient_examination_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {
+                    "error": f"PatientExamination with id {patient_examination_id} does not exist"
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
+        patient = patient_examination.patient
         results = []
 
-        # Construct RequirementLinks from the provided data
         for requirement_set_id in requirement_set_ids:
-            # Fetch the specified RequirementSet
             try:
-                req_set = RequirementSet.objects.get(id=requirement_set_id)
+                req_set = RequirementSet.objects.prefetch_related("requirements").get(
+                    id=requirement_set_id
+                )
             except RequirementSet.DoesNotExist:
-                return Response({"error": f"RequirementSet with id {requirement_set_id} does not exist"}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"error": f"RequirementSet with id {requirement_set_id} does not exist"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
             for requirement in req_set.requirements.all():
-                met, details = requirement.evaluate(patient_examination.patient, mode="strict")
-                results.append({
-                    "requirement_name": requirement.name,
-                    "met": met,
-                    "details": details
-                })
+                met, details, error = safe_evaluate_requirement(
+                    requirement, patient, mode="strict"
+                )
 
-        return Response({
-            "results": results
-        }, status=status.HTTP_200_OK)
+                results.append(
+                    {
+                        "requirement_set_id": req_set.id,
+                        "requirement_set_name": req_set.name,
+                        "requirement_name": requirement.name,
+                        "met": met,
+                        "details": details,
+                        "error": error,
+                    }
+                )
+
+        return Response({"results": results}, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"results": str(e), details: "Fehler bei der Bewertung der Voraussetzung"}, status=status.HTTP_400_BAD_REQUEST)
+        logger.exception("evaluate_requirement_set: unexpected error")
+        return Response(
+            {
+                "results": [],
+                "error": str(e),
+                "details": "Fehler bei der Bewertung der Voraussetzung",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )

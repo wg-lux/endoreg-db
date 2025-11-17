@@ -3,7 +3,6 @@ import yaml
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import OperationalError, transaction
 
-
 def load_model_data_from_yaml(command, model_name, metadata, verbose):
     """
     Load model data from YAML files.
@@ -74,6 +73,19 @@ def load_data_with_foreign_keys(
         name = fields.pop("name", None)
 
 
+        if getattr(model, "_meta", None) and model._meta.model_name == "requirement":
+            requirement_types = fields.get("requirement_types", [])
+            operators = fields.get("operators", [])
+        
+            if not requirement_types:
+                raise ValueError(
+                    f"Requirement '{name}' must define at least one requirement_types entry."
+                )
+            if not operators:
+                raise ValueError(
+                    f"Requirement '{name}' must define at least one operators entry."
+                )
+                      
         ####################
         #TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED
         SKIP_NAMES=[
@@ -88,7 +100,7 @@ def load_data_with_foreign_keys(
         for skip_name in SKIP_NAMES:
             if skip_name in fields:
                 fields.pop(skip_name)
-        ########################
+        # ########################
 
         m2m_relationships = {}  # Store many-to-many relationships
         # print(entry)

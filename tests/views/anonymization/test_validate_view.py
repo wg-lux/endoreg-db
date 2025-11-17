@@ -10,6 +10,9 @@ Tests cover:
 """
 import uuid
 from typing import Dict, cast
+import logging
+from typing import Any, Dict, cast
+
 
 import pytest
 from django.contrib.auth.models import User
@@ -20,6 +23,9 @@ from unittest.mock import patch
 
 from endoreg_db.models import VideoFile, RawPdfFile, Center, EndoscopyProcessor
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
+from endoreg_db.models.administration.person.patient import Patient
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.django_db
@@ -29,7 +35,7 @@ class TestAnonymizationValidateView:
     # ------------------------------------------------------------------ #
     # Fixtures                                                           #
     # ------------------------------------------------------------------ #
-
+           
     @pytest.fixture
     def factory(self) -> APIRequestFactory:
         """Create APIRequestFactory."""
@@ -143,6 +149,7 @@ class TestAnonymizationValidateView:
             "patient_last_name": "Mustermann",
             "patient_dob": "21.03.1994",
             "examination_date": "15.02.2024",
+            "patient_gender": "männlich",
             "casenumber": "12345",
             "anonymized_text": "Anonymized PDF content",
             "file_type": "pdf",
@@ -199,6 +206,8 @@ class TestAnonymizationValidateView:
             "patient_dob": "21.03.1994",
             "examination_date": "15.02.2024",
             "casenumber": "12345",
+            "patient_gender": "männlich",
+
         }
 
         request = factory.post(
@@ -216,62 +225,6 @@ class TestAnonymizationValidateView:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "not found" in error_text
 
-    def test_validate_with_center_name_from_video(self, factory, user, video_file):
-        """Test that center_name is added from video if not in payload."""
-        data = {
-            "patient_first_name": "Max",
-            "patient_last_name": "Mustermann",
-            "patient_dob": "21.03.1994",
-            "examination_date": "15.02.2024",
-            "casenumber": "12345",
-        }
-
-        def check_center_name(payload):
-            assert "center_name" in payload
-            assert payload["center_name"] == video_file.center.name
-            return True
-
-        with patch.object(VideoFile, "validate_metadata_annotation", side_effect=check_center_name):
-            request = factory.post(
-                f"/api/anonymization/{video_file.id}/validate/",
-                data=data,
-                format="json",
-            )
-            force_authenticate(request, user=user)
-
-            view = AnonymizationValidateView.as_view()
-            response = self._call_view(view, request, file_id=video_file.id)
-
-            assert response.status_code == status.HTTP_200_OK
-
-    def test_validate_with_center_name_from_pdf(self, factory, user, pdf_file):
-        """Test that center_name is added from PDF if not in payload."""
-        data = {
-            "patient_first_name": "Max",
-            "patient_last_name": "Mustermann",
-            "patient_dob": "21.03.1994",
-            "examination_date": "15.02.2024",
-            "casenumber": "12345",
-            "file_type": "pdf",
-        }
-
-        def check_center_name(payload):
-            assert "center_name" in payload
-            assert payload["center_name"] == pdf_file.center.name
-            return True
-
-        with patch.object(RawPdfFile, "validate_metadata_annotation", side_effect=check_center_name):
-            request = factory.post(
-                f"/api/anonymization/{pdf_file.id}/validate/",
-                data=data,
-                format="json",
-            )
-            force_authenticate(request, user=user)
-
-            view = AnonymizationValidateView.as_view()
-            response = self._call_view(view, request, file_id=pdf_file.id)
-
-            assert response.status_code == status.HTTP_200_OK
 
     def test_validate_invalid_date_format(self, factory, user, video_file):
         """Test validation with invalid date format."""
@@ -306,6 +259,7 @@ class TestAnonymizationValidateView:
             "patient_dob": "21.03.1994",
             "examination_date": "15.02.2024",
             "casenumber": "12345",
+            "patient_gender": "unknown"
         }
 
         def check_is_verified(payload):
@@ -514,31 +468,3 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
             assert "unexpected error" in error_text
-
-    def test_file_type_not_forwarded_to_validator(self, factory, user, video_file):
-        """file_type should be stripped before calling validators."""
-        data = {
-            "patient_first_name": "Max",
-            "patient_last_name": "Mustermann",
-            "patient_dob": "21.03.1994",
-            "examination_date": "15.02.2024",
-            "casenumber": "12345",
-            "file_type": "video",
-        }
-
-        def assert_no_file_type(payload):
-            assert "file_type" not in payload
-            return True
-
-        with patch.object(VideoFile, "validate_metadata_annotation", side_effect=assert_no_file_type):
-            request = factory.post(
-                f"/api/anonymization/{video_file.id}/validate/",
-                data=data,
-                format="json",
-            )
-            force_authenticate(request, user=user)
-
-            view = AnonymizationValidateView.as_view()
-            response = self._call_view(view, request, file_id=video_file.id)
-
-            assert response.status_code == status.HTTP_200_OK

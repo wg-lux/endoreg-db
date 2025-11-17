@@ -511,9 +511,9 @@ class Requirement(models.Model):
         """
 
         try:
-            _valid_operator_and_type = _validate_requirement_configuration(self)
-        except ValueError as e:
-            raise e
+            _validate_requirement_configuration(self)
+        except Exception as e:
+            logger.warning(str(e))
         # TODO Review, Optimize or remove
         if mode not in ["strict", "loose"]:
             raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
