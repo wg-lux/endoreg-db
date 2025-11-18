@@ -29,7 +29,7 @@ from rest_framework.permissions import BasePermission
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import cached_property
 from endoreg_db.utils.permissions import is_debug_mode
-from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies
+from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies, get_needed_role
 import logging
 
 logger = logging.getLogger(__name__)
@@ -106,10 +106,13 @@ class PolicyPermission(BasePermission):
             return False
 
         # 3) Determine needed role
-        needed = self._required_roles.get(route) or DEFAULT_ROLE_BY_METHOD.get(method)
+        needed = get_needed_role(route, method)
         if not needed:
-            logger.info("RBAC DENY (NO-NORM): route=%s method=%s reason=no role mapping", route, method)
-            return False
+          logger.info(
+            "RBAC DENY (NO ROLE): route=%s method=%s reason=no mapping",
+            route, method
+          )
+          return False
 
         # 4) Collect roles and decide
         user_roles = set(user.groups.values_list("name", flat=True))

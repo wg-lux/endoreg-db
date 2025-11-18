@@ -4,8 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies
-
+from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies, get_needed_role
 
 # Map frontend page keys → (DRF route name, HTTP method)
 #
@@ -41,7 +40,8 @@ def auth_bootstrap(request):
         method = method.upper()
 
         # Look up which role is needed for this route/method
-        needed = REQUIRED_ROLES.get(route_name) or DEFAULT_ROLE_BY_METHOD.get(method)
+        #needed = REQUIRED_ROLES.get(route_name) or DEFAULT_ROLE_BY_METHOD.get(method)
+        needed = get_needed_role(route_name, method)
 
         if not needed:
             # No role mapping defined → secure default: deny
