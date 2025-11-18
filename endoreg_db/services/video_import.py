@@ -533,7 +533,10 @@ class VideoImportService:
 
         video.save(update_fields=update_fields)
         if video.state is None:
-            raise RuntimeError(f"Video state not found for video {video.uuid}")
+            try:
+                video.get_or_create_state()
+            except:
+                raise RuntimeError(f"Video state not found for video {video.uuid}")
 
         else:
             video.state.mark_anonymized(save=True)
@@ -704,7 +707,10 @@ class VideoImportService:
             video.refresh_from_db()
             if hasattr(video, "state") and self.processing_context.get("anonymization_completed"):
                 if video.state is None:
-                    raise RuntimeError(f"Video state not found for video {video.uuid}")
+                    try:
+                        video.get_or_create_state()
+                    except:
+                        raise RuntimeError(f"Video state not found for video {video.uuid}")
 
                 video.state.mark_sensitive_meta_processed(save=True)
 
@@ -1086,8 +1092,11 @@ class VideoImportService:
         """Cleanup processing context on error."""
         if self.current_video and hasattr(self.current_video, "state"):
             if self.current_video.state is None:
-                self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
-                return
+                try:
+                    self.current_video.get_or_create_state()
+                except:
+                    self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
+                    return
             self.current_video.state = self.current_video.get_or_create_state()
             try:
                 if self.original_file_path is not None:

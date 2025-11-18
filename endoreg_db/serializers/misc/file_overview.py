@@ -54,14 +54,14 @@ class FileOverviewSerializer(serializers.Serializer):
             )
 
             # ------- anonymization status using VideoState model
-            vs = instance.state
+            vs = instance.get_or_create_state()
             anonym_status = (
                 vs.anonymization_status if vs else VideoAnonymizationState.NOT_STARTED
             )
 
             # ------- annotation status (validated label segments)
             if instance.label_video_segments.filter(state__is_validated=True).exists():
-                annot_status = "done"
+                annot_status = "validated"
             else:
                 annot_status = "not_started"
 
@@ -71,13 +71,15 @@ class FileOverviewSerializer(serializers.Serializer):
             filename = instance.file.name.split("/")[-1] if instance.file else "unknown"
 
             # ------- anonymization status using RawPdfState model
-            rps = getattr(instance, "state", None)
+            rps = instance.get_or_create_state()
             anonym_status = (
                 rps.anonymization_status if rps else PdfAnonymizationState.NOT_STARTED
             )
 
             # ------- annotation status (not applicable for PDFs)
-            annot_status = "not_applicable"
+            annot_status = (
+                            PdfAnonymizationState.VALIDATED if rps.anonymization_validated else PdfAnonymizationState.NOT_STARTED 
+                            )
 
         else:  # shouldn't happen
             raise TypeError(f"Unsupported instance for overview: {type(instance)}")
