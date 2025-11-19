@@ -34,12 +34,15 @@ class SensitiveMeta(models.Model):
     Stores potentially sensitive information extracted from media.
     Logic for creation, hashing, pseudo-anonymization, and saving is in sensitive_meta_logic.py.
     """
+    
+    
 
     # --- Examination and Patient Info ---
     examination_date = models.DateField(blank=True, null=True)
     examination_time = models.TimeField(blank=True, null=True)
     casenumber = models.CharField(max_length=255, blank=True, null=True)
     file_path = models.CharField(max_length=1024, blank=True, null=True)
+
 
     # --- Core FKs ---
     pseudo_patient = models.ForeignKey("Patient", on_delete=models.CASCADE, blank=True, null=True, help_text="FK to the pseudo-anonymized Patient record.")

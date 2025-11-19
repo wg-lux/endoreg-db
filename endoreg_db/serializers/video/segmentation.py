@@ -10,7 +10,8 @@ from django.conf import settings
 from typing import TYPE_CHECKING
 from rest_framework.exceptions import ValidationError
 if TYPE_CHECKING:
-    from endoreg_db.models import Video
+    from endoreg_db.models import VideoFile
+    
 class VideoFileSerializer(serializers.ModelSerializer):
     """
     Serializer that dynamically handles video retrieval and streaming.

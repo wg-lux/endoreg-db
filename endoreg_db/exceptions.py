@@ -1,3 +1,6 @@
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class InsufficientStorageError(Exception):
@@ -7,7 +10,7 @@ class InsufficientStorageError(Exception):
         super().__init__(message)
         self.required_space = required_space
         self.available_space = available_space
-
+        
 
 class TranscodingError(Exception):
     """Raised when video transcoding fails."""

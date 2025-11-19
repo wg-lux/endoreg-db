@@ -1,4 +1,6 @@
 # Modern Media Framework: Sensitive Metadata Management
+import string
+from numpy import number
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
@@ -14,6 +16,46 @@ from endoreg_db.serializers.meta import (
 
 # === VIDEO SENSITIVE METADATA ===
 
+@api_view(['GET'])
+@permission_classes([EnvironmentAwarePermission])
+def get_sensitive_metadata_pk(request, pk: number, mediaType: str) -> Response | None:
+    """
+    A route to get the sensitive meta pk for a media type quickly.
+    
+    GET api/media/sensitive-media-id/<pk>/<str:mediaType>
+
+    Args:
+        request (_type_): _description_
+        id (_type_): _description_
+
+    Returns:
+        Response | None: _description_
+    """
+    
+    if mediaType == 'video':
+        video = get_object_or_404(VideoFile, pk=pk)
+        if not video.sensitive_meta:
+            return Response(
+                {"error": f"No sensitive metadata found for video {pk}"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        sm_id = video.sensitive_meta.pk
+        return Response({
+            "sm": sm_id
+        })
+    if mediaType == 'pdf':
+        pdf = get_object_or_404(RawPdfFile, pk=pk)
+        if not pdf.sensitive_meta:
+            return Response(
+                {"error": f"No sensitive metadata found for PDF {pk}"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        sm_id = pdf.sensitive_meta.pk
+        return Response({
+            "sm": sm_id
+        })
+    
+
 @api_view(['GET', 'PATCH'])
 @permission_classes([EnvironmentAwarePermission])
 def video_sensitive_metadata(request, pk):
@@ -24,16 +66,15 @@ def video_sensitive_metadata(request, pk):
     Get or update sensitive metadata for a video.
     Video-scoped: Uses video ID to locate related sensitive metadata.
     """
-    video = get_object_or_404(VideoFile, pk=pk)
+    sensitive_meta = get_object_or_404(SensitiveMeta, pk=pk)
     
     # Get related sensitive metadata
-    if not video.sensitive_meta:
+    if not sensitive_meta:
         return Response(
             {"error": f"No sensitive metadata found for video {pk}"},
             status=status.HTTP_404_NOT_FOUND
         )
     
-    sensitive_meta = video.sensitive_meta
     
     if request.method == 'GET':
         serializer = SensitiveMetaDetailSerializer(sensitive_meta)
@@ -123,16 +164,15 @@ def pdf_sensitive_metadata(request, pk):
     Get or update sensitive metadata for a PDF.
     PDF-scoped: Uses PDF ID to locate related sensitive metadata.
     """
-    pdf = get_object_or_404(RawPdfFile, pk=pk)
+    sensitive_meta = get_object_or_404(SensitiveMeta, pk=pk)
     
     # Get related sensitive metadata
-    if not pdf.sensitive_meta:
+    if not sensitive_meta:
         return Response(
             {"error": f"No sensitive metadata found for PDF {pk}"},
             status=status.HTTP_404_NOT_FOUND
         )
     
-    sensitive_meta = pdf.sensitive_meta
     
     if request.method == 'GET':
         serializer = SensitiveMetaDetailSerializer(sensitive_meta)
