@@ -1,0 +1,27 @@
+# - models: endoreg_db.requirement_set
+#   fields:
+#     name: "colonoscopy_default_polyp_advanced_imaging_requirements"
+#     name_de: "Koloskopie Standard Polyp Anforderungen"
+#     requirement_set_type: "any"
+#     links_to_sets:
+#       - "colonoscopy_polyp_advanced_imaging_classification"
+#     requirements:
+#       # requirement set which evaluates to true if:
+#       ## Size >9 mm AND advanced imaging classification is done
+#       ## Size <=9 mm AND advanced imaging classification is not done
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_default_finding_requirements"
+    name_de: "Koloskopie Standard Polyp Anforderungen"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "colonoscopy_polyp_advanced_imaging_classification"
+    requirements:
+      # Triggers for all findings if they are potentially classified with
+      - "colonoscopy_default_size" # colon_lesion_size_mm, colon_lesion_size_categorical
+      - "colonoscopy_default_location" # colonoscopy_location_default
+      - "colonoscopy_default_polyp_morphology" # colon_lesion_paris, colon_lesion_lst, colon_lesion_planarity_default
+      - "colonoscopy_default_polyp_histology" # colonoscopy_polyp_histology, colonoscopy_polyp_histology_dysplasia, colonoscopy_histology_dignity, colonoscopy_default_histology_in_sano
+      - "colonoscopy_default_polyp_intervention" #
+

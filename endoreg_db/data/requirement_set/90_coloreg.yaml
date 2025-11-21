@@ -1,0 +1,17 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_coloreg"
+    name_de: "Koloskopie Coloreg"
+    name_en: "Colonoscopy Coloreg"
+    description: "Colonoscopy Coloreg"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "colonoscopy_austria_screening_finding_polyp_required_classifications"
+      - "colonoscopy_austria_screening_required_patient_information"
+      - "colonoscopy_austria_screening_examination_required_findings"
+    tags:
+      - "report_mask_requirement_set"
+      - "colonoscopy_austria_screening"
+    reqset_exam_links:
+      - "colonoscopy_austria_req_sets"
+      - "colonoscopy_req_sets"
