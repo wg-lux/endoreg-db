@@ -43,3 +43,7 @@
       - "colonoscopy_polyp_histology_dysplasia"
       - "colonoscopy_histology_dignity"
       - "colonoscopy_default_histology_in_sano"
+
+- models: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_finding_colon_polyp_histo_expected"

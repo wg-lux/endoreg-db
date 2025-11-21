@@ -1,0 +1,13 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "basic_lab_values_normal"
+    name_de: "Basis-Labortests (Unauffällig)"
+    name_en: "Basic Lab Tests (Normal)"
+    description: "Basic lab tests (normal)"
+    requirement_set_type: "all"
+    requirements:
+      - "lab_value_hb_normal"
+      - "lab_value_leukocytes_normal"
+      - "lab_value_platelets_normal"
+      - "lab_value_creatinine_normal"
+      - "lab_value_inr_normal"
