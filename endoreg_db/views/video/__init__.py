@@ -1,5 +1,4 @@
 from .correction import (
-    VideoMetadataView,
     VideoProcessingHistoryView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
@@ -30,7 +29,6 @@ from .video_examination_viewset import VideoExaminationViewSet
 
 __all__ = [
     # Video Correction (Phase 1.1) - Implemented
-    'VideoMetadataView',
     'VideoProcessingHistoryView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',

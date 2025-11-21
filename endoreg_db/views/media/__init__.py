@@ -15,6 +15,7 @@ from .video_segments import (
     video_segments_validation_status,
 )
 from .sensitive_metadata import (
+    get_sensitive_metadata_pk,
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
     pdf_sensitive_metadata,
@@ -28,6 +29,7 @@ __all__ = [
     'PdfMediaView',
     'VideoReimportView',
     'PdfReimportView',
+    'get_sensitive_metadata_pk',
     'video_segments_by_pk',
     'video_segments_collection',
     'video_segments_by_video',

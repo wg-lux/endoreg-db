@@ -288,8 +288,6 @@ def video_segment_validate(request, pk: int, segment_id: int):
         # Update state
         with transaction.atomic():
             segment.state.is_validated = is_validated
-            if notes and hasattr(segment.state, "validation_notes"):
-                segment.state.validation_notes = notes
             segment.state.save()
 
         logger.info(f"Validated segment {segment_id} in video {pk}: {is_validated}")

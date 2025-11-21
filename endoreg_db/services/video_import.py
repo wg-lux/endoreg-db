@@ -533,7 +533,10 @@ class VideoImportService:
 
         video.save(update_fields=update_fields)
         if video.state is None:
-            raise RuntimeError(f"Video state not found for video {video.uuid}")
+            try:
+                video.get_or_create_state()
+            except:
+                raise RuntimeError(f"Video state not found for video {video.uuid}")
 
         else:
             video.state.mark_anonymized(save=True)
@@ -704,7 +707,10 @@ class VideoImportService:
             video.refresh_from_db()
             if hasattr(video, "state") and self.processing_context.get("anonymization_completed"):
                 if video.state is None:
-                    raise RuntimeError(f"Video state not found for video {video.uuid}")
+                    try:
+                        video.get_or_create_state()
+                    except:
+                        raise RuntimeError(f"Video state not found for video {video.uuid}")
 
                 video.state.mark_sensitive_meta_processed(save=True)
 
@@ -880,32 +886,9 @@ class VideoImportService:
                 )
                 return
         else:
-            update_data: Dict[str, Any] = {}
-            if not sensitive_meta.patient_first_name:
-                update_data["patient_first_name"] = "Patient"
-            if not sensitive_meta.patient_last_name:
-                update_data["patient_last_name"] = "Unknown"
-            if not sensitive_meta.patient_dob:
-                update_data["patient_dob"] = date(1990, 1, 1)
-            if not sensitive_meta.examination_date:
-                update_data["examination_date"] = date.today()
+            state = video.get_or_create_state()
+            state.mark_sensitive_meta_processed(save=True)
 
-            if update_data:
-                try:
-                    sensitive_meta.update_from_dict(update_data)
-                    state = video.get_or_create_state()
-                    state.mark_sensitive_meta_processed(save=True)
-                    self.logger.info(
-                        "Updated missing SensitiveMeta fields for video %s: %s",
-                        video.uuid,
-                        list(update_data.keys()),
-                    )
-                except Exception as exc:
-                    self.logger.error(
-                        "Failed to update SensitiveMeta for video %s: %s",
-                        video.uuid,
-                        exc,
-                    )
 
     def _ensure_frame_cleaning_available(self):
         """
@@ -1086,8 +1069,11 @@ class VideoImportService:
         """Cleanup processing context on error."""
         if self.current_video and hasattr(self.current_video, "state"):
             if self.current_video.state is None:
-                self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
-                return
+                try:
+                    self.current_video.get_or_create_state()
+                except:
+                    self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
+                    return
             self.current_video.state = self.current_video.get_or_create_state()
             try:
                 if self.original_file_path is not None:

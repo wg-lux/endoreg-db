@@ -1,10 +1,11 @@
 import logging
 from subprocess import run
-from typing import TYPE_CHECKING, Dict, List, Union, cast
+from typing import TYPE_CHECKING, Dict, List, Union, cast, Tuple
 
 from django.db import models
 
 from endoreg_db.utils.links.requirement_link import RequirementLinks
+
 
 logger = logging.getLogger(__name__)
 
@@ -732,7 +733,8 @@ class Requirement(models.Model):
 
         return is_valid
 
-    def evaluate_with_details(self, *args, mode: str, **kwargs):
+
+    def evaluate_with_details(self, *args, mode: str, **kwargs) -> Tuple[bool, str]:
         """
         Evaluates whether the requirement is satisfied for the given input models using linked operators and gender constraints.
 
@@ -742,17 +744,29 @@ class Requirement(models.Model):
             **kwargs: Additional keyword arguments passed to operator evaluations.
 
         Returns:
-            True if the requirement is satisfied according to the specified mode, linked operators, and gender restrictions; otherwise, False.
+            (met, details):
+                met: True/False, ob die Voraussetzung erfüllt ist
+                details: menschenlesbare Erklärung (für UI geeignet)
 
         Raises:
-            ValueError: If an invalid mode is provided.
-            TypeError: If an input is not an instance or QuerySet of expected models, or lacks a valid `.links` attribute.
-
-        If the requirement specifies genders, only input containing a patient with a matching gender will be considered valid for evaluation.
+            RequirementEvaluationError:
+                - bei ungültigem Modus
+                - bei komplett falschen Input-Typen / fehlender .links-Struktur
         """
-        # TODO Review, Optimize or remove
+        from endoreg_db.models.requirement.requirement_error import RequirementEvaluationError
+
+        # --- Mode validieren -------------------------------------------------
         if mode not in ["strict", "loose"]:
-            raise ValueError(f"Invalid mode: {mode}. Use 'strict' or 'loose'.")
+            raise RequirementEvaluationError(
+                requirement=self,
+                code="INVALID_MODE",
+                technical_message=f"Invalid mode: {mode}. Use 'strict' or 'loose'.",
+                user_message=(
+                    "Diese Voraussetzung ist intern mit einem ungültigen "
+                    "Bewertungsmodus konfiguriert und kann aktuell nicht "
+                    "korrekt geprüft werden."
+                ),
+            )
 
         evaluate_result_list_func = all if mode == "strict" else any
 
@@ -764,7 +778,7 @@ class Requirement(models.Model):
         requirement_has_conditions = bool(requirement_req_links.active())
         queryset_mode, queryset_min_count = self._resolve_queryset_config(kwargs)
 
-        # helpers to avoid passing a complex tuple to isinstance/issubclass which confuses type checkers
+        # --- Helper für Typprüfung ------------------------------------------
         def _is_expected_instance(obj) -> bool:
             for cls in expected_models:
                 if isinstance(cls, type):
@@ -772,7 +786,7 @@ class Requirement(models.Model):
                         if isinstance(obj, cls):
                             return True
                     except Exception:
-                        # cls might not be a runtime type
+                        # cls might nicht runtime-kompatibel sein
                         continue
             return False
 
@@ -788,20 +802,21 @@ class Requirement(models.Model):
                         continue
             return False
 
-        # Aggregate RequirementLinks from all input arguments
-        aggregated_input_links_data = {}
+        # --- RequirementLinks aus allen Inputs aggregieren -------------------
+        aggregated_input_links_data: dict = {}
         processed_inputs_count = 0
 
         for _input in args:
-            # Check if the input is an instance of any of the expected model types
             if not _is_expected_instance(_input):
-                # Allow QuerySets of expected models
+                # QuerySet von erwarteten Typen erlauben
                 if _is_queryset_of_expected(_input):
                     if not _input.exists():
+                        # leeres QS -> je nach QS-Mode sofort nicht erfüllt
                         if queryset_mode == "all":
                             return (
                                 False,
-                                "Queryset mode 'all' requires every item to satisfy the requirement, but the queryset is empty.",
+                                "Für diese Voraussetzung müssen alle passenden Einträge vorliegen, "
+                                "aber es wurden keine entsprechenden Datensätze gefunden.",
                             )
                         if queryset_mode == "min_count":
                             required = (
@@ -812,8 +827,10 @@ class Requirement(models.Model):
                             if required > 0:
                                 return (
                                     False,
-                                    f"Queryset mode 'min_count' requires at least {required} matching items, but the queryset is empty.",
+                                    f"Für diese Voraussetzung werden mindestens {required} passende "
+                                    "Einträge benötigt, es wurden jedoch keine gefunden.",
                                 )
+                        # queryset_mode == "any" bei leerem QS -> neutral (keine zusätzliche Einschränkung)
                         continue
 
                     queryset_results: List[bool] = []
@@ -824,13 +841,24 @@ class Requirement(models.Model):
                         if not hasattr(item, "links") or not isinstance(
                             item.links, RequirementLinks
                         ):
-                            raise TypeError(
-                                f"Item {item} of type {type(item)} in QuerySet does not have a valid .links attribute of type RequirementLinks."
+                            raise RequirementEvaluationError(
+                                requirement=self,
+                                code="MISSING_LINKS_ATTR",
+                                technical_message=(
+                                    f"Item {item} of type {type(item)} in QuerySet does not "
+                                    f"have a valid .links attribute of type RequirementLinks."
+                                ),
+                                user_message=(
+                                    "Für einen Datensatz fehlen die intern benötigten Verknüpfungen, "
+                                    "sodass diese Voraussetzung nicht korrekt geprüft werden kann."
+                                ),
+                                meta={"item_type": str(type(item))},
                             )
 
                         item_active_links = item.links.active()
                         item_input_links = RequirementLinks(**item_active_links)
 
+                        # Links sammeln
                         for link_key, link_list in item_active_links.items():
                             if link_key not in aggregated_input_links_data:
                                 aggregated_input_links_data[link_key] = []
@@ -855,7 +883,10 @@ class Requirement(models.Model):
                                     item_operator_results.append(operator_result)
                                 except Exception as exc:
                                     logger.debug(
-                                        f"Operator {operator.name} evaluation failed for item {item}: {exc}"
+                                        "Operator %s evaluation failed for item %s: %s",
+                                        getattr(operator, "name", "unknown"),
+                                        item,
+                                        exc,
                                     )
                                     item_operator_results.append(False)
                             item_result = (
@@ -864,6 +895,7 @@ class Requirement(models.Model):
                                 else True
                             )
                         else:
+                            # keine Operatoren -> Bedingung erfüllt, wenn Requirement selbst keine Bedingungen hat
                             item_result = not requirement_has_conditions
 
                         queryset_results.append(item_result)
@@ -872,70 +904,88 @@ class Requirement(models.Model):
                         queryset_item_count += 1
                         processed_inputs_count += 1
 
+                    # QS-Modus nach Auswertung anwenden
                     if queryset_mode == "all":
                         if queryset_item_count == 0 or not all(queryset_results):
                             return (
                                 False,
-                                "Queryset mode 'all' requires every item to satisfy the requirement.",
+                                "Für diese Voraussetzung müssen alle relevanten Einträge die Bedingung erfüllen.",
                             )
                     elif queryset_mode == "min_count":
                         required = (
                             queryset_min_count if queryset_min_count is not None else 1
                         )
                         if queryset_true_count < max(required, 0):
-                            return False, (
-                                f"Queryset mode 'min_count' requires at least {max(required, 0)} matching items (found {queryset_true_count})."
+                            return (
+                                False,
+                                f"Für diese Voraussetzung werden mindestens {max(required, 0)} "
+                                f"passende Einträge benötigt (gefunden: {queryset_true_count}).",
                             )
-                    continue  # Move to the next arg after processing queryset
-                else:
-                    raise TypeError(
-                        f"Input type {type(_input)} is not among expected models: {self.expected_models} nor a QuerySet of expected models."
-                    )
+                    # queryset_mode == "any": keine zusätzliche Einschränkung
+                    continue
 
-            # Process single model instance
+                # Weder Instanz noch QS eines erwarteten Modells -> Konfig-/Aufruf-Fehler
+                raise RequirementEvaluationError(
+                    requirement=self,
+                    code="INVALID_INPUT_TYPE",
+                    technical_message=(
+                        f"Input type {type(_input)} is not among expected models: "
+                        f"{self.expected_models} nor a QuerySet of expected models."
+                    ),
+                    user_message=(
+                        "Diese Voraussetzung wurde mit einem nicht passenden Datentyp "
+                        "aufgerufen und kann aktuell nicht korrekt geprüft werden."
+                    ),
+                    meta={"input_type": str(type(_input))},
+                )
+
+            # Einzelinstanz erwarteten Typs
             if not hasattr(_input, "links") or not isinstance(
                 _input.links, RequirementLinks
             ):
-                raise TypeError(
-                    f"Input {_input} of type {type(_input)} does not have a valid .links attribute of type RequirementLinks."
+                raise RequirementEvaluationError(
+                    requirement=self,
+                    code="MISSING_LINKS_ATTR",
+                    technical_message=(
+                        f"Input {_input} of type {type(_input)} does not have a valid "
+                        f".links attribute of type RequirementLinks."
+                    ),
+                    user_message=(
+                        "Für die Auswertung dieser Voraussetzung fehlen die intern "
+                        "benötigten Verknüpfungsinformationen."
+                    ),
+                    meta={"input_type": str(type(_input))},
                 )
 
-            active_input_links = _input.links.active()  # Get dict of non-empty lists
+            active_input_links = _input.links.active()
             for link_key, link_list in active_input_links.items():
                 if link_key not in aggregated_input_links_data:
                     aggregated_input_links_data[link_key] = []
                 aggregated_input_links_data[link_key].extend(link_list)
             processed_inputs_count += 1
 
-        if (
-            not processed_inputs_count and args
-        ):  # If args were provided but none were processable (e.g. all empty querysets)
-            # This situation implies no relevant data was provided for evaluation against the requirement.
-            # Depending on operator logic (e.g., "requires at least one matching item"), this might lead to False.
-            # For "models_match_any", an empty input_links will likely result in False if requirement_req_links is not empty.
-            pass
+        # Wenn es zwar *args gibt, aber alles leer/irrelevant war, lassen wir das weiterlaufen.
+        # Operatoren sehen dann ggf. ein leeres final_input_links.
 
-        # Deduplicate items within each list after aggregation
+        # Deduplizieren der aggregierten Links
         for key in aggregated_input_links_data:
             try:
-                # Using dict.fromkeys to preserve order and remove duplicates for hashable items
                 aggregated_input_links_data[key] = list(
                     dict.fromkeys(aggregated_input_links_data[key])
                 )
             except TypeError:
-                # Fallback for non-hashable items (though Django models are hashable)
-                temp_list = []
+                # Fallback für nicht-hashbare Items
+                tmp: list = []
                 for item in aggregated_input_links_data[key]:
-                    if item not in temp_list:
-                        temp_list.append(item)
-                aggregated_input_links_data[key] = temp_list
+                    if item not in tmp:
+                        tmp.append(item)
+                aggregated_input_links_data[key] = tmp
 
         final_input_links = RequirementLinks(**aggregated_input_links_data)
 
-        # Gender strict check: if this requirement has genders, only pass if patient.gender is in the set
+        # --- Gender-Check ----------------------------------------------------
         genders_exist = self.genders.exists()
         if genders_exist:
-            # Import here to avoid circular import
             from endoreg_db.models.administration.person.patient import Patient
 
             patient = None
@@ -943,30 +993,38 @@ class Requirement(models.Model):
                 if isinstance(arg, Patient):
                     patient = arg
                     break
-            if patient is None or patient.gender is None:
-                return False
-            if not self.genders.filter(pk=patient.gender.pk).exists():
-                return False
 
+            if patient is None or patient.gender is None:
+                return (
+                    False,
+                    "Für diese Voraussetzung ist ein hinterlegtes Geschlecht des Patienten erforderlich.",
+                )
+
+            if not self.genders.filter(pk=patient.gender.pk).exists():
+                return (
+                    False,
+                    "Diese Voraussetzung gilt nur für bestimmte Geschlechter und ist "
+                    "für diesen Patienten nicht erfüllt.",
+                )
+
+        # --- Fall: keine Operatoren -----------------------------------------
         if not has_operators:
-            if not requirement_has_conditions:  # No conditions in requirement
-                return True, "Keine Operatoren für die Bewertung verfügbar"
+            if not requirement_has_conditions:
+                return True, "Keine Operatoren für die Bewertung erforderlich."
             return (
                 False,
-                "Requirement besitzt Verknüpfungen, aber keinen Operator zur Auswertung",
+                "Die Voraussetzung besitzt Bedingungen, aber keinen Operator zur Auswertung.",
             )
 
-        operator_results = []
-        operator_details = []
+        # --- Operatoren anwenden --------------------------------------------
+        operator_results: List[bool] = []
+        operator_details: List[str] = []
+
         for operator in operators:
-            # Prepare kwargs for the operator, including the current Requirement instance
-            op_kwargs = (
-                kwargs.copy()
-            )  # Start with kwargs passed to Requirement.evaluate
-            op_kwargs["requirement"] = self  # Add the Requirement instance itself
-            op_kwargs["original_input_args"] = (
-                args  # Add the original input arguments for operators that need them (e.g., age operators)
-            )
+            op_kwargs = kwargs.copy()
+            op_kwargs["requirement"] = self
+            op_kwargs["original_input_args"] = args
+
             try:
                 operator_result = operator.evaluate(
                     requirement_links=requirement_req_links,
@@ -975,17 +1033,23 @@ class Requirement(models.Model):
                 )
                 operator_results.append(operator_result)
                 operator_details.append(
-                    f"{operator.name}: {'Passed' if operator_result else 'Failed'}"
+                    f"{operator.name}: {'erfüllt' if operator_result else 'nicht erfüllt'}"
                 )
             except Exception as e:
                 operator_results.append(False)
-                operator_details.append(f"{operator.name}: {str(e)}")
+                operator_details.append(f"{operator.name}: technischer Fehler ({e})")
+                logger.debug(
+                    "Operator %s evaluation failed for requirement %s: %s",
+                    getattr(operator, "name", "unknown"),
+                    getattr(self, "name", "unknown"),
+                    e,
+                )
 
         is_valid = evaluate_result_list_func(operator_results)
 
-        # Create detailed feedback
+        # --- Detailtext bauen -----------------------------------------------
         if not operator_results:
-            details = "Keine Operatoren für die Bewertung verfügbar"
+            details = "Keine Operatoren für die Bewertung verfügbar."
         elif len(operator_results) == 1:
             details = operator_details[0]
         else:
@@ -997,14 +1061,14 @@ class Requirement(models.Model):
             if failed_details:
                 details = "; ".join(failed_details)
             else:
-                details = "Alle Operatoren erfolgreich"
+                details = "Alle verknüpften Bedingungen sind erfüllt."
 
-        # Append working directory for debugging convenience
+        # Arbeitsverzeichnis als Debug-Helfer anhängen (optional)
         try:
             cwd = run("pwd", capture_output=True, text=True).stdout.strip()
             details = f"{details}\ncwd: {cwd}"
         except Exception:
-            # non-fatal: ignore if subprocess fails
+            # nicht kritisch
             pass
 
-        return is_valid, details
+        return bool(is_valid), details

@@ -2,7 +2,7 @@ from endoreg_db.models.requirement.requirement import Requirement
 from endoreg_db.views.requirement.requirement_utils import safe_evaluate_requirement
 from endoreg_db.models.requirement.requirement_set import RequirementSet
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-
+from endoreg_db.models.requirement.requirement_error import RequirementEvaluationError
 import json
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -155,24 +155,25 @@ def evaluate_requirements(request):
                         details_str = str(details)
 
                 results.append({
-                    "requirement_set_id": getattr(req_set, "id", None),
+                    "requirement_set_id": error,
                     "requirement_set_name": getattr(req_set, "name", str(getattr(req_set, "id", ""))),
                     "requirement_name": getattr(requirement_obj, "name", "unknown"),
                     "met": bool(met),
                     "details": details_str if details_str else ("Voraussetzung erfüllt" if met else "Voraussetzung nicht erfüllt"),
                     "error": error
                 })
-            except (TypeError, ValueError) as e:
+            except (RequirementEvaluationError) as e:
+                ctx = e.context
                 msg = f"Fehler bei der Bewertung der Voraussetzung: {e}"
                 logger.warning("evaluate_requirements: requirement '%s' error: %s",
                                getattr(requirement_obj, "name", "unknown"), e)
                 results.append({
-                    "requirement_set_id": getattr(req_set, "id", None),
+                    "requirement_set_id": ctx.requirement_name,
                     "requirement_set_name": getattr(req_set, "name", str(getattr(req_set, "id", ""))),
                     "requirement_name": getattr(requirement_obj, "name", "unknown"),
                     "met": False,
                     "details": msg,
-                    "error": f"{e.__class__.__name__}: {e}"
+                    "error": f"{e.user_message}: {e}"
                 })
                 errors.append(msg)
             except Exception as e:

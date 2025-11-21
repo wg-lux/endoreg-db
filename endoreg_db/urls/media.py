@@ -18,6 +18,7 @@ from endoreg_db.views.media import (
     video_segments_validation_status,
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
+    get_sensitive_metadata_pk
 )
 from endoreg_db.views.pdf.pdf_stream import PdfStreamView
 from endoreg_db.views.pdf.reimport import PdfReimportView
@@ -41,6 +42,11 @@ from endoreg_db.views.video.reimport import VideoReimportView
 # Simplified Meta and Validation Endpoints
 
 urlpatterns = [
+    path(
+        "media/sensitive-media-id/<int:pk>/<str:mediaType>/", 
+        get_sensitive_metadata_pk,
+        name="sm-pk"
+    ),
     # Video media endpoints
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
     path(

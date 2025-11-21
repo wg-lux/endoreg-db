@@ -85,6 +85,7 @@ if TYPE_CHECKING:
         VideoImportMeta,
         VideoMeta,
         VideoState,
+        SensitiveMeta
     )
 
 
