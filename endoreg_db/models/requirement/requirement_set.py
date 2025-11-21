@@ -83,6 +83,18 @@ class RequirementSet(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
+    
+    depends_on = models.ManyToManyField(
+        "self",
+        symmetrical=False,
+        related_name="dependents",
+        blank=True,
+        help_text=(
+            "Andere RequirementSets, die zuerst erfüllt sein müssen, "
+            "bevor dieses Set geprüft wird ('after')."
+        ),
+    )
+    
     requirements = models.ManyToManyField(
         "Requirement",
         blank=True,
