@@ -26,6 +26,7 @@ from endoreg_db.models.media.video.video_file_anonymize import _cleanup_raw_asse
 from endoreg_db.utils import ensure_local_file, storage_file_exists
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, VIDEO_DIR
+from endoreg_db.models.state import VideoState
 
 # File lock configuration (matches PDF import)
 STALE_LOCK_SECONDS = 6000  # 100 minutes - reclaim locks older than this
@@ -75,6 +76,8 @@ class VideoImportService:
         self.original_file_path = None
 
         self.logger = logging.getLogger(__name__)
+        
+        self.current_video_id = Optional[int]
 
         self.cleaner = None  # This gets instantiated in the perform_frame_cleaning method
 
@@ -281,6 +284,7 @@ class VideoImportService:
             delete_source=self.processing_context["delete_source"],
             save_video_file=self.processing_context["save_video"],
         )
+        self.current_video_id = self.current_video.pk
 
         if not self.current_video:
             raise RuntimeError("Failed to create VideoFile instance")
@@ -450,7 +454,7 @@ class VideoImportService:
                 )
                 try:
                     # Increased timeout to better accommodate ffmpeg + OCR
-                    future.result(timeout=50000)
+                    future.result(timeout=5000)
                     self.processing_context["anonymization_completed"] = True
                     self.logger.info("Frame cleaning completed successfully within timeout")
                 except FutureTimeoutError:
@@ -532,11 +536,11 @@ class VideoImportService:
             )
 
         video.save(update_fields=update_fields)
-        if video.state is None:
+        if not isinstance(video.state, VideoState):
             try:
                 video.get_or_create_state()
-            except:
-                raise RuntimeError(f"Video state not found for video {video.uuid}")
+            except ValueError as e:
+                raise RuntimeError(f"Video state not found for video {video.uuid}. Error {e}")
 
         else:
             video.state.mark_anonymized(save=True)
@@ -706,7 +710,7 @@ class VideoImportService:
         with transaction.atomic():
             video.refresh_from_db()
             if hasattr(video, "state") and self.processing_context.get("anonymization_completed"):
-                if video.state is None:
+                if not isinstance(video.state, VideoState):
                     try:
                         video.get_or_create_state()
                     except:
@@ -1071,8 +1075,8 @@ class VideoImportService:
             if self.current_video.state is None:
                 try:
                     self.current_video.get_or_create_state()
-                except:
-                    self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup")
+                except Exception as e:
+                    self.logger.warning(f"Video state not found for video {self.current_video.uuid} during error cleanup {e}")
                     return
             self.current_video.state = self.current_video.get_or_create_state()
             try:
@@ -1090,6 +1094,12 @@ class VideoImportService:
             except AssertionError:
                 self.logger.warning("Original file path does not exist")
             try:
+                
+                if not isinstance(self.current_video.state, VideoState):
+                    logger.error("Current video is none after Assertion for Video File")
+                    raise AssertionError
+                    
+                
                 if self.processing_context.get("processing_started"):
                     self.current_video.state.frames_extracted = False
                     self.current_video.state.frames_initialized = False

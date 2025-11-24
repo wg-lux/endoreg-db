@@ -12,7 +12,7 @@ class ReportMetaSerializer(serializers.ModelSerializer):
     # Füge fehlende Zeitstempel-Felder hinzu
     created_at = serializers.SerializerMethodField()
     updated_at = serializers.SerializerMethodField()
-    casenumber = serializers.CharField(source='case_number', allow_blank=True, allow_null=True)
+    casenumber = serializers.CharField(source='casenumber', allow_blank=True, allow_null=True)
 
     class Meta:
         model = SensitiveMeta

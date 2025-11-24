@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg-db"
 readme = "README.md"
-version = "0.8.7.7"
+version = "0.8.7.9"
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -81,7 +81,7 @@ dependencies = [
     "oauth2-proxy>=1.0.11",
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[llm,ocr]==0.8.9.4",
+    "lx-anonymizer[llm,ocr]==0.8.9.5",
     "ruff>=0.14.0",
     "build>=1.3.0",
     "flake8>=7.3.0",

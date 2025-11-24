@@ -188,7 +188,6 @@ class Command(BaseCommand):
         center_name = options["center_name"]
         video_file = options["video_file"]
         frame_dir_root = options["frame_dir_root"]
-        video_dir_root = options["video_dir_root"]
         delete_source = options["delete_source"]
         save_video_file = options["save_video_file"]
         model_name = options["model_name"]
