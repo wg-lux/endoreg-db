@@ -11,7 +11,6 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import F
 from django.db.models.fields.files import FieldFile
-from librosa import frames_to_samples
 from pandas.core import frame
 
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
