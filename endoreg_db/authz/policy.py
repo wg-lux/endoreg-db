@@ -52,6 +52,11 @@ RESOURCE_ROLES = {
         "read": "video:read",
         "write": "video:write",
     },
+    #anonymization resource
+    "anonymization": {
+        "read": "anonymization:read",
+        "write": "anonymization:write",
+    },
     # Add more resources as needed:
     # "report": {"read": "report:read", "write": "report:write"},
 }
@@ -80,7 +85,10 @@ ROUTE_RESOURCE = {
     "videos-list":   "video",
     "videos-detail": "video",
 
+    "anonymization_items_overview": "anonymization",
     # Add more mappings as your API grows
+
+    
 }
 
 # ------------------------------------------------------------
@@ -126,6 +134,8 @@ DEFAULT_ROLE_BY_METHOD = {
     "DELETE":  "data:write",
 }
 
+
+
 # ------------------------------------------------------------
 # Role satisfaction rule
 # ------------------------------------------------------------
@@ -150,6 +160,10 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
     """
     if not needed:
         return False
+    
+     #  Global override: any user with role "endoregdb_user" passes all checks
+    if "endoregdb_user" in user_roles:
+        return True
 
     # 1) exact role match
     if needed in user_roles:

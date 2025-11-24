@@ -11,6 +11,9 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+#for keycloak
+from rest_framework.permissions import IsAuthenticated
+from endoreg_db.authz.permissions import PolicyPermission
 
 import os
 
@@ -27,7 +30,8 @@ class VideoMediaView(APIView):
       GET /api/media/videos/42/  (Accept≠JSON)  →  byte‐range stream
       PATCH /api/media/videos/42/     →   update sensitive meta and handle raw file deletion
     """
-    permission_classes = [EnvironmentAwarePermission]
+    #permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [IsAuthenticated, PolicyPermission]
 
     # ---------- GET ----------
     def get(self, request, pk=None):

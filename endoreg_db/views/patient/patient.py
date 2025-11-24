@@ -6,11 +6,11 @@ from rest_framework import viewsets, status, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-
+from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import Patient
 from endoreg_db.serializers.patient import PatientSerializer
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-
+from rest_framework.permissions import IsAuthenticated
 @staff_member_required  # Ensures only staff members can access the page
 def start_examination(request):
     return render(request, 'admin/start_examination.html')  # Loads the simple HTML page
@@ -21,8 +21,9 @@ class PatientViewSet(viewsets.ModelViewSet):
     """API endpoint for managing patients."""
     queryset = Patient.objects.all()
     serializer_class = PatientSerializer
-    #permission_classes = [IsAuthenticatedOrReadOnly] 
-
+    permission_classes = [PolicyPermission]
+    #permission_classes = [PolicyPermission]
+    
     def perform_create(self, serializer):
         """Erweiterte Validierung beim Erstellen eines Patienten"""
         try:
