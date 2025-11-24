@@ -8,28 +8,31 @@ from endoreg_db.views.media import (
     pdf_sensitive_metadata_list,
     pdf_sensitive_metadata_verify,
     sensitive_metadata_list,
-    video_segment_detail,
-    video_segment_validate,
-    video_segments_by_pk,
-    video_segments_by_video,
-    video_segments_collection,
-    video_segments_stats,
-    video_segments_validate_bulk,
-    video_segments_validation_status,
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
-    get_sensitive_metadata_pk
+    get_sensitive_metadata_pk,
+    label_list
 )
 from endoreg_db.views.pdf.pdf_stream import PdfStreamView
 from endoreg_db.views.pdf.reimport import PdfReimportView
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
     VideoCorrectionView,
-    VideoMetadataView,
+    VideoMetadataStatsView,
     VideoProcessingHistoryView,
     VideoRemoveFramesView,
 )
-from endoreg_db.views.video.reimport import VideoReimportView
+
+from endoreg_db.views.video import(
+    video_segments_collection,
+    video_segments_by_video,
+    video_segment_detail,
+    video_segments_stats,
+    video_segment_validate,
+    video_segments_validate_bulk,
+    video_segments_validation_status,
+    VideoReimportView,
+)
 
 # ---------------------------------------------------------------------------------------
 # ANNOTATION API ENDPOINTS
@@ -90,7 +93,7 @@ urlpatterns = [
     # Returns analysis results (sensitive frame count, ratio, frame IDs)
     path(
         "media/videos/<int:pk>/metadata/",
-        VideoMetadataView.as_view(),
+        VideoMetadataStatsView.as_view(),
         name="video-metadata",
     ),
     # Video Processing History API
@@ -123,14 +126,15 @@ urlpatterns = [
         VideoRemoveFramesView.as_view(),
         name="video-remove-frames",
     ),
+    
+    path(
+        "media/videos/labels/list/", 
+        label_list, 
+        name ="get_lvs_list"
+    ),
+    
     # ---------------------------------------------------------------------------------------
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
-    #
-    # Unified segment management endpoints replacing legacy /api/video-segments/
-    # Collection: GET/POST all segments across videos
-    # Video-scoped: GET/POST segments for specific video
-    # Detail: GET/PATCH/DELETE individual segment
-    # ---------------------------------------------------------------------------------------
     # Video Segments Collection API
     # GET/POST /api/media/videos/segments/
     # List all video segments across videos or create new segment
@@ -202,6 +206,9 @@ urlpatterns = [
         video_segments_validation_status,
         name="video-segments-validation-status",
     ),
+    
+    
+    
     # ---------------------------------------------------------------------------------------
     # SENSITIVE METADATA ENDPOINTS (Modern Media Framework)
     # ---------------------------------------------------------------------------------------

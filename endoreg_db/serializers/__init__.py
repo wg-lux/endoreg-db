@@ -21,8 +21,6 @@ from .label_video_segment import (
     LabelVideoSegmentSerializer,
 )
 from .meta import (
-    PDFFileForMetaSerializer,
-    ReportMetaSerializer,
     SensitiveMetaDetailSerializer,
     SensitiveMetaUpdateSerializer,
     SensitiveMetaVerificationSerializer,
@@ -47,7 +45,6 @@ from .patient_finding import (
     PatientFindingWriteSerializer,
 )
 from .pdf import RawPdfAnonyTextSerializer
-from .report import ReportDataSerializer, ReportListSerializer, SecureFileUrlSerializer
 from .video.video_processing_history import VideoProcessingHistorySerializer
 from .video_examination import (
     VideoExaminationCreateSerializer,
@@ -76,8 +73,6 @@ __all__ = [
     "LabelVideoSegmentSerializer",
     "LabelVideoSegmentAnnotationSerializer",
     # Meta
-    "PDFFileForMetaSerializer",
-    "ReportMetaSerializer",
     "SensitiveMetaDetailSerializer",
     "SensitiveMetaUpdateSerializer",
     "SensitiveMetaVerificationSerializer",

@@ -146,7 +146,7 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
     }
 
 
-class VideoMetadataView(APIView):
+class VideoMetadataStatsView(APIView):
     """
     GET /api/media/videos/{pk}/metadata/
     

@@ -58,14 +58,7 @@ from .video_file_io import (
     _get_temp_anonymized_frame_dir,
     _set_frame_dir,
 )
-from .video_file_meta import (
-    _get_crop_template,
-    _get_endo_roi,
-    _get_fps,
-    _initialize_video_specs,
-    _update_text_metadata,
-    _update_video_meta,
-)
+
 
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"
@@ -268,14 +261,6 @@ class VideoFile(models.Model):
     pipe_1 = _pipe_1
     test_after_pipe_1 = _test_after_pipe_1
     pipe_2 = _pipe_2
-
-    # Metadata Funtions
-    update_video_meta = _update_video_meta
-    initialize_video_specs = _initialize_video_specs
-    get_fps = _get_fps
-    get_endo_roi = _get_endo_roi
-    get_crop_template = _get_crop_template
-    update_text_metadata = _update_text_metadata
 
     extract_frames = _extract_frames
     initialize_frames = _initialize_frames

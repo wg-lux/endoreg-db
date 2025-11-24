@@ -8,9 +8,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 
-class VideoMetadataView(APIView):
+class VideoMetadataStatsView(APIView):
     """
-    GET /api/video-metadata/{id}/ - Get video metadata including sensitivity analysis
+    GET media/videos/{pk}/metadata/ - Get video metadata including sensitivity analysis
     """
     permission_classes = [EnvironmentAwarePermission]
 
