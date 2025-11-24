@@ -7,7 +7,7 @@ the DEBUG setting and other environment configurations.
 
 from django.conf import settings
 from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
-from rest_framework.decorators import permission_classes as drf_permission_classes
+#from rest_framework.decorators import permission_classes as drf_permission_classes
 from functools import wraps
 import logging
 import os
@@ -50,6 +50,7 @@ def dynamic_permission_classes(force_auth=None):
             - None: Use environment-based logic (default)
     """
     def decorator(view_func):
+        from rest_framework.decorators import permission_classes as drf_permission_classes
         @wraps(view_func)
         def wrapper(*args, **kwargs):
             return view_func(*args, **kwargs)
