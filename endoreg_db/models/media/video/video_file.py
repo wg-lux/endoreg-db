@@ -573,7 +573,7 @@ class VideoFile(models.Model):
 
         if self.sensitive_meta:
             # Mark as processed after validation
-            self.get_or_create_state().mark_sensitive_meta_processed(save=True)
+            self.get_or_create_state().mark_anonymization_validated(save=True)
             # Save the VideoFile instance to persist changes
             self.save()
             logger.info(f"Metadata annotation validated and saved for video {self.uuid}.")
