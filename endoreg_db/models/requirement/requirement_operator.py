@@ -1,7 +1,8 @@
 from logging import getLogger  # Added logger
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from django.db import models
+from pydantic import BaseModel
 
 # see how operator evaluation function is fetched, add to docs #TODO
 # endoreg_db/utils/requirement_operator_logic/model_evaluators.py
@@ -12,6 +13,66 @@ if TYPE_CHECKING:
     from .requirement import Requirement  # Added Requirement import for type hint
 
 logger = getLogger(__name__)  # Added logger instance
+
+
+class OperatorInstructions(BaseModel):
+    input_targets: List[str] = []
+    requirement_targets: List[str] = []
+    kwargs: Dict[str, Union[str, int, float, bool]] = {}
+    args: List[Union[str, int, float, bool]] = []
+
+
+def _parse_target_attributes(raw: str):
+    target_attributes_list = [_.strip() for _ in raw.split(";") if _.strip()]
+
+    input_targets = []
+    kwargs: Dict[str, Union[str, int, float, bool]] = {}
+    args: List[Union[str, int, float, bool]] = []
+
+    valid_prefixes = [
+        "!",  # Requirement target
+        "?",  # Input target
+        "$",  # Keyword argument, keyword and value separated by ":"
+        "@",  # Positional argument
+    ]
+
+    for entry in target_attributes_list:
+        _prefix = entry[0]
+
+        if _prefix in valid_prefixes:
+            _attribute = entry[1:].strip()
+            if _prefix == "!":
+                # Requirement target
+                input_targets.append(_attribute)
+            elif _prefix == "?":
+                # Input target
+                input_targets.append(_attribute)
+            elif _prefix == "$":
+                # Keyword argument
+                if ":" in _attribute:
+                    key, value = _attribute.split(":", 1)
+                    kwargs[key.strip()] = value.strip()
+                else:
+                    raise ValueError(f"Invalid keyword argument format in target_attributes: '{entry}'. Expected format is '$key:value'.")
+            elif _prefix == "@":
+                # Positional argument
+                args.append(_attribute)
+        else:
+            raise ValueError(f"Invalid prefix '{_prefix}' in target_attributes entry: '{entry}'. Valid prefixes are {valid_prefixes}.")
+    return OperatorInstructions(
+        input_targets=input_targets,
+        requirement_targets=input_targets,
+        kwargs=kwargs,
+        args=args,
+    )
+
+
+def _validate_requirement_targets(instance: "Requirement") -> bool:
+    """Ensures requirement fixtures declare at least one target attribute."""
+    if not instance.target_attributes:
+        raise ValueError(f"Requirement '{instance.name}' must declare at least one target attribute.")
+    _req_target_obj = _parse_target_attributes(instance.target_attributes)
+    return True
 
 
 class RequirementOperatorManager(models.Manager):
@@ -48,16 +109,18 @@ class RequirementOperator(models.Model):
 
         requirements: models.QuerySet[Requirement]
 
-    @property
-    def operator_evaluation_models(self):
+    @classmethod
+    def parse_instructions(cls, raw: str) -> OperatorInstructions:
         """
-        Returns a dictionary of operator evaluation models for this requirement operator.
+        Parses the raw target attributes string into structured operator instructions.
 
-        This property dynamically imports and provides access to the available operator evaluation models.
+        Args:
+            raw: The raw target attributes string.
+
+        Returns:
+            An OperatorInstructions instance containing parsed input targets, requirement targets, kwargs, and args.
         """
-        from .requirement_evaluation.operator_evaluation_models import operator_evaluation_models
-
-        return operator_evaluation_models
+        return _parse_target_attributes(raw)
 
     @property
     def data_model_dict(self):
@@ -84,96 +147,16 @@ class RequirementOperator(models.Model):
         """
         return str(self.name)
 
-    def evaluate(self, requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool:  # Changed signature
-        """
-        Evaluates the requirement operator against the provided requirement links and input_links.
+    def get_operator_function(self):
+        from endoreg_db.utils.requirement_operator_logic import 
 
-        Args:
-            requirement_links: The RequirementLinks object from the Requirement model.
-            input_links: The aggregated RequirementLinks object from the input arguments.
-            **kwargs: Additional keyword arguments for specific operator logic.
-                        For lab value operators, this includes 'requirement' (the Requirement model instance).
-                        The 'requirement' instance is now passed for all operators.
+    def evaluate(self, operator_instructions: "OperatorInstructions", requirement: "Requirement", input_obj: Any, **kwargs) -> bool:
+        """ """
+        requirement_links: "RequirementLinks" = requirement.links
+        expected_input_models = requirement.expected_models
 
-        Returns:
-            True if the condition defined by the operator is met, False otherwise.
+        input_model = type(input_obj)
+        assert input_model in expected_input_models, f"Input model {input_model} not in expected models {expected_input_models}"
 
-        Raises:
-            NotImplementedError: If the evaluation logic for the operator's name is not implemented.
-        """
-        # kwargs should contain 'requirement' (the Requirement instance) passed from Requirement.evaluate()
-        if self.evaluation_function_name:
-            eval_func = getattr(self, self.evaluation_function_name, None)
-            if eval_func and callable(eval_func):
-                result = eval_func(requirement_links=requirement_links, input_links=input_links, **kwargs)
-                assert isinstance(result, bool), (
-                    f"Evaluation function '{self.evaluation_function_name}' for operator '{self.name}' must return a boolean value."
-                )
-                return result
-            else:
-                logger.error(
-                    f"Evaluation function '{self.evaluation_function_name}' not found or not callable on {self.__class__.__name__} for operator '{self.name}'."
-                )
-                raise NotImplementedError(f"Evaluation function '{self.evaluation_function_name}' not implemented correctly for operator '{self.name}'.")
-        else:
-            # Fallback to the central dispatcher if no specific function name is provided
-            from endoreg_db.utils.requirement_operator_logic.model_evaluators import dispatch_operator_evaluation
-
-            return dispatch_operator_evaluation(
-                operator_name=self.name,
-                requirement_links=requirement_links,
-                input_links=input_links,
-                operator_instance=self,  # Pass the operator instance
-                **kwargs,
-            )
-
-    from ..medical.medication import MedicationSchedule as MedicationScheduleTemplate  # Added with alias
-    from ..medical.patient.patient_medication import PatientMedication  # Added
-
-    def _evaluate_patient_medication_schedule_matches_template(
-        self,
-        requirement_links: "RequirementLinks",
-        input_links: "RequirementLinks",
-        requirement: "Requirement",  # Added requirement
-        **kwargs,
-    ) -> bool:
-        """
-        Checks if any PatientMedication in the input PatientMedicationSchedule
-        matches the profile (medication, dose, unit, intake times)
-        of any MedicationSchedule template linked to the requirement.
-        """
-        # Get MedicationSchedule templates from the requirement
-        req_schedule_templates = requirement_links.medication_schedules
-        if not req_schedule_templates:
-            # If the requirement doesn't specify any templates to match against,
-            # it's ambiguous. Consider this a non-match.
-            return False
-
-        # Get PatientMedication instances from the input (derived from PatientMedicationSchedule.links)
-        input_patient_medications = input_links.patient_medications
-        if not input_patient_medications:
-            # If the input schedule has no medications, it cannot match any template.
-            return False
-
-        for pm_instance in input_patient_medications:
-            pm_intake_times_set = set(pm_instance.intake_times.all())
-            for schedule_template in req_schedule_templates:
-                template_intake_times_set = set(schedule_template.intake_times.all())
-
-                # Check for profile match
-                medication_match = pm_instance.medication == schedule_template.medication
-                dose_match = pm_instance.dosage == schedule_template.dose
-                unit_match = pm_instance.unit == schedule_template.unit
-                intake_times_match = pm_intake_times_set == template_intake_times_set
-
-                # Debugging output (optional, can be removed)
-                # print(f"Comparing PM ID {pm_instance.id} with Template {schedule_template.name}:")
-                # print(f"  Medication: {pm_instance.medication} vs {schedule_template.medication} -> {medication_match}")
-                # print(f"  Dose: {pm_instance.dosage} vs {schedule_template.dose} -> {dose_match}")
-                # print(f"  Unit: {pm_instance.unit} vs {schedule_template.unit} -> {unit_match}")
-                # print(f"  Intake Times: {pm_intake_times_set} vs {template_intake_times_set} -> {intake_times_match}")
-
-                if medication_match and dose_match and unit_match and intake_times_match:
-                    return True  # Found a match
-
-        return False  # No PatientMedication matched any template
+        # Execute Instructions
+        from endoreg_db.utils.requirement_operator_logic.model_evaluators import dispatch_operator_evaluation

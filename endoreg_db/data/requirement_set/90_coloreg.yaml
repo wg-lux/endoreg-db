@@ -5,11 +5,12 @@
     name_en: "Coloreg Patient Data"
     description: "Coloreg Patient Data"
     requirement_set_type: "all"
-    requirements: []
+    requirements:
+      - "patient_has_gender_information" # Checks if any gender is set
+      # - "patient_has_valid_gender_information" # checks if gender is male or female
+      - "patient_has_dob_information" #TODO
+      - "patient_has_names_information" #TODO
     links_to_sets:
-      - "patient_gender_generic"
-      - "patient_names_generic"
-      - "patient_dob_generic"
       - "colonoscopy_basic_patient_history" # includes previous bowel_surgery_known and last_colonoscopy_known
     tags: [] # not tagged as report_mask_requirement_set, only used in top level requirement set
 
@@ -163,7 +164,18 @@
 
 - models: endoreg_db.requirement_set
   fields:
-    name: "colonoscopy_coloreg"
+    name: "coloreg_finding_data_complete"
+    name_de: "Coloreg Befund Kolon Polyp Komplett"
+    name_en: "Coloreg Finding Colon Polyp Complete"
+    description: "Coloreg Finding Colon Polyp Complete"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "coloreg_finding_colon_polyp_base_description"
+    tags: []
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_colonoscopy_report_complete"
     name_de: "Koloskopie Coloreg"
     name_en: "Colonoscopy Coloreg"
     description: "Colonoscopy Coloreg"
@@ -171,7 +183,7 @@
     links_to_sets:
       - "coloreg_patient_data"
       - "coloreg_examination_data"
-      - "coloreg_finding_colon_polyp_base_description"
+      - "coloreg_finding_data_complete"
     tags:
       - "report_mask_requirement_set"
     reqset_exam_links:

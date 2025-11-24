@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
@@ -44,7 +44,14 @@ class FindingClassification(models.Model):
     choices = models.ManyToManyField("FindingClassificationChoice", related_name="classifications", blank=True)
 
     findings = models.ManyToManyField("Finding", blank=True, related_name="finding_classifications")
-    examinations = models.ManyToManyField("Examination", blank=True, related_name="finding_classifications")
+    # examinations = models.ManyToManyField("Examination", blank=True, related_name="finding_classifications")
+
+    @property
+    def examinations(self):
+        from endoreg_db.models import Examination
+
+        return Examination.objects.filter(findings__finding_classifications=self)
+
     finding_types = models.ManyToManyField("FindingType", blank=True, related_name="finding_classifications")
 
     objects = FindingClassificationManager()
@@ -54,7 +61,6 @@ class FindingClassification(models.Model):
 
         classification_types = cast(models.manager.RelatedManager["FindingClassificationType"], classification_types)
         choices = cast(models.manager.RelatedManager["FindingClassificationChoice"], choices)
-        examinations = cast(models.manager.RelatedManager["Examination"], examinations)
         findings = cast(models.manager.RelatedManager["Finding"], findings)
         finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
 
