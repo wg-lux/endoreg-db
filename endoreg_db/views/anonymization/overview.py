@@ -13,6 +13,8 @@ from rest_framework.pagination import PageNumberPagination
 from endoreg_db.models import VideoFile, RawPdfFile
 from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
 from django.http import JsonResponse
+from endoreg_db.utils.operation_log import record_operation
+
 
 from endoreg_db.authz.permissions import PolicyPermission  #  import RBAC
 import logging
@@ -146,9 +148,10 @@ def start_anonymization(request, file_id: int):
     info = AnonymizationService.get_status(file_id)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    file_type = info["mediaType"]
-    
+
+    file_type = info.get("mediaType") or "unknown"
+    status_before = info.get("anonymizationStatus") or info.get("status") or "not_started"
+
     # Use processing lock context to prevent duplicate processing
     with ProcessingLockContext(file_id, file_type) as lock:
         if not lock.acquired:
@@ -157,23 +160,55 @@ def start_anonymization(request, file_id: int):
                     "detail": "File is already being processed by another request",
                     "file_id": file_id,
                     "file_type": file_type,
-                    "processing_locked": True
-                }, 
-                status=status.HTTP_409_CONFLICT
+                    "processing_locked": True,
+                },
+                status=status.HTTP_409_CONFLICT,
             )
-        
+
         # Proceed with starting anonymization
         service = AnonymizationService()
         kind = service.start(file_id)
         if not kind:
-            return Response({"detail": "Failed to start anonymization"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        return Response({
-            "detail": f"Anonymization started for {kind} file",
-            "file_id": file_id,
-            "file_type": kind,
-            "processing_locked": True
-        })
+            return Response(
+                {"detail": "Failed to start anonymization"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Re-read status AFTER starting
+        try:
+            info_after = AnonymizationService.get_status(file_id) or {}
+        except Exception:
+            logger.exception("Failed to refresh anonymization status for file %s", file_id)
+            info_after = {}
+
+        status_after = (
+            info_after.get("anonymizationStatus")
+            or info_after.get("status")
+            or status_before
+        )
+
+        # 🔐 Write operation log
+        record_operation(
+            request,
+            action="anonymization.start",
+            resource_type=kind,          # 'video' or 'pdf' as returned by service.start
+            resource_id=file_id,
+            status_before=str(status_before),
+            status_after=str(status_after),
+            meta={
+                "file_type_from_status": file_type,
+            },
+        )
+
+        return Response(
+            {
+                "detail": f"Anonymization started for {kind} file",
+                "file_id": file_id,
+                "file_type": kind,
+                "processing_locked": True,
+            }
+        )
+
 
 
 # ---------- current with coordination ------------------------------------
