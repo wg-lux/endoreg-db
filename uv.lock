@@ -891,7 +891,7 @@ requires-dist = [
     { name = "icecream", specifier = ">=2.1.4" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["ocr", "llm"], specifier = ">=0.8.8" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.4" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", specifier = ">=1.16.0" },
