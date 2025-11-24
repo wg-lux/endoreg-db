@@ -43,9 +43,6 @@ class FindingClassification(models.Model):
     )
     choices = models.ManyToManyField("FindingClassificationChoice", related_name="classifications", blank=True)
 
-    findings = models.ManyToManyField("Finding", blank=True, related_name="finding_classifications")
-    # examinations = models.ManyToManyField("Examination", blank=True, related_name="finding_classifications")
-
     @property
     def examinations(self):
         from endoreg_db.models import Examination
@@ -61,8 +58,10 @@ class FindingClassification(models.Model):
 
         classification_types = cast(models.manager.RelatedManager["FindingClassificationType"], classification_types)
         choices = cast(models.manager.RelatedManager["FindingClassificationChoice"], choices)
-        findings = cast(models.manager.RelatedManager["Finding"], findings)
         finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
+
+        @property
+        def findings(self) -> "models.manager.RelatedManager[Finding]": ...
 
     def natural_key(self):
         return (self.name,)
@@ -111,15 +110,8 @@ class FindingClassificationChoiceManager(models.Manager):
 class FindingClassificationChoice(models.Model):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
-    # classifications = models.ManyToManyField(
-    #     "FindingClassification",
-    #     related_name='choices'
-    # )
-
     subcategories = models.JSONField(default=dict)
-
     numerical_descriptors = models.JSONField(default=dict)
-
     objects = FindingClassificationChoiceManager()
 
     if TYPE_CHECKING:

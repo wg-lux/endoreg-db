@@ -45,11 +45,11 @@ class ExaminationIndication(models.Model):
         blank=True,
     )
 
-    examinations = models.ManyToManyField(
-        "Examination",
-        related_name="indications",
-        blank=True,
-    )
+    # examinations = models.ManyToManyField(
+    #     "Examination",
+    #     related_name="indications",
+    #     blank=True,
+    # )
 
     expected_interventions = models.ManyToManyField(
         "FindingIntervention",
@@ -61,11 +61,13 @@ class ExaminationIndication(models.Model):
 
     if TYPE_CHECKING:
         classifications = cast(models.manager.RelatedManager["ExaminationIndicationClassification"], classifications)
-        examinations = cast(models.manager.RelatedManager["Examination"], examinations)
         expected_interventions = cast(models.manager.RelatedManager["FindingIntervention"], expected_interventions)
 
         @property
         def related_requirements(self) -> "models.manager.RelatedManager[Requirement]": ...
+
+        @property
+        def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
 
     @property
     def links(self) -> "RequirementLinks":

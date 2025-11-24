@@ -27,9 +27,7 @@ class ExaminationTime(models.Model):
     """
 
     name = models.CharField(max_length=100, unique=True)
-    start_time = models.TimeField(blank=True, null=True)
     time_types = models.ManyToManyField("ExaminationTimeType", blank=True)
-    end_time = models.TimeField(blank=True, null=True)
     objects = ExaminationTimeManager()
 
     if TYPE_CHECKING:

@@ -33,6 +33,12 @@ class Endoscope(models.Model):
         verbose_name = "Endoscope"
         verbose_name_plural = "Endoscopes"
 
+    @property
+    def center_safe(self) -> "Center":
+        if self.center is None:
+            raise ValueError("Endoscope has no associated center.")
+        return self.center
+
 
 class EndoscopeTypeManager(models.Manager):
     def get_by_natural_key(self, name):

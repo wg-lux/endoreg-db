@@ -1,8 +1,10 @@
 from logging import getLogger  # Added logger
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Union
 
 from django.db import models
 from pydantic import BaseModel
+
+from endoreg_db.utils.requirement_operator_logic.new_operator_logic import REQUIREMENT_OPERATORS, model_attribute_set_any
 
 # see how operator evaluation function is fetched, add to docs #TODO
 # endoreg_db/utils/requirement_operator_logic/model_evaluators.py
@@ -22,7 +24,7 @@ class OperatorInstructions(BaseModel):
     args: List[Union[str, int, float, bool]] = []
 
 
-def _parse_target_attributes(raw: str):
+def _parse_operator_instructions(raw: str):
     target_attributes_list = [_.strip() for _ in raw.split(";") if _.strip()]
 
     input_targets = []
@@ -67,11 +69,10 @@ def _parse_target_attributes(raw: str):
     )
 
 
-def _validate_requirement_targets(instance: "Requirement") -> bool:
+def _validate_operator_instructions(instance: "Requirement") -> bool:
     """Ensures requirement fixtures declare at least one target attribute."""
-    if not instance.target_attributes:
+    if not instance.operator_instructions_parsed:
         raise ValueError(f"Requirement '{instance.name}' must declare at least one target attribute.")
-    _req_target_obj = _parse_target_attributes(instance.target_attributes)
     return True
 
 
@@ -120,7 +121,7 @@ class RequirementOperator(models.Model):
         Returns:
             An OperatorInstructions instance containing parsed input targets, requirement targets, kwargs, and args.
         """
-        return _parse_target_attributes(raw)
+        return _parse_operator_instructions(raw)
 
     @property
     def data_model_dict(self):
@@ -147,16 +148,20 @@ class RequirementOperator(models.Model):
         """
         return str(self.name)
 
-    def get_operator_function(self):
-        from endoreg_db.utils.requirement_operator_logic import 
+    def get_operator_function(self) -> Callable[..., bool]:
+        _operator_function = REQUIREMENT_OPERATORS.get(self.name)
+        if not _operator_function:
+            raise ValueError(f"Operator function for '{self.name}' not found in REQUIREMENT_OPERATORS.")
+        return _operator_function
 
     def evaluate(self, operator_instructions: "OperatorInstructions", requirement: "Requirement", input_obj: Any, **kwargs) -> bool:
         """ """
+        eval_result: bool = False
         requirement_links: "RequirementLinks" = requirement.links
         expected_input_models = requirement.expected_models
+        operator_function = self.get_operator_function()
 
         input_model = type(input_obj)
         assert input_model in expected_input_models, f"Input model {input_model} not in expected models {expected_input_models}"
 
-        # Execute Instructions
-        from endoreg_db.utils.requirement_operator_logic.model_evaluators import dispatch_operator_evaluation
+        return eval_result

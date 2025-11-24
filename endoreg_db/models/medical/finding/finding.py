@@ -12,10 +12,9 @@ class FindingManager(models.Manager):
 class Finding(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    examinations = models.ManyToManyField("Examination", blank=True, related_name="findings")
     finding_types = models.ManyToManyField("FindingType", blank=True, related_name="findings")
-
     finding_interventions = models.ManyToManyField("FindingIntervention", blank=True, related_name="findings")
+    finding_classifications = models.ManyToManyField("FindingClassification", blank=True, related_name="findings")
 
     objects = FindingManager()
 
@@ -30,16 +29,8 @@ class Finding(models.Model):
         )
 
         finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
-        examinations = cast(models.manager.RelatedManager["Examination"], examinations)
         finding_interventions = cast(models.manager.RelatedManager["FindingIntervention"], finding_interventions)
-
-        @property
-        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
-
-        # finding_classifications: models.QuerySet["FindingClassification"]
-        # examinations: models.QuerySet[Examination]
-        # finding_types: models.QuerySet[FindingType]
-        # finding_interventions: models.QuerySet[FindingIntervention]
+        finding_classifications = cast(models.manager.RelatedManager["FindingClassification"], finding_classifications)
 
     def natural_key(self):
         """

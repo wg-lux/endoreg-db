@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
@@ -28,20 +28,34 @@ class Examination(models.Model):
     name = models.CharField(max_length=100, unique=True)
     examination_types = models.ManyToManyField("ExaminationType", blank=True)
     description = models.TextField(blank=True, null=True)
+    indications = models.ManyToManyField(
+        "ExaminationIndication",
+        related_name="examinations",
+        blank=True,
+    )
+    examination_times = models.ManyToManyField(
+        "ExaminationTime",
+        related_name="examinations",
+        blank=True,
+    )
+
+    findings = models.ManyToManyField(
+        "Finding",
+        blank=True,
+        related_name="examinations",
+    )
 
     objects = ExaminationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import ExaminationIndication, Finding, FindingClassification
+        from endoreg_db.models import ExaminationIndication, ExaminationTime, Finding, FindingClassification
+
+        indications = cast("models.manager.RelatedManager[ExaminationIndication]", indications)
+        examination_times = cast("models.manager.RelatedManager[ExaminationTime]", examination_times)
+        findings = cast("models.manager.RelatedManager[Finding]", findings)
 
         @property
         def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
-
-        @property
-        def indications(self) -> "models.manager.RelatedManager[ExaminationIndication]": ...
-
-        @property
-        def findings(self) -> "models.manager.RelatedManager[Finding]": ...
 
         @property
         def exam_reqset_links(self) -> "models.manager.RelatedManager[ExaminationRequirementSet]": ...
