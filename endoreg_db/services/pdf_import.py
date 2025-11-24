@@ -45,7 +45,7 @@ class PdfImportService:
     """
 
     def __init__(
-        self, allow_meta_overwrite: bool = False, processing_mode: str = "blackening"
+        self, allow_meta_overwrite: bool = True, processing_mode: str = "blackening"
     ):
         """
         Initialize the PDF import service.
@@ -72,6 +72,11 @@ class PdfImportService:
         self.current_pdf_state = None
         self.processing_context = {}
         self.original_path = None
+        
+        self.DEFAULT_PATIENT_FIRST_NAME = "Patient"
+        self.DEFAULT_PATIENT_LAST_NAME = "Unknown"
+        self.DEFAULT_PATIENT_DOB = date(1990, 1, 1)
+        self.DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
 
     @classmethod
     def with_blackening(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
@@ -723,6 +728,7 @@ class PdfImportService:
             "examiner_last_name": "examiner_last_name",
             "endoscope_type": "endoscope_type",
             "casenumber": "case_number",
+            "center_name": "center_name",
         }
 
         # Update fields with extracted information
@@ -747,9 +753,9 @@ class PdfImportService:
                 # Configurable overwrite policy
                 should_overwrite = (
                     self.allow_meta_overwrite
-                    or not old_value
-                    or old_value in ["Patient", "Unknown"]
+                    or self._is_placeholder_value(sm_field, old_value)
                 )
+
                 if new_value and should_overwrite:
                     setattr(sm, sm_field, new_value)
                     updated_fields.append(sm_field)
@@ -1449,3 +1455,25 @@ class PdfImportService:
             except Exception as e:
                 logger.error(f"Failed to archive PDF {pdf_file.pdf_hash}: {e}")
                 return False
+    
+    def _is_placeholder_value(self, field_name: str, value) -> bool:
+        """Return True if a SensitiveMeta field still has a dummy/default value."""
+        if value is None:
+            return True
+
+        # String placeholders
+        if isinstance(value, str):
+            if value in {self.DEFAULT_PATIENT_FIRST_NAME, self.DEFAULT_PATIENT_LAST_NAME}:
+                return True
+
+        # Date placeholders
+        if isinstance(value, date):
+            # Default DOB
+            if field_name == "patient_dob" and value == self.DEFAULT_PATIENT_DOB:
+                return True
+            # "Today" exam date created as fallback – allow anonymizer to override
+            if field_name == "examination_date" and value == date.today():
+                return True
+
+        return False
+
