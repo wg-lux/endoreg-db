@@ -17,7 +17,7 @@ OIDC_RP_CLIENT_ID = "endoregdb-api"
 # The client secret for the OIDC client above. This authenticates Django to Keycloak during token exchange.
 # ⚠️ Best practice: load this from environment variables, not hardcoded in git.
 # e.g. from endoreg_db.config.env import env_str; OIDC_RP_CLIENT_SECRET = env_str("OIDC_RP_CLIENT_SECRET", "")
-OIDC_RP_CLIENT_SECRET = "18jcfrebu8kw2sbWE0kJ3h9OdMfI3E2S"
+OIDC_RP_CLIENT_SECRET = "replace with CLIENT_SECRET"
 
 # -----------------------------
 # DISCOVERY (OPTIONAL – NICE TO HAVE)
