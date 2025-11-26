@@ -12,7 +12,7 @@ from .examination import (
 )
 from .finding import FindingSerializer
 from .finding_classification import (
-    FindingClassificationChoiceSerializer,
+    # FindingClassificationChoiceSerializer,
     FindingClassificationSerializer,
 )
 from .label import ImageClassificationAnnotationSerializer, LabelSerializer

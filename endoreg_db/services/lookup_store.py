@@ -173,8 +173,8 @@ class LookupStore:
         # Check if required fields are present
         required_fields = [
             "patient_examination_id",
-            "requirementsBySet",
-            "requirementStatus",
+            "requirements_by_set",
+            "requirement_status",
         ]
         missing_fields = [field for field in required_fields if field not in data]
 

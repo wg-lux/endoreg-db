@@ -1,9 +1,12 @@
 import json
+
 import pytest
 from django.core.cache import cache
 from django.urls import reverse
 
-pytestmark = pytest.mark.django_db  # APIClient touches DB-level middleware in some stacks
+pytestmark = (
+    pytest.mark.django_db
+)  # APIClient touches DB-level middleware in some stacks
 
 
 def _seed_cache(token: str, payload: dict):
@@ -20,7 +23,9 @@ def test_lookup_init_happy_path(client, monkeypatch):
         _seed_cache("tok123", {"patient_examination_id": pe_id})
         return "tok123"
 
-    monkeypatch.setattr(ls, "create_lookup_token_for_pe", fake_create_lookup_token_for_pe)
+    monkeypatch.setattr(
+        ls, "create_lookup_token_for_pe", fake_create_lookup_token_for_pe
+    )
 
     # Act
     resp = client.post("/api/lookup/init/", data={"patient_examination_id": 1})
@@ -42,10 +47,10 @@ def test_lookup_get_all_returns_payload(client):
     payload = {
         "patient_examination_id": 90,
         "requirement_sets": [{"id": 9, "name": "rs", "type": "all"}],
-        "availableFindings": [],
-        "requiredFindings": [],
-        "requirementDefaults": {},
-        "classificationChoices": {},
+        "available_findings": [],
+        "required_findings": [],
+        "requirement_defaults": {},
+        "classification_choices": {},
     }
     _seed_cache(token, payload)
 
@@ -82,20 +87,20 @@ def test_lookup_get_parts_happy_path(client):
     token = "t_parts_ok"
     payload = {
         "patient_examination_id": 90,
-        "availableFindings": [1, 2, 3],
-        "classificationChoices": {"42": [{"classification_id": 7, "label": "x"}]},
+        "available_findings": [1, 2, 3],
+        "classification_choices": {"42": [{"classification_id": 7, "label": "x"}]},
         "ignored": True,
     }
     _seed_cache(token, payload)
 
     resp = client.get(
         f"/api/lookup/{token}/parts/",
-        {"keys": "availableFindings,classificationChoices"},
+        {"keys": "available_findings,classification_choices"},
     )
     assert resp.status_code == 200, resp.content
     data = resp.json()
-    assert "availableFindings" in data
-    assert "classificationChoices" in data
+    assert "available_findings" in data
+    assert "classification_choices" in data
     assert "ignored" not in data
 
 
@@ -134,17 +139,22 @@ def test_lookup_session_expiration_and_restart(client, monkeypatch):
         init_calls.append(pe_id)
         token = f"token_{len(init_calls)}"
         # Create cache entry that will be valid
-        _seed_cache(token, {
-            "patient_examination_id": pe_id,
-            "requirement_sets": [{"id": 1, "name": "test", "type": "all"}],
-            "availableFindings": [],
-            "requiredFindings": [],
-            "requirementDefaults": {},
-            "classificationChoices": {},
-        })
+        _seed_cache(
+            token,
+            {
+                "patient_examination_id": pe_id,
+                "requirement_sets": [{"id": 1, "name": "test", "type": "all"}],
+                "available_findings": [],
+                "required_findings": [],
+                "requirement_defaults": {},
+                "classification_choices": {},
+            },
+        )
         return token
 
-    monkeypatch.setattr(ls, "create_lookup_token_for_pe", mock_create_lookup_token_for_pe)
+    monkeypatch.setattr(
+        ls, "create_lookup_token_for_pe", mock_create_lookup_token_for_pe
+    )
 
     # Step 1: Initialize session
     resp = client.post("/api/lookup/init/", data={"patient_examination_id": 123})
@@ -177,7 +187,9 @@ def test_lookup_restart_prevents_infinite_loops(client, monkeypatch):
         # Don't seed cache - this will cause get_all to fail
         return token
 
-    monkeypatch.setattr(ls, "create_lookup_token_for_pe", mock_create_lookup_token_for_pe)
+    monkeypatch.setattr(
+        ls, "create_lookup_token_for_pe", mock_create_lookup_token_for_pe
+    )
 
     # Initialize session
     resp = client.post("/api/lookup/init/", data={"patient_examination_id": 456})
@@ -195,10 +207,11 @@ def test_lookup_restart_prevents_infinite_loops(client, monkeypatch):
 def test_lookup_cache_timeout_behavior(client):
     """Test that cache timeout settings work correctly"""
     from django.conf import settings
+
     from endoreg_db.services.lookup_store import DEFAULT_TTL_SECONDS
 
     # Verify TTL matches Django cache timeout
-    cache_timeout = settings.CACHES['default']['TIMEOUT']
+    cache_timeout = settings.CACHES["default"]["TIMEOUT"]
     assert DEFAULT_TTL_SECONDS == cache_timeout
 
     token = "timeout_test"
@@ -223,17 +236,22 @@ def test_lookup_reuse_existing_patient_examination(client, monkeypatch):
 
     def mock_create_lookup_token_for_pe(pe_id: int) -> str:
         token = f"reuse_test_token_{pe_id}"
-        _seed_cache(token, {
-            "patient_examination_id": pe_id,
-            "requirement_sets": [{"id": 1, "name": "test", "type": "all"}],
-            "availableFindings": [],
-            "requiredFindings": [],
-            "requirementDefaults": {},
-            "classificationChoices": {},
-        })
+        _seed_cache(
+            token,
+            {
+                "patient_examination_id": pe_id,
+                "requirement_sets": [{"id": 1, "name": "test", "type": "all"}],
+                "available_findings": [],
+                "required_findings": [],
+                "requirement_defaults": {},
+                "classification_choices": {},
+            },
+        )
         return token
 
-    monkeypatch.setattr(ls, "create_lookup_token_for_pe", mock_create_lookup_token_for_pe)
+    monkeypatch.setattr(
+        ls, "create_lookup_token_for_pe", mock_create_lookup_token_for_pe
+    )
 
     # First init
     resp1 = client.post("/api/lookup/init/", data={"patient_examination_id": 789})
@@ -266,7 +284,9 @@ def test_lookup_error_handling_comprehensive(client):
     token = "patch_test"
     _seed_cache(token, {"test": "data"})
 
-    resp = client.patch(f"/api/lookup/{token}/parts/", data={}, content_type="application/json")
+    resp = client.patch(
+        f"/api/lookup/{token}/parts/", data={}, content_type="application/json"
+    )
     assert resp.status_code == 400
 
     # Test parts without keys
