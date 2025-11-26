@@ -104,6 +104,7 @@ class AnonymizationValidateView(APIView):
 
                     if video.state is not None:
                         video.state.anonymized = True
+                        video.state.save(update_fields=["anonymized"])
                         video.sensitive_meta.state.save()
 
                     return Response(
@@ -162,11 +163,13 @@ class AnonymizationValidateView(APIView):
                             and pdf.sensitive_meta.state
                             and pdf.state
                         ):
+                            
                             pdf.sensitive_meta.state.refresh_from_db()
                             pdf.sensitive_meta.state.mark_dob_verified()
                             pdf.sensitive_meta.state.mark_names_verified()
                             pdf.sensitive_meta.create_anonymized_record()
                             pdf.state.anonymized = True
+                            pdf.state.save(update_fields=["anonymized"])
                             pdf.sensitive_meta.state.save()
                         else:
                             return Response(
