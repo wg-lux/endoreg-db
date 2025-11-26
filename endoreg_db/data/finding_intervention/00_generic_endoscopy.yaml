@@ -1,0 +1,59 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_injection_liftup
+    description:
+      Lift-up injection is a technique used to lift up a lesion in the
+      colon. It is performed by injecting a solution under the lesion to create a
+      cushion of fluid that lifts the lesion away from the colon wall. This allows
+      the lesion to be removed more easily and reduces the risk of complications during
+      the procedure.
+    intervention_types:
+      - diagnostic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_foreign_body_removal_generic
+    description:
+      Foreign body removal is a technique used to remove objects that have
+      been accidentally swallowed and are stuck in the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_foreign_body_removal_grasper
+    description:
+      Foreign body removal with grasper is a technique used to remove objects
+      that have been accidentally swallowed and are stuck in the colon using a grasper tool.
+    intervention_types:
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_foreign_body_removal_net
+    description:
+      Foreign body removal with net is a technique used to remove objects
+      that have been accidentally swallowed and are stuck in the colon using a net tool.
+    intervention_types:
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_foreign_body_removal_snare
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_biopsy_grasper_generic
+    description:
+      Biopsy is a technique used to take a small sample of tissue from
+      a lesion in the colon. It is performed by inserting a small instrument through
+      the colonoscope and removing a small piece of tissue from the lesion. The tissue
+      sample is then sent to a laboratory for analysis to determine if the lesion
+      is cancerous or benign.
+    intervention_types:
+      - diagnostic
+      - invasive

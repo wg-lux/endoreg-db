@@ -62,32 +62,28 @@ def _validate_requirement_configuration(fields: dict, *, entry: dict, model):
             return True
         return any(not item for item in value)
 
-    missing = [
-        key for key in ("requirement_types", "operators") if _values_missing(key)
-    ]
+    missing = [key for key in ("requirement_types", "operators") if _values_missing(key)]
     if missing:
         missing_display = ", ".join(missing)
-        raise ValueError(
-            f"{model.__name__} '{name}' is missing required configuration for: {missing_display}."
-        )
+        raise ValueError(f"{model.__name__} '{name}' is missing required configuration for: {missing_display}.")
 
 
 IMPORT_METADATA = {
     RequirementType.__name__: {
         "dir": REQUIREMENT_TYPE_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementType,  # e.g. Intervention
+        "model": RequirementType,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     RequirementOperator.__name__: {
         "dir": REQUIREMENT_OPERATOR_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementOperator,  # e.g. Intervention
+        "model": RequirementOperator,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     ExaminationRequirementSet.__name__: {
         "dir": EXAMINATION_REQUIREMENT_SET_DATA_DIR,  # e.g. "interventions"
-        "model": ExaminationRequirementSet,  # e.g. Intervention
+        "model": ExaminationRequirementSet,
         "foreign_keys": [
             "examinations",
         ],  # Through model uses foreign keys of both models
@@ -98,7 +94,7 @@ IMPORT_METADATA = {
     # ExaminationRequirementSet.__name__,
     Requirement.__name__: {
         "dir": REQUIREMENT_DATA_DIR,  # e.g. "interventions"
-        "model": Requirement,  # e.g. Intervention
+        "model": Requirement,
         "foreign_keys": [
             "requirement_types",
             "operators",
@@ -149,13 +145,13 @@ IMPORT_METADATA = {
     },
     RequirementSetType.__name__: {
         "dir": REQUIREMENT_SET_TYPE_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementSetType,  # e.g. Intervention
+        "model": RequirementSetType,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     RequirementSet.__name__: {
         "dir": REQUIREMENT_SET_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementSet,  # e.g. Intervention
+        "model": RequirementSet,
         "foreign_keys": [
             "requirement_set_type",
             "requirements",  # This is a many-to-many field

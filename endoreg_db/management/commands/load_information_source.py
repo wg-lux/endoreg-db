@@ -16,13 +16,13 @@ IMPORT_MODELS = [ # string as model key, serves as key in IMPORT_METADATA
 IMPORT_METADATA = {
     InformationSourceType.__name__: {
         "dir": INFORMATION_SOURCE_TYPE_DATA_DIR, # e.g. "intervention_type"
-        "model": InformationSourceType, # e.g. InterventionType
+        "model": InformationSourceType, Type
         "foreign_keys": [], # e.g. ["intervention_types"]
         "foreign_key_models": [] # e.g. [InterventionType]
     },
     InformationSource.__name__: {
         "dir": SOURCE_DIR, # e.g. "interventions"
-        "model": InformationSource, # e.g. Intervention
+        "model": InformationSource, 
         "foreign_keys": ["information_source_types"], # e.g. ["intervention_types"]
         "foreign_key_models": [InformationSourceType] # e.g. [InterventionType]
     }
