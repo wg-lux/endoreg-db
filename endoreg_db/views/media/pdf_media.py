@@ -163,23 +163,20 @@ class PdfMediaView(APIView):
             pdf = RawPdfFile.objects.get(pk=pdf_id_int)
 
             file_field = pdf.file
+            file_path = file_field.path
 
             if not file_field or not file_field.name:
                 raise Http404("PDF file not found")
             if not file_exists(file_field):
                 raise Http404("PDF file does not exist in storage")
 
-            try:
-                file_field.open("rb")
-            except Exception as exc:  # pragma: no cover - backend-specific failure
-                logger.error("File access error for PDF %s: %s", pk, exc)
-                raise Http404("PDF file cannot be accessed")
 
-            response = FileResponse(
-                file_field,
-                content_type="application/pdf",
-                as_attachment=False,
-            )
+            with open(file_path, "rb") as file_handle:
+                response = FileResponse(
+                    file_handle,
+                    content_type="application/pdf",
+                    as_attachment=False,
+                )
 
             filename = Path(file_field.name).name
             response["Content-Disposition"] = f'inline; filename="{filename}"'
