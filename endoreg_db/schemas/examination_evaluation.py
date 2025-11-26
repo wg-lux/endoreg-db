@@ -19,7 +19,7 @@ class RequirementSetEval(BaseModel):
     linked_sets: List["RequirementSetEval"] = Field(default_factory=list)
 
 class ExaminationEvalReport(BaseModel):
-    examination_id: int
+    examination_id: int | None = None
     summary: dict
     sets: List[RequirementSetEval]
     errors: List[str] = Field(default_factory=list)
