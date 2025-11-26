@@ -11,6 +11,8 @@ from endoreg_db.views.media import (
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
     get_sensitive_metadata_pk,
+)
+from endoreg_db.views.ai import (
     label_list
 )
 from endoreg_db.views.pdf.pdf_stream import PdfStreamView

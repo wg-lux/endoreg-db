@@ -4,7 +4,7 @@ from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
 from ..video.reimport import VideoReimportView
 from ..pdf.reimport import PdfReimportView
-from ..video.label import label_list
+from ..ai.label import label_list
 
 from .sensitive_metadata import (
     get_sensitive_metadata_pk,

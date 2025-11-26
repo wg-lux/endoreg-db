@@ -24,7 +24,7 @@ from .segments_crud import (
     video_segments_validate_bulk,
     video_segments_validation_status,
 )
-from .label import label_list
+from ..ai.label import label_list
 
 __all__ = [
     # Video Correction (Phase 1.1) - Implemented
