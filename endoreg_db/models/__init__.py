@@ -165,6 +165,9 @@ from .state import (
     RawPdfState,
 )
 
+# operation
+from .operation_log import OperationLog
+
 __all__ = [
 
     ####### Administration ########
@@ -352,4 +355,7 @@ __all__ = [
     "LabelVideoSegmentState",
     "AnonymizationStatus",
     "RawPdfState",
+
+    ###### Operation Log ###
+    "OperationLog",
 ]
