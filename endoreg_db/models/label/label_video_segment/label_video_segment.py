@@ -131,6 +131,28 @@ class LabelVideoSegment(models.Model):
             # Should not happen if self.state exists and has the is_validated attribute.
             logger.error("AttributeError accessing 'state.is_validated' for LabelVideoSegment %s.", self.pk)
             return False
+    
+    def mark_validated(
+        self,
+        is_validated: bool = True,
+        information_source_name: str = "frontend",
+    ) -> None:
+        """
+        Domain helper: update validation state (and optionally information source).
+        """
+        from endoreg_db.models import InformationSource  # avoid import cycle
+
+        # ensure state exists
+        state, _ = self.get_or_create_state()
+        state.is_validated = is_validated
+        state.save()
+
+        # update information source
+        info_source, _ = InformationSource.objects.get_or_create(
+            name=information_source_name
+        )
+        self.source = info_source
+        self.save(update_fields=["source"])
 
     def extract_segment_frame_files(self, overwrite: bool = False, **kwargs) -> bool:
         """

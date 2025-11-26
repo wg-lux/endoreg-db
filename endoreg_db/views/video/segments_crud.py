@@ -273,22 +273,38 @@ def video_segment_validate(request, pk: int, segment_id: int):
     # Verify video exists
     video = get_object_or_404(VideoFile, pk=pk)
 
-    # Get segment and verify it belongs to this video
-    segment = get_object_or_404(LabelVideoSegment.objects.select_related("state", "video_file", "label"), pk=segment_id, video_file=video)
+    segment = get_object_or_404(
+        LabelVideoSegment.objects.select_related("state", "video_file", "label"),
+        pk=segment_id,
+        video_file=video,
+    )
 
     try:
-        # Validation status from request (default: True)
         is_validated = request.data.get("is_validated", True)
         notes = request.data.get("notes", "")
+        information_source_name = request.data.get("information_source_name", "manual_annotation")
 
-        # Get or create state object
-        if not hasattr(segment, "state") or segment.state is None:
-            return Response({"error": "Segment has no state object. Cannot validate."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Optional: update times (seconds) before validation
+        start_time = request.data.get("start_time")
+        end_time = request.data.get("end_time")
 
-        # Update state
         with transaction.atomic():
-            segment.state.is_validated = is_validated
-            segment.state.save()
+            if start_time is not None and end_time is not None:
+                fps = segment.video_file.get_fps() or 0
+                if fps > 0:
+                    new_start = int(round(float(start_time) * fps))
+                    new_end = int(round(float(end_time) * fps))
+                    LabelVideoSegment.validate_frame_range(
+                        new_start, new_end, video_file=segment.video_file
+                    )
+                    segment.start_frame_number = new_start
+                    segment.end_frame_number = new_end
+                    segment.save(update_fields=["start_frame_number", "end_frame_number"])
+
+            segment.mark_validated(
+                is_validated=is_validated,
+                information_source_name=information_source_name,
+            )
 
         logger.info(f"Validated segment {segment_id} in video {pk}: {is_validated}")
 
@@ -309,7 +325,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
         logger.error(f"Error validating segment {segment_id} in video {pk}: {e}")
         return Response({"error": f"Validation failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
+#TODO Pass user based information source to backend. This is the endpoint currently used by the VideoExamination endpoint
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def video_segments_validate_bulk(request, pk: int):
@@ -318,41 +334,45 @@ def video_segments_validate_bulk(request, pk: int):
 
     POST /api/media/videos/<pk>/segments/validate-bulk/
 
-    Validates multiple LabelVideoSegments simultaneously.
-    Useful for batch validation after review.
-
-    Request Body:
+    Body:
     {
       "segment_ids": [1, 2, 3, ...],
-      "is_validated": true,  // optional, default true
-      "notes": "..."         // optional, applies to all segments
-    }
-
-    Response:
-    {
-      "message": "Bulk validation completed. 3 segments updated.",
-      "updated_count": 3,
-      "requested_count": 3,
+      "segments": [
+        {"id": 1, "start_time": 12.3, "end_time": 15.7},
+        ...
+      ],
       "is_validated": true,
-      "failed_ids": []  // only present if some failed
+      "notes": "...",
+      "information_source_name": "manual_annotation"
     }
     """
-    # Verify video exists
     video = get_object_or_404(VideoFile, pk=pk)
 
     segment_ids = request.data.get("segment_ids", [])
     is_validated = request.data.get("is_validated", True)
     notes = request.data.get("notes", "")
-
+    information_source_name = request.data.get("information_source_name", "manual_annotation")
+    if notes:
+        logger.info(f"Segment Validiert ${notes}")
     if not segment_ids:
         return Response({"error": "segment_ids is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # optional per-segment timing info (seconds)
+    segments_data_list = request.data.get("segments", []) or []
+    segments_data = {int(s["id"]): s for s in segments_data_list if "id" in s}
+
     try:
-        # Get all segments for this video only
-        segments = LabelVideoSegment.objects.filter(pk__in=segment_ids, video_file=video).select_related("state")
+        segments = (
+            LabelVideoSegment.objects
+            .filter(pk__in=segment_ids, video_file=video)
+            .select_related("state", "video_file")
+        )
 
         if not segments.exists():
-            return Response({"error": "No segments found with provided IDs for this video"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "No segments found with provided IDs for this video"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         updated_count = 0
         failed_ids = []
@@ -360,14 +380,32 @@ def video_segments_validate_bulk(request, pk: int):
         with transaction.atomic():
             for segment in segments:
                 try:
-                    if segment.state:
-                        segment.state.is_validated = is_validated
-                        if notes and hasattr(segment.state, "validation_notes"):
-                            segment.state.validation_notes = notes
-                        segment.state.save()
-                        updated_count += 1
-                    else:
-                        failed_ids.append(segment.id)
+                    # 1) optionally update times from payload
+                    data = segments_data.get(segment.id)
+                    if data is not None:
+                        start_time = data.get("start_time")
+                        end_time = data.get("end_time")
+                        if start_time is not None and end_time is not None:
+                            fps = segment.video_file.get_fps() or 0
+                            if fps > 0:
+                                new_start = int(round(float(start_time) * fps))
+                                new_end = int(round(float(end_time) * fps))
+                                LabelVideoSegment.validate_frame_range(
+                                    new_start, new_end, video_file=segment.video_file
+                                )
+                                segment.start_frame_number = new_start
+                                segment.end_frame_number = new_end
+                                segment.save(
+                                    update_fields=["start_frame_number", "end_frame_number"]
+                                )
+
+                    # 2) mark as validated + update information source + notes
+                    segment.mark_validated(
+                        is_validated=is_validated,
+                        information_source_name=str(information_source_name) if is_validated else str(None),
+                    )
+                    updated_count += 1
+
                 except Exception as e:
                     logger.error(f"Error validating segment {segment.id}: {e}")
                     failed_ids.append(segment.id)
