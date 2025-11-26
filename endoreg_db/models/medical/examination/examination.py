@@ -44,15 +44,21 @@ class Examination(models.Model):
         blank=True,
         related_name="examinations",
     )
+    information_sources = models.ManyToManyField(
+        "InformationSource",
+        related_name="examinations",
+        blank=True,
+    )
 
     objects = ExaminationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import ExaminationIndication, ExaminationTime, Finding, FindingClassification
+        from endoreg_db.models import ExaminationIndication, ExaminationTime, Finding, FindingClassification, InformationSource
 
         indications = cast("models.manager.RelatedManager[ExaminationIndication]", indications)
         examination_times = cast("models.manager.RelatedManager[ExaminationTime]", examination_times)
         findings = cast("models.manager.RelatedManager[Finding]", findings)
+        information_sources = cast("models.manager.RelatedManager[InformationSource]", information_sources)
 
         @property
         def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...

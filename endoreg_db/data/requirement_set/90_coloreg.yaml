@@ -46,7 +46,7 @@
     name_en: "Coloreg Finding Colon Polyp Rectosigmoid Location"
     description: "Coloreg Finding Colon Polyp Rectosigmoid Location"
     requirement_set_type: "all"
-    depends_on_sets:
+    depends_on:
       - "coloreg_finding_colon_polyp_location_base"
     requirements:
       - "coloreg_finding_colon_polyp_rectosigmoid_has_location_cm" #TODO Rektosigmoid muss cm haben
@@ -106,7 +106,7 @@
     name_en: "Coloreg Finding Colon Polyp Morphology"
     description: "Coloreg Finding Colon Polyp Morphology"
     requirement_set_type: "any"
-    depends_on_sets:
+    depends_on:
       - "coloreg_finding_colon_polyp_size"
     links_to_sets:
       - "coloreg_polyp_small_morphology"

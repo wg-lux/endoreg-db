@@ -6,7 +6,6 @@
     description: "Settings related to the examination environment and conditions."
     finding_classifications:
       - examination_setting_generic_location
-      - examination_setting_generic_sedation
 
 - model: endoreg_db.finding
   fields:
@@ -16,7 +15,7 @@
       - baseline
     finding_classifications:
       - sedation_performed
-      - sedation_type
+      - examination_setting_generic_sedation
 
 - model: endoreg_db.finding
   fields:
@@ -30,3 +29,7 @@
       - endoscopy_hemoclip_generic
       - endoscopy_over_the_scope_clip_generic
     finding_classifications: [] #TODO active bleeding? macroscopically in sano?
+    caused_by_interventions:
+      - endoscopy_cold_snare_resection_generic
+      - endoscopy_diathermic_snare_resection_generic
+      - endoscopy_biopsy_foreceps_resection_generic

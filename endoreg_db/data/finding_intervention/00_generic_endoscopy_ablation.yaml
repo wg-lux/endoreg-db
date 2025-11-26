@@ -27,3 +27,18 @@
     intervention_types:
       - therapeutic
       - invasive
+
+# argon_plasma_coagulation
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_ablation_argon_plasma_coagulation
+    description:
+      Argon plasma coagulation (APC) is a non-contact thermal ablation
+      technique used to treat various lesions in the colon. It involves the use of ionized
+      argon gas to deliver electrical energy to the target tissue, causing coagulation and
+      devitalization of the lesion. APC is commonly used for the treatment of bleeding
+      lesions, such as angiodysplasia, as well as for the ablation of residual adenomatous
+      tissue following polypectomy.
+    intervention_types:
+      - therapeutic
+      - invasive

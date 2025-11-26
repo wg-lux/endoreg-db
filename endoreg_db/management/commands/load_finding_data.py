@@ -25,10 +25,10 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     FindingInterventionType.__name__,
     FindingIntervention.__name__,
     FindingType.__name__,
-    Finding.__name__,
-    FindingClassificationType.__name__,
     FindingClassificationChoice.__name__,
+    FindingClassificationType.__name__,
     FindingClassification.__name__,
+    Finding.__name__,
 ]
 
 IMPORT_METADATA = {
@@ -41,14 +41,8 @@ IMPORT_METADATA = {
     Finding.__name__: {
         "dir": FINDING_DATA_DIR,
         "model": Finding,
-        "foreign_keys": [
-            "finding_types",
-            "finding_interventions",
-        ],
-        "foreign_key_models": [
-            FindingType,
-            FindingIntervention,
-        ],
+        "foreign_keys": ["finding_types", "finding_interventions", "finding_classifications", "caused_by_interventions"],
+        "foreign_key_models": [FindingType, FindingIntervention, FindingClassification, FindingIntervention],
     },
     FindingInterventionType.__name__: {
         "dir": FINIDNG_INTERVENTION_TYPE_DATA_DIR,

@@ -10,13 +10,14 @@ from ...models import (
     ExaminationIndicationClassification,
     ExaminationIndicationClassificationChoice,
     FindingIntervention,
+    InformationSource,
 )
 from ...utils import load_model_data_from_yaml
 
 IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
-    ExaminationIndication.__name__,
-    ExaminationIndicationClassification.__name__,
     ExaminationIndicationClassificationChoice.__name__,
+    ExaminationIndicationClassification.__name__,
+    ExaminationIndication.__name__,
 ]
 
 IMPORT_METADATA = {
@@ -25,26 +26,30 @@ IMPORT_METADATA = {
         "model": ExaminationIndication,
         "foreign_keys": [
             "expected_interventions",
+            "classifications",
+            "information_sources",
         ],
         "foreign_key_models": [
             FindingIntervention,
+            ExaminationIndicationClassification,
+            InformationSource,
         ],
     },
     ExaminationIndicationClassification.__name__: {
         "dir": EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR,
         "model": ExaminationIndicationClassification,
         "foreign_keys": [
-            "indications",  # This is a many-to-many field
+            "choices",  # This is a many-to-many field
         ],
         "foreign_key_models": [
-            ExaminationIndication,
+            ExaminationIndicationClassificationChoice,
         ],
     },
     ExaminationIndicationClassificationChoice.__name__: {
         "dir": EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR,
         "model": ExaminationIndicationClassificationChoice,
-        "foreign_keys": ["classification"],
-        "foreign_key_models": [ExaminationIndicationClassification],
+        "foreign_keys": [],
+        "foreign_key_models": [],
     },
 }
 

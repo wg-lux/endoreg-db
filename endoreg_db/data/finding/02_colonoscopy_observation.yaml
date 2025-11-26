@@ -50,9 +50,9 @@
     name_de: "Kolondivertikel"
     name_en: "Colon Diverticule"
     finding_interventions:
-      - colon_lesion_clip
-      - colon_lesion_biopsy
-      - colon_lesion_injection_vasoactive
+      - endoscopy_hemoclip_generic
+      - endoscopy_biopsy_grasper_generic
+      - endoscopy_injection_vasoactive
     finding_types:
       - observation
     finding_classifications:
@@ -88,22 +88,21 @@
     name_de: "Kolonstenose"
     name_en: "Colon Stenosis"
     finding_interventions:
-      - colon_lesion_dilation_balloon #TODO
-      - colon_lesion_stent_placement #TODO
+      - endoscopy_dilation_balloon #TODO
+      - endoscopy_stent_generic #TODO
     finding_types:
       - observation
     finding_classifications:
-      - colon_lesion_stenosis_degree_categorical #TODO
+      # - colon_lesion_stenosis_degree_categorical #TODO
       - colonoscopy_location_coarse
       - colonoscopy_location_default
       - lesion_circularity_default
-      - lesion_length_default
 
 - model: endoreg_db.finding
   fields:
     name: "colon_post_intervention_wound"
     name_de: "Postinterventionelle Wunde"
-    finding_interventions: ["colon_lesion_clip"] #TODO
+    finding_interventions: ["endoscopy_hemoclip_generic"] #TODO
     finding_types:
       - observation
 

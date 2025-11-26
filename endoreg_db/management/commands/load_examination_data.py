@@ -4,7 +4,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from ...data import EXAMINATION_DATA_DIR
-from ...models import Examination, ExaminationIndication, ExaminationTime, ExaminationTimeType, ExaminationType
+from ...models import Examination, ExaminationIndication, ExaminationTime, ExaminationTimeType, ExaminationType, Finding
 from ...utils import load_model_data_from_yaml
 
 SOURCE_DIR = EXAMINATION_DATA_DIR
@@ -26,8 +26,8 @@ IMPORT_METADATA = {
     "Examination": {
         "dir": os.path.join(SOURCE_DIR, "examinations"),
         "model": Examination,
-        "foreign_keys": ["examination_types, examination_times", "indications"],
-        "foreign_key_models": [ExaminationType, ExaminationTime, ExaminationIndication],
+        "foreign_keys": ["findings", "examination_types", "examination_times", "indications"],
+        "foreign_key_models": [Finding, ExaminationType, ExaminationTime, ExaminationIndication],
     },
     "ExaminationTimeType": {
         "dir": os.path.join(SOURCE_DIR, "time-type"),

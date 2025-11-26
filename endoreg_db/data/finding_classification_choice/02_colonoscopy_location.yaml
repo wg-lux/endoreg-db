@@ -4,10 +4,7 @@
     name_de: "terminales Ileum"
     name_en: "Terminal Ileum"
     subcategories:
-      description: {
-        choices: ["unspecified"],
-        required: false
-      }
+      description: { choices: ["unspecified"], required: false }
     numerical_descriptors:
       cm_rectified:
         unit: "centimeter"
@@ -63,6 +60,28 @@
     name: "right_flexure"
     name_de: "Rechte Flexur"
     name_en: "Right Flexure"
+    subcategories:
+      description:
+        choices: ["unspecified", "proximal", "distal"]
+        probability: [0.5, 0.3, 0.2]
+        default: "unspecified"
+        required: true
+    numerical_descriptors:
+      cm_rectified:
+        unit: "centimeter"
+        min: 80
+        max: 180
+        mean: null
+        std: null
+        distribution: "uniform"
+        description: "Insertion depth of the colonoscope in cm (rectified)"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "left_flexure"
+    name_de: "Linke Flexur"
+    name_en: "Left Flexure"
     subcategories:
       description:
         choices: ["unspecified", "proximal", "distal"]

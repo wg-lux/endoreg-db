@@ -34,8 +34,7 @@
     requirement_types:
       - "patient"
       - "patient_examination"
-    operators:
-      - "model_attribute_set_any"
+    operator: "model_attribute_set_any"
     operator_instructions: "?first_name;?patient.first_name"
 
 - model: endoreg_db.requirement
@@ -60,7 +59,7 @@
     requirement_types:
       - "patient"
       - "patient_examination"
-    operator: model_attribute_is_set_any #TODO implement operator
+    operator: model_attribute_set_any
     operator_instructions: "?gender;?patient.gender"
 
 # model_attribute_is_among_values operator to be implemented

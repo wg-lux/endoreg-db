@@ -5,7 +5,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.requirement.requirement_operator import OperatorInstructions, RequirementOperator
 
 
-def fetch_input_target(input_object: Union[Patient, PatientExamination], operator_instructions: OperatorInstructions) -> Tuple[str, Any]:
+def fetch_input_target(input_object: Union["Patient", "PatientExamination"], operator_instructions: "OperatorInstructions") -> Tuple[str, Any]:
     input_target_names = operator_instructions.input_targets
 
     # Iterate over targets and stop with first successful fetch
@@ -25,7 +25,7 @@ def fetch_input_target(input_object: Union[Patient, PatientExamination], operato
 
 def fetch_requirement_targets(
     requirement: "Requirement",
-    operator_instructions: OperatorInstructions,
+    operator_instructions: "OperatorInstructions",
 ):
     attribute_target_names = operator_instructions.requirement_targets
     target_values = {}
@@ -43,7 +43,7 @@ def fetch_requirement_targets(
 
 def model_attribute_set_any(
     input_object: Any,
-    operator_instructions: OperatorInstructions,
+    operator_instructions: "OperatorInstructions",
     requirement: "Requirement",
 ) -> bool:
     input_target_name, input_value = fetch_input_target(input_object, operator_instructions)
@@ -56,7 +56,7 @@ def model_attribute_set_any(
 
 def model_attribute_numeric_in_range(
     input_object: Any,
-    operator_instructions: OperatorInstructions,
+    operator_instructions: "OperatorInstructions",
     requirement: "Requirement",
 ) -> bool:
     input_target_name, input_value = fetch_input_target(input_object, operator_instructions)
@@ -78,7 +78,7 @@ def model_attribute_numeric_in_range(
 
 def model_attribute_is_among_values(
     input_object: Any,
-    operator_instructions: OperatorInstructions,
+    operator_instructions: "OperatorInstructions",
     requirement: "Requirement",
 ) -> bool:
     input_target_name, input_value = fetch_input_target(input_object, operator_instructions)

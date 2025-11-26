@@ -25,7 +25,7 @@
 
 - model: endoreg_db.finding_classification
   fields:
-    name: "sedation_type"
+    name: "examination_setting_generic_sedation"
     classification_types: []
     choices:
       - "sedation_propofol"

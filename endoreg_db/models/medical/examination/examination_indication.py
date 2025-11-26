@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional, cast
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Examination, FindingIntervention, Requirement
+    from endoreg_db.models import Examination, FindingIntervention, InformationSource, Requirement
     from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 
@@ -45,15 +45,15 @@ class ExaminationIndication(models.Model):
         blank=True,
     )
 
-    # examinations = models.ManyToManyField(
-    #     "Examination",
-    #     related_name="indications",
-    #     blank=True,
-    # )
-
     expected_interventions = models.ManyToManyField(
         "FindingIntervention",
         related_name="indications",
+        blank=True,
+    )
+
+    information_sources = models.ManyToManyField(
+        "InformationSource",
+        related_name="examination_indications",
         blank=True,
     )
 
@@ -62,6 +62,7 @@ class ExaminationIndication(models.Model):
     if TYPE_CHECKING:
         classifications = cast(models.manager.RelatedManager["ExaminationIndicationClassification"], classifications)
         expected_interventions = cast(models.manager.RelatedManager["FindingIntervention"], expected_interventions)
+        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
 
         @property
         def related_requirements(self) -> "models.manager.RelatedManager[Requirement]": ...
@@ -100,39 +101,6 @@ class ExaminationIndication(models.Model):
         """
         return str(self.name)
 
-    def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
-        """
-        Retrieves all classification choices for the indication.
-
-        Aggregates and returns the choices from each classification associated with the indication.
-
-        Returns:
-            List[ExaminationIndicationClassificationChoice]: A list of classification choices.
-        """
-        classifications = self.classifications.all()
-        choices = []
-        for classification in classifications:
-            choices.extend(classification.choices.all())
-        return choices
-
-    def get_examination(self) -> Optional["Examination"]:
-        """
-        Returns the first examination associated with this indication, or None if no examinations exist.
-
-        Note: Since this is now a many-to-many relationship, this method returns the first examination.
-        Consider using get_examinations() for accessing all related examinations.
-        """
-        return self.examinations.first()
-
-    def get_examinations(self) -> List["Examination"]:
-        """
-        Returns all examinations associated with this indication.
-
-        Returns:
-            List[Examination]: A list of all examinations linked to this indication.
-        """
-        return list(self.examinations.all())
-
 
 class ExaminationIndicationClassificationManager(models.Manager):
     """
@@ -164,17 +132,13 @@ class ExaminationIndicationClassification(models.Model):
 
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    examinations = models.ManyToManyField(
-        "Examination",
-        related_name="indication_classifications",
+    choices = models.ManyToManyField(
+        "ExaminationIndicationClassificationChoice",
+        related_name="classifications",
         blank=True,
     )
 
     objects = ExaminationIndicationClassificationManager()
-
-    if TYPE_CHECKING:
-        examinations: "models.ManyToManyField[Examination, Examination]"
-        choices: "models.QuerySet[ExaminationIndicationClassificationChoice]"
 
     def natural_key(self) -> tuple:
         """
@@ -193,33 +157,6 @@ class ExaminationIndicationClassification(models.Model):
             str: The name of the classification.
         """
         return str(self.name)
-
-    def get_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
-        """
-        Retrieves all classification choices associated with this classification.
-
-        Returns:
-            List[ExaminationIndicationClassificationChoice]: A list of classification choice instances.
-        """
-        return list(self.choices.all())
-
-    def get_examination(self) -> Optional["Examination"]:
-        """
-        Returns the first examination associated with this classification, or None if no examinations exist.
-
-        Note: Since this is now a many-to-many relationship, this method returns the first examination.
-        Consider using get_examinations() for accessing all related examinations.
-        """
-        return self.examinations.first()
-
-    def get_examinations(self) -> List["Examination"]:
-        """
-        Returns all examinations associated with this classification.
-
-        Returns:
-            List[Examination]: A list of all examinations linked to this classification.
-        """
-        return list(self.examinations.all())
 
 
 class ExaminationIndicationClassificationChoiceManager(models.Manager):
@@ -254,11 +191,6 @@ class ExaminationIndicationClassificationChoice(models.Model):
     name = models.CharField(max_length=255, unique=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
-    classification = models.ForeignKey(
-        ExaminationIndicationClassification,
-        on_delete=models.CASCADE,
-        related_name="choices",
-    )
 
     objects = ExaminationIndicationClassificationChoiceManager()
 

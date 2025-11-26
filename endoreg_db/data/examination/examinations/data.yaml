@@ -52,12 +52,12 @@
     examination_types: ["endoscopy"]
     indications:
       - gastroscopy_generic
-      - gastroscopy_diagnostic_acute_symptomatic
-      - gastroscopy_surveillance_barretts_esophagus
-      - gastroscopy_surveillance_gastric_atrophy
+      # - gastroscopy_diagnostic_acute_symptomatic
+      # - gastroscopy_surveillance_barretts_esophagus
+      # - gastroscopy_surveillance_gastric_atrophy
       - gastroscopy_lesion_removal_small
       - gastroscopy_lesion_removal_large
-      - gastroscopy_lesion_removal_emr
+      # - gastroscopy_lesion_removal_emr
     findings:
       # baseline
       - sedation_endoscopy
@@ -99,7 +99,6 @@
       - gastroscopy_baseline
       - gastroscopy_diagnostic_acute_symptomatic
       - gastroscopy_acute_bleeding
-      - gastroscopy_diagnostic_acute
       - gastroscopy_percutane_enterostomy
       - gastroscopy_varicosis_therapeutic_esophagus
       - gastroscopy_varicosis_therapeutic_stomach

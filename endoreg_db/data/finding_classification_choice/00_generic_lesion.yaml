@@ -104,6 +104,23 @@
         description: "Perpendicular diameter of the lesion in mm"
         required: false
 
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_length_mm"
+    name_de: "Länge Läsion (mm)"
+    name_en: "Length of lesions (mm)"
+    description: "Length of lesions"
+    numerical_descriptors:
+      value:
+        unit: "mm"
+        min: 0
+        max: 100
+        distribution: "normal"
+        mean: 5
+        std: 3
+        description: "Largest diameter of the lesion in mm"
+        required: true
+
 # Surface of lesions
 - model: endoreg_db.finding_classification_choice
   fields:

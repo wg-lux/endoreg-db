@@ -14,8 +14,9 @@ class Finding(models.Model):
     description = models.TextField(blank=True, null=True)
     finding_types = models.ManyToManyField("FindingType", blank=True, related_name="findings")
     finding_interventions = models.ManyToManyField("FindingIntervention", blank=True, related_name="findings")
+    caused_by_interventions = models.ManyToManyField("FindingIntervention", blank=True, related_name="causes_findings")
     finding_classifications = models.ManyToManyField("FindingClassification", blank=True, related_name="findings")
-
+    information_sources = models.ManyToManyField("InformationSource", blank=True, related_name="findings")
     objects = FindingManager()
 
     if TYPE_CHECKING:
@@ -25,6 +26,7 @@ class Finding(models.Model):
             FindingClassificationType,
             FindingIntervention,
             FindingType,
+            InformationSource,
             PatientFindingClassification,
         )
 

@@ -29,3 +29,11 @@
 - model: endoreg_db.finding_type
   fields:
     name: "complication"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "iatrogenic"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "persisting"

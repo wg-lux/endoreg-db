@@ -45,7 +45,7 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     RequirementOperator.__name__,
     Requirement.__name__,
     RequirementSetType.__name__,
-    ExaminationRequirementSet.__name__,
+    # ExaminationRequirementSet.__name__,
     RequirementSet.__name__,
 ]
 
@@ -84,12 +84,8 @@ IMPORT_METADATA = {
     ExaminationRequirementSet.__name__: {
         "dir": EXAMINATION_REQUIREMENT_SET_DATA_DIR,  # e.g. "interventions"
         "model": ExaminationRequirementSet,
-        "foreign_keys": [
-            "examinations",
-        ],  # Through model uses foreign keys of both models
-        "foreign_key_models": [
-            Examination,
-        ],
+        "foreign_keys": [],  # Through model uses foreign keys of both models
+        "foreign_key_models": [],
     },
     # ExaminationRequirementSet.__name__,
     Requirement.__name__: {
@@ -97,7 +93,7 @@ IMPORT_METADATA = {
         "model": Requirement,
         "foreign_keys": [
             "requirement_types",
-            "operators",
+            "operator",
             "unit",
             "examinations",
             "examination_indications",
@@ -159,6 +155,7 @@ IMPORT_METADATA = {
             "information_sources",
             "tags",
             "reqset_exam_links",
+            "depends_on",
         ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
             RequirementSetType,
@@ -167,6 +164,7 @@ IMPORT_METADATA = {
             InformationSource,
             Tag,
             ExaminationRequirementSet,
+            RequirementSet,
         ],  # e.g. [InterventionType]
     },
 }
