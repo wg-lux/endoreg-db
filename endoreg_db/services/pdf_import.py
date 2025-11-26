@@ -81,6 +81,113 @@ class PdfImportService:
         self.DEFAULT_PATIENT_DOB = date(1990, 1, 1)
         self.DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
 
+
+
+    def import_and_anonymize(
+        self,
+        file_path: Union[Path, str],
+        center_name: str,
+        delete_source: bool = False,
+        retry: bool = False,
+    ) -> "RawPdfFile | None":
+        """
+        Import a PDF file and anonymize it using ReportReader.
+        Uses centralized PDF instance management pattern.
+
+        The processing mode is determined by the service initialization:
+        - 'blackening': Creates an anonymized PDF with black rectangles over sensitive regions
+        - 'cropping': Advanced mode that crops sensitive regions to separate images
+
+        Args:
+            file_path: Path to the PDF file to import
+            center_name: Name of the center to associate with PDF
+            delete_source: Whether to delete the source file after import
+            retry: Whether this is a retry attempt
+
+        Returns:
+            RawPdfFile instance after import and processing
+
+        Raises:
+            Exception: On any failure during import or processing
+        """
+        try:
+            # Initialize processing context
+            self._initialize_processing_context(
+                file_path, center_name, delete_source, retry
+            )
+
+            # Step 1: Validate and prepare file
+            self._validate_and_prepare_file()
+
+            # Step 2: Create or retrieve PDF instance
+            self._create_or_retrieve_pdf_instance()
+
+            # Early return check - if no PDF instance was created, return None
+            if not self.current_pdf:
+                logger.warning(
+                    f"No PDF instance created for {file_path}, returning None"
+                )
+                raise ObjectDoesNotExist
+            # Step 3: Setup processing environment
+            self._setup_processing_environment()
+
+            # Step 4: Process text and metadata
+            self._process_text_and_metadata()
+
+            # Step 5: Finalize processing
+            self._finalize_processing()
+
+            return self.current_pdf
+
+        except ValueError as e:
+            # Handle "File already being processed" case specifically
+            if "already being processed" in str(e):
+                logger.info(f"Skipping file {file_path}: {e}")
+                return
+            else:
+                logger.error(f"PDF import failed for {file_path}: {e}")
+                self._cleanup_on_error()
+                raise
+        except Exception as e:
+            logger.error(f"PDF import failed for {file_path}: {e}")
+            # Cleanup on error
+            self._cleanup_on_error()
+            raise
+        finally:
+            # Always cleanup context
+            self._cleanup_processing_context()
+
+    def _initialize_processing_context(
+        self,
+        file_path: Union[Path, str],
+        center_name: str,
+        delete_source: bool,
+        retry: bool,
+    ):
+        """Initialize the processing context for the current PDF."""
+        self.processing_context = {
+            "file_path": Path(file_path),
+            "original_file_path": Path(file_path),
+            "center_name": center_name,
+            "delete_source": delete_source,
+            "retry": retry,
+            "file_hash": None,
+            "processing_started": False,
+            "text_extracted": False,
+            "metadata_processed": False,
+            "anonymization_completed": False,
+        }
+        self.original_path = Path(file_path)
+
+        # Check if already processed (only during current session to prevent race conditions)
+        if str(file_path) in self.processed_files:
+            logger.info(
+                f"File {file_path} already being processed in current session, skipping"
+            )
+            raise ValueError("File already being processed")
+
+        logger.info(f"Starting import and processing for: {file_path}")
+        
     @classmethod
     def with_blackening(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
         """
@@ -164,16 +271,6 @@ class PdfImportService:
             except OSError:
                 pass
 
-    def _sha256(self, path: Path, chunk: int = 1024 * 1024) -> str:
-        """Compute SHA256 hash of a file."""
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            while True:
-                b = f.read(chunk)
-                if not b:
-                    break
-                h.update(b)
-        return h.hexdigest()
 
     def _get_pdf_dir(self) -> Path | None:
         """Resolve the configured PDF directory to a concrete Path."""
@@ -325,111 +422,6 @@ class PdfImportService:
                     f"Failed to create default SensitiveMeta for PDF {pdf_file.pdf_hash}: {e}"
                 )
 
-    def import_and_anonymize(
-        self,
-        file_path: Union[Path, str],
-        center_name: str,
-        delete_source: bool = False,
-        retry: bool = False,
-    ) -> "RawPdfFile | None":
-        """
-        Import a PDF file and anonymize it using ReportReader.
-        Uses centralized PDF instance management pattern.
-
-        The processing mode is determined by the service initialization:
-        - 'blackening': Creates an anonymized PDF with black rectangles over sensitive regions
-        - 'cropping': Advanced mode that crops sensitive regions to separate images
-
-        Args:
-            file_path: Path to the PDF file to import
-            center_name: Name of the center to associate with PDF
-            delete_source: Whether to delete the source file after import
-            retry: Whether this is a retry attempt
-
-        Returns:
-            RawPdfFile instance after import and processing
-
-        Raises:
-            Exception: On any failure during import or processing
-        """
-        try:
-            # Initialize processing context
-            self._initialize_processing_context(
-                file_path, center_name, delete_source, retry
-            )
-
-            # Step 1: Validate and prepare file
-            self._validate_and_prepare_file()
-
-            # Step 2: Create or retrieve PDF instance
-            self._create_or_retrieve_pdf_instance()
-
-            # Early return check - if no PDF instance was created, return None
-            if not self.current_pdf:
-                logger.warning(
-                    f"No PDF instance created for {file_path}, returning None"
-                )
-                raise ObjectDoesNotExist
-            # Step 3: Setup processing environment
-            self._setup_processing_environment()
-
-            # Step 4: Process text and metadata
-            self._process_text_and_metadata()
-
-            # Step 5: Finalize processing
-            self._finalize_processing()
-
-            return self.current_pdf
-
-        except ValueError as e:
-            # Handle "File already being processed" case specifically
-            if "already being processed" in str(e):
-                logger.info(f"Skipping file {file_path}: {e}")
-                return
-            else:
-                logger.error(f"PDF import failed for {file_path}: {e}")
-                self._cleanup_on_error()
-                raise
-        except Exception as e:
-            logger.error(f"PDF import failed for {file_path}: {e}")
-            # Cleanup on error
-            self._cleanup_on_error()
-            raise
-        finally:
-            # Always cleanup context
-            self._cleanup_processing_context()
-
-    def _initialize_processing_context(
-        self,
-        file_path: Union[Path, str],
-        center_name: str,
-        delete_source: bool,
-        retry: bool,
-    ):
-        """Initialize the processing context for the current PDF."""
-        self.processing_context = {
-            "file_path": Path(file_path),
-            "original_file_path": Path(file_path),
-            "center_name": center_name,
-            "delete_source": delete_source,
-            "retry": retry,
-            "file_hash": None,
-            "processing_started": False,
-            "text_extracted": False,
-            "metadata_processed": False,
-            "anonymization_completed": False,
-        }
-        self.original_path = Path(file_path)
-
-        # Check if already processed (only during current session to prevent race conditions)
-        if str(file_path) in self.processed_files:
-            logger.info(
-                f"File {file_path} already being processed in current session, skipping"
-            )
-            raise ValueError("File already being processed")
-
-        logger.info(f"Starting import and processing for: {file_path}")
-
     def _validate_and_prepare_file(self):
         """Validate file existence and calculate hash."""
         file_path = self.processing_context["file_path"]
@@ -437,11 +429,6 @@ class PdfImportService:
         if not file_path.exists():
             raise FileNotFoundError(f"PDF file not found: {file_path}")
 
-        try:
-            self.processing_context["file_hash"] = self._sha256(file_path)
-        except Exception as e:
-            logger.warning(f"Could not calculate file hash: {e}")
-            self.processing_context["file_hash"] = None
 
     def _create_or_retrieve_pdf_instance(self):
         """Create new or retrieve existing PDF instance."""
