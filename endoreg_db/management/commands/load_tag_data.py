@@ -1,14 +1,11 @@
 from django.core.management.base import BaseCommand
+
 from endoreg_db.models import (
     Tag,
-
 )
 
+from ...data import TAG_DATA_DIR
 from ...utils import load_model_data_from_yaml
-from ...data import (
-    TAG_DATA_DIR
-)
-
 
 IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     Tag.__name__,
@@ -17,7 +14,7 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
 IMPORT_METADATA = {
     Tag.__name__: {
         "dir": TAG_DATA_DIR,  # e.g. "interventions"
-        "model": Tag,  # e.g. Intervention
+        "model": Tag,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
@@ -32,7 +29,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         """
         Add command-line arguments to enable verbose output.
-        
+
         Adds an optional '--verbose' flag to the command parser. When specified,
         this flag causes the command to display detailed output during execution.
         """
@@ -45,10 +42,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """
         Executes data import for requirement models from YAML files.
-        
-        Retrieves the verbosity setting from the command options and iterates over each model 
-        listed in IMPORT_MODELS. For each model, it obtains the corresponding metadata from 
-        IMPORT_METADATA and calls a helper to load the YAML data into the database. Verbose mode 
+
+        Retrieves the verbosity setting from the command options and iterates over each model
+        listed in IMPORT_MODELS. For each model, it obtains the corresponding metadata from
+        IMPORT_METADATA and calls a helper to load the YAML data into the database. Verbose mode
         enables detailed output during the process.
         """
         verbose = options["verbose"]

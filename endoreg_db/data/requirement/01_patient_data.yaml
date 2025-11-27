@@ -1,0 +1,93 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_dob_information"
+    name_de: "Patient hat Geburtsdatum Information"
+    name_en: "Patient has date of birth information"
+    description: "Checks if the patient has date of birth information."
+    requirement_types:
+      - "patient"
+      - "patient_examination"
+    operator: model_attribute_set_any #TODO implement operator
+    operator_instructions: "dob;patient.dob"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_valid_dob_information"
+    name_de: "Patient hat gültige Geburtsdatum Information"
+    name_en: "Patient has valid date of birth information"
+    description: "Checks if the patient has valid date of birth information."
+    requirement_types:
+      - "patient"
+      - "patient_examination"
+    operator: model_attribute_numeric_in_range
+    operator_instructions: "?age;?patient.age"
+    numeric_value_min: 18
+    numeric_value_max: 110
+
+# Name related Requirements
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_first_name_information"
+    name_de: "Patienten-Untersuchung hat Namensinformation"
+    name_en: "Patient Examination has names information"
+    description: "Checks if the patient has first and last name information."
+    requirement_types:
+      - "patient"
+      - "patient_examination"
+    operator: "model_attribute_set_any"
+    operator_instructions: "?first_name;?patient.first_name"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_last_name_information"
+    name_de: "Patienten-Untersuchung hat Nachnameninformation"
+    name_en: "Patient Examination has last name information"
+    description: "Checks if the patient has last name information."
+    requirement_types:
+      - "patient"
+      - "patient_examination"
+    operator: "model_attribute_set_any"
+    operator_instructions: "?last_name;?patient.last_name"
+
+############# Gender Related Requirements ################
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_gender_information"
+    name_de: "Patient hat Geschlechtsinformation"
+    name_en: "Patient has gender information"
+    description: "Checks if the patient has gender information."
+    requirement_types:
+      - "patient"
+      - "patient_examination"
+    operator: model_attribute_set_any
+    operator_instructions: "?gender;?patient.gender"
+
+# model_attribute_is_among_values operator to be implemented
+# should resolve the target models defined in requirement types to
+# get at least one of the linked models (i.e. "patient_has_gender_information",
+# expects a patient as input and should fetch the gender attribute and check
+# if it is among the defined values [male, female])
+# operator_instructions must be provided for used operator;
+# we will parse the value as comma separated list;
+# it defines attributes the operator will try to fetch
+# from the input models defined in requirement_types.
+# at least one of the provided values must match at least one
+# valid field for each input model
+
+- model: endoreg_db.requirement
+  fields:
+    name: "patient_has_valid_gender_information"
+    name_de: "Patient hat Geschlechtsinformation"
+    name_en: "Patient has gender information"
+    description: "Checks if the patient has gender information."
+    requirement_types:
+      - "patient"
+      - "patient_examination"
+    operator: model_attribute_is_among_values #TODO implement operator; here,
+    # we add "entries leading with "!" to indicate the current
+    # requirements field we use to fetch  the list of values
+    # to check against
+    operator_instructions: "?gender;?patient.gender;!genders"
+    genders:
+      - "male"
+      - "female"

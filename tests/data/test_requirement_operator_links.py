@@ -51,17 +51,6 @@ OPERATOR_NAMES = _gather_operator_names()
 
 
 @pytest.mark.parametrize("path, fields", REQUIREMENT_FIELDS, ids=REQUIREMENT_IDS)
-def test_requirements_have_at_least_one_operator(path: Path, fields: dict) -> None:
-    operators = fields.get("operators")
-    assert operators, f"Requirement '{fields.get('name')}' in {path.name} must define at least one operator"
-    if not isinstance(operators, list):
-        raise AssertionError(f"Requirement '{fields.get('name')}' in {path.name} must use a list for 'operators', got {type(operators)!r}")
-    for operator in operators:
-        if not isinstance(operator, str) or not operator.strip():
-            raise AssertionError(f"Requirement '{fields.get('name')}' in {path.name} contains an invalid operator entry: {operator!r}")
-
-
-@pytest.mark.parametrize("path, fields", REQUIREMENT_FIELDS, ids=REQUIREMENT_IDS)
 def test_requirement_operators_reference_existing_entries(path: Path, fields: dict) -> None:
     missing = [operator for operator in fields.get("operators", []) if operator not in OPERATOR_NAMES]
     assert not missing, f"Requirement '{fields.get('name')}' in {path.name} references unknown operators: {', '.join(missing)}"

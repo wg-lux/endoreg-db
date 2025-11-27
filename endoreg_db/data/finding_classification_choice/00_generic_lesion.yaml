@@ -1,0 +1,158 @@
+# Planarity of lesions
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_planarity_flat"
+    name_de: "Planarität flach"
+    name_en: "planarity flat"
+    description: "Category for flat lesions"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_planarity_flat_elevated"
+    name_de: "Planarität flach-erhaben"
+    name_en: "planarity flat-elevated"
+    description: "Category for flat-elevated lesions (surface +/- 2 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_planarity_sessile"
+    name_de: "Planarität sessil"
+    name_en: "planarity sessile"
+    description: "Category for sessile lesions (surface > 2 mm)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_planarity_pedunculated"
+    name_de: "Planarität gestielt"
+    name_en: "planarity pedunculated"
+    description: "Category for pedunculated lesions (surface on a stalk)"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_planarity_excavated"
+    name_de: "Planarität exkaviert"
+    name_en: "planarity excavated"
+    description: "Category for excavated lesions (surface below surrounding mucosa)"
+    subcategories:
+      description:
+        choices: ["unspecified", "focal", "diffuse", "total"]
+        probability: [0.5, 0.2, 0.2, 0.1]
+        default: "unspecified"
+        required: true
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_planarity_unknown"
+    name_de: "Planarität unbekannt"
+    name_en: "planarity unknown"
+
+# Circularity of lesions
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_circularity_false"
+    name_de: "Zirkularität"
+    name_en: "Circularity"
+    description: "Category for non-circular lesions"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_circularity_true"
+    name_de: "Zirkularität"
+    name_en: "Circularity"
+    description: "Category for circular lesions"
+    numerical_descriptors:
+      length:
+        unit: "milimeter"
+        min: 0
+        max: 100
+        default: null
+        distribution: "uniform"
+        description: "Length of the lesion in mm"
+        required: true
+      circumference:
+        unit: "percent"
+        min: 33
+        max: 100
+        mean: 50
+        std: 10
+        default: null
+        distribution: "normal"
+        description: "Circumference of the lesion in %"
+        required: true
+
+# Size of oval lesions
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_size_oval_mm"
+    name_de: "Größe Ovaler Läsionen (mm)"
+    name_en: "Size of Oval Lesions (mm)"
+    description: "oval lesions"
+    numerical_descriptors:
+      largest_diameter_mm:
+        unit: "mm"
+        min: 0
+        max: 35
+        distribution: "normal"
+        mean: 5
+        std: 3
+        description: "Largest diameter of the lesion in mm"
+        required: true
+      perpendicular_diameter_mm:
+        unit: "mm"
+        min: 0
+        max: 35
+        description: "Perpendicular diameter of the lesion in mm"
+        required: false
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_length_mm"
+    name_de: "Länge Läsion (mm)"
+    name_en: "Length of lesions (mm)"
+    description: "Length of lesions"
+    numerical_descriptors:
+      value:
+        unit: "mm"
+        min: 0
+        max: 100
+        distribution: "normal"
+        mean: 5
+        std: 3
+        description: "Largest diameter of the lesion in mm"
+        required: true
+
+# Surface of lesions
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_surface_intact"
+    name_de: "Oberfläche intakt"
+    name_en: "surface intact"
+    description: "Category for intact lesion surfaces"
+
+# eroded
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_surface_eroded"
+    name_de: "Oberfläche erodiert"
+    name_en: "surface eroded"
+    description: "Category for eroded lesion surfaces"
+    subcategories:
+      description:
+        choices: ["unspecified", "focal", "diffuse"]
+        default: "unspecified"
+        probability: [0.5, 0.2, 0.3]
+        required: true
+
+# ulcerated
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "lesion_surface_ulcerated"
+    name_de: "Oberfläche ulzeriert"
+    name_en: "surface ulcerated"
+    description: "Category for ulcerated lesion surfaces"
+    subcategories:
+      description:
+        choices: ["unspecified", "focal", "diffuse"]
+        default: "unspecified"
+        probability: [0.5, 0.2, 0.3]
+        required: true

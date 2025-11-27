@@ -1,35 +1,27 @@
-from django.test import TestCase
-from endoreg_db.models import (
-    LabelVideoSegment,
-    Frame,
-    Label,
-    InformationSource,
-    VideoPredictionMeta,
-    ImageClassificationAnnotation,
-)
+import logging
 
+from django.test import TestCase
+
+from endoreg_db.models import (
+    Frame,
+    ImageClassificationAnnotation,
+    InformationSource,
+    Label,
+    LabelVideoSegment,
+    VideoPredictionMeta,
+)
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 
-import logging
-from ..helpers.data_loader import (
-    load_ai_model_label_data,
-    load_ai_model_data,
-    load_default_ai_model
-)
-from ..helpers.default_objects import (
-    get_latest_segmentation_model,
-    get_default_video_file,
-    get_information_source_prediction
-)
+from ..helpers.data_loader import load_data
+from ..helpers.default_objects import get_default_video_file, get_information_source_prediction, get_latest_segmentation_model
 
 logger = logging.getLogger(__name__)
 
+
 class LabelVideoSegmentModelTest(TestCase):
     def setUp(self):
-        load_ai_model_label_data()
-        load_ai_model_data()
-        load_default_ai_model()
+        load_data()
 
         self.ai_model_meta = get_latest_segmentation_model()
         self.video_file = get_default_video_file()
@@ -41,13 +33,11 @@ class LabelVideoSegmentModelTest(TestCase):
 
         self.source_prediction = get_information_source_prediction()
 
-        self.prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
-            video_file=self.video_file, model_meta=self.ai_model_meta
-        )
+        self.prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(video_file=self.video_file, model_meta=self.ai_model_meta)
 
         self.start_frame = 10
         self.end_frame = min(self.start_frame + 20, self.video_file.frame_count)
-        self.assertLess(self.start_frame, self.end_frame+1, "Start frame must be less than end frame")
+        self.assertLess(self.start_frame, self.end_frame + 1, "Start frame must be less than end frame")
         self.segment = LabelVideoSegment.create_from_video(
             source=self.video_file,
             prediction_meta=self.prediction_meta,
@@ -92,7 +82,7 @@ class LabelVideoSegmentModelTest(TestCase):
     def test_extract_and_delete_segment_frame_files(self):
         """
         Tests extraction and deletion of frame files for a video segment.
-        
+
         Verifies that no frames are initially extracted, successfully extracts frame files for all frames in the segment, and ensures only segment frames are marked as extracted. Confirms that extracted frame files exist on disk, then deletes the frame files and checks that no frames remain marked as extracted and the files are removed from disk. Skips the test if required video assets or FFmpeg are missing.
         """
         frames_qs = self.segment.get_frames()
@@ -125,7 +115,7 @@ class LabelVideoSegmentModelTest(TestCase):
             self.fail(f"refresh_from_db failed with unexpected error: {e}")
 
         self.video_file.refresh_from_db()
-        frames_after_extract = self.segment.get_frames().order_by('frame_number')
+        frames_after_extract = self.segment.get_frames().order_by("frame_number")
         self.assertEqual(frames_after_extract.count(), self.segment_frame_count, "Should still have the same number of frames")
         extracted_count = frames_after_extract.filter(is_extracted=True).count()
         self.assertEqual(extracted_count, self.segment_frame_count, "All frames in the segment should now be marked as extracted")
@@ -152,20 +142,15 @@ class LabelVideoSegmentModelTest(TestCase):
         if sample_frame:
             sample_frame.refresh_from_db()
             self.assertFalse(sample_frame.file_path.exists(), f"Frame file {sample_frame.file_path} should NOT exist after deletion")
-    
+
     def test_create_segment_with_video_seg_label_name(self):
         """
         Tests creating a LabelVideoSegment using a serializer with a label name and video ID.
-        
+
         Verifies that the serializer validates the input data, successfully creates a segment, and assigns a Label instance to the segment.
         """
         v = self.video_file
-        data = {
-            "video_id": v.id, 
-            "label_name": "appendix",
-            "start_time": self.start_frame / v.fps, 
-            "end_time": self.end_frame / v.fps
-        }
+        data = {"video_id": v.id, "label_name": "appendix", "start_time": self.start_frame / v.fps, "end_time": self.end_frame / v.fps}
         s = LabelVideoSegmentSerializer(data=data)
         assert s.is_valid(), s.errors
         segment = s.save()
@@ -181,7 +166,6 @@ class LabelVideoSegmentModelTest(TestCase):
         actual_duration = self.segment.get_segment_len_in_s()
         self.assertAlmostEqual(actual_duration, expected_duration, places=4)
 
-    
     def test_get_frames_without_annotation(self):
         """Test retrieving frames that don't have annotations for the segment's label."""
         frames = list(self.segment.get_frames())
@@ -194,11 +178,7 @@ class LabelVideoSegmentModelTest(TestCase):
         if frames:
             first_frame = frames[0]
             ImageClassificationAnnotation.objects.create(
-                frame=first_frame,
-                label=self.segment.label,
-                model_meta=self.prediction_meta.model_meta,
-                value=True,
-                information_source=self.source_prediction
+                frame=first_frame, label=self.segment.label, model_meta=self.prediction_meta.model_meta, value=True, information_source=self.source_prediction
             )
 
             frames_without_anno_after = self.segment.get_frames_without_annotation(n_frames=self.segment_frame_count)
@@ -212,15 +192,12 @@ class LabelVideoSegmentModelTest(TestCase):
     def test_generate_annotations(self):
         """Test generating ImageClassificationAnnotations for segment frames."""
         # Corrected filter using frame_id__in and the correct FK field name 'video'
-        relevant_frame_ids = Frame.objects.filter(video=self.video_file).values_list('id', flat=True)
-        initial_annotation_count = ImageClassificationAnnotation.objects.filter(
-            frame_id__in=relevant_frame_ids,
-            label=self.segment.label
-        ).count()
+        relevant_frame_ids = Frame.objects.filter(video=self.video_file).values_list("id", flat=True)
+        initial_annotation_count = ImageClassificationAnnotation.objects.filter(frame_id__in=relevant_frame_ids, label=self.segment.label).count()
         self.assertEqual(initial_annotation_count, 0)
 
         # Ensure the segment source is correctly set before generating annotations
-        self.segment.refresh_from_db() # Refresh to be sure
+        self.segment.refresh_from_db()  # Refresh to be sure
         self.assertEqual(self.segment.source, self.source_prediction, "Segment source should be set to source_prediction")
 
         self.segment.generate_annotations()
@@ -231,16 +208,13 @@ class LabelVideoSegmentModelTest(TestCase):
             label=self.segment.label,
             model_meta=self.prediction_meta.model_meta,
             information_source=self.source_prediction,
-            value=True
+            value=True,
         ).count()
         self.assertEqual(final_annotation_count, self.segment_frame_count)
 
-        self.segment.generate_annotations() # Idempotency check
+        self.segment.generate_annotations()  # Idempotency check
         idempotent_count = ImageClassificationAnnotation.objects.filter(
-            frame__video=self.video_file,
-            label=self.segment.label,
-            model_meta=self.prediction_meta.model_meta,
-            information_source=self.source_prediction
+            frame__video=self.video_file, label=self.segment.label, model_meta=self.prediction_meta.model_meta, information_source=self.source_prediction
         ).count()
         self.assertEqual(idempotent_count, self.segment_frame_count)
 
@@ -257,9 +231,9 @@ class LabelVideoSegmentModelTest(TestCase):
             frame__video=self.video_file,
             frame__frame_number__gte=self.segment.start_frame_number,
             frame__frame_number__lt=self.segment.end_frame_number,
-            label=self.segment.label
+            label=self.segment.label,
         )
-        self.assertQuerySetEqual(segment_annotations.order_by('pk'), manual_annotations.order_by('pk'))
+        self.assertQuerySetEqual(segment_annotations.order_by("pk"), manual_annotations.order_by("pk"))
 
     def test_lvs_serializer_base(self) -> None:
         """
@@ -272,20 +246,20 @@ class LabelVideoSegmentModelTest(TestCase):
         - end_frame_number
         """
         serializer = LabelVideoSegmentSerializer(instance=self.segment)
-        
+
         data = serializer.to_representation(self.segment)
 
         # data =serializer.validate(serializer.data)
 
-        self.assertIn('id', data)
-        self.assertIn('video_id', data)
-        self.assertIn('label_id', data)
-        self.assertIn('start_frame_number', data)
-        self.assertIn('end_frame_number', data)
+        self.assertIn("id", data)
+        self.assertIn("video_id", data)
+        self.assertIn("label_id", data)
+        self.assertIn("start_frame_number", data)
+        self.assertIn("end_frame_number", data)
 
         label = self.segment.label
 
-        self.assertEqual(data['label_id'], label.pk)
+        self.assertEqual(data["label_id"], label.pk)
 
     def test_lvs_serializer_create_method(self) -> None:
         """
@@ -296,12 +270,12 @@ class LabelVideoSegmentModelTest(TestCase):
         label_id = label.pk
         frame_count = self.video_file.frame_count
         data = {
-            'video_id': self.video_file.pk,
-            'label_id': label_id,
-            'start_time': 0,
-            'end_time': frame_count / self.video_file.fps,
+            "video_id": self.video_file.pk,
+            "label_id": label_id,
+            "start_time": 0,
+            "end_time": frame_count / self.video_file.fps,
         }
-        
+
         serializer = LabelVideoSegmentSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
@@ -320,14 +294,15 @@ class LabelVideoSegmentModelTest(TestCase):
         Test that creating a new LabelVideoSegment with end_frame_number exceeding video frame count raises ValidationError.
         """
         from rest_framework import serializers
+
         label = Label.objects.first()
         label_id = label.pk
         frame_count = self.video_file.frame_count + 10  # Intentionally exceed frame count
         data = {
-            'video_id': self.video_file.pk,
-            'label_id': label_id,
-            'start_time': 0,
-            'end_time': frame_count / self.video_file.fps,
+            "video_id": self.video_file.pk,
+            "label_id": label_id,
+            "start_time": 0,
+            "end_time": frame_count / self.video_file.fps,
         }
         serializer = LabelVideoSegmentSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
@@ -337,11 +312,12 @@ class LabelVideoSegmentModelTest(TestCase):
         self.assertIn("exceeds video frame count", str(cm.exception))
 
     def tearDown(self):
-        if hasattr(self, 'video_file') and self.video_file:
+        if hasattr(self, "video_file") and self.video_file:
             try:
                 frame_dir = self.video_file.get_frame_dir_path()
                 if frame_dir and frame_dir.exists():
                     import shutil
+
                     shutil.rmtree(frame_dir, ignore_errors=True)
                     logger.info("Cleaned up frame directory: %s", frame_dir)
             except Exception as e:

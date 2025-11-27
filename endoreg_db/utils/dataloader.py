@@ -1,7 +1,38 @@
 import os
+from datetime import UTC, datetime
+
 import yaml
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import OperationalError, transaction
+
+from endoreg_db.utils.paths import STORAGE_DIR
+
+_WARNING_LOG_PATH = None
+
+
+def _get_warning_log_path():
+    """Return the path used for warning logs, creating it on first access."""
+    global _WARNING_LOG_PATH
+    if _WARNING_LOG_PATH is None:
+        log_dir = STORAGE_DIR / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        _WARNING_LOG_PATH = log_dir / f"dataloader_warnings_{timestamp}.log"
+    return _WARNING_LOG_PATH
+
+
+def _record_warning(command, message, verbose, context):
+    """Write a warning to stdout (when verbose) and append it to the log file."""
+    prefix = f"[{context}] " if context else ""
+    full_message = f"{prefix}{message}"
+
+    if verbose:
+        command.stdout.write(command.style.WARNING(full_message))
+
+    log_path = _get_warning_log_path()
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write(f"{datetime.now(UTC).isoformat()}Z {full_message}\n")
+
 
 def load_model_data_from_yaml(command, model_name, metadata, verbose):
     """
@@ -15,6 +46,10 @@ def load_model_data_from_yaml(command, model_name, metadata, verbose):
     """
     if verbose:
         command.stdout.write(f"Start loading {model_name}")
+
+    warning_log_path = _get_warning_log_path()
+    if verbose:
+        command.stdout.write(f"Warning log file: {warning_log_path}")
     model = metadata["model"]
     dir_path = metadata["dir"]
     foreign_keys = metadata["foreign_keys"]
@@ -29,7 +64,14 @@ def load_model_data_from_yaml(command, model_name, metadata, verbose):
             yaml_data = yaml.safe_load(file)
 
         load_data_with_foreign_keys(
-            command, model, yaml_data, foreign_keys, foreign_key_models, validators, verbose
+            command,
+            model,
+            yaml_data,
+            foreign_keys,
+            foreign_key_models,
+            validators,
+            verbose,
+            log_context=model_name or model.__name__,
         )
 
 
@@ -41,10 +83,11 @@ def load_data_with_foreign_keys(
     foreign_key_models,
     validators,
     verbose,
+    log_context=None,
 ):
     """
     Load YAML data into Django model instances with FK and M2M support.
-    
+
     Processes each YAML entry to create or update a model instance. For each entry, the
     function extracts field data and uses the presence of a 'name' field to decide whether
     to update an existing instance or create a new one. Foreign key fields listed in
@@ -52,7 +95,7 @@ def load_data_with_foreign_keys(
     contains a list, it is treated as a many-to-many relationship and the corresponding
     objects are set after the instance is saved. Missing or unresolved foreign keys trigger
     warnings if verbose output is enabled.
-    
+
     Parameters:
         model: The Django model class representing the data.
         yaml_data: A list of dictionaries representing YAML entries.
@@ -62,7 +105,10 @@ def load_data_with_foreign_keys(
             validator receives a shallow copy of the entry's field dictionary along with
             the original entry and model for context.
         verbose: If True, prints detailed output and warnings during processing.
+        log_context: Label that identifies the source dataset inside the warning log.
     """
+    context_label = log_context or getattr(model, "__name__", "dataloader")
+
     for entry in yaml_data:
         raw_fields = entry.get("fields", {})
 
@@ -72,30 +118,21 @@ def load_data_with_foreign_keys(
         fields = dict(raw_fields)
         name = fields.pop("name", None)
 
-
         if getattr(model, "_meta", None) and model._meta.model_name == "requirement":
             requirement_types = fields.get("requirement_types", [])
-            operators = fields.get("operators", [])
-        
+
             if not requirement_types:
-                raise ValueError(
-                    f"Requirement '{name}' must define at least one requirement_types entry."
-                )
-            if not operators:
-                raise ValueError(
-                    f"Requirement '{name}' must define at least one operators entry."
-                )
-                      
+                raise ValueError(f"Requirement '{name}' must define at least one requirement_types entry.")
+
         ####################
-        #TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED
-        SKIP_NAMES=[
+        # TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED
+        SKIP_NAMES = [
             "name_de",  # German name, not used
             "name_en",  # English name, not used
             "description_de",  # German description
             "description_en",  # English description
         ]
 
-        
         # Remove fields that are not needed
         for skip_name in SKIP_NAMES:
             if skip_name in fields:
@@ -115,12 +152,12 @@ def load_data_with_foreign_keys(
 
             # Ensure the foreign key exists
             if target_keys is None:
-                if verbose:
-                    command.stdout.write(
-                        command.style.WARNING(
-                            f"Foreign key {fk_field} not found in fields"
-                        )
-                    )
+                _record_warning(
+                    command,
+                    f"Foreign key {fk_field} not found in fields",
+                    verbose,
+                    context_label,
+                )
                 continue  # Skip if no foreign key provided
 
             # Process many-to-many fields or foreign keys
@@ -130,20 +167,17 @@ def load_data_with_foreign_keys(
                     try:
                         obj = fk_model.objects.get_by_natural_key(key)
                     except ObjectDoesNotExist:
-                        if verbose:
-                            command.stdout.write(
-                                command.style.WARNING(
-                                    f"{fk_model.__name__} with key {key} not found"
-                                )
-                            )
+                        _record_warning(
+                            command,
+                            f"{fk_model.__name__} with key {key} not found",
+                            verbose,
+                            context_label,
+                        )
                         continue
                     related_objects.append(obj)
                 m2m_relationships[fk_field] = related_objects
             else:  # Single foreign key relationship
-                if (
-                    model.__name__ == "ModelMeta"
-                    and fk_field == "labelset"
-                ):
+                if model.__name__ == "ModelMeta" and fk_field == "labelset":
                     labelset_version = fields.pop("labelset_version", None)
 
                     if isinstance(target_keys, (tuple, list)):
@@ -154,10 +188,12 @@ def load_data_with_foreign_keys(
                         labelset_name = target_keys
 
                     if not labelset_name:
-                        if verbose:
-                            command.stdout.write(
-                                command.style.WARNING("LabelSet name missing for ModelMeta entry")
-                            )
+                        _record_warning(
+                            command,
+                            "LabelSet name missing for ModelMeta entry",
+                            verbose,
+                            context_label,
+                        )
                         continue
 
                     queryset = fk_model.objects.filter(name=labelset_name)
@@ -170,24 +206,24 @@ def load_data_with_foreign_keys(
 
                     obj = queryset.order_by("-version").first()
                     if obj is None:
-                        if verbose:
-                            command.stdout.write(
-                                command.style.WARNING(
-                                    f"LabelSet '{labelset_name}' (version={labelset_version}) not found"
-                                )
-                            )
+                        _record_warning(
+                            command,
+                            f"LabelSet '{labelset_name}' (version={labelset_version}) not found",
+                            verbose,
+                            context_label,
+                        )
                         continue
                     fields[fk_field] = obj
                 else:
                     try:
                         obj = fk_model.objects.get_by_natural_key(target_keys)
                     except ObjectDoesNotExist:
-                        if verbose:
-                            command.stdout.write(
-                                command.style.WARNING(
-                                    f"{fk_model.__name__} with key {target_keys} not found"
-                                )
-                            )
+                        _record_warning(
+                            command,
+                            f"{fk_model.__name__} with key {target_keys} not found",
+                            verbose,
+                            context_label,
+                        )
                         continue
                     fields[fk_field] = obj
 
@@ -229,9 +265,7 @@ def load_data_with_foreign_keys(
             obj, created = _save_instance()
 
         if created and verbose:
-            command.stdout.write(
-                command.style.SUCCESS(f"Created {model.__name__} {name}")
-            )
+            command.stdout.write(command.style.SUCCESS(f"Created {model.__name__} {name}"))
         elif verbose:
             pass
 
@@ -240,8 +274,4 @@ def load_data_with_foreign_keys(
             if related_objs:  # Only set if there are objects to set
                 getattr(obj, field_name).set(related_objs)
                 if verbose:
-                    command.stdout.write(
-                        command.style.SUCCESS(
-                            f"Set {len(related_objs)} {field_name} for {model.__name__} {name}"
-                        )
-                    )
+                    command.stdout.write(command.style.SUCCESS(f"Set {len(related_objs)} {field_name} for {model.__name__} {name}"))

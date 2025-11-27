@@ -1,9 +1,11 @@
+import os
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from ...models import Label, LabelType, LabelSet
-import os
-from ...utils import load_model_data_from_yaml
+
 from ...data import LABEL_DATA_DIR
+from ...models import Label, LabelSet, LabelType
+from ...utils import load_model_data_from_yaml
 
 SOURCE_DIR = LABEL_DATA_DIR
 
@@ -16,25 +18,25 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
 IMPORT_METADATA = {
     # "": { # same as model name in "import models", e.g. "Intervention"
     #     "subdir": os.path.join(SOURCE_DIR,""), # e.g. "interventions"
-    #     "model": None, # e.g. Intervention
+    #     "model": None,
     #     "foreign_keys": [], # e.g. ["intervention_types"]
     #     "foreign_key_models": [] # e.g. [InterventionType]
     # },
     "LabelType": {
         "dir": os.path.join(SOURCE_DIR, "label-type"),  # e.g. "interventions"
-        "model": LabelType,  # e.g. Intervention
+        "model": LabelType,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     "Label": {
         "dir": os.path.join(SOURCE_DIR, "label"),  # e.g. "interventions"
-        "model": Label,  # e.g. Intervention
+        "model": Label,
         "foreign_keys": ["label_type"],  # e.g. ["intervention_types"]
         "foreign_key_models": [LabelType],  # e.g. [InterventionType]
     },
     "LabelSet": {
         "dir": os.path.join(SOURCE_DIR, "label-set"),  # e.g. "interventions"
-        "model": LabelSet,  # e.g. Intervention
+        "model": LabelSet,
         "foreign_keys": ["labels"],  # e.g. ["intervention_types"]
         "foreign_key_models": [Label],  # e.g. [InterventionType]
     },

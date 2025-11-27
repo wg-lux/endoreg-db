@@ -2,9 +2,6 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 
-if TYPE_CHECKING:
-    from endoreg_db.models import InformationSourceType
-
 
 def get_prediction_information_source():
     """
@@ -47,9 +44,33 @@ class InformationSource(models.Model):
     abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
 
     if TYPE_CHECKING:
-        # information_source_types: models.QuerySet["InformationSourceType"]
-        # Avoid self-referential import; use forward references instead
-        pass
+        from endoreg_db.models import (
+            Examination,
+            ExaminationIndication,
+            ExaminationTime,
+            Finding,
+            FindingClassification,
+            FindingIntervention,
+            InformationSourceType,
+        )
+
+        @property
+        def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
+
+        @property
+        def examination_indications(self) -> "models.manager.RelatedManager[ExaminationIndication]": ...
+
+        @property
+        def examination_times(self) -> "models.manager.RelatedManager[ExaminationTime]": ...
+
+        @property
+        def findings(self) -> "models.manager.RelatedManager[Finding]": ...
+
+        @property
+        def finding_interventions(self) -> "models.manager.RelatedManager[FindingIntervention]": ...
+
+        @property
+        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
 
     class Meta:
         verbose_name = "Information Source"
