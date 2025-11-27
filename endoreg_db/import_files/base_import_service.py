@@ -26,6 +26,8 @@ class BaseImportService(ABC):
         self.processing_context: Dict[str, Any] = {}
         self.processed_files: set[str] = set()
         self.original_path: Optional[Path] = None
+        self.file_type: str = "None"
+        self.error_cleanup: ErrorCleanup = ErrorCleanup()
 
     # === Template method (orchestrator) ===
     def import_and_anonymize(
@@ -51,7 +53,7 @@ class BaseImportService(ABC):
             if path_to_lock is None:
                 raise ValueError("No file path set before acquiring file lock")
 
-            with _file_lock(Path(path_to_lock)):
+            with _file_lock(Path(path_to_lock), self._cleanup_on_error()):
                 logger.info("Acquired file lock for %s", path_to_lock)
 
                 self._validate_and_prepare_file()
