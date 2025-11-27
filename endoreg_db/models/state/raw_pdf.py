@@ -85,15 +85,15 @@ class RawPdfState(models.Model):
             AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
         """
         if self.anonymization_validated:
-            return AnonymizationState.VALIDATED
+            return AnonymizationState.VALIDATED #  Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
         if self.sensitive_meta_processed:
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
         if self.processing_started and not self.processing_error and not self.anonymized:
             return AnonymizationState.PROCESSING_ANONYMIZING
         if getattr(self, "processing_error", False):
-            return AnonymizationState.FAILED
+            return AnonymizationState.FAILED # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
         if self.processing_started:
-            return AnonymizationState.STARTED
+            return AnonymizationState.STARTED # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
         return AnonymizationState.NOT_STARTED

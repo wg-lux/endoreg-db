@@ -11,7 +11,6 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import F
 from django.db.models.fields.files import FieldFile
-from librosa import frames_to_samples
 from pandas.core import frame
 
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
@@ -58,6 +57,8 @@ from .video_file_io import (
     _get_temp_anonymized_frame_dir,
     _set_frame_dir,
 )
+
+
 from .video_file_meta import (
     _get_crop_template,
     _get_endo_roi,
@@ -66,6 +67,7 @@ from .video_file_meta import (
     _update_text_metadata,
     _update_video_meta,
 )
+
 
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"
@@ -85,7 +87,6 @@ if TYPE_CHECKING:
         VideoImportMeta,
         VideoMeta,
         VideoState,
-        SensitiveMeta
     )
 
 
@@ -268,7 +269,8 @@ class VideoFile(models.Model):
     pipe_1 = _pipe_1
     test_after_pipe_1 = _test_after_pipe_1
     pipe_2 = _pipe_2
-
+    
+    
     # Metadata Funtions
     update_video_meta = _update_video_meta
     initialize_video_specs = _initialize_video_specs
@@ -276,6 +278,7 @@ class VideoFile(models.Model):
     get_endo_roi = _get_endo_roi
     get_crop_template = _get_crop_template
     update_text_metadata = _update_text_metadata
+
 
     extract_frames = _extract_frames
     initialize_frames = _initialize_frames
@@ -573,7 +576,7 @@ class VideoFile(models.Model):
 
         if self.sensitive_meta:
             # Mark as processed after validation
-            self.get_or_create_state().mark_sensitive_meta_processed(save=True)
+            self.get_or_create_state().mark_anonymization_validated(save=True)
             # Save the VideoFile instance to persist changes
             self.save()
             logger.info(f"Metadata annotation validated and saved for video {self.uuid}.")

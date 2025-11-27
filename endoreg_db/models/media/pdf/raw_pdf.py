@@ -326,6 +326,7 @@ class RawPdfFile(models.Model):
 
         deleted_original = delete_field_file(self.file, missing_ok=True, save=False)
         deleted_anonymized = delete_field_file(self.anonymized_file, missing_ok=True, save=False)
+        self.get_or_create_state().mark_anonymization_validated()
 
         if deleted_original or deleted_anonymized:
             self.save(update_fields=["file", "anonymized_file"])  # Persist cleared fields

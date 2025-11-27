@@ -2,7 +2,9 @@
 PDF import service module.
 
 Provides high-level functions for importing and anonymizing PDF files,
-combining RawPdfFile creation with text extraction and anonymization.
+combining RawPdfFile creation with text extraction and anonymization using lx anonymizer.
+
+All Fields should be overwritten from anonymizer defaults except for the center which is given.
 """
 
 import errno
@@ -18,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Union
 import subprocess
 from django.db import transaction
+from django.core.exceptions import ObjectDoesNotExist
 import lx_anonymizer
 
 from endoreg_db.models import SensitiveMeta
@@ -45,7 +48,7 @@ class PdfImportService:
     """
 
     def __init__(
-        self, allow_meta_overwrite: bool = False, processing_mode: str = "blackening"
+        self, allow_meta_overwrite: bool = True, processing_mode: str = "blackening"
     ):
         """
         Initialize the PDF import service.
@@ -72,6 +75,11 @@ class PdfImportService:
         self.current_pdf_state = None
         self.processing_context = {}
         self.original_path = None
+        
+        self.DEFAULT_PATIENT_FIRST_NAME = "Patient"
+        self.DEFAULT_PATIENT_LAST_NAME = "Unknown"
+        self.DEFAULT_PATIENT_DOB = date(1990, 1, 1)
+        self.DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
 
     @classmethod
     def with_blackening(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
@@ -270,7 +278,7 @@ class PdfImportService:
         self._report_reader_class = None
         return False, None
 
-    def _ensure_default_patient_data(self, pdf_instance: "RawPdfFile" = None) -> None:
+    def _ensure_default_patient_data(self, pdf_instance: "RawPdfFile") -> None:
         """
         Ensure PDF has minimum required patient data in SensitiveMeta.
         Creates default values if data is missing after text processing.
@@ -293,14 +301,17 @@ class PdfImportService:
 
             # Create default SensitiveMeta with placeholder data
             default_data = {
-                "patient_first_name": "Patient",
-                "patient_last_name": "Unknown",
-                "patient_dob": date(1990, 1, 1),  # Default DOB
-                "examination_date": date.today(),
-                "center_name": pdf_file.center.name
-                if pdf_file.center
-                else "university_hospital_wuerzburg",
+                "patient_first_name": self.DEFAULT_PATIENT_FIRST_NAME,
+                "patient_last_name": self.DEFAULT_PATIENT_LAST_NAME,
+                "patient_dob": self.DEFAULT_PATIENT_DOB,
+                "examination_date": date.today(),  # today is intentionally *not* a constant
+                "center_name": (
+                    pdf_file.center.name
+                    if pdf_file.center
+                    else self.DEFAULT_CENTER_NAME
+                ),
             }
+
 
             try:
                 sensitive_meta = SensitiveMeta.create_from_dict(default_data)
@@ -320,7 +331,7 @@ class PdfImportService:
         center_name: str,
         delete_source: bool = False,
         retry: bool = False,
-    ) -> "RawPdfFile":
+    ) -> "RawPdfFile | None":
         """
         Import a PDF file and anonymize it using ReportReader.
         Uses centralized PDF instance management pattern.
@@ -358,8 +369,7 @@ class PdfImportService:
                 logger.warning(
                     f"No PDF instance created for {file_path}, returning None"
                 )
-                return None
-
+                raise ObjectDoesNotExist
             # Step 3: Setup processing environment
             self._setup_processing_environment()
 
@@ -375,7 +385,7 @@ class PdfImportService:
             # Handle "File already being processed" case specifically
             if "already being processed" in str(e):
                 logger.info(f"Skipping file {file_path}: {e}")
-                None
+                return
             else:
                 logger.error(f"PDF import failed for {file_path}: {e}")
                 self._cleanup_on_error()
@@ -510,10 +520,9 @@ class PdfImportService:
             except RawPdfFile.DoesNotExist:
                 raise RuntimeError("Processing environment setup failed")
         # Create sensitive file copy
-        try:
-            assert original_path is not None
-        except AssertionError as e:
-            logger.error(f"No original path {e}")
+        if original_path is None or not isinstance(original_path, (str, Path)):
+            logger.error(f"No original path: {original_path!r}")
+            return
         self.create_sensitive_file(self.current_pdf, original_path)
 
         # Update file path to point to sensitive copy
@@ -722,7 +731,8 @@ class PdfImportService:
             "examiner_first_name": "examiner_first_name",
             "examiner_last_name": "examiner_last_name",
             "endoscope_type": "endoscope_type",
-            "casenumber": "case_number",
+            "casenumber": "casenumber",
+            "center_name": "center_name",
         }
 
         # Update fields with extracted information
@@ -747,9 +757,9 @@ class PdfImportService:
                 # Configurable overwrite policy
                 should_overwrite = (
                     self.allow_meta_overwrite
-                    or not old_value
-                    or old_value in ["Patient", "Unknown"]
+                    or self._is_placeholder_value(sm_field, old_value)
                 )
+
                 if new_value and should_overwrite:
                     setattr(sm, sm_field, new_value)
                     updated_fields.append(sm_field)
@@ -1250,7 +1260,7 @@ class PdfImportService:
 
     def check_storage_capacity(
         self, file_path: Union[Path, str], storage_root, min_required_space
-    ) -> None:
+    ) -> bool:
         """
         Check if there is sufficient storage capacity for the PDF file.
 
@@ -1290,7 +1300,7 @@ class PdfImportService:
         return True
 
     def create_sensitive_file(
-        self, pdf_instance: "RawPdfFile" = None, file_path: Union[Path, str] = None
+        self, pdf_instance: "RawPdfFile", file_path: Union[Path, str]
     ) -> None:
         """
         Create a copy of the PDF file in the sensitive directory and update the file reference.
@@ -1373,10 +1383,10 @@ class PdfImportService:
 
     def archive_or_quarantine_file(
         self,
-        pdf_instance: "RawPdfFile" = None,
-        source_file_path: Union[Path, str] = None,
-        quarantine_reason: str = None,
-        is_pdf_problematic: bool = None,
+        pdf_instance: "RawPdfFile",
+        source_file_path: Union[Path, str],
+        quarantine_reason: str,
+        is_pdf_problematic: bool,
     ) -> bool:
         """
         Archive or quarantine file based on the state of the PDF processing.
@@ -1424,9 +1434,6 @@ class PdfImportService:
             quarantine_path = quarantine_dir / f"{pdf_file.pdf_hash}.pdf"
             try:
                 shutil.move(file_path, quarantine_path)
-                pdf_file.quarantine_reason = (
-                    quarantine_reason or "File processing failed"
-                )
                 pdf_file.save(update_fields=["quarantine_reason"])
                 logger.info(f"Moved problematic PDF to quarantine: {quarantine_path}")
                 return True
@@ -1449,3 +1456,25 @@ class PdfImportService:
             except Exception as e:
                 logger.error(f"Failed to archive PDF {pdf_file.pdf_hash}: {e}")
                 return False
+    
+    def _is_placeholder_value(self, field_name: str, value) -> bool:
+        """Return True if a SensitiveMeta field still has a dummy/default value."""
+        if value is None:
+            return True
+
+        # String placeholders
+        if isinstance(value, str):
+            if value in {self.DEFAULT_PATIENT_FIRST_NAME, self.DEFAULT_PATIENT_LAST_NAME}:
+                return True
+
+        # Date placeholders
+        if isinstance(value, date):
+            # Default DOB
+            if field_name == "patient_dob" and value == self.DEFAULT_PATIENT_DOB:
+                return True
+            # "Today" exam date created as fallback – allow anonymizer to override
+            if field_name == "examination_date" and value == date.today():
+                return True
+
+        return False
+

@@ -11,6 +11,8 @@ from rest_framework.pagination import PageNumberPagination
 from endoreg_db.models import VideoFile, RawPdfFile
 from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
 from django.http import JsonResponse
+
+from endoreg_db.authz.permissions import PolicyPermission  #  import RBAC
 import logging
 logger = logging.getLogger(__name__)
 PERMS = DEBUG_PERMISSIONS   # shorten
@@ -27,7 +29,8 @@ class AnonymizationOverviewView(ListAPIView):
     Returns a flat list (Video + PDF) ordered by newest upload first.
     """
     serializer_class = FileOverviewSerializer
-    permission_classes = DEBUG_PERMISSIONS   
+    #permission_classes = DEBUG_PERMISSIONS   
+    permission_classes = [PolicyPermission]
     pagination_class = NoPagination
 
     def get_queryset(self):

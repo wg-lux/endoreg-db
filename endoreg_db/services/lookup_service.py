@@ -148,14 +148,14 @@ def build_initial_lookup(
         Dictionary containing initial lookup data with the following keys:
         - patient_examination_id: ID of the patient examination
         - requirement_sets: List of available requirement sets with metadata
-        - availableFindings: List of finding IDs available for the examination
-        - requiredFindings: List of finding IDs that are required by defaults
-        - requirementDefaults: Default findings per requirement
-        - classificationChoices: Available classification choices per requirement
-        - requirementsBySet: Empty dict (populated on selection)
-        - requirementStatus: Empty dict (computed on evaluation)
-        - requirementSetStatus: Empty dict (computed on evaluation)
-        - suggestedActions: Empty dict (computed on evaluation)
+        - available_findings: List of finding IDs available for the examination
+        - required_findings: List of finding IDs that are required by defaults
+        - requirement_defaults: Default findings per requirement
+        - classification_choices: Available classification choices per requirement
+        - requirements_by_set: Empty dict (populated on selection)
+        - requirement_status: Empty dict (computed on evaluation)
+        - requirement_set_status: Empty dict (computed on evaluation)
+        - suggested_actions: Empty dict (computed on evaluation)
     """
     # Available + required findings
     available_findings = (
@@ -202,15 +202,15 @@ def build_initial_lookup(
     return {
         "patient_examination_id": pe.id,
         "requirement_sets": requirement_sets,
-        "availableFindings": available_findings,
-        "requiredFindings": required_findings,
-        "requirementDefaults": req_defaults,
-        "classificationChoices": cls_choices,
+        "available_findings": available_findings,
+        "required_findings": required_findings,
+        "requirement_defaults": req_defaults,
+        "classification_choices": cls_choices,
         # New fields for expanded lookup payload
-        "requirementsBySet": {},  # Will be populated when requirement sets are selected
-        "requirementStatus": {},  # Status of each requirement (satisfied/unsatisfied)
-        "requirementSetStatus": {},  # Status of each requirement set
-        "suggestedActions": {},  # Suggested actions to satisfy requirements
+        "requirements_by_set": {},  # Will be populated when requirement sets are selected
+        "requirement_status": {},  # Status of each requirement (satisfied/unsatisfied)
+        "requirement_set_status": {},  # Status of each requirement set
+        "suggested_actions": {},  # Suggested actions to satisfy requirements
         # You can add "selectedRequirementSetIds" as the user makes choices
     }
 
@@ -260,12 +260,12 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
 
     Returns:
         Dictionary of updates containing:
-        - requirementsBySet: Requirements grouped by selected requirement sets
-        - requirementStatus: Boolean status for each requirement
-        - requirementSetStatus: Boolean status for each requirement set
-        - requirementDefaults: Default findings per requirement
-        - classificationChoices: Available choices per requirement
-        - suggestedActions: UI actions to satisfy unsatisfied requirements
+        - requirements_by_set: Requirements grouped by selected requirement sets
+        - requirement_status: Boolean status for each requirement
+        - requirement_set_status: Boolean status for each requirement set
+        - requirement_defaults: Default findings per requirement
+        - classification_choices: Available choices per requirement
+        - suggested_actions: UI actions to satisfy unsatisfied requirements
 
     Raises:
         ValueError: If lookup data is invalid or patient examination not found
@@ -396,12 +396,12 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
         # if you implement server-side simulation later, adjust requirement_status with staged result here
 
         updates = {
-            "requirementsBySet": requirements_by_set,
-            "requirementStatus": requirement_status,
-            "requirementSetStatus": set_status,
-            "requirementDefaults": req_defaults,  # keep your existing key
-            "classificationChoices": cls_choices,  # keep your existing key
-            "suggestedActions": suggested_actions,  # new
+            "requirements_by_set": requirements_by_set,
+            "requirement_status": requirement_status,
+            "requirement_set_status": set_status,
+            "requirement_defaults": req_defaults,  # keep your existing key
+            "classification_choices": cls_choices,  # keep your existing key
+            "suggested_actions": suggested_actions,  # new
         }
 
         logger.debug(
