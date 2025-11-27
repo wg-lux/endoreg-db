@@ -14,8 +14,8 @@ from rest_framework.test import APIClient
 
 from endoreg_db.models import SensitiveMeta, SensitiveMetaState, VideoState
 
-from .helpers.default_objects import get_default_center, get_default_egd_pdf
-from .helpers.optimized_video_fixtures import get_cached_or_create
+from ...helpers.default_objects import get_default_center, get_default_egd_pdf
+from ...helpers.optimized_video_fixtures import get_cached_or_create
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class AnonymizationOverviewAPITest(TestCase):
         """Set up session-scoped fixtures."""
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
-        from .helpers.data_loader import load_base_db_data
+        from ...helpers.data_loader import load_base_db_data
 
         load_base_db_data()
 
@@ -54,7 +54,7 @@ class AnonymizationOverviewAPITest(TestCase):
 
         # Always use real video file for this integration test suite
         # These tests require full VideoFile functionality
-        from .helpers.default_objects import get_default_video_file
+        from ...helpers.default_objects import get_default_video_file
 
         self.video = get_cached_or_create(
             "anonymization_overview_video", get_default_video_file
