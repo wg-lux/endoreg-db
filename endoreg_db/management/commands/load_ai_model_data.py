@@ -22,7 +22,7 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     VideoSegmentationLabel.__name__,
     VideoSegmentationLabelSet.__name__,
     AiModel.__name__,
-    ModelMeta.__name__,  # Re-enable ModelMeta loading
+    # ModelMeta.__name__,  # Disable automatic model meta loading
 ]
 
 IMPORT_METADATA = {
