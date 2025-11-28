@@ -1,12 +1,9 @@
 # endoreg_db/models/state/processing_history.py
 from __future__ import annotations
 
-from django.db import models
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-
-from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.models.media import VideoFile, RawPdfFile  # type hints only
+from django.db import models
 
 
 class ProcessingHistory(models.Model):
@@ -20,25 +17,41 @@ class ProcessingHistory(models.Model):
       - timestamps
     """
 
-    # Generic relation to VideoFile or RawPdfFile
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey("content_type", "object_id")
-
-    file_name = models.CharField(max_length=512, blank=True)
-
-    # Store the enum value of AnonymizationState
-    state = models.PositiveSmallIntegerField(
-        choices=AnonymizationState.choices,
-        help_text="Anonymization workflow state at this point in time.",
-    )
-
-    message = models.TextField(blank=True)
-
+    file_hash = models.CharField(max_length=512, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    success = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.file_name or self.object_id} – {self.get_state_display()} @ {self.created_at:%Y-%m-%d %H:%M:%S}"
+        return f"{self.file_hash or self.object_id}, Success: {self.success}"
+
+    @classmethod
+    def get_or_create_history(
+        cls,
+        *,
+        object_id: int,
+        file_hash: str,
+        success: bool | None = None,
+    ) -> "ProcessingHistory":
+        """
+        - Returns existing entry for (object_id, file_hash) if present
+        - Otherwise creates one with the given success flag (default False)
+        - If an entry exists and `success` is provided, it updates `success`
+        """
+        if success is None:
+            success = False
+
+        obj, created = cls.objects.get_or_create(
+            object_id=object_id,
+            file_hash=file_hash,
+            defaults={"success": success},
+        )
+
+        if not created and success is not None and obj.success != success:
+            obj.success = success
+            obj.save(update_fields=["success"])
+
+        return obj

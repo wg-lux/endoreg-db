@@ -71,6 +71,7 @@ def quarantine(source: Path, qdir: Path) -> Path:
 
     Returns the *new* path in qdir.
     """
+    
     qdir.mkdir(parents=True, exist_ok=True)
     target = qdir / source.name
     try:

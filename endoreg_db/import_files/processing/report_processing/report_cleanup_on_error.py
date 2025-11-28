@@ -10,8 +10,6 @@ from endoreg_db.utils import paths as path_utils
 logger = logging.getLogger(__name__)
 
 
-
-
 def cleanup_report_on_error(
     self,
     *,
@@ -26,10 +24,10 @@ def cleanup_report_on_error(
 
     Args:
         current_pdf: RawPdfFile instance or None
-        original_path: Original ingress PDF path, if known
+        original_path: Original ingress report path, if known
         processing_context: PdfImportService.processing_context dict
         processed_files: PdfImportService.processed_files set
-        get_pdf_dir: Callable resolving the PDF directory (PdfImportService._get_pdf_dir)
+        get_pdf_dir: Callable resolving the report directory (PdfImportService._get_pdf_dir)
     """
     try:
         if current_pdf and hasattr(current_pdf, "state"):
@@ -47,7 +45,7 @@ def cleanup_report_on_error(
                     shutil.copy2(str(raw_file_path), str(original_path))
                 except Exception as e:
                     logger.warning(
-                        "Failed to restore original PDF from %s to %s: %s",
+                        "Failed to restore original report from %s to %s: %s",
                         raw_file_path,
                         original_path,
                         e,
@@ -63,23 +61,19 @@ def cleanup_report_on_error(
                     os.remove(str(raw_file_path))
                 except OSError as e:
                     logger.warning(
-                        "Failed to remove duplicate raw/original PDF %s: %s",
+                        "Failed to remove duplicate raw/original report %s: %s",
                         raw_file_path,
                         e,
                     )
 
             # Remove lock file
-            lock_path = Path(str(path_utils.PDF_DIR) + ".lock")
+            lock_path = Path(str(path_utils.REPORT_DIR) + ".lock")
             try:
                 if lock_path.exists():
                     lock_path.unlink()
-                    logger.info(
-                        "Removed lock file during error cleanup: %s", lock_path
-                    )
+                    logger.info("Removed lock file during error cleanup: %s", lock_path)
             except Exception as e:
-                logger.warning(
-                    "Could not remove lock file during error cleanup: %s", e
-                )
+                logger.warning("Could not remove lock file during error cleanup: %s", e)
 
             # Reset state flags
             if state and processing_context.get("processing_started"):
@@ -91,28 +85,26 @@ def cleanup_report_on_error(
                     state.save()
                 except Exception as e:
                     logger.warning(
-                        "Failed to save PDF state during error cleanup: %s", e
+                        "Failed to save report state during error cleanup: %s", e
                     )
                 logger.debug(
-                    "Updated PDF state to indicate processing failure for %s",
+                    "Updated report state to indicate processing failure for %s",
                     getattr(current_pdf, "pdf_hash", None),
                 )
 
         else:
             # Early failure: no current_pdf (or no state).
-            # Try to clean up stray files under PDF_DIR or PDF_DIR/sensitive.
+            # Try to clean up stray files under REPORT_DIR or REPORT_DIR/sensitive.
             pdf_dir = get_pdf_dir()
-            raw_dir = (
-                original_path.parent if isinstance(original_path, Path) else None
-            )
+            raw_dir = original_path.parent if isinstance(original_path, Path) else None
 
-            # Fallback resolution if PDF_DIR could not be determined
+            # Fallback resolution if REPORT_DIR could not be determined
             if not pdf_dir and raw_dir:
                 base_dir = raw_dir.parent
-                dir_name = getattr(path_utils, "PDF_DIR_NAME", "pdfs")
+                dir_name = getattr(path_utils, "REPORT_DIR_NAME", "pdfs")
                 fallback_pdf_dir = base_dir / dir_name
                 logger.debug(
-                    "PDF cleanup fallback resolution - base: %s, dir_name: %s, exists: %s",
+                    "report cleanup fallback resolution - base: %s, dir_name: %s, exists: %s",
                     base_dir,
                     dir_name,
                     fallback_pdf_dir.exists(),
@@ -127,19 +119,18 @@ def cleanup_report_on_error(
                             # Don't delete the original ingress file
                             if (
                                 original_path is not None
-                                and candidate.resolve()
-                                == Path(original_path).resolve()
+                                and candidate.resolve() == Path(original_path).resolve()
                             ):
                                 continue
                             try:
                                 candidate.unlink()
                                 logger.debug(
-                                    "Removed stray PDF during early error cleanup: %s",
+                                    "Removed stray report during early error cleanup: %s",
                                     candidate,
                                 )
                             except Exception as e:
                                 logger.warning(
-                                    "Failed to remove stray PDF %s: %s",
+                                    "Failed to remove stray report %s: %s",
                                     candidate,
                                     e,
                                 )
@@ -177,12 +168,12 @@ def cleanup_report_on_error(
                             try:
                                 candidate.unlink()
                                 logger.debug(
-                                    "Removed stray PDF copy during error cleanup: %s",
+                                    "Removed stray report copy during error cleanup: %s",
                                     candidate,
                                 )
                             except Exception as e:
                                 logger.warning(
-                                    "Failed to remove stray PDF copy %s: %s",
+                                    "Failed to remove stray report copy %s: %s",
                                     candidate,
                                     e,
                                 )
@@ -197,27 +188,21 @@ def cleanup_report_on_error(
                 )
 
             # Debug counts for raw/pdf/sensitive dirs
-            raw_dir = (
-                original_path.parent if isinstance(original_path, Path) else None
-            )
+            raw_dir = original_path.parent if isinstance(original_path, Path) else None
             pdf_dir = get_pdf_dir()
 
             if not pdf_dir and raw_dir:
                 base_dir = raw_dir.parent
-                dir_name = getattr(path_utils, "PDF_DIR_NAME", "pdfs")
+                dir_name = getattr(path_utils, "REPORT_DIR_NAME", "pdfs")
                 fallback_pdf_dir = base_dir / dir_name
                 if fallback_pdf_dir.exists():
                     pdf_dir = fallback_pdf_dir
 
             raw_count = (
-                len(list(raw_dir.glob("*")))
-                if raw_dir and raw_dir.exists()
-                else None
+                len(list(raw_dir.glob("*"))) if raw_dir and raw_dir.exists() else None
             )
             pdf_count = (
-                len(list(pdf_dir.glob("*")))
-                if pdf_dir and pdf_dir.exists()
-                else None
+                len(list(pdf_dir.glob("*"))) if pdf_dir and pdf_dir.exists() else None
             )
 
             sensitive_path = processing_context.get("sensitive_file_path")
@@ -237,7 +222,7 @@ def cleanup_report_on_error(
                 )
 
             logger.info(
-                "PDF import error cleanup counts - raw: %s, pdf: %s, sensitive: %s",
+                "report import error cleanup counts - raw: %s, pdf: %s, sensitive: %s",
                 raw_count,
                 pdf_count,
                 sensitive_count,
@@ -245,6 +230,7 @@ def cleanup_report_on_error(
         except Exception:
             # Last-resort: never let cleanup throw further up
             pass
+
 
 def cleanup_processing_context(
     self,
@@ -262,7 +248,7 @@ def cleanup_processing_context(
     try:
         # Clean up temporary directories
         if processing_context.get("text_extracted"):
-            crops_dir = path_utils.PDF_DIR / "cropped_regions"
+            crops_dir = path_utils.REPORT_DIR / "cropped_regions"
             if crops_dir.exists() and not any(crops_dir.iterdir()):
                 try:
                     crops_dir.rmdir()

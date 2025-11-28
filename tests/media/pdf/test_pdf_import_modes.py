@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def test_blackening_mode():
     """Test the new blackening mode."""
-    print("\n=== Testing PDF Import with Blackening Mode ===")
+    print("\n=== Testing report Import with Blackening Mode ===")
 
     # Create service with blackening mode
     service = PdfImportService.with_blackening(allow_meta_overwrite=True)
@@ -46,7 +46,7 @@ def test_blackening_mode():
 
 def test_cropping_mode():
     """Test the existing cropping mode."""
-    print("\n=== Testing PDF Import with Cropping Mode ===")
+    print("\n=== Testing report Import with Cropping Mode ===")
 
     # Create service with cropping mode
     service = PdfImportService.with_cropping(allow_meta_overwrite=True)
@@ -155,7 +155,9 @@ def main():
     print(f"\n🎯 Results: {passed}/{total} tests passed")
 
     if passed == total:
-        print("🎉 All tests passed! PdfImportService is ready with both processing modes.")
+        print(
+            "🎉 All tests passed! PdfImportService is ready with both processing modes."
+        )
     else:
         print("⚠️  Some tests failed. Check the output above for details.")
 

@@ -22,14 +22,19 @@ class VideoState(models.Model):
     Uses BooleanFields for clear, distinct states.
     """
 
-
     # Frame related states
     if TYPE_CHECKING:
         video_file: models.OneToOneField["VideoFile"]
 
-    frames_extracted = models.BooleanField(default=False, help_text="True if raw frames have been extracted to files.")
-    frames_initialized = models.BooleanField(default=False, help_text="True if Frame DB objects have been created.")
-    frame_count = models.PositiveIntegerField(null=True, blank=True, help_text="Number of frames extracted/initialized.")
+    frames_extracted = models.BooleanField(
+        default=False, help_text="True if raw frames have been extracted to files."
+    )
+    frames_initialized = models.BooleanField(
+        default=False, help_text="True if Frame DB objects have been created."
+    )
+    frame_count = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Number of frames extracted/initialized."
+    )
 
     # Metadata related states
     video_meta_extracted = models.BooleanField(
@@ -41,30 +46,54 @@ class VideoState(models.Model):
     )
 
     # AI / Annotation related states
-    initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
-    lvs_created = models.BooleanField(default=False, help_text="True if LabelVideoSegments have been created from predictions.")
-    frame_annotations_generated = models.BooleanField(default=False, help_text="True if frame-level annotations have been generated from segments.")
+    initial_prediction_completed = models.BooleanField(
+        default=False, help_text="True if initial AI prediction has run."
+    )
+    lvs_created = models.BooleanField(
+        default=False,
+        help_text="True if LabelVideoSegments have been created from predictions.",
+    )
+    frame_annotations_generated = models.BooleanField(
+        default=False,
+        help_text="True if frame-level annotations have been generated from segments.",
+    )
 
     # Processing state
     sensitive_meta_processed = models.BooleanField(
-        default=False, help_text="True if the video has been fully processed, meaning a anonymized person was created."
+        default=False,
+        help_text="True if the video has been fully processed, meaning a anonymized person was created.",
     )
 
     # Anonymization state
-    anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
-    anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
+    anonymized = models.BooleanField(
+        default=False, help_text="True if the anonymized video file has been created."
+    )
+    anonymization_validated = models.BooleanField(
+        default=False,
+        help_text="True if the anonymization process has been validated and confirmed.",
+    )
 
-    processing_started = models.BooleanField(default=False, help_text="True if the processing has started, but not yet completed.")
+    processing_started = models.BooleanField(
+        default=False,
+        help_text="True if the processing has started, but not yet completed.",
+    )
 
     # Timestamps
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
 
     # Segment Annotation State
-    segment_annotations_created = models.BooleanField(default=False, help_text="True if segment annotations have been created from LabelVideoSegments.")
-    segment_annotations_validated = models.BooleanField(default=False, help_text="True if segment annotations have been validated.")
+    segment_annotations_created = models.BooleanField(
+        default=False,
+        help_text="True if segment annotations have been created from LabelVideoSegments.",
+    )
+    segment_annotations_validated = models.BooleanField(
+        default=False, help_text="True if segment annotations have been validated."
+    )
 
-    was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
+    was_created = models.BooleanField(
+        default=True, help_text="True if this state was created for the first time."
+    )
 
     objects = models.Manager()
 
@@ -105,9 +134,9 @@ class VideoState(models.Model):
         Fast, side‑effect‑free status resolution used by API & UI.
         """
         if self.anonymization_validated:
-            return AnonymizationState.VALIDATED # Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
+            return AnonymizationState.VALIDATED  # Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
         if self.sensitive_meta_processed:
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION # /home/admin/endoreg-db/endoreg_db/services/video_import.py /home/admin/endoreg-db/endoreg_db/views/video/reimport.py 
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION  # /home/admin/endoreg-db/endoreg_db/services/video_import.py /home/admin/endoreg-db/endoreg_db/views/video/reimport.py
         if self.frames_extracted and not self.anonymized:
             return AnonymizationState.PROCESSING_ANONYMIZING
         if self.was_created and not self.frames_extracted:
@@ -118,7 +147,19 @@ class VideoState(models.Model):
             return AnonymizationState.STARTED
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
-        return AnonymizationState.NOT_STARTED
+        elif not self.processing_started:
+            return AnonymizationState.NOT_STARTED
+
+    def mark_processing_not_started(self, *, save: bool = True) -> None:
+        """
+        Mark the processing as started and optionally save the updated state.
+
+        Parameters:
+            save (bool): If True, persist the change to the database immediately. Defaults to True.
+        """
+        self.processing_started = False
+        if save:
+            self.save(update_fields=["processing_started", "date_modified"])
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
@@ -165,7 +206,7 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
-        self.anonymized = True
+        self.state.anonymization_status.mark_anonymized()
         if save:
             self.save(update_fields=["anonymized", "date_modified"])
 

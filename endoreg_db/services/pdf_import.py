@@ -1,7 +1,7 @@
 """
-PDF import service module.
+report import service module.
 
-Provides high-level functions for importing and anonymizing PDF files,
+Provides high-level functions for importing and anonymizing report files,
 combining RawPdfFile creation with text extraction and anonymization using lx anonymizer.
 
 All Fields should be overwritten from anonymizer defaults except for the center which is given.
@@ -12,16 +12,17 @@ import hashlib
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import time
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
-import subprocess
-from django.db import transaction
-from django.core.exceptions import ObjectDoesNotExist
+
 import lx_anonymizer
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 
 from endoreg_db.models import SensitiveMeta
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -39,11 +40,11 @@ if TYPE_CHECKING:
 
 class PdfImportService:
     """
-    Service class for importing and processing PDF files with text extraction and anonymization.
-    Uses a central PDF instance pattern for cleaner state management.
+    Service class for importing and processing report files with text extraction and anonymization.
+    Uses a central report instance pattern for cleaner state management.
 
     Supports two processing modes:
-    - 'blackening': Simple PDF masking with black rectangles over sensitive areas
+    - 'blackening': Simple report masking with black rectangles over sensitive areas
     - 'cropping': Advanced mode that crops sensitive regions to separate images
     """
 
@@ -51,7 +52,7 @@ class PdfImportService:
         self, allow_meta_overwrite: bool = True, processing_mode: str = "blackening"
     ):
         """
-        Initialize the PDF import service.
+        Initialize the report import service.
 
         Args:
             allow_meta_overwrite: Whether to allow overwriting existing SensitiveMeta fields
@@ -70,18 +71,16 @@ class PdfImportService:
             )
         self.processing_mode = processing_mode
 
-        # Central PDF instance management
+        # Central report instance management
         self.current_pdf = None
         self.current_pdf_state = None
         self.processing_context = {}
         self.original_path = None
-        
+
         self.DEFAULT_PATIENT_FIRST_NAME = "Patient"
         self.DEFAULT_PATIENT_LAST_NAME = "Unknown"
         self.DEFAULT_PATIENT_DOB = date(1990, 1, 1)
         self.DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
-
-
 
     def import_and_anonymize(
         self,
@@ -91,16 +90,16 @@ class PdfImportService:
         retry: bool = False,
     ) -> "RawPdfFile | None":
         """
-        Import a PDF file and anonymize it using ReportReader.
-        Uses centralized PDF instance management pattern.
+        Import a report file and anonymize it using ReportReader.
+        Uses centralized report instance management pattern.
 
         The processing mode is determined by the service initialization:
-        - 'blackening': Creates an anonymized PDF with black rectangles over sensitive regions
+        - 'blackening': Creates an anonymized report with black rectangles over sensitive regions
         - 'cropping': Advanced mode that crops sensitive regions to separate images
 
         Args:
-            file_path: Path to the PDF file to import
-            center_name: Name of the center to associate with PDF
+            file_path: Path to the report file to import
+            center_name: Name of the center to associate with report
             delete_source: Whether to delete the source file after import
             retry: Whether this is a retry attempt
 
@@ -119,13 +118,13 @@ class PdfImportService:
             # Step 1: Validate and prepare file
             self._validate_and_prepare_file()
 
-            # Step 2: Create or retrieve PDF instance
+            # Step 2: Create or retrieve report instance
             self._create_or_retrieve_pdf_instance()
 
-            # Early return check - if no PDF instance was created, return None
+            # Early return check - if no report instance was created, return None
             if not self.current_pdf:
                 logger.warning(
-                    f"No PDF instance created for {file_path}, returning None"
+                    f"No report instance created for {file_path}, returning None"
                 )
                 raise ObjectDoesNotExist
             # Step 3: Setup processing environment
@@ -145,11 +144,11 @@ class PdfImportService:
                 logger.info(f"Skipping file {file_path}: {e}")
                 return
             else:
-                logger.error(f"PDF import failed for {file_path}: {e}")
+                logger.error(f"report import failed for {file_path}: {e}")
                 self._cleanup_on_error()
                 raise
         except Exception as e:
-            logger.error(f"PDF import failed for {file_path}: {e}")
+            logger.error(f"report import failed for {file_path}: {e}")
             # Cleanup on error
             self._cleanup_on_error()
             raise
@@ -164,7 +163,7 @@ class PdfImportService:
         delete_source: bool,
         retry: bool,
     ):
-        """Initialize the processing context for the current PDF."""
+        """Initialize the processing context for the current report."""
         self.processing_context = {
             "file_path": Path(file_path),
             "original_file_path": Path(file_path),
@@ -187,11 +186,11 @@ class PdfImportService:
             raise ValueError("File already being processed")
 
         logger.info(f"Starting import and processing for: {file_path}")
-        
+
     @classmethod
     def with_blackening(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
         """
-        Create a PdfImportService configured for simple PDF blackening mode.
+        Create a PdfImportService configured for simple report blackening mode.
 
         Args:
             allow_meta_overwrite: Whether to allow overwriting existing SensitiveMeta fields
@@ -255,7 +254,7 @@ class PdfImportService:
                     fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
                 else:
                     # Another worker is processing this file
-                    
+
                     raise ValueError(f"File already being processed: {path}")
 
             os.write(fd, b"lock")
@@ -271,10 +270,9 @@ class PdfImportService:
             except OSError:
                 pass
 
-
     def _get_pdf_dir(self) -> Path | None:
-        """Resolve the configured PDF directory to a concrete Path."""
-        candidate = getattr(path_utils, "PDF_DIR", None)
+        """Resolve the configured report directory to a concrete Path."""
+        candidate = getattr(path_utils, "REPORT_DIR", None)
         if isinstance(candidate, Path):
             return candidate
         if candidate is None:
@@ -297,7 +295,7 @@ class PdfImportService:
 
     def _quarantine(self, source: Path) -> Path:
         """Move file to quarantine directory to prevent re-processing."""
-        qdir = path_utils.PDF_DIR / "_processing"
+        qdir = path_utils.REPORT_DIR / "_processing"
         qdir.mkdir(parents=True, exist_ok=True)
         target = qdir / source.name
         try:
@@ -316,7 +314,7 @@ class PdfImportService:
         return target
 
     def _ensure_state(self, pdf_file: "RawPdfFile"):
-        """Ensure PDF file has a state object."""
+        """Ensure report file has a state object."""
         if getattr(pdf_file, "state", None):
             return pdf_file.state
         if hasattr(pdf_file, "get_or_create_state"):
@@ -325,7 +323,6 @@ class PdfImportService:
             self.current_pdf_state = state
             assert isinstance(self.current_pdf_state, RawPdfState)
             return state
-
 
     def _ensure_report_reading_available(self):
         """
@@ -377,23 +374,23 @@ class PdfImportService:
 
     def _ensure_default_patient_data(self, pdf_instance: "RawPdfFile") -> None:
         """
-        Ensure PDF has minimum required patient data in SensitiveMeta.
+        Ensure report has minimum required patient data in SensitiveMeta.
         Creates default values if data is missing after text processing.
-        Uses the central PDF instance if no specific instance provided.
+        Uses the central report instance if no specific instance provided.
 
         Args:
-            pdf_instance: Optional specific PDF instance, defaults to self.current_pdf
+            pdf_instance: Optional specific report instance, defaults to self.current_pdf
         """
         pdf_file = pdf_instance or self.current_pdf
         if not pdf_file:
             logger.warning(
-                "No PDF instance available for ensuring default patient data"
+                "No report instance available for ensuring default patient data"
             )
             return
 
         if not pdf_file.sensitive_meta:
             logger.info(
-                f"No SensitiveMeta found for PDF {pdf_file.pdf_hash}, creating default"
+                f"No SensitiveMeta found for report {pdf_file.pdf_hash}, creating default"
             )
 
             # Create default SensitiveMeta with placeholder data
@@ -409,17 +406,16 @@ class PdfImportService:
                 ),
             }
 
-
             try:
                 sensitive_meta = SensitiveMeta.create_from_dict(default_data)
                 pdf_file.sensitive_meta = sensitive_meta
                 pdf_file.save(update_fields=["sensitive_meta"])
                 logger.info(
-                    f"Created default SensitiveMeta for PDF {pdf_file.pdf_hash}"
+                    f"Created default SensitiveMeta for report {pdf_file.pdf_hash}"
                 )
             except Exception as e:
                 logger.error(
-                    f"Failed to create default SensitiveMeta for PDF {pdf_file.pdf_hash}: {e}"
+                    f"Failed to create default SensitiveMeta for report {pdf_file.pdf_hash}: {e}"
                 )
 
     def _validate_and_prepare_file(self):
@@ -427,11 +423,10 @@ class PdfImportService:
         file_path = self.processing_context["file_path"]
 
         if not file_path.exists():
-            raise FileNotFoundError(f"PDF file not found: {file_path}")
-
+            raise FileNotFoundError(f"report file not found: {file_path}")
 
     def _create_or_retrieve_pdf_instance(self):
-        """Create new or retrieve existing PDF instance."""
+        """Create new or retrieve existing report instance."""
         file_path = self.processing_context["file_path"]
         center_name = self.processing_context["center_name"]
         delete_source = self.processing_context["delete_source"]
@@ -439,7 +434,7 @@ class PdfImportService:
         file_hash = self.processing_context["file_hash"]
 
         if not retry:
-            # Check for existing PDF and handle duplicates
+            # Check for existing report and handle duplicates
             with self._file_lock(file_path):
                 existing = None
                 if file_hash and RawPdfFile.objects.filter(pdf_hash=file_hash).exists():
@@ -449,16 +444,16 @@ class PdfImportService:
                     logger.info(f"Found existing RawPdfFile {existing.pdf_hash}")
                     if existing.text:
                         logger.info(
-                            f"Existing PDF {existing.pdf_hash} already processed - returning"
+                            f"Existing report {existing.pdf_hash} already processed - returning"
                         )
                         self.current_pdf = existing
                         return
                     else:
                         # Retry processing
-                        logger.info(f"Reprocessing existing PDF {existing.pdf_hash}")
+                        logger.info(f"Reprocessing existing report {existing.pdf_hash}")
                         return self._retry_existing_pdf(existing)
 
-        # Create new PDF instance
+        # Create new report instance
         logger.info("Creating new RawPdfFile instance...")
         from django.db import IntegrityError
 
@@ -479,14 +474,14 @@ class PdfImportService:
                 # Check if retry is actually needed
                 if self.current_pdf.text:
                     logger.info(
-                        f"Existing PDF {self.current_pdf.pdf_hash} already processed during retry - returning"
+                        f"Existing report {self.current_pdf.pdf_hash} already processed during retry - returning"
                     )
                     return
 
             if not self.current_pdf:
                 raise RuntimeError("Failed to create RawPdfFile instance")
 
-            logger.info(f"PDF instance ready: {self.current_pdf.pdf_hash}")
+            logger.info(f"report instance ready: {self.current_pdf.pdf_hash}")
 
         except IntegrityError:
             # Race condition - another worker created it
@@ -501,9 +496,11 @@ class PdfImportService:
         original_path = self.processing_context.get("file_path")
         if not original_path or not self.current_pdf:
             try:
-                self.current_pdf = RawPdfFile.objects.get(pdf_hash=self.processing_context["file_hash"])
+                self.current_pdf = RawPdfFile.objects.get(
+                    pdf_hash=self.processing_context["file_hash"]
+                )
                 self.original_path = Path(str(self.current_pdf.file.path))
-                    
+
             except RawPdfFile.DoesNotExist:
                 raise RuntimeError("Processing environment setup failed")
         # Create sensitive file copy
@@ -536,16 +533,20 @@ class PdfImportService:
 
     def _process_text_and_metadata(self):
         """Process text extraction and metadata using ReportReader."""
-        report_reading_available, ReportReaderCls = self._ensure_report_reading_available()
+        report_reading_available, ReportReaderCls = (
+            self._ensure_report_reading_available()
+        )
         try:
             assert ReportReaderCls is not None and report_reading_available
-            assert self.current_pdf is not None 
+            assert self.current_pdf is not None
         except AssertionError as e:
-            logger.error(f"PDF Import failed on Error:{e} Ensure the pdf was passed correctly and report reading is available in function _process_text_and_metadata() ")
+            logger.error(
+                f"report Import failed on Error:{e} Ensure the pdf was passed correctly and report reading is available in function _process_text_and_metadata() "
+            )
         if not report_reading_available:
             logger.warning("Report reading not available (lx_anonymizer not found)")
             self._mark_processing_incomplete("no_report_reader")
-            return 
+            return
         assert self.current_pdf is not None
         if not self.current_pdf.file:
             logger.warning("No file available for text processing")
@@ -556,7 +557,7 @@ class PdfImportService:
             logger.info(
                 f"Starting text extraction and metadata processing with ReportReader (mode: {self.processing_mode})..."
             )
-            ReportReaderCls = lx_anonymizer.ReportReader            
+            ReportReaderCls = lx_anonymizer.ReportReader
 
             # Initialize ReportReader
             report_reader = ReportReaderCls(
@@ -569,7 +570,7 @@ class PdfImportService:
                 # Use advanced cropping method (existing implementation)
                 self._process_with_cropping(report_reader)
             else:  # blackening mode
-                # Use enhanced process_report with PDF masking
+                # Use enhanced process_report with report masking
                 self._process_with_blackening(report_reader)
 
         except Exception as e:
@@ -577,14 +578,14 @@ class PdfImportService:
             self._mark_processing_incomplete("text_processing_failed")
 
     def _process_with_blackening(self, report_reader):
-        """Process PDF using simple blackening/masking mode."""
-        logger.info("Using simple PDF blackening mode...")
+        """Process report using simple blackening/masking mode."""
+        logger.info("Using simple report blackening mode...")
 
         # Setup anonymized directory
-        anonymized_dir = path_utils.PDF_DIR / "anonymized"
+        anonymized_dir = path_utils.REPORT_DIR / "anonymized"
         anonymized_dir.mkdir(parents=True, exist_ok=True)
         assert self.current_pdf is not None
-        # Generate output path for anonymized PDF
+        # Generate output path for anonymized report
         pdf_hash = self.current_pdf.pdf_hash
         anonymized_output_path = anonymized_dir / f"{pdf_hash}_anonymized.pdf"
 
@@ -621,15 +622,15 @@ class PdfImportService:
             self._apply_anonymized_pdf()
             self.processing_context["anonymization_completed"] = True
 
-        logger.info("PDF blackening processing completed")
+        logger.info("report blackening processing completed")
 
     def _process_with_cropping(self, report_reader):
-        """Process PDF using advanced cropping mode (existing implementation)."""
+        """Process report using advanced cropping mode (existing implementation)."""
         logger.info("Using advanced cropping mode...")
 
         # Setup output directories
-        crops_dir = path_utils.PDF_DIR / "cropped_regions"
-        anonymized_dir = path_utils.PDF_DIR / "anonymized"
+        crops_dir = path_utils.REPORT_DIR / "cropped_regions"
+        anonymized_dir = path_utils.REPORT_DIR / "anonymized"
         crops_dir.mkdir(parents=True, exist_ok=True)
         anonymized_dir.mkdir(parents=True, exist_ok=True)
 
@@ -671,12 +672,12 @@ class PdfImportService:
             self._apply_anonymized_pdf()
             self.processing_context["anonymization_completed"] = True
 
-        logger.info("PDF cropping processing completed")
+        logger.info("report cropping processing completed")
 
     def _apply_text_results(self):
-        """Apply text extraction results to the PDF instance."""
+        """Apply text extraction results to the report instance."""
         if not self.current_pdf:
-            logger.warning("Cannot apply text results - no PDF instance available")
+            logger.warning("Cannot apply text results - no report instance available")
             return
 
         original_text = self.processing_context.get("original_text")
@@ -688,17 +689,19 @@ class PdfImportService:
 
         # Store extracted text
         self.current_pdf.text = original_text
-        logger.info(f"Extracted {len(original_text)} characters of text from PDF")
+        logger.info(f"Extracted {len(original_text)} characters of text from report")
 
         # Handle anonymized text
         if anonymized_text and anonymized_text != original_text:
-            self.current_pdf.anonymized = True
-            logger.info("PDF text anonymization completed")
+            self.current_pdf.state.anonymization_status.mark_anonymized()
+            logger.info("report text anonymization completed")
 
     def _apply_metadata_results(self):
         """Apply metadata extraction results to SensitiveMeta."""
         if not self.current_pdf:
-            logger.warning("Cannot apply metadata results - no PDF instance available")
+            logger.warning(
+                "Cannot apply metadata results - no report instance available"
+            )
             return
 
         extracted_metadata = self.processing_context.get("extracted_metadata")
@@ -793,7 +796,7 @@ class PdfImportService:
     # from gc-08
     def _apply_anonymized_pdf(self):
         """
-        Attach the already-generated anonymized PDF without copying bytes.
+        Attach the already-generated anonymized report without copying bytes.
 
         We do NOT re-upload or re-save file bytes via Django storage (which would
         place a new file under upload_to='raw_pdfs' and retrigger the watcher).
@@ -802,7 +805,9 @@ class PdfImportService:
         model/state reflect that anonymization is done even if text didn't change.
         """
         if not self.current_pdf:
-            logger.warning("Cannot apply anonymized PDF - no PDF instance available")
+            logger.warning(
+                "Cannot apply anonymized report - no report instance available"
+            )
             return
 
         anonymized_pdf_path = self.processing_context.get("anonymized_pdf_path")
@@ -813,12 +818,12 @@ class PdfImportService:
         anonymized_path = Path(anonymized_pdf_path)
         if not anonymized_path.exists():
             logger.warning(
-                "Anonymized PDF path returned but file does not exist: %s",
+                "Anonymized report path returned but file does not exist: %s",
                 anonymized_path,
             )
             return
 
-        logger.info("Anonymized PDF created by ReportReader at: %s", anonymized_path)
+        logger.info("Anonymized report created by ReportReader at: %s", anonymized_path)
 
         try:
             # Prefer storing a path relative to STORAGE_DIR so Django serves it correctly
@@ -829,12 +834,12 @@ class PdfImportService:
                 relative_name = str(anonymized_path)
 
             # Only update if something actually changed
-            if getattr(self.current_pdf.anonymized_file, "name", None) != relative_name:
-                self.current_pdf.anonymized_file.name = relative_name
+            if getattr(self.current_pdf.processed_file, "name", None) != relative_name:
+                self.current_pdf.processed_file.name = relative_name
 
             # Ensure model/state reflect anonymization even if text didn't differ
             if not getattr(self.current_pdf, "anonymized", False):
-                self.current_pdf.anonymized = True
+                self.current_pdf.state.anonymization_status.mark_anonymized()
 
             # Persist cropped regions info somewhere useful (optional & non-breaking)
             # If your model has a field for this, persist there; otherwise we just log.
@@ -845,20 +850,20 @@ class PdfImportService:
                 )
 
             # Save model changes
-            update_fields = ["anonymized_file"]
+            update_fields = ["processed_file"]
             if "anonymized" in self.current_pdf.__dict__:
                 update_fields.append("anonymized")
             self.current_pdf.save(update_fields=update_fields)
 
             # Mark state as anonymized immediately; this keeps downstream flows working
             state = self._ensure_state(self.current_pdf)
-            
+
             if state and not state.processing_started:
                 state.mark_processing_started()
 
             logger.info(
-                "Updated anonymized_file reference to: %s",
-                self.current_pdf.anonymized_file.name,
+                "Updated processed_file reference to: %s",
+                self.current_pdf.processed_file.name,
             )
 
         except Exception as e:
@@ -867,7 +872,7 @@ class PdfImportService:
     def _finalize_processing(self):
         """Finalize processing and update state."""
         if not self.current_pdf:
-            logger.warning("Cannot finalize processing - no PDF instance available")
+            logger.warning("Cannot finalize processing - no report instance available")
             return
 
         try:
@@ -881,7 +886,7 @@ class PdfImportService:
             if self.processing_context.get("anonymization_completed") and state:
                 state.mark_sensitive_meta_processed()
                 logger.info(
-                    f"PDF {self.current_pdf.pdf_hash} processing completed - "
+                    f"report {self.current_pdf.pdf_hash} processing completed - "
                     f"ready for validation (status: {state.anonymization_status})"
                 )
 
@@ -891,7 +896,7 @@ class PdfImportService:
                 if state:
                     state.save()
 
-            logger.info("PDF processing completed successfully")
+            logger.info("report processing completed successfully")
         except Exception as e:
             logger.warning(f"Failed to finalize processing: {e}")
 
@@ -899,7 +904,7 @@ class PdfImportService:
         """Mark processing as incomplete with reason."""
         if not self.current_pdf:
             logger.warning(
-                f"Cannot mark processing incomplete - no PDF instance available. Reason: {reason}"
+                f"Cannot mark processing incomplete - no report instance available. Reason: {reason}"
             )
             return
 
@@ -910,7 +915,7 @@ class PdfImportService:
                 state.pdf_meta_extracted = False
                 state.sensitive_meta_processed = False
                 state.save()
-                logger.info(f"Set PDF state: processed=False due to {reason}")
+                logger.info(f"Set report state: processed=False due to {reason}")
 
             # Save changes
             with transaction.atomic():
@@ -920,7 +925,7 @@ class PdfImportService:
 
     def _retry_existing_pdf(self, existing_pdf):
         """
-        Retry processing for existing PDF.
+        Retry processing for existing report.
 
         Uses get_raw_file_path() to find the original raw file instead of
         relying on the file field which may point to a deleted sensitive file.
@@ -931,8 +936,8 @@ class PdfImportService:
 
             if not raw_file_path or not raw_file_path.exists():
                 logger.error(
-                    f"Cannot retry PDF {existing_pdf.pdf_hash}: Raw file not found. "
-                    f"Please re-upload the original PDF file."
+                    f"Cannot retry report {existing_pdf.pdf_hash}: Raw file not found. "
+                    f"Please re-upload the original report file."
                 )
                 self.current_pdf = existing_pdf
                 return existing_pdf
@@ -955,7 +960,7 @@ class PdfImportService:
             )
         except Exception as e:
             logger.error(
-                f"Failed to re-import existing PDF {existing_pdf.pdf_hash}: {e}"
+                f"Failed to re-import existing report {existing_pdf.pdf_hash}: {e}"
             )
             self.current_pdf = existing_pdf
             return existing_pdf
@@ -970,33 +975,39 @@ class PdfImportService:
                 if raw_file_path is not None and original_path is not None:
                     # Ensure reprocessing for next attempt by restoring original file
                     shutil.copy2(str(raw_file_path), str(original_path))
-                    
+
                 # Ensure no two files can remain
-                if raw_file_path == original_path and raw_file_path is not None and original_path is not None:
+                if (
+                    raw_file_path == original_path
+                    and raw_file_path is not None
+                    and original_path is not None
+                ):
                     os.remove(str(raw_file_path))
-                    
-                    
+
                 # Remove Lock file also
-                lock_path = Path(str(path_utils.PDF_DIR) + ".lock")
+                lock_path = Path(str(path_utils.REPORT_DIR) + ".lock")
                 try:
                     if lock_path.exists():
                         lock_path.unlink()
-                        logger.info("Removed lock file during quarantine: %s", lock_path)
+                        logger.info(
+                            "Removed lock file during quarantine: %s", lock_path
+                        )
                 except Exception as e:
-                    logger.warning("Could not remove lock file during quarantine: %s", e)
+                    logger.warning(
+                        "Could not remove lock file during quarantine: %s", e
+                    )
 
-                
                 if state and self.processing_context.get("processing_started"):
                     state.text_meta_extracted = False
                     state.pdf_meta_extracted = False
                     state.sensitive_meta_processed = False
                     state.anonymized = False
                     state.save()
-                    logger.debug("Updated PDF state to indicate processing failure")
+                    logger.debug("Updated report state to indicate processing failure")
             else:
                 # 🔧 Early failure: no current_pdf (or no state).
                 # In this case we want to make sure we don't leave stray files
-                # under PDF_DIR or PDF_DIR/sensitive.
+                # under REPORT_DIR or REPORT_DIR/sensitive.
 
                 pdf_dir = self._get_pdf_dir()
                 if pdf_dir and pdf_dir.exists():
@@ -1006,18 +1017,19 @@ class PdfImportService:
                                 # Don't delete the original ingress file
                                 if (
                                     original_path is not None
-                                    and candidate.resolve() == Path(original_path).resolve()
+                                    and candidate.resolve()
+                                    == Path(original_path).resolve()
                                 ):
                                     continue
                                 try:
                                     candidate.unlink()
                                     logger.debug(
-                                        "Removed stray PDF during early error cleanup: %s",
+                                        "Removed stray report during early error cleanup: %s",
                                         candidate,
                                     )
                                 except Exception as e:
                                     logger.warning(
-                                        "Failed to remove stray PDF %s: %s",
+                                        "Failed to remove stray report %s: %s",
                                         candidate,
                                         e,
                                     )
@@ -1054,12 +1066,12 @@ class PdfImportService:
                             try:
                                 candidate.unlink()
                                 logger.debug(
-                                    "Removed stray PDF copy during early error cleanup: %s",
+                                    "Removed stray report copy during early error cleanup: %s",
                                     candidate,
                                 )
                             except Exception as e:
                                 logger.warning(
-                                    "Failed to remove stray PDF copy %s: %s",
+                                    "Failed to remove stray report copy %s: %s",
                                     candidate,
                                     e,
                                 )
@@ -1080,10 +1092,10 @@ class PdfImportService:
                 pdf_dir = self._get_pdf_dir()
                 if not pdf_dir and raw_dir:
                     base_dir = raw_dir.parent
-                    dir_name = getattr(path_utils, "PDF_DIR_NAME", "pdfs")
+                    dir_name = getattr(path_utils, "REPORT_DIR_NAME", "pdfs")
                     fallback_pdf_dir = base_dir / dir_name
                     logger.debug(
-                        "PDF cleanup fallback resolution - base: %s, dir_name: %s, exists: %s",
+                        "report cleanup fallback resolution - base: %s, dir_name: %s, exists: %s",
                         base_dir,
                         dir_name,
                         fallback_pdf_dir.exists(),
@@ -1091,7 +1103,7 @@ class PdfImportService:
                     if fallback_pdf_dir.exists():
                         pdf_dir = fallback_pdf_dir
 
-                # Remove empty PDF subdirectories that might have been created during setup
+                # Remove empty report subdirectories that might have been created during setup
                 if pdf_dir and pdf_dir.exists():
                     for subdir_name in (
                         "sensitive",
@@ -1151,7 +1163,7 @@ class PdfImportService:
                     )
 
                 logger.info(
-                    "PDF import error cleanup counts - raw: %s, pdf: %s, sensitive: %s",
+                    "report import error cleanup counts - raw: %s, pdf: %s, sensitive: %s",
                     raw_count,
                     pdf_count,
                     sensitive_count,
@@ -1164,7 +1176,7 @@ class PdfImportService:
         try:
             # Clean up temporary directories
             if self.processing_context.get("text_extracted"):
-                crops_dir = path_utils.PDF_DIR / "cropped_regions"
+                crops_dir = path_utils.REPORT_DIR / "cropped_regions"
                 if crops_dir.exists() and not any(crops_dir.iterdir()):
                     crops_dir.rmdir()
 
@@ -1185,12 +1197,12 @@ class PdfImportService:
         self, file_path: Union[Path, str], center_name: str, delete_source: bool = False
     ) -> "RawPdfFile":
         """
-        Simple PDF import without text processing or anonymization.
-        Uses centralized PDF instance management pattern.
+        Simple report import without text processing or anonymization.
+        Uses centralized report instance management pattern.
 
         Args:
-            file_path: Path to the PDF file to import
-            center_name: Name of the center to associate with PDF
+            file_path: Path to the report file to import
+            center_name: Name of the center to associate with report
             delete_source: Whether to delete the source file after import
 
         Returns:
@@ -1205,7 +1217,7 @@ class PdfImportService:
             # Validate file
             self._validate_and_prepare_file()
 
-            # Create PDF instance
+            # Create report instance
             logger.info("Starting simple import - creating RawPdfFile instance...")
             self.current_pdf = RawPdfFile.create_from_file_initialized(
                 file_path=self.processing_context["file_path"],
@@ -1226,7 +1238,7 @@ class PdfImportService:
                 state.pdf_meta_extracted = False
                 state.sensitive_meta_processed = False
                 state.save()
-                logger.info("Set PDF state: processed=False for simple import")
+                logger.info("Set report state: processed=False for simple import")
 
             # Save changes
             with transaction.atomic():
@@ -1239,7 +1251,7 @@ class PdfImportService:
             return self.current_pdf
 
         except Exception as e:
-            logger.error(f"Simple PDF import failed for {file_path}: {e}")
+            logger.error(f"Simple report import failed for {file_path}: {e}")
             self._cleanup_on_error()
             raise
         finally:
@@ -1249,10 +1261,10 @@ class PdfImportService:
         self, file_path: Union[Path, str], storage_root, min_required_space
     ) -> bool:
         """
-        Check if there is sufficient storage capacity for the PDF file.
+        Check if there is sufficient storage capacity for the report file.
 
         Args:
-            file_path: Path to the PDF file to check
+            file_path: Path to the report file to check
 
         Raises:
             InsufficientStorageError: If there is not enough space
@@ -1278,7 +1290,7 @@ class PdfImportService:
         # Check if there is enough space
         if file_size > free:
             raise InsufficientStorageError(
-                f"Not enough space to store PDF file: {file_path}"
+                f"Not enough space to store report file: {file_path}"
             )
         logger.info(
             f"Storage check passed for {file_path}: {file_size} bytes, {free} bytes available"
@@ -1290,9 +1302,9 @@ class PdfImportService:
         self, pdf_instance: "RawPdfFile", file_path: Union[Path, str]
     ) -> None:
         """
-        Create a copy of the PDF file in the sensitive directory and update the file reference.
+        Create a copy of the report file in the sensitive directory and update the file reference.
         Delete the source path to avoid duplicates.
-        Uses the central PDF instance and processing context if parameters not provided.
+        Uses the central report instance and processing context if parameters not provided.
 
         Ensures the FileField points to the file under STORAGE_DIR/pdfs/sensitive and never back to raw_pdfs.
         """
@@ -1302,11 +1314,11 @@ class PdfImportService:
         )
 
         if not pdf_file:
-            raise ValueError("No PDF instance available for creating sensitive file")
+            raise ValueError("No report instance available for creating sensitive file")
         if not source_path:
             raise ValueError("No file path available for creating sensitive file")
 
-        SENSITIVE_DIR = path_utils.PDF_DIR / "sensitive"
+        SENSITIVE_DIR = path_utils.REPORT_DIR / "sensitive"
         target = SENSITIVE_DIR / f"{pdf_file.pdf_hash}.pdf"
 
         try:
@@ -1328,7 +1340,7 @@ class PdfImportService:
                             e,
                         )
                 shutil.move(str(source_path), str(target))
-                logger.info(f"Moved PDF to sensitive directory: {target}")
+                logger.info(f"Moved report to sensitive directory: {target}")
 
             # Update FileField to reference the file under STORAGE_DIR
             # We avoid re-saving file content (the file is already at target); set .name relative to STORAGE_DIR
@@ -1345,12 +1357,12 @@ class PdfImportService:
                 pdf_file.file.name = relative_name
                 pdf_file.save(update_fields=["file"])
                 logger.info(
-                    "Updated PDF FileField reference to sensitive path: %s",
+                    "Updated report FileField reference to sensitive path: %s",
                     pdf_file.file.path,
                 )
             else:
                 logger.debug(
-                    "PDF FileField already points to sensitive path: %s",
+                    "report FileField already points to sensitive path: %s",
                     pdf_file.file.path,
                 )
 
@@ -1358,9 +1370,13 @@ class PdfImportService:
             try:
                 if source_path.exists() and source_path != target:
                     os.remove(source_path)
-                    logger.info(f"Removed original PDF file at ingress: {source_path}")
+                    logger.info(
+                        f"Removed original report file at ingress: {source_path}"
+                    )
             except OSError as e:
-                logger.warning(f"Could not delete original PDF file {source_path}: {e}")
+                logger.warning(
+                    f"Could not delete original report file {source_path}: {e}"
+                )
 
         except Exception as e:
             logger.warning(
@@ -1376,11 +1392,11 @@ class PdfImportService:
         is_pdf_problematic: bool,
     ) -> bool:
         """
-        Archive or quarantine file based on the state of the PDF processing.
-        Uses the central PDF instance and processing context if parameters not provided.
+        Archive or quarantine file based on the state of the report processing.
+        Uses the central report instance and processing context if parameters not provided.
 
         Args:
-            pdf_instance: Optional PDF instance, defaults to self.current_pdf
+            pdf_instance: Optional report instance, defaults to self.current_pdf
             source_file_path: Optional source file path, defaults to processing_context['file_path']
             quarantine_reason: Optional quarantine reason, defaults to processing_context['error_reason']
             is_pdf_problematic: Optional override for problematic state
@@ -1394,16 +1410,16 @@ class PdfImportService:
             if source_file_path
             else self.processing_context.get("file_path")
         )
-        quarantine_reason = str(quarantine_reason or self.processing_context.get(
-            "error_reason"
-        ))
+        quarantine_reason = str(
+            quarantine_reason or self.processing_context.get("error_reason")
+        )
 
         if not pdf_file:
-            raise ValueError("No PDF instance available for archiving/quarantine")
+            raise ValueError("No report instance available for archiving/quarantine")
         if not file_path:
             raise ValueError("No file path available for archiving/quarantine")
 
-        # Determine if the PDF is problematic
+        # Determine if the report is problematic
         pdf_problematic = (
             is_pdf_problematic
             if is_pdf_problematic is not None
@@ -1413,37 +1429,39 @@ class PdfImportService:
         if pdf_problematic:
             # Quarantine the file
             logger.warning(
-                f"Quarantining problematic PDF: {pdf_file.pdf_hash}, reason: {quarantine_reason}"
+                f"Quarantining problematic report: {pdf_file.pdf_hash}, reason: {quarantine_reason}"
             )
-            quarantine_dir = path_utils.PDF_DIR / "quarantine"
+            quarantine_dir = path_utils.REPORT_DIR / "quarantine"
             os.makedirs(quarantine_dir, exist_ok=True)
 
             quarantine_path = quarantine_dir / f"{pdf_file.pdf_hash}.pdf"
             try:
                 shutil.move(file_path, quarantine_path)
                 pdf_file.save(update_fields=["quarantine_reason"])
-                logger.info(f"Moved problematic PDF to quarantine: {quarantine_path}")
+                logger.info(
+                    f"Moved problematic report to quarantine: {quarantine_path}"
+                )
                 return True
             except Exception as e:
-                logger.error(f"Failed to quarantine PDF {pdf_file.pdf_hash}: {e}")
+                logger.error(f"Failed to quarantine report {pdf_file.pdf_hash}: {e}")
                 return (
                     True  # Still consider as quarantined to prevent further processing
                 )
         else:
             # Archive the file normally
-            logger.info(f"Archiving successfully processed PDF: {pdf_file.pdf_hash}")
-            archive_dir = path_utils.PDF_DIR / "processed"
+            logger.info(f"Archiving successfully processed report: {pdf_file.pdf_hash}")
+            archive_dir = path_utils.REPORT_DIR / "processed"
             os.makedirs(archive_dir, exist_ok=True)
 
             archive_path = archive_dir / f"{pdf_file.pdf_hash}.pdf"
             try:
                 shutil.move(file_path, archive_path)
-                logger.info(f"Moved processed PDF to archive: {archive_path}")
+                logger.info(f"Moved processed report to archive: {archive_path}")
                 return False
             except Exception as e:
-                logger.error(f"Failed to archive PDF {pdf_file.pdf_hash}: {e}")
+                logger.error(f"Failed to archive report {pdf_file.pdf_hash}: {e}")
                 return False
-    
+
     def _is_placeholder_value(self, field_name: str, value) -> bool:
         """Return True if a SensitiveMeta field still has a dummy/default value."""
         if value is None:
@@ -1451,7 +1469,10 @@ class PdfImportService:
 
         # String placeholders
         if isinstance(value, str):
-            if value in {self.DEFAULT_PATIENT_FIRST_NAME, self.DEFAULT_PATIENT_LAST_NAME}:
+            if value in {
+                self.DEFAULT_PATIENT_FIRST_NAME,
+                self.DEFAULT_PATIENT_LAST_NAME,
+            }:
                 return True
 
         # Date placeholders
@@ -1464,4 +1485,3 @@ class PdfImportService:
                 return True
 
         return False
-

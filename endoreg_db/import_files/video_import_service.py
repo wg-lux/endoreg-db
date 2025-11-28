@@ -1,14 +1,31 @@
 # endoreg_db/services/video_import.py
-from pathlib import Path
-from typing import Optional, Union, Any, Dict
-
 import logging
+import os
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
-from endoreg_db.import_files.base_import_service import VideoImportContext
+from django.db.models.fields.files import FieldFile
+
+from endoreg_db.import_files.context import (
+    ImportContext,
+    file_lock,
+    quarantine,
+    unquarantine,
+)
+from endoreg_db.import_files.processing.video_processing.video_cleanup_on_error import (
+    cleanup_video_on_error,
+)
+from endoreg_db.import_files.storage import create_sensitive_copy, move_to_anonymized
+from endoreg_db.import_files.storage.create_video_file import (
+    create_or_retrieve_video_file,
+)
+from endoreg_db.import_files.storage.state_management import mark_instance_processing_started
 from endoreg_db.models import VideoFile
+from endoreg_db.models.media.storage.processing_history import ProcessingHistory
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, VIDEO_DIR
 
 
-class VideoImportService(BaseImportService):
+class VideoImportService:
     """
     Service for importing and anonymizing video files.
     Uses a central video instance pattern for cleaner state management.
@@ -26,23 +43,10 @@ class VideoImportService(BaseImportService):
 
     """
 
-    def __init__(self, project_root: Optional[Path] = None):
-        super().__init__()  # important!
-
-        if project_root:
-            self.project_root = Path(project_root)
-        else:
-            self.project_root = Path(__file__).parent.parent.parent  # whatever you had
-
-        self.current_video: Optional[VideoFile] = None
-        self.processing_context: Dict[str, Any] = {}  # you can keep or rely on base
-        self.delete_source = True
-        self.original_file_path: Optional[Path] = None
-
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.current_video_id: Optional[int] = None
-        self.cleaner = None
-    
+        self.quarantine_path = Path(STORAGE_DIR / "_processing")
+
     def import_and_anonymize(
         self,
         file_path: Union[Path, str],
@@ -52,25 +56,41 @@ class VideoImportService(BaseImportService):
         delete_source: bool = True,
     ) -> "VideoFile | None":
         """
-        Public entrypoint: wrap BaseImportService.import_and_anonymize.
+        Public entrypoint: wrap import_and_anonymize logic.
         """
-        # Set original_path for the base class (used for locking)
-        self.original_path = Path(file_path)
+        self.ctx: ImportContext = ImportContext(
+            Path(file_path), center_name, processor_name, save_video, delete_source
+        )
+        self.quarantine_path = STORAGE_DIR / "quarantine"
+        self.ctx.sensitive_path = create_sensitive_copy(
+            self.ctx.file_path, SENSITIVE_VIDEO_DIR
+        )
 
-        with _file_lock(Path(path_to_lock), self._cleanup_on_error()):
-            logger.info("Acquired file lock for %s", path_to_lock)
+        self.logger.info("validating and preparing file")
+        if not self.ctx.file_path.exists():
+            raise FileNotFoundError(f"Video file not found: {file_path}")
+        with file_lock(self.ctx.file_path):
+            self.ctx.quarantine_path = quarantine(
+                self.ctx.file_path, self.quarantine_path
+            )
 
-            self._validate_and_prepare_file()
-            self._create_or_retrieve_instance()
-            if not self._has_instance():
-                logger.warning("No instance created for %s; aborting", path_to_lock)
-                return None
+            # create or retrieve RawPdfFile + update history
+            video, file_hash, retry = create_or_retrieve_video_file(
+                self.ctx
+            )
+            
+            mark_instance_processing_started(video, self.ctx)
 
-            self._setup_processing_environment()
-            self._process_payload()
-            self._finalize_processing()
 
-            # Mark as processed in this service instance (session-level guard)
-            self.processed_files.add(str(Path(file_path)))
-            return self._get_instance()
+            self.ctx.current_video = video
+            self.ctx.file_hash = file_hash
+            self.ctx.retry = retry
 
+            # ... here continue with: OCR / anonymization / saving etc. ...
+
+            # when everything finishes successfully, mark success in history:
+            ProcessingHistory.get_or_create_history(
+                object_id=self.ctx.current_video.pk,
+                file_hash=self.ctx.file_hash,
+                success=True,
+            )

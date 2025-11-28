@@ -48,8 +48,12 @@ class Patient(Person):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     dob = models.DateField(null=True, blank=True)
-    gender = models.ForeignKey("Gender", on_delete=models.SET_NULL, null=True, blank=True)
-    center = models.ForeignKey("Center", on_delete=models.SET_NULL, null=True, blank=True)
+    gender = models.ForeignKey(
+        "Gender", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    center = models.ForeignKey(
+        "Center", on_delete=models.SET_NULL, null=True, blank=True
+    )
     patient_hash = models.CharField(max_length=255, blank=True, null=True)
 
     objects = models.Manager()  # Default manager
@@ -73,10 +77,14 @@ class Patient(Person):
         def patient_examinations(self) -> RelatedManager[PatientExamination]: ...
 
         @property
-        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
+        def anonymexaminationreport_set(
+            self,
+        ) -> RelatedManager[AnonymExaminationReport]: ...
 
         @property
-        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
+        def anonymhistologyreport_set(
+            self,
+        ) -> RelatedManager[AnonymHistologyReport]: ...
 
         @property
         def external_ids(self) -> RelatedManager[PatientExternalID]: ...
@@ -114,7 +122,9 @@ class Patient(Person):
         # If no patient with the given hash exists, create a new pseudo patient
         assert center, "Center must be provided to create a new pseudo patient"
         assert gender, "Gender must be provided to create a new pseudo patient"
-        assert birth_month, "Birth month must be provided to create a new pseudo patient"
+        assert birth_month, (
+            "Birth month must be provided to create a new pseudo patient"
+        )
         assert birth_year, "Birth year must be provided to create a new pseudo patient"
 
         # Ensure gender is a Gender object
@@ -173,18 +183,22 @@ class Patient(Person):
             )
 
         else:
-            patient_examination = PatientExamination(patient=self, date_start=date_start, date_end=date_end)
+            patient_examination = PatientExamination(
+                patient=self, date_start=date_start, date_end=date_end
+            )
 
         if save:
             patient_examination.save()
 
         return patient_examination
 
-    def create_examination_by_indication(self, indication: "ExaminationIndication", date_start: Optional[datetime] = None, date_end: Optional[datetime] = None):
-        from ....medical import (
-            PatientExamination,
-            PatientExaminationIndication,
-        )
+    def create_examination_by_indication(
+        self,
+        indication: "ExaminationIndication",
+        date_start: Optional[datetime] = None,
+        date_end: Optional[datetime] = None,
+    ):
+        from ....medical import PatientExamination, PatientExaminationIndication
 
         examination = indication.get_examination()
 
@@ -197,7 +211,9 @@ class Patient(Person):
 
         patient_examination.save()
 
-        patient_examination_indication = PatientExaminationIndication.objects.create(patient_examination=patient_examination, examination_indication=indication)
+        patient_examination_indication = PatientExaminationIndication.objects.create(
+            patient_examination=patient_examination, examination_indication=indication
+        )
         patient_examination_indication.save()
 
         return patient_examination, patient_examination_indication
@@ -231,9 +247,9 @@ class Patient(Person):
 
     def create_examination_by_pdf(self, pdf: "RawPdfFile"):
         """
-        Creates a patient examination and associates it with the provided PDF report file.
+        Creates a patient examination and associates it with the provided report report file.
 
-        The examination is created for this patient, saved, and linked to the given RawPdfFile instance. The PDF's examination field is updated and saved. Returns the created examination instance.
+        The examination is created for this patient, saved, and linked to the given RawPdfFile instance. The report's examination field is updated and saved. Returns the created examination instance.
 
         Args:
             pdf: The RawPdfFile to associate with the new examination.
@@ -273,7 +289,9 @@ class Patient(Person):
         return gender_obj
 
     @classmethod
-    def get_random_age(cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"):
+    def get_random_age(
+        cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
+    ):
         """
         Get a random age based on the given distribution.
 
@@ -371,11 +389,17 @@ class Patient(Person):
         :return: The age of the patient.
         """
         # calculate correct age based on current date including day and month
-        current_date = timezone.now().date()  # Use timezone.now() here too for consistency
+        current_date = (
+            timezone.now().date()
+        )  # Use timezone.now() here too for consistency
         dob = self.dob
         # Ensure dob is not None before calculation
         if dob:
-            age = current_date.year - dob.year - ((current_date.month, current_date.day) < (dob.month, dob.day))
+            age = (
+                current_date.year
+                - dob.year
+                - ((current_date.month, current_date.day) < (dob.month, dob.day))
+            )
             return age
         return None  # Or handle the case where dob is None appropriately
 
@@ -394,16 +418,24 @@ class Patient(Person):
             date = timezone.now()  # Use timezone.now() instead of datetime.now()
         # Ensure the provided date is timezone-aware if it's not None
         elif timezone.is_naive(date):
-            logger.warning(f"Received naive datetime {date} for PatientLabSample. Making it timezone-aware using current timezone.")
+            logger.warning(
+                f"Received naive datetime {date} for PatientLabSample. Making it timezone-aware using current timezone."
+            )
             date = timezone.make_aware(date, timezone.get_current_timezone())
 
         if isinstance(sample_type, str):
             sample_type = PatientLabSampleType.objects.get(name=sample_type)
-            assert sample_type is not None, f"Sample type with name '{sample_type}' not found."
+            assert sample_type is not None, (
+                f"Sample type with name '{sample_type}' not found."
+            )
         elif not isinstance(sample_type, PatientLabSampleType):
-            raise ValueError("Sample type must be either a string or a PatientLabSampleType object.")
+            raise ValueError(
+                "Sample type must be either a string or a PatientLabSampleType object."
+            )
 
-        patient_lab_sample = PatientLabSample.objects.create(patient=self, sample_type=sample_type, date=date)
+        patient_lab_sample = PatientLabSample.objects.create(
+            patient=self, sample_type=sample_type, date=date
+        )
 
         return patient_lab_sample
 
@@ -414,27 +446,41 @@ class Patient(Person):
         as a RequirementLinks object. For a Patient, this includes their diseases, associated classification choices,
         all their lab values, and medication information.
         """
-        from endoreg_db.models.medical.disease import Disease, DiseaseClassificationChoice
+        from endoreg_db.models.medical.disease import (
+            Disease,
+            DiseaseClassificationChoice,
+        )
 
         # Imports for medication related models
         from endoreg_db.models.medical.medication.medication import Medication
-        from endoreg_db.models.medical.medication.medication_indication import MedicationIndication
-        from endoreg_db.models.medical.medication.medication_intake_time import MedicationIntakeTime
+        from endoreg_db.models.medical.medication.medication_indication import (
+            MedicationIndication,
+        )
+        from endoreg_db.models.medical.medication.medication_intake_time import (
+            MedicationIntakeTime,
+        )
         from endoreg_db.utils.links.requirement_link import RequirementLinks
+
         # PatientMedication objects are retrieved via self.patientmedication_set
         # PatientLabValue objects are retrieved via self.lab_values
 
-        patient_disease_instances = list(self.diseases.all())  # These are PatientDisease model instances
+        patient_disease_instances = list(
+            self.diseases.all()
+        )  # These are PatientDisease model instances
         actual_diseases: List[Disease] = []
         all_classification_choices: List[DiseaseClassificationChoice] = []
 
         for pd_instance in patient_disease_instances:
             if pd_instance.disease:  # pd_instance.disease is a Disease instance
                 actual_diseases.append(pd_instance.disease)
-            all_classification_choices.extend(list(pd_instance.classification_choices.all()))
+            all_classification_choices.extend(
+                list(pd_instance.classification_choices.all())
+            )
 
         # Assuming self.lab_values is a related manager for PatientLabValue instances
-        patient_lab_value_instances = list(self.lab_values.all())  # These are PatientLabValue model instances
+        patient_lab_value_instances = list(
+            self.lab_values.all()
+        )  # These are PatientLabValue model instances
 
         # Medication information
         # self.patientmedication_set gives a QuerySet of PatientMedication
@@ -445,11 +491,17 @@ class Patient(Person):
         med_intake_times: List[MedicationIntakeTime] = []
 
         for pm_instance in patient_medication_instances:
-            if pm_instance.medication:  # pm_instance.medication is a Medication instance
+            if (
+                pm_instance.medication
+            ):  # pm_instance.medication is a Medication instance
                 actual_medications.append(pm_instance.medication)
-            if pm_instance.medication_indication:  # pm_instance.medication_indication is a MedicationIndication instance
+            if (
+                pm_instance.medication_indication
+            ):  # pm_instance.medication_indication is a MedicationIndication instance
                 med_indications.append(pm_instance.medication_indication)
-            med_intake_times.extend(list(pm_instance.intake_times.all()))  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
+            med_intake_times.extend(
+                list(pm_instance.intake_times.all())
+            )  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
         return RequirementLinks(
             diseases=list(set(actual_diseases)),

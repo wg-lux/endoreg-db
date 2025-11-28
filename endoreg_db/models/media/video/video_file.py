@@ -546,12 +546,9 @@ class VideoFile(models.Model):
         video is preserved as the final validated output.
         """
 
-        if not self.sensitive_meta:
-            # Ensure a SensitiveMeta exists so validation can proceed.
-            self.sensitive_meta = self.get_or_create_sensitive_meta()
         # CRITICAL FIX: Delete RAW video file, not the processed (anonymized) one
         # CRITICAL: Update metadata BEFORE deleting raw video
-        if extracted_data_dict:
+        if extracted_data_dict and self.sensitive_meta:
             self.sensitive_meta.update_from_dict(extracted_data_dict)
         else:
             return False
@@ -674,65 +671,7 @@ class VideoFile(models.Model):
 
         return state
 
-    def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
-        """
-        Retrieve the associated SensitiveMeta instance for this video, creating and assigning one if it does not exist.
-
-        **Two-Phase Patient Data Pattern:**
-        This method implements a two-phase approach to handle incomplete patient data:
-
-        **Phase 1: Initial Creation (with defaults)**
-        - Creates SensitiveMeta with default patient data to prevent hash calculation errors
-        - Default values: patient_first_name="Patient", patient_last_name="Unknown", patient_dob=1990-01-01
-        - Allows video import to proceed even without extracted patient data
-        - Temporary hash and pseudo-entities are created
-
-        **Phase 2: Update (with extracted data)**
-        - Real patient data is extracted later (e.g., from video OCR via lx_anonymizer)
-        - update_from_dict() is called with actual patient information
-        - Hash is recalculated automatically using real data
-        - Correct pseudo-entities are created/linked based on new hash
-
-        **Example workflow:**
-        ```python
-        # Phase 1: Video creation
-        video = VideoFile.create_from_file_initialized(...)
-        video.initialize()  # Calls this method
-        # → SensitiveMeta created with defaults
-        # → Hash: sha256("Patient Unknown 1990-01-01...")
-
-        # Phase 2: Frame cleaning extracts real data
-        extracted = {"patient_first_name": "Max", "patient_last_name": "Mustermann", ...}
-        video.sensitive_meta.update_from_dict(extracted)
-        # → Hash: sha256("Max Mustermann 1985-03-15...") (RECALCULATED)
-        ```
-
-        Returns:
-            SensitiveMeta: The related SensitiveMeta instance.
-
-        See Also:
-            - sensitive_meta_logic.perform_save_logic() for hash calculation details
-            - sensitive_meta_logic.update_sensitive_meta_from_dict() for update mechanism
-        """
-        from datetime import date as dt_date
-
-        from endoreg_db.models import SensitiveMeta
-
-        if self.sensitive_meta is None:
-            # Use create_from_dict with default patient data
-            # to prevent "First name is required to calculate patient hash" error
-            default_data = {
-                "patient_first_name": "Patient",
-                "patient_last_name": "Unknown",
-                "patient_dob": dt_date(1990, 1, 1),
-                "examination_date": dt_date.today(),
-                "center": self.center,
-            }
-            self.sensitive_meta = SensitiveMeta.create_from_dict(default_data)
-            self.save(update_fields=["sensitive_meta"])
-            # Do not mark state as processed here; it will be set after extraction/validation steps
-        return self.sensitive_meta
-
+ 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
         """
         Return all video segments labeled as "outside" for this video.
@@ -784,8 +723,6 @@ class VideoFile(models.Model):
             extracted = video.extract_frames(quality=2, overwrite=False, ext="jpg", verbose=False, from_processed=True)
             assert extracted is True
         except AssertionError:
-            # Use default anonymization here
-            video.anonymize
             extracted = video.extract_frames(quality=2, overwrite=False, ext="jpg", verbose=False, from_processed=True)
             assert extracted is True
         try:
@@ -794,9 +731,11 @@ class VideoFile(models.Model):
             frames = [instance.get_frame_dir_path()]
             assert len(frames) != 0
             fps = video.fps if video.fps else 120.0  # Default to 30 FPS if fps is not set
+            assert censored is True
             assert fps is not None
             assert video.width is not None
             assert video.height is not None
+        #assert isinstance(frames, list[Path]) #TODO improve TypeCheck
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
             output_video_path = Path(f"/path/to/output/{cls.uuid}_filtered.mp4")

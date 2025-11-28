@@ -7,7 +7,7 @@ from django.db import models
 class UploadJob(models.Model):
     """
     Tracks file upload jobs and their processing status.
-    Supports both PDF and video file uploads with asynchronous processing.
+    Supports both report and video file uploads with asynchronous processing.
     """
 
     class Status(models.TextChoices):
@@ -16,23 +16,47 @@ class UploadJob(models.Model):
         ANONYMIZED = "anonymized", "Anonymized"
         ERROR = "error", "Error"
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, help_text="Unique identifier for the upload job")
-
-    file = models.FileField(upload_to="uploads/%Y/%m/%d/", help_text="Uploaded file (PDF or video)")
-
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, help_text="Current processing status of the upload")
-
-    content_type = models.CharField(max_length=100, blank=True, help_text="MIME type of the uploaded file")
-
-    sensitive_meta = models.ForeignKey(
-        "SensitiveMeta", null=True, blank=True, on_delete=models.SET_NULL, help_text="Link to the created SensitiveMeta record after processing"
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="Unique identifier for the upload job",
     )
 
-    error_detail = models.TextField(blank=True, help_text="Error message if processing failed")
+    file = models.FileField(
+        upload_to="uploads/%Y/%m/%d/", help_text="Uploaded file (report or video)"
+    )
 
-    created_at = models.DateTimeField(auto_now_add=True, help_text="When the upload job was created")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        help_text="Current processing status of the upload",
+    )
 
-    updated_at = models.DateTimeField(auto_now=True, help_text="When the upload job was last updated")
+    content_type = models.CharField(
+        max_length=100, blank=True, help_text="MIME type of the uploaded file"
+    )
+
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        help_text="Link to the created SensitiveMeta record after processing",
+    )
+
+    error_detail = models.TextField(
+        blank=True, help_text="Error message if processing failed"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True, help_text="When the upload job was created"
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True, help_text="When the upload job was last updated"
+    )
 
     if TYPE_CHECKING:
         from django.db.models.fields.files import FieldFile

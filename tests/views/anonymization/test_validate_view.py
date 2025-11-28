@@ -3,27 +3,26 @@ Comprehensive unit tests for AnonymizationValidateView.
 
 Tests cover:
 - Video file validation endpoint
-- PDF file validation endpoint
+- report file validation endpoint
 - German and ISO date format support
 - Error handling and edge cases
 - Center name handling
 """
-import uuid
-from typing import Dict, cast
-import logging
-from typing import Any, Dict, cast
 
+import logging
+import uuid
+from typing import Any, Dict, cast
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
-from unittest.mock import patch
 
-from endoreg_db.models import VideoFile, RawPdfFile, Center, EndoscopyProcessor
-from endoreg_db.views.anonymization.validate import AnonymizationValidateView
+from endoreg_db.models import Center, EndoscopyProcessor, RawPdfFile, VideoFile
 from endoreg_db.models.administration.person.patient import Patient
+from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ class TestAnonymizationValidateView:
     # ------------------------------------------------------------------ #
     # Fixtures                                                           #
     # ------------------------------------------------------------------ #
-           
+
     @pytest.fixture
     def factory(self) -> APIRequestFactory:
         """Create APIRequestFactory."""
@@ -95,8 +94,8 @@ class TestAnonymizationValidateView:
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
-            "patient_dob": "1994-03-21",        # ISO format
-            "examination_date": "2024-02-15",   # ISO format
+            "patient_dob": "1994-03-21",  # ISO format
+            "examination_date": "2024-02-15",  # ISO format
             "casenumber": "12345",
             "is_verified": True,
             "file_type": "video",
@@ -126,7 +125,9 @@ class TestAnonymizationValidateView:
             "file_type": "video",
         }
 
-        with patch.object(VideoFile, "validate_metadata_annotation", return_value=False):
+        with patch.object(
+            VideoFile, "validate_metadata_annotation", return_value=False
+        ):
             request = factory.post(
                 f"/api/anonymization/{video_file.id}/validate/",
                 data=data,
@@ -143,7 +144,7 @@ class TestAnonymizationValidateView:
             assert "Video validation failed" in error_text
 
     def test_validate_pdf_with_german_dates(self, factory, user, pdf_file):
-        """Test validating PDF with German date format."""
+        """Test validating report with German date format."""
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
@@ -151,11 +152,13 @@ class TestAnonymizationValidateView:
             "examination_date": "15.02.2024",
             "patient_gender": "männlich",
             "casenumber": "12345",
-            "anonymized_text": "Anonymized PDF content",
+            "anonymized_text": "Anonymized report content",
             "file_type": "pdf",
         }
 
-        with patch.object(RawPdfFile, "validate_metadata_annotation", return_value=True):
+        with patch.object(
+            RawPdfFile, "validate_metadata_annotation", return_value=True
+        ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
                 data=data,
@@ -169,10 +172,10 @@ class TestAnonymizationValidateView:
             message = self._payload_text(payload, "message")
 
             assert response.status_code == status.HTTP_200_OK
-            assert "PDF validated" in message
+            assert "report validated" in message
 
     def test_validate_pdf_failure(self, factory, user, pdf_file):
-        """Test PDF validation failure."""
+        """Test report validation failure."""
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
@@ -182,7 +185,9 @@ class TestAnonymizationValidateView:
             "file_type": "pdf",
         }
 
-        with patch.object(RawPdfFile, "validate_metadata_annotation", return_value=False):
+        with patch.object(
+            RawPdfFile, "validate_metadata_annotation", return_value=False
+        ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
                 data=data,
@@ -196,7 +201,7 @@ class TestAnonymizationValidateView:
             error_text = self._payload_text(payload, "error")
 
             assert response.status_code == status.HTTP_400_BAD_REQUEST
-            assert "PDF validation failed" in error_text
+            assert "report validation failed" in error_text
 
     def test_validate_nonexistent_file(self, factory, user):
         """Test validating non-existent file."""
@@ -207,7 +212,6 @@ class TestAnonymizationValidateView:
             "examination_date": "15.02.2024",
             "casenumber": "12345",
             "patient_gender": "männlich",
-
         }
 
         request = factory.post(
@@ -224,7 +228,6 @@ class TestAnonymizationValidateView:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "not found" in error_text
-
 
     def test_validate_invalid_date_format(self, factory, user, video_file):
         """Test validation with invalid date format."""
@@ -259,14 +262,16 @@ class TestAnonymizationValidateView:
             "patient_dob": "21.03.1994",
             "examination_date": "15.02.2024",
             "casenumber": "12345",
-            "patient_gender": "unknown"
+            "patient_gender": "unknown",
         }
 
         def check_is_verified(payload):
             assert payload.get("is_verified") is True
             return True
 
-        with patch.object(VideoFile, "validate_metadata_annotation", side_effect=check_is_verified):
+        with patch.object(
+            VideoFile, "validate_metadata_annotation", side_effect=check_is_verified
+        ):
             request = factory.post(
                 f"/api/anonymization/{video_file.id}/validate/",
                 data=data,
@@ -279,7 +284,9 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
 
-    def test_validate_video_without_file_type_specified(self, factory, user, video_file):
+    def test_validate_video_without_file_type_specified(
+        self, factory, user, video_file
+    ):
         """Test validation tries video first when file_type not specified."""
         data = {
             "patient_first_name": "Max",
@@ -371,7 +378,7 @@ class TestAnonymizationValidateView:
         with patch.object(
             RawPdfFile.objects,
             "filter",
-            side_effect=AssertionError("PDF lookup should not occur"),
+            side_effect=AssertionError("report lookup should not occur"),
         ):
             view = AnonymizationValidateView.as_view()
             response = self._call_view(view, request, file_id=9999)
@@ -382,7 +389,7 @@ class TestAnonymizationValidateView:
         assert "Video 9999 not found" in error_text
 
     def test_validate_pdf_type_missing_pdf_returns_not_found(self, factory, user):
-        """Explicit PDF requests should not fall back to videos when PDF is missing."""
+        """Explicit report requests should not fall back to videos when report is missing."""
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
@@ -410,20 +417,24 @@ class TestAnonymizationValidateView:
             error_text = self._payload_text(payload, "error")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "PDF 8888 not found" in error_text
+        assert "report 8888 not found" in error_text
 
-    def test_validate_falls_back_to_pdf_when_video_missing(self, factory, user, pdf_file):
-        """Requests without file_type should attempt video first, then PDF."""
+    def test_validate_falls_back_to_pdf_when_video_missing(
+        self, factory, user, pdf_file
+    ):
+        """Requests without file_type should attempt video first, then report."""
         data = {
             "patient_first_name": "Anna",
             "patient_last_name": "Schmidt",
             "patient_dob": "21.03.1994",
             "examination_date": "15.02.2024",
             "casenumber": "98765",
-            "anonymized_text": "Payload for PDF",
+            "anonymized_text": "Payload for report",
         }
 
-        with patch.object(RawPdfFile, "validate_metadata_annotation", return_value=True):
+        with patch.object(
+            RawPdfFile, "validate_metadata_annotation", return_value=True
+        ):
             request = factory.post(
                 f"/api/anonymization/{pdf_file.id}/validate/",
                 data=data,
@@ -437,9 +448,11 @@ class TestAnonymizationValidateView:
             message = self._payload_text(payload, "message")
 
             assert response.status_code == status.HTTP_200_OK
-            assert "PDF validated" in message
+            assert "report validated" in message
 
-    def test_validate_video_exception_returns_server_error(self, factory, user, video_file):
+    def test_validate_video_exception_returns_server_error(
+        self, factory, user, video_file
+    ):
         """Exceptions during video validation should surface as server errors."""
         data = {
             "patient_first_name": "Max",

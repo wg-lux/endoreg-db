@@ -12,8 +12,7 @@ from .examination import (
 )
 from .finding import FindingSerializer
 from .finding_classification import (
-    # FindingClassificationChoiceSerializer,
-    FindingClassificationSerializer,
+    FindingClassificationSerializer,  # FindingClassificationChoiceSerializer,
 )
 from .label import ImageClassificationAnnotationSerializer, LabelSerializer
 from .label_video_segment import (
@@ -96,7 +95,7 @@ __all__ = [
     "PatientFindingInterventionSerializer",
     "PatientFindingListSerializer",
     "PatientFindingWriteSerializer",
-    # PDF
+    # report
     "RawPdfAnonyTextSerializer",
     # Report
     "ReportListSerializer",
