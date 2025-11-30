@@ -1,23 +1,6 @@
-from django.contrib.contenttypes.models import ContentType
 from endoreg_db.models.media.storage.processing_history import ProcessingHistory
+from endoreg_db.utils.paths import IMPORT_REPORT_DIR, IMPORT_VIDEO_DIR, ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
-
-def finalize_processing()
-
-
-
-
-def _record_history(self, instance, state, message: str = "") -> None:
-    ProcessingHistory.objects.create(
-        content_type=ContentType.objects.get_for_model(instance.__class__),
-        object_id=instance.pk,
-        file_name=getattr(instance, "file").name if hasattr(instance, "file") else "",
-        state=state.anonymization_status,
-        message=message,
-    )
-
-
-# endoreg_db/import_files/storage/finalize_processing.py
 
 import logging
 import shutil
@@ -29,7 +12,6 @@ from django.db import transaction
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state import RawPdfState, VideoState
-from endoreg_db.models.media.storage import ProcessingHistory
 from endoreg_db.utils import paths as path_utils
 
 logger = logging.getLogger(__name__)
@@ -37,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _ensure_instance_state(instance: Union[VideoFile, RawPdfFile]) -> Optional[Union[RawPdfState, VideoState]]:
     """
-    Helper: ensure RawPdfFile.state exists and return it.
+    Helper: ensure instance.state exists and return it.
     Mirrors PdfImportService._ensure_state.
     """
     if isinstance(instance, RawPdfFile):
@@ -70,28 +52,29 @@ def mark_instance_processing_started(
                 state.mark_processing_started()
 
 
-def finalize_success(
-    instance: Union[RawPdfFile, VideoFile],
+def finalize_report_success(
     ctx: ImportContext,
-    anonymized_root: Path,
-    anonymized_temp_path: Optional[Path],
 ) -> None:
     """
     Finalize a successful instance import/anonymization.
 
-    - Move anonymized PDF from temp to canonical anonymized dir
+    - Move anonymized Report from temp to canonical anonymized dir
     - Update RawPdfFile.processed_file and .anonymized flag
     - Mark RawPdfState as anonymized + sensitive_meta_processed
     - Mark ProcessingHistory.success = True
     """
+    instance = ctx.current_report
+    if not isinstance(instance, Union[VideoFile, RawPdfFile]):
+        logger.warning("finalize_success called with unsaved instance")
+        return
     if not instance.pk:
-        logger.warning("finalize_report_success called with unsaved RawPdfFile")
+        logger.warning("finalize_success called with unsaved instance")
         return
 
-    # --- Move anonymized PDF into final storage (if we have one) ---
+    # --- Move anonymized path into final storage (if we have one) ---
     final_path: Optional[Path] = None
 
-    if anonymized_temp_path is None:
+    if ctx.anonymized_path is None:
         logger.warning(
             "No anonymized_temp_path for instance %s (hash=%s); "
             "skipping anonymized file move.",
@@ -99,11 +82,11 @@ def finalize_success(
             getattr(instance, "pdf_hash", None),
         )
     else:
-        anonymized_root.mkdir(parents=True, exist_ok=True)
+        ANONYM_REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
         # Use same naming convention as old PdfImportService: <hash>_anonymized.pdf
         pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
-        final_path = anonymized_root / f"{pdf_hash}_anonymized.pdf"
+        final_path = ANONYM_REPORT_DIR / f"{pdf_hash}.pdf"
 
         # Replace any existing file for this hash
         if final_path.exists():
@@ -116,15 +99,14 @@ def finalize_success(
                     e,
                 )
 
-        shutil.move(str(anonymized_temp_path), str(final_path))
+        shutil.move(str(ctx.anonymized_path), str(final_path))
         logger.info(
             "Moved anonymized instance to canonical path: %s",
             final_path,
         )
 
-        # Update FileField to be relative to STORAGE_DIR (same as _apply_anonymized_pdf)
         try:
-            relative_name = str(final_path.relative_to(path_utils.STORAGE_DIR))
+            relative_name = str(ctx.anonymized_path))
         except ValueError:
             # Fallback: absolute path if outside STORAGE_DIR
             relative_name = str(final_path)
@@ -161,80 +143,214 @@ def finalize_success(
         instance.save()
 
     # --- ProcessingHistory entry ---
-    if ctx.file_hash:
-        ProcessingHistory.get_or_create_history(
-            object_id=instance.pk,
-            file_hash=ctx.file_hash,
-            success=True,
-        )
-    else:
+    try:
+        with transaction.atomic():
+            file_type="report"
+            ProcessingHistory.get_or_create_history(
+                object_id=instance.pk,
+                file_type=file_type,
+                success=True,
+            )
+    except Exception as e:
         logger.debug(
-            "No file_hash in context for instance %s when finalizing success; "
+            "Saving not possible; "
             "skipping ProcessingHistory.",
             instance.pk,
         )
 
-
-def finalize_report_failure(
-    instance: RawPdfFile,
+def finalize_video_success(
     ctx: ImportContext,
-    error_reason: Optional[str] = None,
+) -> None:
+    """
+    Finalize a successful instance import/anonymization.
+
+    - Move anonymized Report from temp to canonical anonymized dir
+    - Update RawPdfFile.processed_file and .anonymized flag
+    - Mark RawPdfState as anonymized + sensitive_meta_processed
+    - Mark ProcessingHistory.success = True
+    """
+    instance = ctx.current_video
+    if not isinstance(instance, VideoFile):
+        logger.warning("finalize_success called with unsaved instance")
+        return
+    if not instance.pk:
+        logger.warning("finalize_success called with unsaved instance")
+        return
+
+    # --- Move anonymized path into final storage (if we have one) ---
+    final_path: Optional[Path] = None
+
+    if ctx.anonymized_path is None:
+        logger.warning(
+            "No anonymized_temp_path for instance %s (hash=%s); "
+            "skipping anonymized file move.",
+            instance.pk,
+            getattr(instance, "video_hash", None),
+        )
+
+    else:
+
+        # Use same naming convention as old PdfImportService: <hash>_anonymized.pdf
+        video_hash = getattr(instance, "video_hash", None),
+
+        final_path = ANONYM_VIDEO_DIR / f"{video_hash}.mp4"
+
+        logger.info(
+            "Moved anonymized instance to canonical path: %s",
+            final_path,
+        )
+        
+
+
+        # Update FileField to be relative to STORAGE_DIR (same as _apply_anonymized_pdf)
+        try:
+            relative_name = str(ctx.anonymized_path)
+        except ValueError:
+            # Fallback: absolute path if outside STORAGE_DIR
+            relative_name = str(final_path)
+
+        current_name = getattr(instance.processed_file, "name", None)
+        if current_name != relative_name:
+            instance.processed_file.name = relative_name
+            logger.info(
+                "Updated processed_file reference to: %s",
+                instance.processed_file.name,
+            )
+
+
+    # --- Update RawPdfState flags (mirrors _finalize_processing) ---
+    state = _ensure_instance_state(instance)
+
+    with transaction.atomic():
+        if state is not None:
+
+            # In the old code, processing_started was set earlier; we guard here
+            if not getattr(state, "processing_started", False) and hasattr(
+                state, "mark_processing_started"
+            ):
+                state.mark_processing_started()
+
+            # We consider text/meta extraction + anonymization done at this point
+            if hasattr(state, "mark_anonymized"):
+                state.mark_anonymized()
+            if hasattr(state, "mark_sensitive_meta_processed"):
+                state.mark_sensitive_meta_processed()
+
+            state.save()
+
+        instance.save()
+
+    # --- ProcessingHistory entry ---
+    try:
+        with transaction.atomic():
+            file_type="video"
+            ProcessingHistory.get_or_create_history(
+                object_id=instance.pk,
+                file_type=file_type,
+                success=True,
+            )
+    except Exception as e:
+        logger.debug(
+            "Saving not possible; "
+            "skipping ProcessingHistory.",
+            instance.pk,
+            file_type
+        )
+
+def finalize_failure(
+    ctx: ImportContext,
 ) -> None:
     """
     Finalize a failed instance import/anonymization.
 
     - Reset RawPdfState flags to "not processed"
     - Mark ProcessingHistory.success = False
-    - Store error_reason on ImportContext for later quarantine/cleanup
     """
-    if error_reason:
-        ctx.error_reason = error_reason
-
+    if ctx.instance is None:
+        if isinstance(ctx.current_report, RawPdfFile):
+            ctx.instance = ctx.current_report
+        elif isinstance(ctx.current_video, VideoFile):
+            ctx.instance = ctx.current_video
+        else:
+            raise Exception
     # Reset state flags similar to _mark_processing_incomplete / _cleanup_on_error
-    state = _ensure_raw_pdf_state(instance)
+    state = _ensure_instance_state(ctx.instance)
 
     if state is not None:
         try:
-            # These fields existed in the previous RawPdfState
-            if hasattr(state, "text_meta_extracted"):
-                state.text_meta_extracted = False
-            if hasattr(state, "pdf_meta_extracted"):
-                state.pdf_meta_extracted = False
-            if hasattr(state, "sensitive_meta_processed"):
-                state.sensitive_meta_processed = False
-            if hasattr(state, "anonymized"):
-                state.anonymized = False
+            state.mark_processing_not_started
 
             state.save()
             logger.info(
                 "Reset instance state for failed processing (instance pk=%s, hash=%s)",
-                instance.pk,
-                getattr(instance, "pdf_hash", None),
+                ctx.instance.pk,
+                getattr(ctx.instance, "file_type", None),
             )
         except Exception as e:
             logger.warning(
-                "Failed to reset RawPdfState for instance %s: %s",
-                instance.pk,
+                "Failed to reset State for instance %s: %s",
+                ctx.instance.pk,
                 e,
             )
+
+        try:
+            delete_associated_files(ctx)
+        except Exception as e:
+            logger.warning("There might be files remaining")
 
     # History entry with success=False
     if ctx.file_hash:
         ProcessingHistory.get_or_create_history(
-            object_id=instance.pk,
-            file_hash=ctx.file_hash,
+            object_id=ctx.instance.pk,
+            file_type=ctx.file_type,
             success=False,
         )
     else:
         logger.debug(
             "No file_hash in context for instance %s when finalizing failure; "
             "skipping ProcessingHistory.",
-            instance.pk,
+            ctx.instance.pk,
         )
 
     logger.error(
         "Report processing failed for %s (hash=%s): %s",
         ctx.file_path,
         ctx.file_hash,
-        error_reason or "no reason provided",
     )
+
+def delete_associated_files(ctx:ImportContext):
+    try:
+        assert isinstance(ctx.original_path, Path)
+    except AssertionError as e:
+        if ctx.file_type =="video":
+            if isinstance(ctx.sensitive_path, Path):
+                try:
+                    ctx.original_path = Path(shutil.copy2(ctx.sensitive_path, IMPORT_VIDEO_DIR))
+                    
+                except Exception as e:
+                    raise
+        elif ctx.file_type == "report":
+            if isinstance(ctx.sensitive_path, Path):
+                try:
+                    ctx.original_path = Path(shutil.copy2(ctx.sensitive_path, IMPORT_REPORT_DIR))
+                except Exception as e:
+                    raise
+        
+    if isinstance(ctx.anonymized_path, Path):
+        try:
+            Path.unlink(ctx.anonymized_path)
+            
+        except Exception as e:
+            raise
+        
+    ctx.anonymized_path = None
+    
+    if isinstance(ctx.sensitive_path, Path):
+        try:
+            Path.unlink(ctx.sensitive_path)
+            
+        except Exception as e:
+            raise
+        
+    ctx.sensitive_path = None
+    

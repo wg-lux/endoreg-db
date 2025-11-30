@@ -5,6 +5,7 @@ import time
 from logging import getLogger
 import errno
 import shutil
+from typing import Generator, Any
 
 logger = getLogger(__name__)
 
@@ -13,7 +14,7 @@ MAX_LOCK_WAIT_SECONDS = 90
 
 
 @contextmanager
-def file_lock(path: Path):
+def file_lock(path: Path) -> Generator[None, Any, None]:
     """
     Create a file lock to prevent duplicate processing of the same file.
 
@@ -63,53 +64,3 @@ def file_lock(path: Path):
                 lock_path.unlink()
         except OSError:
             pass
-
-
-def quarantine(source: Path, qdir: Path) -> Path:
-    """
-    Move file to quarantine directory to prevent re-processing.
-
-    Returns the *new* path in qdir.
-    """
-    
-    qdir.mkdir(parents=True, exist_ok=True)
-    target = qdir / source.name
-    try:
-        # Try atomic rename first (fastest when on same filesystem)
-        source.rename(target)
-    except OSError as exc:
-        if exc.errno == errno.EXDEV:
-            # Cross-device move, fall back to shutil.move which copies+removes
-            shutil.move(str(source), str(target))
-        else:
-            raise
-
-    # Clean any old lock on the ORIGINAL location
-    lock_path = Path(str(source) + ".lock")
-    if lock_path.exists():
-        lock_path.unlink()
-
-    return target
-
-
-def unquarantine(source: Path, target_dir: Path) -> Path:
-    """
-    Move file from quarantine back to its original directory (or any target_dir).
-
-    `source` is the current quarantine path, `target_dir` is where it should go.
-    """
-    target = target_dir / source.name
-    try:
-        source.rename(target)
-    except OSError as exc:
-        if exc.errno == errno.EXDEV:
-            shutil.move(str(source), str(target))
-        else:
-            raise
-
-    # Clean any lock that might still exist beside the quarantine file
-    lock_path = Path(str(source) + ".lock")
-    if lock_path.exists():
-        lock_path.unlink()
-
-    return target

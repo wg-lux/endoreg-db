@@ -181,11 +181,6 @@ class AnonymizationService:
                 if pdf.state:
                     pdf.state.processing_started = True
                     pdf.state.save(update_fields=["processing_started"])
-                elif pdf.sensitive_meta and hasattr(
-                    pdf.sensitive_meta, "anonymization_started"
-                ):
-                    pdf.sensitive_meta.anonymization_started = True
-                    pdf.sensitive_meta.save(update_fields=["anonymization_started"])
 
                 with ensure_local_file(file_field) as local_path:
                     self.pdf_service.import_and_anonymize(
@@ -200,12 +195,10 @@ class AnonymizationService:
                 logger.error(f"Failed to process RawPdfFile {file_id}: {e}")
                 # Mark as failed if state exists
                 if pdf.state and hasattr(pdf.state, "processing_failed"):
-                    pdf.state.processing_failed = True
                     pdf.state.save(update_fields=["processing_failed"])
                 elif pdf.sensitive_meta and hasattr(
                     pdf.sensitive_meta, "processing_failed"
                 ):
-                    pdf.sensitive_meta.processing_failed = True
                     pdf.sensitive_meta.save(update_fields=["processing_failed"])
                 raise
 

@@ -14,13 +14,12 @@ logger = logging.getLogger(__name__)
 
 def create_or_retrieve_video_file(
     ctx: ImportContext,
-) -> Tuple[VideoFile, str, bool]:
+) -> Tuple[VideoFile, bool]:
     """
     Create a new or retrieve an existing VideoFile for the given context.
 
     Returns:
         video     : VideoFile instance
-        file_hash : hash used for deduplication (video_hash)
         retry     : whether we are re-processing an existing file
     """
     file_path = ctx.file_path
@@ -54,10 +53,10 @@ def create_or_retrieve_video_file(
             )
             ProcessingHistory.get_or_create_history(
                 object_id=existing.pk,
-                file_hash=video_hash,
+                file_type="video",
                 success=True,
             )
-            return existing, video_hash, False
+            return existing, False
 
         logger.info(
             "Reprocessing existing VideoFile %s (not fully anonymized yet)",
@@ -65,10 +64,10 @@ def create_or_retrieve_video_file(
         )
         ProcessingHistory.get_or_create_history(
             object_id=existing.pk,
-            file_hash=video_hash,
+            file_type="video",
             success=False,
         )
-        return existing, video_hash, True
+        return existing, True
 
     # === CREATE OR RETRY PATH ===
     logger.info("Creating or retrieving VideoFile instance...")
@@ -96,10 +95,10 @@ def create_or_retrieve_video_file(
                 )
                 ProcessingHistory.get_or_create_history(
                     object_id=video.pk,
-                    file_hash=video_hash,
+                    file_type="video",
                     success=True,
                 )
-                return video, video_hash, False
+                return video, False
 
         if not video:
             raise RuntimeError("Failed to create VideoFile instance")
@@ -108,11 +107,11 @@ def create_or_retrieve_video_file(
 
         ProcessingHistory.get_or_create_history(
             object_id=video.pk,
-            file_hash=video_hash,
-            success=bool(getattr(video, "anonymized", False)),
+            file_type="video",
+            success=False
         )
 
-        return video, video_hash, retry
+        return video, retry
 
     except IntegrityError:
         # Race condition - another worker created it first
@@ -124,8 +123,8 @@ def create_or_retrieve_video_file(
 
         ProcessingHistory.get_or_create_history(
             object_id=video.pk,
-            file_hash=video_hash,
-            success=bool(getattr(video, "anonymized", False)),
+            file_type="video",
+            success=False
         )
 
-        return video, video_hash, True
+        return video, True

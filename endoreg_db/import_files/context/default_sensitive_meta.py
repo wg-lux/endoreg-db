@@ -11,14 +11,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PATIENT_FIRST_NAME = "unknown"
 DEFAULT_PATIENT_LAST_NAME = "unknown"
-DEFAULT_CENTER_NAME = "endoreg_db_demo"  # or whatever you use
+DEFAULT_CENTER_NAME = "endoreg_db_demo"
 # DEFAULT_PATIENT_DOB can be a fixed date or None to let logic.generate_random_dob handle it
 DEFAULT_PATIENT_DOB = date(1970, 1, 1)
 
 
-def ensure_default_patient_data(instance: Union[RawPdfFile, VideoFile]) -> None:
+def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> None:
     """
-    Ensure the given RawPdfFile has a minimal SensitiveMeta attached.
+    Ensure the given instance has a minimal SensitiveMeta attached.
 
     Called after text extraction + merging; only creates meta if none exists.
     """

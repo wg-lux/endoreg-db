@@ -18,14 +18,12 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 STORAGE_DIR = data_paths["storage"]
-FILE_STORAGE = FileSystemStorage(location=STORAGE_DIR)
-VIDEO_DIR = data_paths["video"]
-TMP_VIDEO_DIR = VIDEO_DIR / "tmp"
-ANONYM_VIDEO_DIR = data_paths["video_export"]
+FILE_STORAGE = FileSystemStorage(location=str(STORAGE_DIR))
+TRANSCODING_DIR = data_paths["transcoding"]
 FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
-REPORT_DIR = data_paths["raw_pdf"]
-DOCUMENT_DIR = data_paths["pdf"]
+REPORT_DIR = data_paths["report_import"]
+DOCUMENT_DIR = data_paths["documents"] #TODO Verify if this is still used and assign correct dir
 
 TEST_RUN = os.environ.get("TEST_RUN", "False")
 TEST_RUN = TEST_RUN.lower() == "true"
@@ -128,13 +126,10 @@ __all__ = [
     "DJANGO_NAME_SALT",
     "data_paths",
     "FILE_STORAGE",
-    "VIDEO_DIR",
-    "TMP_VIDEO_DIR",
     "ANONYM_VIDEO_DIR",
     "FRAME_DIR",
     "WEIGHTS_DIR",
     "REPORT_DIR",
-    "DOCUMENT_DIR",
     "prepare_bulk_frames",
     "anonymize_frame",
     "find_segments_in_prediction_array",

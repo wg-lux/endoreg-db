@@ -1,21 +1,56 @@
-from .import_context import ImportContext
+import logging
+from pathlib import Path
+from typing import Iterable
+from endoreg_db.utils.paths import (
+    ANONYM_REPORT_DIR,
+    ANONYM_VIDEO_DIR,
+    IMPORT_REPORT_DIR,
+    IMPORT_VIDEO_DIR,
+    SENSITIVE_REPORT_DIR,
+    SENSITIVE_VIDEO_DIR,
+)
 
-def _validate_path(import_context: ImportContext, anonym_dir, processed_dir, target_dir) -> bool:
+dirs = [
+    ANONYM_REPORT_DIR,
+    ANONYM_VIDEO_DIR,
+    IMPORT_REPORT_DIR,
+    IMPORT_VIDEO_DIR,
+    SENSITIVE_REPORT_DIR,
+    SENSITIVE_VIDEO_DIR,
+]
 
-    # Track processed files to prevent duplicates
-    try:
-        # Ensure anonym_report directory exists before listing files
-        anonym_report_dir = Path(ANONYM_VIDEO_DIR)
-        if anonym_report_dir.exists():
-            ImportContext.processed_files = set(str(anonym_report_dir / file) for file in os.listdir(ANONYM_VIDEO_DIR))
-        else:
-            logger.info(f"Creating anonym_reports directory: {anonym_report_dir}")
-            anonym_report_dir.mkdir(parents=True, exist_ok=True)
-            self.processed_files = set()
-    except Exception as e:
-        logger.warning(f"Failed to initialize processed files tracking: {e}")
-        self.processed_files = set()
-    if project_root:
-        self.project_root = Path(project_root)
-    else:
-        self.project_root = Path(__file__).parent.parent.parent.parent
+
+logger = logging.getLogger(__name__)
+
+
+def validate_directories(dirs: Iterable[Path] = dirs) -> bool:
+    """
+    Ensure all directories in `dirs` exist.
+    Missing directories are created automatically.
+
+    Args:
+        dirs: Iterable of Path objects representing directories.
+
+    Returns:
+        bool: True if all directories exist or were created successfully,
+              False if any directory could not be created.
+    """
+    ok = True
+
+    for d in dirs:
+        try:
+            if not d.exists():
+                logger.info(f"Directory missing, creating: {d}")
+                d.mkdir(parents=True, exist_ok=True)
+
+            if not d.is_dir():
+                logger.error(f"Path exists but is not a directory: {d}")
+                ok = False
+
+        except Exception as e:
+            logger.error(f"Failed to create or validate directory '{d}': {e}")
+            ok = False
+
+    return ok
+
+validate_directories(dirs)

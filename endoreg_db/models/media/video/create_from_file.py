@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING, Optional, Type
 
 # Import the new exceptions from the correct path
 from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
-
-from ...utils import TMP_VIDEO_DIR, VIDEO_DIR
+from endoreg_db.utils.paths import IMPORT_VIDEO_DIR, SENSITIVE_VIDEO_DIR, TRANSCODING_DIR
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -20,7 +19,9 @@ from ....utils.video.ffmpeg_wrapper import transcode_videofile_if_required
 logger = logging.getLogger(__name__)
 
 
-def check_storage_capacity(src_path: Path, dst_root: Path, safety_margin: float = 1.2) -> None:
+def check_storage_capacity(
+    src_path: Path, dst_root: Path, safety_margin: float = 1.2
+) -> None:
     """
     Check if there's enough storage space before starting operations.
 
@@ -46,14 +47,16 @@ def check_storage_capacity(src_path: Path, dst_root: Path, safety_margin: float 
                 available_space=free_space,
             )
 
-        logger.info(f"Storage check passed: {free_space / 1e9:.1f} GB available, {required_space / 1e9:.1f} GB required")
+        logger.info(
+            f"Storage check passed: {free_space / 1e9:.1f} GB available, {required_space / 1e9:.1f} GB required"
+        )
 
     except OSError as e:
         logger.warning(f"Could not check storage capacity: {e}")
         # Don't fail the operation, just log the warning
 
 
-def atomic_copy_with_fallback(src_path: Path, dst_path: Path) -> bool:
+def atomic_copy_with_fallback(src_path: Path = IMPORT_VIDEO_DIR, dst_path: Path = SENSITIVE_VIDEO_DIR) -> bool:
     """
     Atomically copy file from src to dst, preserving the source file.
 
@@ -157,7 +160,9 @@ def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
             # Re-raise with better context
             if e.errno == 28:  # No space left on device
                 raise InsufficientStorageError(
-                    f"No space left on device during copy: {e}", required_space=src_path.stat().st_size, available_space=shutil.disk_usage(dst_path.parent).free
+                    f"No space left on device during copy: {e}",
+                    required_space=src_path.stat().st_size,
+                    available_space=shutil.disk_usage(dst_path.parent).free,
                 )
             raise
 
@@ -187,7 +192,7 @@ def _create_from_file(
     file_path: Path,
     center_name: str,
     processor_name: Optional[str] = None,
-    video_dir: Path = VIDEO_DIR,
+    video_dir: Path = IMPORT_VIDEO_DIR,
     save: bool = True,
     delete_source: bool = False,
     **kwargs,
@@ -224,16 +229,22 @@ def _create_from_file(
 
         # 1. Transcode if necessary
         logger.debug("Checking transcoding requirement for %s", file_path)
-        temp_transcode_dir = TMP_VIDEO_DIR / "transcoding"
+        temp_transcode_dir = TRANSCODING_DIR
         temp_transcode_dir.mkdir(parents=True, exist_ok=True)
 
         # Use a unique name for the potential transcoded file
-        temp_transcoded_output_path = temp_transcode_dir / f"{uuid.uuid4()}{original_suffix}"
+        temp_transcoded_output_path = (
+            temp_transcode_dir / f"{uuid.uuid4()}{original_suffix}"
+        )
 
         try:
-            transcoded_file_path = transcode_videofile_if_required(input_path=file_path, output_path=temp_transcoded_output_path)
+            transcoded_file_path = transcode_videofile_if_required(
+                input_path=file_path, output_path=temp_transcoded_output_path
+            )
             if transcoded_file_path is None:
-                raise TranscodingError(f"Transcoding check/process failed for {file_path}")
+                raise TranscodingError(
+                    f"Transcoding check/process failed for {file_path}"
+                )
         except Exception as e:
             raise TranscodingError(f"Video transcoding failed: {e}") from e
 
@@ -242,24 +253,42 @@ def _create_from_file(
         # 2. Calculate hash (this will be the raw_video_hash)
         video_hash = get_video_hash(transcoded_file_path)
         if not video_hash:
-            raise ValueError(f"Could not calculate video hash for {transcoded_file_path}")
-        logger.info("Calculated raw video hash: %s for %s", video_hash, original_file_name)
+            raise ValueError(
+                f"Could not calculate video hash for {transcoded_file_path}"
+            )
+        logger.info(
+            "Calculated raw video hash: %s for %s", video_hash, original_file_name
+        )
 
         # 3. Check if hash already exists
         if cls_model.check_hash_exists(video_hash=video_hash):
             existing_video = cls_model.objects.get(video_hash=video_hash)
-            logger.warning("Video with hash %s already exists (UUID: %s)", video_hash, existing_video.uuid)
+            logger.warning(
+                "Video with hash %s already exists (UUID: %s)",
+                video_hash,
+                existing_video.uuid,
+            )
 
             # Check if the existing video has a valid file
             existing_raw_path = existing_video.get_raw_file_path()
-            if existing_video.has_raw and existing_raw_path and existing_raw_path.exists():
-                logger.warning("Video with hash %s already exists and file is present. Returning existing instance.", video_hash)
+            if (
+                existing_video.has_raw
+                and existing_raw_path
+                and existing_raw_path.exists()
+            ):
+                logger.warning(
+                    "Video with hash %s already exists and file is present. Returning existing instance.",
+                    video_hash,
+                )
                 # Clean up transcoded file if it was created temporarily
                 if transcoded_file_path != file_path and transcoded_file_path.exists():
                     transcoded_file_path.unlink(missing_ok=True)
                 return existing_video
 
-            logger.warning("Video with hash %s exists but file is missing. Deleting orphaned record.", video_hash)
+            logger.warning(
+                "Video with hash %s exists but file is missing. Deleting orphaned record.",
+                video_hash,
+            )
             existing_video.delete()
 
         # 4. Generate UUID and final storage path
@@ -270,16 +299,26 @@ def _create_from_file(
         # 5. Move or Copy the file to final storage using improved method
         try:
             if delete_source and transcoded_file_path == file_path:
-                logger.debug("Moving original file %s to %s", file_path, final_storage_path)
+                logger.debug(
+                    "Moving original file %s to %s", file_path, final_storage_path
+                )
                 atomic_move_with_fallback(file_path, final_storage_path)
             elif delete_source and transcoded_file_path != file_path:
-                logger.debug("Moving transcoded file %s to %s", transcoded_file_path, final_storage_path)
+                logger.debug(
+                    "Moving transcoded file %s to %s",
+                    transcoded_file_path,
+                    final_storage_path,
+                )
                 atomic_move_with_fallback(transcoded_file_path, final_storage_path)
             else:
-                logger.debug("Copying file %s to %s", transcoded_file_path, final_storage_path)
+                logger.debug(
+                    "Copying file %s to %s", transcoded_file_path, final_storage_path
+                )
                 atomic_copy_with_fallback(transcoded_file_path, final_storage_path)
                 if transcoded_file_path != file_path and transcoded_file_path.exists():
-                    logger.debug("Cleaning up temporary transcoded file %s", transcoded_file_path)
+                    logger.debug(
+                        "Cleaning up temporary transcoded file %s", transcoded_file_path
+                    )
                     transcoded_file_path.unlink(missing_ok=True)
         except InsufficientStorageError:
             # Re-raise storage errors as-is
@@ -290,15 +329,29 @@ def _create_from_file(
         # 6. Verify hash after move/copy
         final_hash = get_video_hash(final_storage_path)
         if final_hash != video_hash:
-            logger.error("Hash mismatch after file operation! Expected %s, got %s", video_hash, final_hash)
+            logger.error(
+                "Hash mismatch after file operation! Expected %s, got %s",
+                video_hash,
+                final_hash,
+            )
             final_storage_path.unlink(missing_ok=True)
-            raise RuntimeError(f"Hash mismatch after file operation for {final_storage_path}")
+            raise RuntimeError(
+                f"Hash mismatch after file operation for {final_storage_path}"
+            )
 
         # 7. Get related objects
         try:
             center = Center.objects.get(name=center_name)
-            processor = EndoscopyProcessor.objects.get(name=processor_name) if processor_name else None
-            logger.debug("Found Center: %s, Processor: %s", center.name, processor.name if processor else "None")
+            processor = (
+                EndoscopyProcessor.objects.get(name=processor_name)
+                if processor_name
+                else None
+            )
+            logger.debug(
+                "Found Center: %s, Processor: %s",
+                center.name,
+                processor.name if processor else "None",
+            )
         except Center.DoesNotExist as e:
             logger.error("Center '%s' not found", center_name)
             if final_storage_path and final_storage_path.exists():
@@ -331,7 +384,9 @@ def _create_from_file(
         if save:
             logger.info("Saving new VideoFile instance (UUID: %s)", uuid_val)
             video.save()
-            logger.info("Successfully created VideoFile PK %s (UUID: %s)", video.pk, video.uuid)
+            logger.info(
+                "Successfully created VideoFile PK %s (UUID: %s)", video.pk, video.uuid
+            )
 
         return video
 
@@ -339,12 +394,24 @@ def _create_from_file(
         # Re-raise these specific errors as-is
         raise
     except Exception as e:
-        logger.error("Failed to create VideoFile from %s: (%s) %s", file_path, type(e).__name__, e, exc_info=True)
+        logger.error(
+            "Failed to create VideoFile from %s: (%s) %s",
+            file_path,
+            type(e).__name__,
+            e,
+            exc_info=True,
+        )
         # Clean up any created files
         if final_storage_path and final_storage_path.exists():
             logger.warning("Cleaning up orphaned file: %s", final_storage_path)
             final_storage_path.unlink(missing_ok=True)
-        if transcoded_file_path and transcoded_file_path != file_path and transcoded_file_path.exists():
-            logger.warning("Cleaning up orphaned transcoded file: %s", transcoded_file_path)
+        if (
+            transcoded_file_path
+            and transcoded_file_path != file_path
+            and transcoded_file_path.exists()
+        ):
+            logger.warning(
+                "Cleaning up orphaned transcoded file: %s", transcoded_file_path
+            )
             transcoded_file_path.unlink(missing_ok=True)
         raise RuntimeError(f"Video processing failed: {e}") from e

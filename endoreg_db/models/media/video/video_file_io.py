@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Iterator, Optional
 from django.db import transaction
 
 from ....utils import delete_field_file, ensure_local_file, storage_file_exists
-from ...utils import (
+from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,
-    VIDEO_DIR,
+    SENSITIVE_VIDEO_DIR,
     data_paths,
 )
 
@@ -27,7 +27,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     raw_rel = Path(video.raw_file.name)
 
     # If it already contains the video directory name, keep the tail
-    rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
+    rel_name = raw_rel.name if raw_rel.parent.name == SENSITIVE_VIDEO_DIR.name else raw_rel
     full_path = data_paths["video"] / rel_name
 
     if full_path.exists():

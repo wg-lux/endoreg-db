@@ -27,7 +27,7 @@ from endoreg_db.models.media.video.video_file_anonymize import _cleanup_raw_asse
 from endoreg_db.models.state import VideoState
 from endoreg_db.utils import ensure_local_file, storage_file_exists
 from endoreg_db.utils.hashs import get_video_hash
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, VIDEO_DIR
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR
 
 # File lock configuration (matches report import)
 STALE_LOCK_SECONDS = 6000  # 100 minutes - reclaim locks older than this
@@ -831,7 +831,7 @@ class VideoImportService:
         raw_field: FieldFile | None = getattr(video, "raw_file", None)
 
         def copy_into_sensitive(source: Path) -> Path:
-            target_dir = VIDEO_DIR / "sensitive"
+            target_dir = SENSITIVE_VIDEO_DIR
             if not target_dir.exists():
                 self.logger.info("Creating sensitive file directory: %s", target_dir)
                 os.makedirs(target_dir, exist_ok=True)

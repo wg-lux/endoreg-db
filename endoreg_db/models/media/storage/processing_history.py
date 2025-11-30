@@ -18,22 +18,23 @@ class ProcessingHistory(models.Model):
     """
 
     object_id = models.PositiveIntegerField()
-    file_hash = models.CharField(max_length=512, blank=True)
+    file_type = models.CharField(max_length=512, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     success = models.BooleanField(default=False)
+
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.file_hash or self.object_id}, Success: {self.success}"
+        return f"{self.file_type or self.object_id}, Success: {self.success}"
 
     @classmethod
     def get_or_create_history(
         cls,
         *,
         object_id: int,
-        file_hash: str,
+        file_type: str,
         success: bool | None = None,
     ) -> "ProcessingHistory":
         """
@@ -46,7 +47,7 @@ class ProcessingHistory(models.Model):
 
         obj, created = cls.objects.get_or_create(
             object_id=object_id,
-            file_hash=file_hash,
+            file_type=file_type,
             defaults={"success": success},
         )
 

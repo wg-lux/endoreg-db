@@ -13,7 +13,11 @@ from django.db import models
 
 from endoreg_db.utils.file_operations import get_uuid_filename
 from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import REPORT_DIR
+from endoreg_db.utils.paths import (
+    ANONYM_REPORT_DIR,
+    IMPORT_REPORT_DIR,
+    SENSITIVE_REPORT_DIR,
+)
 from endoreg_db.utils.storage import (
     delete_field_file,
     ensure_local_file,
@@ -26,7 +30,6 @@ if TYPE_CHECKING:
 
     from endoreg_db.models.state import RawPdfState
 
-# setup logging to pdf_import.log
 import logging
 from pathlib import Path
 
@@ -70,11 +73,11 @@ class RawPdfFile(models.Model):
 
     file = models.FileField(
         # Use the relative path from the specific REPORT_DIR
-        upload_to=REPORT_DIR.name,
+        upload_to=SENSITIVE_REPORT_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
     processed_file = models.FileField(
-        upload_to=REPORT_DIR.name,
+        upload_to=ANONYM_REPORT_DIR.name,
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         null=True,
         blank=True,
@@ -220,10 +223,10 @@ class RawPdfFile(models.Model):
 
         # Define potential raw directories
         raw_dirs = [
-            REPORT_DIR / "sensitive",  # Files might be in sensitive dir
-            Path(settings.BASE_DIR) / "data" / "raw_pdfs",
+            SENSITIVE_REPORT_DIR,  # Files might be in sensitive dir
+            Path(settings.BASE_DIR) / "data" / "temporary_reports",
             Path(settings.BASE_DIR) / "data" / "pdfs" / "raw",
-            REPORT_DIR,  # General report directory
+            IMPORT_REPORT_DIR,  # General report directory
         ]
 
         # Check direct hash-based name in each directory
@@ -305,6 +308,38 @@ class RawPdfFile(models.Model):
 
         super().delete(*args, **kwargs)
 
+        # --- Convenience state/meta helpers used in tests and admin workflows ---
+
+    def mark_sensitive_meta_processed(self, *, save: bool = True) -> "RawPdfFile":
+        """
+        Mark this video's processing state as having its sensitive meta fully processed.
+        This proxies to the related VideoState and persists by default.
+        """
+        sm = self.sensitive_meta
+        from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+
+        if not isinstance(sm, SensitiveMeta):
+            raise AttributeError()
+        state = self.get_or_create_state()
+        state.mark_sensitive_meta_processed(save=save)
+        return self
+
+    def mark_sensitive_meta_verified(self) -> "RawPdfFile":
+        """
+        Mark the associated SensitiveMeta as verified by setting both DOB and names as verified.
+        Ensures the SensitiveMeta and its state exist.
+        """
+        sm = self.sensitive_meta
+        # Use SensitiveMeta methods to update underlying SensitiveMetaState
+        from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+
+        if not isinstance(sm, SensitiveMeta):
+            raise AttributeError()
+
+        sm.mark_dob_verified()
+        sm.mark_names_verified()
+        return self
+
     def validate_metadata_annotation(
         self, extracted_data_dict: Optional[dict] = None
     ) -> bool:
@@ -315,9 +350,8 @@ class RawPdfFile(models.Model):
         It also ensures the video file is properly saved after the metadata update.
         """
 
-        if not self.sensitive_meta:
-            logger.error("No sensitive meta data associated with this report file.")
-            return False
+        self.mark_sensitive_meta_processed()
+        self.mark_sensitive_meta_verified()
 
         if not extracted_data_dict:
             logger.error("No extracted data provided for validation.")
@@ -716,8 +750,8 @@ class RawPdfFile(models.Model):
         return settings_dict
 
     @staticmethod
-    def get_pdf_by_id(pdf_id: int) -> "RawPdfFile":
+    def get_pdf_by_pk(pk: int) -> "RawPdfFile":
         try:
-            return RawPdfFile.objects.get(pk=pdf_id)
+            return RawPdfFile.objects.get(pk=pk)
         except RawPdfFile.DoesNotExist:
             raise ValueError(f"report with ID {pdf_id} does not exist.")

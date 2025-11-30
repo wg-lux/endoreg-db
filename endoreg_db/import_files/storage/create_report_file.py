@@ -13,29 +13,26 @@ logger = logging.getLogger(__name__)
 
 def create_or_retrieve_report_file(
     ctx: ImportContext,
-) -> Tuple[RawPdfFile, str, bool]:
+) -> Tuple[RawPdfFile, bool]:
     """
     Create a new or retrieve an existing RawPdfFile for the given context.
 
     Returns:
         pdf      : RawPdfFile instance
-        file_hash: hash used for deduplication
         retry    : whether we are re-processing an existing file
     """
     file_path = ctx.file_path
     center_name = ctx.center_name
     delete_source = ctx.delete_source
     retry = ctx.retry
-    file_hash = ctx.file_hash
+    file_type = ctx.file_type
 
     existing: RawPdfFile | None = None
-
-    # Try to find existing by hash (if known)
-    if file_hash:
-        try:
-            existing = RawPdfFile.objects.get(pdf_hash=file_hash)
-        except RawPdfFile.DoesNotExist:
-            existing = None
+    
+    if ctx.current_report:
+        pk = ctx.current_report.pk
+        existing = ctx.current_report.get_pdf_by_pk(pk=pk):
+        
 
     # === NON-RETRY PATH WITH EXISTING FILE ===
     if existing and not retry:
@@ -48,20 +45,20 @@ def create_or_retrieve_report_file(
             )
             ProcessingHistory.get_or_create_history(
                 object_id=existing.pk,
-                file_hash=file_hash,
+                file_type=file_type,
                 success=True,
             )
-            return existing, file_hash, False
+            return existing, file_type, False
 
         logger.info(
             "Reprocessing existing report %s (no text found yet)", existing.pdf_hash
         )
         ProcessingHistory.get_or_create_history(
             object_id=existing.pk,
-            file_hash=file_hash,
+            file_type=file_type,
             success=False,
         )
-        return existing, file_hash, True
+        return existing, True
 
     # === CREATE OR RETRY PATH ===
     logger.info("Creating or retrieving RawPdfFile instance...")
@@ -74,11 +71,11 @@ def create_or_retrieve_report_file(
                 delete_source=delete_source,
             )
         else:
-            # Explicit retry path: assume file_hash is set
-            if not file_hash:
-                raise RuntimeError("Retry requested but file_hash is empty")
+            # Explicit retry path: assume file_type is set
+            if not file_type:
+                raise RuntimeError("Retry requested but file_type is empty")
 
-            pdf = RawPdfFile.objects.get(pdf_hash=file_hash)
+            pdf = RawPdfFile.objects.get(pdf_hash=file_type)
             logger.info("Retrying import for existing RawPdfFile %s", pdf.pdf_hash)
 
             if pdf.text:
@@ -88,34 +85,34 @@ def create_or_retrieve_report_file(
                 )
                 ProcessingHistory.get_or_create_history(
                     object_id=pdf.pk,
-                    file_hash=file_hash,
+                    file_type=file_type,
                     success=True,
                 )
-                return pdf, file_hash, False
+                return pdf, False
 
         if not pdf:
             raise RuntimeError("Failed to create RawPdfFile instance")
 
-        # Ensure we have a hash even if ctx.file_hash was not set
-        if not file_hash:
-            file_hash = pdf.pdf_hash
+        # Ensure we have a hash even if ctx.file_type was not set
+        if not file_type:
+            file_type = pdf.pdf_hash
 
         logger.info("report instance ready: %s", pdf.pdf_hash)
 
         ProcessingHistory.get_or_create_history(
             object_id=pdf.pk,
-            file_hash=file_hash,
+            file_type=file_type,
             success=bool(getattr(pdf, "text", None)),
         )
 
-        return pdf, file_hash, retry
+        return pdf, file_type, retry
 
     except IntegrityError:
         # Race condition - another worker created it first
-        if not file_hash:
+        if not file_type:
             raise  # cannot recover without a hash
 
-        pdf = RawPdfFile.objects.get(pdf_hash=file_hash)
+        pdf = RawPdfFile.objects.get(pdf_hash=file_type)
         logger.info(
             "Race condition detected, using existing RawPdfFile %s instead",
             pdf.pdf_hash,
@@ -123,8 +120,8 @@ def create_or_retrieve_report_file(
 
         ProcessingHistory.get_or_create_history(
             object_id=pdf.pk,
-            file_hash=file_hash,
+            file_type=file_type,
             success=bool(getattr(pdf, "text", None)),
         )
 
-        return pdf, file_hash, True
+        return pdf, True

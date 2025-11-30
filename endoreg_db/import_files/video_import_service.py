@@ -9,20 +9,28 @@ from django.db.models.fields.files import FieldFile
 from endoreg_db.import_files.context import (
     ImportContext,
     file_lock,
-    quarantine,
-    unquarantine,
 )
-from endoreg_db.import_files.processing.video_processing.video_cleanup_on_error import (
-    cleanup_video_on_error,
+from endoreg_db.import_files.storage.state_management import (
+    finalize_failure,
+    finalize_video_success
 )
-from endoreg_db.import_files.storage import create_sensitive_copy, move_to_anonymized
+from endoreg_db.import_files.storage.storage import create_sensitive_copy, move_to_anonymized
 from endoreg_db.import_files.storage.create_video_file import (
     create_or_retrieve_video_file,
 )
-from endoreg_db.import_files.storage.state_management import mark_instance_processing_started
+from endoreg_db.import_files.context.validate_directories import validate_directories
+from endoreg_db.import_files.storage.state_management import (
+    mark_instance_processing_started,
+)
 from endoreg_db.models import VideoFile
 from endoreg_db.models.media.storage.processing_history import ProcessingHistory
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, VIDEO_DIR
+from endoreg_db.import_files.processing.video_processing.video_anonymization import VideoAnonymizer
+from endoreg_db.utils.paths import (
+    ANONYM_VIDEO_DIR,
+    IMPORT_VIDEO_DIR,
+    SENSITIVE_VIDEO_DIR,
+    TRANSCODING_DIR
+)
 
 
 class VideoImportService:
@@ -41,11 +49,14 @@ class VideoImportService:
         Create processed_file
         Decide fallback anonymization
 
+    These actions are delegated to the modules inside file_import
+
     """
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.quarantine_path = Path(STORAGE_DIR / "_processing")
+        self.quarantine_path = Path(TRANSCODING_DIR)
+        validate_directories()
 
     def import_and_anonymize(
         self,
@@ -58,39 +69,30 @@ class VideoImportService:
         """
         Public entrypoint: wrap import_and_anonymize logic.
         """
-        self.ctx: ImportContext = ImportContext(
+        ctx: ImportContext = ImportContext(
             Path(file_path), center_name, processor_name, save_video, delete_source
         )
-        self.quarantine_path = STORAGE_DIR / "quarantine"
-        self.ctx.sensitive_path = create_sensitive_copy(
-            self.ctx.file_path, SENSITIVE_VIDEO_DIR
+        self.quarantine_path = TRANSCODING_DIR
+        ctx.sensitive_path = create_sensitive_copy(
+            ctx.file_path, SENSITIVE_VIDEO_DIR
         )
 
         self.logger.info("validating and preparing file")
-        if not self.ctx.file_path.exists():
+        if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
-        with file_lock(self.ctx.file_path):
-            self.ctx.quarantine_path = quarantine(
-                self.ctx.file_path, self.quarantine_path
-            )
-
-            # create or retrieve RawPdfFile + update history
-            video, file_hash, retry = create_or_retrieve_video_file(
-                self.ctx
-            )
-            
-            mark_instance_processing_started(video, self.ctx)
+        try:
+            with file_lock(ctx.file_path):
 
 
-            self.ctx.current_video = video
-            self.ctx.file_hash = file_hash
-            self.ctx.retry = retry
+                # create or retrieve VideoFile + update history
+                ctx.current_video, ctx.file_hash, ctx.retry = (
+                    create_or_retrieve_video_file(ctx)
+                )
 
-            # ... here continue with: OCR / anonymization / saving etc. ...
-
-            # when everything finishes successfully, mark success in history:
-            ProcessingHistory.get_or_create_history(
-                object_id=self.ctx.current_video.pk,
-                file_hash=self.ctx.file_hash,
-                success=True,
-            )
+                mark_instance_processing_started(ctx.current_video, ctx)
+                anonymizer = VideoAnonymizer()
+                ctx = anonymizer.anonymize_video(ctx)
+                finalize_video_success(ctx)
+                
+        except Exception as e:
+            finalize_failure(ctx)

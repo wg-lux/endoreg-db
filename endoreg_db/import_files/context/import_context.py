@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from tkinter import N
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from endoreg_db.models.media import RawPdfFile, VideoFile
@@ -32,8 +31,13 @@ class ImportContext:
     current_report: Optional[RawPdfFile] = None
     current_video: Optional[VideoFile] = None
     current_meta: Optional[SensitiveMeta] = None
-
+    instance: Optional[Union[RawPdfFile, VideoFile]] = None
+    
+    file_type: str = "undefined"
+    
+    
     # processing metadata
     file_hash: str = ""
     original_text: Optional[str] = None
+    anonymized_text: Optional[str] = None
     extracted_metadata: Dict[str, Any] = field(default_factory=dict)

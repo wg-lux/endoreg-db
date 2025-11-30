@@ -299,7 +299,7 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
     This function is called on every save() operation and implements a two-phase approach:
 
     **Phase 1: Initial Creation (with defaults)**
-    - When a SensitiveMeta is first created (e.g., via get_or_create_sensitive_meta()),
+    - When a SensitiveMeta is first created (e.g., via create_from_dict),
       it may have missing patient data (names, DOB, etc.)
     - Default values are set to prevent hash calculation errors:
       * patient_first_name: "unknown"

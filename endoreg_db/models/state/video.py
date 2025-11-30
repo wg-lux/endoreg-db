@@ -6,7 +6,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from django.db import models
+from django.db import models, transaction
 
 from endoreg_db.models.state.anonymization import AnonymizationState
 
@@ -97,36 +97,6 @@ class VideoState(models.Model):
 
     objects = models.Manager()
 
-    def __str__(self):
-        # Find the related VideoFile's UUID if possible
-        video_uuid = "Unknown"
-        try:
-            # Access the related VideoFile via the reverse relation 'video_file'
-            if hasattr(self, "video_file") and self.video_file:
-                video_uuid = self.video_file.uuid
-        except Exception:
-            pass  # Ignore errors if relation doesn't exist or causes issues
-            pass  # Ignore errors if relation doesn't exist or causes issues
-
-        states = [
-            f"FramesExtracted={self.frames_extracted}",
-            f"FramesInit={self.frames_initialized}",
-            f"VideoMetaExtracted={self.video_meta_extracted}",
-            f"TextMetaExtracted={self.text_meta_extracted}",
-            f"PredictionDone={self.initial_prediction_completed}",
-            f"LvsCreated={self.lvs_created}",
-            f"Anonymized={self.anonymized}",
-            f"AnonymizationValidated={self.anonymization_validated}",
-            f"SensitiveMetaProcessed={self.sensitive_meta_processed}",
-            f"FrameCount={self.frame_count}"
-            if self.frame_count is not None
-            else "FrameCount=None",
-            f"SegmentAnnotationsCreated={self.segment_annotations_created}",
-            f"SegmentAnnotationsValidated={self.segment_annotations_validated}",
-            f"DateCreated={self.date_created.isoformat()}",
-            f"DateModified={self.date_modified.isoformat()}",
-        ]
-        return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
 
     @property
     def anonymization_status(self) -> AnonymizationState:
@@ -147,19 +117,23 @@ class VideoState(models.Model):
             return AnonymizationState.STARTED
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
-        elif not self.processing_started:
-            return AnonymizationState.NOT_STARTED
+        return AnonymizationState.NOT_STARTED
 
-    def mark_processing_not_started(self, *, save: bool = True) -> None:
+    def mark_processing_not_started(self) -> None:
         """
-        Mark the processing as started and optionally save the updated state.
+        Mark the processing as not started and optionally save the updated state.
 
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
-        self.processing_started = False
-        if save:
-            self.save(update_fields=["processing_started", "date_modified"])
+        with transaction.atomic():
+            self.processing_started = False
+            self.anonymized = False
+            self.was_created = False
+            self.sensitive_meta_processed = False
+            self.anonymization_validated = False
+            self.frames_extracted = False
+            self.save()
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
@@ -206,8 +180,8 @@ class VideoState(models.Model):
         Parameters:
             save (bool): If True, immediately saves the updated state to the database.
         """
-        self.state.anonymization_status.mark_anonymized()
-        if save:
+        with transaction.atomic():
+            self.anonymized = True
             self.save(update_fields=["anonymized", "date_modified"])
 
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:

@@ -6,7 +6,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from django.db import models
+from django.db import models, transaction
 
 from endoreg_db.models.state.anonymization import AnonymizationState
 
@@ -121,19 +121,22 @@ class RawPdfState(models.Model):
             )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
-        elif not self.processing_started:
-            return AnonymizationState.NOT_STARTED
+        return AnonymizationState.NOT_STARTED
 
-    def mark_processing_not_started(self, *, save: bool = True) -> None:
+    def mark_processing_not_started(self) -> None:
         """
-        Mark the processing as started and optionally save the updated state.
+        Mark the processing as not started and optionally save the updated state.
 
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
-        self.processing_started = False
-        if save:
-            self.save(update_fields=["processing_started", "date_modified"])
+        with transaction.atomic():
+            self.processing_started = False
+            self.anonymized = False
+            self.was_created = False
+            self.sensitive_meta_processed = False
+            self.anonymization_validated = False
+            self.save()
 
     def mark_processing_started(self, *, save: bool = True) -> None:
         """
@@ -143,8 +146,7 @@ class RawPdfState(models.Model):
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
         self.processing_started = True
-        if save:
-            self.save(update_fields=["processing_started", "date_modified"])
+        self.save(update_fields=["processing_started", "date_modified"])
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
@@ -176,7 +178,7 @@ class RawPdfState(models.Model):
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
-        self.state.anonymization_status.mark_anonymized()
+        self.anonymization_status.mark_anonymized()
         if save:
             self.save(update_fields=["anonymized", "date_modified"])
 
