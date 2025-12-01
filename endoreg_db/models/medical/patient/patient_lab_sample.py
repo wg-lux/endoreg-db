@@ -69,7 +69,7 @@ class PatientLabSample(models.Model):
         sample_type: models.ForeignKey["PatientLabSampleType"]
 
         @property
-        def values(self) -> models.manager.RelatedManager["PatientLabValue"]: ...
+        def values(self) -> models.manager.Manager["PatientLabValue"]: ...
 
     def __str__(self):
         """Returns a string representation including patient, type, and date."""

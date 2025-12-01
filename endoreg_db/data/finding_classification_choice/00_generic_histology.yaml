@@ -19,3 +19,17 @@
   fields:
     name: "histology_dignity_malign"
     description: "Histology: Malign"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_non_pathological"
+    description: "Histology: Non-pathological"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_unknown"
+    description: "Histology: Unknown"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_other"
+    description: "Histology: Other"

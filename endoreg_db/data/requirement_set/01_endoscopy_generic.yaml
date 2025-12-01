@@ -17,8 +17,8 @@
     description: "Patient names (generic)"
     requirement_set_type: "all"
     requirements:
-      - patient_first_name #TODO
-      - patient_last_name #TODO
+      - patient_has_first_name
+      - patient_has_last_name
 
 - models: endoreg_db.requirement_set
   fields:
@@ -28,38 +28,16 @@
     description: "Patient date of birth (generic)"
     requirement_set_type: "all"
     requirements:
-      - patient_date_of_birth_present #TODO
+      - patient_has_dob
 
 - models: endoreg_db.requirement_set
   fields:
-    name: "colonoscopy_basic_patient_history"
-    name_de: "Koloskopie - Basis Patientenanamnese"
-    name_en: "Colonoscopy - Basic Patient History"
-    description: "Colonoscopy - Basic Patient History"
-    requirement_set_type: "all"
-    requirements:
-      - "patient_history_last_colonoscopy_known" #TODO
-      - "patient_history_previous_bowel_surgery_known" #TODO
-
-- models: endoreg_db.requirement_set
-  fields:
-    name: "patient_age_generic"
-    name_de: "Patientenalter (18-100 Jahre)"
-    name_en: "Patient Age (18-100 years)"
-    description: "Patient age between 18 and 100 years"
-    requirement_set_type: "all"
-    requirements:
-      - "patient_age_gte_18"
-      - "patient_age_lte_100"
-
-- models: endoreg_db.requirement_set
-  fields:
-    name: "generic_patient"
+    name: "patient_information_generic"
     requirement_set_type: "all"
     description: "Generic patient requirement set"
     name_de: "Generische Patientenanforderung"
     name_en: "Generic Patient Requirement"
     links_to_sets:
-      - "patient_age_generic"
+      - "patient_names_generic"
       - "patient_gender_generic"
-      - "basic_lab_values_normal"
+      - "patient_dob_generic"

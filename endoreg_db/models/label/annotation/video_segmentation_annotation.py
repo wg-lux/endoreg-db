@@ -63,7 +63,7 @@ class VideoSegmentationAnnotation(models.Model):
     class Meta:
         constraints = [
             CheckConstraint(
-                check=Q(start_time__lt=F("stop_time")),
+                condition=Q(start_time__lt=F("stop_time")),
                 name="start_time_less_than_stop_time",
             ),
         ]

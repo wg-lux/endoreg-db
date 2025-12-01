@@ -16,6 +16,12 @@ class FindingTypeManager(models.Manager):
         """
         return self.get(name=name)
 
+    def get(self, *args, **kwargs) -> "FindingType":
+        return super().get(*args, **kwargs)
+
+    def all(self) -> models.QuerySet["FindingType"]:
+        return super().all()
+
 
 class FindingType(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -27,7 +33,7 @@ class FindingType(models.Model):
         from endoreg_db.models import Examination, Finding, FindingClassification
 
         @property
-        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+        def finding_classifications(self) -> "models.manager.Manager[FindingClassification]": ...
 
     def natural_key(self):
         return (self.name,)

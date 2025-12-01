@@ -1,0 +1,2 @@
+- pytest-xdist ?
+- mypy, django-stubs, pytest-django

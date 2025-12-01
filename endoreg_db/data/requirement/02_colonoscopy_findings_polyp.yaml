@@ -1,0 +1,289 @@
+######## Location
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_has_location"
+    name_de: "Kolonpolyp hat Lageinformation"
+    name_en: "Colon polyp has location information"
+    description: "Checks if the colon polyp has location classification information."
+    operator: "patient_examination_specific_findings_have_classifications_any"
+    finding_classifications:
+      - colonoscopy_location_default
+      - colonoscopy_location_coarse
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_location_rectosigmoid"
+    name_de: "Kolonpolyp Lage im Rektosigmoid"
+    name_en: "Colon polyp location in rectosigmoid"
+    description: "Checks if the colon polyp is located in the rectosigmoid."
+    operator: "patient_examination_specific_findings_have_specific_classification_choices_any"
+    finding_classification_choices:
+      - rectum
+      - sigmoid_colon
+      - anal_canal
+    findings:
+      - "colon_polyp"
+
+######## Size
+# coloreg_finding_colon_polyp_size_measured_in_mm
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_mm"
+    name_de: "Coloreg Befund Kolon Polyp Größe in mm gemessen"
+    name_en: "Coloreg Finding Colon Polyp Size measured in mm"
+    description: "Checks if the colon polyp size is measured in mm."
+    operator: "patient_examination_specific_findings_have_classifications_all"
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+
+# coloreg_finding_colon_polyp_size_categorical
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_categorical"
+    name_de: "Coloreg Befund Kolon Polyp Größe kategorisch"
+    name_en: "Coloreg Finding Colon Polyp Size categorical"
+    description: "Checks if the colon polyp size is categorized."
+    operator: "patient_examination_specific_findings_have_classifications_all"
+    finding_classifications:
+      - colon_lesion_size_categorical
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_any"
+    name_de: "Coloreg Befund Kolon Polyp Größe beliebig"
+    name_en: "Coloreg Finding Colon Polyp Size (any)"
+    description: "Checks if the colon polyp size is categorized."
+    operator: "patient_examination_specific_findings_have_classifications_any"
+    finding_classifications:
+      - lesion_size_mm
+      - colon_lesion_size_categorical
+    findings:
+      - "colon_polyp"
+
+####### Size thresholds
+
+# colon_polyp_size_smaller_10_mm
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_gte_10_mm"
+    name_de: "Coloreg Befund Kolon Polyp Größer gleich 10 mm"
+    name_en: "Coloreg Finding Colon Polyp Size "
+    description: "Checks if the colon polyp size is categorized."
+    operator: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_gte"
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+    numeric_value: 10
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_lt_6_mm"
+    name_de: "Coloreg Befund Kolon Polyp Größe kleiner 6 mm"
+    name_en: "Coloreg Finding Colon Polyp Size (any)"
+    description: "Checks if the colon polyp size is categorized."
+    operator: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_lt"
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+    numeric_value: 6
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_1_to_5_mm"
+    name_de: "Coloreg Befund Kolon Polyp Größe 1-5 mm"
+    name_en: "Coloreg Finding Colon Polyp Size 1-5 mm"
+    description: "Checks if the colon polyp size is between 1 and 5 mm."
+    operator: patient_examination_specific_findings_have_specific_classification_with_numeric_value_in_range
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+    numeric_value_min: 1
+    numeric_value_max: 5
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_6_to_9_mm"
+    name_de: "Coloreg Befund Kolon Polyp Größe 6-9 mm"
+    name_en: "Coloreg Finding Colon Polyp Size 6-9 mm"
+    description: "Checks if the colon polyp size is between 6 and 9 mm."
+    operator: patient_examination_specific_findings_have_specific_classification_with_numeric_value_in_range
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+    numeric_value_min: 6
+    numeric_value_max: 9
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_10_to_19_mm"
+    name_de: "Coloreg Befund Kolon Polyp Größe 10-19 mm"
+    name_en: "Coloreg Finding Colon Polyp Size 10-19 mm"
+    description: "Checks if the colon polyp size is between 10 and 19 mm"
+    operator: patient_examination_specific_findings_have_specific_classification_with_numeric_value_in_range
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+    numeric_value_min: 10
+    numeric_value_max: 19
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_20_mm_or_larger"
+    name_de: "Coloreg Befund Kolon Polyp Größe 20 mm oder größer"
+    name_en: "Coloreg Finding Colon Polyp Size 20 mm or larger"
+    description: "Checks if the colon polyp size is 20 mm or larger."
+    operator: patient_examination_specific_findings_have_specific_classification_with_numeric_value_gte
+    finding_classifications:
+      - lesion_size_mm
+    findings:
+      - "colon_polyp"
+    numeric_value: 20
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_diminutive_cat"
+    name_de: "Coloreg Befund Kolon Polyp Größe kategorisch diminutive"
+    name_en: "Coloreg Finding Colon Polyp Size categorical diminutive"
+    description: "Checks if the colon polyp size category is diminutive (<6 mm)."
+    operator: "patient_examination_specific_findings_have_specific_classification_choices_all"
+    finding_classification_choices:
+      - colon_lesion_size_categorical_diminutive
+    findings:
+      - "colon_polyp"
+
+# colon_polyp_size_small_cat
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_small_cat"
+    name_de: "Coloreg Befund Kolon Polyp Größe kategorisch small"
+    name_en: "Coloreg Finding Colon Polyp Size categorical small"
+    description: "Checks if the colon polyp size category is small (6-9 mm)."
+    operator: "patient_examination_specific_findings_have_specific_classification_choices_all"
+    finding_classification_choices:
+      - colon_lesion_size_categorical_small
+    findings:
+      - "colon_polyp"
+
+# colon_polyp_size_smaller_10_19_mm
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_medium_cat"
+    name_de: "Coloreg Befund Kolon Polyp Größe kategorisch medium"
+    name_en: "Coloreg Finding Colon Polyp Size categorical medium"
+    description: "Checks if the colon polyp size category is medium (10-19 mm)."
+    operator: "patient_examination_specific_findings_have_specific_classification_choices_all"
+    finding_classification_choices:
+      - colon_lesion_size_categorical_medium
+    findings:
+      - "colon_polyp"
+
+# colon_polyp_size_20_mm_or_larger
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_size_large_cat"
+    name_de: "Coloreg Befund Kolon Polyp Größe kategorisch medium"
+    name_en: "Coloreg Finding Colon Polyp Size categorical medium"
+    description: "Checks if the colon polyp size category is medium (10-19 mm)."
+    requirement_types:
+      - "patient_examination"
+    operator: "patient_examination_specific_findings_have_specific_classification_choices_all"
+    finding_classification_choices:
+      - colon_lesion_size_categorical_large
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_white_light_morphology_present"
+    name_de: "Kolonpolyp Weißlicht Morphologie vorhanden"
+    name_en: "Colon polyp white light morphology present"
+    description: "Checks if the colon polyp has white light morphology classification information."
+    operator: "patient_examination_specific_findings_have_classifications_any"
+    finding_classifications:
+      - colon_lesion_paris
+      - colon_lesion_lst
+      - lesion_planarity_default
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_advanced_imaging_morphology_present"
+    name_de: "Kolonpolyp NBI Morphologie vorhanden"
+    name_en: "Colon polyp NBI morphology present"
+    description: "Checks if the colon polyp has NBI or JNET morphology classification information."
+    operator: "patient_examination_specific_findings_have_classifications_any"
+    finding_classifications:
+      - colon_lesion_nice
+      - colon_lesion_jnet
+      - colon_lesion_kudo
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_morphology_lst_present"
+    name_de: "Kolonpolyp LST Morphologie vorhanden"
+    name_en: "Colon polyp LST morphology present"
+    description: "Checks if the colon polyp has LST morphology classification information."
+    operator: "patient_examination_specific_findings_have_classifications_all"
+    finding_classifications:
+      - colon_lesion_lst
+    findings:
+      - "colon_polyp"
+
+# TODO:
+# colon_polyp_histology_expected -> checks for specific intervention_type
+# colon_polyp_histology_not_expected -> checks for absence of specific intervention_type
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_histology_not_expected"
+    name_de: "Kolonpolyp Histologie nicht erwartet"
+    name_en: "Colon polyp histology not expected"
+    description:
+      "Checks if the colon polyps have intervention of type 'histology_sampling'.
+      If not, this requirement returns true."
+    operator: "!patient_examination_specific_findings_have_intervention_of_type"
+    finding_intervention_type:
+      - histology_sampling
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_histology_expected"
+    name_de: "Kolonpolyp Histologie erwartet"
+    name_en: "Colon polyp histology expected"
+    description: "Checks if the colon polyps have intervention of type 'histology_sampling'."
+    operator: "patient_examination_specific_findings_have_intervention_of_type"
+    finding_intervention_type:
+      - histology_sampling
+    findings:
+      - "colon_polyp"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colon_polyp_histology_reported"
+    name_de: "Kolonpolyp Histologie vorhanden"
+    name_en: "Colon polyp histology present"
+    description: "Checks if the colon polyp has histology classification information."
+    operator: "patient_examination_specific_findings_have_classifications_all"
+    finding_classifications:
+      - colonoscopy_polyp_histology
+      - histology_dysplasia_default
+      - histology_dignity_default
+      - histology_in_sano_default
+    findings:
+      - "colon_polyp"

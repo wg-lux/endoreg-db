@@ -42,7 +42,7 @@ class MedicationSchedule(models.Model):
     if TYPE_CHECKING:
         unit: models.ForeignKey["Unit"]
         medication: models.ForeignKey["Medication"]
-        intake_times = cast("models.manager.RelatedManager[MedicationIntakeTime]", intake_times)
+        intake_times = cast("models.manager.Manager[MedicationIntakeTime]", intake_times)
 
     def natural_key(self):
         """Return the natural key for the medication schedule."""

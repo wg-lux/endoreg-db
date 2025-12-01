@@ -60,15 +60,15 @@ class ExaminationIndication(models.Model):
     objects = ExaminationIndicationManager()
 
     if TYPE_CHECKING:
-        classifications = cast(models.manager.RelatedManager["ExaminationIndicationClassification"], classifications)
-        expected_interventions = cast(models.manager.RelatedManager["FindingIntervention"], expected_interventions)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        classifications = cast(models.manager.Manager["ExaminationIndicationClassification"], classifications)
+        expected_interventions = cast(models.manager.Manager["FindingIntervention"], expected_interventions)
+        information_sources = cast(models.manager.Manager["InformationSource"], information_sources)
 
         @property
-        def related_requirements(self) -> "models.manager.RelatedManager[Requirement]": ...
+        def related_requirements(self) -> "models.manager.Manager[Requirement]": ...
 
         @property
-        def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
+        def examinations(self) -> "models.manager.Manager[Examination]": ...
 
     @property
     def links(self) -> "RequirementLinks":

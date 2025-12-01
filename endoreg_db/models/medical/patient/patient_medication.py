@@ -39,7 +39,7 @@ class PatientMedication(models.Model):
         medication_indication: models.ForeignKey["MedicationIndication|None"]
         medication: models.ForeignKey["Medication|None"]
 
-        intake_times = cast(models.manager.RelatedManager["MedicationIntakeTime"], intake_times)
+        intake_times = cast(models.manager.Manager["MedicationIntakeTime"], intake_times)
         unit: models.ForeignKey["Unit|None"]
         dosage = cast(models.JSONField, dosage)
 

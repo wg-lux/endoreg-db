@@ -35,13 +35,13 @@ class PatientFinding(models.Model):
         finding: models.ForeignKey["Finding"]
 
         @property
-        def video_segments(self) -> models.manager.RelatedManager["LabelVideoSegment"]: ...
+        def video_segments(self) -> models.manager.Manager["LabelVideoSegment"]: ...
 
         @property
-        def interventions(self) -> models.manager.RelatedManager["PatientFindingIntervention"]: ...
+        def interventions(self) -> models.manager.Manager["PatientFindingIntervention"]: ...
 
         @property
-        def classifications(self) -> models.manager.RelatedManager["PatientFindingClassification"]: ...
+        def classifications(self) -> models.manager.Manager["PatientFindingClassification"]: ...
 
     class Meta:
         verbose_name = "Patient Finding"
@@ -54,9 +54,7 @@ class PatientFinding(models.Model):
                 fields=["patient_examination", "finding"], condition=models.Q(is_active=True), name="unique_active_finding_per_examination"
             ),
             models.CheckConstraint(
-                check=models.Q(  # called .check in future?
-                    deactivated_at__isnull=True, deactivated_by__isnull=True
-                )
+                condition=models.Q(deactivated_at__isnull=True, deactivated_by__isnull=True)
                 | models.Q(deactivated_at__isnull=False, deactivated_by__isnull=False, is_active=False),
                 name="deactivation_fields_consistency",
             ),

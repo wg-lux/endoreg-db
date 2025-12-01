@@ -1,0 +1,133 @@
+############################# IN RANGE #############################
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_in_range"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation mit numerischem Wert im Bereich"
+    name_en: "Patient examination has finding with classification with numeric value in range"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have all of the linked FindingClassifications with numeric values within a specified range.
+      "
+    filter_functions: exact_match;exact_match;
+    filter_input_fields: patient_findings[].finding;\
+      patient_findings[].classifications[].classification;
+    filter_requirement_fields: findings;finding_classifications;
+    eval_functions: numeric_gte;\
+      numeric_lte
+    eval_modes: "all"
+    evaluation_input_fields:
+      patient_findings[].classifications[].numerical_value_safe;\
+      patient_findings[].classifications[].numerical_value_safe;
+    evaluation_requirement_fields: numeric_value_min;\
+      numeric_value_max;
+
+################################### LESS THAN EQUAL / LESS THAN #############################
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_lt_equal"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation mit numerischem Wert kleiner gleich"
+    name_en: "Patient examination has finding with classification with numeric value less than or equal"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have:
+      - a classification choice using a numerical value
+      - and the numeric value of this choice is less or equal then the requirements 'numeric_value'.
+
+      Comparison is made using patient_findings[].classifications[].numerical_value_safe field.
+
+      The Requirement using this operator must define:
+      - finding (used to filter PatientFindings)
+      - finding_classifications (Used to filter the classifications of the filtered PatientFindings)
+      "
+    eval_functions: numeric_lte
+    eval_modes: "all"
+    evaluation_input_fields: patient_findings[].classifications[].numerical_value_safe;
+    evaluation_requirement_fields: numeric_value;
+    filter_functions: exact_match;exact_match;
+    filter_input_fields: patient_findings[].finding;\
+      patient_findings[].classifications[].classification;
+    filter_requirement_fields: findings;finding_classifications;
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_lt"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation mit numerischem Wert kleiner"
+    name_en: "Patient examination has finding with classification with numeric value less than"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have:
+      - a classification choice using a numerical value
+      - and the numeric value of this choice is less then the requirements 'numeric_value'.
+
+      Comparison is made using patient_findings[].classifications[].numerical_value_safe field.
+
+      The Requirement using this operator must define:
+      - finding (used to filter PatientFindings)
+      - finding_classifications (Used to filter the classifications of the filtered PatientFindings)
+      "
+    eval_functions: numeric_lt
+    eval_modes: "any"
+    evaluation_input_fields: patient_findings[].classifications[].numerical_value_safe;
+    evaluation_requirement_fields: numeric_value;
+    filter_functions: exact_match;exact_match;
+    filter_input_fields: patient_findings[].finding;\
+      patient_findings[].classifications[].classification;
+    filter_requirement_fields: findings;finding_classifications;
+
+################################### GREATER THAN EQUAL / GREATER THAN #############################
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_gt_equal"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation mit numerischem Wert größer gleich"
+    name_en: "Patient examination has finding with classification with numeric value greater than or equal"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have:
+      - a classification choice using a numerical value
+      - and the numeric value of this choice is greater then the requirements 'numeric_value'.
+
+      Comparison is made using patient_findings[].classifications[].numerical_value_safe field.
+
+      The Requirement using this operator must define:
+      - finding (used to filter PatientFindings)
+      - finding_classifications (Used to filter the classifications of the filtered PatientFindings)
+      "
+    eval_functions: numeric_gte
+    eval_modes: "all"
+    evaluation_input_fields: patient_findings[].classifications[].numerical_value_safe;
+    evaluation_requirement_fields: numeric_value;
+    filter_functions: exact_match;exact_match;
+    filter_input_fields: patient_findings[].finding;\
+      patient_findings[].classifications[].classification;
+    filter_requirement_fields: findings;finding_classifications;
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_with_numeric_value_gt"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation mit numerischem Wert größer"
+    name_en: "Patient examination has finding with classification with numeric value greater than"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have:
+      - a classification choice using a numerical value
+      - and the numeric value of this choice is greater then the requirements 'numeric_value'.
+      ---
+      Comparison is made using patient_findings[].classifications[].numerical_value_safe field.
+      ---
+      The Requirement using this operator must define:
+      - finding (used to filter PatientFindings)
+      - finding_classifications (Used to filter the classifications of the filtered PatientFindings)
+      "
+    eval_functions: numeric_gt
+    eval_modes: "any"
+    evaluation_input_fields: patient_findings[].classifications[].numerical_value_safe;
+    evaluation_requirement_fields: numeric_value;
+    filter_functions: exact_match;exact_match;
+    filter_input_fields: patient_findings[].finding;\
+      patient_findings[].classifications[].classification;
+    filter_requirement_fields: findings;finding_classifications;

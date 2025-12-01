@@ -34,15 +34,12 @@ class SensitiveMeta(models.Model):
     Stores potentially sensitive information extracted from media.
     Logic for creation, hashing, pseudo-anonymization, and saving is in sensitive_meta_logic.py.
     """
-    
-    
 
     # --- Examination and Patient Info ---
     examination_date = models.DateField(blank=True, null=True)
     examination_time = models.TimeField(blank=True, null=True)
     casenumber = models.CharField(max_length=255, blank=True, null=True)
     file_path = models.CharField(max_length=1024, blank=True, null=True)
-
 
     # --- Core FKs ---
     pseudo_patient = models.ForeignKey("Patient", on_delete=models.CASCADE, blank=True, null=True, help_text="FK to the pseudo-anonymized Patient record.")
@@ -80,7 +77,7 @@ class SensitiveMeta(models.Model):
         state: models.ForeignKey["SensitiveMetaState|None"]  # Assuming related_name='state' is defined on SensitiveMetaState.origin
         center: models.ForeignKey["Center|None"]
 
-        examiners = cast(models.manager.RelatedManager["Examiner"], examiners)
+        examiners = cast(models.manager.Manager["Examiner"], examiners)
 
     @property
     def external_id_origin(self) -> str | None:
@@ -92,7 +89,7 @@ class SensitiveMeta(models.Model):
     # --- Text Fields ---
     text = models.TextField(blank=True, null=True)
     anonymized_text = models.TextField(blank=True, null=True)
-    
+
     # --- Anonymization helper method ---
     create_anonymized_record = logic._create_anonymized_record
 

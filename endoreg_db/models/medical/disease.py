@@ -93,7 +93,7 @@ class DiseaseClassification(models.Model):
         disease: models.ForeignKey["Disease"]
 
         @property
-        def disease_classification_choices(self) -> models.manager.RelatedManager["DiseaseClassificationChoice"]: ...
+        def disease_classification_choices(self) -> models.manager.Manager["DiseaseClassificationChoice"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
@@ -151,7 +151,7 @@ class DiseaseClassificationChoice(models.Model):
         disease_classification: models.ForeignKey["DiseaseClassification"]
 
         @property
-        def patient_diseases(self) -> models.manager.RelatedManager["PatientDisease"]: ...
+        def patient_diseases(self) -> models.manager.Manager["PatientDisease"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""

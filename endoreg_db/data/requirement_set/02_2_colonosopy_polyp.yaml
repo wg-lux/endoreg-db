@@ -1,0 +1,94 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colon_polyp_small_morphology"
+    name_de: "Coloreg Polyp Klein Morphologie"
+    name_en: "Coloreg Polyp Small Morphology"
+    description: "Coloreg Polyp Small Morphology"
+    instructions:
+      {
+        model: "patient_finding",
+        output_reference: "object:boolean",
+        filter: {},
+        evaluation:
+          {
+            endpoint: true,
+            operator: ["and"],
+            return_source: "input:patient_finding",
+            return_mode: "object[boolean]",
+            acceptence_criteria: { reference: "all", evaluation: "all" },
+          },
+      }
+    requirements:
+      - "colon_polyp_size_smaller_10_mm" # any size_cat is <6 or 6 - 9 mm or size_mm is < 10 mm
+      - "colonoscopy_default_polyp_morphology_wli" # any (paris / description)
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colon_polyp_medium_morphology"
+    name_de: "Coloreg Polyp Mittel Morphologie"
+    name_en: "Coloreg Polyp Medium Morphology"
+    description: "Coloreg Polyp Medium Morphology"
+    requirement_set_type: "all"
+    requirements:
+      - "colon_polyp_size_smaller_10_19_mm" # size cat is 10-19 mm or size_mm between 10 and 19 mm
+      - "colonoscopy_default_polyp_morphology_wli"
+      - "colonoscopy_nbi_polyp_morphology" # (nice)
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colon_polyp_large_morphology"
+    name_de: "Coloreg Polyp Groß Morphologie"
+    name_en: "Coloreg Polyp Large Morphology"
+    description: "Coloreg Polyp Large Morphology"
+    requirement_set_type: "all"
+    requirements:
+      - "colon_polyp_size_20_mm_or_larger" # size cat is 20+ mm or size_mm >=20 mm
+      - "colonoscopy_nbi_polyp_morphology" # (nice)
+      - "colonoscopy_large_polyp_morphology" # ( LST )
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_morphology"
+    name_de: "Coloreg Befund Kolon Polyp Morphologie"
+    name_en: "Coloreg Finding Colon Polyp Morphology"
+    description: "Coloreg Finding Colon Polyp Morphology"
+    requirement_set_type: "any"
+    depends_on:
+      - "coloreg_finding_colon_polyp_size"
+    links_to_sets:
+      - "colon_polyp_small_morphology"
+      - "colon_polyp_medium_morphology"
+      - "colon_polyp_large_morphology"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_histology_expected_and_available"
+    name_de: "Coloreg Befund Kolon Polyp Histologie"
+    name_en: "Coloreg Finding Colon Polyp Histology"
+    description: "Coloreg Finding Colon Polyp Histology"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_default_polyp_resection"
+      - "colonoscopy_default_polyp_histology"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_histology_not_expected"
+    name_de: "Coloreg Befund Kolon Polyp Histologie"
+    name_en: "Coloreg Finding Colon Polyp Histology"
+    description: "Coloreg Finding Colon Polyp Histology"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_default_polyp_no_resection"
+      # - "colonoscopy_finding_colon_polyp_no_resection_reason"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_histology"
+    name_de: "Coloreg Befund Kolon Polyp Histologie"
+    name_en: "Coloreg Finding Colon Polyp Histology"
+    description: "Coloreg Finding Colon Polyp Histology"
+    requirement_set_type: "any"
+    links_to_sets:
+      - "coloreg_finding_colon_polyp_histology_expected_and_available"
+      - "coloreg_finding_colon_polyp_histology_not_expected"

@@ -32,7 +32,7 @@ class PatientDisease(models.Model):
         disease: models.ForeignKey["Disease"]
 
         classification_choices = cast(
-            "models.manager.RelatedManager[DiseaseClassificationChoice]",
+            "models.manager.Manager[DiseaseClassificationChoice]",
             classification_choices,
         )
 

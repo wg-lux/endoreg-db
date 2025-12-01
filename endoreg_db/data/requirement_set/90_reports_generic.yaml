@@ -1,0 +1,15 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "examination_information_generic"
+    name_de: "Basis Untersuchungsdaten"
+    name_en: "Basic Examination Data"
+    description: "Basic Examination Data"
+    requirement_set_type: "all"
+    requirements: []
+    links_to_sets:
+      - examination_has_setting
+      - examination_has_indication
+      - examination_has_sedation_information
+      - colonoscopy_bowel_prep_bbps_any
+      - colonoscopy_deepest_insertion_valid
+    tags: []

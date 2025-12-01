@@ -30,7 +30,7 @@ class Qualification(models.Model):
         related_name="qualifications",
     )
     if TYPE_CHECKING:
-        qualification_types = cast(models.manager.RelatedManager["QualificationType"], qualification_types)
+        qualification_types = cast(models.manager.Manager["QualificationType"], qualification_types)
 
     objects = QualificationManager()
 

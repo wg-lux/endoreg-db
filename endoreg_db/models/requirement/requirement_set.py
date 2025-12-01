@@ -83,18 +83,15 @@ class RequirementSet(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    
+
     depends_on = models.ManyToManyField(
-        "self",
+        "RequirementSet",
         symmetrical=False,
         related_name="dependents",
         blank=True,
-        help_text=(
-            "Andere RequirementSets, die zuerst erfüllt sein müssen, "
-            "bevor dieses Set geprüft wird ('after')."
-        ),
+        help_text=("Andere RequirementSets, die zuerst erfüllt sein müssen, bevor dieses Set geprüft wird ('after')."),
     )
-    
+
     requirements = models.ManyToManyField(
         "Requirement",
         blank=True,
@@ -137,15 +134,15 @@ class RequirementSet(models.Model):
 
         from endoreg_db.models import ExaminationRequirementSet, InformationSource, Requirement, Tag
 
-        tags = cast(models.manager.RelatedManager["Tag"], tags)
-        requirements = cast(models.manager.RelatedManager["Requirement"], requirements)
-        links_to_sets = cast(models.manager.RelatedManager["RequirementSet"], links_to_sets)
-        reqset_exam_links = cast(models.manager.RelatedManager["ExaminationRequirementSet"], reqset_exam_links)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        tags = cast(models.manager.Manager["Tag"], tags)
+        requirements = cast(models.manager.Manager["Requirement"], requirements)
+        links_to_sets = cast(models.manager.Manager["RequirementSet"], links_to_sets)
+        reqset_exam_links = cast(models.manager.Manager["ExaminationRequirementSet"], reqset_exam_links)
+        information_sources = cast(models.manager.Manager["InformationSource"], information_sources)
         requirement_set_type: models.ForeignKey["RequirementSetType | None"]
 
         @property
-        def links_from_sets(self) -> "models.manager.RelatedManager[RequirementSet]": ...
+        def links_from_sets(self) -> "models.manager.Manager[RequirementSet]": ...
 
     def natural_key(self):
         """Return the natural key as a tuple containing the instance's name."""

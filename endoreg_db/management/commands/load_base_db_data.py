@@ -20,7 +20,7 @@ class Command(BaseCommand):
         (via call_command) in a specified order. It ignores any verbose setting from the command-line options
         and forces verbose output. A final success message is printed after all commands complete.
         """
-        verbose = True
+        verbose = False
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))
 
@@ -50,7 +50,7 @@ class Command(BaseCommand):
         call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
 
-        call_command("load_requirement_data", stdout=out, verbose=verbose)
+        # call_command("load_requirement_data", stdout=out, verbose=verbose) #TODO Enable when requirements are re-implemented
 
         # Load AI Model Data
         call_command("load_ai_model_label_data", stdout=out, verbose=verbose)

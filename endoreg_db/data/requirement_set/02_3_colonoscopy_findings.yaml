@@ -1,0 +1,82 @@
+# Morphology
+- model: requirement_set
+  fields:
+    name: "colon_polyp_has_morphology_information"
+    name_de: "Koloskopie Befunde: Kolon Polyp Morphologie"
+    name_en: "Colonoscopy Findings: Colon Polyp Morphology"
+    description: "Colonoscopy Findings: Colon Polyp Morphology"
+    findings:
+      - "colon_polyp"
+    instructions: {
+        model: "patient_examination",
+        output_reference: "queryset:patient_finding",
+        # output_shape: "links_to_sets:queryset"
+        # For now, we assume that we always return
+        filter:
+          {
+            requirement_sources: ["findings"],
+            target_fields: ["patient_findings__finding"],
+            operators: ["is"],
+          },
+
+        evaluation: {
+            endpoint: false,
+            operator: ["which"],
+            return_source: "queryset:patient_findings",
+            # this return mode indicates that the requirement set will return a matrix like this for 2 findings and 3 linked requirement sets:
+            # [
+            #   finding_1 ? [set_1, set_2, set_3], ## -> true or false
+            #   finding_2 ? [set_1, set_2, set_3] ## -> true or false
+            # ]
+            # --> [ [true, false, false], [false, false, true] ]
+            # --> using the evaluation criteria below, this means that the overall requirement is met if for all findings (rows) at least one of the linked requirement sets (columns) is matched
+            return_mode: "array[bool]:patient_finding x linked_requirement_sets",
+            # Here we will evaluate a boolean matrix consisting of
+            # queryset:patient_finding x queryset:requirement_set (links_to_sets)
+            acceptence_criteria: {
+                reference: "all", # -> all findings must pass
+                evaluation: "any", # -> any requirement set can be matched in each finding
+              },
+          },
+      }
+    links_to_sets:
+      - "colon_polyp_small_morphology"
+      - "colon_polyp_medium_morphology"
+      - "colon_polyp_large_morphology"
+    depends_on:
+      - "colon_polyp_has_size"
+
+- model: requirement_set
+  fields:
+    name: "colonoscopy_findings_colon_polyp_generic"
+    name_de: "Koloskopie Befunde: Kolon Polyp (generisch)"
+    name_en: "Colonoscopy Findings: Colon Polyp (generic)"
+    description: "Colonoscopy Findings: Colon Polyp (generic)"
+    instructions:
+      {
+        model: "patient_examination",
+        output_reference: "queryset:patient_finding",
+        filter:
+          {
+            requirement_sources: ["findings"],
+            target_fields: ["patient_findings__finding"],
+            operators: ["is"],
+          },
+        evaluation:
+          {
+            endpoint: false,
+            operator: ["which"],
+            return_source: "queryset:patient_findings",
+            return_mode: "array[bool]:patient_finding x linked_requirement_sets",
+            acceptence_criteria: { reference: "all", evaluation: "any" },
+          },
+      }
+
+    requirement_set_type: "all"
+    requirements: []
+    links_to_sets:
+      - "colon_polyp_has_location_information"
+      - "colon_polyp_has_size_information"
+      - "colon_polyp_has_morphology_information"
+      - "colon_polyp_has_histology_information"
+    tags: []

@@ -42,17 +42,17 @@ class MedicationIndication(models.Model):
 
         indication_type: models.ForeignKey["MedicationIndicationType"]
         medication_schedules = cast(
-            "models.manager.RelatedManager[MedicationSchedule]",
+            "models.manager.Manager[MedicationSchedule]",
             medication_schedules,
         )
-        diseases = cast("models.manager.RelatedManager[Disease]", diseases)
-        events = cast("models.manager.RelatedManager[Event]", events)
+        diseases = cast("models.manager.Manager[Disease]", diseases)
+        events = cast("models.manager.Manager[Event]", events)
         disease_classification_choices = cast(
-            "models.manager.RelatedManager[DiseaseClassificationChoice]",
+            "models.manager.Manager[DiseaseClassificationChoice]",
             disease_classification_choices,
         )
         sources = cast(
-            "models.manager.RelatedManager[InformationSource]",
+            "models.manager.Manager[InformationSource]",
             sources,
         )
 

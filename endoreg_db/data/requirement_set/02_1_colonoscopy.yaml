@@ -1,0 +1,74 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_bowel_prep_bbps_detailed_recorded"
+    name_de: "Koloskopie Untersuchungsdaten: BBPS (detailliert)"
+    name_en: "Colonoscopy Examination Data: BBPS (detailed)"
+    description: "Colonoscopy Examination Data: BBPS (detailed)"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_has_bowel_prep_information_detailed_lc"
+      - "colonoscopy_has_bowel_prep_information_detailed_tc"
+      - "colonoscopy_has_bowel_prep_information_detailed_rc"
+    links_to_sets: []
+    tags: []
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_bowel_prep_bbps_simplified_recorded"
+    name_de: "Koloskopie Untersuchungsdaten: BBPS (vereinfacht)"
+    name_en: "Colonoscopy Examination Data: BBPS (simplified)"
+    description: "Colonoscopy Examination Data: BBPS (simplified)"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_has_bowel_prep_information_simplified"
+    links_to_sets: []
+    tags: []
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_bowel_prep_bbps_any"
+    name_de: "BBPS Darmvorbereitungsskala (BBPS, vereinfacht oder detailliert)"
+    name_en: "BBPS Bowel Preparation Scale (BBPS, simplified or detailed)"
+    description: "Colonoscopy Bowel Preparation Scale (BBPS, simplified or detailed)"
+    requirement_set_type: "any"
+    links_to_sets:
+      - "colonoscopy_bowel_prep_bbps_detailed_recorded"
+      - "colonoscopy_bowel_prep_bbps_simplified_recorded"
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_deepest_insertion_cecum_or_terminal_ileum"
+    name_de: "Koloskopie tiefste Insertion erreicht"
+    name_en: "Colonoscopy deepest insertion reached"
+    description: "Colonoscopy deepest insertion reached"
+    requirement_set_type: "any"
+    requirements:
+      - "deepest_insertion_is_cecum_or_terminal_ileum"
+    links_to_sets: []
+    tags: []
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_deepest_insertion_incomplete_has_reason"
+    name_de: "Unvollständige Koloskopie hat Begründung"
+    name_en: "Colonoscopy deepest insertion reached"
+    description: "Colonoscopy deepest insertion reached"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_incomplete_reason_recorded"
+      - "deepest_insertion_is_not_cecum_or_terminal_ileum"
+    links_to_sets: []
+    tags: []
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_deepest_insertion_valid"
+    name_de: "Koloskopie tiefste Insertion erreicht"
+    name_en: "Colonoscopy deepest insertion reached"
+    description: "Colonoscopy deepest insertion reached"
+    requirement_set_type: "any"
+    requirements: []
+    links_to_sets:
+      - "colonoscopy_deepest_insertion_cecum_or_terminal_ileum"
+      - "colonoscopy_deepest_insertion_incomplete_has_reason"
+    tags: []

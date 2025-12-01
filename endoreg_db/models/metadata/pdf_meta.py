@@ -37,8 +37,8 @@ class PdfType(models.Model):
         endoscope_info_line: models.ForeignKey["ReportReaderFlag"]
         examiner_info_line: models.ForeignKey["ReportReaderFlag"]
 
-        cut_off_above_lines = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_above_lines)
-        cut_off_below_lines = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_below_lines)
+        cut_off_above_lines = cast(models.manager.Manager["ReportReaderFlag"], cut_off_above_lines)
+        cut_off_below_lines = cast(models.manager.Manager["ReportReaderFlag"], cut_off_below_lines)
 
     def __str__(self):
         """Returns a string summary of the PDF type and its associated flags."""

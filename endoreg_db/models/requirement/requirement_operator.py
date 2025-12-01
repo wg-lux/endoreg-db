@@ -32,6 +32,7 @@ def _parse_operator_instructions(raw: str):
     args: List[Union[str, int, float, bool]] = []
 
     valid_prefixes = [
+        "~"  # shortcut for pre-existing operator instructions #TODO
         "!",  # Requirement target
         "?",  # Input target
         "$",  # Keyword argument, keyword and value separated by ":"

@@ -47,7 +47,7 @@ class LabelSet(models.Model):
 
         from .label import Label
 
-        labels = cast(models.manager.RelatedManager["Label"], labels)
+        labels = cast(models.manager.Manager["Label"], labels)
 
     def natural_key(self):
         """Return the natural key of this label set"""

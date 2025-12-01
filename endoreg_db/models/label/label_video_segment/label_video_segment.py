@@ -68,13 +68,13 @@ class LabelVideoSegment(models.Model):
         source: models.ForeignKey["InformationSource|None"]
         prediction_meta: models.ForeignKey["VideoPredictionMeta|None"]
 
-        patient_findings = cast(models.manager.RelatedManager["PatientFinding"], patient_findings)
+        patient_findings = cast(models.manager.Manager["PatientFinding"], patient_findings)
         model_meta: models.ForeignKey["ModelMeta|None"]
         state: models.OneToOneField["LabelVideoSegmentState"]
 
     class Meta:
         constraints = [
-            CheckConstraint(check=Q(start_frame_number__lt=F("end_frame_number")), name="segment_start_lt_end"),
+            CheckConstraint(condition=Q(start_frame_number__lt=F("end_frame_number")), name="segment_start_lt_end"),
         ]
         indexes = [
             models.Index(fields=["video_file", "label", "start_frame_number"]),
@@ -131,7 +131,7 @@ class LabelVideoSegment(models.Model):
             # Should not happen if self.state exists and has the is_validated attribute.
             logger.error("AttributeError accessing 'state.is_validated' for LabelVideoSegment %s.", self.pk)
             return False
-    
+
     def mark_validated(
         self,
         is_validated: bool = True,
@@ -148,9 +148,7 @@ class LabelVideoSegment(models.Model):
         state.save()
 
         # update information source
-        info_source, _ = InformationSource.objects.get_or_create(
-            name=information_source_name
-        )
+        info_source, _ = InformationSource.objects.get_or_create(name=information_source_name)
         self.source = info_source
         self.save(update_fields=["source"])
 

@@ -11,6 +11,7 @@
       - diagnostic
       - therapeutic
       - invasive
+      - histology_sampling
 
 - model: endoreg_db.finding_intervention
   fields:
@@ -25,6 +26,7 @@
       - diagnostic
       - therapeutic
       - invasive
+      - histology_sampling
 
 - model: endoreg_db.finding_intervention
   fields:
@@ -39,6 +41,7 @@
       - diagnostic
       - therapeutic
       - invasive
+      - histology_sampling
 
 - model: endoreg_db.finding_intervention
   fields:
@@ -55,6 +58,7 @@
       - diagnostic
       - therapeutic
       - invasive
+      - histology_sampling
 
 - model: endoreg_db.finding_intervention
   fields:
@@ -71,6 +75,7 @@
       - therapeutic
       - diagnostic
       - invasive
+      - histology_sampling
 
 - model: endoreg_db.finding_intervention
   fields:
@@ -83,3 +88,4 @@
       - invasive
       - diagnostic
       - foreign_body
+      - histology_sampling

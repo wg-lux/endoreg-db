@@ -224,6 +224,11 @@ class Requirement(models.Model):
         blank=True,
         related_name="required_in",
     )
+    finding_classification_types = models.ManyToManyField(
+        "FindingClassificationType",
+        blank=True,
+        related_name="required_in",
+    )
 
     finding_classification_choices = models.ManyToManyField(
         "FindingClassificationChoice",
@@ -268,42 +273,46 @@ class Requirement(models.Model):
     )
 
     if TYPE_CHECKING:
-        requirement_types = cast(models.manager.RelatedManager["RequirementType"], requirement_types)
+        requirement_types = cast(models.manager.Manager["RequirementType"], requirement_types)
         operator = models.ForeignKey["RequirementOperator"]
-        # requirement_sets = cast(models.manager.RelatedManager["RequirementSet"], requirement_sets)
-        examinations = cast(models.manager.RelatedManager["Examination"], examinations)
+        # requirement_sets = cast(models.manager.Manager["RequirementSet"], requirement_sets)
+        examinations = cast(models.manager.Manager["Examination"], examinations)
         examination_indications = cast(
-            models.manager.RelatedManager["ExaminationIndication"],
+            models.manager.Manager["ExaminationIndication"],
             examination_indications,
         )
-        lab_values = cast(models.manager.RelatedManager["LabValue"], lab_values)
-        diseases = cast(models.manager.RelatedManager["Disease"], diseases)
+        lab_values = cast(models.manager.Manager["LabValue"], lab_values)
+        diseases = cast(models.manager.Manager["Disease"], diseases)
         disease_classification_choices = cast(
-            models.manager.RelatedManager["DiseaseClassificationChoice"],
+            models.manager.Manager["DiseaseClassificationChoice"],
             disease_classification_choices,
         )
-        events = cast(models.manager.RelatedManager["Event"], events)
-        findings = cast(models.manager.RelatedManager["Finding"], findings)
+        events = cast(models.manager.Manager["Event"], events)
+        findings = cast(models.manager.Manager["Finding"], findings)
         finding_classifications = cast(
-            models.manager.RelatedManager["FindingClassification"],
+            models.manager.Manager["FindingClassification"],
             finding_classifications,
         )
+        finding_classification_types = cast(
+            models.manager.Manager["FindingClassificationType"],
+            finding_classification_types,
+        )
         finding_classification_choices = cast(
-            models.manager.RelatedManager["FindingClassificationChoice"],
+            models.manager.Manager["FindingClassificationChoice"],
             finding_classification_choices,
         )
-        finding_interventions = cast(models.manager.RelatedManager["FindingIntervention"], finding_interventions)
-        medications = cast(models.manager.RelatedManager["Medication"], medications)
+        finding_interventions = cast(models.manager.Manager["FindingIntervention"], finding_interventions)
+        medications = cast(models.manager.Manager["Medication"], medications)
         medication_indications = cast(
-            models.manager.RelatedManager["MedicationIndication"],
+            models.manager.Manager["MedicationIndication"],
             medication_indications,
         )
         medication_intake_times = cast(
-            models.manager.RelatedManager["MedicationIntakeTime"],
+            models.manager.Manager["MedicationIntakeTime"],
             medication_intake_times,
         )
-        medication_schedules = cast(models.manager.RelatedManager["MedicationSchedule"], medication_schedules)
-        genders = cast(models.manager.RelatedManager["Gender"], genders)
+        medication_schedules = cast(models.manager.Manager["MedicationSchedule"], medication_schedules)
+        genders = cast(models.manager.Manager["Gender"], genders)
 
     def natural_key(self):
         """

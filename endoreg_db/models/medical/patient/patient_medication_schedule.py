@@ -1,13 +1,13 @@
-from django.db import models
-from typing import TYPE_CHECKING, List, cast  # Added List
 from datetime import datetime as dt
+from typing import TYPE_CHECKING, List, cast  # Added List
+
+from django.db import models
 
 if TYPE_CHECKING:
-    from ...administration.person.patient import Patient
-    from .patient_medication import PatientMedication
-    from ..medication import MedicationSchedule
     from ....utils.links.requirement_link import RequirementLinks  # Added
-    from ..medication import Medication, MedicationIndication, MedicationIntakeTime  # Added
+    from ...administration.person.patient import Patient
+    from ..medication import Medication, MedicationIndication, MedicationIntakeTime, MedicationSchedule  # Added
+    from .patient_medication import PatientMedication
 
 
 class PatientMedicationSchedule(models.Model):
@@ -24,7 +24,7 @@ class PatientMedicationSchedule(models.Model):
     if TYPE_CHECKING:
         patient: models.ForeignKey["Patient"]
 
-        medication = cast(models.manager.RelatedManager["PatientMedication"], medication)
+        medication = cast(models.manager.Manager["PatientMedication"], medication)
 
     @property
     def links(self) -> "RequirementLinks":
@@ -78,9 +78,9 @@ class PatientMedicationSchedule(models.Model):
     @classmethod
     def create_by_patient_and_indication(cls, patient, medication_indication):
         """Creates a schedule and adds a medication based on a specific indication."""
+        from ...administration.person.patient import Patient
         from ..medication import MedicationIndication
         from .patient_medication import PatientMedication
-        from ...administration.person.patient import Patient
 
         assert isinstance(medication_indication, MedicationIndication)
         assert isinstance(patient, Patient)

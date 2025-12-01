@@ -22,8 +22,8 @@ class FindingIntervention(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import Contraindication, FindingInterventionType, InformationSource, LabValue
 
-        intervention_types = cast(models.manager.RelatedManager["FindingInterventionType"], intervention_types)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        intervention_types = cast(models.manager.Manager["FindingInterventionType"], intervention_types)
+        information_sources = cast(models.manager.Manager["InformationSource"], information_sources)
 
     def natural_key(self):
         return (self.name,)
@@ -46,7 +46,7 @@ class FindingInterventionType(models.Model):
     if TYPE_CHECKING:
 
         @property
-        def interventions(self) -> "models.manager.RelatedManager[FindingIntervention]": ...
+        def interventions(self) -> "models.manager.Manager[FindingIntervention]": ...
 
     def natural_key(self):
         return (self.name,)

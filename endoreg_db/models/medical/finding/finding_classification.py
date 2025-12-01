@@ -52,13 +52,13 @@ class FindingClassification(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import Examination, Finding, FindingType, InformationSource, PatientFindingClassification
 
-        classification_types = cast(models.manager.RelatedManager["FindingClassificationType"], classification_types)
-        choices = cast(models.manager.RelatedManager["FindingClassificationChoice"], choices)
-        finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        classification_types = cast(models.manager.Manager["FindingClassificationType"], classification_types)
+        choices = cast(models.manager.Manager["FindingClassificationChoice"], choices)
+        finding_types = cast(models.manager.Manager["FindingType"], finding_types)
+        information_sources = cast(models.manager.Manager["InformationSource"], information_sources)
 
         @property
-        def findings(self) -> "models.manager.RelatedManager[Finding]": ...
+        def findings(self) -> "models.manager.Manager[Finding]": ...
 
     def natural_key(self):
         return (self.name,)

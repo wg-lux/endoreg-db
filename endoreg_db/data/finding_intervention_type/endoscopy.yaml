@@ -13,3 +13,7 @@
 - model: endoreg_db.finding_intervention_type
   fields:
     name: "foreign_body"
+
+- model: endoreg_db.finding_intervention_type
+  fields:
+    name: "histology_sampling"

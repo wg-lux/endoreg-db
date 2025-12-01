@@ -19,7 +19,7 @@ class VideoSegmentationLabelSet(models.Model):
     objects = VideoSegmentationLabelSetManager()
 
     if TYPE_CHECKING:
-        labels = cast(models.manager.RelatedManager["VideoSegmentationLabel"], labels)
+        labels = cast(models.manager.Manager["VideoSegmentationLabel"], labels)
 
     def natural_key(self):
         return (self.name,)

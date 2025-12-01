@@ -36,6 +36,36 @@ class PatientFindingClassification(models.Model):
         verbose_name_plural = "Patient Finding Classifications"
         ordering = ["finding", "classification", "classification_choice"]
 
+    @property
+    def numerical_value(self):
+        """
+        Retrieve the numerical value from the numerical descriptors if available.
+        If multiple values exist, the first one is returned.
+
+        Returns:
+            float or None: The numerical value if it exists, otherwise None.
+        """
+        if self.numerical_descriptors:
+            for descriptor in self.numerical_descriptors.values():
+                if "value" in descriptor:
+                    _value = float(descriptor["value"])
+                    return _value
+
+        return None
+
+    @property
+    def numerical_value_safe(self):
+        """
+        Safely retrieve the numerical value, returning 0.0 if not available.
+
+        Returns:
+            float: The numerical value or 0.0 if not set.
+        """
+        value = self.numerical_value
+        if value is None:
+            raise ValueError("Numerical value is not set.")
+        return value
+
     def __str__(self):
         """
         Return a string representation combining the finding, classification, and classification choice.

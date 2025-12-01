@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 
+import django_stubs_ext
+
+# django_stubs_ext.monkeypatch()
 # Use centralized environment helpers
 from endoreg_db.config.env import env_bool, env_path
 
@@ -28,7 +31,7 @@ LANGUAGES = [
     ("en", "English"),
 ]
 
-#ROOT_URLCONF = 'endoreg_db.urls.root_urls'
+# ROOT_URLCONF = 'endoreg_db.urls.root_urls'
 
 # Configure modeltranslation to only use our supported languages
 MODELTRANSLATION_LANGUAGES = ("de", "en")

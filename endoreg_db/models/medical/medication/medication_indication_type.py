@@ -26,7 +26,7 @@ class MedicationIndicationType(models.Model):
     if TYPE_CHECKING:
 
         @property
-        def medication_indications(self) -> "models.manager.RelatedManager[MedicationIndication]": ...
+        def medication_indications(self) -> "models.manager.Manager[MedicationIndication]": ...
 
     def natural_key(self):
         """Return the natural key for the medication indication type."""

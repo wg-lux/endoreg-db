@@ -33,10 +33,10 @@ class ReportReaderConfig(models.Model):
         endoscope_info_line_flag = models.ForeignKey["ReportReaderFlag"]
         examiner_info_line_flag = models.ForeignKey["ReportReaderFlag"]
 
-        first_names = cast(models.manager.RelatedManager["FirstName"], first_names)
-        last_names = cast(models.manager.RelatedManager["LastName"], last_names)
-        cut_off_below = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_below)
-        cut_off_above = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_above)
+        first_names = cast(models.manager.Manager["FirstName"], first_names)
+        last_names = cast(models.manager.Manager["LastName"], last_names)
+        cut_off_below = cast(models.manager.Manager["ReportReaderFlag"], cut_off_below)
+        cut_off_above = cast(models.manager.Manager["ReportReaderFlag"], cut_off_above)
 
     def __str__(self):
         """Returns a string representation including the locale and primary key."""

@@ -55,16 +55,16 @@ class Examination(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import ExaminationIndication, ExaminationTime, Finding, FindingClassification, InformationSource
 
-        indications = cast("models.manager.RelatedManager[ExaminationIndication]", indications)
-        examination_times = cast("models.manager.RelatedManager[ExaminationTime]", examination_times)
-        findings = cast("models.manager.RelatedManager[Finding]", findings)
-        information_sources = cast("models.manager.RelatedManager[InformationSource]", information_sources)
+        indications = cast("models.manager.Manager[ExaminationIndication]", indications)
+        examination_times = cast("models.manager.Manager[ExaminationTime]", examination_times)
+        findings = cast("models.manager.Manager[Finding]", findings)
+        information_sources = cast("models.manager.Manager[InformationSource]", information_sources)
 
         @property
-        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+        def finding_classifications(self) -> "models.manager.Manager[FindingClassification]": ...
 
         @property
-        def exam_reqset_links(self) -> "models.manager.RelatedManager[ExaminationRequirementSet]": ...
+        def exam_reqset_links(self) -> "models.manager.Manager[ExaminationRequirementSet]": ...
 
     @property
     def links(self) -> "RequirementLinks":

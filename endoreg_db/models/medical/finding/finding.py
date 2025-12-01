@@ -2,6 +2,7 @@
 from typing import TYPE_CHECKING, Optional, cast
 
 from django.db import models
+from django.db.models.fields.related_descriptors import ManyToManyDescriptor
 
 
 class FindingManager(models.Manager):
@@ -30,9 +31,9 @@ class Finding(models.Model):
             PatientFindingClassification,
         )
 
-        finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
-        finding_interventions = cast(models.manager.RelatedManager["FindingIntervention"], finding_interventions)
-        finding_classifications = cast(models.manager.RelatedManager["FindingClassification"], finding_classifications)
+        finding_types = cast(ManyToManyDescriptor["FindingType"], finding_types)
+        finding_interventions = cast(ManyToManyDescriptor["FindingIntervention"], finding_interventions)
+        finding_classifications = cast(ManyToManyDescriptor["FindingClassification"], finding_classifications)
 
     def natural_key(self):
         """

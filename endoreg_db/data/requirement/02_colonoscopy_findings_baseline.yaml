@@ -1,0 +1,164 @@
+# examination_bowel_prep_recorded
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_has_bowel_prep_information_detailed_lc"
+    name_de: "Untersuchung hat Darmvorbereitungsinformation (Colon Ascendens)"
+    name_en: "Examination has bowel preparation information (Colon Ascending)"
+    description: "Checks if the examination has bowel preparation classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.[any].classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - bowel_prep_boston
+    findings:
+      - "bowel_preparation_lc"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_has_bowel_prep_information_detailed_tc"
+    name_de: "Untersuchung hat Darmvorbereitungsinformation (Colon Transversum)"
+    name_en: "Examination has bowel preparation information (Colon transversum)"
+    description: "Checks if the examination has bowel preparation classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.[any].classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - bowel_prep_boston
+    findings:
+      - "bowel_preparation_tc"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_has_bowel_prep_information_detailed_rc"
+    name_de: "Untersuchung hat Darmvorbereitungsinformation (Colon descendens)"
+    name_en: "Examination has bowel preparation information (Colon descendens)"
+    description: "Checks if the examination has bowel preparation classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.[any].classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - bowel_prep_boston
+    findings:
+      - "bowel_preparation_rc"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_has_bowel_prep_information_detailed_all"
+    name_de: "Untersuchung hat Darmvorbereitungsinformation (Colon descendens)"
+    name_en: "Examination has bowel preparation information (Colon descendens)"
+    description: "Checks if the examination has bowel preparation classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.[all].classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - bowel_prep_boston
+    findings:
+      - "bowel_preparation_rc"
+      - "bowel_preparation_tc"
+      - "bowel_preparation_lc"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_has_bowel_prep_information_simplified"
+    name_de: "Untersuchung hat Darmvorbereitungsinformation (Vereinfacht)"
+    name_en: "Examination has bowel preparation information (Simplified)"
+    description: "Checks if the examination has bowel preparation classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.[any].classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - bowel_prep_boston_simplified
+    findings:
+      - "bowel_preparation_simplified"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "deepest_insertion_is_not_cecum_or_terminal_ileum"
+    name_de: "Tiefste Insertion ist nicht Caecum oder terminales Ileum"
+    name_en: "Deepest insertion is not cecum or terminal ileum"
+    description: "Checks if the deepest insertion during colonoscopy is not cecum or terminal ileum."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_none"
+    operator_instructions: "?patient_findings;\
+      !finding_classification_choices;\
+      $array_object_target:classifications.[any].classification_choice;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classification_choices:
+      - "cecum"
+      - "terminal_ileum"
+    findings:
+      - "colonoscopy_deepest_viewed_location"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "deepest_insertion_is_cecum_or_terminal_ileum"
+    name_de: "Tiefste Insertion ist nicht Caecum oder terminales Ileum"
+    name_en: "Deepest insertion is not cecum or terminal ileum"
+    description: "Checks if the deepest insertion during colonoscopy is not cecum or terminal ileum."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_any"
+    operator_instructions: "?patient_findings;\
+      !finding_classification_choices;\
+      $array_object_target:classifications.[any].classification_choice;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classification_choices:
+      - "cecum"
+      - "terminal_ileum"
+    findings:
+      - "colonoscopy_deepest_viewed_location"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_incomplete_reason_recorded"
+    name_de: "Untersuchung hat Information zur tiefsten Insertion"
+    name_en: "Examination has deepest insertion information"
+    description: "Checks if the examination has deepest insertion classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.[any].classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - colonoscopy_not_complete_reason
+    findings:
+      - "colonoscopy_deepest_viewed_location"

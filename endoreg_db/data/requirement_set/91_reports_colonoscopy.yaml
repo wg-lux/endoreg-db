@@ -1,0 +1,26 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_finding_information_generic"
+    name_de: "Generische Koloskopie Befundinformation"
+    name_en: "Colonoscopy Finding Generic Information"
+    description: "Colonoscopy Finding Generic Information"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "colonoscopy_findings_colon_polyp_generic"
+    tags: []
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_colonoscopy_annotation"
+    name_de: "Koloskopie Coloreg"
+    name_en: "Colonoscopy Coloreg"
+    description: "Colonoscopy Coloreg"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "patient_information_generic"
+      - "examination_information_generic"
+      - "colonoscopy_finding_information_generic"
+    tags:
+      - "report_mask_requirement_set"
+    reqset_exam_links:
+      - "colonoscopy_req_sets"

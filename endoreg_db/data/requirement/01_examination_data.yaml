@@ -1,0 +1,53 @@
+# examination_has_indication
+- model: endoreg_db.requirement
+  fields:
+    name: "examination_has_indication"
+    name_de: "Untersuchung hat Indikationsinformation"
+    name_en: "Examination has indication information"
+    description: "Checks if the examination has indication information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_set_any"
+    operator_instructions: "?indications"
+
+# examination_has_sedation_information
+- model: endoreg_db.requirement
+  fields:
+    name: "examination_has_sedation_information"
+    name_de: "Untersuchung hat Sedierungsinformation"
+    name_en: "Examination has sedation finding"
+    description: "Checks if the examination has sedation finding classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - sedation_performed
+      - examination_setting_generic_sedation
+    findings:
+      - "sedation_endoscopy"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "examination_has_setting"
+    name_de: "Untersuchung hat Untersuchungstyp (ambulant vs stationär)"
+    name_en: "Examination has setting information"
+    description: "Checks if the examination has setting classification information."
+    requirement_types:
+      - "patient_examination"
+    operator: "model_attribute_array_match_all"
+    operator_instructions: "?patient_findings;\
+      !finding_classifications;\
+      $array_object_target:classifications.classification;\
+      $filter_array_objects_by_field:finding;\
+      $filter_source_field:findings;\
+      "
+    finding_classifications:
+      - examination_setting_generic_location
+    findings:
+      - "examination_setting"

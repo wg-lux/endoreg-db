@@ -1,0 +1,107 @@
+##### Patient Examination Specific Findings Have Classifications
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_classifications_all"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation (alle)"
+    name_en: "Patient examination has finding with classification (all)"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have all of the linked FindingClassifications.
+      The Requirement using this operator must define:
+      - finding_classifications (All Linked FindingClassifications must be present in each filtered PatientFinding)
+      - findings (Optional: Used to filter PatientFindings by their Finding)
+      "
+    eval_functions: "" # Äquivalent zu gestrigem Operator
+    eval_modes: "all"
+    evaluation_input_fields: patient_findings[].classifications[].classification;
+    evaluation_requirement_fields: finding_classifications;
+    filter_functions: exact_match;
+    filter_input_fields: patient_findings[].finding;
+    filter_requirement_fields: findings;
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_classifications_any"
+    name_de: "Patienten-Untersuchung hat Befund mit Klassifikation (min. eines)"
+    name_en: "Patient examination has finding with classification (any)"
+    expected_input: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have at least one of the linked FindingClassifications.
+      The Requirement using this operator must define:
+      - finding_classifications (At least one linked FindingClassification must be present in each filtered PatientFinding)
+      - findings (Optional: Used to filter PatientFindings by their Finding)
+      "
+    eval_functions: ""
+    eval_modes: "any"
+    evaluation_input_fields: patient_findings[].classifications[].classification;
+    evaluation_requirement_fields: finding_classifications;
+    filter_functions: exact_match;
+    filter_input_fields: patient_findings[].finding;
+    filter_requirement_fields: findings;
+
+##### Patient_examination_specific_findings_have_specific_classification_choices
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_choices_all"
+    name_de: "Patienten-Untersuchung hat Befund mit spezifischen Klassifikationswerten (alle)"
+    name_en: "Patient examination has finding with specific classification choices (all)"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have all of the linked FindingClassification choices.
+      The Requirement using this operator must define:
+      - finding_classification_choices (All Linked FindingClassification choices must be present in each filtered PatientFinding)
+      - findings (Optional: Used to filter PatientFindings by their Finding)
+      "
+    eval_functions: "" #TODO; Move to requirement?
+    eval_modes: "all"
+    evaluation_input_fields: patient_findings[].classifications[].classification_choice;
+    evaluation_requirement_fields: finding_classification_choices;
+    filter_functions: exact_match;
+    filter_input_fields: patient_findings[].finding; #TODO
+    filter_requirement_fields: findings;
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_specific_classification_choices_any"
+    name_de: "Patienten-Untersuchung hat Befund mit spezifischen Klassifikationswerten (min. eines)"
+    name_en: "Patient examination has finding with specific classification choices (any)"
+    expected_input: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have at least one of the linked FindingClassification choices.
+      The Requirement using this operator must define:
+      - finding_classification_choices (At least one linked FindingClassification choice must be present in each filtered PatientFinding)
+      - findings (Optional: Used to filter PatientFindings by their Finding)
+      "
+    eval_functions: ""
+    eval_modes: "any"
+    evaluation_input_fields: patient_findings[].classifications[].classification_choice;
+    evaluation_requirement_fields: finding_classification_choices;
+    filter_functions: exact_match;
+    filter_input_fields: patient_findings[].finding;
+    filter_requirement_fields: findings;
+
+#### Patient Examination Specific Findings have intervention of specific type
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "patient_examination_specific_findings_have_intervention_of_type"
+    name_de: "Patienten-Untersuchung hat Befund mit Intervention eines bestimmten Typs"
+    name_en: "Patient examination has finding with intervention of specific type"
+    valid_input_types: "patient_examination"
+    description: "
+      Checks if all PatientFindings of the PatientExamination after applying the filter
+      have at least one linked Intervention of the specified type.
+      The Requirement using this operator must define:
+      - intervention_types (At least one linked Intervention type must be present in each filtered PatientFinding)
+      - findings (Optional: Used to filter PatientFindings by their Finding)
+      "
+    eval_functions: ""
+    eval_modes: "any"
+    evaluation_input_fields: patient_findings[].interventions[].intervention_type;
+    evaluation_requirement_fields: intervention_types;
+    filter_functions: exact_match;
+    filter_input_fields: patient_findings[].finding;
+    filter_requirement_fields: findings;

@@ -6,18 +6,20 @@
     description: "
       Checks if a numeric model attribute is within a specified range.
       If this operator is used in a requirement, the requirement
-      must define 'target_attributes', 'numeric_value_min', and 'numeric_value_max' fields.
+      must define 'operator_instructions', 'numeric_value_min', and 'numeric_value_max' fields.
+      Entries with prefix '?' are target fields of the input object to check against,
       "
 
 - model: endoreg_db.requirement_operator
   fields:
     name: "model_attribute_set_any"
-    name_de: "Modellattribut Menge beliebig"
+    name_de: "Modellattribut beliebiger Wert"
     name_en: "Model attribute set any"
     description: "
       Checks if a model attribute is set to any value (not null or empty).
       If this operator is used in a requirement, the requirement
-      must define 'target_attributes' field.
+      must define 'operator_instructions' field.
+      Entries with prefix '?' are target fields of the input object to check against,
       "
 
 - model: endoreg_db.requirement_operator
@@ -28,9 +30,72 @@
     description: "
       Checks if a model attribute is among a specified set of values.
       If this operator is used in a requirement, the requirement
-      must define 'target_attributes'. In this case,
+      must define 'operator_instructions'. In this case,
       target must contain a comma-separated list.
-      Entries without prefix are target fields to check against,
-      entries with prefix '?' define fields of the requirement to use
+      Entries with prefix '?' are target fields of the input object to check against,
+      entries with prefix '!' define fields of the requirement to use
       as reference during evaluation.
+      "
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "model_attribute_array_match_any"
+    name_de: "Modellattribut Array enthält mindestens einen der verknüpften Werte"
+    name_en: "Model attribute array matches any of linked values"
+    description: "
+      Checks if a model attribute array contains at least one of the linked values.
+      If this operator is used in a requirement, the requirement must define 'operator_instructions' field.
+      Entries with prefix '?' define the target field of the input object.
+      The field must point to an array attribute.
+      entries with prefix '!' define fields of the requirement to use
+      as reference during evaluation.
+      The field must point to an array attribute.
+      All linked values must be matched in a single array entry.
+      Accepts keyword arguments:
+      - array_object_target: defines the field of each array entry to check against
+      nested fields can be accessed using dot notation; using '.[].' allows to
+      iterate over nested arrays
+      - filter_array_objects_by_field: defines a field to filter array entries by
+      - filter_source_field: defines the source field of the requirement to fetch filter values fro
+      "
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "model_attribute_array_match_all"
+    name_de: "Modellattribut Array enthält Objekt mit allen verknüpften Werte"
+    name_en: "Model attribute array matches all of linked values"
+    description: "
+      Checks if a model attribute array contains at least one of the linked values.
+      If this operator is used in a requirement, the requirement must define 'operator_instructions' field.
+      Entries with prefix '?' define the target field of the input object.
+      entries with prefix '!' define fields of the requirement to use
+      as reference during evaluation.
+      The field must point to an array attribute.
+      All linked values must be matched in a single array entry.
+      Accepts keyword arguments:
+      - array_object_target: defines the field of each array entry to check against
+      nested fields can be accessed using dot notation; using '.[].' allows to
+      iterate over nested arrays
+      - filter_array_objects_by_field: defines a field to filter array entries by
+      - filter_source_field: defines the source field of the requirement to fetch filter values from
+      "
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "model_attribute_array_match_none"
+    name_de: "Modellattribut Array enthält kein Objekt mit verknüpften Werten"
+    name_en: "Model attribute array matches none of linked values"
+    description: "
+      Checks if a model attribute array contains none of the linked values.
+      If this operator is used in a requirement, the requirement must define 'operator_instructions' field.
+      Entries with prefix '?' define the target field of the input object.
+      entries with prefix '!' define fields of the requirement to use
+      as reference during evaluation.
+      The field must point to an array attribute.
+      Accepts keyword arguments:
+      - array_object_target: defines the field of each array entry to check against
+      nested fields can be accessed using dot notation; using '.[].' allows to
+      iterate over nested arrays
+      - filter_array_objects_by_field: defines a field to filter array entries by
+      - filter_source_field: defines the source field of the requirement to fetch filter values from
       "

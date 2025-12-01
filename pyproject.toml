@@ -23,70 +23,74 @@ classifiers = [
 ]
 
 dependencies = [
-    "agl-report-reader>=0.4.0",
-    "django-bootstrap5>=25.2",
-    "django-cors-headers>=4.8.0",
-    "django-extensions>=3.2.3",
-    "django>=5.2.4",
-    "djangorestframework>=3.16.1",
-    "dotenv>=0.9.9",
-    "faker>=37.6.0",
-    "icecream>=2.1.4",
-    "numpy>=2.2.3",
-    "opencv-python>=4.11.0.86",
-    "pandas>=2.2.3",
-    "pillow>=11.3.0",
-    "pydantic>=2.10.6",
-    "pytesseract>=0.3.13",
-    "pytest>=8.3.5",
-    "python-ffmpeg>=2.0.12",
-    "pytorch-lightning>=2.5.1",
-    "pyyaml>=6.0.2",
-    "regex>=2024.11.6",
-    "scikit-learn>=1.5.2",
-    "scipy>=1.16.1",
-    "sphinx-rtd-theme>=3.0.2",
-    "sphinx>=8.2.3",
-    "tesseract>=0.1.3",
-    "llvmlite>=0.44.0",
-    "tqdm>=4.67.0",
-    "urllib3>=2.2.3",
-    "pytest-django>=4.11.1",
-    "pytest-cov>=6.1.1",
-    "pytest-env>=1.1.5",
-    "openpyxl>=3.1.5",
-    "pyjwt>=2.10.1",
-    "cryptography>=44.0.2",
-    "mypy>=1.16.0",
-    "whitenoise>=6.10.0",
-    "requests>=2.32.3",
-    "gunicorn>=23.0.0",
-    "django-filter>=25.1",
-    "optimum==1.26.1",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
-    "torchvision==0.20.1",
-    "transformers==4.44.2",
-    "librosa==0.11.0",
-    "soundfile==0.12.1",
-    "vector-quantize-pytorch==1.18.5",
-    "vocos==0.1.0",
-    "decord==0.6.0",
-    "moviepy==2.2.1",
-    "safetensors>=0.4.5",
-    "celery>=5.5.3",
-    "python-magic>=0.4.27",
-    "django-modeltranslation>=0.19.16",
-    "pip>=25.2",
-    "oauth2-proxy>=1.0.11",
-    "python-jose[cryptography]>=3.5.0",
-    "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[llm,ocr]==0.8.9.6",
-    "ruff>=0.14.0",
-    "build>=1.3.0",
-    "flake8>=7.3.0",
-    "twine>=6.2.0",
-    "googlemaps>=4.10.0",
+  "agl-report-reader>=0.4.0",
+  "django-bootstrap5>=25.2",
+  "django-cors-headers>=4.8.0",
+  "django-extensions>=3.2.3",
+  "django>=5.2.4",
+  "django-stubs[compatible-mypy]>=5.2.4",
+  "djangorestframework>=3.16.1",
+  "dotenv>=0.9.9",
+  "faker>=37.6.0",
+  "icecream>=2.1.4",
+  "numpy>=2.2.3",
+  "opencv-python>=4.11.0.86",
+  "pandas>=2.2.3",
+  "pillow>=11.3.0",
+  "pydantic>=2.10.6",
+  "pytesseract>=0.3.13",
+  "pytest>=8.3.5",
+  "python-ffmpeg>=2.0.12",
+  "pytorch-lightning>=2.5.1",
+  "pyyaml>=6.0.2",
+  "regex>=2024.11.6",
+  "scikit-learn>=1.5.2",
+  "scipy>=1.16.1",
+  "sphinx-rtd-theme>=3.0.2",
+  "sphinx>=8.2.3",
+  "tesseract>=0.1.3",
+  "llvmlite>=0.44.0",
+  "tqdm>=4.67.0",
+  "urllib3>=2.2.3",
+  "pytest-cov>=6.1.1",
+  "pytest-env>=1.1.5",
+  "openpyxl>=3.1.5",
+  "pyjwt>=2.10.1",
+  "cryptography>=44.0.2",
+  "mypy>=1.16.0",
+  "whitenoise>=6.10.0",
+  "requests>=2.32.3",
+  "gunicorn>=23.0.0",
+  "django-filter>=25.1",
+  "optimum==1.26.1",
+  "torch==2.5.1",
+  "torchaudio==2.5.1",
+  "torchvision==0.20.1",
+  "transformers==4.44.2",
+  "librosa==0.11.0",
+  "soundfile==0.12.1",
+  "vector-quantize-pytorch==1.18.5",
+  "vocos==0.1.0",
+  "decord==0.6.0",
+  "moviepy==2.2.1",
+  "safetensors>=0.4.5",
+  "celery>=5.5.3",
+  "python-magic>=0.4.27",
+  "django-modeltranslation>=0.19.16",
+  "pip>=25.2",
+  "oauth2-proxy>=1.0.11",
+  "python-jose[cryptography]>=3.5.0",
+  "mozilla-django-oidc>=4.0.1",
+  "lx-anonymizer[llm,ocr]==0.8.9.6",
+  "ruff>=0.14.0",
+  "build>=1.3.0",
+  "flake8>=7.3.0",
+  "twine>=6.2.0",
+  "googlemaps>=4.10.0",
+  "django-stubs-ext>=5.2.7",
+  "pytest-mypy-plugins>=3.2.0",
+  "pytest-django>=4.11.1",
+  "pytest-xdist>=3.8.0",
 ]
 requires-python = ">=3.12,<3.13"
 
@@ -108,6 +112,47 @@ requires = ["hatchling"]
 
 [tool.setuptools]
 packages = ["endoreg_db"]
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main"]
+strict = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+addopts = "--reuse-db --log-level=DEBUG --log-disable=faker --cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov-report=html"
+env = [
+  "STORAGE_DIR=data/tests/storage",
+  "DRF_THROTTLE_USER=100000/hour",
+  "DRF_THROTTLE_ANON=100000/hour",
+  "DJANGO_DEBUG=true",
+  "DEV_DB_NAME=data/tests/db/dev_ignored.sqlite3",
+]
+filterwarnings = [
+  "ignore:.*faker.*",
+  "ignore::UserWarning:faker",
+  "ignore::DeprecationWarning:faker",
+]
+log_cli = true
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
+log_cli_level = "DEBUG"
+log_level = "DEBUG"
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "expensive: marks computationally expensive tests",
+  "video: marks tests that require video processing",
+  "pipeline: marks tests that run full video pipeline",
+  "ai: marks tests that require AI inference",
+  "ffmpeg: marks tests that require FFmpeg",
+  "integration: marks integration tests",
+  "unit: marks unit tests",
+  "api: marks API endpoint tests",
+]
+python_files = ["tests.py", "test_*.py", "*_test.py"]
+testpaths = ["tests/"]
 
 [tool.hatch.build]
 exclude = [

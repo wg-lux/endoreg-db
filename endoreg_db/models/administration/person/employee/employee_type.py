@@ -34,7 +34,7 @@ class EmployeeType(models.Model):
     )
 
     if TYPE_CHECKING:
-        qualifications = cast(models.manager.RelatedManager["Qualification"], qualifications)
+        qualifications = cast(models.manager.Manager["Qualification"], qualifications)
 
         @property
         def employees(self) -> models.QuerySet["Employee"]: ...
