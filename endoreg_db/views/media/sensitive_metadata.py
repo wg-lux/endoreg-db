@@ -64,7 +64,7 @@ def video_sensitive_metadata(request, pk):
     PATCH /api/media/videos/<pk>/sensitive-metadata/
     
     Get or update sensitive metadata for a video.
-    Video-scoped: Uses video ID to locate related sensitive metadata.
+    Video-scoped: Uses sensitive meta ID to locate related sensitive metadata.
     """
     sensitive_meta = get_object_or_404(SensitiveMeta, pk=pk)
     
@@ -162,7 +162,7 @@ def pdf_sensitive_metadata(request, pk):
     PATCH /api/media/pdfs/<pk>/sensitive-metadata/
     
     Get or update sensitive metadata for a PDF.
-    PDF-scoped: Uses PDF ID to locate related sensitive metadata.
+    PDF-scoped: Uses sensitive meta ID to locate related sensitive metadata.
     """
     sensitive_meta = get_object_or_404(SensitiveMeta, pk=pk)
     
