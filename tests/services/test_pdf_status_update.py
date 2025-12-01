@@ -1,5 +1,5 @@
 """
-Test that report status is correctly updated to "ready for validation" after anonymization.
+Test that PDF status is correctly updated to "ready for validation" after anonymization.
 """
 
 from unittest.mock import patch
@@ -13,7 +13,7 @@ from endoreg_db.services.pdf_import import PdfImportService
 
 @pytest.mark.django_db
 class TestPdfStatusAfterAnonymization:
-    """Test that report state is correctly updated after successful anonymization."""
+    """Test that PDF state is correctly updated after successful anonymization."""
 
     @pytest.fixture
     def center(self):
@@ -25,16 +25,16 @@ class TestPdfStatusAfterAnonymization:
 
     def test_status_becomes_done_after_anonymization(self, center, tmp_path):
         """
-        Test that after successful report anonymization, the status becomes 'done_processing_anonymization'
+        Test that after successful PDF anonymization, the status becomes 'done_processing_anonymization'
         (ready for validation) instead of remaining at 'not_started'.
         """
-        # Create a test report file
+        # Create a test PDF file
         test_pdf = tmp_path / "test_report.pdf"
-        test_pdf.write_bytes(b"%report-1.4\n%test content")
+        test_pdf.write_bytes(b"%PDF-1.4\n%test content")
 
-        # Create anonymized report file that will be referenced
+        # Create anonymized PDF file that will be referenced
         anonymized_pdf_path = tmp_path / "anonymized.pdf"
-        anonymized_pdf_path.write_bytes(b"%report-1.4\n%anonymized")
+        anonymized_pdf_path.write_bytes(b"%PDF-1.4\n%anonymized")
 
         # Mock the text processing to simulate successful anonymization
         def mock_process(service_instance):
@@ -52,13 +52,13 @@ class TestPdfStatusAfterAnonymization:
             )
 
         with patch.object(PdfImportService, "_process_text_and_metadata", mock_process):
-            # Import the report
+            # Import the PDF
             service = PdfImportService.with_blackening()
             pdf = service.import_and_anonymize(
                 file_path=test_pdf, center_name=center.name, delete_source=False
             )
 
-            # Verify report was created
+            # Verify PDF was created
             assert pdf is not None
 
             # Verify state exists
@@ -66,9 +66,9 @@ class TestPdfStatusAfterAnonymization:
             assert state is not None
 
             # Verify anonymization flags are set
-            assert state.anonymized is True, "report should be marked as anonymized"
+            assert state.anonymized is True, "PDF should be marked as anonymized"
             assert state.sensitive_meta_processed is True, (
-                "report should be marked as ready for validation"
+                "PDF should be marked as ready for validation"
             )
 
             # Verify status is DONE_PROCESSING_ANONYMIZATION (ready for validation)
@@ -88,10 +88,10 @@ class TestPdfStatusAfterAnonymization:
         not_started -> processing -> done -> (validation ready)
         """
         test_pdf = tmp_path / "test_report.pdf"
-        test_pdf.write_bytes(b"%report-1.4\n%test content")
+        test_pdf.write_bytes(b"%PDF-1.4\n%test content")
 
         anonymized_pdf_path = tmp_path / "anonymized.pdf"
-        anonymized_pdf_path.write_bytes(b"%report-1.4\n%anonymized")
+        anonymized_pdf_path.write_bytes(b"%PDF-1.4\n%anonymized")
 
         def mock_process(service_instance):
             service_instance.processing_context["text_extracted"] = True
@@ -123,10 +123,10 @@ class TestPdfStatusAfterAnonymization:
         Test the full status progression for cropping mode.
         """
         test_pdf = tmp_path / "test_report.pdf"
-        test_pdf.write_bytes(b"%report-1.4\n%test content")
+        test_pdf.write_bytes(b"%PDF-1.4\n%test content")
 
         anonymized_pdf_path = tmp_path / "anonymized.pdf"
-        anonymized_pdf_path.write_bytes(b"%report-1.4\n%anonymized")
+        anonymized_pdf_path.write_bytes(b"%PDF-1.4\n%anonymized")
 
         def mock_process(service_instance):
             service_instance.processing_context["text_extracted"] = True

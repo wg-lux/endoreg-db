@@ -3,7 +3,6 @@ from config.settings.dev import *  # noqa
 from pathlib import Path
 from icecream import ic
 import os
-from endoreg_db.utils.paths import STORAGE_DIR
 
 # Define BASE_DIR first
 BASE_DIR = Path(__file__).parent.parent

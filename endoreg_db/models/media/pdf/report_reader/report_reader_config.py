@@ -12,41 +12,21 @@ if TYPE_CHECKING:
 
 class ReportReaderConfig(models.Model):
     """
-    Configuration settings for parsing report reports (ReportReader).
+    Configuration settings for parsing PDF reports (ReportReader).
 
     Stores locale, name lists, date format, and flags used to identify key information lines
     and text sections to ignore.
     """
 
     locale = models.CharField(default="de_DE", max_length=10)
-    first_names = models.ManyToManyField(
-        "FirstName", related_name="report_reader_configs"
-    )
-    last_names = models.ManyToManyField(
-        "LastName", related_name="report_reader_configs"
-    )
+    first_names = models.ManyToManyField("FirstName", related_name="report_reader_configs")
+    last_names = models.ManyToManyField("LastName", related_name="report_reader_configs")
     text_date_format = models.CharField(default="%d.%m.%Y", max_length=10)
-    patient_info_line_flag = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="report_reader_configs_patient_info_line",
-        on_delete=models.CASCADE,
-    )
-    endoscope_info_line_flag = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="report_reader_configs_endoscope_info_line",
-        on_delete=models.CASCADE,
-    )
-    examiner_info_line_flag = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="report_reader_configs_examiner_info_line",
-        on_delete=models.CASCADE,
-    )
-    cut_off_below = models.ManyToManyField(
-        "ReportReaderFlag", related_name="report_reader_configs_cut_off_below"
-    )
-    cut_off_above = models.ManyToManyField(
-        "ReportReaderFlag", related_name="report_reader_configs_cut_off_above"
-    )
+    patient_info_line_flag = models.ForeignKey("ReportReaderFlag", related_name="report_reader_configs_patient_info_line", on_delete=models.CASCADE)
+    endoscope_info_line_flag = models.ForeignKey("ReportReaderFlag", related_name="report_reader_configs_endoscope_info_line", on_delete=models.CASCADE)
+    examiner_info_line_flag = models.ForeignKey("ReportReaderFlag", related_name="report_reader_configs_examiner_info_line", on_delete=models.CASCADE)
+    cut_off_below = models.ManyToManyField("ReportReaderFlag", related_name="report_reader_configs_cut_off_below")
+    cut_off_above = models.ManyToManyField("ReportReaderFlag", related_name="report_reader_configs_cut_off_above")
 
     if TYPE_CHECKING:
         patient_info_line_flag = models.ForeignKey["ReportReaderFlag"]
@@ -55,12 +35,8 @@ class ReportReaderConfig(models.Model):
 
         first_names = cast(models.manager.RelatedManager["FirstName"], first_names)
         last_names = cast(models.manager.RelatedManager["LastName"], last_names)
-        cut_off_below = cast(
-            models.manager.RelatedManager["ReportReaderFlag"], cut_off_below
-        )
-        cut_off_above = cast(
-            models.manager.RelatedManager["ReportReaderFlag"], cut_off_above
-        )
+        cut_off_below = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_below)
+        cut_off_above = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_above)
 
     def __str__(self):
         """Returns a string representation including the locale and primary key."""

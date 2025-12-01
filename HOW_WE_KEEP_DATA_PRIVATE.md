@@ -49,7 +49,10 @@ extracted_metadata = {
 
 ### Phase 1: Initial Creation (with Defaults)
 
+When `SensitiveMeta` is first created, **default values** are set to allow hash calculation:
+
 ```python
+# video_file.py - get_or_create_sensitive_meta()
 default_data = {
     "patient_first_name": "Patient",      # Default
     "patient_last_name": "Unknown",       # Default

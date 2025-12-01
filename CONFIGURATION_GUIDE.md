@@ -23,7 +23,6 @@ General
 - DJANGO_SETTINGS_MODULE: choose settings module (defaults used in manage.py/wsgi.py/pytest.ini).
 - STORAGE_DIR: absolute path to media storage (defaults to storage/ in repo).
 - STATIC_URL, STATIC_ROOT, MEDIA_URL: override static/media paths if embedding.
-- IO_DIR: Input Output dir, here data dropoff and export is handled.
 - TIME_ZONE: defaults to Europe/Berlin.
 
 Development (config.settings.dev)

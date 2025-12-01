@@ -13,7 +13,7 @@ ENDOSCOPE_TYPE_DATA_DIR = DATA_DIR / "endoscope_type"
 ENDOSCOPE_DATA_DIR = DATA_DIR / "endoscope"
 ACTIVE_MODEL_DATA_DIR = DATA_DIR / "active_model"
 PROFESSION_DATA_DIR = DATA_DIR / "profession"
-REPORT_TYPE_DATA_DIR = DATA_DIR / "pdf_type"
+PDF_TYPE_DATA_DIR = DATA_DIR / "pdf_type"
 REPORT_READER_FLAG_DATA_DIR = DATA_DIR / "report_reader_flag"
 EVENT_DATA_DIR = DATA_DIR / "event"
 GENDER_DATA_DIR = DATA_DIR / "gender"
@@ -27,29 +27,17 @@ CONTRAINDICATION_DATA_DIR = DATA_DIR / "contraindication"
 
 # Examination
 EXAMINATION_INDICATION_DATA_DIR = DATA_DIR / "examination_indication"
-EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR = (
-    DATA_DIR / "examination_indication_classification"
-)
-EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR = (
-    DATA_DIR / "examination_indication_classification_choice"
-)
+EXAMINATION_INDICATION_CLASSIFICATION_DATA_DIR = DATA_DIR / "examination_indication_classification"
+EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "examination_indication_classification_choice"
 
 # Finding
 FINDING_TYPE_DATA_DIR = DATA_DIR / "finding_type"
 FINDING_DATA_DIR = DATA_DIR / "finding"
 FINDING_LOCATION_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_location_classification"
-FINDING_LOCATION_CLASSIFICATION_CHOICE_DATA_DIR = (
-    DATA_DIR / "finding_location_classification_choice"
-)
-FINDING_MORPHOLOGY_CLASSIFICATION_DATA_DIR = (
-    DATA_DIR / "finding_morphology_classification"
-)
-FINDING_MORPHOLOGY_CLASSIFICATION_CHOICE_DATA_DIR = (
-    DATA_DIR / "finding_morphology_classification_choice"
-)
-FINDING_MORPGOLOGY_CLASSIFICATION_TYPE_DATA_DIR = (
-    DATA_DIR / "finding_morphology_classification_type"
-)
+FINDING_LOCATION_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_location_classification_choice"
+FINDING_MORPHOLOGY_CLASSIFICATION_DATA_DIR = DATA_DIR / "finding_morphology_classification"
+FINDING_MORPHOLOGY_CLASSIFICATION_CHOICE_DATA_DIR = DATA_DIR / "finding_morphology_classification_choice"
+FINDING_MORPGOLOGY_CLASSIFICATION_TYPE_DATA_DIR = DATA_DIR / "finding_morphology_classification_type"
 FINDING_INTERVETION_DATA_DIR = DATA_DIR / "finding_intervention"
 FINIDNG_INTERVENTION_TYPE_DATA_DIR = DATA_DIR / "finding_intervention_type"
 
@@ -81,9 +69,7 @@ MEDICATION_INDICATION_TYPE_DATA_DIR = DATA_DIR / "medication_indication_type"
 DISTRIBUTION_BASE_DIR = DATA_DIR / "distribution"
 DISTRIBUTION_SINGLE_CATEGORICAL_DATA_DIR = DISTRIBUTION_BASE_DIR / "single_categorical"
 DISTRIBUTION_NUMERIC_DATA_DIR = DISTRIBUTION_BASE_DIR / "numeric"
-DISTRIBUTION_MULTIPLE_CATEGORICAL_DATA_DIR = (
-    DISTRIBUTION_BASE_DIR / "multiple_categorical"
-)
+DISTRIBUTION_MULTIPLE_CATEGORICAL_DATA_DIR = DISTRIBUTION_BASE_DIR / "multiple_categorical"
 DISTRIBUTION_DATE_DATA_DIR = DISTRIBUTION_BASE_DIR / "date"
 
 # NETWORK

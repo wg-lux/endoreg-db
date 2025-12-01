@@ -473,7 +473,7 @@ def patch_env(monkeypatch, tmp_path):
     anon_dir.mkdir()
     storage_dir = tmp_path
 
-    monkeypatch.setattr(vis, "SENSITIVE_VIDEO_DIR", video_dir)
+    monkeypatch.setattr(vis, "VIDEO_DIR", video_dir)
     monkeypatch.setattr(vis, "ANONYM_VIDEO_DIR", anon_dir)
     monkeypatch.setattr(vis, "STORAGE_DIR", storage_dir)
     monkeypatch.setattr("endoreg_db.models.VideoFile", DummyVideoFile)

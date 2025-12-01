@@ -154,7 +154,7 @@ At this point in the pipeline:
   `VideoFile.processed_file`
 - Video hash is calculated and saved in:  
   `VideoFile.processed_video_hash`
-- `VideoState.state.anonymization_status.mark_anonymized()`
+- `VideoState.anonymized = True`
 
 ---
 

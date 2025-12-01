@@ -1,7 +1,7 @@
 """
-Test suite for report Import Service retry functionality with get_raw_file_path().
+Test suite for PDF Import Service retry functionality with get_raw_file_path().
 
-This test ensures the critical fix for report re-import using raw file paths
+This test ensures the critical fix for PDF re-import using raw file paths
 instead of sensitive file paths which may have been deleted.
 """
 
@@ -19,7 +19,7 @@ from endoreg_db.utils.hashs import get_pdf_hash
 @pytest.mark.django_db
 class TestPdfImportServiceRetryFix:
     """
-    Test suite for report import service retry fixes.
+    Test suite for PDF import service retry fixes.
 
     **Expected Behavior:**
     - Service uses get_raw_file_path() for retries
@@ -37,8 +37,8 @@ class TestPdfImportServiceRetryFix:
 
     @pytest.fixture
     def sample_pdf_content(self):
-        """Create sample report content."""
-        return b"""%report-1.4
+        """Create sample PDF content."""
+        return b"""%PDF-1.4
 1 0 obj
 <<
 /Type /Catalog
@@ -77,7 +77,7 @@ stream
 BT
 /F1 12 Tf
 100 700 Td
-(Sample report) Tj
+(Sample PDF) Tj
 ET
 endstream
 endobj
@@ -104,11 +104,11 @@ startxref
 
         **Test Scenario:**
         1. Create RawPdfFile with raw file only
-        2. Simulate existing report without text (needs reprocessing)
+        2. Simulate existing PDF without text (needs reprocessing)
         3. Call _retry_existing_pdf()
         4. Verify it uses get_raw_file_path() to find source file
         """
-        # Create raw report file
+        # Create raw PDF file
         raw_file = tmp_path / "test.pdf"
         raw_file.write_bytes(sample_pdf_content)
 
@@ -151,7 +151,7 @@ startxref
         **Test Scenario:**
         1. Create RawPdfFile without raw file
         2. Call _retry_existing_pdf()
-        3. Verify it returns existing report without error
+        3. Verify it returns existing PDF without error
         4. Verify clear error message logged
         """
         raw_pdf = RawPdfFile.objects.create(
@@ -168,7 +168,7 @@ startxref
             # Call retry method
             result = service._retry_existing_pdf(raw_pdf)
 
-            # Should return existing report
+            # Should return existing PDF
             assert result == raw_pdf
             assert service.current_pdf == raw_pdf
 
@@ -242,7 +242,7 @@ startxref
 
                 # Check error message
                 assert any(
-                    "Please re-upload the original report file" in record.message
+                    "Please re-upload the original PDF file" in record.message
                     for record in caplog.records
                 ), "Error message should tell user to re-upload"
 
@@ -250,7 +250,7 @@ startxref
 @pytest.mark.django_db
 class TestPdfImportServiceFileDiscovery:
     """
-    Test file discovery in report import scenarios matching production logs.
+    Test file discovery in PDF import scenarios matching production logs.
     """
 
     @pytest.fixture
@@ -260,7 +260,7 @@ class TestPdfImportServiceFileDiscovery:
 
     def test_existing_pdf_found_by_hash(self, center, tmp_path):
         """
-        Test that existing report is found by hash.
+        Test that existing PDF is found by hash.
 
         **Production Scenario:**
         - File appears in raw_pdfs: c8bd695d-6e2c-43a5-ac2c-1e76c33d9caf.pdf
@@ -269,7 +269,7 @@ class TestPdfImportServiceFileDiscovery:
         """
         # Create file with one name
         file1 = tmp_path / "c8bd695d-6e2c-43a5-ac2c-1e76c33d9caf.pdf"
-        file1.write_bytes(b"%report-1.4\nTest content\n%%EOF")
+        file1.write_bytes(b"%PDF-1.4\nTest content\n%%EOF")
 
         hash1 = get_pdf_hash(file1)
 
@@ -281,16 +281,16 @@ class TestPdfImportServiceFileDiscovery:
 
         # Create file with different name but same content
         file2 = tmp_path / "lux-histo-1.pdf"
-        file2.write_bytes(b"%report-1.4\nTest content\n%%EOF")
+        file2.write_bytes(b"%PDF-1.4\nTest content\n%%EOF")
 
         hash2 = get_pdf_hash(file2)
 
         # Hashes should match
         assert hash1 == hash2, "Same content should produce same hash"
 
-        # Query should find existing report
+        # Query should find existing PDF
         existing = RawPdfFile.objects.filter(pdf_hash=hash2).first()
-        assert existing == pdf1, "Should find existing report by hash"
+        assert existing == pdf1, "Should find existing PDF by hash"
 
 
 if __name__ == "__main__":

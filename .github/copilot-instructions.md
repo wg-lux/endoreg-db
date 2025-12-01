@@ -111,5 +111,5 @@ class ExampleClass2(models.Model):
 - **Logging**: `config/settings/base.py` defines `TEST_LOGGER_NAMES`; use `logging.getLogger(__name__)` so unit tests capture module-level logs consistently.
 - **Pipelines**: `endoreg_db/utils/pipelines/process_video_dir.py` shows the orchestration pattern—refresh model state after `pipe_1/pipe_2` and reuse its helpers for batch jobs.
 - **Permissions**: Storage-aware helpers live in `endoreg_db/utils/permissions.py` and related services—reuse them instead of manual `os.path` checks.
-- **Path hygiene**: File movement bugs usually stem from bypassing `endoreg_db.utils.paths` or `endoreg_db.config.env`; always derive locations from `data_paths[...]`/`env_path(...)` so raw/anonymized video & report paths stay consistent.
+- **Path hygiene**: File movement bugs usually stem from bypassing `endoreg_db.utils.paths` or `endoreg_db.config.env`; always derive locations from `data_paths[...]`/`env_path(...)` so raw/anonymized video & PDF paths stay consistent.
 - **RQ usage**: Enqueue jobs via `endoreg_db/tasks/video_ingest.enqueue_video_import`; ensure `RQ_REDIS_URL` is configured and Django is initialized before background execution.

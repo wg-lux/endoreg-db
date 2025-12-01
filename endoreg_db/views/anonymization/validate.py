@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 class AnonymizationValidateView(APIView):
     """
     POST /api/anonymization/<int:file_id>/validate/
-
+    
     Validiert und aktualisiert SensitiveMeta-Felder für Videos oder PDFs.
-
+    
     DATA HERE IS COMING FROM THE ANONYIZATION VALIDATION COMPONENT
-
+    
     Body (Datumsfelder bevorzugt in deutschem Format DD.MM.YYYY; ISO YYYY-MM-DD ebenfalls akzeptiert):
     {
       "patient_first_name": "Max",
@@ -32,12 +32,12 @@ class AnonymizationValidateView(APIView):
       "casenumber":         "12345",
       "anonymized_text":    "...",             // nur für PDFs; Videos ignorieren
       "is_verified":        true               // optional; default true
-      "file_type":        "video"            // optional; "video" oder "pdf"; wenn nicht angegeben, wird zuerst Video, dann report versucht
+      "file_type":        "video"            // optional; "video" oder "pdf"; wenn nicht angegeben, wird zuerst Video, dann PDF versucht
       "center_name":       editedPatient.value.centerName || '',
       "external_id":       editedPatient.value.externalId || '',
-      "external_id_origin":editedPatient.value.externalIdOrigin || '',
+      "external_id_origin":editedPatient.value.externalIdOrigin || '', 
     }
-
+    
     Rückwärtskompatibilität: ISO-Format (YYYY-MM-DD) wird ebenfalls akzeptiert.
     """
 
@@ -56,12 +56,10 @@ class AnonymizationValidateView(APIView):
         file_type = payload.get("file_type")
 
         with transaction.atomic():
-            # Try Video first (unless explicitly requesting report)
+            # Try Video first (unless explicitly requesting PDF)
             if file_type in (None, "video"):
                 video = (
-                    VideoFile.objects.select_related(
-                        "center", "sensitive_meta", "state"
-                    )
+                    VideoFile.objects.select_related("center", "sensitive_meta", "state")
                     .filter(pk=file_id)
                     .first()
                 )
@@ -98,12 +96,14 @@ class AnonymizationValidateView(APIView):
                         video.sensitive_meta.create_anonymized_record()
                     else:
                         return Response(
-                            {"message": "Video not validated, failed to create State."},
+                            {
+                                "message": "Video not validated, failed to create State."
+                            },
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
 
                     if video.state is not None:
-                        video.state.state.anonymization_status.mark_anonymized()
+                        video.state.anonymized = True
                         video.state.save(update_fields=["anonymized"])
                         video.sensitive_meta.state.save()
 
@@ -118,12 +118,10 @@ class AnonymizationValidateView(APIView):
                         status=status.HTTP_404_NOT_FOUND,
                     )
 
-            # Then report (unless explicitly requesting Video)
+            # Then PDF (unless explicitly requesting Video)
             if file_type in (None, "pdf"):
                 pdf = (
-                    RawPdfFile.objects.select_related(
-                        "center", "sensitive_meta", "state"
-                    )
+                    RawPdfFile.objects.select_related("center", "sensitive_meta", "state")
                     .filter(pk=file_id)
                     .first()
                 )
@@ -132,10 +130,10 @@ class AnonymizationValidateView(APIView):
                     try:
                         ok = pdf.validate_metadata_annotation(prepared_payload)
                     except Exception:  # pragma: no cover - defensive safety net
-                        logger.exception("report validation crashed for id=%s", file_id)
+                        logger.exception("PDF validation crashed for id=%s", file_id)
                         return Response(
                             {
-                                "error": "report validation encountered an unexpected error."
+                                "error": "PDF validation encountered an unexpected error."
                             },
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
@@ -149,7 +147,7 @@ class AnonymizationValidateView(APIView):
 
                     if not ok:
                         return Response(
-                            {"error": "report validation failed."},
+                            {"error": "PDF validation failed."},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     else:
@@ -165,29 +163,30 @@ class AnonymizationValidateView(APIView):
                             and pdf.sensitive_meta.state
                             and pdf.state
                         ):
+                            
                             pdf.sensitive_meta.state.refresh_from_db()
                             pdf.sensitive_meta.state.mark_dob_verified()
                             pdf.sensitive_meta.state.mark_names_verified()
                             pdf.sensitive_meta.create_anonymized_record()
-                            pdf.state.state.anonymization_status.mark_anonymized()
+                            pdf.state.anonymized = True
                             pdf.state.save(update_fields=["anonymized"])
                             pdf.sensitive_meta.state.save()
                         else:
                             return Response(
                                 {
-                                    "message": "report not validated, failed to create State."
+                                    "message": "PDF not validated, failed to create State."
                                 },
                                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             )
 
                     return Response(
-                        {"message": "report validated."},
+                        {"message": "PDF validated."},
                         status=status.HTTP_200_OK,
                     )
 
                 if file_type == "pdf":
                     return Response(
-                        {"error": f"report {file_id} not found."},
+                        {"error": f"PDF {file_id} not found."},
                         status=status.HTTP_404_NOT_FOUND,
                     )
 

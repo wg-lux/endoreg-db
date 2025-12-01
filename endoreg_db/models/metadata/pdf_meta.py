@@ -9,28 +9,20 @@ if TYPE_CHECKING:
 
 class PdfType(models.Model):
     """
-    Defines a specific type or format of report report, linking to flags used for parsing.
+    Defines a specific type or format of PDF report, linking to flags used for parsing.
 
-    Used to configure how different report report layouts are processed.
+    Used to configure how different PDF report layouts are processed.
     """
 
     name = models.CharField(max_length=255)
 
-    patient_info_line = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="pdf_type_patient_info_line",
-        on_delete=models.CASCADE,
-    )
+    patient_info_line = models.ForeignKey("ReportReaderFlag", related_name="pdf_type_patient_info_line", on_delete=models.CASCADE)
     endoscope_info_line = models.ForeignKey(
         "ReportReaderFlag",
         related_name="pdf_type_endoscopy_info_line",
         on_delete=models.CASCADE,
     )
-    examiner_info_line = models.ForeignKey(
-        "ReportReaderFlag",
-        related_name="pdf_type_examiner_info_line",
-        on_delete=models.CASCADE,
-    )
+    examiner_info_line = models.ForeignKey("ReportReaderFlag", related_name="pdf_type_examiner_info_line", on_delete=models.CASCADE)
     cut_off_above_lines = models.ManyToManyField(
         "ReportReaderFlag",
         related_name="pdf_type_cut_off_above_lines",
@@ -45,15 +37,11 @@ class PdfType(models.Model):
         endoscope_info_line: models.ForeignKey["ReportReaderFlag"]
         examiner_info_line: models.ForeignKey["ReportReaderFlag"]
 
-        cut_off_above_lines = cast(
-            models.manager.RelatedManager["ReportReaderFlag"], cut_off_above_lines
-        )
-        cut_off_below_lines = cast(
-            models.manager.RelatedManager["ReportReaderFlag"], cut_off_below_lines
-        )
+        cut_off_above_lines = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_above_lines)
+        cut_off_below_lines = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_below_lines)
 
     def __str__(self):
-        """Returns a string summary of the report type and its associated flags."""
+        """Returns a string summary of the PDF type and its associated flags."""
         summary = f"{self.name}"
         # add lines to summary
         summary += f"\nPatient Info Line: {self.patient_info_line.value}"
@@ -72,7 +60,7 @@ class PdfType(models.Model):
 
 class PdfMeta(models.Model):
     """
-    Stores metadata associated with a specific report document file.
+    Stores metadata associated with a specific PDF document file.
     """
 
     pdf_type = models.ForeignKey(PdfType, on_delete=models.CASCADE)
@@ -81,13 +69,13 @@ class PdfMeta(models.Model):
     pdf_hash = models.CharField(max_length=255, unique=True)
 
     def __str__(self):
-        """Returns the report hash as its string representation."""
+        """Returns the PDF hash as its string representation."""
         return str(self.pdf_hash)
 
     @classmethod
     def create_from_file(cls, pdf_file):
         """
-        Creates a PdfMeta instance from a report file object.
+        Creates a PdfMeta instance from a PDF file object.
         Note: This implementation seems incomplete; it doesn't extract hash, date, time, or type.
         """
         pdf_file = File(pdf_file)

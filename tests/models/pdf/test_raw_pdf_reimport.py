@@ -1,10 +1,10 @@
 """
-Test suite for report reimport functionality and RawPdfFile model enhancements.
+Test suite for PDF reimport functionality and RawPdfFile model enhancements.
 
 This test ensures the critical fixes for:
 1. RawPdfFile.uuid property compatibility
 2. RawPdfFile.get_raw_file_path() method for finding raw files
-3. report reimport view using pdf_hash instead of uuid
+3. PDF reimport view using pdf_hash instead of uuid
 """
 
 from pathlib import Path
@@ -32,14 +32,14 @@ class TestRawPdfFileModelEnhancements:
     def center(self):
         """Create test center."""
         return Center.objects.create(
-            name="test_center_pdf", display_name="Test Center report"
+            name="test_center_pdf", display_name="Test Center PDF"
         )
 
     @pytest.fixture
     def sample_pdf_content(self):
-        """Create sample report content."""
-        # Minimal valid report structure
-        return b"""%report-1.4
+        """Create sample PDF content."""
+        # Minimal valid PDF structure
+        return b"""%PDF-1.4
 1 0 obj
 <<
 /Type /Catalog
@@ -78,7 +78,7 @@ stream
 BT
 /F1 12 Tf
 100 700 Td
-(Test report) Tj
+(Test PDF) Tj
 ET
 endstream
 endobj
@@ -108,7 +108,7 @@ startxref
         2. Access uuid property
         3. Verify uuid equals pdf_hash
         """
-        # Create temporary report file
+        # Create temporary PDF file
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(sample_pdf_content)
 
@@ -171,7 +171,7 @@ startxref
         3. Call get_raw_file_path()
         4. Verify it finds the file by hash
         """
-        # Create a dummy report file to calculate hash
+        # Create a dummy PDF file to calculate hash
         dummy_pdf = tmp_path / "dummy.pdf"
         dummy_pdf.write_bytes(sample_pdf_content)
 
@@ -193,7 +193,7 @@ startxref
         )
 
         # Mock the raw directories to include our test directory
-        with patch("endoreg_db.models.media.pdf.raw_pdf.REPORT_DIR", tmp_path):
+        with patch("endoreg_db.models.media.pdf.raw_pdf.PDF_DIR", tmp_path):
             # Mock settings.BASE_DIR to point to tmp_path
             with patch.object(settings, "BASE_DIR", tmp_path):
                 found_path = raw_pdf.get_raw_file_path()
@@ -230,7 +230,7 @@ startxref
 @pytest.mark.django_db
 class TestPdfReimportViewFixes:
     """
-    Test suite for report reimport view fixes.
+    Test suite for PDF reimport view fixes.
 
     **Expected Behavior:**
     - View uses pdf.pdf_hash instead of pdf.uuid
@@ -247,8 +247,8 @@ class TestPdfReimportViewFixes:
 
     @pytest.fixture
     def sample_pdf_content(self):
-        """Create sample report content."""
-        return b"%report-1.4\n%Test report content\n%%EOF"
+        """Create sample PDF content."""
+        return b"%PDF-1.4\n%Test PDF content\n%%EOF"
 
     def test_reimport_view_uses_pdf_hash(self, center, sample_pdf_content, tmp_path):
         """
@@ -307,7 +307,7 @@ class TestPdfReimportViewFixes:
 @pytest.mark.django_db
 class TestPdfFilePathResolution:
     """
-    Test suite for report file path resolution logic.
+    Test suite for PDF file path resolution logic.
 
     **Expected Behavior:**
     - Files can be found in multiple configured directories
@@ -358,12 +358,12 @@ class TestPdfFilePathResolution:
 
         # Use uuid as dict key
         pdf_dict = {
-            pdf1.uuid: "report 1",
-            pdf2.uuid: "report 2",
+            pdf1.uuid: "PDF 1",
+            pdf2.uuid: "PDF 2",
         }
 
-        assert pdf_dict[pdf1.uuid] == "report 1"
-        assert pdf_dict[pdf2.uuid] == "report 2"
+        assert pdf_dict[pdf1.uuid] == "PDF 1"
+        assert pdf_dict[pdf2.uuid] == "PDF 2"
 
 
 if __name__ == "__main__":

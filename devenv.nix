@@ -94,7 +94,6 @@ in
         "PORT": "${port}",
         "CONF_DIR": "${confDir}",
         "HOME_DIR": "$HOME",
-        "IO_DIR": "HOME_DIR"
         "WORKING_DIR": "$PWD"
       }
       EOF

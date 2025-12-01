@@ -12,8 +12,8 @@ from pathlib import Path
 from django.test import TestCase
 from endoreg_db.models import VideoFile
 from endoreg_db.services.video_import import import_and_anonymize
-from ..helpers.default_objects import get_default_center, get_default_processor
-from ..media.video.helper import get_random_video_path_by_examination_alias
+from .helpers.default_objects import get_default_center, get_default_processor
+from .media.video.helper import get_random_video_path_by_examination_alias
 import logging
 
 # Environment-based test control
@@ -29,7 +29,7 @@ class TestVideoImportService(TestCase):
         """Set up session-scoped fixtures."""
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
-        from ..helpers.data_loader import load_base_db_data
+        from .helpers.data_loader import load_base_db_data
         load_base_db_data()
 
     def setUp(self):

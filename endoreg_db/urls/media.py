@@ -1,36 +1,39 @@
 from django.urls import path
 
 from endoreg_db.views import VideoStreamView
-from endoreg_db.views.ai import label_list
 from endoreg_db.views.media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.PDFMediaView
     VideoMediaView,
-    get_sensitive_metadata_pk,
     pdf_sensitive_metadata,
     pdf_sensitive_metadata_list,
     pdf_sensitive_metadata_verify,
     sensitive_metadata_list,
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
+    get_sensitive_metadata_pk,
+)
+from endoreg_db.views.ai import (
+    label_list
 )
 from endoreg_db.views.pdf.pdf_stream import PdfStreamView
 from endoreg_db.views.pdf.reimport import PdfReimportView
-from endoreg_db.views.video import (
-    VideoReimportView,
-    video_segment_detail,
-    video_segment_validate,
-    video_segments_by_video,
-    video_segments_collection,
-    video_segments_stats,
-    video_segments_validate_bulk,
-    video_segments_validation_status,
-)
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
     VideoCorrectionView,
     VideoMetadataStatsView,
     VideoProcessingHistoryView,
     VideoRemoveFramesView,
+)
+
+from endoreg_db.views.video import(
+    video_segments_collection,
+    video_segments_by_video,
+    video_segment_detail,
+    video_segments_stats,
+    video_segment_validate,
+    video_segments_validate_bulk,
+    video_segments_validation_status,
+    VideoReimportView,
 )
 
 # ---------------------------------------------------------------------------------------
@@ -45,9 +48,9 @@ from endoreg_db.views.video.correction import (
 
 urlpatterns = [
     path(
-        "media/sensitive-media-id/<int:pk>/<str:mediaType>/",
+        "media/sensitive-media-id/<int:pk>/<str:mediaType>/", 
         get_sensitive_metadata_pk,
-        name="sm-pk",
+        name="sm-pk"
     ),
     # Video media endpoints
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
@@ -125,7 +128,13 @@ urlpatterns = [
         VideoRemoveFramesView.as_view(),
         name="video-remove-frames",
     ),
-    path("media/videos/labels/list/", label_list, name="get_lvs_list"),
+    
+    path(
+        "media/videos/labels/list/", 
+        label_list, 
+        name ="get_lvs_list"
+    ),
+    
     # ---------------------------------------------------------------------------------------
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
     # Video Segments Collection API
@@ -199,6 +208,9 @@ urlpatterns = [
         video_segments_validation_status,
         name="video-segments-validation-status",
     ),
+    
+    
+    
     # ---------------------------------------------------------------------------------------
     # SENSITIVE METADATA ENDPOINTS (Modern Media Framework)
     # ---------------------------------------------------------------------------------------
@@ -217,9 +229,9 @@ urlpatterns = [
         video_sensitive_metadata_verify,
         name="video-sensitive-metadata-verify",
     ),
-    # report Sensitive Metadata (Resource-Scoped)
+    # PDF Sensitive Metadata (Resource-Scoped)
     # GET/PATCH /api/media/pdfs/<pk>/sensitive-metadata/
-    # Get or update sensitive patient data for a report
+    # Get or update sensitive patient data for a PDF
     path(
         "media/pdfs/<int:pk>/sensitive-metadata/",
         pdf_sensitive_metadata,
@@ -249,15 +261,15 @@ urlpatterns = [
         pdf_sensitive_metadata_list,
         name="pdf-sensitive-metadata-list",
     ),
-    # report media endpoints
+    # PDF media endpoints
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
     path("media/pdfs/<int:pk>/", PdfMediaView.as_view(), name="pdf-detail"),
     path(
         "media/pdfs/<int:pk>/stream/", PdfStreamView.as_view(), name="pdf-stream"
     ),  # Support ?type=raw|anonymized params
-    # report Re-import API endpoint (modern media framework)
+    # PDF Re-import API endpoint (modern media framework)
     # POST /api/media/pdfs/<int:pk>/reimport/
-    # Re-imports a report file to regenerate metadata when OCR failed or data is incomplete
+    # Re-imports a PDF file to regenerate metadata when OCR failed or data is incomplete
     path(
         "media/pdfs/<int:pk>/reimport/", PdfReimportView.as_view(), name="pdf-reimport"
     ),
