@@ -147,6 +147,7 @@ try:
 
         # Add paths and config from nix_vars if missing
         # Ensure paths are NOT quoted
+        #TODO Check for missing paths from path utils
         vars_to_add = {
             "DJANGO_HOST": nix_vars.get("HOST"),
             "DJANGO_PORT": nix_vars.get("PORT"),

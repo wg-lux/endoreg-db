@@ -136,7 +136,7 @@ class MediaManagementView(APIView):
         return stats
 
     def _get_pdf_stats(self) -> Dict[str, int]:
-        """Get PDF file statistics"""
+        """Get report file statistics"""
         pdfs = RawPdfFile.objects.all()
 
         stats = {
@@ -150,7 +150,7 @@ class MediaManagementView(APIView):
         }
 
         for pdf in pdfs:
-            # PDF status logic based on anonymized_text presence and validation
+            # report status logic based on anonymized_text presence and validation
             has_anonymized = bool(pdf.anonymized_text and pdf.anonymized_text.strip())
             is_validated = (
                 getattr(pdf.sensitive_meta, "is_verified", False)
@@ -196,10 +196,11 @@ class MediaManagementView(APIView):
 
         if media_type == "video":
             video_file_obj = (
-                VideoFile.get_video_by_id(self, video_id=file_id) if file_id else None
+                VideoFile.get_video_by_pk(pk=file_id) if file_id else None
             )
+
         elif media_type == "pdf":
-            pdf_file_obj = RawPdfFile.get_pdf_by_id(file_id) if file_id else None
+            pdf_file_obj = RawPdfFile.get_pdf_by_pk(pk=file_id) if file_id else None
 
         with transaction.atomic():
             if video_file_obj:
@@ -414,7 +415,7 @@ def force_remove_media(request, file_id: int):
 
             return Response(
                 {
-                    "detail": f"PDF file '{filename}' (ID: {file_id}) removed successfully",
+                    "detail": f"report file '{filename}' (ID: {file_id}) removed successfully",
                     "file_type": "pdf",
                     "file_id": file_id,
                 }
@@ -462,7 +463,7 @@ def reset_processing_status(request, file_id: int):
         except VideoFile.DoesNotExist:
             pass
 
-        # PDF files don't have state, but we can clear anonymized_text
+        # report files don't have state, but we can clear anonymized_text
         try:
             pdf = RawPdfFile.objects.get(id=file_id)
             pdf.anonymized_text = ""
@@ -470,7 +471,7 @@ def reset_processing_status(request, file_id: int):
 
             return Response(
                 {
-                    "detail": "PDF file processing reset",
+                    "detail": "report file processing reset",
                     "file_type": "pdf",
                     "file_id": file_id,
                     "new_status": "not_started",

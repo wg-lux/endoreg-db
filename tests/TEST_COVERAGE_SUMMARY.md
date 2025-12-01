@@ -74,13 +74,13 @@ A total of **over 400 comprehensive unit tests** have been created covering mode
 7. **`tests/views/anonymization/test_validate_view.py`** (20+ tests)
    - AnonymizationValidateView POST endpoint
    - Video file validation flow
-   - PDF file validation flow
+   - report file validation flow
    - German date format support (DD.MM.YYYY)
    - ISO date format support (YYYY-MM-DD)
    - Center name auto-population from file
    - Error handling: non-existent files, validation failures
    - Default `is_verified=True` behavior
-   - File type detection (video tried first, then PDF)
+   - File type detection (video tried first, then report)
    - All fields validation
 
 ## Test Categories
@@ -204,7 +204,7 @@ Focus areas:
 ## Continuous Integration
 
 These tests are designed to run in CI/CD pipelines:
-- Fast execution (no video/PDF processing)
+- Fast execution (no video/report processing)
 - Deterministic results
 - Clear failure messages
 - No external dependencies

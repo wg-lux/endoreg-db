@@ -4,11 +4,16 @@ Data Loader Helpers and others
 
 from pathlib import Path
 
+
+from pathlib import Path
+
 from django.core.management import call_command
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 
+
+def load_default_ai_model():
 def load_default_ai_model():
     """
     Loads the default AI model into the application using a predefined checkpoint file.
@@ -23,7 +28,9 @@ def load_default_ai_model():
         "--model_path",
         model_path,
         "--bump_version",  # Handle existing models by bumping version
+        "--bump_version",  # Handle existing models by bumping version
     )
+
 
 
 def load_qualification_data():
@@ -43,11 +50,19 @@ def load_shift_data():
         "load_shift_data",
     )
 
+    call_command(
+        "load_shift_data",
+    )
+
 
 def load_base_db_data():
     """
     Loads the base database data using the corresponding Django management command.
     """
+    call_command(
+        "load_base_db_data",
+    )
+
     call_command(
         "load_base_db_data",
     )
@@ -103,7 +118,7 @@ def load_report_reader_flag_data():
 
 
 def load_pdf_type_data():
-    """Load PDF Type Data"""
+    """Load report Type Data"""
     call_command(
         "load_pdf_type_data",
     )

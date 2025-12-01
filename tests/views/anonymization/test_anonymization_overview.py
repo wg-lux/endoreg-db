@@ -14,8 +14,8 @@ from rest_framework.test import APIClient
 
 from endoreg_db.models import SensitiveMeta, SensitiveMetaState, VideoState
 
-from .helpers.default_objects import get_default_center, get_default_egd_pdf
-from .helpers.optimized_video_fixtures import get_cached_or_create
+from ...helpers.default_objects import get_default_center, get_default_egd_pdf
+from ...helpers.optimized_video_fixtures import get_cached_or_create
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class AnonymizationOverviewAPITest(TestCase):
         """Set up session-scoped fixtures."""
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
-        from .helpers.data_loader import load_base_db_data
+        from ...helpers.data_loader import load_base_db_data
 
         load_base_db_data()
 
@@ -54,7 +54,7 @@ class AnonymizationOverviewAPITest(TestCase):
 
         # Always use real video file for this integration test suite
         # These tests require full VideoFile functionality
-        from .helpers.default_objects import get_default_video_file
+        from ...helpers.default_objects import get_default_video_file
 
         self.video = get_cached_or_create(
             "anonymization_overview_video", get_default_video_file
@@ -91,10 +91,10 @@ class AnonymizationOverviewAPITest(TestCase):
 
     @pytest.mark.unit
     def test_pdf_sm_creation(self):
-        """Test creation of SensitiveMeta for PDF."""
+        """Test creation of SensitiveMeta for report."""
         pdf = self.raw_pdf
         pdf_sm = pdf.sensitive_meta
-        self.assertIsNotNone(pdf_sm, "SensitiveMeta for PDF should be created")
+        self.assertIsNotNone(pdf_sm, "SensitiveMeta for report should be created")
         self.assertIsInstance(
             pdf_sm,
             SensitiveMeta,
@@ -122,7 +122,7 @@ class AnonymizationOverviewAPITest(TestCase):
     @pytest.mark.video
     @pytest.mark.expensive
     def test_overview_mixed_files(self):
-        """Test overview with both video and PDF files."""
+        """Test overview with both video and report files."""
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest("Skipping mixed files test (requires video processing)")
 
@@ -153,7 +153,7 @@ class AnonymizationOverviewAPITest(TestCase):
         video.anonymize()
         self.assertTrue(video.state.anonymized, "Video should be marked as anonymized")
 
-        # Create PDF - not anonymized
+        # Create report - not anonymized
         pdf = self.raw_pdf
 
         response = self.client.get("/api/anonymization/items/overview/")
@@ -263,7 +263,7 @@ class AnonymizationOverviewAPITest(TestCase):
 #     self.assertEqual(items_by_filename['video_done.mp4']['anonymizationStatus'], 'done_processing_anonymization')
 
 # def test_pdf_anonymization_statuses(self):
-#     """Test PDF anonymization status logic."""
+#     """Test report anonymization status logic."""
 #     base_time = timezone.datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 #     # Test case 1: not_started (no anonymized_text)
@@ -380,12 +380,12 @@ class AnonymizationOverviewAPITest(TestCase):
 #     self.assertEqual(data['reportMeta']['patientFirstName'], 'Video')
 
 # def test_set_current_for_validation_pdf(self):
-#     """Test setting current PDF for validation."""
+#     """Test setting current report for validation."""
 #     pdf = RawPdfFile.objects.create(
 #         file="reports/test.pdf",
 #         created_at=timezone.now(),
-#         text="Original PDF content",
-#         anonymized_text="Anonymized PDF content",
+#         text="Original report content",
+#         anonymized_text="Anonymized report content",
 #         sensitive_meta=self.pdf_meta
 #     )
 
@@ -396,10 +396,10 @@ class AnonymizationOverviewAPITest(TestCase):
 
 #     self.assertEqual(data['id'], pdf.id)
 #     self.assertEqual(data['sensitiveMetaId'], self.pdf_meta.id)
-#     self.assertEqual(data['text'], 'Original PDF content')
-#     self.assertEqual(data['anonymizedText'], 'Anonymized PDF content')
+#     self.assertEqual(data['text'], 'Original report content')
+#     self.assertEqual(data['anonymizedText'], 'Anonymized report content')
 #     self.assertIsNotNone(data['reportMeta'])
-#     self.assertEqual(data['reportMeta']['patientFirstName'], 'PDF')
+#     self.assertEqual(data['reportMeta']['patientFirstName'], 'report')
 
 # def test_set_current_for_validation_not_found(self):
 #     """Test setting current for non-existent file."""

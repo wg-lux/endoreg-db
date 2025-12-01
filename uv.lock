@@ -799,6 +799,9 @@ source = {registry = "https://pypi.org/simple"}
 version = "0.1.1"
 
 [[package]]
+name = "endoreg-db"
+version = "0.8.8.3"
+source = { editable = "." }
 dependencies = [
   {name = "agl-report-reader"},
   {name = "build"},
