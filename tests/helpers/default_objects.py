@@ -54,6 +54,14 @@ DEFAULT_PATIENT_BIRTH_DATE = date(1970, 1, 1)
 
 
 def get_information_source_prediction():
+    """
+    Retrieve the InformationSource record named "prediction".
+    
+    Loads information source fixture data and returns the InformationSource instance with name "prediction".
+    
+    Returns:
+        InformationSource: The InformationSource instance with name "prediction".
+    """
     from .data_loader import load_information_source_data
 
     load_information_source_data()
@@ -64,10 +72,13 @@ def get_information_source_prediction():
 
 def get_latest_segmentation_model(model_name: str = DEFAULT_SEGMENTATION_MODEL_NAME) -> ModelMeta:
     """
-    Get the latest segmentation model from the database.
-    This function retrieves the latest ModelMeta object from the database.
+    Retrieve the latest ModelMeta for the segmentation AI model with the given name, loading baseline and fallback model data if necessary.
+    
+    Parameters:
+        model_name (str): Name of the segmentation AI model to look up (defaults to DEFAULT_SEGMENTATION_MODEL_NAME).
+    
     Returns:
-        ModelMeta: The latest segmentation model.
+        ModelMeta: The most recent ModelMeta instance for the specified AI model.
     """
     from .data_loader import (
         load_ai_model_data,
@@ -148,7 +159,10 @@ def get_default_processor() -> EndoscopyProcessor:
 
 def get_default_center() -> Center:
     """
-    Create a default Center instance for testing.
+    Retrieve the default Center configured by DEFAULT_CENTER_NAME.
+    
+    Returns:
+        Center: The Center object whose name equals DEFAULT_CENTER_NAME.
     """
     center = Center.objects.get(
         name=DEFAULT_CENTER_NAME,
@@ -158,7 +172,21 @@ def get_default_center() -> Center:
 
 
 def generate_patient(**kwargs) -> Patient:
-    """Create a test Patient with deterministic defaults unless randomness is requested."""
+    """
+    Create a test Patient instance with deterministic defaults unless randomness is requested.
+    
+    Parameters:
+        randomize (bool): If True, generate random name and gender values; otherwise use deterministic defaults.
+        gender (Gender | str | None): Gender instance or name to assign; if omitted uses a default (or a random gender when `randomize` is True).
+        first_name (str | None): Patient first name; if omitted a generated or default first name is used.
+        last_name (str | None): Patient last name; if omitted a generated or default last name is used.
+        dob (date | str | None): Date of birth as a date or ISO-formatted string; if omitted `birth_date` or a default birth date is used.
+        birth_date (date | str): Alias for `dob` used when `dob` is not provided.
+        center (Center | str | None): Center instance or center name; if omitted the default center is used.
+    
+    Returns:
+        Patient: An unsaved Patient instance populated with the resolved fields (first_name, last_name, dob, center, gender).
+    """
 
     randomize = kwargs.pop("randomize", False)
 
@@ -221,9 +249,14 @@ def get_random_default_examination():
 
 def get_random_default_examination_indication():
     """
-    Get a random examination indication from the list of default indications.
+    Selects a random default indication name and returns the corresponding ExaminationIndication.
+    
     Returns:
-        str: A random examination indication.
+        ExaminationIndication: The matching ExaminationIndication instance.
+    
+    Raises:
+        ExaminationIndication.DoesNotExist: If no ExaminationIndication exists with the selected name.
+        Exception: Propagates other exceptions raised during retrieval.
     """
     examination_indication = random.choice(DEFAULT_INDICATIONS)
     all_examination_indications = ExaminationIndication.objects.all()
@@ -239,11 +272,10 @@ def get_random_default_examination_indication():
 
 def get_default_egd_pdf():
     """
-    Get a default EGD PDF file for testing.
-    This function creates a temporary copy of the default PDF file, uses it to create and save
-    a RawPdfFile instance using the refactored create_from_file method,
-    processes it to create SensitiveMeta, and ensures that the temporary file is deleted.
-
+    Create and return a test EGD PDF as a processed RawPdfFile.
+    
+    Creates a RawPdfFile from the repository's default EGD PDF, processes it to produce associated SensitiveMeta, and ensures any temporary source file used during creation is removed.
+    
     Returns:
         RawPdfFile: The created and processed RawPdfFile instance.
     """
@@ -313,12 +345,12 @@ def get_default_egd_pdf():
 
 def get_default_video_file():
     """
-    Creates and initializes a default VideoFile instance for an EGD examination.
-
-    Loads required datasets, selects a random EGD video, creates a VideoFile object with default center and processor, initializes its metadata and frames, and saves the updated instance.
-
+    Create and initialize a default VideoFile for an EGD examination.
+    
+    Loads base database fixtures, selects a random non-anonymous EGD video, and creates a VideoFile using the default center and endoscopy processor while retaining the source asset.
+    
     Returns:
-        The created and initialized VideoFile instance.
+        VideoFile: The created and initialized VideoFile instance.
     """
     from endoreg_db.models import VideoFile
 

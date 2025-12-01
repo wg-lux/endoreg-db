@@ -93,7 +93,19 @@ class MediaManagementView(APIView):
         }
 
     def _get_video_stats(self) -> Dict[str, int]:
-        """Get video file statistics using VideoState boolean fields"""
+        """
+        Compute counts of VideoFile records grouped by their anonymization/processing status.
+        
+        Returns:
+            stats (Dict[str, int]): Mapping with the following keys:
+                - "total": total number of VideoFile records.
+                - "not_started": count of videos with no state or status "not_started".
+                - "processing": count of videos in "extracting_frames" or "processing_anonymization".
+                - "done": count of videos with status "done_processing_anonymization".
+                - "failed": count of videos with status "failed".
+                - "validated": count of videos with status "validated".
+                - "unfinished": count of videos considered unfinished (includes not started, processing, and failed).
+        """
         videos = VideoFile.objects.select_related("state").all()
 
         stats = {
@@ -136,7 +148,19 @@ class MediaManagementView(APIView):
         return stats
 
     def _get_pdf_stats(self) -> Dict[str, int]:
-        """Get PDF file statistics"""
+        """
+        Compute anonymization and validation statistics for all RawPdfFile records.
+        
+        Returns:
+            stats (Dict[str, int]): A mapping of PDF status counters with the following keys:
+                - total: total number of PDF records.
+                - not_started: PDFs without anonymized text.
+                - processing: PDFs currently in processing (reserved; always 0 in current implementation).
+                - done: PDFs that have anonymized text but are not validated.
+                - failed: PDFs marked as failed (reserved; always 0 in current implementation).
+                - validated: PDFs that have anonymized text and are validated.
+                - unfinished: PDFs considered unfinished (includes `not_started` and any other unfinished cases).
+        """
         pdfs = RawPdfFile.objects.all()
 
         stats = {
@@ -173,7 +197,25 @@ class MediaManagementView(APIView):
     def _perform_cleanup(
         self, cleanup_type: str, force: bool, media_type: str, file_id: int
     ) -> Dict[str, Any]:
-        """Perform the actual cleanup operations"""
+        """
+        Perform the requested cleanup operation for video and/or PDF media.
+        
+        Parameters:
+            cleanup_type (str): Cleanup mode to run. Allowed values: "unfinished", "failed", "stale", "all".
+            force (bool): If True, perform deletions; if False, perform a dry run (no deletions).
+            media_type (str): Target media type. Allowed values: "video", "pdf", "all".
+            file_id (int): Optional ID of a specific media item to remove prior to running the cleanup. If provided, will be cast to int.
+        
+        Returns:
+            result (dict): Summary of the cleanup action with keys:
+                - "cleanup_type": the requested cleanup_type.
+                - "force": the provided force flag.
+                - "removed_items": list of items identified (and deleted when force is True); each item is a dict with details about the media removed or targeted.
+                - "summary": operation-specific summary data; for "all" this is a mapping with "unfinished", "failed", and "stale" sub-summaries.
+        
+        Raises:
+            ValueError: If media_type or cleanup_type is unknown, or if file_id cannot be converted to int.
+        """
 
         result = {
             "cleanup_type": cleanup_type,
@@ -386,8 +428,16 @@ class MediaManagementView(APIView):
 @permission_classes(DEBUG_PERMISSIONS)
 def force_remove_media(request, file_id: int):
     """
-    DELETE /api/media-management/force-remove/{file_id}/
-    Force remove a specific media item regardless of status
+    Force-remove a media item (video or PDF) by its ID.
+    
+    Attempts to delete a VideoFile with the given ID first; if not found, attempts to delete a RawPdfFile. On successful deletion returns a response containing a human-readable detail message, `file_type` ("video" or "pdf"), and `file_id`. If no matching media is found returns a 404 response with `{"detail": "File not found"}`. On unexpected errors returns a 500 response with `{"error": "Force removal failed"}`.
+    
+    Parameters:
+        request: The HTTP request object.
+        file_id (int): Identifier of the media item to remove.
+    
+    Returns:
+        Response: On success, a JSON response with keys `detail`, `file_type`, and `file_id`; on not found a 404 JSON response; on error a 500 JSON response.
     """
     try:
         # Try to find and delete from VideoFile first
@@ -436,8 +486,16 @@ def force_remove_media(request, file_id: int):
 @permission_classes(DEBUG_PERMISSIONS)
 def reset_processing_status(request, file_id: int):
     """
-    POST /api/media-management/reset-status/{file_id}/
-    Reset processing status for a stuck/failed media item
+    Reset the processing status of a media item identified by `file_id`.
+    
+    Attempts to reset a VideoFile to the "not_started" VideoState; if no VideoFile with the given id exists, clears the `anonymized_text` of a RawPdfFile with that id. Returns a 404 response when no media item is found and a 500 response on unexpected errors.
+    
+    Parameters:
+        request: The HTTP request object.
+        file_id (int): ID of the media file to reset.
+    
+    Returns:
+        rest_framework.response.Response: On success for a video: a response containing `detail`, `file_type: "video"`, `file_id`, and `new_status: "not_started"`. On success for a PDF: a response containing `detail`, `file_type: "pdf"`, `file_id`, and `new_status: "not_started"`. If no file is found: a 404 response with `{"detail": "File not found"}`. On unexpected failure: a 500 response with `{"error": "Status reset failed"}`.
     """
     try:
         # Try VideoFile first

@@ -25,6 +25,17 @@ class Command(BaseCommand):
     """
 
     def add_arguments(self, parser):
+        """
+        Add command-line arguments for controlling the file watcher.
+        
+        Adds:
+        - --test: run configuration validation without starting monitoring.
+        - --existing: process existing files in the configured directories before starting monitoring.
+        - --log-level: choose logging level; one of 'DEBUG', 'INFO', 'WARNING', 'ERROR' (default: 'INFO').
+        
+        Parameters:
+            parser: The argparse-compatible parser to which these options are registered.
+        """
         parser.add_argument(
             '--test',
             action='store_true',
@@ -43,6 +54,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Start and manage the file watcher service for automated video and PDF processing.
+        
+        Loads the file_watcher module from scripts/file_watcher.py, sets the watcher log level from options, and either validates configuration (test mode), processes existing files (existing mode), or starts continuous monitoring. Emits user-facing status messages, reports a missing watcher script as an error, handles user interrupt (Ctrl+C) gracefully, and exits with code 1 on unexpected errors (printing a traceback when verbosity >= 2).
+        """
         self.stdout.write(self.style.SUCCESS("Starting File Watcher Service"))
         
         # Set environment variables

@@ -9,6 +9,19 @@ import requests
 
 class WhiteNoiseFileServingTest(LiveServerTestCase):
     def setUp(self):
+        """
+        Prepare test fixtures and required media files for the test case.
+        
+        Loads base database data and ensures a real video and PDF are available for tests. After setup the instance has:
+        - video_path: filesystem path to a sample video used for creating or validating a VideoFile
+        - center: the default center object
+        - video_file: a VideoFile instance
+        - video_url: the active URL for the VideoFile
+        - pdf_file: a PDF file object
+        - pdf_url: the URL for the PDF file
+        
+        This method also asserts that the VideoFile and PDF objects were created and that the video file exists on disk.
+        """
         load_base_db_data()
 
         # Use the video test helper to get a real video file path and create a VideoFile instance
@@ -26,6 +39,11 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
 
     def tearDown(self):
         # Clean up the created VideoFile and its file
+        """
+        Remove the test-created VideoFile and its associated stored file if present.
+        
+        This tearDown hook deletes the VideoFile instance created during the test and also removes the underlying file from storage when the VideoFile has a primary key.
+        """
         if self.video_file and self.video_file.pk:
             self.video_file.delete_with_file()
 
@@ -40,6 +58,11 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
         # Optionally, check content type or partial content
 
     def test_pdf_file_accessible_via_url(self):
+        """
+        Verify that the PDF file is reachable through the live server URL.
+        
+        Performs an HTTP HEAD request to the PDF's full URL and asserts the response status code is 200.
+        """
         if self.pdf_url is None:
             self.fail("PDF file URL is None.")
         full_url = self.live_server_url + self.pdf_url

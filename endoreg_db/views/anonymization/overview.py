@@ -35,7 +35,12 @@ class AnonymizationOverviewView(ListAPIView):
 
     def get_queryset(self):
         """
-        Returns a combined queryset of VideoFile and RawPdfFile instances.
+        Provide a flat list combining video and PDF file records for the anonymization overview.
+        
+        This method retrieves VideoFile and RawPdfFile querysets with a restricted set of selected fields and returns them concatenated into a single list. VideoFile instances appear first in the list followed by RawPdfFile instances.
+        
+        Returns:
+            list: A list of model instances — first `VideoFile` objects, then `RawPdfFile` objects — with only the selected fields fetched from the database.
         """
         # 1) VideoFile queryset - only fields that exist on VideoFile
         qs_video = (
@@ -61,7 +66,26 @@ class AnonymizationOverviewView(ListAPIView):
 @permission_classes(PERMS)
 def anonymization_status(request, file_id: int):
     """
-    Get anonymization status with polling rate limiting.
+    Retrieve anonymization status for a file while enforcing polling rate limits.
+    
+    Parameters:
+        file_id (int): Identifier of the file whose anonymization status is requested.
+    
+    Returns:
+        dict: One of the following JSON payloads wrapped in a Response:
+            - 404: {"detail": "File not found"} when the file does not exist.
+            - 429: {
+                "detail": "Status check rate limited. Please wait before checking again.",
+                "file_id": <int>,
+                "cooldown_active": True,
+                "retry_after": <seconds>
+              } and a "Retry-After" header when polling is rate-limited.
+            - 200: {
+                "file_id": <int>,
+                "file_type": <str>,
+                "anonymizationStatus": <str>,
+                "processing_locked": <bool>
+              } with the current anonymization status and a boolean indicating whether processing is considered locked.
     """
     # Ermittele erst den echten Typ und Status
     info = AnonymizationService.get_status(file_id)
@@ -101,7 +125,17 @@ def anonymization_status(request, file_id: int):
 @permission_classes(PERMS)
 def start_anonymization(request, file_id: int):
     """
-    Start anonymization with processing lock to prevent duplicates.
+    Start anonymization for the given file while acquiring a processing lock to prevent concurrent starts.
+    
+    Parameters:
+        file_id (int): Primary key of the file to start anonymization for.
+    
+    Returns:
+        Response: JSON response with one of the following outcomes:
+          - 200 OK: {"detail": "Anonymization started for <kind> file", "file_id": <id>, "file_type": "<kind>", "processing_locked": True}
+          - 404 Not Found: {"detail": "File not found"} when the file id is unknown.
+          - 409 Conflict: {"detail": "File is already being processed by another request", "file_id": <id>, "file_type": "<type>", "processing_locked": True} when a processing lock could not be acquired.
+          - 500 Internal Server Error: {"detail": "Failed to start anonymization"} when the service fails to initiate processing.
     """
     # First check what type of file this is
     info = AnonymizationService.get_status(file_id)
@@ -142,7 +176,16 @@ def start_anonymization(request, file_id: int):
 @permission_classes(DEBUG_PERMISSIONS)
 def anonymization_current(request, file_id):
     """
-    Set current file for validation and return patient data
+    Set the given file as the current file for validation and return its patient data.
+    
+    Attempts to locate a VideoFile with the provided id first, then a RawPdfFile. If found, returns the file's patient-related data serialized with VoPPatientDataSerializer.
+    
+    Parameters:
+        request: The HTTP request object (used to build serializer context).
+        file_id: The primary key of the file to retrieve; may refer to a VideoFile or RawPdfFile.
+    
+    Returns:
+        Response or JsonResponse: Serialized patient data when the file is found; a 404 JSON error when no file matches `file_id`; a 500 JSON error when a ValueError, TypeError, or AttributeError occurs during processing.
     """
     # Try to find the file in VideoFile first
     try:
@@ -171,8 +214,11 @@ def anonymization_current(request, file_id):
 @permission_classes(DEBUG_PERMISSIONS)
 def polling_coordinator_info(request):
     """
-    GET /api/anonymization/polling-info/
-    Get information about polling coordinator status
+    Return information about the polling coordinator's processing locks.
+    
+    Returns:
+        Response: A DRF Response containing a dictionary with processing lock information on success,
+        or a dictionary with an "error" key on failure (HTTP 500).
     """
     try:
         info = PollingCoordinator.get_processing_locks_info()
@@ -189,8 +235,18 @@ def polling_coordinator_info(request):
 @permission_classes(DEBUG_PERMISSIONS)
 def clear_processing_locks(request):
     """
-    DELETE /api/anonymization/clear-locks/
-    Emergency endpoint to clear all processing locks
+    Clear all processing locks, optionally filtered by file type.
+    
+    Parameters:
+        request: The incoming HTTP request. Recognizes an optional query parameter `type`
+            which, when provided, limits clearing to locks for that file type.
+    
+    Returns:
+        Response: On success, a JSON object with:
+            - `detail` (str): Confirmation message.
+            - `cleared_count` (int): Number of locks that were cleared.
+            - `file_type_filter` (str|None): The `type` query parameter value used to filter, or `None`.
+        On failure, a 500 response with `{"error": "Failed to clear locks"}`.
     """
     try:
         file_type = request.query_params.get('type', None)
@@ -212,8 +268,10 @@ def clear_processing_locks(request):
 @permission_classes(DEBUG_PERMISSIONS)
 def has_raw_video_file(request, file_id):
     """
-    GET /api/anonymization/{file_id}/has-raw/
-    Check if a raw video file exists for the given file ID
+    Check whether a raw video file exists for the given file ID.
+    
+    Returns:
+        Response: JSON with keys `file_id` and `has_raw_file` (`true` if a raw file exists, `false` otherwise).
     """
     exists = VideoFile.objects.filter(id=file_id, raw_file__isnull=False).exists()
     return Response({"file_id": file_id, "has_raw_file": exists})

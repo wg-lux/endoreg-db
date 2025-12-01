@@ -44,6 +44,18 @@ class AnonymizationValidateView(APIView):
     @transaction.atomic
     def post(self, request, file_id: int):
         # Serializer-Validierung mit deutscher Datums-Priorität
+        """
+        Validate sensitive metadata for a video or PDF file and mark the file/state as anonymized when validation succeeds.
+        
+        Validates incoming sensitive metadata via SensitiveMetaValidateSerializer, prepares the payload, and attempts validation first for a VideoFile (unless payload requests PDF), then for a RawPdfFile (unless payload requests Video). On successful validation the view ensures a SensitiveMeta and its State exist, marks date of birth and names as verified, creates an anonymized record, and sets the file state as anonymized. Responses indicate success, validation failures, not-found conditions, or unexpected errors.
+        
+        Parameters:
+            request (Request): DRF request containing the validation payload.
+            file_id (int): Primary key of the file to validate (video or PDF).
+        
+        Returns:
+            Response: DRF Response containing a JSON object with either a "message" on success or an "error" on failure and an appropriate HTTP status code.
+        """
         serializer = SensitiveMetaValidateSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
         validated_data = cast(Dict[str, Any], serializer.validated_data)

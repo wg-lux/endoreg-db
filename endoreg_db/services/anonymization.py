@@ -35,10 +35,23 @@ class AnonymizationService:
     @staticmethod
     def get_status(file_id: int):
         """
-        Retrieve the anonymization status and media type for a file by its ID.
-
+        Get anonymization status and media type for a file by its ID.
+        
+        Parameters:
+            file_id (int): Primary key of a VideoFile or RawPdfFile.
+        
         Returns:
-            dict or None: A dictionary containing the file's media type and anonymization status if found, or None if no matching file exists.
+            dict or None: For a video file, a dict with keys:
+                - "mediaType": "video"
+                - "anonymizationStatus": the file's anonymization status or "not_started"
+                - "fileExists": `True` if the raw video file exists, `False` otherwise
+                - "uuid": the file's UUID as a string or `None`
+            For a PDF file, a dict with keys:
+                - "mediaType": "pdf"
+                - "anonymizationStatus": the file's anonymization status or "not_started"
+                - "fileExists": `True` if the PDF file exists, `False` otherwise
+                - "hash": the PDF file's stored hash
+            Returns `None` if no matching file is found.
         """
         vf = VideoFile.objects.select_related("state", "sensitive_meta").filter(pk=file_id).first()
         if vf:
@@ -63,13 +76,12 @@ class AnonymizationService:
     @transaction.atomic
     def start(self, file_id: int):
         """
-        Start anonymization process for a file by its ID.
-
-        Args:
-            file_id: The ID of the file to anonymize
-
+        Start anonymization for a video or PDF file identified by its ID.
+        
+        If a VideoFile with the given ID exists, marks processing as started (if state present), invokes the video import/anonymization flow, and returns "video". If a RawPdfFile with the given ID exists, validates the PDF file exists in storage, marks processing as started (on state or sensitive_meta), invokes the PDF import/anonymization flow, and returns "pdf". If no matching file is found or the raw source file is missing, returns None. On exception, updates processing-related flags to reflect failure where possible and re-raises the exception.
+        
         Returns:
-            str or None: Media type if successful, None if file not found
+            `\"video\"` if a VideoFile was processed, `\"pdf\"` if a RawPdfFile was processed, `None` if no matching file or required source file is missing.
         """
         # Try VideoFile first
         vf = VideoFile.objects.select_related("state", "sensitive_meta", "center", "video_meta__processor").filter(pk=file_id).first()
@@ -195,6 +207,17 @@ class AnonymizationService:
 
     @staticmethod
     def list_items():
+        """
+        List all video and PDF files with their anonymization status and timestamps.
+        
+        Returns:
+            A list of dictionaries, one per media file, each containing:
+                - id: primary key of the file
+                - mediaType: either "video" or "pdf"
+                - anonymizationStatus: the file's anonymization status string, or "not_started" if missing
+                - createdAt: the file's creation datetime
+                - updatedAt: the file's last modification datetime
+        """
         video_files = VideoFile.objects.select_related("state").all()
         pdf_files = RawPdfFile.objects.select_related("state").all()  # was sensitive_meta
 

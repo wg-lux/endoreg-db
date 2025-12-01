@@ -29,6 +29,12 @@ except ImportError:
     CELERY_AVAILABLE = False
     # Define a dummy function for development
     def process_upload_job(job_id):
+        """
+        Placeholder no-op used when the asynchronous task runner is unavailable.
+        
+        Parameters:
+            job_id (UUID or str): Identifier of the UploadJob that would be processed; this function does nothing with it.
+        """
         pass
 
 
@@ -63,7 +69,22 @@ class UploadFileView(APIView):
 
     def post(self, request, *args, **kwargs):
         """
-        Handle file upload and create processing job.
+        Handle an uploaded file: validate input, create an UploadJob, and enqueue or mark it for processing.
+        
+        Performs the following observable actions:
+        - Validates presence, non-emptiness, filename, size (against MAX_FILE_SIZE), and MIME type (via _detect_mime_type and ALLOWED_MIME_TYPES).
+        - Creates an UploadJob with the uploaded file and detected content_type.
+        - If Celery is available, attempts to start asynchronous processing; on failure marks the job as failed.
+        - If Celery is not available, marks the job as processing (development fallback).
+        - Returns a status URL for polling the job status.
+        
+        Returns:
+            Response: On success returns a 201 response with JSON containing:
+                - 'upload_id' (str): the created job UUID as a string,
+                - 'status_url' (str): URL to query upload status,
+                - 'message' (str): success message.
+            On client validation failure returns 400 with {'error': <message>}.
+            On server-side failure returns 500 with {'error': <message>}.
         """
         # Validate file presence
         if 'file' not in request.FILES:
@@ -157,8 +178,18 @@ class UploadFileView(APIView):
 
     def _detect_mime_type(self, uploaded_file) -> str:
         """
-        Detect MIME type using python-magic as primary method,
-        fallback to mimetypes module.
+        Determine the MIME type of an uploaded file from its content, filename, or extension and return it as a string.
+        
+        Attempts detection using file content and filename heuristics and falls back to common extension mappings. Ensures the uploaded file's read pointer is reset to the start before returning.
+        
+        Parameters:
+            uploaded_file (file-like): An object with a .read(), .seek(), and .name attribute (e.g., Django UploadedFile).
+        
+        Returns:
+            str: The detected MIME type (for example, 'application/pdf' or 'video/mp4').
+        
+        Raises:
+            ValueError: If the MIME type cannot be determined.
         """
         try:
             # Reset file pointer
@@ -217,7 +248,16 @@ class UploadStatusView(APIView):
 
     def get(self, request, id, *args, **kwargs):
         """
-        Return the current status of an upload job.
+        Retrieve the current status of an upload job.
+        
+        Parameters:
+            id (str | UUID): UUID of the UploadJob to retrieve.
+        
+        Returns:
+            dict: Serialized upload job status as produced by UploadJobStatusSerializer.
+        
+        Raises:
+            Http404: If no UploadJob with the given id exists.
         """
         try:
             # Look up upload job by UUID

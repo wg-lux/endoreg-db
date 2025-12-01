@@ -53,9 +53,13 @@ DEFAULT_PATIENT_BIRTH_DATE = date(1970, 1, 1)
 
 def get_information_source_prediction():
     """
-    Retrieves the InformationSource object with the name "prediction".
+    Retrieve the InformationSource named "prediction".
     
-    Loads information source data if needed and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found or is not an InformationSource.
+    Returns:
+        InformationSource: The InformationSource instance with name "prediction".
+    
+    Raises:
+        ValueError: If no InformationSource with that name exists or the retrieved object is not an InformationSource.
     """
     from .data_loader import load_information_source
     load_information_source()
@@ -129,27 +133,36 @@ def get_default_gender() -> Gender:
 
 def get_gender_m_or_f() -> Gender:
     """
-    Returns a randomly selected Gender object representing either male or female.
+    Return a Gender object named either "male" or "female", chosen at random.
+    
+    Returns:
+        Gender: The selected Gender object ("male" or "female").
+    
+    Raises:
+        Gender.DoesNotExist: If the chosen gender name does not exist in the database.
     """
     gender_name = random.choice(["male", "female"])
     return Gender.objects.get(name=gender_name)
 
 def get_random_gender() -> Gender:
     """
-    Returns a randomly selected Gender object from the available default genders.
+    Select a Gender chosen at random from DEFAULT_GENDERS.
+    
+    Returns:
+        Gender: The Gender instance whose name was randomly selected.
     """
     gender_name = random.choice(DEFAULT_GENDERS)
     return Gender.objects.get(name=gender_name) # Fetch and return the Gender object
 
 def get_default_processor() -> EndoscopyProcessor:
     """
-    Retrieves the default EndoscopyProcessor object by its predefined name.
+    Retrieves the EndoscopyProcessor identified by the default processor name.
+    
+    Returns:
+        The EndoscopyProcessor instance matching DEFAULT_ENDOSCOPY_PROCESSOR_NAME.
     
     Raises:
         ValueError: If no EndoscopyProcessor with the default name exists.
-        
-    Returns:
-        The EndoscopyProcessor instance with the default name.
     """
     processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
     if not isinstance(processor, EndoscopyProcessor):
@@ -159,13 +172,13 @@ def get_default_processor() -> EndoscopyProcessor:
 
 def get_default_center() -> Center:
     """
-    Retrieves the default Center object with the predefined name.
-    
-    Raises:
-        ValueError: If no Center with the default name exists.
+    Return the Center with the configured default name.
     
     Returns:
-        The Center instance with the default name.
+        Center: The Center instance matching DEFAULT_CENTER_NAME.
+    
+    Raises:
+        ValueError: If no Center exists with DEFAULT_CENTER_NAME.
     """
     center = Center.objects.get(
         name=DEFAULT_CENTER_NAME,
@@ -176,7 +189,21 @@ def get_default_center() -> Center:
     return center
 
 def generate_patient(**kwargs) -> Patient:
-    """Create a Patient with deterministic defaults unless ``randomize=True`` is supplied."""
+    """
+    Create a Patient instance using provided values or deterministic defaults; when `randomize=True`, name and gender may be randomized.
+    
+    Parameters:
+        randomize (bool): If True, generate randomized first and last names and choose a random gender when not provided.
+        gender (str|Gender, optional): Gender name or Gender instance to assign to the patient. If omitted, defaults to the file's DEFAULT_PATIENT_GENDER_NAME or a random gender when `randomize` is True.
+        first_name (str, optional): Patient's first name. If omitted, a deterministic default or a generated name (when `randomize`) is used.
+        last_name (str, optional): Patient's last name. If omitted, a deterministic default or a generated name (when `randomize`) is used.
+        dob (date|str, optional): Date of birth as a date or ISO-format string. If omitted, `birth_date` or DEFAULT_PATIENT_BIRTH_DATE is used.
+        birth_date (date|str, optional): Alternative key for date of birth; used when `dob` is not provided.
+        center (str|Center, optional): Center name or Center instance to assign. If omitted, the file's default center is used.
+    
+    Returns:
+        Patient: An unsaved Patient instance populated with the resolved attributes.
+    """
 
     randomize = kwargs.pop("randomize", False)
 
@@ -225,10 +252,10 @@ def generate_patient(**kwargs) -> Patient:
     
 def get_random_default_examination():
     """
-    Retrieves a random Examination object from the default examination names.
+    Selects and returns a random Examination from the default examination names.
     
     Returns:
-        Examination: A randomly selected Examination instance from the defaults.
+        Examination: Examination instance chosen randomly from DEFAULT_EXAMINATIONS.
     """
     examination_name = random.choice(DEFAULT_EXAMINATIONS)
 
@@ -237,9 +264,13 @@ def get_random_default_examination():
 
 def get_random_default_examination_indication():
     """
-    Returns a random ExaminationIndication object from the default indications list.
+    Selects a random default examination indication and returns its corresponding ExaminationIndication instance.
     
-    Selects a random indication name from the predefined defaults and retrieves the corresponding ExaminationIndication instance from the database.
+    Returns:
+        The matching ExaminationIndication instance.
+    
+    Raises:
+        Exception: Propagates any exception raised while retrieving the ExaminationIndication from the database (for example `DoesNotExist` or `MultipleObjectsReturned`).
     """
     examination_indication = random.choice(DEFAULT_INDICATIONS)
     all_examination_indications = ExaminationIndication.objects.all()
@@ -254,9 +285,9 @@ def get_random_default_examination_indication():
 
 def get_default_egd_pdf():
     """
-    Creates and processes a default EGD PDF file for testing purposes.
+    Create and process a default EGD PDF test file and return its RawPdfFile record.
     
-    This function copies a default EGD PDF to a temporary location, creates a RawPdfFile instance from it, processes the file to generate associated metadata, and ensures cleanup of the temporary file. The resulting RawPdfFile instance is returned for use in tests.
+    The function copies a predefined EGD PDF into a temporary test directory, creates a RawPdfFile from that file, runs processing to extract metadata (including creating SensitiveMeta), and ensures temporary files are cleaned up on error. The returned RawPdfFile is ready for use in tests and has been processed by process_file.
     
     Returns:
         RawPdfFile: The created and processed RawPdfFile instance.
@@ -337,9 +368,9 @@ def get_default_egd_pdf():
 
 def get_default_video_file():
     """
-    Creates and returns a VideoFile instance using a randomly selected EGD examination video.
+    Create a VideoFile from a randomly selected 'egd' examination video.
     
-    Loads all necessary data dependencies, selects a random video file for the 'egd' examination, and initializes a VideoFile object with the default center and processor names. The original video file is retained after creation.
+    This loads required test data (disease, event, information source, examinations, center, endoscope, AI model labels and data), selects a random non-anonymous EGD video, and initializes a VideoFile using the default center and processor names while preserving the original source file.
     
     Returns:
         VideoFile: The created and initialized VideoFile instance.

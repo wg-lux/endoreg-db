@@ -31,6 +31,15 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission
 logger = logging.getLogger(__name__)
 
 def update_processed_file(video, output_path: Path):
+    """
+    Persist the given processed video file path on the VideoFile instance as a storage-relative path.
+    
+    Computes a path for the provided output file relative to the configured storage root (data_paths["storage"]); if that fails, falls back to settings.MEDIA_ROOT. Assigns the resulting relative path to video.processed_file.name and saves only the processed_file field.
+    
+    Parameters:
+        video: VideoFile model instance to update.
+        output_path (Path): Absolute filesystem path to the processed/anonymized video file.
+    """
     from endoreg_db.utils import data_paths
     storage_root = Path(data_paths["storage"])
     try:
@@ -48,42 +57,37 @@ class VideoCorrectionView(APIView):
     permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, pk):
+        """
+        Retrieve detailed information for a specific video to support correction workflows.
+        
+        Parameters:
+            pk (int): Primary key of the VideoFile to retrieve.
+        
+        Returns:
+            Response: Serialized video detail data (VideoDetailSerializer) with HTTP 200.
+        
+        Raises:
+            Http404: If no VideoFile exists with the given `pk`.
+        """
         video = get_object_or_404(VideoFile, pk=pk)
         ser = VideoDetailSerializer(video, context={"request": request})
         return Response(ser.data, status=status.HTTP_200_OK)
 
 def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) -> dict:
     """
-    Update LabelVideoSegment frame boundaries after frame removal.
+    Update LabelVideoSegment boundaries for a video after removing specific frames.
     
-    This function shifts segment start/end frames based on which frames were removed.
-    Segments are deleted if all their frames are removed.
+    Adjusts each segment's start and end frame numbers to account for removed frames; deletes a segment if all of its frames were removed.
     
-    Args:
-        video: VideoFile instance whose segments should be updated
-        removed_frames: List of frame numbers that were removed (sorted)
+    Parameters:
+        video (VideoFile): The video whose segments will be updated.
+        removed_frames (list[int]): Sorted list of removed frame numbers.
     
     Returns:
-        dict: {
-            'segments_updated': int,
-            'segments_deleted': int,
-            'segments_unchanged': int
-        }
-    
-    Algorithm:
-        For each segment:
-        1. Count frames removed before segment → shift start_frame
-        2. Count frames removed within segment → shift end_frame
-        3. Delete segment if start_frame >= end_frame (all frames removed)
-    
-    Example:
-        Original segment: frames 100-200
-        Removed frames: [50, 75, 120, 150, 180]
-        
-        Frames before segment (< 100): 2 frames (50, 75)
-        Frames within segment (100-200): 3 frames (120, 150, 180)
-        
-        New segment: frames (100-2) to (200-2-3) = 98-195
+        dict: Counts of changes with keys:
+            'segments_updated': number of segments whose boundaries were changed,
+            'segments_deleted': number of segments deleted because all frames were removed,
+            'segments_unchanged': number of segments left unchanged.
     """
     if not removed_frames:
         return {'segments_updated': 0, 'segments_deleted': 0, 'segments_unchanged': 0}
@@ -167,7 +171,20 @@ class VideoMetadataStatsView(APIView):
     """
     
     def get(self, request, pk):
-        """Get video metadata by video ID."""
+        """
+        Retrieve the metadata record for a video and return its serialized representation.
+        
+        Fetches the VideoFile by primary key (raises 404 if not found), obtains or creates the associated VideoMetadata record, and returns the serialized metadata using the request context.
+        
+        Parameters:
+            pk (int or str): Primary key of the VideoFile to retrieve.
+        
+        Returns:
+            Response: Serialized VideoMetadata for the requested video.
+        
+        Raises:
+            Http404: If no VideoFile exists with the given primary key.
+        """
         video = get_object_or_404(VideoFile, pk=pk)
         
         # Get or create metadata record
@@ -207,7 +224,15 @@ class VideoProcessingHistoryView(APIView):
     """
     
     def get(self, request, pk):
-        """Get processing history for a video."""
+        """
+        Retrieve the processing history for a specific video.
+        
+        Parameters:
+            pk: Primary key of the VideoFile to fetch processing history for.
+        
+        Returns:
+            A Response containing a list of serialized VideoProcessingHistory records for the video, ordered newest first.
+        """
         video = get_object_or_404(VideoFile, pk=pk)
         
         # Get all history records, newest first
@@ -254,7 +279,17 @@ class VideoApplyMaskView(APIView):
     """
     
     def post(self, request, pk):
-        """Apply masking to video."""
+        """
+        Apply a device-based or custom ROI mask to the specified video and persist the processed file.
+        
+        Creates a processing history entry, applies the requested mask (device or custom ROI), updates the video's processed_file on success, and returns operation details.
+        
+        Parameters:
+            pk (int or str): Primary key of the VideoFile to process.
+        
+        Returns:
+            Response: On success (HTTP 200) a JSON object containing `task_id` (currently None), `output_file` (path to the masked video), `message` (status message), and `processing_time` (seconds). Returns HTTP 400 for missing/invalid input and HTTP 500 with an `error` message on processing failure.
+        """
         video = get_object_or_404(VideoFile, pk=pk)
         
         # Extract parameters
@@ -385,7 +420,23 @@ class VideoRemoveFramesView(APIView):
     """
     
     def post(self, request, pk):
-        """Remove frames from video."""
+        """
+        Remove specified frames from the given video, persist the processed file, adjust related segments, and record processing history.
+        
+        Expects request.data to provide one of:
+        - `frame_list`: explicit list of frame numbers to remove, or
+        - `frame_ranges`: string of comma-separated ranges (e.g., "10-20,30"), or
+        - `detection_method='automatic'` to use previously computed analysis results.
+        
+        On success the video file is processed, video.processed_file is updated, LabelVideoSegment entries are shifted or deleted as needed, and a VideoProcessingHistory record is marked successful.
+        
+        Parameters:
+            request: DRF request with the input described above in request.data.
+            pk: Primary key of the VideoFile to process.
+        
+        Returns:
+            DRF Response containing success details (output_file, frames_removed, segment_updates, processing_time) on success; returns status 400 for invalid or missing input and status 500 for processing failures.
+        """
         video = get_object_or_404(VideoFile, pk=pk)
         
         # Extract parameters
@@ -515,9 +566,13 @@ class VideoRemoveFramesView(APIView):
     
     def _parse_frame_ranges(self, ranges_str: str) -> list:
         """
-        Parse frame ranges string to list of frame numbers.
+        Convert a comma-separated string of frame numbers and ranges into a sorted list of unique frame indices.
         
-        Example: "10-20,30,45-50" -> [10,11,...,20,30,45,...,50]
+        Parameters:
+            ranges_str (str): Comma-separated integers or ranges using hyphens (e.g., "10-20,30,45-50").
+        
+        Returns:
+            list[int]: Sorted list of distinct frame numbers expanded from the input ranges (e.g., "10-12,15" -> [10, 11, 12, 15]).
         """
         frames = []
         for part in ranges_str.split(','):

@@ -30,14 +30,24 @@ class TestRawPdfFileModelEnhancements:
 
     @pytest.fixture
     def center(self):
-        """Create test center."""
+        """
+        Create and persist a test Center used by PDF tests.
+        
+        Returns:
+            center (Center): Newly created Center with name "test_center_pdf" and display_name "Test Center PDF".
+        """
         return Center.objects.create(
             name="test_center_pdf", display_name="Test Center PDF"
         )
 
     @pytest.fixture
     def sample_pdf_content(self):
-        """Create sample PDF content."""
+        """
+        Provide a minimal valid PDF file as bytes for use in tests.
+        
+        Returns:
+            bytes: A small, well-formed PDF file content suitable for hashing and writing to disk.
+        """
         # Minimal valid PDF structure
         return b"""%PDF-1.4
 1 0 obj
@@ -101,12 +111,10 @@ startxref
 
     def test_uuid_property_returns_pdf_hash(self, center, sample_pdf_content, tmp_path):
         """
-        Test that uuid property returns pdf_hash for backward compatibility.
-
-        **Test Scenario:**
-        1. Create RawPdfFile with known pdf_hash
-        2. Access uuid property
-        3. Verify uuid equals pdf_hash
+        Ensure RawPdfFile.uuid exposes the instance's pdf_hash for backward compatibility.
+        
+        Creates a RawPdfFile with a known PDF hash, saves the file, and asserts that the
+        object's uuid property equals the stored pdf_hash and the computed expected hash.
         """
         # Create temporary PDF file
         pdf_file = tmp_path / "test.pdf"
@@ -247,7 +255,12 @@ class TestPdfReimportViewFixes:
 
     @pytest.fixture
     def sample_pdf_content(self):
-        """Create sample PDF content."""
+        """
+        Provide a minimal valid PDF file content for use in tests.
+        
+        Returns:
+            bytes: A small byte sequence representing a valid PDF file (header, simple content marker, and EOF).
+        """
         return b"%PDF-1.4\n%Test PDF content\n%%EOF"
 
     def test_reimport_view_uses_pdf_hash(self, center, sample_pdf_content, tmp_path):

@@ -41,7 +41,14 @@ class PdfType(models.Model):
         cut_off_below_lines = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_below_lines)
 
     def __str__(self):
-        """Returns a string summary of the PDF type and its associated flags."""
+        """
+        String summary of the PDF type including the configured flag values.
+        
+        Returns:
+            str: A multi-line string that starts with the PDF type name and lists the values of
+                 patient info line, endoscope info line, examiner info line, cut-off-above lines,
+                 and cut-off-below lines.
+        """
         summary = f"{self.name}"
         # add lines to summary
         summary += f"\nPatient Info Line: {self.patient_info_line.value}"
@@ -69,14 +76,27 @@ class PdfMeta(models.Model):
     pdf_hash = models.CharField(max_length=255, unique=True)
 
     def __str__(self):
-        """Returns the PDF hash as its string representation."""
+        """
+        String representation containing the PDF metadata hash.
+        
+        Returns:
+            str: The value of the `pdf_hash` field.
+        """
         return str(self.pdf_hash)
 
     @classmethod
     def create_from_file(cls, pdf_file):
         """
-        Creates a PdfMeta instance from a PDF file object.
-        Note: This implementation seems incomplete; it doesn't extract hash, date, time, or type.
+        Create and save a PdfMeta record from a PDF file.
+        
+        Parameters:
+            pdf_file (IO|str): A file-like object or filesystem path pointing to the PDF document.
+        
+        Returns:
+            PdfMeta: The saved PdfMeta instance corresponding to the provided file.
+        
+        Notes:
+            This function does not extract or populate metadata such as pdf_hash, date, time, or pdf_type from the file.
         """
         pdf_file = File(pdf_file)
         pdf_meta = cls(file=pdf_file)

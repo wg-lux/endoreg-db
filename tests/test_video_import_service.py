@@ -26,14 +26,22 @@ class TestVideoImportService(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up session-scoped fixtures."""
+        """
+        Prepare the test class by loading session-scoped base database fixtures.
+        
+        Calls the superclass setup and invokes the session-scoped database loader to populate base test data used by all tests in this class.
+        """
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
         from .helpers.data_loader import load_base_db_data
         load_base_db_data()
 
     def setUp(self):
-        """Set up test fixtures."""
+        """
+        Prepare the test case with cached default center and processor.
+        
+        Assigns cached default center and processor objects to `self.center` and `self.processor` for reuse in tests.
+        """
         super().setUp()
         # Use cached objects instead of creating each time
         self.center = get_default_center()

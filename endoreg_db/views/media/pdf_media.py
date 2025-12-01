@@ -59,17 +59,17 @@ class PdfMediaView(APIView):
 
     def get(self, request, pk=None):
         """
-        Handle GET requests for PDF listing, detail retrieval, or streaming.
-
-        Args:
-            request: HTTP request object
-            pk: Optional PDF ID for detail view or streaming
-
+        Route GET requests to listing, detail, or streaming endpoints for PDFs.
+        
+        Parameters:
+        	request (HttpRequest): Incoming HTTP request.
+        	pk (Optional[int]): If provided, the PDF primary key used for detail retrieval or streaming.
+        
         Returns:
-            Response or FileResponse: JSON response with PDF data or PDF file stream
-
+        	HttpResponse or FileResponse: JSON list/detail response for PDFs or a PDF file stream for streaming requests.
+        
         Raises:
-            Http404: If specific PDF not found
+        	Http404: If the specified PDF is not found or the ID format is invalid.
         """
         if pk is not None:
             # Check if this is a streaming request
@@ -84,16 +84,30 @@ class PdfMediaView(APIView):
 
     def _get_pdf_detail(self, pk):
         """
-        Get detailed information for a specific PDF.
-
-        Args:
-            pk: PDF primary key
-
+        Return detailed metadata for a specific PDF identified by its primary key.
+        
+        Parameters:
+            pk (str|int): Primary key or identifier of the PDF to retrieve.
+        
         Returns:
-            Response: JSON response with PDF details
-
+            dict: JSON-serializable mapping with PDF details including:
+                - id
+                - filename
+                - file_size
+                - pdf_hash
+                - uploaded_at (ISO 8601 string or None)
+                - anonymized_text
+                - has_anonymized_text (bool)
+                - is_validated (bool)
+                - stream_url
+                - Optional patient metadata when available:
+                    - patient_first_name
+                    - patient_last_name
+                    - patient_dob (formatted as DD.MM.YYYY or None)
+                    - examination_date (formatted as DD.MM.YYYY or None)
+        
         Raises:
-            Http404: If PDF not found
+            Http404: If the provided `pk` is not a valid integer or no PDF with that ID exists.
         """
         try:
             # Validate pdf_id is numeric
@@ -196,13 +210,28 @@ class PdfMediaView(APIView):
 
     def _list_pdfs(self, request):
         """
-        List PDFs with filtering, search, and pagination.
-
-        Args:
-            request: HTTP request with query parameters
-
+        List PDFs applying status filters, search, ordering, and pagination.
+        
+        Supports the following query parameters:
+        - search: substring match against the stored file name.
+        - status: one of "not_started", "done", or "validated" to filter by processing/validation state.
+        - limit: maximum number of items to return (default 50, max 100).
+        - offset: zero-based index to start the page.
+        
         Returns:
-            Response: JSON response with paginated PDF list
+        A Response whose JSON payload contains:
+        - count (int): total number of matching PDFs.
+        - next (str|null): URL for the next page or null if none.
+        - previous (str|null): URL for the previous page or null if none.
+        - results (list): list of PDF objects, each containing:
+            - id (int): primary key of the PDF record.
+            - filename (str): stored file name or "Unknown" if unavailable.
+            - file_size (int): file size in bytes (0 if unavailable).
+            - pdf_hash (str): stored PDF hash value.
+            - has_anonymized_text (bool): `true` if anonymized text exists and is non-empty.
+            - is_validated (bool): `true` if sensitive metadata indicates verification.
+            - stream_url (str): absolute URL to stream the PDF.
+            - status (str): one of "not_started" (no anonymized text), "done" (anonymized text present, not validated), or "validated" (anonymized text present and validated).
         """
         try:
             # Start with all PDFs
@@ -289,14 +318,19 @@ class PdfMediaView(APIView):
 
     def _apply_filters(self, queryset, query_params):
         """
-        Apply status and other filters to PDF queryset.
-
-        Args:
-            queryset: Base queryset to filter
-            query_params: Request query parameters
-
+        Apply status-based filtering to a PDF queryset.
+        
+        If the request query parameters include a "status" key (case-insensitive, surrounding whitespace ignored), this filter narrows the queryset to PDFs matching one of these statuses:
+        - "not_started": anonymized_text is missing or empty.
+        - "done": anonymized_text is present and non-empty, and sensitive_meta is either missing or not verified.
+        - "validated": anonymized_text is present and non-empty, and sensitive_meta.is_verified is True.
+        
+        Parameters:
+            queryset: Django QuerySet of RawPdfFile objects to filter.
+            query_params: Mapping-like object (e.g., request.query_params) containing query parameters.
+        
         Returns:
-            QuerySet: Filtered queryset
+            QuerySet: The filtered queryset.
         """
         status_filter = query_params.get("status", "").strip().lower()
 
@@ -353,10 +387,12 @@ class PdfMediaView(APIView):
 
     def delete(self, request, pk):
         """
-        Delete PDF file (Phase 1.2+ future enhancement).
-
-        Currently returns 501 Not Implemented.
-        Use /api/media-management/force-remove/{id}/ instead.
+        Placeholder endpoint for deleting a PDF; deletion is not implemented in this API version.
+        
+        Attempts to delete a PDF are rejected with HTTP 501. The response body contains an "error" message and an "alternative" field pointing to the force-remove endpoint.
+        
+        Returns:
+            Response: DRF Response with an error message and an "alternative" instruction for DELETE /api/media-management/force-remove/{id}/, with HTTP 501 Not Implemented.
         """
         return Response(
             {"error": "PDF deletion not yet implemented", "alternative": f"Use DELETE /api/media-management/force-remove/{pk}/ instead"},

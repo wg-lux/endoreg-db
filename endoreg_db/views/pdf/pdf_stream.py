@@ -53,6 +53,21 @@ class PdfStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission]
     @xframe_options_exempt
     def get(self, request, pk: int, *args, **kwargs):
+        """
+        Stream a raw or processed PDF file for the given database object, supporting HTTP Range requests.
+        
+        This view method locates a RawPdfFile by primary key, selects either the raw or processed (anonymized) file based on the request's "type" query parameter (accepted values: "raw", "processed"; defaults to "raw" on invalid input), and returns either a partial Content-Range streaming response for valid Range headers or a full-file response. File handles are managed so they are closed after the response is served.
+        
+        Parameters:
+            request: The incoming HTTP request; may include a "Range" header and a "type" query parameter to select the file variant.
+            pk (int): Primary key of the RawPdfFile to stream.
+        
+        Returns:
+            StreamingHttpResponse or FileResponse: an HTTP response streaming the requested PDF (partial content with status 206 if a valid Range header is provided; full file otherwise).
+        
+        Raises:
+            Http404: if the RawPdfFile is not found, the requested file variant is unavailable, the file is missing or inaccessible on disk, an invalid Range is requested, or another error occurs while preparing the response.
+        """
         file_type = "raw"  # Initialize for error logging
         try:
             pdf_obj = RawPdfFile.objects.filter(pk=pk).first()

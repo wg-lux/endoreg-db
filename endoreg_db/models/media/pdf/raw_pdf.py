@@ -137,17 +137,20 @@ class RawPdfFile(models.Model):
     @property
     def uuid(self):
         """
-        Compatibility property - returns pdf_hash as UUID-like identifier.
-
-        Note: RawPdfFile uses pdf_hash instead of UUID for identification.
-        This property exists for API backward compatibility.
+        Compatibility alias exposing the PDF's hash as a UUID-like identifier.
+        
+        Returns:
+            pdf_hash (str): The PDF's hash value used as the UUID-like identifier for this record.
         """
         return self.pdf_hash
 
     @property
     def file_path(self) -> Path | None:
         """
-        Returns the file path of the stored PDF file if available; otherwise, returns None.
+        Get the local filesystem path of the stored PDF file.
+        
+        Returns:
+            Path: The local filesystem Path to the stored PDF file if available, `None` otherwise.
         """
         from django.db.models.fields.files import FieldFile
 
@@ -162,7 +165,13 @@ class RawPdfFile(models.Model):
 
     def set_file_path(self, file_path: Path):
         """
-        Sets the file path of the stored PDF file.
+        Attach a local PDF file to the model's file field and persist that change.
+        
+        Parameters:
+            file_path (Path): Path to the local PDF file to attach.
+        
+        Raises:
+            FileNotFoundError: If `file_path` does not exist.
         """
         if not file_path.exists():
             raise FileNotFoundError(f"File path does not exist: {file_path}")
@@ -173,7 +182,10 @@ class RawPdfFile(models.Model):
     @property
     def anonymized_file_path(self) -> Path | None:
         """
-        Returns the file path of the anonymized PDF file if available; otherwise, returns None.
+        Path to the anonymized PDF file if present, otherwise None.
+        
+        Returns:
+            Path | None: A Path pointing to the anonymized PDF on local storage if available, `None` otherwise.
         """
         if self.anonymized_file and self.anonymized_file.name:
             try:
@@ -184,7 +196,13 @@ class RawPdfFile(models.Model):
 
     def set_anonymized_file_path(self, file_path: Path):
         """
-        Sets the file path of the anonymized PDF file.
+        Store a local PDF file as the model's anonymized_file and persist that field.
+        
+        Parameters:
+            file_path (Path): Path to an existing local PDF file to attach as the anonymized file.
+        
+        Raises:
+            FileNotFoundError: If `file_path` does not exist.
         """
         if not file_path.exists():
             raise FileNotFoundError(f"File path does not exist: {file_path}")
@@ -194,15 +212,12 @@ class RawPdfFile(models.Model):
 
     def get_raw_file_path(self) -> Optional[Path]:
         """
-        Get the path to the raw PDF file, searching common locations.
-
-        This method attempts to find the original raw PDF file by checking:
-        1. Direct hash-based path in raw_pdfs/
-        2. Scanning raw_pdfs/ directory for files matching the hash
-        3. Checking the file field if it exists
-
+        Locate the original raw PDF file for this instance by searching the file field and common storage directories.
+        
+        Searches the file field first, then looks for a file named with the instance's PDF hash in a set of candidate directories, and finally scans those directories for a PDF whose content hash matches the instance's pdf_hash.
+        
         Returns:
-            Path to raw file if it exists, None otherwise
+            Path | None: Path to the found PDF file, or None if no matching file is found.
         """
         from django.conf import settings
 
@@ -255,7 +270,10 @@ class RawPdfFile(models.Model):
     @property
     def file_url(self):
         """
-        Returns the URL of the stored PDF file if available; otherwise, returns None.
+        Get the URL of the stored PDF file.
+        
+        Returns:
+            file_url (str | None): The file's URL if a file is present and has a name, `None` otherwise.
         """
         try:
             return self.file.url if self.file and self.file.name else None
@@ -265,7 +283,10 @@ class RawPdfFile(models.Model):
     @property
     def anonymized_file_url(self):
         """
-        Returns the URL of the stored PDF file if available; otherwise, returns None.
+        Get the public URL of the anonymized PDF file.
+        
+        Returns:
+            The URL string of the anonymized PDF file, or `None` if no anonymized file is present or accessible.
         """
         try:
             return self.anonymized_file.url if self.anonymized_file and self.anonymized_file.name else None
@@ -274,16 +295,19 @@ class RawPdfFile(models.Model):
 
     def __str__(self):
         """
-        Return a string representation of the RawPdfFile, including its PDF hash, type, and center.
+        Return a string representation of the RawPdfFile including its PDF hash, type, and center.
+        
+        Returns:
+            str: Formatted string in the form "<pdf_hash> (<pdf_type>, <center>)".
         """
         str_repr = f"{self.pdf_hash} ({self.pdf_type}, {self.center})"
         return str_repr
 
     def delete(self, *args, **kwargs):
         """
-        Deletes the RawPdfFile instance from the database and removes the associated file from storage if it exists.
-
-        This method ensures that the physical PDF file is deleted from the file system after the database record is removed. Logs warnings or errors if the file cannot be found or deleted.
+        Delete the RawPdfFile instance and remove its associated original and anonymized PDF files from storage.
+        
+        Both file fields are removed from storage if present; missing files are ignored. The database record is then deleted.
         """
         primary_name = self.file.name if self.file and self.file.name else None
         anonymized_name = self.anonymized_file.name if self.anonymized_file and self.anonymized_file.name else None
@@ -297,10 +321,15 @@ class RawPdfFile(models.Model):
 
     def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
         """
-        Validate the metadata of the RawPdf instance.
-
-        Called after annotation in the frontend, this method deletes the associated active file, updates the sensitive meta data with the user annotated data.
-        It also ensures the video file is properly saved after the metadata update.
+        Apply frontend-provided annotation data to the associated SensitiveMeta and finalize anonymization state.
+        
+        If a SensitiveMeta is attached and annotation data is provided, update the SensitiveMeta from the provided dictionary and save it, remove any stored original and anonymized PDF files, mark the PDF's anonymization as validated in its state, and persist the RawPdfFile. If either the SensitiveMeta is missing or no data is provided, no changes are made.
+        
+        Parameters:
+            extracted_data_dict (Optional[dict]): Annotation data from the frontend used to update the associated SensitiveMeta.
+        
+        Returns:
+            `true` if metadata was applied and anonymization was finalized, `false` otherwise.
         """
 
         if not self.sensitive_meta:
@@ -585,10 +614,13 @@ class RawPdfFile(models.Model):
         # This method might still be useful if called explicitly, but create_from_file now handles restoration
         # Ensure fallback_file is a Path object.
         """
-        Checks if the stored PDF file exists in storage and attempts to restore it from a fallback file path if missing.
-
+        Ensure the model's stored PDF file exists and restore it from a local fallback file if missing.
+        
         Parameters:
-            fallback_file: Path or string representing the fallback file location to restore from if the stored file is missing.
+            fallback_file (Path | str): Local filesystem path to a file used to restore the model's stored file if it is missing.
+            
+        Notes:
+            If the stored file is missing and `fallback_file` exists, the fallback's contents are written into the model's file field via the configured storage backend. Successes and failures are logged; this method does not raise on internal errors (exceptions are caught and logged).
         """
         if not isinstance(fallback_file, Path):
             fallback_file = Path(fallback_file)
@@ -642,6 +674,27 @@ class RawPdfFile(models.Model):
         return text, anonymized_text, report_meta
 
     def get_report_reader_config(self):
+        """
+        Builds a configuration dictionary used by a report reader to parse and interpret the PDF.
+        
+        The returned dictionary contains localization, employee name lists from the associated center, a date format string, and parsing flags derived from the associated PdfType. The `flags` mapping includes:
+        - `patient_info_line`: value indicating the patient info line identifier.
+        - `endoscope_info_line`: value or `None` if not configured.
+        - `examiner_info_line`: value indicating the examiner info line identifier.
+        - `cut_off_below`: list of values for lines considered cut-off below.
+        - `cut_off_above`: list of values for lines considered cut-off above.
+        
+        Returns:
+            settings_dict (dict): Configuration with keys:
+                - "locale" (str): locale code, e.g., "de_DE".
+                - "employee_first_names" (list[str]): center first-name entries.
+                - "employee_last_names" (list[str]): center last-name entries.
+                - "text_date_format" (str): date format used in PDFs.
+                - "flags" (dict): parsing flags as described above.
+        
+        Raises:
+            AssertionError: If the RawPdfFile instance has no associated center.
+        """
         from warnings import warn
 
         from ...administration import Center
@@ -679,6 +732,15 @@ class RawPdfFile(models.Model):
 
     @staticmethod
     def get_pdf_by_id(pdf_id: int) -> "RawPdfFile":
+        """
+        Retrieve a RawPdfFile by its primary key.
+        
+        Returns:
+            The RawPdfFile instance with the given primary key.
+        
+        Raises:
+            ValueError: If no RawPdfFile exists with the given ID.
+        """
         try:
             return RawPdfFile.objects.get(pk=pdf_id)
         except RawPdfFile.DoesNotExist:

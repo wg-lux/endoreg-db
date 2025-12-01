@@ -49,6 +49,14 @@ class VideoImportService:
 
     def __init__(self, project_root: Optional[Path] = None):
         # Set up project root path
+        """
+        Initialize the VideoImportService instance and its processing state.
+        
+        Sets the project root, prepares the anonymized-video tracking set (creating the anonym_videos directory if missing), and initializes core instance attributes used during import and anonymization.
+        
+        Parameters:
+            project_root (Optional[Path]): Optional path to the project root. If omitted, the project root is inferred relative to this file.
+        """
         if project_root:
             self.project_root = Path(project_root)
         else:
@@ -82,7 +90,15 @@ class VideoImportService:
         self.cleaner = None  # This gets instantiated in the perform_frame_cleaning method
 
     def _require_current_video(self) -> VideoFile:
-        """Return the current VideoFile or raise if it has not been initialized."""
+        """
+        Get the current VideoFile instance.
+        
+        Returns:
+            VideoFile: The current VideoFile.
+        
+        Raises:
+            RuntimeError: If no current video has been initialized.
+        """
         if self.current_video is None:
             raise RuntimeError("Current video instance is not set")
         return self.current_video
@@ -90,12 +106,12 @@ class VideoImportService:
     @contextmanager
     def _file_lock(self, path: Path):
         """
-        Create a file lock to prevent duplicate processing of the same video.
-
-        This context manager creates a .lock file alongside the video file.
-        If the lock file already exists, it checks if it's stale (older than
-        STALE_LOCK_SECONDS) and reclaims it if necessary. If it's not stale,
-        we now WAIT (up to MAX_LOCK_WAIT_SECONDS) instead of failing immediately.
+        Acquire a filesystem lock for the given file by creating a sibling ".lock" file.
+        
+        Context manager that creates a ".lock" file next to the provided path to serialize processing of the same file. If an existing lock is older than STALE_LOCK_SECONDS it will be reclaimed; otherwise the manager waits up to MAX_LOCK_WAIT_SECONDS for the lock to clear. The lock file is removed when the context exits.
+        
+        Parameters:
+            path (Path): Path to the target file to lock; the lock file will be created at `path.with_suffix(path.suffix + ".lock")` (i.e., by appending ".lock" to the file path).
         """
         lock_path = Path(str(path) + ".lock")
         fd = None
@@ -160,8 +176,22 @@ class VideoImportService:
         delete_source: bool = True,
     ) -> "VideoFile|None":
         """
-        High-level helper that orchestrates the complete video import and anonymization process.
-        Uses the central video instance pattern for improved state management.
+        Orchestrates end-to-end import and anonymization of a single video file into the system.
+        
+        Performs file validation and locking, creates or retrieves the VideoFile record, creates a sensitive copy,
+        prepares the processing environment, runs frame-level anonymization (or fallback), finalizes state changes,
+        and moves processed output into permanent storage.
+        
+        Parameters:
+            file_path (Union[Path, str]): Path to the source video file to import.
+            center_name (str): Name of the center to associate with the imported video.
+            processor_name (str): Name of the processor configuration to use for anonymization.
+            save_video (bool): If True, preserve the processed (anonymized) video in storage; if False, do not store processed output.
+            delete_source (bool): If True, remove the original source file after successful import and archival.
+        
+        Returns:
+            VideoFile|None: The VideoFile instance for the imported video when processing was performed; `None` if processing was skipped
+            because another worker was handling the same file.
         """
         # DEFENSIVE: Initialize processing_context immediately to prevent KeyError crashes
         self.processing_context = {"file_path": Path(file_path)}
@@ -387,7 +417,11 @@ class VideoImportService:
         self.processing_context["video_filename"] = stored_raw_path.name
 
     def _setup_processing_environment(self):
-        """Setup the processing environment without file movement."""
+        """
+        Prepare the video processing environment for anonymization without moving files.
+        
+        Initializes video specifications, attempts to pre-extract frames and create frame records, and persists the frames_extracted flag both in the processing context and on the VideoState when extraction succeeds. If frame extraction fails, records failure in the processing context and continues. Ensures default patient/sensitive metadata exists for the video.
+        """
         video = self._require_current_video()
 
         # Initialize video specifications
@@ -423,7 +457,11 @@ class VideoImportService:
         self.logger.info("Processing environment setup completed")
 
     def _process_frames_and_metadata(self):
-        """Process frames and extract metadata with anonymization."""
+        """
+        Process frames and extract anonymization metadata for the current video.
+        
+        Attempts frame-level anonymization using the configured frame cleaner and processor ROI masking when a raw file is present and frame cleaning is available. Runs the cleaning operation with a long timeout (5000 seconds) and, on timeout, waits a grace period (60 seconds) for a cleaned output file to appear before treating the attempt as failed. On success, records cleaned path and marks anonymization as completed in the processing context. If frame cleaning is unavailable, times out, or raises an error, falls back to the simpler anonymization path and records failure details in the processing context when both primary and fallback approaches fail.
+        """
         # Check frame cleaning availability
         frame_cleaning_available, frame_cleaner = self._ensure_frame_cleaning_available()
         video = self._require_current_video()
@@ -498,6 +536,18 @@ class VideoImportService:
                 self.processing_context["error_reason"] = f"Frame cleaning failed: {e}, Fallback failed: {fallback_error}"
 
     def _save_anonymized_video(self):
+        """
+        Finalize and persist the anonymized video for the current VideoFile, update related database fields, and optionally schedule raw-asset cleanup.
+        
+        This method verifies the assembled anonymized file exists, computes and checks its hash against other videos to prevent duplicates, sets the video's processed hash and processed file location, and updates the video's frame directory. If delete_source is enabled, it clears the video's raw_file, schedules deletion of the original raw file and frame directory after the transaction commits, and updates raw-related fields. It ensures a VideoState exists and marks the video as anonymized.
+        
+        Returns:
+            True if the anonymized video was saved and the video state was marked anonymized.
+        
+        Raises:
+            RuntimeError: if the assembled anonymized file is missing or the video state cannot be retrieved/created.
+            ValueError: if another video already has the same processed video hash.
+        """
         original_raw_file_path_to_delete = None
         original_raw_frame_dir_to_delete = None
         video = self._require_current_video()
@@ -551,7 +601,9 @@ class VideoImportService:
 
     def _fallback_anonymize_video(self):
         """
-        Fallback to create anonymized video if lx_anonymizer is not available.
+        Mark the current video as processed using a non-anonymized fallback and update processing context flags.
+        
+        Sets processing_context["anonymization_completed"] to False and processing_context["use_raw_as_processed"] to True to indicate the raw file will be treated as the processed (anonymized) output. If an error occurs, records the exception message in processing_context["error_reason"] and ensures anonymization is marked incomplete.
         """
         try:
             self.logger.info("Attempting fallback video anonymization...")
@@ -570,7 +622,11 @@ class VideoImportService:
             self.processing_context["error_reason"] = str(e)
 
     def _finalize_processing(self):
-        """Finalize processing and update video state."""
+        """
+        Finalize the video's processing lifecycle and persist resulting state flags.
+        
+        Refreshes the current VideoFile from the database if possible, then within a transaction updates its VideoState according to the current processing context: sets frames_extracted when frames were actually extracted; sets frames_initialized, video_meta_extracted, and text_meta_extracted to true to record extraction attempts; marks sensitive metadata as processed only when anonymization_completed is true (otherwise ensures sensitive_meta_processed is false). Persists the state changes and then signals overall completion via the service's completion check. Logs refresh and decision outcomes for observability.
+        """
         self.logger.info("Updating video processing state...")
 
         with transaction.atomic():
@@ -616,7 +672,11 @@ class VideoImportService:
         self._signal_completion()
 
     def _cleanup_and_archive(self):
-        """Move processed video to anonym_videos and cleanup."""
+        """
+        Move the processed video into the anonym_videos storage and perform cleanup and finalization.
+        
+        This method moves or copies the available processed video into the anonym_videos directory, updates the VideoFile.processed_file path in storage, and sets a flag in the processing context when anonymization is completed. It also removes temporary frame directories, optionally deletes the original source file if configured, and — if no processed file was produced — attempts a late-stage anonymization and updates the processing flag accordingly. Finally, it records the original file as processed in memory and, within a database transaction, ensures the video's state exists and marks sensitive metadata as processed.
+        """
         from endoreg_db.utils import data_paths
 
         anonym_videos_dir = data_paths["anonym_video"]  # /data/anonym_videos
@@ -727,12 +787,40 @@ class VideoImportService:
         video_instance: VideoFile | None = None,
         file_path: Path | str | None = None,
     ) -> Path:
-        """Create or move a sensitive copy of the raw video file inside storage."""
+        """
+        Ensure a sensitive copy of the video's raw file exists in storage and update the VideoFile to reference it.
+        
+        Creates or copies the source raw video into the storage "videos/sensitive" directory, updates the VideoFile.raw_file to point at the sensitive copy (saving the change), and records the resulting path and filename in the processing context.
+        
+        Parameters:
+            video_instance (VideoFile | None): Optional VideoFile to operate on. If omitted, the current video is required.
+            file_path (Path | str | None): Optional filesystem path to use as a source if the VideoFile's raw file is not available.
+        
+        Returns:
+            Path: Filesystem path to the created sensitive copy within storage.
+        
+        Raises:
+            ValueError: If no source file could be located to create the sensitive copy, or if the VideoFile has no raw_file to update.
+        
+        Side effects:
+            - Copies or moves a file into the storage sensitive directory.
+            - Updates and saves video.raw_file to reference the sensitive file.
+            - Sets processing_context["raw_video_path"] and processing_context["video_filename"].
+        """
 
         video = video_instance or self._require_current_video()
         raw_field: FieldFile | None = getattr(video, "raw_file", None)
 
         def copy_into_sensitive(source: Path) -> Path:
+            """
+            Copy a file into the service's sensitive video directory and return the destination path.
+            
+            Parameters:
+                source (Path): Path to the source file to copy.
+            
+            Returns:
+                target_file_path (Path): Path inside VIDEO_DIR/"sensitive" where the file was copied (may be the same as source if already located there).
+            """
             target_dir = VIDEO_DIR / "sensitive"
             if not target_dir.exists():
                 self.logger.info("Creating sensitive file directory: %s", target_dir)
@@ -824,7 +912,16 @@ class VideoImportService:
     def _get_processor_roi_info(
         self,
     ) -> Tuple[Optional[List[List[Dict[str, Any]]]], Optional[Dict[str, Any]]]:
-        """Get processor ROI information for masking."""
+        """
+        Retrieve ROI information from the current video's processor for use in masking.
+        
+        Attempts to read sensitive ROI groups and an endoscope-image ROI from the video's processor. If the processor provides a dict of ROIs, it is converted to the nested list shape returned by this function. On failure or when no processor is present, returns (None, None).
+        
+        Returns:
+            Tuple[Optional[List[List[Dict[str, Any]]]], Optional[Dict[str, Any]]]:
+                A pair where the first element is a nested list of sensitive ROI dictionaries (groups of ROI dicts) or `None`,
+                and the second element is a dictionary of endoscope-image ROI parameters or `None`.
+        """
         endoscope_data_roi_nested = None
         endoscope_image_roi = None
 
@@ -863,7 +960,17 @@ class VideoImportService:
         return endoscope_data_roi_nested, endoscope_image_roi
 
     def _ensure_default_patient_data(self, video_instance: VideoFile | None = None) -> None:
-        """Ensure minimum patient data is present on the video's SensitiveMeta."""
+        """
+        Ensure a VideoFile has minimal sensitive patient metadata and mark it processed.
+        
+        If the video has no SensitiveMeta, creates and attaches a default SensitiveMeta with placeholder
+        patient and examination values and saves the video. If the video already has SensitiveMeta,
+        marks that sensitive metadata as processed on the video's state. If creation fails, the video
+        is left unchanged.
+        Parameters:
+            video_instance (VideoFile | None): Optional VideoFile to operate on. If omitted, the
+                current service video is used.
+        """
 
         video = video_instance or self._require_current_video()
 
@@ -896,10 +1003,14 @@ class VideoImportService:
 
     def _ensure_frame_cleaning_available(self):
         """
-        Ensure frame cleaning modules are available by adding lx-anonymizer to path.
-
+        Check for availability of lx_anonymizer's FrameCleaner and return an instance when present.
+        
+        Attempts to import and instantiate FrameCleaner from the lx_anonymizer package.
+        
         Returns:
-            Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
+            tuple: (available, frame_cleaner)
+                available (bool): True if FrameCleaner was successfully imported and instantiated, False otherwise.
+                frame_cleaner (object|None): An instance of FrameCleaner when available, otherwise None.
         """
         try:
             from lx_anonymizer import FrameCleaner
@@ -915,7 +1026,24 @@ class VideoImportService:
         return _available, frame_cleaner
 
     def _perform_frame_cleaning(self, endoscope_data_roi_nested, endoscope_image_roi):
-        """Perform frame cleaning and anonymization."""
+        """
+        Perform frame-level anonymization of the current video using the configured FrameCleaner.
+        
+        Performs ROI-based cleaning and stores results in the service processing context. On success,
+        the cleaned video path is saved to processing_context["cleaned_video_path"], extracted metadata
+        is saved to processing_context["extracted_metadata"], and SensitiveMeta on the current video
+        is updated from the extracted metadata.
+        
+        Parameters:
+            endoscope_data_roi_nested (list[list[tuple]]): Nested ROI coordinate data per endoscope channel
+                used to drive masking (structure produced by processor ROI extraction).
+            endoscope_image_roi (dict | None): Optional image-space ROI hints (e.g., bounding boxes or masks)
+                to guide the FrameCleaner.
+        
+        Raises:
+            RuntimeError: If frame cleaning is unavailable, FrameCleaner cannot be instantiated, or the raw
+                video path cannot be resolved.
+        """
         # Instantiate frame cleaner
         is_available, frame_cleaner = self._ensure_frame_cleaning_available()
 
@@ -964,9 +1092,15 @@ class VideoImportService:
 
     def _update_sensitive_metadata(self, extracted_metadata: Dict[str, Any]):
         """
-        Update sensitive metadata with extracted information.
-        Args:
-            extracted_metadata (Dict[str, Any]): Extracted metadata to update.
+        Populate the current video's SensitiveMeta with values extracted from frame/anonymization metadata.
+        
+        Updates the existing SensitiveMeta on the current VideoFile (if present) using keys from the provided extracted_metadata. If the SensitiveMeta lacks a center, the method will attempt to set a center object from the VideoFile or resolve a center by the provided "center_name". After applying updates, the SensitiveMeta is saved and the video's processing state is marked as having sensitive metadata processed.
+        
+        Parameters:
+            extracted_metadata (Dict[str, Any]): Metadata extracted during processing to apply to the SensitiveMeta. Keys correspond to SensitiveMeta fields; a "center_name" key may be used to resolve and set a Center object when the SensitiveMeta has no center.
+        
+        Raises:
+            Exception: Re-raises unexpected exceptions raised while saving SensitiveMeta so callers can handle fallback/error flows.
         """
         video = self._require_current_video()
         sensitive_meta = getattr(video, "sensitive_meta", None)
@@ -1031,7 +1165,11 @@ class VideoImportService:
             )
 
     def _signal_completion(self):
-        """Signal completion to the tracking system."""
+        """
+        Mark the current video's completion flags and log completion status when required components are present.
+        
+        Checks that the current VideoFile has a stored raw file, sensitive metadata, and video metadata; if all are present, sets any of the attributes `import_completed`, `processing_complete`, and `ready_for_validation` to True when they exist on the model and saves those fields. Logs a success message and which fields were updated. If the required components are missing, logs a warning. Any exceptions during this signaling are caught and logged.
+        """
         try:
             video = self._require_current_video()
 
@@ -1070,7 +1208,11 @@ class VideoImportService:
             self.logger.warning(f"Failed to signal completion status: {e}")
 
     def _cleanup_on_error(self):
-        """Cleanup processing context on error."""
+        """
+        Ensure video state exists, attempt to restore the original raw file, and reset processing flags after a processing error.
+        
+        This routine verifies or creates a VideoState for the current video, tries to copy the stored raw file back to the original source location when available, and clears in-progress processing flags (frames_extracted, frames_initialized, video_meta_extracted, text_meta_extracted) if processing had been started. Side effects: may modify the VideoFile state, write a file to the original path, and persist changes to the VideoState.
+        """
         if self.current_video and hasattr(self.current_video, "state"):
             if self.current_video.state is None:
                 try:
@@ -1113,10 +1255,9 @@ class VideoImportService:
 
     def _cleanup_processing_context(self):
         """
-        Cleanup processing context and release file lock.
-
-        This method is always called in the finally block of import_and_anonymize()
-        to ensure the file lock is released even if processing fails.
+        Clean up the per-file processing context and release any acquired file lock.
+        
+        If a lock was acquired it will be released. If anonymization did not complete, the file is removed from the in-memory processed_files set. The method resets current_video and processing_context.
         """
         # DEFENSIVE: Ensure processing_context exists before accessing it
         if not hasattr(self, "processing_context"):

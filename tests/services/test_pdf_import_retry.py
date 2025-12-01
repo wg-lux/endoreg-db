@@ -37,7 +37,12 @@ class TestPdfImportServiceRetryFix:
 
     @pytest.fixture
     def sample_pdf_content(self):
-        """Create sample PDF content."""
+        """
+        Provide a small sample PDF file content for tests.
+        
+        Returns:
+            bytes: Byte string containing a minimal valid PDF (PDF-1.4) with one page and the text "Sample PDF", suitable for writing to disk or computing a PDF hash.
+        """
         return b"""%PDF-1.4
 1 0 obj
 <<

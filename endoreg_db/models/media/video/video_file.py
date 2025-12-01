@@ -296,20 +296,18 @@ class VideoFile(models.Model):
     # Define new methods that call the helper functions
     def extract_specific_frame_range(self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs) -> bool:
         """
-        Extract frames from the video within the specified frame range.
-
+        Extract frames from the video within the given frame index range.
+        
         Parameters:
-            start_frame (int): The starting frame number (inclusive).
-            end_frame (int): The ending frame number (exclusive).
-            overwrite (bool): Whether to overwrite existing frames in the range.
-
+            start_frame (int): Starting frame index (inclusive).
+            end_frame (int): Ending frame index (exclusive).
+            overwrite (bool): If True, existing frames in the range will be replaced.
+            quality (int, optional): Quality level for extracted frames (default 2).
+            ext (str, optional): File extension for extracted frames (default "jpg").
+            verbose (bool, optional): Enable verbose output from the extraction helper (default False).
+        
         Returns:
-            bool: True if frame extraction was successful, False otherwise.
-
-        Additional keyword arguments:
-            quality (int, optional): Quality setting for extracted frames.
-            ext (str, optional): File extension for extracted frames.
-            verbose (bool, optional): Whether to enable verbose output.
+            bool: `True` if frame extraction completed successfully, `False` otherwise.
         """
         quality = kwargs.get("quality", 2)
         ext = kwargs.get("ext", "jpg")
@@ -333,7 +331,11 @@ class VideoFile(models.Model):
 
     def delete_specific_frame_range(self, start_frame: int, end_frame: int) -> None:
         """
-        Deletes frame files for a specific range [start_frame, end_frame).
+        Delete frame files in the half-open range [start_frame, end_frame).
+        
+        Parameters:
+            start_frame (int): Starting frame number (inclusive).
+            end_frame (int): Ending frame number (exclusive); frames >= start_frame and < end_frame will be removed.
         """
         _delete_frame_range_helper(video=self, start_frame=start_frame, end_frame=end_frame)
 
@@ -374,11 +376,11 @@ class VideoFile(models.Model):
     @property
     def active_file(self) -> FieldFile:
         """
-        Return the active video file, preferring the processed file if available.
-
+        Select the processed video file when present; otherwise select the raw video file.
+        
         Returns:
-            File: The processed file if present; otherwise, the raw file.
-
+            FieldFile: The active video file — the processed file if present, otherwise the raw file.
+        
         Raises:
             ValueError: If neither a processed nor a raw file is available.
         """
@@ -395,13 +397,15 @@ class VideoFile(models.Model):
     @property
     def active_file_path(self) -> Path:
         """
-        Return the filesystem path of the active video file.
-
+        Get the filesystem path of the video's active file.
+        
+        Prefers the processed file when present; otherwise returns the raw file path.
+        
         Returns:
-            Path: The path to the processed file if available, otherwise the raw file.
-
+            Path: Path to the processed file if present, otherwise the raw file path.
+        
         Raises:
-            ValueError: If neither a processed nor raw file is present.
+            ValueError: If neither processed nor raw file is present, or if the active file path cannot be resolved.
         """
         active = self.active_file
         if active is self.processed_file:
@@ -417,7 +421,15 @@ class VideoFile(models.Model):
 
     @property
     def active_file_url(self) -> str:
-        """Return the URL of the active video file, if available."""
+        """
+        Get the URL for the currently active video file.
+        
+        Raises:
+            ValueError: if there is no active file or the active file is not a Django FieldFile; if the storage backend fails to resolve a URL; or if the resolved URL is empty.
+        
+        Returns:
+            str: URL of the active video file.
+        """
         file_obj = self.active_file
         if not isinstance(file_obj, FieldFile):
             raise ValueError("Active file is not a valid Django FieldFile instance.")
@@ -439,6 +451,19 @@ class VideoFile(models.Model):
     @classmethod
     def create_from_file(cls, file_path: Union[str, Path], center_name: str, **kwargs) -> Optional["VideoFile"]:
         # Ensure file_path is a Path object
+        """
+        Create a VideoFile record from a filesystem path and associate it with a center.
+        
+        If center_name is falsy, the CENTER_NAME environment variable is used; if that is not set, creation is aborted and None is returned. Additional keyword arguments are forwarded to the underlying creation helper.
+        
+        Parameters:
+            file_path (Union[str, Path]): Path to the source video file.
+            center_name (str): Name of the center to associate with the created VideoFile. May be empty to use the CENTER_NAME environment variable.
+            **kwargs: Extra options forwarded to the creation helper.
+        
+        Returns:
+            VideoFile or None: The created VideoFile instance on success, or None if creation could not proceed (for example, missing center name).
+        """
         if isinstance(file_path, str):
             file_path = Path(file_path)
         # Pass center_name and other kwargs to the helper function
@@ -483,9 +508,12 @@ class VideoFile(models.Model):
 
     def delete(self, using=None, keep_parents=False) -> tuple[int, dict[str, int]]:
         """
-        Delete the VideoFile instance, including associated files and frames.
-
-        Overrides the default delete method to ensure proper cleanup of related resources.
+        Delete this VideoFile and all associated frame records, filesystem assets, and processing locks.
+        
+        This method removes extracted frames, deletes the raw and processed files from their storage backends and the filesystem (if present), attempts to remove any processing lock files, and then removes the database record using the provided database connection alias (defaults to "default" if None).
+        
+        Returns:
+            tuple[int, dict[str, int]]: A pair where the first element is the total number of deleted objects and the second is a mapping of "<app_label.ModelName>" to the number of deletions for that model.
         """
         # Ensure frames are deleted before the main instance
         _delete_frames(self)
@@ -535,15 +563,15 @@ class VideoFile(models.Model):
 
     def validate_metadata_annotation(self, extracted_data_dict: Optional[dict] = None) -> bool:
         """
-        Validate the metadata of the VideoFile instance.
-
-        Called after annotation in the frontend, this method:
-        1. Updates sensitive metadata with user-annotated data
-        2. Deletes the RAW video file (keeping only the anonymized version)
-        3. Marks the video as validated
-
-        **IMPORTANT:** Only the raw video is deleted. The processed (anonymized)
-        video is preserved as the final validated output.
+        Validate and persist user-provided sensitive metadata, remove the raw video file, and mark anonymization as validated.
+        
+        This ensures a SensitiveMeta exists for the VideoFile, applies the provided annotation values to it, deletes the raw (unprocessed) video file while preserving any processed/anonymized video, marks the video state as having validated anonymization, and persists changes.
+        
+        Parameters:
+            extracted_data_dict (Optional[dict]): Dictionary of user-annotated sensitive metadata to apply; validation is aborted if this is not provided.
+        
+        Returns:
+            bool: `True` if metadata was applied and the video was marked validated and saved, `False` otherwise.
         """
 
         if not self.sensitive_meta:
@@ -587,10 +615,10 @@ class VideoFile(models.Model):
 
     def initialize(self):
         """
-        Initialize the VideoFile instance by updating metadata, setting up video specs, assigning frame directory, ensuring related state and sensitive metadata exist, saving the instance, and initializing frames.
-
+        Prepare the VideoFile for use by updating its metadata, initializing video specifications, setting the frame directory, ensuring associated VideoState and SensitiveMeta exist, saving the model, and initializing frames.
+        
         Returns:
-            VideoFile: The initialized VideoFile instance.
+            VideoFile: The same VideoFile instance after initialization.
         """
 
         self.update_video_meta()
@@ -612,7 +640,10 @@ class VideoFile(models.Model):
 
     def __str__(self):
         """
-        Return a human-readable string summarizing the video's state, active file name, and UUID.
+        Human-readable summary of the video's state, active file name, and UUID.
+        
+        Returns:
+            str: A string containing the video's state ("Processed", "Raw", or "No File"), the active file name or "No file", and the video's UUID.
         """
         active_path = self.active_file_path
         file_name = active_path.name if active_path else "No file"
@@ -622,8 +653,13 @@ class VideoFile(models.Model):
     # --- Convenience state/meta helpers used in tests and admin workflows ---
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> "VideoFile":
         """
-        Mark this video's processing state as having its sensitive meta fully processed.
-        This proxies to the related VideoState and persists by default.
+        Mark the video's sensitive metadata as processed and optionally persist the change.
+        
+        Parameters:
+            save (bool): If True, persist the updated processing state to storage.
+        
+        Returns:
+            VideoFile: The same VideoFile instance.
         """
         state = self.get_or_create_state()
         state.mark_sensitive_meta_processed(save=save)
@@ -631,8 +667,12 @@ class VideoFile(models.Model):
 
     def mark_sensitive_meta_verified(self) -> "VideoFile":
         """
-        Mark the associated SensitiveMeta as verified by setting both DOB and names as verified.
-        Ensures the SensitiveMeta and its state exist.
+        Mark the video's associated SensitiveMeta as having DOB and names verified.
+        
+        Ensures a SensitiveMeta exists for this VideoFile before marking its DOB and names as verified.
+        
+        Returns:
+            VideoFile: The same VideoFile instance with updated SensitiveMeta.
         """
         sm = self.get_or_create_sensitive_meta()
         # Use SensitiveMeta methods to update underlying SensitiveMetaState
@@ -651,7 +691,14 @@ class VideoFile(models.Model):
         super().save(*args, **kwargs)
 
     def get_or_create_state(self) -> "VideoState":
-        """Ensure this video has a persisted ``VideoState`` and return it."""
+        """
+        Ensure the VideoFile has an associated, persisted VideoState and return it.
+        
+        If the current in-memory state is missing or points to a deleted DB row, a new VideoState is created and attached. If this VideoFile already has a primary key, the relation is saved so subsequent refreshes observe the association.
+        
+        Returns:
+            VideoState: The persisted VideoState linked to this VideoFile.
+        """
 
         state = self.state
 
@@ -676,43 +723,12 @@ class VideoFile(models.Model):
 
     def get_or_create_sensitive_meta(self) -> "SensitiveMeta":
         """
-        Retrieve the associated SensitiveMeta instance for this video, creating and assigning one if it does not exist.
-
-        **Two-Phase Patient Data Pattern:**
-        This method implements a two-phase approach to handle incomplete patient data:
-
-        **Phase 1: Initial Creation (with defaults)**
-        - Creates SensitiveMeta with default patient data to prevent hash calculation errors
-        - Default values: patient_first_name="Patient", patient_last_name="Unknown", patient_dob=1990-01-01
-        - Allows video import to proceed even without extracted patient data
-        - Temporary hash and pseudo-entities are created
-
-        **Phase 2: Update (with extracted data)**
-        - Real patient data is extracted later (e.g., from video OCR via lx_anonymizer)
-        - update_from_dict() is called with actual patient information
-        - Hash is recalculated automatically using real data
-        - Correct pseudo-entities are created/linked based on new hash
-
-        **Example workflow:**
-        ```python
-        # Phase 1: Video creation
-        video = VideoFile.create_from_file_initialized(...)
-        video.initialize()  # Calls this method
-        # → SensitiveMeta created with defaults
-        # → Hash: sha256("Patient Unknown 1990-01-01...")
-
-        # Phase 2: Frame cleaning extracts real data
-        extracted = {"patient_first_name": "Max", "patient_last_name": "Mustermann", ...}
-        video.sensitive_meta.update_from_dict(extracted)
-        # → Hash: sha256("Max Mustermann 1985-03-15...") (RECALCULATED)
-        ```
-
+        Ensure this VideoFile has an associated SensitiveMeta, creating and attaching a placeholder SensitiveMeta with default patient data if none exists.
+        
+        If a SensitiveMeta is created, it uses placeholder patient values so downstream hash calculations and imports can proceed; the created SensitiveMeta is intended to be updated later with extracted real patient data.
+        
         Returns:
-            SensitiveMeta: The related SensitiveMeta instance.
-
-        See Also:
-            - sensitive_meta_logic.perform_save_logic() for hash calculation details
-            - sensitive_meta_logic.update_sensitive_meta_from_dict() for update mechanism
+            SensitiveMeta: The existing or newly created SensitiveMeta instance.
         """
         from datetime import date as dt_date
 
@@ -735,13 +751,15 @@ class VideoFile(models.Model):
 
     def get_outside_segments(self, only_validated: bool = False) -> models.QuerySet["LabelVideoSegment"]:
         """
-        Return all video segments labeled as "outside" for this video.
-
+        Return video segments for the "outside" label associated with this video.
+        
+        If `only_validated` is True, only segments whose related state has `is_validated == True` are included.
+        
         Parameters:
-            only_validated (bool): If True, only segments with a validated state are included.
-
+            only_validated (bool): When True, filter to segments with a validated state.
+        
         Returns:
-            QuerySet: A queryset of LabelVideoSegment instances labeled as "outside". Returns an empty queryset if the label does not exist or an error occurs.
+            QuerySet[LabelVideoSegment]: LabelVideoSegment instances labeled "outside" for this video; an empty queryset if the "outside" label does not exist or an error occurs.
         """
         try:
             outside_label = Label.objects.get(name__iexact="outside")
@@ -767,13 +785,16 @@ class VideoFile(models.Model):
     @classmethod
     def create_video_without_outside_frames(cls, instance: "VideoFile", only_validated: bool = False) -> bool:
         """
-        Creates a new video by excluding frames that belong to 'outside' segments.
-
+        Create a new processed video for the given VideoFile that excludes frames labeled as "outside".
+        
+        This attempts to extract frames from the video's processed file (falling back to anonymization if extraction fails), removes frames belonging to the "outside" label (optionally only validated segments), and reassembles a new processed video assigned to the instance's processed_file. Returns whether the operation succeeded.
+        
         Parameters:
-            only_validated (bool): If True, only validated segments are considered for frame exclusion.
-
+            instance (VideoFile): The VideoFile whose processed video will be filtered.
+            only_validated (bool): When True, consider only validated "outside" segments for exclusion.
+        
         Returns:
-            VideoFile: A new VideoFile instance with the frames excluding those labeled as 'outside'.
+            bool: `True` if a new processed video was successfully created and assigned, `False` otherwise.
         """
         video = instance
 
@@ -838,14 +859,11 @@ class VideoFile(models.Model):
 
     def frame_number_to_s(self, frame_number: int) -> float:
         """
-        Convert a frame number to its corresponding time in seconds based on the video's frames per second (FPS).
-
-        Parameters:
-            frame_number (int): The frame number to convert.
-
+        Convert a frame number to seconds using the video's frames-per-second (FPS).
+        
         Returns:
-            float: The time in seconds corresponding to the given frame number.
-
+            float: Time in seconds corresponding to the provided frame number.
+        
         Raises:
             ValueError: If the video's FPS is not set or is less than or equal to zero.
         """

@@ -17,7 +17,12 @@ class TestPdfStatusAfterAnonymization:
 
     @pytest.fixture
     def center(self):
-        """Create test center."""
+        """
+        Create and return a test Center instance for use in tests.
+        
+        Returns:
+            Center: A newly created Center with name "test_center" and display_name "Test Center".
+        """
         return Center.objects.create(
             name="test_center",
             display_name="Test Center",
@@ -39,6 +44,17 @@ class TestPdfStatusAfterAnonymization:
         # Mock the text processing to simulate successful anonymization
         def mock_process(service_instance):
             # Simulate successful processing by setting context flags
+            """
+            Populate the given service instance's processing_context to simulate successful text extraction and anonymization.
+            
+            Parameters:
+                service_instance: The PDF import/anonymization service instance whose `processing_context` dict will be modified. After calling, the context contains:
+                    - "text_extracted": True
+                    - "anonymization_completed": True
+                    - "original_text": original text content
+                    - "anonymized_text": anonymized text content
+                    - "anonymized_pdf_path": string path to the anonymized PDF
+            """
             service_instance.processing_context["text_extracted"] = True
             service_instance.processing_context["anonymization_completed"] = True
             service_instance.processing_context["original_text"] = (
@@ -84,8 +100,9 @@ class TestPdfStatusAfterAnonymization:
 
     def test_status_progression_blackening_mode(self, center, tmp_path):
         """
-        Test the full status progression for blackening mode:
-        not_started -> processing -> done -> (validation ready)
+        Verify that in blackening mode a PDF's anonymization state progresses to ready-for-validation.
+        
+        After importing and anonymizing a test PDF in blackening mode, assert that the PDF's state has anonymization_status set to AnonymizationState.DONE_PROCESSING_ANONYMIZATION and that both `anonymized` and `sensitive_meta_processed` are True.
         """
         test_pdf = tmp_path / "test_report.pdf"
         test_pdf.write_bytes(b"%PDF-1.4\n%test content")
@@ -94,6 +111,15 @@ class TestPdfStatusAfterAnonymization:
         anonymized_pdf_path.write_bytes(b"%PDF-1.4\n%anonymized")
 
         def mock_process(service_instance):
+            """
+            Simulate a successful extraction and anonymization run by updating the service instance's processing context to indicate completion and provide the anonymized PDF path.
+            
+            Parameters:
+                service_instance: The import/anonymization service instance whose `processing_context` will be updated. The function sets:
+                    - `text_extracted` to `True`
+                    - `anonymization_completed` to `True`
+                    - `anonymized_pdf_path` to the precomputed anonymized PDF path (string)
+            """
             service_instance.processing_context["text_extracted"] = True
             service_instance.processing_context["anonymization_completed"] = True
             service_instance.processing_context["anonymized_pdf_path"] = str(
@@ -129,6 +155,15 @@ class TestPdfStatusAfterAnonymization:
         anonymized_pdf_path.write_bytes(b"%PDF-1.4\n%anonymized")
 
         def mock_process(service_instance):
+            """
+            Simulate a successful extraction and anonymization run by updating the service instance's processing context to indicate completion and provide the anonymized PDF path.
+            
+            Parameters:
+                service_instance: The import/anonymization service instance whose `processing_context` will be updated. The function sets:
+                    - `text_extracted` to `True`
+                    - `anonymization_completed` to `True`
+                    - `anonymized_pdf_path` to the precomputed anonymized PDF path (string)
+            """
             service_instance.processing_context["text_extracted"] = True
             service_instance.processing_context["anonymization_completed"] = True
             service_instance.processing_context["anonymized_pdf_path"] = str(

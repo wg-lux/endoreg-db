@@ -16,11 +16,12 @@ class Command(BaseCommand):
     
     def add_arguments(self, parser):
         """
-        Adds command-line arguments for verbose output, forced revalidation, and anonymization.
+        Register command-line flags for verbose output, forced revalidation, and anonymization.
         
-        This method configures the management command to accept optional flags:
-        --verbose for detailed output, --force to revalidate all videos regardless of status,
-        and --anonymize to anonymize video files during processing.
+        Adds the following optional flags to the command parser:
+        - --verbose: enable detailed logging during processing.
+        - --force: force revalidation of all videos regardless of current state.
+        - --anonymize: perform anonymization of video files during processing.
         """
         parser.add_argument(
             "--verbose",
@@ -40,13 +41,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Validates video files stored in the database and updates their validation states.
+        Validate and optionally anonymize VideoFile records based on their related VideoState booleans.
         
-        This method processes video files according to the provided command-line options,
-        such as verbose output, forced revalidation, or anonymization.
-        It interprets the boolean flags in the related VideoState object to determine
-        if a video is 'validated' (e.g., initial_prediction_completed and lvs_created are True)
-        or 'anonymized' (e.g., anonymized is True).
+        Processes VideoFile objects and updates their related VideoState fields. Supported command options:
+        - verbose (bool): when True, write progress and status messages to stdout.
+        - force (bool): when True, re-run validation/anonymization regardless of current state.
+        - anonymize (bool): when True, attempt to anonymize videos that are validated (or force-anonymize when forced).
+        
+        Behavior notes:
+        - A video is considered "validated" when its state has initial_prediction_completed=True and lvs_created=True.
+        - A video is considered "anonymized" when its state has anonymized=True.
+        - When appropriate, this method invokes VideoFile.pipe_1(model_name=...) to perform validation and VideoFile.anonymize_video_content() to perform anonymization, and refreshes objects from the database to observe state changes.
+        - Attempts to use the latest segmentation model for pipe_1 when available; proceeds without a model if unavailable.
+        
+        Parameters:
+            *args: Ignored.
+            **options: Command-line options containing the keys described above.
         """
         #TODO @maxhild here is some ai generated code for now, not validated yet
         verbose = options["verbose"]
@@ -201,4 +211,3 @@ class Command(BaseCommand):
 
         if verbose:
             self.stdout.write(self.style.SUCCESS(f"Video processing finished. Succeeded: {processed_count}, Failed: {failed_count}."))
-

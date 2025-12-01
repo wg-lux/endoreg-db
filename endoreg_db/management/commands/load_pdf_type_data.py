@@ -38,6 +38,13 @@ class Command(BaseCommand):
     help = f"""Load all .yaml files in the {SOURCE_DIR} directory"""
 
     def add_arguments(self, parser):
+        """
+        Add the `--verbose` flag to the command-line parser.
+        
+        Parameters:
+            parser (argparse.ArgumentParser): The argument parser for the management command; this adds the optional
+                `--verbose` flag which, when present, enables verbose output.
+        """
         parser.add_argument(
             "--verbose",
             action="store_true",
@@ -45,6 +52,14 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        """
+        Execute the management command that loads YAML-defined data for configured models into the database.
+        
+        Processes each model listed in IMPORT_MODELS using the corresponding entry in IMPORT_METADATA and invokes the YAML data loader for each model. Honors the 'verbose' option to enable detailed output.
+        
+        Parameters:
+            options (dict): Command-line options; recognizes 'verbose' (bool) to enable verbose logging.
+        """
         verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]

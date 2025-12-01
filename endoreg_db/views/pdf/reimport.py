@@ -23,12 +23,17 @@ class PdfReimportView(APIView):
 
     def post(self, request, pk):
         """
-        Re-import a pdf file to regenerate SensitiveMeta and other metadata.
-        Instead of creating a new pdf, this updates the existing one.
-
-        Args:
-            request: HTTP request object
-            pk: PDF primary key (ID)
+        Re-import an existing PDF to regenerate SensitiveMeta and other metadata, updating the existing RawPdfFile rather than creating a new record.
+        
+        Parameters:
+            pk (int): PDF primary key (ID) of the RawPdfFile to re-import.
+        
+        Returns:
+            Response: DRF Response whose JSON body varies by outcome:
+                - 200: {"message", "pdf_id", "pdf_hash", "sensitive_meta_created", "sensitive_meta_id", "text_extracted", "anonymized", "status"} on successful re-import.
+                - 400/404: {"error"} for invalid ID, missing PDF, missing raw file, or missing center.
+                - 507: {"error", "error_type": "storage_error", "pdf_id", "pdf_hash"} for storage-related failures.
+                - 500: {"error", "error_type": "processing_error", "pdf_id", "pdf_hash"} for other processing failures.
         """
         pdf_id = pk  # Align with media framework naming convention
 

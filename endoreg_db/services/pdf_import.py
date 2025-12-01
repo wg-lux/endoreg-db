@@ -51,11 +51,11 @@ class PdfImportService:
         self, allow_meta_overwrite: bool = True, processing_mode: str = "blackening"
     ):
         """
-        Initialize the PDF import service.
-
-        Args:
-            allow_meta_overwrite: Whether to allow overwriting existing SensitiveMeta fields
-            processing_mode: Processing mode - 'blackening' for simple masking, 'cropping' for advanced cropping
+        Create a PdfImportService configured for importing and anonymizing PDFs.
+        
+        Parameters:
+            allow_meta_overwrite (bool): If True, existing SensitiveMeta fields may be overwritten when new metadata is extracted.
+            processing_mode (str): Processing mode to use; either "blackening" for masking or "cropping" for advanced cropping. Raises ValueError for invalid modes.
         """
         self.processed_files = set()
         self._report_reader_available = None
@@ -84,13 +84,13 @@ class PdfImportService:
     @classmethod
     def with_blackening(cls, allow_meta_overwrite: bool = False) -> "PdfImportService":
         """
-        Create a PdfImportService configured for simple PDF blackening mode.
-
-        Args:
-            allow_meta_overwrite: Whether to allow overwriting existing SensitiveMeta fields
-
+        Return a PdfImportService configured to run in blackening (masking) processing mode.
+        
+        Parameters:
+            allow_meta_overwrite (bool): If True, existing SensitiveMeta fields may be overwritten.
+        
         Returns:
-            PdfImportService instance configured for blackening mode
+            PdfImportService: Service instance configured for blackening mode.
         """
         return cls(
             allow_meta_overwrite=allow_meta_overwrite, processing_mode="blackening"
@@ -113,8 +113,16 @@ class PdfImportService:
 
     @contextmanager
     def _file_lock(self, path: Path):
-        """Create a file lock to prevent duplicate processing.
-        Handles stale lock files by reclaiming after STALE_LOCK_SECONDS.
+        """
+        Create a filesystem lock for the given path to prevent concurrent processing.
+        
+        Creates a ".lock" sibling file, writes a short marker, and yields control while the
+        lock is held. If an existing lock is older than STALE_LOCK_SECONDS it will be
+        removed and replaced. The lock file is removed when the context exits; cleanup
+        errors are suppressed.
+        
+        Raises:
+            ValueError: if another worker is currently processing the file (lock exists and is not stale).
         """
         lock_path = Path(str(path) + ".lock")
         fd = None
@@ -165,7 +173,16 @@ class PdfImportService:
                 pass
 
     def _sha256(self, path: Path, chunk: int = 1024 * 1024) -> str:
-        """Compute SHA256 hash of a file."""
+        """
+        Compute the SHA256 hex digest of a file's contents.
+        
+        Parameters:
+            path (Path): Path to the file to hash.
+            chunk (int): Number of bytes to read per chunk when hashing (buffer size). Default is 1MB.
+        
+        Returns:
+            str: SHA256 hash as a lowercase hexadecimal string.
+        """
         h = hashlib.sha256()
         with open(path, "rb") as f:
             while True:
@@ -176,7 +193,14 @@ class PdfImportService:
         return h.hexdigest()
 
     def _get_pdf_dir(self) -> Path | None:
-        """Resolve the configured PDF directory to a concrete Path."""
+        """
+        Resolve the configured PDF directory to a concrete filesystem path.
+        
+        Attempts to convert path_utils.PDF_DIR into a pathlib.Path and returns None if the setting is missing or cannot be resolved.
+        
+        Returns:
+        	Path | None: A Path for the configured PDF directory, or `None` if no valid directory is configured.
+        """
         candidate = getattr(path_utils, "PDF_DIR", None)
         if isinstance(candidate, Path):
             return candidate
@@ -199,7 +223,20 @@ class PdfImportService:
             return None
 
     def _quarantine(self, source: Path) -> Path:
-        """Move file to quarantine directory to prevent re-processing."""
+        """
+        Move a PDF file into the module's processing quarantine directory and return the new path.
+        
+        Prefers an atomic rename when possible and falls back to a cross-device copy-and-remove if required. Removes a stray ".lock" file next to the original source if present.
+        
+        Parameters:
+            source (Path): Path to the source file to quarantine.
+        
+        Returns:
+            Path: New path of the file inside the PDF "_processing" quarantine directory.
+        
+        Raises:
+            OSError: If the rename/copy fails for reasons other than a cross-device move.
+        """
         qdir = path_utils.PDF_DIR / "_processing"
         qdir.mkdir(parents=True, exist_ok=True)
         target = qdir / source.name
@@ -219,7 +256,19 @@ class PdfImportService:
         return target
 
     def _ensure_state(self, pdf_file: "RawPdfFile"):
-        """Ensure PDF file has a state object."""
+        """
+        Ensure a RawPdfFile has an associated RawPdfState and return it.
+        
+        If the PDF already has a state, that state is returned. If not and the PDF exposes
+        get_or_create_state(), a new state is created, assigned to pdf_file.state and
+        to this service's current_pdf_state, and then returned.
+        
+        Parameters:
+            pdf_file (RawPdfFile): PDF model instance to ensure state for.
+        
+        Returns:
+            RawPdfState: The associated state instance.
+        """
         if getattr(pdf_file, "state", None):
             return pdf_file.state
         if hasattr(pdf_file, "get_or_create_state"):
@@ -232,10 +281,10 @@ class PdfImportService:
 
     def _ensure_report_reading_available(self):
         """
-        Ensure report reading modules are available by adding lx-anonymizer to path.
-
+        Ensure the lx_anonymizer ReportReader class can be imported, attempting to use LX_ANONYMIZER_PATH if needed and caching the result.
+        
         Returns:
-            Tuple of (availability_flag, ReportReader_class)
+            (available, ReportReader): `available` is `True` and `ReportReader` is the class when import succeeds; `False` and `None` otherwise.
         """
         if self._report_reader_available is not None:
             return self._report_reader_available, self._report_reader_class
@@ -280,12 +329,15 @@ class PdfImportService:
 
     def _ensure_default_patient_data(self, pdf_instance: "RawPdfFile") -> None:
         """
-        Ensure PDF has minimum required patient data in SensitiveMeta.
-        Creates default values if data is missing after text processing.
-        Uses the central PDF instance if no specific instance provided.
-
-        Args:
-            pdf_instance: Optional specific PDF instance, defaults to self.current_pdf
+        Ensure the PDF has a SensitiveMeta populated with minimum patient data.
+        
+        If the PDF has no SensitiveMeta, create and attach a default SensitiveMeta containing
+        patient_first_name, patient_last_name, patient_dob, examination_date (set to today),
+        and center_name.
+        
+        Parameters:
+            pdf_instance (RawPdfFile | None): PDF instance to update; if falsy, uses
+                self.current_pdf.
         """
         pdf_file = pdf_instance or self.current_pdf
         if not pdf_file:
@@ -333,24 +385,18 @@ class PdfImportService:
         retry: bool = False,
     ) -> "RawPdfFile | None":
         """
-        Import a PDF file and anonymize it using ReportReader.
-        Uses centralized PDF instance management pattern.
-
-        The processing mode is determined by the service initialization:
-        - 'blackening': Creates an anonymized PDF with black rectangles over sensitive regions
-        - 'cropping': Advanced mode that crops sensitive regions to separate images
-
-        Args:
-            file_path: Path to the PDF file to import
-            center_name: Name of the center to associate with PDF
-            delete_source: Whether to delete the source file after import
-            retry: Whether this is a retry attempt
-
+        Import a PDF, extract text and metadata, anonymize it according to the service's processing mode, and return the associated RawPdfFile.
+        
+        Processing mode configured on the service ('blackening' or 'cropping') controls the anonymization output (masked PDF or cropped regions). The method handles creating or reusing a RawPdfFile instance, applying extracted text and metadata, attaching any generated anonymized PDF, and updating processing state.
+        
+        Parameters:
+            file_path (Union[Path, str]): Path to the PDF file to import.
+            center_name (str): Name of the center to associate with the PDF.
+            delete_source (bool): If True, delete the original source file after successful import.
+            retry (bool): If True, attempt to reprocess an existing RawPdfFile instance (useful when a previous import left the PDF partially processed).
+        
         Returns:
-            RawPdfFile instance after import and processing
-
-        Raises:
-            Exception: On any failure during import or processing
+            RawPdfFile | None: The persisted RawPdfFile instance after processing, or `None` if the file was skipped.
         """
         try:
             # Initialize processing context
@@ -406,7 +452,18 @@ class PdfImportService:
         delete_source: bool,
         retry: bool,
     ):
-        """Initialize the processing context for the current PDF."""
+        """
+        Prepare internal processing context for importing a PDF and mark the file as the current original path.
+        
+        Parameters:
+            file_path (Path | str): Path to the PDF being imported.
+            center_name (str): Name of the center associated with the PDF.
+            delete_source (bool): Whether the original source file should be deleted after successful processing.
+            retry (bool): Whether this invocation is a retry attempt for an existing PDF.
+        
+        Raises:
+            ValueError: If the file is already being processed in the current session.
+        """
         self.processing_context = {
             "file_path": Path(file_path),
             "original_file_path": Path(file_path),
@@ -431,7 +488,11 @@ class PdfImportService:
         logger.info(f"Starting import and processing for: {file_path}")
 
     def _validate_and_prepare_file(self):
-        """Validate file existence and calculate hash."""
+        """
+        Ensure the configured file exists and compute its SHA256 hash.
+        
+        Checks that the Path stored in self.processing_context["file_path"] exists and stores its SHA256 digest in self.processing_context["file_hash"]. If hash computation fails, stores None in "file_hash". Raises FileNotFoundError when the file is missing.
+        """
         file_path = self.processing_context["file_path"]
 
         if not file_path.exists():
@@ -444,7 +505,19 @@ class PdfImportService:
             self.processing_context["file_hash"] = None
 
     def _create_or_retrieve_pdf_instance(self):
-        """Create new or retrieve existing PDF instance."""
+        """
+        Ensure self.current_pdf is set to a RawPdfFile corresponding to the current processing context, creating a new database instance when necessary or reusing an existing one.
+        
+        This will:
+        - Use a file lock (when not retrying) to avoid duplicate creation.
+        - If a matching PDF already exists and has extracted text, use it and return early.
+        - If a matching PDF exists but has not been processed, attempt a reprocess path.
+        - On retry, retrieve the existing RawPdfFile by pdf_hash instead of creating a new one.
+        - Handle race conditions by falling back to an existing instance when an IntegrityError occurs.
+        
+        Raises:
+            RuntimeError: If creation completes without producing a RawPdfFile instance.
+        """
         file_path = self.processing_context["file_path"]
         center_name = self.processing_context["center_name"]
         delete_source = self.processing_context["delete_source"]
@@ -510,7 +583,17 @@ class PdfImportService:
                 raise
 
     def _setup_processing_environment(self):
-        """Setup processing environment and state."""
+        """
+        Prepare the processing environment for the current PDF and initialize its processing state.
+        
+        Creates a sensitive copy of the PDF (if an original path is available), updates processing_context keys
+        ("file_path", "sensitive_copy_created", "sensitive_file_path", "processing_started"), ensures a RawPdfState
+        exists and is marked as processing started, records the file in processed_files to prevent duplicates,
+        and ensures default patient SensitiveMeta is present on the PDF.
+        
+        Raises:
+            RuntimeError: If no current PDF can be resolved from the known file hash.
+        """
         original_path = self.processing_context.get("file_path")
         if not original_path or not self.current_pdf:
             try:
@@ -548,7 +631,14 @@ class PdfImportService:
         self._ensure_default_patient_data(self.current_pdf)
 
     def _process_text_and_metadata(self):
-        """Process text extraction and metadata using ReportReader."""
+        """
+        Orchestrates text extraction and metadata processing for the current PDF using the ReportReader.
+        
+        This ensures a ReportReader implementation is available, instantiates it with storage and locale settings,
+        and delegates work to the mode-specific handlers (_process_with_cropping or _process_with_blackening).
+        On missing ReportReader or missing current PDF/file the function marks the processing as incomplete with
+        an appropriate reason. On processing exceptions it marks the processing incomplete with reason "text_processing_failed".
+        """
         report_reading_available, ReportReaderCls = self._ensure_report_reading_available()
         try:
             assert ReportReaderCls is not None and report_reading_available
@@ -590,7 +680,14 @@ class PdfImportService:
             self._mark_processing_incomplete("text_processing_failed")
 
     def _process_with_blackening(self, report_reader):
-        """Process PDF using simple blackening/masking mode."""
+        """
+        Run the report reader in blackening mode to extract text and metadata and produce an anonymized PDF, then apply and record the results on the current PDF.
+        
+        This method invokes the provided report_reader to obtain original text, anonymized text, extracted metadata, and a path to a pre-generated anonymized PDF. It stores these results in the service's processing_context, applies text and metadata to the current PDF, attaches the anonymized PDF to the PDF record, and sets processing flags indicating which steps completed.
+        
+        Parameters:
+            report_reader: An object implementing the report reading interface (expected to provide a `process_report` method) used to process the current PDF.
+        """
         logger.info("Using simple PDF blackening mode...")
 
         # Setup anonymized directory
@@ -637,7 +734,15 @@ class PdfImportService:
         logger.info("PDF blackening processing completed")
 
     def _process_with_cropping(self, report_reader):
-        """Process PDF using advanced cropping mode (existing implementation)."""
+        """
+        Run the advanced cropping workflow for the current PDF and persist results into the service state.
+        
+        Invokes the provided report_reader to perform cropping-based processing for the PDF located at processing_context["file_path"]. Creates required output directories under PDF_DIR ("cropped_regions" and "anonymized"), stores the returned original text, anonymized text, extracted metadata, cropped region descriptors, and anonymized PDF path into processing_context, and applies results to the current PDF state. When present, extracted text, metadata, and anonymized PDF are applied via the service's _apply_text_results, _apply_metadata_results, and _apply_anonymized_pdf helpers and corresponding processing_context flags ("text_extracted", "metadata_processed", "anonymization_completed") are set.
+        
+        Parameters:
+            report_reader: An object that exposes process_report_with_cropping(pdf_path, crop_sensitive_regions, crop_output_dir, anonymization_output_dir) and returns a tuple (original_text, anonymized_text, extracted_metadata, cropped_regions, anonymized_pdf_path).
+        
+        """
         logger.info("Using advanced cropping mode...")
 
         # Setup output directories
@@ -687,7 +792,11 @@ class PdfImportService:
         logger.info("PDF cropping processing completed")
 
     def _apply_text_results(self):
-        """Apply text extraction results to the PDF instance."""
+        """
+        Apply extracted text results from the processing context to the current PDF instance.
+        
+        Assigns the value of "original_text" from processing_context to self.current_pdf.text. If "anonymized_text" is present and differs from the original text, marks the PDF as anonymized by setting self.current_pdf.anonymized = True. If there is no current PDF or no original text in the context, the method makes no changes.
+        """
         if not self.current_pdf:
             logger.warning("Cannot apply text results - no PDF instance available")
             return
@@ -709,7 +818,19 @@ class PdfImportService:
             logger.info("PDF text anonymization completed")
 
     def _apply_metadata_results(self):
-        """Apply metadata extraction results to SensitiveMeta."""
+        """
+        Apply extracted metadata to the current PDF's SensitiveMeta fields.
+        
+        Reads `extracted_metadata` from the processing context and maps known extraction keys to
+        SensitiveMeta attributes. Date-like fields are parsed with `_parse_date_field`; string
+        placeholders (where the extracted value equals the metadata key) are ignored. Fields are
+        updated only if the service is configured to allow metadata overwrites (`allow_meta_overwrite`)
+        or if the existing value is considered a placeholder via `_is_placeholder_value`. If any
+        fields are changed the SensitiveMeta is saved and the updated field names are logged.
+        
+        Early exits occur when there is no current PDF, no SensitiveMeta on the PDF, or no extracted
+        metadata available.
+        """
         if not self.current_pdf:
             logger.warning("Cannot apply metadata results - no PDF instance available")
             return
@@ -806,13 +927,9 @@ class PdfImportService:
     # from gc-08
     def _apply_anonymized_pdf(self):
         """
-        Attach the already-generated anonymized PDF without copying bytes.
-
-        We do NOT re-upload or re-save file bytes via Django storage (which would
-        place a new file under upload_to='raw_pdfs' and retrigger the watcher).
-        Instead, we point the FileField to the path that the anonymizer already
-        wrote (ideally relative to STORAGE_DIR). Additionally, we make sure the
-        model/state reflect that anonymization is done even if text didn't change.
+        Attach a pre-generated anonymized PDF to the current RawPdfFile and mark the PDF as anonymized.
+        
+        Sets the PDF instance's FileField to point at the anonymized file (preferring a path relative to STORAGE_DIR when possible), ensures the instance's anonymized flag and processing state reflect completion, and saves those changes. If there is no current PDF, no anonymized path in the processing context, or the target file does not exist, the function returns without making changes.
         """
         if not self.current_pdf:
             logger.warning("Cannot apply anonymized PDF - no PDF instance available")
@@ -878,7 +995,11 @@ class PdfImportService:
             logger.warning("Could not set anonymized file reference: %s", e)
 
     def _finalize_processing(self):
-        """Finalize processing and update state."""
+        """
+        Finalize the current PDF processing run by updating related state and persisting changes.
+        
+        Updates the associated RawPdfState based on processing_context flags (e.g., mark anonymized when text was extracted, mark sensitive metadata processed when anonymization completed), saves the current PDF and its state inside a database transaction, and emits informational logs about completion or failure.
+        """
         if not self.current_pdf:
             logger.warning("Cannot finalize processing - no PDF instance available")
             return
@@ -909,7 +1030,18 @@ class PdfImportService:
             logger.warning(f"Failed to finalize processing: {e}")
 
     def _mark_processing_incomplete(self, reason: str):
-        """Mark processing as incomplete with reason."""
+        """
+        Mark the current PDF's processing state as incomplete.
+        
+        Resets processing-related flags on the associated RawPdfState (text_meta_extracted,
+        pdf_meta_extracted, sensitive_meta_processed) and persists the state and the current
+        PDF object. If no current PDF is set, a warning is logged and no action is taken.
+        Any failures during persistence are logged.
+        
+        Parameters:
+            reason (str): Human-readable explanation for why processing is being marked incomplete;
+                included in log messages.
+        """
         if not self.current_pdf:
             logger.warning(
                 f"Cannot mark processing incomplete - no PDF instance available. Reason: {reason}"
@@ -933,10 +1065,12 @@ class PdfImportService:
 
     def _retry_existing_pdf(self, existing_pdf):
         """
-        Retry processing for existing PDF.
-
-        Uses get_raw_file_path() to find the original raw file instead of
-        relying on the file field which may point to a deleted sensitive file.
+        Attempt to retry processing for an existing PDF using its original raw file path.
+        
+        If the original raw file is located via get_raw_file_path() and exists, removes that path from the in-memory processed set (to allow reprocessing) and invokes import_and_anonymize with retry=True using the raw file. If the raw file is missing or an error occurs, sets self.current_pdf to the provided existing_pdf and returns it unchanged.
+        
+        Returns:
+            RawPdfFile: The RawPdfFile instance that will be (or was) processed — either the re-imported PDF result from import_and_anonymize or the original existing_pdf if retry could not proceed.
         """
         try:
             # ✅ FIX: Use get_raw_file_path() to find original file
@@ -974,7 +1108,11 @@ class PdfImportService:
             return existing_pdf
 
     def _cleanup_on_error(self):
-        """Cleanup processing context on error."""
+        """
+        Perform cleanup after a failed PDF processing run and attempt to restore a clean state for future retries.
+        
+        If a PDF instance and its state are available, restore the original raw file for reprocessing when possible, remove stale lock files, and reset processing-related state flags to indicate processing did not complete. Remove any sensitive copy that was created during this run, delete stray PDF files created under the configured PDF directories (including sensitive, anonymized, cropped_regions, and _processing subdirectories), and remove empty subdirectories where appropriate. Also ensure the in-memory processed_files tracking is cleared for the current file and log a summary of remaining file counts for diagnostic purposes.
+        """
         original_path = self.original_path
         try:
             if self.current_pdf and hasattr(self.current_pdf, "state"):
@@ -1173,7 +1311,11 @@ class PdfImportService:
                 pass
 
     def _cleanup_processing_context(self):
-        """Cleanup processing context."""
+        """
+        Clean up processing context and reset internal state after a processing attempt.
+        
+        If text was extracted, attempts to remove an empty cropped regions directory. Always removes the current processing file path from the in-memory processed_files set (if present). Any cleanup errors are logged and do not propagate. Finally, clears the current PDF reference and resets the processing_context dictionary.
+        """
         try:
             # Clean up temporary directories
             if self.processing_context.get("text_extracted"):
@@ -1198,16 +1340,15 @@ class PdfImportService:
         self, file_path: Union[Path, str], center_name: str, delete_source: bool = False
     ) -> "RawPdfFile":
         """
-        Simple PDF import without text processing or anonymization.
-        Uses centralized PDF instance management pattern.
-
-        Args:
-            file_path: Path to the PDF file to import
-            center_name: Name of the center to associate with PDF
-            delete_source: Whether to delete the source file after import
-
+        Import a PDF file into the system without performing text extraction or anonymization.
+        
+        Parameters:
+            file_path (Union[Path, str]): Path to the PDF file to import.
+            center_name (str): Name of the center to associate with the created PDF record.
+            delete_source (bool): If True, delete the source file after a successful import.
+        
         Returns:
-            RawPdfFile instance after basic import
+            RawPdfFile: The created RawPdfFile instance representing the imported PDF.
         """
         try:
             # Initialize simple processing context
@@ -1262,13 +1403,19 @@ class PdfImportService:
         self, file_path: Union[Path, str], storage_root, min_required_space
     ) -> bool:
         """
-        Check if there is sufficient storage capacity for the PDF file.
-
-        Args:
-            file_path: Path to the PDF file to check
-
+        Determine whether there is enough free space under storage_root to store the given PDF file.
+        
+        Parameters:
+            file_path (Path | str): Path to the local PDF file to check.
+            storage_root (str | Path): Filesystem root or directory whose available space will be checked.
+            min_required_space (int | Any): Optional minimum required free bytes; currently not used by the check.
+        
+        Returns:
+            True if the file size is less than or equal to the available free space.
+        
         Raises:
-            InsufficientStorageError: If there is not enough space
+            FileNotFoundError: If file_path does not exist.
+            endoreg_db.exceptions.InsufficientStorageError: If there is not enough free space to store the file.
         """
         import shutil
 
@@ -1303,11 +1450,16 @@ class PdfImportService:
         self, pdf_instance: "RawPdfFile", file_path: Union[Path, str]
     ) -> None:
         """
-        Create a copy of the PDF file in the sensitive directory and update the file reference.
-        Delete the source path to avoid duplicates.
-        Uses the central PDF instance and processing context if parameters not provided.
-
-        Ensures the FileField points to the file under STORAGE_DIR/pdfs/sensitive and never back to raw_pdfs.
+        Create a sensitive copy of the given PDF and update the PDF model to reference it.
+        
+        Creates or moves the file into the sensitive storage directory (PDF_DIR / "sensitive") using the PDF's pdf_hash as the filename, updates the PDF instance's FileField to point to the path relative to STORAGE_DIR when possible, and removes the original ingress file to avoid duplicate processing. If the sensitive target already exists it will be replaced; if the source already resides at the target location the FileField is still validated and updated if necessary.
+        
+        Parameters:
+            pdf_instance (RawPdfFile): The PDF model instance to update.
+            file_path (Path | str): Path to the source PDF file to copy/move into sensitive storage.
+        
+        Raises:
+            ValueError: If no PDF instance is provided or no source file path can be determined.
         """
         pdf_file = pdf_instance or self.current_pdf
         source_path = (
@@ -1389,17 +1541,18 @@ class PdfImportService:
         is_pdf_problematic: bool,
     ) -> bool:
         """
-        Archive or quarantine file based on the state of the PDF processing.
-        Uses the central PDF instance and processing context if parameters not provided.
-
-        Args:
-            pdf_instance: Optional PDF instance, defaults to self.current_pdf
-            source_file_path: Optional source file path, defaults to processing_context['file_path']
-            quarantine_reason: Optional quarantine reason, defaults to processing_context['error_reason']
-            is_pdf_problematic: Optional override for problematic state
-
+        Decide whether to quarantine or archive a PDF file and perform the chosen action.
+        
+        If the PDF is considered problematic, the function moves the source file to the quarantine directory and records the quarantine reason on the PDF instance; otherwise it moves the file to the processed archive directory. Raises ValueError if no PDF instance or no source file path is available.
+        
+        Parameters:
+            pdf_instance (RawPdfFile): The PDF model instance to update; if None, uses the service's current_pdf.
+            source_file_path (Path | str): Path to the source file to move; if None, uses processing_context['file_path'].
+            quarantine_reason (str): Reason to record when quarantining the PDF.
+            is_pdf_problematic (bool): When provided, overrides the PDF instance's problematic flag to determine action.
+        
         Returns:
-            bool: True if file was quarantined, False if archived successfully
+            bool: `True` if the file was quarantined (or treated as quarantined on failure), `False` if archived successfully.
         """
         pdf_file = pdf_instance or self.current_pdf
         file_path = (
@@ -1458,7 +1611,16 @@ class PdfImportService:
                 return False
     
     def _is_placeholder_value(self, field_name: str, value) -> bool:
-        """Return True if a SensitiveMeta field still has a dummy/default value."""
+        """
+        Determine whether a SensitiveMeta field contains a placeholder or default value.
+        
+        Parameters:
+            field_name (str): Name of the SensitiveMeta field being checked (e.g., "patient_dob", "examination_date").
+            value: The field's current value; may be None, a string, or a date.
+        
+        Returns:
+            True if the value is considered a placeholder or default, False otherwise.
+        """
         if value is None:
             return True
 
@@ -1477,4 +1639,3 @@ class PdfImportService:
                 return True
 
         return False
-

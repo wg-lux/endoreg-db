@@ -14,21 +14,19 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True)
 def process_upload_job(self, job_id: str) -> dict:
     """
-    Process an uploaded file (PDF or video) asynchronously.
+    Process an UploadJob's file (PDF or video) and create or associate a SensitiveMeta.
     
-    This task:
-    1. Updates job status to 'processing'
-    2. Determines file type and routes to appropriate processor
-    3. For PDFs: Uses ReportReader to extract metadata and create SensitiveMeta
-    4. For videos: Uses VideoFile.create_from_file_initialized() and processing pipeline
-    5. Links the created SensitiveMeta to the job and marks as 'anonymized'
-    6. On error: marks job as 'error' with details
+    This updates the UploadJob status as it proceeds: marks the job as processing, routes the file
+    to the PDF or video processor, and on success marks the job completed with the created
+    SensitiveMeta. On any failure the job is marked as error and an error description is returned.
     
-    Args:
-        job_id: UUID string of the UploadJob to process
-        
+    Parameters:
+        job_id (str): UUID of the UploadJob to process.
+    
     Returns:
-        dict: Processing result with status and details
+        dict: Result of processing:
+            - {'status': 'anonymized', 'sensitive_meta_id': <id>, 'job_id': <job_id>} on success.
+            - {'status': 'error', 'error': '<message>'} on failure.
     """
     try:
         # Get the upload job
@@ -94,14 +92,22 @@ def process_upload_job(self, job_id: str) -> dict:
 
 def _process_pdf_file(upload_job: UploadJob, file_path: str) -> Optional[SensitiveMeta]:
     """
-    Process a PDF file using ReportReader.
+    Extract sensitive metadata from a PDF file and create a SensitiveMeta record.
     
-    Args:
-        upload_job: The UploadJob instance
-        file_path: Path to the uploaded PDF file
-        
+    This function processes the PDF at file_path, converts extracted metadata into a SensitiveMeta,
+    saves it to the database, and returns the created instance.
+    
+    Parameters:
+        upload_job (UploadJob): The UploadJob associated with this file (used for context).
+        file_path (str): Filesystem path to the PDF to process.
+    
     Returns:
-        SensitiveMeta instance if successful, None otherwise
+        SensitiveMeta: The created SensitiveMeta instance built from the PDF's extracted metadata.
+    
+    Raises:
+        ImportError: If the required `lx_anonymizer` library (ReportReader) is not available.
+        ValueError: If no metadata could be extracted from the PDF.
+        Exception: Propagates other unexpected errors encountered during processing.
     """
     try:
         # Import ReportReader (lazy import to avoid startup issues)
@@ -143,14 +149,18 @@ def _process_pdf_file(upload_job: UploadJob, file_path: str) -> Optional[Sensiti
 
 def _process_video_file(upload_job: UploadJob, file_path: str) -> Optional[SensitiveMeta]:
     """
-    Process a video file using VideoFile creation and processing pipeline.
+    Process a video file to extract or produce sensitive metadata and associate it with the video.
     
-    Args:
-        upload_job: The UploadJob instance
-        file_path: Path to the uploaded video file
-        
+    Parameters:
+        upload_job (UploadJob): Upload job owning the file; used for context but not modified.
+        file_path (str): Absolute path to the uploaded video file on disk.
+    
     Returns:
-        SensitiveMeta instance if successful, None otherwise
+        SensitiveMeta or None: `SensitiveMeta` if processing produced or an association was created, `None` if no metadata could be produced.
+    
+    Raises:
+        ValueError: If a VideoFile instance cannot be created from the given file_path.
+        Exception: Any unexpected error from the video processing pipeline or model operations is propagated.
     """
     try:
         logger.info(f"Processing video file: {file_path}")

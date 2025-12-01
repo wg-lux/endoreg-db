@@ -21,8 +21,13 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_next_pdf(last_id=None):
         """
-        Retrieves the first available PDF if `last_id` is NOT provided.
-        Otherwise, fetches the next available PDF where `id > last_id`.
+        Selects the next RawPdfFile record, optionally starting after a given id.
+        
+        Parameters:
+            last_id (int | str | None): If provided, finds the first RawPdfFile with id greater than this value; if omitted or None, returns the first available record.
+        
+        Returns:
+            RawPdfFile | None: The matching RawPdfFile instance, or None if no record is found.
         """
         query_filter = {} if last_id is None else {"id__gt": int(last_id)}
         pdf_entry = RawPdfFile.objects.filter(**query_filter).order_by('id').first()
@@ -30,25 +35,37 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def get_pdf_url(self, obj):
         """
-        Returns the absolute URL for accessing the anonymized text PDF endpoint for the given object.
+        Builds the absolute URL for the anonymized-text PDF for the given object.
         
-        If the request context or file is missing, returns None.
+        Returns the absolute URL for the anonymized-text PDF endpoint using the serializer's request context, or `None` if the context has no request or the object has no associated file.
+        
+        Returns:
+            str or None: Absolute URL string for the anonymized-text PDF, or `None` if unavailable.
         """
         request = self.context.get('request')
         return request.build_absolute_uri(f"/pdf/anony_text/?id={obj.id}") if request and obj.file else None
 
     def get_file(self, obj):
         """
-        Retrieves the relative file path of the PDF from the model instance.
+        Return the model instance's relative file path for its stored PDF.
+        
+        Parameters:
+            obj (RawPdfFile): Model instance containing the file field.
         
         Returns:
-            The relative file path as a string, or None if no file is associated.
+            str or None: The relative file path (obj.file.name) stripped of surrounding whitespace, or None if no file is associated.
         """
         return str(obj.file.name).strip() if obj.file else None  
 
     def get_full_pdf_path(self, obj):
         """
-        Constructs the full absolute file path using `settings.MEDIA_ROOT`.
+        Return the absolute filesystem path to the given object's file if that file exists on disk.
+        
+        Parameters:
+            obj (RawPdfFile): Model instance with a FileField/Field-like `.file` attribute whose `.name` is a relative media path.
+        
+        Returns:
+            str or None: Absolute path to the file under `settings.MEDIA_ROOT` if the file exists, `None` if the object has no file or the file path does not exist.
         """
         if not obj.file:
             return None
@@ -58,10 +75,13 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def validate_anonymized_text(self, value):
         """
-        Validates that the anonymized text is non-empty and does not exceed 5000 characters.
+        Validate anonymized_text is non-empty and at most 5000 characters.
         
         Raises:
-            serializers.ValidationError: If the text is empty or exceeds the length limit.
+            serializers.ValidationError: If the text is empty after stripping whitespace or longer than 5000 characters.
+        
+        Returns:
+            str: The validated anonymized text.
         """
         if not value.strip():
             raise serializers.ValidationError("Anonymized text cannot be empty.")
@@ -72,9 +92,9 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """
-        Update the `anonymized_text` field of a RawPdfFile instance with validated data.
+        Update the instance's anonymized_text with the provided validated data.
         
-        Only the `anonymized_text` field is modified; all other fields remain unchanged.
+        Only the 'anonymized_text' field is changed; other fields remain unchanged.
         
         Returns:
             The updated RawPdfFile instance.
@@ -82,4 +102,3 @@ class RawPdfAnonyTextSerializer(serializers.ModelSerializer):
         instance.anonymized_text = validated_data.get('anonymized_text', instance.anonymized_text)
         instance.save()
         return instance
-

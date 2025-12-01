@@ -33,6 +33,11 @@ FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 class RawPdfFileModelTest(TestCase):
     def setUp(self):  
+        """
+        Prepare test fixtures and create a test RawPdfFile instance.
+        
+        Loads required lookup and fixture data (gender, disease, event, information source, examination, center, endoscope), creates a default EGD RawPdfFile which triggers related processing (including creation of its SensitiveMeta), and assigns the refreshed database-backed instance to self.raw_pdf_file.
+        """
         load_gender_data()
         load_disease_data()
         load_event_data()

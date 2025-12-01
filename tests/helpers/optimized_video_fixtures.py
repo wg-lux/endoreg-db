@@ -88,7 +88,27 @@ def _cache_pop(key: str) -> None:
 
 
 def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
-    """Capture immutable info so stub videos can be rebuilt after DB flush."""
+    """
+    Create a serializable payload of immutable VideoFile attributes used to recreate a lightweight stub after a database flush.
+    
+    Parameters:
+        video (VideoFile): The source VideoFile from which immutable fields are extracted.
+    
+    Returns:
+        dict: A mapping with keys:
+            - "uuid": video UUID as a string.
+            - "video_hash": stored video hash.
+            - "original_file_name": original file name or a fallback "segment_stub.mp4".
+            - "raw_file_name": base name of the underlying raw file path or an empty string.
+            - "fps": frames per second as a float (defaults to 25.0 if missing).
+            - "frame_count": frame count as an int (defaults to 0).
+            - "duration": duration in seconds as a float (defaults to 0.0).
+            - "width": video width as an int (defaults to 0).
+            - "height": video height as an int (defaults to 0).
+            - "frame_dir": frame directory path or an empty string.
+            - "center_name": name of the associated center or the default center name.
+            - "processor_name": name of the associated endoscopy processor or the default processor name.
+    """
 
     return {
         "uuid": str(video.uuid),
@@ -107,7 +127,23 @@ def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
 
 
 def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
-    """Recreate a lightweight VideoFile from cached payload data."""
+    """
+    Recreate or retrieve a lightweight VideoFile ORM instance from a cached payload.
+    
+    Constructs a VideoFile from immutable fields in `payload` or returns an existing one with a synthetic empty raw file if the existing record lacks raw data. Ensures referenced Center and EndoscopyProcessor exist (attempting to load seed data and using defaults when necessary).
+    
+    Parameters:
+        payload (Dict[str, Any]): Payload containing video metadata keys:
+            - uuid: UUID of the video
+            - video_hash: Content hash
+            - center_name: Name of the center
+            - processor_name: Optional name of the endoscopy processor
+            - original_file_name, fps, frame_count, duration, width, height, frame_dir: video attributes
+            - raw_file_name: Optional name for a synthetic raw file
+    
+    Returns:
+        VideoFile: The retrieved or newly created VideoFile instance. 
+    """
 
     center = Center.objects.filter(name=payload["center_name"]).first()
     if center is None:
@@ -224,6 +260,25 @@ def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
 class MockVideoState:
     """Mock VideoState for testing."""
     def __init__(self):
+        """
+        Initialize state flags for a mock video processing run.
+        
+        Attributes:
+            frames_extracted (bool): True when frames have been extracted from the video.
+            frames_initialized (bool): True when frame structures have been initialized for processing.
+            frame_count (int|None): Number of frames when known, otherwise None.
+            video_meta_extracted (bool): True when video-level metadata has been extracted.
+            text_meta_extracted (bool): True when textual metadata has been extracted.
+            initial_prediction_completed (bool): True when an initial prediction/inference pass completed.
+            lvs_created (bool): True when low-voltage segments (LVS) or equivalent artifacts were created.
+            frame_annotations_generated (bool): True when per-frame annotations have been produced.
+            sensitive_meta_processed (bool): True when sensitive metadata has been processed/anonymized.
+            anonymized (bool): True when the video has been anonymized.
+            anonymization_validated (bool): True when anonymization has been validated.
+            segment_annotations_created (bool): True when segment-level annotations were created.
+            segment_annotations_validated (bool): True when segment annotations were validated.
+            was_created (bool): True if this mock state object was created (as opposed to loaded).
+        """
         self.frames_extracted = False
         self.frames_initialized = False
         self.frame_count = None
@@ -244,19 +299,40 @@ class MockVideoState:
         pass
         
     def mark_frames_extracted(self, save=True):
-        """Mark frames as extracted."""
+        """
+        Set the video's state flag to indicate frames have been extracted.
+        
+        Parameters:
+            save (bool): Ignored; kept for interface compatibility.
+        """
         self.frames_extracted = True
         
     def mark_anonymized(self, save=True):
-        """Mark video as anonymized."""
+        """
+        Set the video's anonymized flag to True.
+        
+        Parameters:
+            save (bool): Accepted for API compatibility but ignored; the method does not persist the change.
+        
+        """
         self.anonymized = True
         
     def mark_initial_prediction_completed(self, save=True):
-        """Mark initial prediction as completed."""
+        """
+        Set the instance's initial_prediction_completed flag to True.
+        
+        Parameters:
+            save (bool): Optional flag intended to indicate whether the change should be persisted; currently accepted but has no effect.
+        """
         self.initial_prediction_completed = True
         
     def mark_video_meta_extracted(self, save=True):
-        """Mark video metadata as extracted."""
+        """
+        Set the object's video_meta_extracted flag to True.
+        
+        Parameters:
+            save (bool): Optional parameter retained for API compatibility; ignored by this implementation (no persistence is performed).
+        """
         self.video_meta_extracted = True
 
 
@@ -298,7 +374,16 @@ class MockVideoFile:
     def __init__(self, center_name: str = "university_hospital_wuerzburg", 
                  processor_name: str = "olympus_cv_1500"):
         # Set a mock ID for database queries
-        self.id = 999999  # Use a high number to avoid conflicts with real data
+        """
+                 Initialize a lightweight mock VideoFile with optional center and processor names.
+                 
+                 Attempts to resolve real Center and EndoscopyProcessor objects by name; if not found, attaches simple mock objects with the given names. Sets mock identifiers (id, pk, uuid), a synthetic raw_file name and video_hash, an unprocessed state flag, and a MockVideoState instance.
+                 
+                 Parameters:
+                     center_name (str): Name to look up or assign for the video's center.
+                     processor_name (str): Name to look up or assign for the video's endoscopy processor.
+                 """
+                 self.id = 999999  # Use a high number to avoid conflicts with real data
         self.pk = self.id
         self.uuid = uuid.uuid4()
         # Try to get real objects, but create mock ones if they don't exist
@@ -327,7 +412,12 @@ class MockVideoFile:
         
     @property
     def video_meta(self):
-        """Mock video metadata."""
+        """
+        Return a lazily-created mock VideoMeta populated with realistic default values.
+        
+        Returns:
+            video_meta (VideoMeta): A MagicMock conforming to VideoMeta with `duration` (120.0), `fps` (25.0), `width` (1920), and `height` (1080).
+        """
         if self._video_meta is None:
             self._video_meta = MagicMock(spec=VideoMeta)
             self._video_meta.duration = 120.0
@@ -338,7 +428,16 @@ class MockVideoFile:
     
     @property 
     def sensitive_meta(self):
-        """Mock sensitive metadata."""
+        """
+        Return a MagicMock configured to mimic a SensitiveMeta instance.
+        
+        The returned mock has a `state` attribute whose observable properties are:
+        `dob_verified` = True, `names_verified` = True, `is_verified` = True, and
+        `refresh_from_db` is a no-op.
+        
+        Returns:
+            MagicMock: A mock object with `spec=SensitiveMeta` and a populated `state`.
+        """
         if self._sensitive_meta is None:
             self._sensitive_meta = MagicMock(spec=SensitiveMeta)
             # Create a mock state with required attributes
@@ -354,7 +453,25 @@ class MockVideoFile:
                delete_frames_after=False, ocr_frame_fraction=0.001, ocr_cap=10,
                smooth_window_size_s=1, binarize_threshold=0.5, test_run=False, 
                n_test_frames=10, **kwargs):
-        """Mock pipe 1 processing with full parameter compatibility."""
+        """
+               Simulates the first processing pipeline stage, marking the mock video as processed and updating state flags to reflect expected side effects.
+               
+               Parameters:
+                   model_name (str | None): Optional name of the model used for inference; used only for interface compatibility.
+                   model (object | None): Optional model instance used for inference; accepted for compatibility but not executed.
+                   model_meta_version (str | None): Optional model metadata version identifier for compatibility.
+                   delete_frames_after (bool): If True, marks frames as deleted after processing; otherwise frames remain extracted.
+                   ocr_frame_fraction (float): Fraction of frames to sample for OCR metadata extraction (informational for the mock).
+                   ocr_cap (int): Maximum number of frames to run OCR on (informational for the mock).
+                   smooth_window_size_s (float): Temporal smoothing window size in seconds (informational for the mock).
+                   binarize_threshold (float): Threshold used for binarization during preprocessing (informational for the mock).
+                   test_run (bool): If True, indicates a test-mode run; affects nothing beyond interface compatibility.
+                   n_test_frames (int): Number of frames to process in test runs (informational for the mock).
+                   **kwargs: Additional keyword arguments accepted for API compatibility and ignored.
+               
+               Returns:
+                   True if the processing simulation completed and state flags were updated, False otherwise.
+               """
         self.is_processed = True
         # Update state to match successful processing
         if delete_frames_after:
@@ -373,14 +490,24 @@ class MockVideoFile:
         return True
     
     def pipe_2(self):
-        """Mock pipe 2 processing."""
+        """
+        Mark the mock video as anonymized and flag sensitive metadata as processed.
+        
+        Returns:
+            bool: `True` after state flags have been set.
+        """
         # Update state to match successful anonymization
         self.state.anonymized = True
         self.state.sensitive_meta_processed = True
         return True
         
     def test_after_pipe_1(self):
-        """Mock test_after_pipe_1 processing - simulates validation after pipe_1."""
+        """
+        Indicates whether post-pipeline-1 validation succeeded for this mock video.
+        
+        Returns:
+            `True` if validation is considered successful, `False` otherwise.
+        """
         # This method simulates human validation or automated testing after pipe_1
         # For mock objects, we just return True to indicate successful validation
         return True
@@ -390,11 +517,19 @@ class MockVideoFile:
         pass
     
     def delete_with_file(self):
-        """Mock file deletion."""
+        """
+        No-op placeholder that satisfies the VideoFile interface for tests.
+        
+        Intentionally performs no action and does not delete files or modify storage; provided so test doubles expose the same method signature as production objects.
+        """
         pass
     
     def delete(self):
-        """Mock database deletion."""
+        """
+        No-op placeholder that mimics deleting a VideoFile record and its file.
+        
+        This method intentionally performs no action and exists to satisfy the VideoFile interface in mock objects so callers can invoke deletion without side effects.
+        """
         pass
 
 class OptimizedVideoTestCase:
@@ -410,13 +545,23 @@ class OptimizedVideoTestCase:
         load_base_db_data()
     
     def get_mock_video_file(self) -> MockVideoFile:
-        """Get a lightweight mock video file."""
+        """
+        Return a lightweight mock VideoFile suitable for tests.
+        
+        Returns:
+            MockVideoFile: A mock implementing the VideoFile interface without performing file I/O or disk operations.
+        """
         return MockVideoFile()
     
     def get_cached_video_file(self, cache_key: str = "default_video"):
         """
-        Get a cached video file or create one if expensive tests are enabled.
-        Returns either a MockVideoFile or real VideoFile depending on settings.
+        Provide a cached test video, using a lightweight mock when expensive tests are skipped.
+        
+        Parameters:
+            cache_key (str): Cache key used to store or retrieve the video.
+        
+        Returns:
+            `MockVideoFile` when the environment variable `SKIP_EXPENSIVE_TESTS` is `"true"` (case-insensitive); otherwise a real `VideoFile` instance.
         """
         skip_expensive = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
         
@@ -429,7 +574,12 @@ class OptimizedVideoTestCase:
         )
     
     def _create_real_video_file(self) -> VideoFile:
-        """Create a real video file (expensive operation)."""
+        """
+        Create a real video file for use in tests.
+        
+        Returns:
+            video_file: A real VideoFile instance created using the test default object helper.
+        """
         from tests.helpers.default_objects import get_default_video_file
         return get_default_video_file()
 
@@ -442,7 +592,16 @@ class MockFFmpegOperations:
     
     @staticmethod
     def extract_frames(video_path: str, output_dir: str, **kwargs):
-        """Mock frame extraction."""
+        """
+        Create five mock JPEG frame files in output_dir to simulate frame extraction.
+        
+        Parameters:
+            video_path (str): Source video path (ignored by this mock).
+            output_dir (str): Directory where mock frame files will be created; the directory is created if missing.
+        
+        Returns:
+            bool: `True` after creating five mock frame files named `frame_000001.jpg` through `frame_000005.jpg` in output_dir.
+        """
         # Create mock frame files
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -456,7 +615,14 @@ class MockFFmpegOperations:
     
     @staticmethod
     def anonymize_video(input_path: str, output_path: str, **kwargs):
-        """Mock video anonymization."""
+        """
+        Create a mock anonymized video file at output_path.
+        
+        Creates any missing parent directories and an empty file at output_path, then returns the output path.
+        
+        Returns:
+            output_path (str): The path to the created anonymized video file.
+        """
         # Create mock anonymized video
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(output_path).touch()
@@ -467,7 +633,22 @@ class MockAIInference:
     
     @staticmethod
     def predict_frames(frames_dir: str, model: ModelMeta, **kwargs):
-        """Mock AI model inference on frames."""
+        """
+        Create a mock prediction payload for a sequence of frame images.
+        
+        Parameters:
+            frames_dir (str): Path to the directory containing frame images (not accessed by the mock).
+            model (ModelMeta): Model metadata describing the inference model (used only for signature compatibility).
+            **kwargs: Ignored additional options accepted for compatibility.
+        
+        Returns:
+            dict: A payload with:
+                - `predictions` (list): Five prediction entries, each a dict with:
+                    - `frame` (str): Frame filename (e.g., "frame_000001.jpg").
+                    - `label` (str): Predicted label.
+                    - `confidence` (float): Confidence score between 0 and 1.
+                - `processing_time` (float): Mock processing duration in seconds.
+        """
         return {
             "predictions": [
                 {"frame": f"frame_{i:06d}.jpg", "label": "mock_prediction", "confidence": 0.95}
@@ -489,20 +670,36 @@ def mock_ffmpeg():
 
 @pytest.fixture
 def mock_ai_inference():
-    """Mock AI inference operations to avoid expensive model loading."""
+    """
+    Provide a patched VideoFile.pipe_1 used to simulate AI inference in tests.
+    
+    Returns:
+        The patched `pipe_1` mock configured to return `True` when called.
+    """
     with patch('endoreg_db.models.media.video.video_file.VideoFile.pipe_1') as mock_pipe1:
         mock_pipe1.return_value = True
         yield mock_pipe1
 
 @pytest.fixture
 def lightweight_video_file(base_db_data):
-    """Provide a lightweight video file for testing."""
+    """
+    Provide a lightweight MockVideoFile for tests that require a video-like object.
+    
+    Parameters:
+        base_db_data: pytest fixture ensuring base database data is loaded before the mock is created.
+    
+    Returns:
+        MockVideoFile: A lightweight mock implementing the VideoFile interface without performing file I/O.
+    """
     return MockVideoFile()
 
 @pytest.fixture
 def optimized_video_file(base_db_data):
     """
-    Provide an optimized video file - real if needed, mock if expensive tests are skipped.
+    Return a lightweight mock video when expensive tests are skipped, otherwise return a cached real VideoFile.
+    
+    Returns:
+        MockVideoFile or VideoFile: A MockVideoFile instance if the environment variable `SKIP_EXPENSIVE_TESTS` is set to "true" (case-insensitive); otherwise a real VideoFile retrieved from cache or created for the fixture.
     """
     skip_expensive = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
     
@@ -516,7 +713,12 @@ def optimized_video_file(base_db_data):
         )
 
 def _create_real_video_file_for_fixture():
-    """Helper function to create real video file for fixture."""
+    """
+    Create a real VideoFile instance for use in test fixtures.
+    
+    Returns:
+        VideoFile: A persisted VideoFile populated with default test data for tests.
+    """
     from tests.helpers.default_objects import get_default_video_file
     return get_default_video_file()
 
@@ -526,7 +728,13 @@ def _create_real_video_file_for_fixture():
 
 def optimize_database_for_tests():
     """
-    Apply database optimizations for test performance.
+    Apply SQLite-specific PRAGMA settings to improve test database performance.
+    
+    This function sets several SQLite pragmas (WAL journal mode, NORMAL synchronous,
+    increased cache size, in-memory temp store, and a 64MB mmap size) when the
+    default database engine is SQLite. If the engine is not SQLite the function
+    does nothing. Failures while applying pragmas are caught and printed as a
+    warning.
     """
     from django.db import connection
     
@@ -544,7 +752,15 @@ def optimize_database_for_tests():
 
 def batch_create_objects(model_class, objects_data, batch_size=100):
     """
-    Efficiently create multiple objects using batch operations.
+    Create multiple model instances in bulk using batched inserts.
+    
+    Parameters:
+        model_class: Django model class to instantiate (e.g., MyModel).
+        objects_data (Iterable[dict]): Iterable of keyword-argument dicts for each object to create.
+        batch_size (int): Maximum number of objects to insert per database batch.
+    
+    Returns:
+        list: List of created model instances.
     """
     objects = [model_class(**data) for data in objects_data]
     return model_class.objects.bulk_create(objects, batch_size=batch_size)
@@ -557,16 +773,42 @@ class PerformanceTimer:
     """Simple timer for measuring test performance."""
     
     def __init__(self, name: str = "operation"):
+        """
+        Initialize the timer with an optional human-readable name.
+        
+        Parameters:
+            name (str): Label for the timed operation (default: "operation").
+        
+        Notes:
+            The attributes `start_time` and `end_time` are initialized to None and will be set when timing begins and ends.
+        """
         self.name = name
         self.start_time = None
         self.end_time = None
     
     def __enter__(self):
+        """
+        Enter the timer context and record the start time.
+        
+        Returns:
+            self (PerformanceTimer): the timer instance with its start_time set to the current epoch time.
+        """
         import time
         self.start_time = time.time()
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Record the end time for the timer and print the elapsed duration if a start time exists.
+        
+        Parameters:
+            exc_type (type | None): Exception type propagated from the context block, if any. Ignored by this method.
+            exc_val (BaseException | None): Exception instance propagated from the context block, if any. Ignored by this method.
+            exc_tb (traceback | None): Traceback object propagated from the context block, if any. Ignored by this method.
+        
+        Side effects:
+            Sets self.end_time to the current time and prints a formatted timing message when self.start_time is present.
+        """
         import time
         self.end_time = time.time()
         if self.start_time is not None:
@@ -576,6 +818,12 @@ class PerformanceTimer:
 def measure_test_performance(func):
     """Decorator to measure test performance."""
     def wrapper(*args, **kwargs):
+        """
+        Execute the wrapped function while recording its execution duration with PerformanceTimer.
+        
+        Returns:
+            The wrapped function's return value.
+        """
         with PerformanceTimer(func.__name__):
             return func(*args, **kwargs)
     return wrapper
@@ -585,10 +833,14 @@ def measure_test_performance(func):
 # ==========================================
 
 def cleanup_test_files(directory: str):
-    """Clean up test files and directories."""
+    """
+    Remove a directory and all of its contents if it exists.
+    
+    Parameters:
+        directory (str): Path to the directory to remove. If the path does not exist, the function does nothing. Errors encountered during recursive removal are suppressed.
+    """
     import shutil
     
     dir_path = Path(directory)
     if dir_path.exists():
         shutil.rmtree(dir_path, ignore_errors=True)
-

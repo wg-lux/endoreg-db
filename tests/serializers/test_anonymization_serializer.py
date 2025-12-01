@@ -270,7 +270,11 @@ class TestSensitiveMetaValidateSerializer:
         assert 'file_type' in serializer.errors
     
     def test_all_fields_not_optional(self):
-        """Test that all fields are optional."""
+        """
+        Verify the serializer rejects an empty payload when required fields are missing.
+        
+        Asserts that validation fails for an empty input dictionary.
+        """
         data = {}
         
         serializer = SensitiveMetaValidateSerializer(data=data)

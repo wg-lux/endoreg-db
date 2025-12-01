@@ -466,7 +466,16 @@ class DummyVideoFile:
 
 @pytest.fixture
 def patch_env(monkeypatch, tmp_path):
-    """Prepare isolated environment."""
+    """
+    Prepare an isolated test environment by injecting dummy models, directories, and data path mappings.
+    
+    Parameters:
+        monkeypatch: pytest.MonkeyPatch — fixture used to set attributes and replace modules for the test.
+        tmp_path (pathlib.Path): Temporary directory root used to create `videos`, `anonym_videos`, and storage directories.
+    
+    Returns:
+        pathlib.Path: The provided temporary root path with created test subdirectories.
+    """
     video_dir = tmp_path / "videos"
     video_dir.mkdir()
     anon_dir = tmp_path / "anonym_videos"

@@ -7,10 +7,7 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 def load_default_ai_model(): 
     """
-    Loads the default AI model into the database using a predefined checkpoint file.
-    
-    This function constructs the path to the default AI model checkpoint and invokes the
-    Django management command `create_multilabel_model_meta` to register the model.
+    Register the project's default AI model in the database using the bundled checkpoint file.
     """
     model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.safetensors"
     # Pass arguments individually to call_command
@@ -22,127 +19,161 @@ def load_default_ai_model():
 
 def load_qualification_data():
     """
-    Loads qualification data into the database using the corresponding Django management command.
+    Load predefined qualification records into the database.
+    
+    Populates the application's qualification reference data required for correct operation by invoking the project's data-loading mechanism.
     """
     call_command("load_qualification_data", )
 
 def load_shift_data():
     """
-    Loads shift data into the database by invoking the corresponding Django management command.
+    Load predefined shift records into the application's database.
+    
+    This populates the reference data for work shifts required by other application components.
     """
     call_command("load_shift_data", )
 
 def load_base_db_data():
     """
-    Loads the base database data by invoking the corresponding Django management command.
+    Load foundational reference data required by the application.
+    
+    Populates the base database with core fixtures used across the project.
     """
     call_command("load_base_db_data", )
 
 def load_information_source():
     """
-    Loads information source data into the database by invoking the corresponding Django management command.
+    Load predefined information source records into the database.
+    
+    Populates the database with the application's information source dataset.
     """
     call_command("load_information_source", )
 
 def load_risk_data():
     """
-    Loads risk data into the database by invoking the corresponding Django management command.
+    Load the predefined risk dataset into the database.
     """
     call_command("load_risk_data", )
 
 def load_center_data():
     """
-    Loads center data into the database by invoking the corresponding Django management command.
+    Load the predefined center dataset into the application's database.
+    
+    This populates the database with the standard set of center records required by the application.
     """
     call_command("load_center_data", )
 
 def load_endoscope_data():
     """
-    Loads endoscope data into the database by invoking the corresponding Django management command.
+    Load predefined endoscope records into the application's database.
+    
+    Populates the database with default endoscope entries required by the application.
     """
     call_command("load_endoscope_data", )
 
 def load_distribution_data():
     """
-    Loads distribution data into the database by invoking the corresponding Django management command.
+    Load predefined distribution reference data into the database.
+    
+    Populates the project's distribution lookup/seed entries required by application features.
     """
     call_command("load_distribution_data", )
 
 def load_gender_data():
     """
-    Loads gender data into the database by invoking the corresponding Django management command.
+    Load predefined gender records into the database.
     """
     call_command("load_gender_data", )
 
 def load_report_reader_flag_data():
     """
-    Loads the report reader flag data into the database using the corresponding management command.
+    Load the predefined report reader flag dataset into the application's database.
+    
+    This populates the set of report reader flags required by the application.
     """
     call_command("load_report_reader_flag_data", )
     
 def load_pdf_type_data():
     """
-    Loads PDF type data into the database by invoking the corresponding Django management command.
+    Load predefined PDF type records into the database.
+    
+    Ensures the application's required PDF type entries are present by executing the project's PDF type data loader.
     """
     call_command("load_pdf_type_data", )
     
 def load_unit_data():
     """
-    Loads unit data into the database by invoking the corresponding Django management command.
+    Populate the application's measurement/unit reference data in the database.
+    
+    This ensures the standard unit lookup entries required by domain models are present.
     """
     call_command("load_unit_data", )
     
 def load_disease_data():
     """
-    Loads disease data into the database using the corresponding Django management command.
+    Load predefined disease fixtures into the application's database.
+    
+    Invokes the Django management command `load_disease_data` to populate disease-related records.
     """
     call_command("load_disease_data", )
     
 def load_event_data():
     """
-    Loads event data into the database by invoking the corresponding Django management command.
+    Load predefined event records into the database.
+    
+    Ensures the application's event dataset is populated so dependent data and lookups are available.
     """
     call_command("load_event_data", )
     
 def load_organ_data():
     """
-    Loads organ data into the database by invoking the corresponding Django management command.
+    Load predefined organ reference data into the database.
+    
+    Populates the application's organ-related reference records by executing the corresponding Django management command.
     """
     call_command("load_organ_data", )
     
 def load_contraindication_data():
     """
-    Loads contraindication data into the database using the corresponding management command.
+    Load contraindication records into the application's database.
+    
+    Uses the project's management command to insert the predefined contraindication fixtures required by the application.
     """
     call_command("load_contraindication_data", )
     
 def load_examination_data():
     """
-    Loads examination data into the database using the corresponding Django management command.
+    Load predefined examination records into the database.
+    
+    Populates examination-related lookup and seed data required by the application.
     """
     call_command("load_examination_data", )
     
 def load_lab_value_data():
     """
-    Loads laboratory value data into the database using the corresponding Django management command.
+    Load predefined laboratory value records into the database.
+    
+    Populates the database with the project's standard laboratory value reference data.
     """
     call_command("load_lab_value_data", )
     
 def load_finding_data():
     """
-    Loads finding data into the database by invoking the corresponding Django management command.
+    Load predefined finding records into the application's database.
+    
+    Populates the database with the standard set of finding entries required by the application.
     """
     call_command("load_finding_data", )
     
 def load_examination_indication_data():
     """
-    Loads examination indication data into the database using the corresponding Django management command.
+    Populate the database with predefined examination indication records.
     """
     call_command("load_examination_indication_data", )
     
 def load_medication_data():
     """
-    Loads medication data into the database using the corresponding Django management command.
+    Populate medication reference records used by the application.
     """
     call_command("load_medication_data", )
 
@@ -155,27 +186,33 @@ def load_requirement_data():
 
 def load_ai_model_label_data():
     """
-    Loads AI model label data into the database by invoking the corresponding Django management command.
+    Load predefined AI model label records into the application's database.
+    
+    Invokes the Django management command that inserts the standard set of AI model labels used by the application.
     """
     call_command("load_ai_model_label_data", )
 
 def load_ai_model_data():    
     """
-    Loads AI model data into the database by invoking the corresponding Django management command.
+    Populate the database with predefined AI model records required by the application.
+    
+    This function triggers the Django management command "load_ai_model_data" to perform the import.
     """
     call_command("load_ai_model_data", )
 
 def load_green_endoscopy_wuerzburg_data():
     """
-    Loads the Green Endoscopy Wuerzburg dataset into the database using the corresponding Django management command.
+    Load the Green Endoscopy Wuerzburg dataset into the database.
+    
+    Invokes the Django management command that imports and persists Green Endoscopy Wuerzburg data.
     """
     call_command("load_green_endoscopy_wuerzburg_data", )
 
 def load_data():
     """
-    Loads all predefined data sets into the database in the required sequence.
+    Load all predefined dataset fixtures into the database in the order required by their dependencies.
     
-    Calls individual data loading functions in a specific order to ensure that dependencies between data sets are respected.
+    Calls the module-level loader functions in a fixed sequence so records that other datasets depend on are created before their dependents.
     """
     
     load_information_source()

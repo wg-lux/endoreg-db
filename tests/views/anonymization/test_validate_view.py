@@ -38,7 +38,12 @@ class TestAnonymizationValidateView:
            
     @pytest.fixture
     def factory(self) -> APIRequestFactory:
-        """Create APIRequestFactory."""
+        """
+        Create and return a Django REST Framework APIRequestFactory for use in tests.
+        
+        Returns:
+            APIRequestFactory: A new factory instance for constructing DRF requests.
+        """
         return APIRequestFactory()
 
     @pytest.fixture
@@ -263,6 +268,18 @@ class TestAnonymizationValidateView:
         }
 
         def check_is_verified(payload):
+            """
+            Validate that the payload indicates a verified state.
+            
+            Parameters:
+            	payload (dict): Mapping expected to contain the key "is_verified".
+            
+            Returns:
+            	True if the payload's "is_verified" value is exactly True.
+            
+            Raises:
+            	AssertionError: If "is_verified" is missing or not exactly True.
+            """
             assert payload.get("is_verified") is True
             return True
 
@@ -382,7 +399,11 @@ class TestAnonymizationValidateView:
         assert "Video 9999 not found" in error_text
 
     def test_validate_pdf_type_missing_pdf_returns_not_found(self, factory, user):
-        """Explicit PDF requests should not fall back to videos when PDF is missing."""
+        """
+        Verify that validating an explicitly requested PDF that does not exist returns HTTP 404 and does not fall back to video lookup.
+        
+        The test posts a validation payload with "file_type" set to "pdf" for a non-existent file id and asserts the response status is 404 and the returned error message includes "PDF 8888 not found". It also ensures the code does not perform any VideoFile lookup by causing such a lookup to raise if attempted.
+        """
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",

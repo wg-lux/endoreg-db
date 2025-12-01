@@ -58,7 +58,10 @@ class RawPdfState(models.Model):
 
     def __str__(self):
         """
-        Return a string summarizing the RawPdfState instance, including the related PDF file UUID and key processing state flags with timestamps.
+        String summary of the RawPdfState including the related RawPdfFile primary key and key processing flags with timestamps.
+        
+        Returns:
+            str: A human-readable string containing the related RawPdfFile primary key (or `None` if unavailable) and the values of key boolean flags (text/meta extraction, prediction, anonymization states, sensitive meta processed) plus creation and modification timestamps.
         """
         try:
             uuid = self.raw_pdf_file.pk
@@ -79,10 +82,18 @@ class RawPdfState(models.Model):
     @property
     def anonymization_status(self) -> AnonymizationState:
         """
-        Determines the current anonymization workflow status for the PDF processing state.
-
+        Resolve the current anonymization workflow state for this RawPdfState.
+        
+        Determines which AnonymizationState best reflects the object's flags; evaluation gives priority to validated and fully processed indicators before in-progress, failed, started, anonymized, and not-started states.
+        
         Returns:
-            AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
+            AnonymizationState: `VALIDATED` if anonymization has been validated,
+            `DONE_PROCESSING_ANONYMIZATION` if sensitive metadata processing is complete,
+            `PROCESSING_ANONYMIZING` if processing has started, no error is present, and anonymization is not yet complete,
+            `FAILED` if a processing error occurred,
+            `STARTED` if processing has started (but no other higher-priority condition applies),
+            `ANONYMIZED` if the PDF has been anonymized,
+            `NOT_STARTED` otherwise.
         """
         if self.anonymization_validated:
             return AnonymizationState.VALIDATED #  Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
@@ -100,10 +111,10 @@ class RawPdfState(models.Model):
 
     def mark_processing_started(self, *, save: bool = True) -> None:
         """
-        Mark the processing as started and optionally save the updated state.
-
+        Mark this state as having started processing.
+        
         Parameters:
-            save (bool): If True, persist the change to the database immediately. Defaults to True.
+            save (bool): If True, persist the change to the database immediately; if False, only update the in-memory instance. Defaults to True.
         """
         self.processing_started = True
         if save:
@@ -112,10 +123,10 @@ class RawPdfState(models.Model):
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
         """
-        Mark the sensitive metadata processing step as completed for this PDF state.
-
+        Mark this state as having completed sensitive metadata processing.
+        
         Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
+            save (bool): If True, persist the change to the database and update `date_modified`; if False, only set the flag in memory.
         """
         self.sensitive_meta_processed = True
         if save:
@@ -123,10 +134,10 @@ class RawPdfState(models.Model):
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
         """
-        Mark the anonymization as validated for this PDF processing state.
-
+        Mark this state's anonymization as validated.
+        
         Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
+            save: If True, persist the change to the database and update the modification timestamp.
         """
         self.anonymization_validated = True
         if save:
@@ -134,10 +145,10 @@ class RawPdfState(models.Model):
 
     def mark_anonymized(self, *, save: bool = True) -> None:
         """
-        Mark the PDF as anonymized and optionally save the updated state.
-
+        Mark this processing state as anonymized.
+        
         Parameters:
-            save (bool): If True, persist the change to the database immediately. Defaults to True.
+            save (bool): If True, persist the change to the database by updating the anonymized flag and modification timestamp; if False, modify the in-memory object only.
         """
         self.anonymized = True
         if save:
@@ -146,9 +157,9 @@ class RawPdfState(models.Model):
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
         """
         Mark the initial AI prediction step as completed for this PDF processing state.
-
+        
         Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
+            save (bool): If True, persist the change to the database by saving the model (updates `initial_prediction_completed` and `date_modified`).
         """
         self.initial_prediction_completed = True
         if save:
@@ -167,10 +178,10 @@ class RawPdfState(models.Model):
 
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
         """
-        Mark the text metadata extraction step as completed for this PDF processing state.
-
+        Mark this state as having completed text and OCR metadata extraction for the related PDF.
+        
         Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
+            save (bool): If True, persist the change to the database immediately (updates `text_meta_extracted` and `date_modified`).
         """
         self.text_meta_extracted = True
         if save:

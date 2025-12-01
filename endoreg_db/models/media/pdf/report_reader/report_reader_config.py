@@ -39,7 +39,12 @@ class ReportReaderConfig(models.Model):
         cut_off_above = cast(models.manager.RelatedManager["ReportReaderFlag"], cut_off_above)
 
     def __str__(self):
-        """Returns a string representation including the locale and primary key."""
+        """
+        Return a human-readable identifier for this ReportReaderConfig instance.
+        
+        Returns:
+            str: Representation in the form "ReportReaderConfig: {locale} (id: {pk}\n", containing the instance's locale and primary key and ending with a newline.
+        """
         _str = f"ReportReaderConfig: {self.locale} (id: {self.pk}\n"
         return _str
 

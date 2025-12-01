@@ -22,15 +22,18 @@ logger = logging.getLogger(__name__)
 
 def check_storage_capacity(src_path: Path, dst_root: Path, safety_margin: float = 1.2) -> None:
     """
-    Check if there's enough storage space before starting operations.
-
-    Args:
-        src_path: Source file path
-        dst_root: Destination root directory
-        safety_margin: Safety factor (1.2 = 20% extra space required)
-
+    Verify there is sufficient free space under dst_root to accommodate src_path multiplied by safety_margin.
+    
+    Parameters:
+        src_path (Path): Path to the source file whose size determines required space.
+        dst_root (Path): Destination root directory where free space will be checked.
+        safety_margin (float): Multiplier applied to the source file size to compute required space (default 1.2).
+    
     Raises:
-        InsufficientStorageError: If insufficient storage space
+        InsufficientStorageError: If available free space at dst_root is less than the required space.
+    
+    Notes:
+        If an OSError occurs while checking file size or disk usage, the function logs a warning and returns without raising.
     """
     try:
         src_size = src_path.stat().st_size
@@ -55,18 +58,18 @@ def check_storage_capacity(src_path: Path, dst_root: Path, safety_margin: float 
 
 def atomic_copy_with_fallback(src_path: Path, dst_path: Path) -> bool:
     """
-    Atomically copy file from src to dst, preserving the source file.
-
-    Args:
-        src_path: Source file path
-        dst_path: Destination file path
-
+    Copy a file to the given destination atomically (via a temporary '.tmp' file) while preserving the source.
+    
+    Parameters:
+        src_path (Path): Source file path.
+        dst_path (Path): Final destination path; a temporary file is created alongside this path and then renamed.
+    
     Returns:
-        True if successful
-
+        True if the copy completed.
+    
     Raises:
-        InsufficientStorageError: If not enough space for the operation
-        OSError: For other file system errors
+        InsufficientStorageError: If the destination does not have enough free space for the operation.
+        OSError: For other filesystem-related errors during copy or rename.
     """
     try:
         # Check space before copy
@@ -101,18 +104,18 @@ def atomic_copy_with_fallback(src_path: Path, dst_path: Path) -> bool:
 
 def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
     """
-    Atomically move file from src to dst, with fallback to copy+remove.
-
-    Args:
-        src_path: Source file path
-        dst_path: Destination file path
-
+    Atomically move a file from src_path to dst_path, falling back to copy-and-remove when the move crosses filesystems.
+    
+    Parameters:
+        src_path (Path): Source file path to move.
+        dst_path (Path): Destination file path where the file should be placed.
+    
     Returns:
-        True if successful
-
+        bool: `True` if the file was moved to dst_path.
+    
     Raises:
-        InsufficientStorageError: If not enough space for the operation
-        OSError: For other file system errors
+        InsufficientStorageError: If there is not enough free space on the destination for the fallback copy.
+        OSError: For other filesystem-related errors encountered during move, copy, or removal.
     """
     try:
         # First try atomic move (same filesystem)
@@ -193,13 +196,26 @@ def _create_from_file(
     **kwargs,
 ) -> "VideoFile":
     """
-    Creates a VideoFile instance from a given video file path with improved error handling.
-
+    Create a VideoFile record from a video file on disk, storing the file under the configured video storage and handling transcoding, deduplication, and safe transfer.
+    
+    Parameters:
+        cls_model (Type[VideoFile]): The VideoFile model class used to query and create records.
+        file_path (Path): Path to the source video file to import.
+        center_name (str): Name of the Center to associate with the new VideoFile.
+        processor_name (Optional[str]): Name of the EndoscopyProcessor to associate, or None to leave unset.
+        video_dir (Path): Base directory for final video storage (resolved against configured data paths).
+        save (bool): If True, save the created VideoFile instance to the database.
+        delete_source (bool): If True, remove the original source (or transcoded) file after transferring to final storage.
+        **kwargs: Additional keyword arguments ignored by this helper and forwarded where appropriate.
+    
+    Returns:
+        VideoFile: The created (and optionally saved) VideoFile instance with its raw_file path set relative to the configured storage root.
+    
     Raises:
-        InsufficientStorageError: When not enough disk space
-        TranscodingError: When video transcoding fails
-        ValueError: When required objects (Center, Processor) not found
-        RuntimeError: For other processing errors
+        InsufficientStorageError: If there is not enough disk space to perform required operations.
+        TranscodingError: If transcoding fails or a required transcoded file cannot be produced.
+        ValueError: If required related objects (Center or EndoscopyProcessor) cannot be found or if a needed hash cannot be computed.
+        RuntimeError: For other processing failures, with cleanup attempted before raising.
     """
     from endoreg_db.models.administration.center.center import Center
     from endoreg_db.models.medical.hardware import EndoscopyProcessor

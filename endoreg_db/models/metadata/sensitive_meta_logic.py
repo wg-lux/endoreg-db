@@ -34,18 +34,13 @@ DE_RX = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 
 def parse_any_date(s: str) -> Optional[date]:
     """
-    Parst Datumsstring mit Priorität auf deutsches Format (DD.MM.YYYY).
-
-    Unterstützte Formate:
-    1. DD.MM.YYYY (Priorität) - deutsches Format
-    2. YYYY-MM-DD (Fallback) - ISO-Format
-    3. Erweiterte Fallbacks über dateparser
-
-    Args:
-        s: Datumsstring zum Parsen
-
+    Parse a date string, preferring German format (DD.MM.YYYY) with ISO (YYYY-MM-DD) and additional fallbacks.
+    
+    Parameters:
+        s (str): Date string to parse; may be empty or malformed.
+    
     Returns:
-        date-Objekt oder None bei ungültigem/fehlendem Input
+        datetime.date: Parsed date when successful, otherwise None.
     """
     if not s:
         return None
@@ -149,7 +144,19 @@ def update_name_db(first_name: Optional[str], last_name: Optional[str]):
 
 
 def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -> str:
-    """Calculates the patient hash for the instance."""
+    """
+    Compute a deterministic anonymized patient identifier for the given SensitiveMeta.
+    
+    Parameters:
+        salt (str): Salt value appended to the hashing input to make the derived identifier environment-specific.
+    
+    Returns:
+        str: SHA-256 hex digest of the derived patient hash string.
+    
+    Raises:
+        ValueError: If the instance is missing patient_dob or center.
+        AssertionError: If patient_first_name or patient_last_name is None.
+    """
     dob = instance.patient_dob
     first_name = instance.patient_first_name
     last_name = instance.patient_last_name
@@ -174,7 +181,20 @@ def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -
 
 
 def calculate_examination_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -> str:
-    """Calculates the examination hash for the instance."""
+    """
+    Compute a deterministic hash representing a specific patient examination.
+    
+    Parameters:
+        instance (SensitiveMeta): SensitiveMeta instance whose patient_first_name, patient_last_name,
+            patient_dob, examination_date, and center.name are used to derive the hash.
+        salt (str): Salt value appended to the hash input to vary output; defaults to module SECRET_SALT.
+    
+    Returns:
+        examination_hash (str): SHA-256 hexadecimal digest of the derived examination hash.
+    
+    Raises:
+        ValueError: If any of patient_dob, examination_date, center, patient_first_name, or patient_last_name is missing.
+    """
     dob = instance.patient_dob
     first_name = instance.patient_first_name
     last_name = instance.patient_last_name
@@ -205,7 +225,18 @@ def calculate_examination_hash(instance: "SensitiveMeta", salt: str = SECRET_SAL
 
 
 def create_pseudo_examiner_logic(instance: "SensitiveMeta") -> "Examiner":
-    """Creates or retrieves the pseudo examiner based on instance data."""
+    """
+    Obtain the pseudo Examiner associated with the given SensitiveMeta instance.
+    
+    If the instance lacks examiner names or a center, a default Examiner using center "endoreg_db_demo"
+    and names "Unknown"/"Unknown" will be returned or created.
+    
+    Returns:
+        An Examiner instance that was retrieved or created for the provided SensitiveMeta.
+    
+    Raises:
+        ValueError: If the default center "endoreg_db_demo" does not exist.
+    """
     first_name = instance.examiner_first_name
     last_name = instance.examiner_last_name
     center = instance.center  # Should be set before calling save
@@ -255,7 +286,19 @@ def get_or_create_pseudo_patient_logic(instance: "SensitiveMeta"):
 def get_or_create_pseudo_patient_examination_logic(
     instance: "SensitiveMeta",
 ):
-    """Gets or creates the pseudo patient examination based on instance data."""
+    """
+    Ensure and return the pseudo patient examination associated with the given SensitiveMeta.
+    
+    This function computes and sets the instance's patient_hash and examination_hash if missing, ensures a linked pseudo_patient exists, and then retrieves or creates the corresponding PatientExamination by hashes. It assigns the pseudo_patient to the instance when created or fetched as a side effect.
+    
+    Parameters:
+        instance (SensitiveMeta): The source SensitiveMeta whose hashes and relations are used.
+    
+    Returns:
+        tuple: (patient_examination, created)
+            - patient_examination (PatientExamination): The retrieved or newly created pseudo examination.
+            - created (bool): `true` if a new PatientExamination was created, `false` otherwise.
+    """
     # Ensure necessary fields are set
     if not instance.patient_hash:
         instance.patient_hash = calculate_patient_hash(instance)
@@ -279,55 +322,16 @@ def get_or_create_pseudo_patient_examination_logic(
 @transaction.atomic  # Ensure all operations within save succeed or fail together
 def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
     """
-    Contains the core logic for preparing a SensitiveMeta instance for saving.
-    Handles data generation (dates), hash calculation, and linking pseudo-entities.
-
-    This function is called on every save() operation and implements a two-phase approach:
-
-    **Phase 1: Initial Creation (with defaults)**
-    - When a SensitiveMeta is first created (e.g., via get_or_create_sensitive_meta()),
-      it may have missing patient data (names, DOB, etc.)
-    - Default values are set to prevent hash calculation errors:
-      * patient_first_name: "unknown"
-      * patient_last_name: "unknown"
-      * patient_dob: random date (1920-2000)
-    - A temporary hash is calculated using these defaults
-    - Temporary pseudo-entities (Patient, Examination) are created
-
-    **Phase 2: Update (with extracted data)**
-    - When real patient data is extracted (e.g., from video OCR via lx_anonymizer),
-      update_from_dict() is called with actual values
-    - The instance fields are updated with real data (names, DOB, etc.)
-    - save() is called again, triggering this function
-    - Default-setting logic is skipped (fields are no longer empty)
-    - Hash is RECALCULATED with real data
-    - New pseudo-entities are created/retrieved based on new hash
-
-    **Example Flow:**
-    ```
-    # Initial creation
-    sm = SensitiveMeta.create_from_dict({"center": center})
-    # → patient_first_name = "unknown", patient_last_name = "unknown"
-    # → hash = sha256("unknown unknown 1990-01-01 ...")
-    # → pseudo_patient_temp created
-
-    # Later update with extracted data
-    sm.update_from_dict({"patient_first_name": "Max", "patient_last_name": "Mustermann"})
-    # → patient_first_name = "Max", patient_last_name = "Mustermann" (overwrites)
-    # → save() triggered → perform_save_logic() called again
-    # → Default-setting skipped (names already exist)
-    # → hash = sha256("Max Mustermann 1985-03-15 ...") (RECALCULATED)
-    # → pseudo_patient_real created/retrieved with new hash
-    ```
-
-    Args:
-        instance: The SensitiveMeta instance being saved
-
+    Prepare a SensitiveMeta instance for saving by ensuring required fields (dates, names, gender, center), recalculating patient and examination hashes, and resolving or creating associated pseudo-entities (Patient, PatientExamination, Examiner).
+    
+    Parameters:
+        instance (SensitiveMeta): The SensitiveMeta instance being prepared for save.
+    
     Returns:
-        Examiner: The pseudo examiner instance to be linked via M2M after save
-
+        Examiner: The pseudo examiner instance to be linked via many-to-many after the main save.
+    
     Raises:
-        ValueError: If required fields (center, gender) cannot be determined
+        ValueError: If a required field cannot be determined (e.g., center missing, gender undeterminable).
     """
 
     # --- Pre-Save Checks and Data Generation ---
@@ -433,50 +437,18 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, Any]) -> "SensitiveMeta":
     """
     Create a SensitiveMeta instance from a dictionary.
-
-    **Center handling:**
-    This function accepts TWO ways to specify the center:
-    1. `center` (Center object) - Directly pass a Center instance
-    2. `center_name` (string) - Pass the center name as a string (will be resolved to Center object)
-
-    At least ONE of these must be provided.
-
-    **Example usage:**
-    ```python
-    # Option 1: With Center object
-    data = {
-        "patient_first_name": "Patient",
-        "patient_last_name": "Unknown",
-        "patient_dob": date(1990, 1, 1),
-        "examination_date": date.today(),
-        "center": center_obj,  # ← Center object
-        "text": text #from extraction
-
-    }
-    sm = SensitiveMeta.create_from_dict(data)
-
-    # Option 2: With center name string
-    data = {
-        "patient_first_name": "Patient",
-        "patient_last_name": "Unknown",
-        "patient_dob": date(1990, 1, 1),
-        "examination_date": date.today(),
-        "center_name": "university_hospital_wuerzburg",  # ← String
-        "anonymized_text": "anonymized text"
-    }
-    sm = SensitiveMeta.create_from_dict(data)
-    ```
-
-    Args:
-        cls: The SensitiveMeta class
-        data: Dictionary containing field values
-
+    
+    Parses and normalizes provided fields, resolves the target Center (accepts either a Center object via `center` or a center name string via `center_name`), converts and validates dates and times, resolves or guesses patient Gender, applies defaults for missing names and text, updates name lookup tables, and saves the resulting SensitiveMeta (triggering its custom save logic).
+    
+    Parameters:
+        cls: The SensitiveMeta class (passed implicitly as a classmethod target).
+        data (dict): Input mapping with possible keys including `center` or `center_name`, `patient_first_name`, `patient_last_name`, `patient_dob`, `examination_date`, `patient_gender`, `text`, `file_path`, `casenumber`, `examination_time`, `anonymized_text` (or `anonym_text`), and other model fields.
+    
     Returns:
-        SensitiveMeta: The created instance
-
+        SensitiveMeta: The created and saved SensitiveMeta instance.
+    
     Raises:
-        ValueError: If neither center nor center_name is provided
-        ValueError: If center_name does not match any Center in database
+        ValueError: If neither `center` nor `center_name` is provided, if `center` is not a Center instance, or if `center_name` does not match any Center in the database.
     """
 
     field_names = {f.name for f in cls._meta.get_fields() if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)}
@@ -728,48 +700,19 @@ def create_sensitive_meta_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, 
 
 def update_sensitive_meta_from_dict(instance: "SensitiveMeta", data: Dict[str, Any]) -> "SensitiveMeta":
     """
-    Updates a SensitiveMeta instance from a dictionary of new values.
-
-    **Integration with two-phase save pattern:**
-    This function is typically called after initial SensitiveMeta creation when real
-    patient data becomes available (e.g., extracted from video OCR, PDF parsing, or
-    manual annotation).
-
-    **Example workflow:**
-    ```python
-    # Phase 1: Initial creation with defaults
-    sm = SensitiveMeta.create_from_dict({"center": center})
-    # → patient_first_name = "unknown", hash = sha256("unknown...")
-
-    # Phase 2: Update with extracted data
-    extracted = {
-        "patient_first_name": "Max",
-        "patient_last_name": "Mustermann",
-        "patient_dob": date(1985, 3, 15)
-    }
-    update_sensitive_meta_from_dict(sm, extracted)
-    # → Sets: sm.patient_first_name = "Max", sm.patient_last_name = "Mustermann"
-    # → Calls: sm.save()
-    # → Triggers: perform_save_logic() again
-    # → Result: Hash recalculated with real data, new pseudo-entities created
-    ```
-
-    **Key behaviors:**
-    - Updates instance attributes from provided dictionary
-    - Handles type conversions (date strings → date objects, gender strings → Gender objects)
-    - Tracks patient name changes to update name database
-    - Calls save() at the end, triggering full save logic including hash recalculation
-    - Default-setting in perform_save_logic() is skipped (fields already populated)
-
-    Args:
-        instance: The existing SensitiveMeta instance to update
-        data: Dictionary of field names and new values
-
+    Update a SensitiveMeta instance's fields from a dictionary and persist the changes.
+    
+    Performs type conversions (date strings → date/datetime, gender string → Gender object), accepts center updates via either a Center object or center_name, updates examiner fields, tracks patient name changes to refresh the name lookup tables, and calls instance.save() which triggers the module's full save logic (including hash recalculation and pseudo-entity creation).
+    
+    Parameters:
+        instance: The SensitiveMeta instance to update.
+        data (dict): Mapping of field names to new values; unsupported or excluded foreign-key fields (e.g., pseudo_patient, pseudo_examination) are ignored.
+    
     Returns:
-        The updated SensitiveMeta instance
-
+        The updated SensitiveMeta instance.
+    
     Raises:
-        Exception: If save fails or required conversions fail
+        Exception: Propagates exceptions raised by instance.save() or other critical conversion/save failures.
     """
     field_names = {f.name for f in instance._meta.get_fields() if not f.is_relation or f.one_to_one or (f.many_to_one and f.related_model)}
     # Exclude FKs that should not be updated directly from dict keys (handled separately or via save logic)
@@ -1029,7 +972,15 @@ def update_or_create_sensitive_meta_from_dict(
 
 
 def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
-    """Maps various gender string inputs to standard gender names used in the DB."""
+    """
+    Map a free-form gender string to a standardized gender name used by the database.
+    
+    Parameters:
+        gender_str (str): Free-form gender input; may include different languages, abbreviations, casing, or surrounding whitespace.
+    
+    Returns:
+        standard_gender (Optional[str]): `"male"`, `"female"`, or `"unknown"` when the input matches a known variant; `None` if no match is found.
+    """
     mapping = {
         "male": ["male", "m", "männlich", "man"],
         "female": ["female", "f", "weiblich", "woman"],
@@ -1043,13 +994,14 @@ def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
 
 def _create_anonymized_record(instance: "SensitiveMeta", DEFAULT_ANONYMIZED=None, DEFAULT_ANONYMIZED_DATE=timezone.make_aware(datetime(1900, 1, 1))) -> None:
     """
-    Create a SensitiveMeta instance with all sensitive fields set to anonymized defaults.
-    This is only called after anonymization and will delete all data that can identify a patient from the database.
-    What is left will only be the patient hash.
+    Overwrite a SensitiveMeta record's identifiable fields with anonymized defaults and persist the change.
     
-    Args:
-        instance: The existing SensitiveMeta instance to anonymize
-        DEFAULT_ANONYMIZED: Usually None, The default string to use for anonymized fields (e.g., "anonymized,")
+    Refreshes the instance from the database, ensures patient and examination hashes are (re)computed, replaces patient names and dates with the provided anonymized values, and saves the updated record.
+    
+    Parameters:
+        instance (SensitiveMeta): The SensitiveMeta instance to anonymize.
+        DEFAULT_ANONYMIZED (Optional[str]): String to use for anonymized name fields (default: None).
+        DEFAULT_ANONYMIZED_DATE (datetime): Date/time to use for anonymized date fields (default: 1900-01-01, timezone-aware).
     """
     
     instance.refresh_from_db()

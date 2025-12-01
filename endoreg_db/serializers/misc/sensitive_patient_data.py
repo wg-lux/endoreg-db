@@ -23,15 +23,18 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
     def to_representation(self, instance):
         """
-        Serialize a VideoFile or RawPdfFile instance into a structured dictionary for validation workflows.
+        Serialize a VideoFile or RawPdfFile into the structure consumed by the Pinia validation store.
         
-        Depending on the instance type, constructs a dictionary containing identifiers, sensitive metadata, text summaries, anonymized text, processing status, and error flag. For VideoFile instances, generates a text summary from associated sensitive metadata and anonymizes personal identifiers. For RawPdfFile instances, uses the instance's text fields directly. Raises a TypeError if the instance is neither type.
+        For VideoFile instances, builds a textual summary from associated sensitive metadata and provides an anonymized version with personal identifiers replaced. For RawPdfFile instances, returns the instance text/anonymized_text and a PDF streaming URL.
         
         Parameters:
             instance: A VideoFile or RawPdfFile model instance to serialize.
         
         Returns:
-            dict: A structured representation of the instance suitable for Pinia store consumption.
+            dict: A mapping containing keys such as `id`, `sensitiveMetaId`, `text`, `anonymizedText`, `reportMeta`, `status`, `error`, and—only for PDFs—`pdfStreamUrl`.
+        
+        Raises:
+            TypeError: If `instance` is not a VideoFile or RawPdfFile.
         """
         if isinstance(instance, VideoFile):
             # For videos, we don't have text content in the traditional sense
@@ -98,10 +101,24 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
     def _serialize_sensitive_meta(self, sensitive_meta):
         """
-        Serialize a SensitiveMeta object into a dictionary with patient and examination details.
+        Serialize a SensitiveMeta object into a plain dictionary of patient and examination details.
+        
+        Parameters:
+            sensitive_meta: SensitiveMeta or falsy — the model instance to serialize.
         
         Returns:
-            dict or None: A dictionary containing patient and examination metadata fields, or None if sensitive_meta is not provided.
+            dict or None: A dictionary with keys:
+                - id: primary key of the sensitive_meta
+                - patientFirstName: patient first name or empty string
+                - patientLastName: patient last name or empty string
+                - patientDob: patient's date of birth in ISO format or empty string
+                - patientGender: patient's gender as string or empty string
+                - examinationDate: examination date in ISO format or empty string
+                - centerName: associated center name or empty string
+                - endoscopeType: endoscope type or empty string
+                - endoscopeSn: endoscope serial number or empty string
+                - isVerified: boolean indicating verification status (defaults to False)
+            Returns None if `sensitive_meta` is falsy.
         """
         if not sensitive_meta:
             return None

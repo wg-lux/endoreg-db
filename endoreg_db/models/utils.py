@@ -48,8 +48,16 @@ def prepare_bulk_frames(frame_paths: List[Path]):
 
 def find_segments_in_prediction_array(prediction_array: np.array, min_frame_len: int):
     """
-    Expects a prediction array of shape (num_frames) and a minimum frame length.
-    Returns a list of tuples (start_frame_number, end_frame_number) that represent the segments.
+    Identify consecutive-True segments in a 1D prediction array and return those with length at least min_frame_len.
+    
+    Parameters:
+        prediction_array (np.array): 1D array-like of boolean values where True indicates a predicted frame of interest.
+        min_frame_len (int): Minimum number of consecutive True frames required for a segment to be kept.
+    
+    Returns:
+        segments (list[tuple[int, int]]): List of (start_frame, end_frame) tuples describing segments.
+            start_frame is inclusive and end_frame is exclusive; a segment includes frames
+            start_frame through end_frame - 1. Only segments with (end_frame - start_frame) >= min_frame_len are returned.
     """
     # Add False to the beginning and end to detect changes at the array boundaries
     padded_prediction = np.pad(
@@ -74,7 +82,19 @@ def anonymize_frame(
     raw_frame_path: Path, target_frame_path: Path, endo_roi, all_black: bool = False, censor_color: Tuple[int, int, int] = (0, 0, 0) # Added censor_color param
 ):
     """
-    Anonymize the frame by blacking out pixels outside the endoscope ROI or making the whole frame black.
+    Create an anonymized copy of an image by preserving only the specified endoscope ROI or by filling the entire frame with a solid censor color, and write the result to disk.
+    
+    Parameters:
+        raw_frame_path (Path): Path to the input image file.
+        target_frame_path (Path): Path where the anonymized image will be written.
+        endo_roi (dict): ROI dictionary with integer keys "x", "y", "width", "height" describing the rectangle to preserve when not using full-frame censoring.
+        all_black (bool): If True, the entire output image is filled with `censor_color`. If False, only the ROI is copied from the source and the rest is set to the censor color (default behavior preserves ROI).
+        censor_color (Tuple[int, int, int]): RGB color used to fill censored areas when `all_black` is True (default `(0, 0, 0)`).
+    
+    Raises:
+        FileNotFoundError: If the input image cannot be read from `raw_frame_path`.
+        ValueError: If `endo_roi` is missing any of the required keys "x", "y", "width", or "height".
+        IOError: If writing the anonymized image to `target_frame_path` fails.
     """
     frame = cv2.imread(raw_frame_path.as_posix())
     if frame is None:

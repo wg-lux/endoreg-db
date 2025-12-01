@@ -36,7 +36,11 @@ class AnonymizationOverviewAPITest(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up session-scoped fixtures."""
+        """
+        Prepare the test class by loading session-scoped fixtures into the test database.
+        
+        Loads shared, session-scoped test data so tests in this class can rely on a common, prepopulated database state.
+        """
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
         from .helpers.data_loader import load_base_db_data
@@ -44,7 +48,11 @@ class AnonymizationOverviewAPITest(TestCase):
         load_base_db_data()
 
     def setUp(self):
-        """Set up test data."""
+        """
+        Initialize the test client and create fixtures required by the anonymization overview tests.
+        
+        Creates an API test client, a default test center, a default raw PDF fixture, and a real video file fixture (cached) used by the integration tests.
+        """
         super().setUp()
         self.client = APIClient()
 
@@ -122,7 +130,11 @@ class AnonymizationOverviewAPITest(TestCase):
     @pytest.mark.video
     @pytest.mark.expensive
     def test_overview_mixed_files(self):
-        """Test overview with both video and PDF files."""
+        """
+        Exercise the anonymization overview endpoint with one anonymized video and one raw PDF and validate the returned items.
+        
+        Creates a video, simulates frame extraction, verification, and anonymization, uses an existing non-anonymized PDF, performs GET /api/anonymization/items/overview/, and asserts that exactly two items are returned. Verifies the older item corresponds to the PDF (mediaType "pdf") and the newer item corresponds to the video (mediaType "video") with anonymizationStatus "done_processing_anonymization".
+        """
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest("Skipping mixed files test (requires video processing)")
 

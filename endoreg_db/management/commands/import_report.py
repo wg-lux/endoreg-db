@@ -14,10 +14,12 @@ from icecream import ic
 # Dynamic import path manipulation to ensure local development version is used
 def ensure_local_lx_anonymizer():
     """
-    Checks for a local development version of the lx-anonymizer package and adds it to sys.path if available.
+    Locate a local development copy of lx-anonymizer and prepend it to sys.path when present.
+    
+    If a directory named "lx-anonymizer" exists at the repository root relative to this file, its path is inserted at the front of sys.path and the path is printed.
     
     Returns:
-        True if the local lx-anonymizer directory was found and added to sys.path; False otherwise.
+        True if a local lx-anonymizer directory was found and added to sys.path, False otherwise.
     """
     script_dir = Path(__file__).parent.parent.parent.parent.parent  # /home/admin/dev/lx-annotate/endoreg-db
     local_lx_anonymizer_path = script_dir / "lx-anonymizer"
@@ -52,9 +54,17 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         """
-        Defines command-line arguments for the import_report management command.
+        Configure command-line arguments for the import_report management command.
         
-        Adds options for specifying the report file path, center name, report directory, deletion and save behavior, and controls for initializing the Ollama LLM service.
+        Adds the positional `file_path` argument and options to control processing and environment:
+        - --verbose: enable verbose output
+        - --center_name: center to associate with the imported report (default "university_hospital_wuerzburg")
+        - --report_dir_root: root directory for report files (default "~/test-data/db_report_dir")
+        - --delete_source: remove the source report file after successful import
+        - --save: persist the created report object to the database
+        - --start_ollama: start the Ollama LLM server for additional processing
+        - --ollama_debug: enable Ollama debug mode
+        - --ollama_timeout: time in seconds to wait for Ollama to start (default 30)
         """
         parser.add_argument(
             "--verbose",

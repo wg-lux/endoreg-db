@@ -70,16 +70,40 @@ class Patient(Person):
         def diseases(self) -> RelatedManager[PatientDisease]: ...
 
         @property
-        def patient_examinations(self) -> RelatedManager[PatientExamination]: ...
+        def patient_examinations(self) -> RelatedManager[PatientExamination]: """
+Access the manager for this patient's examinations.
+
+@returns RelatedManager[PatientExamination]: The related manager for PatientExamination instances linked to this patient, supporting queryset operations such as filtering, ordering, and creation.
+"""
+...
 
         @property
-        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
+        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: """
+Related manager for anonymized examination reports linked to this patient.
+
+Returns:
+    RelatedManager[AnonymExaminationReport]: Manager providing access to AnonymExaminationReport instances associated with the patient.
+"""
+...
 
         @property
-        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
+        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: """
+Django related manager exposing this patient's anonymized histology reports.
+
+Returns:
+    RelatedManager[AnonymHistologyReport]: Manager for AnonymHistologyReport instances associated with the patient.
+"""
+...
 
         @property
-        def external_ids(self) -> RelatedManager[PatientExternalID]: ...
+        def external_ids(self) -> RelatedManager[PatientExternalID]: """
+Access the related manager for this patient's external identifier records.
+
+Provides a RelatedManager yielding PatientExternalID instances associated with the patient.
+Returns:
+    RelatedManager[PatientExternalID]: Manager for the patient's external identifier objects.
+"""
+...
 
         @property
         def patientmedication_set(self) -> RelatedManager[PatientMedication]: ...
@@ -99,6 +123,24 @@ class Patient(Person):
         birth_month: Optional[int] = None,
         birth_year: Optional[int] = None,
     ):
+        """
+        Retrieve a patient by hash or create a pseudo patient with generated attributes when none exists.
+        
+        Parameters:
+            patient_hash (str): Unique hash identifying the patient to find or create.
+            center (Optional[Center]): Center object or center name used for creating a new pseudo patient.
+            gender (Optional[Gender | str]): Gender object or gender name to assign to a newly created pseudo patient.
+            birth_month (Optional[int]): Month (1-12) used to generate the pseudo date of birth for a new patient.
+            birth_year (Optional[int]): Year used to generate the pseudo date of birth for a new patient.
+        
+        Returns:
+            tuple: (patient, created) where `patient` is the found or newly created Patient instance and
+            `created` is `True` if a new pseudo patient was created, `False` if an existing patient was returned.
+        
+        Raises:
+            AssertionError: If creating a new patient and any of `center`, `gender`, `birth_month`, or `birth_year` is not provided.
+            ValueError: If `gender` is neither a string nor a Gender instance.
+        """
         from endoreg_db.utils import create_mock_patient_name, random_day_by_year
 
         from ....other import Gender  # Import Gender model
@@ -160,7 +202,20 @@ class Patient(Person):
         date_end: Optional[datetime] = None,
         save: bool = True,
     ) -> "PatientExamination":
-        """Creates a patient examination for this patient."""
+        """
+        Create a PatientExamination linked to this patient.
+        
+        Creates a PatientExamination optionally associated with an existing Examination (by name), sets the provided start and end datetimes, and optionally saves the record to the database.
+        
+        Parameters:
+            examination_name_str (Optional[str]): Name of an existing Examination to associate; if omitted, an unnamed PatientExamination is created.
+            date_start (Optional[datetime.datetime]): Start datetime for the examination.
+            date_end (Optional[datetime.datetime]): End datetime for the examination.
+            save (bool): If True, persist the created PatientExamination to the database.
+        
+        Returns:
+            PatientExamination: The created PatientExamination instance.
+        """
         from ....medical import Examination, PatientExamination
 
         if examination_name_str:
@@ -209,15 +264,15 @@ class Patient(Person):
 
     def create_examination_by_pdf(self, pdf: "RawPdfFile"):
         """
-        Creates a patient examination and associates it with the provided PDF report file.
-
-        The examination is created for this patient, saved, and linked to the given RawPdfFile instance. The PDF's examination field is updated and saved. Returns the created examination instance.
-
-        Args:
-            pdf: The RawPdfFile to associate with the new examination.
-
+        Create a PatientExamination for this patient and link the given RawPdfFile to it.
+        
+        The new PatientExamination is saved, the pdf.examination field is set to that examination and the pdf is saved.
+        
+        Parameters:
+            pdf (RawPdfFile): The PDF file to associate with the created examination.
+        
         Returns:
-            The created PatientExamination instance.
+            PatientExamination: The created PatientExamination instance.
         """
         from ....medical import PatientExamination
 
@@ -231,11 +286,14 @@ class Patient(Person):
     @classmethod
     def get_random_gender(cls, p_male=0.5, p_female=0.5):
         """
-        Get a Gender object by name (male, female) from the database with given probability.
-
-        :param p_male: Probability of selecting 'male' gender.
-        :param p_female: Probability of selecting 'female' gender.
-        :return: Gender object selected based on given probabilities.
+        Selects a Gender model instance by sampling 'male' or 'female' according to the provided weights.
+        
+        Parameters:
+            p_male (float): Relative weight for selecting "male".
+            p_female (float): Relative weight for selecting "female".
+        
+        Returns:
+            Gender: The Gender instance whose name was sampled ("male" or "female").
         """
         from ....other import Gender
 
@@ -253,14 +311,17 @@ class Patient(Person):
     @classmethod
     def get_random_age(cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"):
         """
-        Get a random age based on the given distribution.
-
-        :param min_age: Minimum age.
-        :param max_age: Maximum age.
-        :param mean_age: Mean age.
-        :param std_age: Standard deviation of the age.
-        :param distribution: Distribution of the age.
-        :return: Random age based on the given distribution.
+        Sample an integer age according to the specified distribution.
+        
+        Parameters:
+        	min_age (int): Minimum age used when sampling uniformly.
+        	max_age (int): Maximum age used when sampling uniformly.
+        	mean_age (float): Mean used when sampling from a normal distribution.
+        	std_age (float): Standard deviation used when sampling from a normal distribution.
+        	distribution (str): If "normal", sample from a normal distribution using mean_age and std_age; otherwise sample uniformly between min_age and max_age.
+        
+        Returns:
+        	int: An age sampled according to the chosen distribution.
         """
         if distribution == "normal":
             age = int(random.normalvariate(mean_age, std_age))
@@ -344,9 +405,10 @@ class Patient(Person):
 
     def age(self) -> int | None:
         """
-        Get the age of the patient.
-
-        :return: The age of the patient.
+        Compute the patient's age in completed years using the current timezone-aware date.
+        
+        Returns:
+            The patient's age in years (integer), or `None` if the patient's date of birth is not set.
         """
         # calculate correct age based on current date including day and month
         current_date = timezone.now().date()  # Use timezone.now() here too for consistency
@@ -359,12 +421,18 @@ class Patient(Person):
 
     def create_lab_sample(self, sample_type="generic", date=None, save=True):
         """
-        Create a lab sample for this patient.
-
-        :param sample_type: The sample type. Should be either string of the sample types
-            name or the sample type object. If not set, the default sample type ("generic") is used.
-        :param date: The date of the lab sample. Must be timezone-aware if provided.
-        :return: The created lab sample.
+        Create and persist a lab sample for this patient.
+        
+        Parameters:
+            sample_type (str | PatientLabSampleType): The sample type to assign. Provide either the name of an existing PatientLabSampleType or a PatientLabSampleType instance. Defaults to "generic".
+            date (datetime | None): Timestamp for the sample. If None, uses the current timezone-aware time. If a naive datetime is provided, it will be converted to the current timezone.
+            save (bool): Ignored; the created sample is persisted before being returned (parameter kept for compatibility).
+        
+        Returns:
+            PatientLabSample: The created and saved PatientLabSample instance.
+        
+        Raises:
+            ValueError: If sample_type is neither a string nor a PatientLabSampleType instance.
         """
         from ....medical import PatientLabSample, PatientLabSampleType
 
@@ -388,9 +456,22 @@ class Patient(Person):
     @property
     def links(self) -> "RequirementLinks":
         """
-        Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object. For a Patient, this includes their diseases, associated classification choices,
-        all their lab values, and medication information.
+        Collects related patient data into a RequirementLinks object for requirement evaluation.
+        
+        Gathers the patient's disease records and their referenced Disease instances, disease classification choices,
+        all patient lab values, patient medication records and their referenced Medication instances, medication
+        indications, and medication intake times, and packages them into a RequirementLinks instance.
+        
+        Returns:
+            RequirementLinks: An object with the following populated fields:
+                - diseases: unique list of Disease instances referenced by the patient's disease records
+                - patient_diseases: list of PatientDisease instances for this patient
+                - disease_classification_choices: unique list of DiseaseClassificationChoice instances from patient diseases
+                - patient_lab_values: list of PatientLabValue instances for this patient
+                - medications: unique list of Medication instances referenced by patient medications
+                - patient_medications: list of PatientMedication instances for this patient
+                - medication_indications: unique list of MedicationIndication instances from patient medications
+                - medication_intake_times: unique list of MedicationIntakeTime instances associated with patient medications
         """
         from endoreg_db.models.medical.disease import Disease, DiseaseClassificationChoice
 

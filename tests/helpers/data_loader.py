@@ -28,7 +28,7 @@ def load_default_ai_model():
 
 def load_qualification_data():
     """
-    Loads qualification data into the application using the corresponding management command.
+    Load qualification reference data into the application's database.
     """
     call_command(
         "load_qualification_data",
@@ -37,7 +37,9 @@ def load_qualification_data():
 
 def load_shift_data():
     """
-    Loads shift data into the application by invoking the corresponding Django management command.
+    Load shift reference data into the database.
+    
+    Populates shift types and related metadata required by the application.
     """
     call_command(
         "load_shift_data",
@@ -46,7 +48,9 @@ def load_shift_data():
 
 def load_base_db_data():
     """
-    Loads the base database data using the corresponding Django management command.
+    Load base database fixtures and core reference data required by the application.
+    
+    Populates foundational tables such as system settings, default lookup values, and other core records necessary for the app to operate.
     """
     call_command(
         "load_base_db_data",
@@ -54,7 +58,9 @@ def load_base_db_data():
 
 
 def load_information_source_data():
-    """Load Information Source Data"""
+    """
+    Load information source reference data into the application's database.
+    """
     call_command(
         "load_information_source",
     )
@@ -103,7 +109,9 @@ def load_report_reader_flag_data():
 
 
 def load_pdf_type_data():
-    """Load PDF Type Data"""
+    """
+    Populate the database with PDF type reference entries used by the application.
+    """
     call_command(
         "load_pdf_type_data",
     )

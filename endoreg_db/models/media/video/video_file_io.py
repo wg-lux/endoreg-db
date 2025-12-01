@@ -19,7 +19,14 @@ logger = logging.getLogger("video_file")
 
 
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
-    """Return the best-effort absolute path to the raw video on disk."""
+    """
+    Determine the absolute filesystem path to the video's raw file if it can be located.
+    
+    Searches the configured video data directory (including a "sensitive" subdirectory) and, if necessary, the storage backend's direct file path. Returns the resolved absolute Path when the file is found.
+    
+    Returns:
+        path (Optional[Path]): Absolute Path to the raw file if found, `None` otherwise.
+    """
     if not (video.has_raw and video.raw_file.name):
         return None
 

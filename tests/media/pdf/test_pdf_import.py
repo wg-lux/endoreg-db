@@ -44,12 +44,24 @@ class TestPdfImportFileMovement(TestCase):
         )
     
     def tearDown(self):
-        """Clean up test environment."""
+        """
+        Remove the temporary storage directory created for the test if it exists.
+        
+        Ensures any filesystem artifacts from setUp are removed to leave a clean test state.
+        """
         if self.temp_storage.exists():
             shutil.rmtree(self.temp_storage)
     
     def create_test_pdf_file(self, filename: str = "test_document.pdf") -> Path:
-        """Create a test PDF file in raw_pdfs directory."""
+        """
+        Create a small test PDF file inside the temporary raw_pdfs directory.
+        
+        Parameters:
+            filename (str): Name to use for the created PDF file (defaults to "test_document.pdf").
+        
+        Returns:
+            Path: Path to the created PDF file within the test raw_pdfs directory.
+        """
         pdf_path = self.temp_raw_pdfs / filename
         with open(pdf_path, 'wb') as f:
             f.write(self.test_pdf_data)
@@ -57,7 +69,14 @@ class TestPdfImportFileMovement(TestCase):
     
     @patch('endoreg_db.utils.paths.PDF_DIR')
     def test_pdf_file_movement_flow(self, mock_pdf_dir):
-        """Test complete PDF file movement flow."""
+        """
+        Verify end-to-end PDF import and anonymization moves the input PDF into sensitive storage and associates it with a database record.
+        
+        This test exercises the full file-movement flow: it creates a test PDF in the raw input directory, redirects the service's PDF directory to a temporary test layout, runs import_and_anonymize with delete_source=True, and asserts that the service produces a PDF record and handles file operations so the processed file is placed in the sensitive storage path. The test uses mocks for external side effects (report availability, model creation, and filesystem operations) to validate orchestration and outcome rather than underlying I/O.
+        
+        Parameters:
+            mock_pdf_dir: patched PDF_DIR path used to route service file operations to the temporary test directories.
+        """
         # Mock PDF_DIR to use our temp directory
         mock_pdf_dir.__str__ = lambda: str(self.temp_pdfs)
         mock_pdf_dir.__truediv__ = lambda self, other: self.temp_pdfs / other
@@ -230,7 +249,11 @@ class TestPdfImportFileMovement(TestCase):
     
     @patch('endoreg_db.utils.paths.PDF_DIR')
     def test_storage_capacity_check(self, mock_pdf_dir):
-        """Test storage capacity validation."""
+        """
+        Verifies that storage capacity checks pass when free space meets the minimum and raise InsufficientStorageError when it does not.
+        
+        Tests two scenarios: first ensures check_storage_capacity succeeds with a small required-space threshold on the test storage; second patches shutil.disk_usage to simulate very low free space and asserts that check_storage_capacity raises endoreg_db.exceptions.InsufficientStorageError when the minimum required space is higher than available.
+        """
         mock_pdf_dir.__str__ = lambda: str(self.temp_pdfs)
         
         test_pdf_path = self.create_test_pdf_file("capacity_test.pdf")
@@ -261,7 +284,17 @@ class TestPdfImportFileMovement(TestCase):
                 )
     
     def test_processing_context_management(self):
-        """Test that processing context is properly managed."""
+        """
+        Verify PdfImportService processing_context is initialized empty, populated with the expected keys when a file begins processing, and cleared after cleanup.
+        
+        This test:
+        - Confirms processing_context starts as an empty dict.
+        - Calls _initialize_processing_context and asserts the context contains the keys:
+          'file_path', 'center_name', 'delete_source', 'retry', 'file_hash',
+          'processing_started', 'text_extracted', 'metadata_processed',
+          and 'anonymization_completed'.
+        - Calls _cleanup_processing_context and asserts the context is reset to an empty dict.
+        """
         service = PdfImportService()
         
         # Context should be empty initially

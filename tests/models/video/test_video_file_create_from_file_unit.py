@@ -29,6 +29,16 @@ def test_create_from_file_stores_transcoded_copy(tmp_path, monkeypatch):
     monkeypatch.setitem(io_module.data_paths, "storage", storage_root)
 
     def fake_transcode(input_path: Path, output_path: Path) -> Path:
+        """
+        Write a deterministic fake transcoded file to the given output path.
+        
+        Parameters:
+            input_path (Path): Source file path (kept for signature compatibility; not read).
+            output_path (Path): Destination path where the fake transcoded bytes are written.
+        
+        Returns:
+            output_path (Path): The path that was written to.
+        """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"transcoded-bytes")
         return output_path
@@ -86,6 +96,18 @@ def test_create_from_file_returns_existing_when_hash_matches(tmp_path, monkeypat
     monkeypatch.setattr(create_module, "get_video_hash", lambda _path: duplicate_hash)
 
     def fake_transcode(input_path: Path, output_path: Path) -> Path:
+        """
+        Create a fake transcoded file for tests by writing fixed bytes to the given output path.
+        
+        Ensures the output directory exists, writes the bytes b"new-bytes-transcoded" to the output path, and returns the output path.
+        
+        Parameters:
+            input_path (Path): Original source file path (not read by this fake).
+            output_path (Path): Destination path where the fake transcoded bytes are written.
+        
+        Returns:
+            Path: The same `output_path` after the file has been created.
+        """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"new-bytes-transcoded")
         return output_path
@@ -135,6 +157,16 @@ def test_create_from_file_cleans_up_on_missing_center(tmp_path, monkeypatch):
     monkeypatch.setitem(io_module.data_paths, "storage", storage_root)
 
     def fake_transcode(input_path: Path, output_path: Path) -> Path:
+        """
+        Create a fake transcoded file at `output_path` by ensuring its parent directory exists and writing the bytes `b"temp"`.
+        
+        Parameters:
+            input_path (Path): Source file path (unused; kept for signature compatibility).
+            output_path (Path): Destination path for the fake transcoded file.
+        
+        Returns:
+            Path: The provided `output_path` after the file has been created.
+        """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"temp")
         return output_path

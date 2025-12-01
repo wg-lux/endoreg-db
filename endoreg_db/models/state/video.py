@@ -70,6 +70,12 @@ class VideoState(models.Model):
 
     def __str__(self):
         # Find the related VideoFile's UUID if possible
+        """
+        Return a compact, human-readable snapshot of this VideoState including the related video UUID and key state fields.
+        
+        Returns:
+            str: A single-line string containing the related VideoFile UUID (or "Unknown") followed by comma-separated state entries for frame extraction/initialization, metadata and prediction flags, anonymization and validation flags, segment annotation flags, frame count, and ISO-formatted creation and modification timestamps.
+        """
         video_uuid = "Unknown"
         try:
             # Access the related VideoFile via the reverse relation 'video_file'
@@ -102,7 +108,12 @@ class VideoState(models.Model):
     @property
     def anonymization_status(self) -> AnonymizationState:
         """
-        Fast, side‑effect‑free status resolution used by API & UI.
+        Resolve the current anonymization state for this VideoState.
+        
+        Determines which AnonymizationState value best represents the video's anonymization progress or outcome by evaluating the instance's state flags in priority order.
+        
+        Returns:
+            An anonymization state (`AnonymizationState`) indicating progress or final outcome (e.g. `VALIDATED`, `DONE_PROCESSING_ANONYMIZATION`, `PROCESSING_ANONYMIZING`, `EXTRACTING_FRAMES`, `FAILED`, `STARTED`, `ANONYMIZED`, or `NOT_STARTED`).
         """
         if self.anonymization_validated:
             return AnonymizationState.VALIDATED # Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
@@ -122,6 +133,14 @@ class VideoState(models.Model):
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
+        """
+        Mark that sensitive metadata processing has completed for this VideoState.
+        
+        Parameters:
+            save (bool): If True, persist the change immediately by saving only the
+                `sensitive_meta_processed` and `date_modified` fields; if False, the
+                change remains only on the model instance until saved later.
+        """
         self.sensitive_meta_processed = True
         if save:
             self.save(update_fields=["sensitive_meta_processed", "date_modified"])
@@ -160,10 +179,12 @@ class VideoState(models.Model):
 
     def mark_anonymized(self, *, save: bool = True) -> None:
         """
-        Mark the video as anonymized by setting the anonymized flag to True.
-
+        Set the state's anonymized flag to True.
+        
+        If `save` is True, persist the change to the database and update `date_modified`.
+        
         Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
+            save (bool): Whether to save the change immediately; defaults to True.
         """
         self.anonymized = True
         if save:

@@ -25,7 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 def test_blackening_mode():
-    """Test the new blackening mode."""
+    """
+    Verify that PdfImportService in blackening mode can access the report reader.
+    
+    Returns:
+        bool: `True` if the report reader (lx_anonymizer) is available and the blackening mode can be tested, `False` otherwise.
+    """
     print("\n=== Testing PDF Import with Blackening Mode ===")
 
     # Create service with blackening mode
@@ -45,7 +50,14 @@ def test_blackening_mode():
 
 
 def test_cropping_mode():
-    """Test the existing cropping mode."""
+    """
+    Run tests for the PDF import service configured in cropping mode.
+    
+    Creates a PdfImportService using cropping mode and verifies that the report-reading dependency (lx_anonymizer) is available.
+    
+    Returns:
+        True if the service was created and the required report reader is available, False otherwise.
+    """
     print("\n=== Testing PDF Import with Cropping Mode ===")
 
     # Create service with cropping mode
@@ -119,7 +131,15 @@ def test_method_signatures():
 
 
 def main():
-    """Run all tests."""
+    """
+    Execute the suite of PdfImportService tests and print a pass/fail summary.
+    
+    Runs each predefined test (default/invalid modes, method signatures, blackening, cropping),
+    prints individual test outcomes and a condensed summary, and returns whether all tests passed.
+    
+    Returns:
+        bool: True if all tests passed, False otherwise.
+    """
     print("🧪 Testing Updated PdfImportService")
     print("=" * 50)
 
