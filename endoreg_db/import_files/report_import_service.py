@@ -10,9 +10,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
     ReportAnonymizer,
 )
-from endoreg_db.import_files.processing.report_processing.report_cleanup_on_error import (
-    cleanup_report_on_error,
-)
+
 from endoreg_db.import_files.storage.create_report_file import (
     create_or_retrieve_report_file,
 )
@@ -26,10 +24,7 @@ from endoreg_db.import_files.context.validate_directories import validate_direct
 from endoreg_db.import_files.storage.storage import create_sensitive_copy
 from endoreg_db.models.media import RawPdfFile
 from endoreg_db.utils.paths import (
-    ANONYM_REPORT_DIR,
-    IMPORT_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
-    TRANSCODING_DIR
 )
 
 
@@ -51,7 +46,6 @@ class ReportImportService:
 
     def __init__(self) -> None:
         self.logger = logger
-        self.quarantine_root = Path()
         self.anonymizer = ReportAnonymizer()
         self.processing_context: Optional[ImportContext] = None
         self.current_report: Optional[RawPdfFile] = None
@@ -63,32 +57,48 @@ class ReportImportService:
         self,
         file_path: Union[Path, str],
         center_name: str,
-        processor_name: str,
-        save_report: bool = True,  # currently unused but kept for API symmetry
+        retry: bool = False,
         delete_source: bool = True,
     ) -> "RawPdfFile | None":
+        """
+        Public entrypoint: wrap import_and_anonymize logic.
+        """
+        # First, initialize import context. this will be updated during import and keep track of current paths, file type and center and processor.
         ctx = ImportContext(
             file_path=Path(file_path),
             center_name=center_name,
-            processor_name=processor_name,
             delete_source=delete_source,
+            file_type="report"
         )
-        self.processing_context = ctx
+        self.logger.info("validating and preparing file")
+        if not ctx.file_path.exists():
+            raise FileNotFoundError(f"Video file not found: {file_path}")
 
-        ctx.sensitive_path = create_sensitive_copy(ctx.file_path, SENSITIVE_REPORT_DIR)
-
+        ctx.sensitive_path = create_sensitive_copy(
+            ctx.file_path, 
+            SENSITIVE_REPORT_DIR
+        )
 
         with file_lock(ctx.file_path):
             logger.info("Acquired file lock for %s", ctx.file_path)
 
             # create or retrieve RawPdfFile + update history
-            pdf, retry = create_or_retrieve_report_file(ctx)
-            ctx.current_report = pdf
+            ctx.current_report, needs_processing = create_or_retrieve_report_file(ctx)
+            ctx.current_report.get_or_create_state()
+            assert(ctx.current_report.state is not None)
+            ctx.current_report = ctx.current_report
+            
             ctx.retry = retry
-            self.current_report = pdf
+            # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
+            if retry and needs_processing and not ctx.current_report.state.anonymization_validated:
+                # ensure clean slate for forced reprocessing
+                finalize_failure(ctx)
+                ctx.current_report, needs_processing = create_or_retrieve_report_file(ctx)
+                assert(needs_processing is True)
+            elif not needs_processing and not retry:
+                return ctx.current_report
 
-            mark_instance_processing_started(pdf, ctx)
-
+            mark_instance_processing_started(ctx.current_report, ctx)
             try:
                 # --- Anonymization with fallback ---
                 try:
@@ -104,12 +114,10 @@ class ReportImportService:
                         ctx.file_path,
                         primary_exc,
                     )
-                    # mark that we're on retry
-                    ctx.retry = True
                     try:
                         ctx = self.anonymizer.anonymize_report(ctx)
                     except Exception as e:
-                        logger.error("PDF Extraction failed for the second time.")
+                        logger.error(f"PDF Extraction failed for the second time. {e}")
                         raise
 
                     logger.info(
@@ -118,11 +126,9 @@ class ReportImportService:
                     )
 
                 # --- Finalize success: history + move anonymized file ---
-                finalize_report_success(
-                    ctx=ctx,
-                )
+                finalize_report_success(ctx)
 
-                return pdf
+                return ctx.current_report
 
             except Exception as exc:
                 logger.exception(
@@ -130,5 +136,6 @@ class ReportImportService:
                 )
                 # mark failure in history
                 finalize_failure(ctx)
-
-
+                raise
+                
+                

@@ -1,6 +1,4 @@
 import logging
-from endoreg_db.models.media.storage.processing_history import ProcessingHistory
-from typing import Optional
 logger = logging.getLogger(__name__)
 
 
@@ -21,4 +19,3 @@ class TranscodingError(Exception):
 class VideoProcessingError(Exception):
     """Base class for video processing errors."""
     pass
-

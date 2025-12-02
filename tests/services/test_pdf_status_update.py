@@ -8,8 +8,8 @@ import pytest
 
 from endoreg_db.models import Center
 from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.services.pdf_import import PdfImportService
-
+from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.models import RawPdfFile
 
 @pytest.mark.django_db
 class TestPdfStatusAfterAnonymization:
@@ -51,9 +51,9 @@ class TestPdfStatusAfterAnonymization:
                 anonymized_pdf_path
             )
 
-        with patch.object(PdfImportService, "_process_text_and_metadata", mock_process):
+        with patch.object(ReportImportService, "_process_text_and_metadata", mock_process):
             # Import the report
-            service = PdfImportService.with_blackening()
+            service = ReportImportService()
             pdf = service.import_and_anonymize(
                 file_path=test_pdf, center_name=center.name, delete_source=False
             )
@@ -100,14 +100,14 @@ class TestPdfStatusAfterAnonymization:
                 anonymized_pdf_path
             )
 
-        with patch.object(PdfImportService, "_process_text_and_metadata", mock_process):
-            service = PdfImportService.with_blackening()
+        with patch.object(ReportImportService, "_process_text_and_metadata", mock_process):
+            service = ReportImportService()
 
             # Import and check initial status
             pdf = service.import_and_anonymize(
                 file_path=test_pdf, center_name=center.name
             )
-
+            assert isinstance(pdf, RawPdfFile)
             state = pdf.get_or_create_state()
 
             # After successful processing, status should be DONE_PROCESSING_ANONYMIZATION
@@ -135,13 +135,13 @@ class TestPdfStatusAfterAnonymization:
                 anonymized_pdf_path
             )
 
-        with patch.object(PdfImportService, "_process_text_and_metadata", mock_process):
-            service = PdfImportService.with_cropping()
+        with patch.object(ReportImportService, "_process_text_and_metadata", mock_process):
+            service = ReportImportService()
 
             pdf = service.import_and_anonymize(
                 file_path=test_pdf, center_name=center.name
             )
-
+            assert isinstance(pdf, RawPdfFile)
             state = pdf.get_or_create_state()
 
             # After successful processing, status should be DONE_PROCESSING_ANONYMIZATION

@@ -145,7 +145,6 @@ class TestVideoImportFileMovement(TestCase):
                         file_path=test_video_path,
                         center_name=self.center.name,  # ✅ Service converts string → Center object
                         processor_name=self.processor.name,  # ✅ Service converts string → Processor object
-                        save_video=True,
                         delete_source=True,
                     )
 
@@ -304,7 +303,7 @@ class TestVideoImportFileMovement(TestCase):
                 "cleaned_video_path": None,
                 "delete_source": False,
             }
-            service.current_video = MagicMock()
+            service.ctx.current_video = MagicMock()
             service.current_video.uuid = "test-uuid"
             service.current_video.file = MagicMock()
             service.current_video.save = MagicMock()
@@ -323,7 +322,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import endoreg_db.services.video_import as vis
+import endoreg_db.services.__old.video_import as vis
 
 # ---------------------------------------------------------------------
 # 🔧 Lightweight Mocks

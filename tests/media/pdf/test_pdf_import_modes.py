@@ -19,7 +19,7 @@ django.setup()
 import logging
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.services.pdf_import import PdfImportService
+from endoreg_db.services.report_import import ReportImportService
 
 logger = logging.getLogger(__name__)
 

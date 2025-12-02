@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 
 from endoreg_db.models import Center
-from endoreg_db.services.pdf_import import PdfImportService
+from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils import paths as path_utils
 
 
@@ -68,7 +68,7 @@ class TestPdfImportFileMovement(TestCase):
 
         # Mock report reading to avoid dependencies
         with patch.object(
-            PdfImportService, "_ensure_report_reading_available"
+            ReportImportService, "_ensure_report_reading_available"
         ) as mock_report_reading:
             mock_report_reading.return_value = (False, None)
 
@@ -93,7 +93,7 @@ class TestPdfImportFileMovement(TestCase):
                 with patch("shutil.move"):
                     with patch("os.remove"):
                         # Initialize service and run import
-                        service = PdfImportService()
+                        service = ReportImportService()
 
                         result_pdf = service.import_and_anonymize(
                             file_path=test_pdf_path,
@@ -119,7 +119,7 @@ class TestPdfImportFileMovement(TestCase):
 
         # Mock dependencies
         with patch.object(
-            PdfImportService, "_ensure_report_reading_available"
+            ReportImportService, "_ensure_report_reading_available"
         ) as mock_report_reading:
             mock_report_reading.return_value = (False, None)
 
@@ -137,7 +137,7 @@ class TestPdfImportFileMovement(TestCase):
                 mock_pdf.get_or_create_state = MagicMock(return_value=mock_state)
                 mock_pdf.save = MagicMock()
 
-                service = PdfImportService()
+                service = ReportImportService()
 
                 # Mock the create_sensitive_file method to track calls
                 with patch.object(
@@ -159,7 +159,7 @@ class TestPdfImportFileMovement(TestCase):
         test_pdf_path = self.create_test_pdf_file("original_name.pdf")
 
         # Test the _sha256 method directly
-        service = PdfImportService()
+        service = ReportImportService()
         pdf_hash = service._sha256(test_pdf_path)
 
         # Hash should be consistent for the same content
@@ -180,7 +180,7 @@ class TestPdfImportFileMovement(TestCase):
 
         # Mock report reading to fail
         with patch.object(
-            PdfImportService, "_ensure_report_reading_available"
+            ReportImportService, "_ensure_report_reading_available"
         ) as mock_report_reading:
             mock_report_reading.return_value = (False, None)
 
@@ -190,7 +190,7 @@ class TestPdfImportFileMovement(TestCase):
             ) as mock_create_pdf:
                 mock_create_pdf.side_effect = Exception("Simulated creation error")
 
-                service = PdfImportService()
+                service = ReportImportService()
 
                 # Import should fail gracefully
                 with self.assertRaises(Exception):
@@ -218,7 +218,7 @@ class TestPdfImportFileMovement(TestCase):
         test_pdf_path = self.create_test_pdf_file("lock_test.pdf")
         lock_path = Path(str(test_pdf_path) + ".lock")
 
-        service = PdfImportService()
+        service = ReportImportService()
 
         # Test file lock creation and cleanup
         with service._file_lock(test_pdf_path):
@@ -236,7 +236,7 @@ class TestPdfImportFileMovement(TestCase):
         """Test that problematic files are moved to quarantine."""
         test_pdf_path = self.create_test_pdf_file("quarantine_test.pdf")
 
-        service = PdfImportService()
+        service = ReportImportService()
 
         # Test quarantine method
         quarantine_path = service._quarantine(test_pdf_path)
@@ -262,7 +262,7 @@ class TestPdfImportFileMovement(TestCase):
 
         test_pdf_path = self.create_test_pdf_file("capacity_test.pdf")
 
-        service = PdfImportService()
+        service = ReportImportService()
 
         # Test with sufficient space (should pass)
         try:
@@ -294,7 +294,7 @@ class TestPdfImportFileMovement(TestCase):
 
     def test_processing_context_management(self):
         """Test that processing context is properly managed."""
-        service = PdfImportService()
+        service = ReportImportService()
 
         # Context should be empty initially
         self.assertEqual(service.processing_context, {})

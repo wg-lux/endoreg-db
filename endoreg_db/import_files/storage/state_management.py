@@ -106,7 +106,7 @@ def finalize_report_success(
         )
 
         try:
-            relative_name = str(ctx.anonymized_path))
+            relative_name = str(ctx.anonymized_path)
         except ValueError:
             # Fallback: absolute path if outside STORAGE_DIR
             relative_name = str(final_path)
@@ -145,16 +145,14 @@ def finalize_report_success(
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
-            file_type="report"
-            ProcessingHistory.get_or_create_history(
-                object_id=instance.pk,
-                file_type=file_type,
+            ProcessingHistory.get_or_create_for_object(
+                obj=instance,
                 success=True,
             )
     except Exception as e:
         logger.debug(
-            "Saving not possible; "
-            "skipping ProcessingHistory.",
+            "Saving not possible; %s"
+            f"skipping ProcessingHistory.{e}",
             instance.pk,
         )
 
@@ -243,18 +241,13 @@ def finalize_video_success(
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
-            file_type="video"
-            ProcessingHistory.get_or_create_history(
-                object_id=instance.pk,
-                file_type=file_type,
+            ProcessingHistory.get_or_create_for_object(
+                obj=instance,
                 success=True,
             )
     except Exception as e:
         logger.debug(
-            "Saving not possible; "
-            "skipping ProcessingHistory.",
-            instance.pk,
-            file_type
+            f"Saving not possible: {e} skipping ProcessingHistory.",
         )
 
 def finalize_failure(
@@ -278,13 +271,12 @@ def finalize_failure(
 
     if state is not None:
         try:
-            state.mark_processing_not_started
+            state.mark_processing_not_started()
 
             state.save()
             logger.info(
-                "Reset instance state for failed processing (instance pk=%s, hash=%s)",
+                "Reset instance state for failed processing (instance pk=%s)",
                 ctx.instance.pk,
-                getattr(ctx.instance, "file_type", None),
             )
         except Exception as e:
             logger.warning(
@@ -296,13 +288,12 @@ def finalize_failure(
         try:
             delete_associated_files(ctx)
         except Exception as e:
-            logger.warning("There might be files remaining")
+            logger.warning(f"There might be files remaining. {e}")
 
     # History entry with success=False
     if ctx.file_hash:
-        ProcessingHistory.get_or_create_history(
-            object_id=ctx.instance.pk,
-            file_type=ctx.file_type,
+        ProcessingHistory.get_or_create_for_object(
+            obj=ctx.instance,
             success=False,
         )
     else:
@@ -313,34 +304,37 @@ def finalize_failure(
         )
 
     logger.error(
-        "Report processing failed for %s (hash=%s): %s",
+        "Report processing failed for %s",
         ctx.file_path,
-        ctx.file_hash,
     )
 
 def delete_associated_files(ctx:ImportContext):
     try:
         assert isinstance(ctx.original_path, Path)
     except AssertionError as e:
+        logger.warning(f"Original file restored from sensitive copy. This is because the original file is gone. {e}")
         if ctx.file_type =="video":
             if isinstance(ctx.sensitive_path, Path):
                 try:
                     ctx.original_path = Path(shutil.copy2(ctx.sensitive_path, IMPORT_VIDEO_DIR))
-                    
                 except Exception as e:
+                    logger.error(f"Error during safety copy: {e} Original file could not be restored!")
                     raise
         elif ctx.file_type == "report":
             if isinstance(ctx.sensitive_path, Path):
                 try:
                     ctx.original_path = Path(shutil.copy2(ctx.sensitive_path, IMPORT_REPORT_DIR))
                 except Exception as e:
+                    logger.error(f"Error during safety copy: {e} Original file could not be restored!")
                     raise
         
     if isinstance(ctx.anonymized_path, Path):
         try:
             Path.unlink(ctx.anonymized_path)
-            
+            assert(ctx.anonymized_path is not Path)
+
         except Exception as e:
+            logger.error(f"Error when unlinking anonymized path. {e}")
             raise
         
     ctx.anonymized_path = None
@@ -348,8 +342,11 @@ def delete_associated_files(ctx:ImportContext):
     if isinstance(ctx.sensitive_path, Path):
         try:
             Path.unlink(ctx.sensitive_path)
+            assert(ctx.sensitive_path is not Path)
             
         except Exception as e:
+            logger.error(f"Error when unlinking anonymized path. {e}")
+
             raise
         
     ctx.sensitive_path = None

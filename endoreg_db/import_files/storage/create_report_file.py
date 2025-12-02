@@ -2,8 +2,6 @@
 import logging
 from typing import Tuple
 
-from django.db import IntegrityError
-
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.media.storage.processing_history import ProcessingHistory
@@ -18,110 +16,56 @@ def create_or_retrieve_report_file(
     Create a new or retrieve an existing RawPdfFile for the given context.
 
     Returns:
-        pdf      : RawPdfFile instance
-        retry    : whether we are re-processing an existing file
+        pdf             : RawPdfFile instance
+        needs_processing: True if the pipeline should run for this file
+                          (no successful history yet for this object/file_type key)
     """
     file_path = ctx.file_path
     center_name = ctx.center_name
     delete_source = ctx.delete_source
-    retry = ctx.retry
-    file_type = ctx.file_type
+    file_type = ctx.file_type  # logical key for history; can be None
 
-    existing: RawPdfFile | None = None
-    
-    if ctx.current_report:
-        pk = ctx.current_report.pk
-        existing = ctx.current_report.get_pdf_by_pk(pk=pk):
-        
+    # 1) Determine the RawPdfFile instance to work with
+    if ctx.current_report is not None:
+        pdf = ctx.current_report
+        logger.info("Using existing RawPdfFile from context: pk=%s", pdf.pk)
+    else:
+        logger.info("Creating new RawPdfFile from %s for center %s", file_path, center_name)
+        pdf = RawPdfFile.create_from_file_initialized(
+            file_path=file_path,
+            center_name=center_name,
+            delete_source=delete_source,
+        )
 
-    # === NON-RETRY PATH WITH EXISTING FILE ===
-    if existing and not retry:
-        logger.info("Found existing RawPdfFile %s", existing.pdf_hash)
 
-        if existing.text:
-            logger.info(
-                "Existing report %s already processed - short-circuiting",
-                existing.pdf_hash,
-            )
-            ProcessingHistory.get_or_create_history(
-                object_id=existing.pk,
-                file_type=file_type,
-                success=True,
-            )
-            return existing, file_type, False
 
+    # 3) Check if we already have a successful history entry for this object+file_type
+    has_success_history = ProcessingHistory.has_history_for_object(
+        obj=pdf,
+        success=True,
+    )
+
+    if has_success_history:
         logger.info(
-            "Reprocessing existing report %s (no text found yet)", existing.pdf_hash
+            "RawPdfFile %s already has successful processing history (file_type=%s) - short-circuiting",
+            getattr(pdf, str(pdf.file_path)),
+            file_type,
         )
-        ProcessingHistory.get_or_create_history(
-            object_id=existing.pk,
-            file_type=file_type,
-            success=False,
-        )
-        return existing, True
+        # No need to run the pipeline again
+        return pdf, False
 
-    # === CREATE OR RETRY PATH ===
-    logger.info("Creating or retrieving RawPdfFile instance...")
+    # 4) No successful history yet → ensure there is a history entry marking it as "in progress"/failed
+    ProcessingHistory.get_or_create_for_object(
+        obj=pdf,
+        # At this point we haven't finished anonymization; treat as not-success yet.
+        success=False,
+    )
 
-    try:
-        if not retry:
-            pdf = RawPdfFile.create_from_file_initialized(
-                file_path=file_path,
-                center_name=center_name,
-                delete_source=delete_source,
-            )
-        else:
-            # Explicit retry path: assume file_type is set
-            if not file_type:
-                raise RuntimeError("Retry requested but file_type is empty")
+    logger.info(
+        "Report instance ready for processing: pk=%s, file_type=%s (needs_processing=True)",
+        pdf.pk,
+        file_type,
+    )
 
-            pdf = RawPdfFile.objects.get(pdf_hash=file_type)
-            logger.info("Retrying import for existing RawPdfFile %s", pdf.pdf_hash)
-
-            if pdf.text:
-                logger.info(
-                    "Existing report %s already processed during retry - short-circuiting",
-                    pdf.pdf_hash,
-                )
-                ProcessingHistory.get_or_create_history(
-                    object_id=pdf.pk,
-                    file_type=file_type,
-                    success=True,
-                )
-                return pdf, False
-
-        if not pdf:
-            raise RuntimeError("Failed to create RawPdfFile instance")
-
-        # Ensure we have a hash even if ctx.file_type was not set
-        if not file_type:
-            file_type = pdf.pdf_hash
-
-        logger.info("report instance ready: %s", pdf.pdf_hash)
-
-        ProcessingHistory.get_or_create_history(
-            object_id=pdf.pk,
-            file_type=file_type,
-            success=bool(getattr(pdf, "text", None)),
-        )
-
-        return pdf, file_type, retry
-
-    except IntegrityError:
-        # Race condition - another worker created it first
-        if not file_type:
-            raise  # cannot recover without a hash
-
-        pdf = RawPdfFile.objects.get(pdf_hash=file_type)
-        logger.info(
-            "Race condition detected, using existing RawPdfFile %s instead",
-            pdf.pdf_hash,
-        )
-
-        ProcessingHistory.get_or_create_history(
-            object_id=pdf.pk,
-            file_type=file_type,
-            success=bool(getattr(pdf, "text", None)),
-        )
-
-        return pdf, True
+    # Signal to the caller that the anonymization pipeline should run
+    return pdf, True

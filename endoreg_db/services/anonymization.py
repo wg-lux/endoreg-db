@@ -6,8 +6,8 @@ from typing import Optional
 from django.db import transaction
 
 from endoreg_db.models import RawPdfFile, VideoFile
-from endoreg_db.services.pdf_import import PdfImportService
-from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.__old.video_import import VideoImportService
+from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
@@ -29,7 +29,7 @@ class AnonymizationService:
         """
         self.project_root: Path = project_root or STORAGE_DIR
         self.video_service = VideoImportService()
-        self.pdf_service = PdfImportService()
+        self.pdf_service = ReportImportService()
 
     # ---------- READ ----------------------------------------------------
     @staticmethod

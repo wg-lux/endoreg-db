@@ -1,10 +1,8 @@
 # endoreg_db/services/video_import.py
 import logging
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Optional, Union
 
-from django.db.models.fields.files import FieldFile
 
 from endoreg_db.import_files.context import (
     ImportContext,
@@ -14,7 +12,7 @@ from endoreg_db.import_files.storage.state_management import (
     finalize_failure,
     finalize_video_success
 )
-from endoreg_db.import_files.storage.storage import create_sensitive_copy, move_to_anonymized
+from endoreg_db.import_files.storage.storage import create_sensitive_copy
 from endoreg_db.import_files.storage.create_video_file import (
     create_or_retrieve_video_file,
 )
@@ -23,14 +21,13 @@ from endoreg_db.import_files.storage.state_management import (
     mark_instance_processing_started,
 )
 from endoreg_db.models import VideoFile
-from endoreg_db.models.media.storage.processing_history import ProcessingHistory
 from endoreg_db.import_files.processing.video_processing.video_anonymization import VideoAnonymizer
 from endoreg_db.utils.paths import (
-    ANONYM_VIDEO_DIR,
-    IMPORT_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
-    TRANSCODING_DIR
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class VideoImportService:
@@ -54,45 +51,99 @@ class VideoImportService:
     """
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.quarantine_path = Path(TRANSCODING_DIR)
+        self.logger = logger
+        self.anonymizer = VideoAnonymizer()
+        self.processing_context: Optional[ImportContext] = None
+        self.current_video: Optional[VideoFile] = None
+        
         validate_directories()
+        
 
     def import_and_anonymize(
         self,
         file_path: Union[Path, str],
         center_name: str,
         processor_name: str,
-        save_video: bool = True,
+        retry:bool = False,
         delete_source: bool = True,
     ) -> "VideoFile | None":
         """
         Public entrypoint: wrap import_and_anonymize logic.
         """
-        ctx: ImportContext = ImportContext(
-            Path(file_path), center_name, processor_name, save_video, delete_source
+        # First, initialize import context. this will be updated during import and keep track of current paths, file type and center and processor.
+        ctx = ImportContext(
+            file_path=Path(file_path),
+            center_name=center_name,
+            processor_name=processor_name,
+            delete_source=delete_source,
+            file_type="video"
         )
-        self.quarantine_path = TRANSCODING_DIR
-        ctx.sensitive_path = create_sensitive_copy(
-            ctx.file_path, SENSITIVE_VIDEO_DIR
-        )
-
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
-        try:
-            with file_lock(ctx.file_path):
+
+        ctx.sensitive_path = create_sensitive_copy(
+            ctx.file_path, 
+            SENSITIVE_VIDEO_DIR
+        )
+
+        with file_lock(ctx.file_path):
+            logger.info("Acquired file lock for %s", ctx.file_path)
 
 
-                # create or retrieve VideoFile + update history
-                ctx.current_video, ctx.file_hash, ctx.retry = (
-                    create_or_retrieve_video_file(ctx)
-                )
+            # create or retrieve VideoFile + update history
+            ctx.current_video, needs_processing = (
+                create_or_retrieve_video_file(ctx)
+            )
+            ctx.current_video.get_or_create_state()
+            assert(ctx.current_video.state is not None)
+            ctx.current_video = ctx.current_video
+            
+            ctx.retry = retry
+            # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
 
-                mark_instance_processing_started(ctx.current_video, ctx)
-                anonymizer = VideoAnonymizer()
-                ctx = anonymizer.anonymize_video(ctx)
+            if retry and needs_processing and not ctx.current_video.state.anonymization_validated:
+                finalize_failure(ctx)
+                ctx.current_video, needs_processing = create_or_retrieve_video_file(ctx)
+                assert(needs_processing is True)
+            elif not needs_processing and not retry:
+                return ctx.current_video
+
+            mark_instance_processing_started(ctx.current_video, ctx)
+            try:            
+                # --- Anonymization with fallback ---
+                try:
+                    ctx = self.anonymizer.anonymize_video(ctx)
+                    logger.info(
+                        "Primary report anonymization succeeded for %s",
+                        ctx.file_path,
+                    )
+                except Exception as primary_exc:
+                    logger.exception(
+                        "Primary report anonymization failed for %s: %s "
+                        "- trying basic anonymization",
+                        ctx.file_path,
+                        primary_exc,
+                    )
+                    try:
+                        ctx = self.anonymizer.anonymize_video(ctx)
+                    except Exception as e:
+                        logger.error(f"Video Extraction failed for the second time. {e}")
+                        raise
+                    logger.info(
+                        "Basic report anonymization succeeded for %s",
+                        ctx.file_path,
+                    )
+                
+                # --- Finalize success: history + move anonymized file ---
                 finalize_video_success(ctx)
                 
-        except Exception as e:
-            finalize_failure(ctx)
+                return ctx.current_video
+                
+                
+            except Exception as exc:
+                logger.exception(
+                    "Video import/anonymization failed for %s: %s", ctx.file_path, exc
+                )
+                finalize_failure(ctx)
+                raise
