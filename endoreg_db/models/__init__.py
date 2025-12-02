@@ -151,6 +151,10 @@ from .state import (
     VideoState,
 )
 
+# AI dataset model
+from .aidataset import AIDataSet
+
+
 __all__ = [
     ####### Administration ########
     # AI
@@ -311,4 +315,6 @@ __all__ = [
     "LabelVideoSegmentState",
     "AnonymizationState",
     "RawPdfState",
+    ###### AIDATASET ######
+    "AIDataSet",
 ]
