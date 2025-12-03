@@ -26,7 +26,7 @@ class Command(BaseCommand):
         "- Creates Frames linked to a given VideoFile\n"
         "- Creates ImageClassificationAnnotations (value=True) for each listed label\n"
         "- Reuses/extends an existing LabelSet\n"
-        "- Fills an AIDataSet.reqset with all annotations"
+        "- Fills an AIDataSet (image dataset) with all annotations via image_annotations"
     )
 
     def add_arguments(self, parser):
@@ -107,7 +107,9 @@ class Command(BaseCommand):
         except VideoFile.DoesNotExist:
             raise CommandError(f"VideoFile with id={video_id} does not exist.")
 
-        self.stdout.write(self.style.NOTICE(f"Using VideoFile id={video.id} for all Frames."))
+        self.stdout.write(
+            self.style.NOTICE(f"Using VideoFile id={video.id} for all Frames.")
+        )
 
         # --- Use existing LabelSet (v1) ---
         labelset = self._get_existing_labelset(
@@ -121,9 +123,11 @@ class Command(BaseCommand):
             )
         )
 
-        # --- Create or reuse AIDataSet ---
+        # --- Create or reuse AIDataSet (image dataset) ---
         if dry_run:
-            self.stdout.write(self.style.WARNING("Dry run: AIDataSet will NOT be created."))
+            self.stdout.write(
+                self.style.WARNING("Dry run: AIDataSet will NOT be created.")
+            )
             ai_dataset = None
         else:
             ai_dataset, created = AIDataSet.objects.get_or_create(
@@ -142,10 +146,12 @@ class Command(BaseCommand):
                     )
                 )
             else:
+                # Use the helper method so this works even if we add video/text later
+                current_count = ai_dataset.get_annotations_queryset().count()
                 self.stdout.write(
                     self.style.WARNING(
                         f"Re-using existing AIDataSet id={ai_dataset.id}, name='{ai_dataset.name}'. "
-                        f"(Current reqset_count={ai_dataset.reqset.count()})"
+                        f"(Current annotation_count={current_count})"
                     )
                 )
 
@@ -221,7 +227,10 @@ class Command(BaseCommand):
                         if not dry_run:
                             annotation.save()
                             if ai_dataset is not None:
-                                ai_dataset.reqset.add(annotation)
+                                # IMPORTANT CHANGE:
+                                # Use the AIDataSet helper, which for dataset_type='image'
+                                # returns the image_annotations manager.
+                                ai_dataset.get_annotations_queryset().add(annotation)
 
             # --- Summary ---
             if dry_run:
@@ -234,8 +243,8 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Imported {frame_counter} Frames, {annotation_counter} ImageClassificationAnnotations "
-                        f"into AIDataSet id={ai_dataset.id}."
+                        f"Imported {frame_counter} Frames, {annotation_counter} "
+                        f"ImageClassificationAnnotations into AIDataSet id={ai_dataset.id}."
                     )
                 )
 
@@ -243,7 +252,9 @@ class Command(BaseCommand):
     # Helper methods
     # ------------------------------------------------------------------
 
-    def _get_existing_labelset(self, labelset_name: str, labelset_version: int) -> LabelSet:
+    def _get_existing_labelset(
+        self, labelset_name: str, labelset_version: int
+    ) -> LabelSet:
         try:
             return LabelSet.objects.get(name=labelset_name, version=labelset_version)
         except LabelSet.DoesNotExist as exc:
@@ -252,7 +263,9 @@ class Command(BaseCommand):
                 "Create it first (e.g. via fixtures or admin)."
             ) from exc
 
-    def _get_or_create_label_and_attach_to_labelset(self, label_name: str, labelset: LabelSet) -> Label:
+    def _get_or_create_label_and_attach_to_labelset(
+        self, label_name: str, labelset: LabelSet
+    ) -> Label:
         label, _ = Label.objects.get_or_create(name=label_name)
         # Attach to this labelset if missing
         if label not in labelset.labels.all():

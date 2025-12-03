@@ -1,55 +1,60 @@
-# endoreg_db/models/aidataset/aidataset.py
+from typing import TYPE_CHECKING
 
 from django.db import models
 
-from endoreg_db.models import ImageClassificationAnnotation
+if TYPE_CHECKING:
+    from endoreg_db.models import ImageClassificationAnnotation
+    # later:
+    # from endoreg_db.models import VideoSegmentationAnnotation
+    # from endoreg_db.models import TextAnnotation  # example name
 
 
 class AIDataSet(models.Model):
     """
     AIDataSet stores the definition of a training dataset for an AI model.
 
-    It does NOT store annotation vectors directly. Instead, it stores:
-    - which kind of data it is based on (dataset_type)
-    - which model family it belongs to (ai_model_type)
-    - which annotations belong to this dataset (via reqset)
+    It does NOT store annotation vectors directly.
+
+    Instead, it stores:
+    - which AI model family it is for         (ai_model_type)
+    - which type of data it is based on       (dataset_type)
+    - which annotations belong to it          (image/video/text *_annotations)
 
     For now:
         dataset_type == "image"
-            -> reqset points to ImageClassificationAnnotation rows
+            -> image_annotations contains ImageClassificationAnnotation rows
                (each with frame_id and label_id)
 
     Later:
         dataset_type == "video"
-            -> extend this model to also connect to a video-annotation table
+            -> video_annotations will contain video-level annotation rows
 
         dataset_type == "text"
-            -> extend this model to also connect to a text-annotation table
+            -> text_annotations will contain text-level annotation rows
     """
 
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # CHOICES
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     DATASET_TYPE_IMAGE = "image"
     DATASET_TYPE_VIDEO = "video"
     DATASET_TYPE_TEXT = "text"
 
     DATASET_TYPE_CHOICES = [
         (DATASET_TYPE_IMAGE, "Image"),
-        # Add more here when you implement them:
+        # later, when implemented:
         # (DATASET_TYPE_VIDEO, "Video"),
         # (DATASET_TYPE_TEXT, "Text"),
     ]
 
-    # You can later add choices here if you want to restrict ai_model_type to
-    # known values; for now it’s a free string.
     AI_MODEL_TYPE_IMAGE_MULTILABEL = "image_multilabel_classification"
+    # later: add more ai_model_type values as needed, e.g.
+    # AI_MODEL_TYPE_VIDEO_SEGMENTATION = "video_segmentation"
+    # AI_MODEL_TYPE_TEXT_CLASSIFICATION = "text_classification"
 
-    # -------------------------------------------------------------------------
-    # FIELDS (as you specified)
-    # -------------------------------------------------------------------------
-
-    # id: implicit primary key
+    # ------------------------------------------------------------------
+    # BASIC FIELDS
+    # ------------------------------------------------------------------
 
     name = models.CharField(
         max_length=255,
@@ -61,7 +66,7 @@ class AIDataSet(models.Model):
     description = models.TextField(
         blank=True,
         null=True,
-        help_text="Optional description / notes about the dataset.",
+        help_text="Optional notes / explanation about this dataset.",
     )
 
     ai_model_type = models.CharField(
@@ -70,7 +75,7 @@ class AIDataSet(models.Model):
         help_text=(
             "AI model family this dataset is for, e.g. "
             '"image_multilabel_classification". '
-            "Used to pick the correct architecture/output logic."
+            "Used to pick the correct architecture and output dimension logic."
         ),
     )
 
@@ -79,49 +84,69 @@ class AIDataSet(models.Model):
         choices=DATASET_TYPE_CHOICES,
         default=DATASET_TYPE_IMAGE,
         help_text=(
-            "Controls which annotation table is used. "
+            "Controls which annotation table will be used. "
             'Currently only "image" is implemented; later "video", "text", etc.'
         ),
     )
 
-    # -------------------------------------------------------------------------
-    # Requirementset (reqset)
-    #
-    # According to your specification:
-    # - For dataset_type == "image":
-    #       reqset is the connection to ImageClassificationAnnotation
-    #       and defines which annotations are part of this dataset.
-    #
-    # We use a ManyToManyField to represent
-    #   “this dataset is defined by these annotations”.
-    #
-    # Later, when you support video/text:
-    # - You can either:
-    #     * add separate M2M fields (e.g. video_reqset, text_reqset), or
-    #     * introduce another abstraction that routes to the right tables.
-    # -------------------------------------------------------------------------
-    reqset = models.ManyToManyField(
-        ImageClassificationAnnotation,
-        related_name="ai_datasets",
+    # ------------------------------------------------------------------
+    # TYPE-SPECIFIC ANNOTATION RELATIONS (Option A)
+    # ------------------------------------------------------------------
+    # For each dataset_type, we provide a separate M2M field.
+    # Only one of them is actually *used* per dataset instance.
+    # The others simply remain empty.
+
+    # IMAGE DATASETS:
+    # For dataset_type == "image":
+    #   - image_annotations defines which ImageClassificationAnnotation rows
+    #     belong to this dataset.
+    image_annotations = models.ManyToManyField(
+        "ImageClassificationAnnotation",
+        related_name="image_ai_datasets",
         blank=True,
         help_text=(
-            "For dataset_type='image', this set of ImageClassificationAnnotation rows "
-            "defines which frames and labels belong to this AIDataSet. "
-            "Each annotation has frame_id and label_id."
+            "For dataset_type='image', this is the set of ImageClassificationAnnotation "
+            "rows that define this AIDataSet. Each annotation has frame_id and label_id."
         ),
     )
 
-    # -------------------------------------------------------------------------
-    # META / AUDIT
-    # -------------------------------------------------------------------------
+    # VIDEO DATASETS (FUTURE):
+    # For dataset_type == "video", you will later add something like:
+    #
+    # video_annotations = models.ManyToManyField(
+    #     "VideoSegmentationAnnotation",    # or whatever your video annotation model is
+    #     related_name="video_ai_datasets",
+    #     blank=True,
+    #     help_text=(
+    #         "For dataset_type='video', this will be the set of video-level "
+    #         "annotation rows that define this AIDataSet."
+    #     ),
+    # )
+    #
+    # TEXT DATASETS (FUTURE):
+    # For dataset_type == "text", you could add:
+    #
+    # text_annotations = models.ManyToManyField(
+    #     "TextAnnotation",                 # placeholder name
+    #     related_name="text_ai_datasets",
+    #     blank=True,
+    #     help_text=(
+    #         "For dataset_type='text', this will be the set of text-level "
+    #         "annotation rows that define this AIDataSet."
+    #     ),
+    # )
+
+    # ------------------------------------------------------------------
+    # META FIELDS
+    # ------------------------------------------------------------------
     created_at = models.DateTimeField(
         auto_now_add=True,
-        help_text="Timestamp when this AIDataSet was created.",
+        help_text="When this AIDataSet was created.",
     )
 
     updated_at = models.DateTimeField(
         auto_now=True,
-        help_text="Timestamp when this AIDataSet was last modified.",
+        help_text="When this AIDataSet was last modified.",
     )
 
     is_active = models.BooleanField(
@@ -129,46 +154,40 @@ class AIDataSet(models.Model):
         help_text="Soft toggle to enable/disable this dataset for training.",
     )
 
-    # -------------------------------------------------------------------------
-    # HELPER METHODS (no heavy logic, but useful for later)
-    # -------------------------------------------------------------------------
+    if TYPE_CHECKING:
+        # for static type checkers only
+        image_annotations: models.ManyToManyField["ImageClassificationAnnotation"]
+        # video_annotations: models.ManyToManyField["VideoSegmentationAnnotation"]
+        # text_annotations: models.ManyToManyField["TextAnnotation"]
+
+    # ------------------------------------------------------------------
+    # UNIFIED ACCESS HELPERS (USE THESE IN YOUR TRAINING CODE)
+    # ------------------------------------------------------------------
+
+    def get_annotations_queryset(self):
+        """
+        Return the *active* annotation relation for this dataset, based on dataset_type.
+
+        - For dataset_type='image' -> returns self.image_annotations
+        - For dataset_type='video' -> later: return self.video_annotations
+        - For dataset_type='text'  -> later: return self.text_annotations
+
+        This is what your data loader / training code should call.
+        """
+        if self.dataset_type == self.DATASET_TYPE_IMAGE:
+            return self.image_annotations
+
+        # TODO (future): implement once video/text annotation models exist
+        # if self.dataset_type == self.DATASET_TYPE_VIDEO:
+        #     return self.video_annotations
+        #
+        # if self.dataset_type == self.DATASET_TYPE_TEXT:
+        #     return self.text_annotations
+
+        # Fallback: empty queryset (nothing to train on)
+        return self.image_annotations.none()
 
     def __str__(self) -> str:
         if self.name:
             return f"AIDataSet(id={self.id}, name={self.name})"
         return f"AIDataSet(id={self.id})"
-
-    def get_image_annotations(self):
-        """
-        Return the queryset of ImageClassificationAnnotation objects that
-        define this dataset, but ONLY if dataset_type == 'image'.
-
-        This is the entry point for building:
-        - the list of frames (and thus image paths)
-        - the list of labels (and thus the label vectors)
-
-        Later:
-            When you add support for 'video' or 'text', you can:
-            - either extend this method to branch by dataset_type, or
-            - add new methods get_video_annotations(), get_text_annotations().
-        """
-        if self.dataset_type != self.DATASET_TYPE_IMAGE:
-            # For now, only image datasets are supported.
-            # You can change this behavior once you implement other types.
-            return ImageClassificationAnnotation.objects.none()
-
-        return self.reqset.select_related("frame", "label")
-
-    # NOTE:
-    # The logic to build the actual data loader
-    # (paths list + annotation vectors [1, 0, None])
-    # should live in a separate service/function that uses:
-    #
-    #   annotations = dataset.get_image_annotations()
-    #
-    # and from there:
-    #   - derive frames via annotation.frame
-    #   - derive labels via annotation.label
-    #   - derive LabelSet and label order based on your label configuration.
-    #
-    # This keeps the model lean and leaves training-specific logic outside.
