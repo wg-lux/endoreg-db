@@ -24,6 +24,12 @@ class Frame(models.Model):
     frame_number = models.PositiveIntegerField()
     relative_path = models.CharField(max_length=512)
     timestamp = models.FloatField(null=True, blank=True)
+    # to keep the track of old examination id, later we can remove that
+    old_examination_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Legacy old_examination_id from JSONL import, used for group-wise splitting.",
+    )
     is_extracted = models.BooleanField(default=False)
 
     if TYPE_CHECKING:

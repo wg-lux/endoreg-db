@@ -37,12 +37,17 @@ class ImageMultilabelDataset(TypedDict):
             1 -> this entry participates in the loss (0 or 1 is known)
             0 -> IGNORE in the loss (value was None)
     """
+    # type description of the returned dict.
 
     image_paths: List[str]
     label_vectors: List[List[Optional[int]]]
     label_masks: List[List[int]]
     labels: List[Label]
     labelset: LabelSet
+
+     # New: keep track of which DB rows were used, and their legacy exam ids
+    frame_ids: List[int]                     # Frame.pk for each sample
+    old_examination_ids: List[Optional[int]] # may be None if not set
 
 
 def _infer_labelset_from_annotations(
@@ -70,7 +75,7 @@ def _infer_labelset_from_annotations(
     labelsets_for_each_label = []
 
     for lbl in labels_qs:
-        # `lbl.label_sets` is the reverse of LabelSet.labels M2M
+        # lbl.label_sets is the reverse of LabelSet.labels M2M
         ls_ids = list(lbl.label_sets.values_list("id", flat=True))
         if not ls_ids:
             # This label is not part of any LabelSet -> ambiguous
@@ -164,6 +169,11 @@ def build_image_multilabel_dataset_from_db(
     label_vectors: List[List[Optional[int]]] = []
     label_masks: List[List[int]] = []
 
+     # New: id tracking for splitting / logging
+    frame_ids: List[int] = []
+    old_examination_ids: List[Optional[int]] = []
+
+
     # Cache frames to avoid repeated DB hits
     frame_obj_by_id: Dict[int, Frame] = {}
 
@@ -175,6 +185,11 @@ def build_image_multilabel_dataset_from_db(
         if frame is None:
             frame = frame_annotations[0].frame
             frame_obj_by_id[frame_id] = frame
+
+            # New: remember DB ids for this sample
+        frame_ids.append(frame_id)
+        old_examination_ids.append(getattr(frame, "old_examination_id", None))
+
 
         # Start with unknown for all labels
         vec: List[Optional[int]] = [None] * num_labels
@@ -202,6 +217,8 @@ def build_image_multilabel_dataset_from_db(
         label_masks=label_masks,
         labels=labels_in_order,
         labelset=labelset,
+        frame_ids=frame_ids,
+        old_examination_ids=old_examination_ids,
     )
 
 

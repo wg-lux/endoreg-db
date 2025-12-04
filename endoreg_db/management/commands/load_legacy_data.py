@@ -16,7 +16,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 
-DEFAULT_LABELSET_NAME = "multilabel_classification_colonoscopy_default"
+DEFAULT_LABELSET_NAME = "multilabel_classification_colonoscopy_default" # must be present in the DB
 DEFAULT_LABELSET_VERSION = 1
 
 
@@ -49,6 +49,7 @@ class Command(BaseCommand):
             ),
             help="Root directory containing legacy images.",
         )
+        #All imported frames need to belong to some VideoFile.
         parser.add_argument(
             "--video-id",
             type=int,
@@ -58,7 +59,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--dataset-name",
             type=str,
-            default="legacy_multilabel_dataset_v1",
+            default="legacy_multilabel_dataset_v1", # later change this if needed
             help="Name for the created/reused AIDataSet.",
         )
         parser.add_argument(
@@ -110,6 +111,26 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.NOTICE(f"Using VideoFile id={video.id} for all Frames.")
         )
+
+                # Ensure this VideoFile uses the legacy images folder as its frame_dir
+        # IMPORTANT: we only set this if frame_dir is empty, so we don't break other videos.
+        if not video.frame_dir:
+            video.frame_dir = str(images_root)  # images_root is Path(...)
+            video.save(update_fields=["frame_dir"])
+            self.stdout.write(
+                self.style.NOTICE(
+                    f"Set frame_dir for VideoFile id={video.id} to '{video.frame_dir}' "
+                    "for legacy image frames."
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"VideoFile id={video.id} already has frame_dir='{video.frame_dir}'. "
+                    "Legacy Frames will be resolved relative to this directory."
+                )
+            )
+
 
         # --- Use existing LabelSet (v1) ---
         labelset = self._get_existing_labelset(
@@ -205,6 +226,7 @@ class Command(BaseCommand):
                         frame_number=frame_counter,
                         relative_path=filename,  # filename is relative under images_root
                         timestamp=None,
+                        old_examination_id=old_exam_id,  # keeping old examination id legacy exam id for grouping
                         is_extracted=True,
                     )
                     if not dry_run:

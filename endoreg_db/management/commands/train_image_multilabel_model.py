@@ -58,6 +58,10 @@ class Command(BaseCommand):
         labels = data["labels"]
         labelset = data["labelset"]
 
+        # Optional: additional meta info, if present
+        frame_ids = data.get("frame_ids", [])
+        old_examination_ids = data.get("old_examination_ids", [])
+
         # ------------------------------------------------------------------
         # Debug: show which LabelSet was picked and its labels
         # ------------------------------------------------------------------
@@ -103,10 +107,17 @@ class Command(BaseCommand):
                       )
                 )
                break
+
+            frame_id = frame_ids[i] if i < len(frame_ids) else None
+            old_exam = (
+                old_examination_ids[i] if i < len(old_examination_ids) else None
+            )
             
             self.stdout.write(
                 f"  Sample {i}:"
                 f"\n    path = {path!r}"
+                f"\n    frame_id = {frame_id}"
+                f"\n    old_examination_id = {old_exam}"
                 f"\n    vector (1/0/None) = {vec}"
                 f"\n    mask (1=use, 0=ignore) = {mask}"
             )
