@@ -8,7 +8,7 @@ import random
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
-
+from collections import defaultdict
 import torch
 from torch.utils.data import DataLoader, random_split, Subset 
 from endoreg_db.models import AIDataSet
@@ -91,6 +91,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     # ------------------------------------------------------------------
     # Group-wise split by old_examination_id (if available)
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     old_exam_ids: Optional[List[Optional[int]]] = data.get("old_examination_ids")
 
     if old_exam_ids is not None:
@@ -105,47 +106,69 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         random.shuffle(all_group_ids)
 
         n_groups = len(all_group_ids)
+
+        # number of groups for val and test
         n_val_groups = int(math.floor(config.val_split * n_groups))
+        n_test_groups = int(math.floor(config.test_split * n_groups))
+
+        # safety: make sure we don't overshoot
+        if n_val_groups + n_test_groups >= n_groups:
+            # fallback: reduce test groups so that at least 1 group is left for train
+            n_test_groups = max(0, n_groups - n_val_groups - 1)
+
         val_group_ids = set(all_group_ids[:n_val_groups])
-        train_group_ids = set(all_group_ids[n_val_groups:])
+        test_group_ids = set(all_group_ids[n_val_groups : n_val_groups + n_test_groups])
+        train_group_ids = set(all_group_ids[n_val_groups + n_test_groups :])
 
         train_indices: List[int] = []
         val_indices: List[int] = []
+        test_indices: List[int] = []
 
         for g in train_group_ids:
             train_indices.extend(group_to_indices[g])
         for g in val_group_ids:
             val_indices.extend(group_to_indices[g])
+        for g in test_group_ids:
+            test_indices.extend(group_to_indices[g])
 
         train_ds = Subset(full_ds, train_indices)
         val_ds = Subset(full_ds, val_indices)
+        test_ds = Subset(full_ds, test_indices)
 
         print(
             f"[TRAIN] Group-wise split by old_examination_id:"
-            f" #groups={n_groups}, train_groups={len(train_group_ids)}, val_groups={len(val_group_ids)}"
+            f" #groups={n_groups}, "
+            f"train_groups={len(train_group_ids)}, "
+            f"val_groups={len(val_group_ids)}, "
+            f"test_groups={len(test_group_ids)}"
         )
         print(
-            f"[TRAIN] Train size: {len(train_indices)}, Val size: {len(val_indices)}"
+            f"[TRAIN] Train size: {len(train_indices)}, "
+            f"Val size: {len(val_indices)}, "
+            f"Test size: {len(test_indices)}"
         )
 
     else:
-        # Fallback: simple per-frame random split (old behavior)
-        val_size = int(math.floor(config.val_split * len(full_ds)))
-        train_size = len(full_ds) - val_size
+        # Fallback: simple per-frame random split (train/val/test)
+        total = len(full_ds)
+        n_test = int(math.floor(config.test_split * total))
+        n_val = int(math.floor(config.val_split * total))
+        n_train = total - n_val - n_test
 
-        train_ds, val_ds = random_split(
+        train_ds, val_ds, test_ds = random_split(
             full_ds,
-            lengths=[train_size, val_size],
+            lengths=[n_train, n_val, n_test],
             generator=torch.Generator().manual_seed(config.random_seed),
         )
         print(
             f"[TRAIN] WARNING: old_examination_ids not available in data; "
-            f"using per-frame random split. Train size: {train_size}, Val size: {val_size}"
+            f"using per-frame random split."
         )
-
-
-
-
+        print(
+            f"[TRAIN] Train size: {n_train}, "
+            f"Val size: {n_val}, "
+            f"Test size: {n_test}"
+        )
     #####
 
     train_loader = DataLoader(
@@ -157,6 +180,13 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     )
     val_loader = DataLoader(
         val_ds,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
+    )
+    test_loader = DataLoader(
+        test_ds,
         batch_size=config.batch_size,
         shuffle=False,
         num_workers=4,
@@ -267,6 +297,36 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             f"[EPOCH {epoch:03d}/{config.num_epochs:03d}] "
             f"train_loss={train_loss:.4f}  val_loss={val_loss_mean:.4f}"
         )
+
+        # ------------------------------------------------------------------
+    # 7. Final evaluation on test set
+    # ------------------------------------------------------------------
+    model.eval()
+    test_loss_sum = 0.0
+    test_batches = 0
+
+    with torch.no_grad():
+        for imgs, y, m in test_loader:
+            imgs = imgs.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
+            m = m.to(device, non_blocking=True)
+
+            logits = model(imgs)
+            loss = focal_loss_with_mask(
+                logits=logits,
+                targets=y,
+                masks=m,
+                class_weights=class_weights,
+                alpha=config.alpha_focal,
+                gamma=config.gamma_focal,
+            )
+            test_loss_sum += loss.item()
+            test_batches += 1
+
+    test_loss = test_loss_sum / max(test_batches, 1)
+    history["test_loss"] = test_loss
+    print(f"[TEST] test_loss={test_loss:.4f}")
+
 
     # ------------------------------------------------------------------
     # 7) Save model + metadata

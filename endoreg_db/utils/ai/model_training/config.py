@@ -31,29 +31,18 @@ for d in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
 # ---------------------------------------------------------------------
 
 @dataclass
+@dataclass
 class TrainingConfig:
-    """
-    High-level configuration for multi-label GastroNet training.
-    """
-
     dataset_id: int
-
-    # Path to RN50_GastroNet-1M_DINOv1.pth (or None for random init)
     backbone_checkpoint: Optional[str] = None
-
-    # Optimization
-    num_epochs: int = 2
+    num_epochs: int = 10
     batch_size: int = 32
     val_split: float = 0.2
+    test_split: float = 0.1      
     lr_head: float = 1e-3
     lr_backbone: float = 1e-4
-
-    # Focal loss
     gamma_focal: float = 2.0
     alpha_focal: float = 0.25
-
-    # Device: "auto", "cpu", or "cuda"
     device: str = "auto"
-
-    # Reproducibility
     random_seed: int = 42
+
