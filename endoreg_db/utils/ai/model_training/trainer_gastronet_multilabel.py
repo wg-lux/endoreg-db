@@ -7,11 +7,10 @@ import math
 import random
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
-from torch.utils.data import DataLoader, random_split
-
+from torch.utils.data import DataLoader, random_split, Subset 
 from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import (
     build_dataset_for_training,
@@ -59,7 +58,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     # ------------------------------------------------------------------
     # 2) Wrap into PyTorch Dataset + train/val split
     # ------------------------------------------------------------------
-    full_ds = EndoMultiLabelDataset(
+    ''' full_ds = EndoMultiLabelDataset(
         image_paths=image_paths,
         label_vectors=label_vectors,
         label_masks=label_masks,
@@ -77,7 +76,77 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         lengths=[train_size, val_size],
         generator=torch.Generator().manual_seed(config.random_seed),
     )
-    print(f"[TRAIN] Train size: {train_size}, Val size: {val_size}")
+    print(f"[TRAIN] Train size: {train_size}, Val size: {val_size}")'''
+
+    full_ds = EndoMultiLabelDataset(
+        image_paths=image_paths,
+        label_vectors=label_vectors,
+        label_masks=label_masks,
+        image_size=224,
+    )
+
+    random.seed(config.random_seed)
+    torch.manual_seed(config.random_seed)
+
+    # ------------------------------------------------------------------
+    # Group-wise split by old_examination_id (if available)
+    # ------------------------------------------------------------------
+    old_exam_ids: Optional[List[Optional[int]]] = data.get("old_examination_ids")
+
+    if old_exam_ids is not None:
+        # 1) Build mapping: exam_id -> list of frame indices
+        group_to_indices: Dict[int, List[int]] = defaultdict(list)
+        for idx, exam_id in enumerate(old_exam_ids):
+            # If some entries are None, treat them as their own group key
+            key = -1 if exam_id is None else int(exam_id)
+            group_to_indices[key].append(idx)
+
+        all_group_ids = list(group_to_indices.keys())
+        random.shuffle(all_group_ids)
+
+        n_groups = len(all_group_ids)
+        n_val_groups = int(math.floor(config.val_split * n_groups))
+        val_group_ids = set(all_group_ids[:n_val_groups])
+        train_group_ids = set(all_group_ids[n_val_groups:])
+
+        train_indices: List[int] = []
+        val_indices: List[int] = []
+
+        for g in train_group_ids:
+            train_indices.extend(group_to_indices[g])
+        for g in val_group_ids:
+            val_indices.extend(group_to_indices[g])
+
+        train_ds = Subset(full_ds, train_indices)
+        val_ds = Subset(full_ds, val_indices)
+
+        print(
+            f"[TRAIN] Group-wise split by old_examination_id:"
+            f" #groups={n_groups}, train_groups={len(train_group_ids)}, val_groups={len(val_group_ids)}"
+        )
+        print(
+            f"[TRAIN] Train size: {len(train_indices)}, Val size: {len(val_indices)}"
+        )
+
+    else:
+        # Fallback: simple per-frame random split (old behavior)
+        val_size = int(math.floor(config.val_split * len(full_ds)))
+        train_size = len(full_ds) - val_size
+
+        train_ds, val_ds = random_split(
+            full_ds,
+            lengths=[train_size, val_size],
+            generator=torch.Generator().manual_seed(config.random_seed),
+        )
+        print(
+            f"[TRAIN] WARNING: old_examination_ids not available in data; "
+            f"using per-frame random split. Train size: {train_size}, Val size: {val_size}"
+        )
+
+
+
+
+    #####
 
     train_loader = DataLoader(
         train_ds,
