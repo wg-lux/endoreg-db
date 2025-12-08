@@ -11,7 +11,7 @@ import pytest
 from pathlib import Path
 from django.test import TestCase
 from endoreg_db.models import VideoFile
-from endoreg_db.services.video_import import import_and_anonymize
+from endoreg_db.services.video_import import VideoImportService
 from ..helpers.default_objects import get_default_center, get_default_processor
 from ..media.video.helper import get_random_video_path_by_examination_alias
 import logging
@@ -20,6 +20,8 @@ import logging
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
 
 logger = logging.getLogger(__name__)
+vis = VideoImportService()
+import_and_anonymize = vis.import_and_anonymize
 
 class TestVideoImportService(TestCase):
     """Test cases for video import service."""
@@ -29,7 +31,7 @@ class TestVideoImportService(TestCase):
         """Set up session-scoped fixtures."""
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
-        from ..helpers.data_loader import load_base_db_data
+        from endoreg_db.helpers.data_loader import load_base_db_data
         load_base_db_data()
 
     def setUp(self):
@@ -41,8 +43,6 @@ class TestVideoImportService(TestCase):
 
 
     @pytest.mark.integration
-    @pytest.mark.video
-    @pytest.mark.expensive
     def test_import_and_anonymize_success(self):
         """
         Test successful import and anonymization of a video file.
@@ -58,9 +58,9 @@ class TestVideoImportService(TestCase):
         # Create a temporary video file
         filepath = get_random_video_path_by_examination_alias()
         
-
+        vis = VideoImportService()
         # Call import_and_anonymize service
-        video_file = import_and_anonymize(
+        video_file = vis.import_and_anonymize(
             file_path=filepath,
             center_name=self.center.name,
             processor_name=self.processor.name,
@@ -68,6 +68,7 @@ class TestVideoImportService(TestCase):
         )
         
         # Verify the import was successful
+        assert isinstance(video_file, VideoFile)
         self.assertIsNotNone(video_file, "VideoFile should be created")
         self.assertIsInstance(video_file, VideoFile)
         self.assertEqual(video_file.center, self.center)
@@ -98,8 +99,6 @@ class TestVideoImportService(TestCase):
             )
 
     @pytest.mark.integration
-    @pytest.mark.video
-    @pytest.mark.expensive
     def test_import_and_anonymize_with_different_options(self):
         """
         Test import_and_anonymize with different save/delete options.
@@ -122,7 +121,6 @@ class TestVideoImportService(TestCase):
                 file_path=temp_path,
                 center_name="university_hospital_wuerzburg",
                 processor_name="olympus_cv_1500",
-                save_video=True, #TODO not saving a video currently breaks as no videoMeta can be created without saving the file
                 delete_source=True
             )
             

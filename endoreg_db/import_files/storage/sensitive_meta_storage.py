@@ -6,12 +6,15 @@ from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.import_files.processing.sensitive_meta_adapter import (
     normalize_lx_sensitive_meta,
 )
+from endoreg_db.import_files.context.default_sensitive_meta import default_sensitive_meta
 from logging import getLogger
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
+#
 
 logger = getLogger(__name__)
 
 def sensitive_meta_storage(
-    sensitive_meta: Dict[str, Any],
+    sensitive_meta: LxSM,
     instance: Union[RawPdfFile, VideoFile],
 ) -> bool:
     """
@@ -21,6 +24,9 @@ def sensitive_meta_storage(
     - Delegates to SensitiveMeta.update_from_dict() (which already calls logic.update_*)
     """
     local_meta = instance.sensitive_meta  # Django SensitiveMeta model instance
+    if not isinstance(local_meta, SensitiveMeta):
+        # If sensitice meta doesnt exist yet, ensure it
+        local_meta = default_sensitive_meta(instance)
     assert isinstance(local_meta, SensitiveMeta)
 
     try:

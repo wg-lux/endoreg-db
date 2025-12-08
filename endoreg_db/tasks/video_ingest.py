@@ -63,15 +63,19 @@ def run_import_video(file_path: str, center_name: Optional[str] = None,
             }
         
         # Use settings defaults if not provided
-        center_name = center_name or getattr(settings, 'DEFAULT_CENTER', 'university_hospital_wuerzburg')
-        processor_name = processor_name or getattr(settings, 'DEFAULT_PROCESSOR', 'olympus_cv_1500')
-        
+        if not isinstance(center_name, str):
+            getattr(settings, 'DEFAULT_CENTER', 'university_hospital_wuerzburg')
+            assert(center_name is str)
+        if not isinstance(processor_name, str):
+            assert(processor_name is str)
+            getattr(settings, 'DEFAULT_PROCESSOR', 'olympus_cv_1500')
+
         logger.info(f"Starting import for video: {file_path}")
         logger.info(f"Using center: {center_name}, processor: {processor_name}")
         
         # Try to use the service first
         try:
-            from endoreg_db.services import video_import
+            from endoreg_db.services.__old import video_import
             
             video_file_obj = video_import.import_and_anonymize(
                 file_path=file_path,

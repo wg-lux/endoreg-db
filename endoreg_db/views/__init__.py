@@ -32,7 +32,6 @@ from .finding_classification import (
     get_morphology_choices,  # DEPRECATED
 )
 from .media import (
-    PdfReimportView,
     get_sensitive_metadata_pk,
     label_list,
     pdf_sensitive_metadata,
@@ -72,7 +71,7 @@ from .patient_examination import (
 )
 from .patient_finding import OptimizedPatientFindingViewSet, PatientFindingViewSet
 from .patient_finding_classification import create_patient_finding_classification
-from .pdf import PdfReimportView, PdfStreamView
+from .report import ReportReimportView, ReportStreamView
 from .requirement import LookupViewSet, evaluate_requirements
 from .video import (  # Video Correction (Phase 1.1) - Implemented; Existing views
     VideoApplyMaskView,
@@ -153,8 +152,8 @@ __all__ = [
     # Patient Finding Classification Views
     "create_patient_finding_classification",
     # report
-    "PdfReimportView",
-    "PdfStreamView",
+    "ReportReimportView",
+    "ReportStreamView",
     # Requirement Views
     "evaluate_requirements",
     "LookupViewSet",
@@ -166,7 +165,7 @@ __all__ = [
     "VideoReimportView",
     "VideoStreamView",
     "VideoExaminationViewSet",
-    "PdfReimportView",
+    "ReportReimportView",
     "label_list",
     "get_sensitive_metadata_pk",
     "video_sensitive_metadata",

@@ -92,7 +92,7 @@ class VoPPatientDataSerializer(serializers.Serializer):
 
         elif isinstance(instance, RawPdfFile):
             # Generate report streaming URL using pdf_id (RawPdfFile.id)
-            pdf_stream_url = f"/api/media/pdfs/{instance.pk}/stream/"
+            report_stream_url = f"/api/media/pdfs/{instance.pk}/stream/"
 
             return {
                 "id": instance.pk,
@@ -106,7 +106,7 @@ class VoPPatientDataSerializer(serializers.Serializer):
                 else None,
                 "status": "done" if instance.anonymized_text else "not_started",
                 "error": False,
-                "pdfStreamUrl": pdf_stream_url,
+                "pdfStreamUrl": report_stream_url,
             }
 
         else:

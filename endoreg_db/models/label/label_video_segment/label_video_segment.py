@@ -74,7 +74,7 @@ class LabelVideoSegment(models.Model):
 
     class Meta:
         constraints = [
-            CheckConstraint(check=Q(start_frame_number__lt=F("end_frame_number")), name="segment_start_lt_end"),
+            CheckConstraint(condition=Q(start_frame_number__lt=F("end_frame_number")), name="segment_start_lt_end"),
         ]
         indexes = [
             models.Index(fields=["video_file", "label", "start_frame_number"]),

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal, NoReturn
 
 from lx_anonymizer import ReportReader
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
 
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.storage.sensitive_meta_storage import sensitive_meta_storage
@@ -30,6 +31,7 @@ class ReportAnonymizer:
         # Generate output path for anonymized report
         pdf_hash = ctx.current_report.pdf_hash
         anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
+        self._report_reader_class = ReportReader()
         
         assert isinstance(self._report_reader_class, ReportReader)
 
@@ -39,16 +41,17 @@ class ReportAnonymizer:
                 create_anonymized_pdf=True,
                 anonymized_pdf_output_path=str(anonymized_output_path),
             )
-    
-        self.storage = sensitive_meta_storage(extracted_metadata, ctx.current_report)
-        if self.storage:
-            return ctx
-        else:
-            raise Exception
         
-            
-        
+        if ctx.anonymized_path:
+            logger.info("DEBUG: after anonymizer, ctx.anonymized_path=%s (exists=%s)",
+                        ctx.anonymized_path, isinstance(ctx.anonymized_path, str))
 
+        sm = LxSM()
+        sm.safe_update(extracted_metadata)        
+        
+        self.storage = sensitive_meta_storage(sm, ctx.current_report)
+        return ctx
+    
     def _ensure_report_reading_available(
         self
     )  -> None:

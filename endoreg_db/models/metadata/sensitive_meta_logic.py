@@ -1008,70 +1008,28 @@ def update_sensitive_meta_from_dict(
                             aware_dob,
                         )
                     elif isinstance(v, str):
-                        # Handle string DOB - check if it's a field name or actual date
-                        if v == "patient_dob" or v in [
-                            "patient_first_name",
-                            "patient_last_name",
-                            "examination_date",
-                        ]:
+                        parsed = parse_any_date(v)
+                        if parsed:
+                            aware_dob = timezone.make_aware(
+                                datetime.combine(parsed, datetime.min.time())
+                            )
+                            value_to_set = aware_dob
+                            logger.debug(
+                                "Parsed string patient_dob '%s' during update to aware datetime: %s",
+                                v,
+                            aware_dob,
+                            )
+                        else:
                             logger.warning(
-                                "Skipping invalid patient_dob value '%s' during update - appears to be field name",
+                                "Could not parse patient_dob string '%s' during update, skipping",
                                 v,
                             )
-                            continue  # Skip this field
-                        else:
-                            # Try to parse as date string
-                            try:
-                                import dateparser
-
-                                parsed_dob = dateparser.parse(
-                                    v, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                                )
-                                if parsed_dob:
-                                    value_to_set = timezone.make_aware(
-                                        parsed_dob.replace(
-                                            hour=0, minute=0, second=0, microsecond=0
-                                        )
-                                    )
-                                    logger.debug(
-                                        "Parsed string patient_dob '%s' during update to aware datetime: %s",
-                                        v,
-                                        value_to_set,
-                                    )
-                                else:
-                                    logger.warning(
-                                        "Could not parse patient_dob string '%s' during update, skipping",
-                                        v,
-                                    )
-                                    continue
-                            except Exception as e:
-                                logger.warning(
-                                    "Error parsing patient_dob string '%s' during update: %s, skipping",
-                                    v,
-                                    e,
-                                )
-                                continue
-                elif k == "examination_date" and isinstance(v, str):
-                    if v == "examination_date" or v in [
-                        "patient_first_name",
-                        "patient_last_name",
-                        "patient_dob",
-                    ]:
-                        logger.warning(
-                            "Skipping invalid examination_date value '%s' during update - appears to be field name",
-                            v,
-                        )
-                        continue
-                    else:
-                        # Try to parse as date string
-                        try:
-                            import dateparser
-
-                            parsed_date = dateparser.parse(
-                                v, languages=["de"], settings={"DATE_ORDER": "DMY"}
-                            )
-                            if parsed_date:
-                                value_to_set = parsed_date.date()
+                            continue
+                    elif k == "examination_date":
+                        if isinstance(v, str):
+                            parsed = parse_any_date(v)
+                            if parsed:
+                                value_to_set = parsed  # field is DateField, so keep it as date
                                 logger.debug(
                                     "Parsed string examination_date '%s' during update to date: %s",
                                     v,
@@ -1083,23 +1041,19 @@ def update_sensitive_meta_from_dict(
                                     v,
                                 )
                                 continue
-                        except Exception as e:
-                            logger.warning(
-                                "Error parsing examination_date string '%s' during update: %s, skipping",
-                                v,
-                                e,
-                            )
-                            continue
-                # --- End Conversion ---
+                        elif isinstance(v, date):
+                            value_to_set = v
 
-                # Check if patient name is changing
-                if (
-                    k in ["patient_first_name", "patient_last_name"]
-                    and getattr(instance, k) != value_to_set
-                ):
-                    patient_name_changed = True
+                        # --- End Conversion ---
 
-                setattr(instance, k, value_to_set)  # Use value_to_set
+                        # Check if patient name is changing
+                        if (
+                            k in ["patient_first_name", "patient_last_name"]
+                            and getattr(instance, k) != value_to_set
+                        ):
+                            patient_name_changed = True
+
+                        setattr(instance, k, value_to_set)  # Use value_to_set
 
             except Exception as e:
                 logger.error(

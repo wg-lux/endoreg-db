@@ -39,7 +39,7 @@ class ClosingFileWrapper:
             self.file_handle.close()
 
 
-class PdfStreamView(APIView):
+class ReportStreamView(APIView):
     """
     Streams a report file with correct HTTP range support and proper file handle management.
 
