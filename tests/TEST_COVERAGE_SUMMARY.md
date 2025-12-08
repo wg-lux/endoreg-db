@@ -1,3 +1,4 @@
+
 # Test Coverage Summary
 
 This document provides an overview of the comprehensive unit tests added for the video correction and anonymization features.

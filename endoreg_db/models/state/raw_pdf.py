@@ -178,8 +178,8 @@ class RawPdfState(models.Model):
         Parameters:
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
-        self.anonymization_status.mark_anonymized()
-        if save:
+        with transaction.atomic():
+            self.anonymized = True
             self.save(update_fields=["anonymized", "date_modified"])
 
     def mark_initial_prediction_completed(self, *, save: bool = True) -> None:

@@ -3,7 +3,7 @@
 from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
 from ..video.reimport import VideoReimportView
-from ..pdf.reimport import PdfReimportView
+from ..report.reimport import ReportReimportView
 from ..ai.label import label_list
 
 from .sensitive_metadata import (
@@ -20,7 +20,7 @@ __all__ = [
     'VideoMediaView',
     'PdfMediaView',
     'VideoReimportView',
-    'PdfReimportView',
+    'ReportReimportView',
     'get_sensitive_metadata_pk',
     'video_sensitive_metadata',
     'video_sensitive_metadata_verify',

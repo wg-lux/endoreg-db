@@ -5,7 +5,7 @@ from typing import Tuple
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.media.storage.processing_history import ProcessingHistory
-
+from endoreg_db.import_files.context.ensure_center import ensure_center
 logger = logging.getLogger(__name__)
 
 
@@ -31,11 +31,16 @@ def create_or_retrieve_report_file(
         logger.info("Using existing RawPdfFile from context: pk=%s", pdf.pk)
     else:
         logger.info("Creating new RawPdfFile from %s for center %s", file_path, center_name)
+        
         pdf = RawPdfFile.create_from_file_initialized(
             file_path=file_path,
             center_name=center_name,
             delete_source=delete_source,
         )
+        
+        center = ensure_center(pdf, ctx.center_name)
+        
+        logger.info(f"Successfully set up report file from {center.name}")
 
 
 

@@ -12,6 +12,7 @@ from endoreg_db.utils.paths import IMPORT_VIDEO_DIR, SENSITIVE_VIDEO_DIR, TRANSC
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
 
+import endoreg_db.utils.paths as path_utils
 from ....utils.file_operations import get_uuid_filename
 from ....utils.hashs import get_video_hash
 from ....utils.video.ffmpeg_wrapper import transcode_videofile_if_required
@@ -366,8 +367,10 @@ def _create_from_file(
         # 8. Create the VideoFile instance
         logger.info("Creating new VideoFile instance with UUID: %s", uuid_val)
         # Store FileField path relative to storage root including the videos prefix
-        storage_base = Path(_get_path(data_paths, "storage", final_storage_path.parent))
-        relative_name = (final_storage_path.relative_to(storage_base)).as_posix()
+        # TODO Review removal, since this is now newly handled by path_utils
+        #storage_base = Path(_get_path(data_paths, "storage", final_storage_path.parent))
+        
+        relative_name = path_utils.to_storage_relative(final_storage_path)        
         video = cls_model(
             uuid=uuid_val,
             raw_file=relative_name,

@@ -23,36 +23,41 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     if not (video.has_raw and video.raw_file.name):
         return None
 
-    # raw_file.name is a relative storage path like 'videos/<filename>'
-    raw_rel = Path(video.raw_file.name)
-
-    # If it already contains the video directory name, keep the tail
-    rel_name = raw_rel.name if raw_rel.parent.name == SENSITIVE_VIDEO_DIR.name else raw_rel
-    full_path = data_paths["video"] / rel_name
-
-    if full_path.exists():
-        return full_path.resolve()
-
-    sensitive_path = data_paths["video"] / "sensitive" / rel_name
-    if sensitive_path.exists():
-        return sensitive_path.resolve()
-
-    if storage_file_exists(video.raw_file):
-        try:
-            direct_path = Path(video.raw_file.path)
-            if direct_path.exists():
-                return direct_path.resolve()
-        except Exception as exc:
+    # 1) Canonical: use Django's storage path
+    try:
+        direct_path = Path(video.raw_file.path)
+        if direct_path.is_file():
+            return direct_path.resolve()
+        else:
             logger.debug(
-                "Could not access direct raw_file.path for video %s: %s",
+                "raw_file.path for video %s is not a regular file: %s",
                 video.uuid,
-                exc,
+                direct_path,
             )
+    except Exception as exc:
+        logger.debug(
+            "Could not access raw_file.path for video %s: %s",
+            video.uuid,
+            exc,
+        )
+
+    # 2) Fallback: use just the filename and search in known dirs
+    raw_rel = Path(video.raw_file.name)
+    filename = raw_rel.name  # strip any (possibly wrong) prefix
+
+    candidates = [
+        data_paths["import_video"] / filename,
+        data_paths["sensitive_video"] / filename,
+    ]
+
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
 
     logger.warning(
-        "Raw video file '%s' not found under %s or via stored FileField path for video %s.",
-        rel_name,
-        data_paths["video"],
+        "Raw video file '%s' not found in import/sensitive paths or via stored FileField path for video %s.",
+        video.raw_file.name,
         video.uuid,
     )
     return None

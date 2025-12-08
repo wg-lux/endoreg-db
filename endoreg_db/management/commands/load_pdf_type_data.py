@@ -15,7 +15,6 @@ SOURCE_DIR = REPORT_TYPE_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 MODEL_0 = PdfType
 
 IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
-IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     MODEL_0.__name__,
 ]
 

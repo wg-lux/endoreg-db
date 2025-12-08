@@ -22,7 +22,7 @@ FILE_STORAGE = FileSystemStorage(location=str(STORAGE_DIR))
 TRANSCODING_DIR = data_paths["transcoding"]
 FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
-REPORT_DIR = data_paths["report_import"]
+REPORT_DIR = data_paths["import_report"]
 DOCUMENT_DIR = data_paths["documents"] #TODO Verify if this is still used and assign correct dir
 
 TEST_RUN = os.environ.get("TEST_RUN", "False")

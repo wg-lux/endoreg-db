@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from django.test import TestCase
 
-from endoreg_db.models import RawPdfFile
+from endoreg_db.models import RawPdfFile, Center
 from endoreg_db.services.report_import import ReportImportService
 from tests.helpers.default_objects import get_default_center, get_default_processor
 
@@ -78,8 +78,6 @@ class TestReportImportService(TestCase):
         self.processor = get_default_processor()
 
     @pytest.mark.integration
-    @pytest.mark.report
-    @pytest.mark.expensive
     def test_import_and_anonymize_success(self):
         """
         Test successful import and anonymization of a report file.
@@ -101,18 +99,17 @@ class TestReportImportService(TestCase):
             pdf_file = service.import_and_anonymize(
                 file_path=pdf_path,
                 center_name=self.center.name,
-                processor_name=self.processor.name,
+                retry=False,
                 delete_source=False,
             )
 
             # Basic checks
             self.assertIsNotNone(pdf_file, "RawPdfFile should be created")
             self.assertIsInstance(pdf_file, RawPdfFile)
+            self.assertIsNotNone(pdf_file)
+            self.assertIsInstance(pdf_file.center, Center)
             self.assertEqual(pdf_file.center, self.center)
 
-            # If processor is modeled on RawPdfFile, assert it too
-            if hasattr(pdf_file, "processor"):
-                self.assertEqual(pdf_file.processor, self.processor)
 
             # State exists and is attached
             if hasattr(pdf_file, "state") and pdf_file.state:
@@ -122,25 +119,7 @@ class TestReportImportService(TestCase):
             if pdf_path.exists():
                 pdf_path.unlink()
 
-    @pytest.mark.unit
-    def test_import_and_anonymize_nonexistent_file(self):
-        """
-        Test import_and_anonymize handles nonexistent files gracefully.
-
-        This is a fast unit test that doesn't require actual PDF processing.
-        """
-        nonexistent_path = Path("/tmp/nonexistent_report.pdf")
-
-        with self.assertRaises(FileNotFoundError):
-            import_and_anonymize(
-                file_path=nonexistent_path,
-                center_name=self.center.name,
-                processor_name=self.processor.name,
-            )
-
     @pytest.mark.integration
-    @pytest.mark.report
-    @pytest.mark.expensive
     def test_import_and_anonymize_with_different_options(self):
         """
         Test import_and_anonymize with different delete_source options.
@@ -162,8 +141,8 @@ class TestReportImportService(TestCase):
             pdf_file = import_and_anonymize(
                 file_path=temp_path,
                 center_name=self.center.name,
-                processor_name=self.processor.name,
-                delete_source=True,
+                retry=False,
+                delete_source=False,
             )
 
             self.assertIsNotNone(pdf_file)

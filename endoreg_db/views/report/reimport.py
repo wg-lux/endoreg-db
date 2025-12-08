@@ -11,7 +11,7 @@ from endoreg_db.services.report_import import ReportImportService
 logger = logging.getLogger(__name__)
 
 
-class PdfReimportView(APIView):
+class  ReportReimportView(APIView):
     """
     API endpoint to re-import a pdf file and regenerate metadata.
     This is useful when OCR failed or metadata is incomplete.

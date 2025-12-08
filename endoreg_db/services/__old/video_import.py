@@ -328,7 +328,7 @@ class VideoImportService:
 
         source_path = Path(self.processing_context["file_path"])
         _current_video = self._require_current_video()
-        videos_dir = Path(data_paths["video"])
+        videos_dir = Path(data_paths["import_video"])
         storage_root = Path(data_paths["storage"])
 
         videos_dir.mkdir(parents=True, exist_ok=True)
@@ -942,9 +942,6 @@ class VideoImportService:
             video_meta = getattr(video, "video_meta", None)
             processor = getattr(video_meta, "processor", None) if video_meta else None
             if processor:
-                assert isinstance(processor, EndoscopyProcessor), (
-                    "Processor is not of type EndoscopyProcessor"
-                )
                 endoscope_image_roi = processor.get_roi_endoscope_image()
                 endoscope_data_roi_nested = processor.get_sensitive_rois()
                 self.logger.info(

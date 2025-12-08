@@ -64,7 +64,7 @@ def finalize_report_success(
     - Mark ProcessingHistory.success = True
     """
     instance = ctx.current_report
-    if not isinstance(instance, Union[VideoFile, RawPdfFile]):
+    if not isinstance(instance, RawPdfFile):
         logger.warning("finalize_success called with unsaved instance")
         return
     if not instance.pk:
@@ -73,38 +73,58 @@ def finalize_report_success(
 
     # --- Move anonymized path into final storage (if we have one) ---
     final_path: Optional[Path] = None
-
     if ctx.anonymized_path is None:
         logger.warning(
-            "No anonymized_temp_path for instance %s (hash=%s); "
-            "skipping anonymized file move.",
+            "No anonymized_path for instance %s (hash=%s); skipping file move.",
             instance.pk,
             getattr(instance, "pdf_hash", None),
         )
+        final_path = None
     else:
-        ANONYM_REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-        # Use same naming convention as old PdfImportService: <hash>_anonymized.pdf
         pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
-        final_path = ANONYM_REPORT_DIR / f"{pdf_hash}.pdf"
+        expected_final_path = ANONYM_REPORT_DIR / f"{pdf_hash}.pdf"
 
-        # Replace any existing file for this hash
-        if final_path.exists():
-            try:
-                final_path.unlink()
-            except Exception as e:
-                logger.warning(
-                    "Could not remove existing anonymized instance %s: %s",
-                    final_path,
-                    e,
-                )
+        src = Path(ctx.anonymized_path)
 
-        shutil.move(str(ctx.anonymized_path), str(final_path))
-        logger.info(
-            "Moved anonymized instance to canonical path: %s",
-            final_path,
+        logger.debug(
+            "finalize_report_success: src=%s (exists=%s, resolved=%s), expected_final=%s",
+            src,
+            src.exists(),
+            src.resolve(),
+            expected_final_path,
         )
 
+        # If anonymizer already wrote to the final path, don't move
+        if src.resolve() == expected_final_path.resolve():
+            logger.info(
+                "Anonymizer output already at final path %s; skipping move.",
+                expected_final_path,
+            )
+            final_path = expected_final_path
+        else:
+            # Only move if the source actually exists
+            if not src.exists():
+                logger.error(
+                    "Anonymized file %s does not exist; cannot move to %s",
+                    src,
+                    expected_final_path,
+                )
+                final_path = None
+            else:
+                ANONYM_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+                if expected_final_path.exists():
+                    expected_final_path.unlink()
+                shutil.move(str(src), str(expected_final_path))
+                final_path = expected_final_path
+                logger.info("Moved anonymized report to %s", final_path)
+
+        # Update FileField if we have a final path
+        if final_path is not None:
+            relative_name = path_utils.to_storage_relative(final_path)
+            current_name = getattr(instance.processed_file, "name", None)
+            if current_name != relative_name:
+                instance.processed_file.name = relative_name
+                logger.info("Updated processed_file to %s", relative_name)
         try:
             relative_name = str(ctx.anonymized_path)
         except ValueError:
@@ -160,19 +180,19 @@ def finalize_video_success(
     ctx: ImportContext,
 ) -> None:
     """
-    Finalize a successful instance import/anonymization.
+    Finalize a successful video import/anonymization.
 
-    - Move anonymized Report from temp to canonical anonymized dir
-    - Update RawPdfFile.processed_file and .anonymized flag
-    - Mark RawPdfState as anonymized + sensitive_meta_processed
+    - Move anonymized video from temp to canonical anonymized dir
+    - Update VideoFile.processed_file
+    - Mark VideoState as anonymized + sensitive_meta_processed
     - Mark ProcessingHistory.success = True
     """
     instance = ctx.current_video
     if not isinstance(instance, VideoFile):
-        logger.warning("finalize_success called with unsaved instance")
+        logger.warning("finalize_video_success called with non-VideoFile instance")
         return
     if not instance.pk:
-        logger.warning("finalize_success called with unsaved instance")
+        logger.warning("finalize_video_success called with unsaved instance")
         return
 
     # --- Move anonymized path into final storage (if we have one) ---
@@ -180,55 +200,79 @@ def finalize_video_success(
 
     if ctx.anonymized_path is None:
         logger.warning(
-            "No anonymized_temp_path for instance %s (hash=%s); "
-            "skipping anonymized file move.",
+            "No anonymized_path for video instance %s (hash=%s); skipping file move.",
             instance.pk,
             getattr(instance, "video_hash", None),
         )
-
     else:
+        # Use a stable naming convention: <video_hash>.mp4
+        video_hash = getattr(instance, "video_hash", None) or instance.pk
+        expected_final_path = ANONYM_VIDEO_DIR / f"{video_hash}.mp4"
 
-        # Use same naming convention as old PdfImportService: <hash>_anonymized.pdf
-        video_hash = getattr(instance, "video_hash", None),
+        src = Path(ctx.anonymized_path)
 
-        final_path = ANONYM_VIDEO_DIR / f"{video_hash}.mp4"
-
-        logger.info(
-            "Moved anonymized instance to canonical path: %s",
-            final_path,
+        logger.debug(
+            "finalize_video_success: src=%s (exists=%s, resolved=%s), expected_final=%s",
+            src,
+            src.exists(),
+            src.resolve(),
+            expected_final_path,
         )
-        
 
-
-        # Update FileField to be relative to STORAGE_DIR (same as _apply_anonymized_pdf)
+        # If anonymizer already wrote to the final path, don't move
         try:
-            relative_name = str(ctx.anonymized_path)
-        except ValueError:
-            # Fallback: absolute path if outside STORAGE_DIR
-            relative_name = str(final_path)
+            same_target = src.resolve() == expected_final_path.resolve()
+        except FileNotFoundError:
+            # src might not exist anymore
+            same_target = False
 
-        current_name = getattr(instance.processed_file, "name", None)
-        if current_name != relative_name:
-            instance.processed_file.name = relative_name
+        if same_target:
             logger.info(
-                "Updated processed_file reference to: %s",
-                instance.processed_file.name,
+                "Anonymizer output already at final video path %s; skipping move.",
+                expected_final_path,
             )
+            final_path = expected_final_path
+        else:
+            if not src.exists():
+                logger.error(
+                    "Anonymized video %s does not exist; cannot move to %s",
+                    src,
+                    expected_final_path,
+                )
+                final_path = None
+            else:
+                ANONYM_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+                if expected_final_path.exists():
+                    try:
+                        expected_final_path.unlink()
+                    except Exception as e:
+                        logger.warning(
+                            "Could not remove existing anonymized video %s: %s",
+                            expected_final_path,
+                            e,
+                        )
+                shutil.move(str(src), str(expected_final_path))
+                final_path = expected_final_path
+                logger.info("Moved anonymized video to %s", final_path)
 
+        # Update FileField if we have a final path
+        if final_path is not None:
+            relative_name = path_utils.to_storage_relative(final_path)
+            current_name = getattr(instance.processed_file, "name", None)
+            if current_name != relative_name:
+                instance.processed_file.name = relative_name
+                logger.info("Updated video processed_file to %s", relative_name)
 
-    # --- Update RawPdfState flags (mirrors _finalize_processing) ---
+    # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
 
     with transaction.atomic():
         if state is not None:
-
-            # In the old code, processing_started was set earlier; we guard here
             if not getattr(state, "processing_started", False) and hasattr(
                 state, "mark_processing_started"
             ):
                 state.mark_processing_started()
 
-            # We consider text/meta extraction + anonymization done at this point
             if hasattr(state, "mark_anonymized"):
                 state.mark_anonymized()
             if hasattr(state, "mark_sensitive_meta_processed"):
@@ -247,8 +291,11 @@ def finalize_video_success(
             )
     except Exception as e:
         logger.debug(
-            f"Saving not possible: {e} skipping ProcessingHistory.",
+            "Saving not possible for video %s; skipping ProcessingHistory. Error: %s",
+            instance.pk,
+            e,
         )
+
 
 def finalize_failure(
     ctx: ImportContext,

@@ -43,8 +43,6 @@ class TestVideoImportService(TestCase):
 
 
     @pytest.mark.integration
-    @pytest.mark.video
-    @pytest.mark.expensive
     def test_import_and_anonymize_success(self):
         """
         Test successful import and anonymization of a video file.
@@ -101,8 +99,6 @@ class TestVideoImportService(TestCase):
             )
 
     @pytest.mark.integration
-    @pytest.mark.video
-    @pytest.mark.expensive
     def test_import_and_anonymize_with_different_options(self):
         """
         Test import_and_anonymize with different save/delete options.
