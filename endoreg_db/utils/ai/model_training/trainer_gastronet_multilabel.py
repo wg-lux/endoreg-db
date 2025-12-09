@@ -7,8 +7,13 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import numpy as np
+from PIL import Image  # (kept in case you later need visual debug)
+
 import torch
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
 from django.db import models
 
 from endoreg_db.models import AIDataSet
@@ -125,8 +130,8 @@ def groupwise_split_indices_by_examination(
     n_train = n_groups - n_val - n_test
 
     train_group_ids = group_ids[:n_train]
-    val_group_ids = group_ids[n_train : n_train + n_val]
-    test_group_ids = group_ids[n_train + n_val :]
+    val_group_ids = group_ids[n_train: n_train + n_val]
+    test_group_ids = group_ids[n_train + n_val:]
 
     train_indices: List[int] = []
     val_indices: List[int] = []
@@ -164,13 +169,14 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     Pipeline:
       1. Load AIDataSet from DB and build raw dataset via build_dataset_for_training.
       2. Filter labels by LabelSet.version == config.labelset_version_to_train.
-      3. Convert unlabeled v2 labels depending on config.treat_unlabeled_as_negative.
-      4. Compute dataset statistics.
+      3. Optionally convert unlabeled → negative (Option A).
+      4. Compute dataset statistics (positives per label, etc.).
       5. Group-wise split by old_examination_id into train/val/test.
       6. Wrap in PyTorch Dataset + DataLoaders.
       7. Build GastroNet-ResNet50 backbone + new head.
-      8. Train with focal loss + class weights.
-      9. Evaluate + save model & metadata.
+      8. Train with focal loss + class weights (+ mask).
+      9. LR schedule: warm-up + cosine decay (if enabled).
+     10. Save model + metadata in model_training/runs.
     """
     # ------------------------------------------------------------------
     # 1. Load dataset from DB
@@ -229,13 +235,20 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         print(f"    [{new_idx}] (orig {orig_idx}) {labels[new_idx].name}")
 
     # ------------------------------------------------------------------
-    # 2b. OPTION A: Treat UNLABELED v2 labels as NEGATIVE (0) + KNOWN
+    # 2b. OPTION A: treat UNLABELED v2 labels as NEGATIVE (0) + KNOWN
     # ------------------------------------------------------------------
+    # After filtering to the target version, we decide how to interpret
+    # unlabeled entries:
+    #
+    # If treat_unlabeled_as_negative == True:
+    #   vec[j] == 1   -> positive, mask[j] = 1
+    #   vec[j] is None -> assume 0 (negative), mask[j] = 1
+    #
+    # If False:
+    #   vec[j] is None -> value 0, but mask[j] = 0 (ignored)
+    #
+    # In your current setup you want Option A (True).
     if config.treat_unlabeled_as_negative:
-        # After this:
-        #   - vec[j] == 1  -> positive, mask[j] = 1
-        #   - vec[j] is None -> 0 (assumed negative), mask[j] = 1
-        # so: no None left, all mask=1 for v2 labels.
         for i in range(len(label_vectors)):
             vec = label_vectors[i]
             mask = label_masks[i]
@@ -244,11 +257,14 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             new_mask = []
             for x in vec:
                 if x is None:
-                    new_vec.append(0)  # unlabeled -> assume absent
-                    new_mask.append(1)  # and supervised
+                    # unlabeled -> assume negative but KNOWN
+                    new_vec.append(0)
+                    new_mask.append(1)
                 else:
-                    new_vec.append(int(x))  # 0 or 1
-                    new_mask.append(1)      # known
+                    # explicit label (1 or 0) -> keep value, mark as known
+                    new_vec.append(int(x))
+                    new_mask.append(1)
+
             label_vectors[i] = new_vec
             label_masks[i] = new_mask
     else:
@@ -261,12 +277,13 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             for x, ms in zip(vec, mask):
                 if x is None:
                     v.append(0)      # value won't be used
-                    m.append(0)      # unknown -> ignore
+                    m.append(0)      # unknown -> ignore in loss/metrics
                 else:
-                    v.append(int(x))  # 0 or 1
+                    v.append(int(x)) # 0 or 1
                     m.append(int(ms))
             cleaned_vectors.append(v)
             cleaned_masks.append(m)
+
         label_vectors = cleaned_vectors
         label_masks = cleaned_masks
 
@@ -277,7 +294,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     masks_arr = []
     for vec, mask in zip(label_vectors, label_masks):
         v = [int(x) for x in vec]   # now guaranteed 0/1
-        m = [int(x) for x in mask]  # usually 1 if Option A
+        m = [int(x) for x in mask]  # typically 1
         labels_arr.append(v)
         masks_arr.append(m)
 
@@ -401,7 +418,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     )
 
     # ------------------------------------------------------------------
-    # 8. Optimizer
+    # 8. Optimizer + LR SCHEDULER (warm-up + cosine)
     # ------------------------------------------------------------------
     head_params = list(model.classifier.parameters())
     backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
@@ -413,12 +430,35 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         ]
     )
 
+    # Store base LRs for warm-up
+    base_lrs = [config.lr_head, config.lr_backbone]
+
+    if config.use_scheduler:
+        total_epochs = config.num_epochs
+        warmup_epochs = max(config.warmup_epochs, 0)
+        # We apply cosine decay AFTER warm-up
+        t_max = max(total_epochs - warmup_epochs, 1)
+
+        scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=t_max,
+            eta_min=config.min_lr,
+        )
+        print(
+            f"[LR] Using warm-up + cosine decay: warmup_epochs={warmup_epochs}, "
+            f"T_max={t_max}, min_lr={config.min_lr}"
+        )
+    else:
+        scheduler = None
+        warmup_epochs = 0
+        print("[LR] No LR scheduler used (fixed learning rate).")
+
     # ------------------------------------------------------------------
     # 9. Training loop
     # ------------------------------------------------------------------
     history = {"train_loss": [], "val_loss": [], "test_loss": None}
 
-    # Debug first batch
+    # One-time debug of first batch
     first_batch = next(iter(train_loader))
     imgs_dbg, y_dbg, m_dbg = first_batch
     print("[DEBUG] First training batch shapes:")
@@ -430,7 +470,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     print("[DEBUG] First sample mask (m[0]):")
     print(m_dbg[0].tolist())
 
-    model.train()
+    model.eval()
     with torch.no_grad():
         logits_dbg = model(imgs_dbg.to(device))
         probs_dbg = torch.sigmoid(logits_dbg)
@@ -440,6 +480,24 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     print(probs_dbg[0].cpu().tolist())
 
     for epoch in range(1, config.num_epochs + 1):
+        # ----------------- LR SCHEDULER: warm-up + cosine ----------------
+        if scheduler is not None:
+            if warmup_epochs > 0 and epoch <= warmup_epochs:
+                # Linear warm-up: start from 0 → base_lr over warmup_epochs
+                warmup_factor = epoch / float(warmup_epochs)
+                for i, pg in enumerate(optimizer.param_groups):
+                    pg["lr"] = base_lrs[i] * warmup_factor
+            else:
+                # After warm-up, step cosine scheduler once per epoch
+                scheduler.step()
+
+            current_lrs = [pg["lr"] for pg in optimizer.param_groups]
+            print(
+                f"[LR] Epoch {epoch:03d}: "
+                f"head_lr={current_lrs[0]:.6g}, backbone_lr={current_lrs[1]:.6g}"
+            )
+
+        # ----------------- TRAIN PHASE -----------------------------------
         model.train()
         train_loss_sum = 0.0
         train_batches = 0
@@ -469,16 +527,16 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         train_loss = train_loss_sum / max(train_batches, 1)
         history["train_loss"].append(train_loss)
 
-        # ---- Validate ----
+        # ----------------- VALIDATION PHASE ------------------------------
         model.eval()
         val_loss_sum = 0.0
         val_batches = 0
 
-        with torch.no_grad():
-            all_val_logits = []
-            all_val_targets = []
-            all_val_masks = []
+        all_val_logits = []
+        all_val_targets = []
+        all_val_masks = []
 
+        with torch.no_grad():
             for imgs, y, m in val_loader:
                 imgs = imgs.to(device, non_blocking=True)
                 y = y.to(device, non_blocking=True)
@@ -603,7 +661,6 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         "config": {
             "dataset_id": config.dataset_id,
             "labelset_version_to_train": config.labelset_version_to_train,
-            "treat_unlabeled_as_negative": config.treat_unlabeled_as_negative,
             "backbone_checkpoint": config.backbone_checkpoint,
             "num_epochs": config.num_epochs,
             "batch_size": config.batch_size,
@@ -615,6 +672,10 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             "alpha_focal": config.alpha_focal,
             "device": config.device,
             "random_seed": config.random_seed,
+            "treat_unlabeled_as_negative": config.treat_unlabeled_as_negative,
+            "use_scheduler": config.use_scheduler,
+            "warmup_epochs": config.warmup_epochs,
+            "min_lr": config.min_lr,
         },
         "original_labelset_id": labelset.id,
         "original_labelset_name": labelset.name,
