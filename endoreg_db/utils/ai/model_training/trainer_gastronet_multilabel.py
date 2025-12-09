@@ -5,79 +5,285 @@ from __future__ import annotations
 import json
 import math
 import random
-from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
-from collections import defaultdict
+from endoreg_db.utils.ai.model_training.metrics import compute_metrics
+
+
+import numpy as np
+from PIL import Image
+
 import torch
-from torch.utils.data import DataLoader, random_split, Subset 
-from endoreg_db.models import AIDataSet
-from endoreg_db.utils.ai.data_loader_for_model_input import (
-    build_dataset_for_training,
+from torch.utils.data import DataLoader
+
+from django.db import models
+
+from endoreg_db.models import AIDataSet, Frame
+from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
+from endoreg_db.utils.ai.model_training.config import (
+    TrainingConfig,
+    RUNS_DIR,
+)
+from endoreg_db.utils.ai.model_training.dataset import EndoMultiLabelDataset
+from endoreg_db.utils.ai.model_training.losses import (
+    compute_class_weights,
+    focal_loss_with_mask,
+)
+from endoreg_db.utils.ai.model_training.model_gastronet_resnet import (
+    GastroNetResNet50MultiLabel,
 )
 
-from .config import TrainingConfig, RUNS_DIR
-from .dataset import EndoMultiLabelDataset
-from .losses import compute_class_weights, focal_loss_with_mask
-from .model_gastronet_resnet import GastroNetResNet50MultiLabel
+
+# ---------------------------------------------------------------------
+# HELPER: FILTER LABELS BY LABELSET VERSION
+# ---------------------------------------------------------------------
+
+def filter_labels_by_labelset_version(
+    labels: Sequence[models.Model],
+    label_vectors: Sequence[Sequence[Optional[int]]],
+    label_masks: Sequence[Sequence[int]],
+    target_version: int,
+) -> Tuple[
+    List[List[Optional[int]]],
+    List[List[int]],
+    List[models.Model],
+    List[int],
+]:
+    """
+    From the full label list + vectors, keep ONLY those labels that belong
+    to ANY LabelSet with version == target_version.
+
+    labels:        list[Label]
+    label_vectors: list[list[0/1/None]] (len = N samples)
+    label_masks:   list[list[0/1]]      (len = N samples)
+    target_version: integer LabelSet.version to filter by.
+
+    Returns:
+        filtered_label_vectors,
+        filtered_label_masks,
+        filtered_labels,
+        kept_indices (original label indices kept)
+    """
+    kept_indices: List[int] = []
+
+    for idx, lbl in enumerate(labels):
+        # lbl.label_sets is the M2M relation "LabelSet.labels"
+        if lbl.label_sets.filter(version=target_version).exists():
+            kept_indices.append(idx)
+
+    if not kept_indices:
+        raise ValueError(
+            f"No labels in this dataset belong to any LabelSet with version={target_version}. "
+            "Check your LabelSet configuration or change labelset_version_to_train "
+            "in config.py."
+        )
+
+    # Slice vectors + masks to keep only the chosen label indices
+    filtered_vectors: List[List[Optional[int]]] = []
+    filtered_masks: List[List[int]] = []
+
+    for vec, mask in zip(label_vectors, label_masks):
+        new_vec = [vec[j] for j in kept_indices]
+        new_mask = [mask[j] for j in kept_indices]
+        filtered_vectors.append(new_vec)
+        filtered_masks.append(new_mask)
+
+    filtered_labels = [labels[j] for j in kept_indices]
+
+    return filtered_vectors, filtered_masks, filtered_labels, kept_indices
 
 
-def _select_device(device_str: str) -> torch.device:
-    if device_str == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device_str)
+# ---------------------------------------------------------------------
+# GROUP-WISE SPLIT BY old_examination_id
+# ---------------------------------------------------------------------
 
+def groupwise_split_indices_by_examination(
+    frame_ids: Sequence[int],
+    old_examination_ids: Sequence[Optional[int]],
+    val_split: float,
+    test_split: float,
+    seed: int = 42,
+) -> Tuple[List[int], List[int], List[int]]:
+    """
+    Split sample indices into train / val / test based on old_examination_id.
+
+    All frames sharing the same old_examination_id go into the same split.
+    If old_examination_id is None, we treat each frame as its own group.
+
+    Returns:
+        train_indices, val_indices, test_indices
+    """
+    assert len(frame_ids) == len(old_examination_ids)
+
+    # 1) Build mapping: group_id -> list of sample indices
+    groups: Dict[object, List[int]] = {}
+    for idx, (fid, exam_id) in enumerate(zip(frame_ids, old_examination_ids)):
+        group_key = exam_id if exam_id is not None else f"no_exam_{fid}"
+        groups.setdefault(group_key, []).append(idx)
+
+    group_ids = list(groups.keys())
+    rng = random.Random(seed)
+    rng.shuffle(group_ids)
+
+    n_groups = len(group_ids)
+    n_test = int(round(test_split * n_groups))
+    n_val = int(round(val_split * n_groups))
+    n_train = n_groups - n_val - n_test
+
+    train_group_ids = group_ids[:n_train]
+    val_group_ids = group_ids[n_train : n_train + n_val]
+    test_group_ids = group_ids[n_train + n_val :]
+
+    train_indices: List[int] = []
+    val_indices: List[int] = []
+    test_indices: List[int] = []
+
+    for gid in train_group_ids:
+        train_indices.extend(groups[gid])
+    for gid in val_group_ids:
+        val_indices.extend(groups[gid])
+    for gid in test_group_ids:
+        test_indices.extend(groups[gid])
+
+    # Sort indices for reproducibility
+    train_indices.sort()
+    val_indices.sort()
+    test_indices.sort()
+
+    print(
+        f"[TRAIN] Group-wise split by old_examination_id: "
+        f"#groups={n_groups}, train_groups={len(train_group_ids)}, "
+        f"val_groups={len(val_group_ids)}, test_groups={len(test_group_ids)}"
+    )
+
+    return train_indices, val_indices, test_indices
+
+
+# ---------------------------------------------------------------------
+# MAIN TRAINING FUNCTION
+# ---------------------------------------------------------------------
 
 def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     """
-    End-to-end training of a GastroNet-ResNet50 multi-label classifier
-    on an AIDataSet defined in the database.
+    High-level training entry point.
+
+    Pipeline:
+      1. Load AIDataSet from DB and build raw dataset via build_dataset_for_training.
+      2. Filter labels by LabelSet.version == config.labelset_version_to_train.
+      3. Compute dataset statistics (positives per label, etc.).
+      4. Group-wise split by old_examination_id into train/val/test.
+      5. Wrap in PyTorch Dataset + DataLoaders.
+      6. Build GastroNet-ResNet50 backbone + new head.
+      7. Train with focal loss + mask + class weights.
+      8. Save model + metadata in model_training/runs.
     """
     # ------------------------------------------------------------------
-    # 1) Load dataset from DB via your existing helper
+    # 1. Load dataset from DB
     # ------------------------------------------------------------------
     dataset_obj = AIDataSet.objects.get(id=config.dataset_id)
     data = build_dataset_for_training(dataset_obj)
 
     image_paths: List[str] = data["image_paths"]
-    label_vectors = data["label_vectors"]
-    label_masks = data["label_masks"]
-    labels = data["labels"]
+    label_vectors: List[List[Optional[int]]] = data["label_vectors"]
+    label_masks: List[List[int]] = data["label_masks"]
+    labels = data["labels"]  # list[Label]
     labelset = data["labelset"]
+    frame_ids: List[int] = data.get("frame_ids", [])
+    old_exam_ids: List[Optional[int]] = data.get("old_examination_ids", [])
 
-    num_samples = len(image_paths)
-    num_labels = len(labels)
+    num_samples_raw = len(image_paths)
+    num_labels_raw = len(labels)
 
     print(f"[TRAIN] AIDataSet id={dataset_obj.id}")
-    print(f"[TRAIN] #samples = {num_samples}, #labels = {num_labels}")
-    print(f"[TRAIN] LabelSet id={labelset.id}, name={labelset.name}, version={labelset.version}")
-    print("[TRAIN] Labels:")
+    print(f"[TRAIN] #samples (raw) = {num_samples_raw}, #labels (raw) = {num_labels_raw}")
+    print(
+        f"[TRAIN] LabelSet id={labelset.id}, "
+        f"name={labelset.name}, version={labelset.version}"
+    )
+    print("[TRAIN] Labels (raw):")
     for idx, lbl in enumerate(labels):
         print(f"    [{idx}] {lbl.name}")
 
     # ------------------------------------------------------------------
-    # 2) Wrap into PyTorch Dataset + train/val split
+    # 2. Filter labels by LabelSet.version == config.labelset_version_to_train
     # ------------------------------------------------------------------
-    ''' full_ds = EndoMultiLabelDataset(
-        image_paths=image_paths,
+    target_version = config.labelset_version_to_train
+    print(
+        f"[TRAIN] Filtering labels to those belonging to ANY LabelSet with version={target_version}..."
+    )
+
+    (
+        label_vectors,
+        label_masks,
+        labels,
+        kept_indices,
+    ) = filter_labels_by_labelset_version(
+        labels=labels,
         label_vectors=label_vectors,
         label_masks=label_masks,
-        image_size=224,
+        target_version=target_version,
     )
 
-    random.seed(config.random_seed)
-    torch.manual_seed(config.random_seed)
-
-    val_size = int(math.floor(config.val_split * len(full_ds)))
-    train_size = len(full_ds) - val_size
-
-    train_ds, val_ds = random_split(
-        full_ds,
-        lengths=[train_size, val_size],
-        generator=torch.Generator().manual_seed(config.random_seed),
+    num_labels_filtered = len(labels)
+    print(
+        f"[TRAIN] Label filtering done. "
+        f"Kept {num_labels_filtered} / {num_labels_raw} labels."
     )
-    print(f"[TRAIN] Train size: {train_size}, Val size: {val_size}")'''
+    print("[TRAIN] Kept labels (new index -> original index -> name):")
+    for new_idx, orig_idx in enumerate(kept_indices):
+        print(f"    [{new_idx}] (orig {orig_idx}) {labels[new_idx].name}")
 
+    # ------------------------------------------------------------------
+    # 3. Dataset statistics AFTER filtering
+    # ------------------------------------------------------------------
+    labels_arr = []
+    masks_arr = []
+    for vec, mask in zip(label_vectors, label_masks):
+        v = [0 if (x is None) else int(x) for x in vec]
+        labels_arr.append(v)
+        masks_arr.append([int(x) for x in mask])
+
+    labels_tensor = torch.tensor(labels_arr, dtype=torch.float32)
+    masks_tensor = torch.tensor(masks_arr, dtype=torch.float32)
+
+    total_known = masks_tensor.sum().item()
+    total_pos = (labels_tensor * masks_tensor).sum().item()
+
+    print("[DEBUG] Dataset statistics AFTER label filtering:")
+    print(f"    #samples           = {len(image_paths)}")
+    print(f"    #labels            = {num_labels_filtered}")
+    print(f"    total known entries= {total_known}")
+    print(f"    total positive labels (over known) = {total_pos}")
+
+    pos_per_label = (labels_tensor * masks_tensor).sum(dim=0).tolist()
+    print("[DEBUG] Positives per label (index: count):")
+    for idx, c in enumerate(pos_per_label):
+        print(f"    [{idx}] = {int(c)}")
+
+    # ------------------------------------------------------------------
+    # 4. Group-wise split by old_examination_id (train/val/test)
+    # ------------------------------------------------------------------
+    if not frame_ids or not old_exam_ids:
+        frame_ids = list(range(len(image_paths)))
+        old_exam_ids = [None] * len(image_paths)
+
+    train_indices, val_indices, test_indices = groupwise_split_indices_by_examination(
+        frame_ids=frame_ids,
+        old_examination_ids=old_exam_ids,
+        val_split=config.val_split,
+        test_split=config.test_split,
+        seed=config.random_seed,
+    )
+
+    print(
+        f"[TRAIN] Train size: {len(train_indices)}, "
+        f"Val size: {len(val_indices)}, "
+        f"Test size: {len(test_indices)}"
+    )
+
+    # ------------------------------------------------------------------
+    # 5. Build PyTorch datasets + loaders
+    # ------------------------------------------------------------------
     full_ds = EndoMultiLabelDataset(
         image_paths=image_paths,
         label_vectors=label_vectors,
@@ -85,91 +291,23 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         image_size=224,
     )
 
-    random.seed(config.random_seed)
-    torch.manual_seed(config.random_seed)
+    def subset_dataset(ds: EndoMultiLabelDataset, indices: List[int]) -> EndoMultiLabelDataset:
+        sub_image_paths = [ds.image_paths[i] for i in indices]
+        sub_labels = ds.labels[indices]
+        sub_masks = ds.masks[indices]
 
-    # ------------------------------------------------------------------
-    # Group-wise split by old_examination_id (if available)
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    old_exam_ids: Optional[List[Optional[int]]] = data.get("old_examination_ids")
-
-    if old_exam_ids is not None:
-        # 1) Build mapping: exam_id -> list of frame indices
-        group_to_indices: Dict[int, List[int]] = defaultdict(list)
-        for idx, exam_id in enumerate(old_exam_ids):
-            # If some entries are None, treat them as their own group key
-            key = -1 if exam_id is None else int(exam_id)
-            group_to_indices[key].append(idx)
-
-        all_group_ids = list(group_to_indices.keys())
-        random.shuffle(all_group_ids)
-
-        n_groups = len(all_group_ids)
-
-        # number of groups for val and test
-        n_val_groups = int(math.floor(config.val_split * n_groups))
-        n_test_groups = int(math.floor(config.test_split * n_groups))
-
-        # safety: make sure we don't overshoot
-        if n_val_groups + n_test_groups >= n_groups:
-            # fallback: reduce test groups so that at least 1 group is left for train
-            n_test_groups = max(0, n_groups - n_val_groups - 1)
-
-        val_group_ids = set(all_group_ids[:n_val_groups])
-        test_group_ids = set(all_group_ids[n_val_groups : n_val_groups + n_test_groups])
-        train_group_ids = set(all_group_ids[n_val_groups + n_test_groups :])
-
-        train_indices: List[int] = []
-        val_indices: List[int] = []
-        test_indices: List[int] = []
-
-        for g in train_group_ids:
-            train_indices.extend(group_to_indices[g])
-        for g in val_group_ids:
-            val_indices.extend(group_to_indices[g])
-        for g in test_group_ids:
-            test_indices.extend(group_to_indices[g])
-
-        train_ds = Subset(full_ds, train_indices)
-        val_ds = Subset(full_ds, val_indices)
-        test_ds = Subset(full_ds, test_indices)
-
-        print(
-            f"[TRAIN] Group-wise split by old_examination_id:"
-            f" #groups={n_groups}, "
-            f"train_groups={len(train_group_ids)}, "
-            f"val_groups={len(val_group_ids)}, "
-            f"test_groups={len(test_group_ids)}"
-        )
-        print(
-            f"[TRAIN] Train size: {len(train_indices)}, "
-            f"Val size: {len(val_indices)}, "
-            f"Test size: {len(test_indices)}"
+        sub_label_vectors = sub_labels.tolist()
+        sub_label_masks = sub_masks.tolist()
+        return EndoMultiLabelDataset(
+            image_paths=sub_image_paths,
+            label_vectors=sub_label_vectors,
+            label_masks=sub_label_masks,
+            image_size=ds.image_size,
         )
 
-    else:
-        # Fallback: simple per-frame random split (train/val/test)
-        total = len(full_ds)
-        n_test = int(math.floor(config.test_split * total))
-        n_val = int(math.floor(config.val_split * total))
-        n_train = total - n_val - n_test
-
-        train_ds, val_ds, test_ds = random_split(
-            full_ds,
-            lengths=[n_train, n_val, n_test],
-            generator=torch.Generator().manual_seed(config.random_seed),
-        )
-        print(
-            f"[TRAIN] WARNING: old_examination_ids not available in data; "
-            f"using per-frame random split."
-        )
-        print(
-            f"[TRAIN] Train size: {n_train}, "
-            f"Val size: {n_val}, "
-            f"Test size: {n_test}"
-        )
-    #####
+    train_ds = subset_dataset(full_ds, train_indices)
+    val_ds = subset_dataset(full_ds, val_indices)
+    test_ds = subset_dataset(full_ds, test_indices)
 
     train_loader = DataLoader(
         train_ds,
@@ -194,32 +332,38 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     )
 
     # ------------------------------------------------------------------
-    # 3) Build model
+    # 6. Build model
     # ------------------------------------------------------------------
-    device = _select_device(config.device)
+    if config.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(config.device)
 
-    backbone_ckpt: Optional[Path] = (
+    backbone_ckpt = (
         Path(config.backbone_checkpoint)
         if config.backbone_checkpoint is not None
         else None
     )
 
     model = GastroNetResNet50MultiLabel(
-        num_labels=num_labels,
+        num_labels=num_labels_filtered,
         backbone_checkpoint=backbone_ckpt,
-        freeze_backbone=True,  # Phase 1: train head only
-    ).to(device)
+        freeze_backbone=True,  # start with head-only training
+    )
+    model.to(device)
 
     # ------------------------------------------------------------------
-    # 4) Class weights
+    # 7. Class weights from full (filtered) dataset
     # ------------------------------------------------------------------
-    all_labels = full_ds.labels  # [N, C]
-    all_masks = full_ds.masks    # [N, C]
-    class_weights = compute_class_weights(all_labels, all_masks).to(device)
-    print("[TRAIN] Class weights:", class_weights.cpu().tolist())
+    class_weights = compute_class_weights(full_ds.labels, full_ds.masks).to(device)
+    print("[TRAIN] Computed class weights per label:", class_weights.cpu().tolist())
+    print(
+        "[DEBUG] class_weights range: "
+        f"min={float(class_weights.min()):.6f}, max={float(class_weights.max()):.6f}"
+    )
 
     # ------------------------------------------------------------------
-    # 5) Optimizer
+    # 8. Optimizer
     # ------------------------------------------------------------------
     head_params = list(model.classifier.parameters())
     backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
@@ -231,13 +375,32 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         ]
     )
 
-    history = {"train_loss": [], "val_loss": []}
+    # ------------------------------------------------------------------
+    # 9. Training loop
+    # ------------------------------------------------------------------
+    history = {"train_loss": [], "val_loss": [], "test_loss": None}
 
-    # ------------------------------------------------------------------
-    # 6) Training loop
-    # ------------------------------------------------------------------
+    first_batch = next(iter(train_loader))
+    imgs_dbg, y_dbg, m_dbg = first_batch
+    print("[DEBUG] First training batch shapes:")
+    print("    imgs:", imgs_dbg.shape)
+    print("    y:   ", y_dbg.shape)
+    print("    m:   ", m_dbg.shape)
+    print("[DEBUG] First sample labels (y[0]):")
+    print(y_dbg[0].tolist())
+    print("[DEBUG] First sample mask (m[0]):")
+    print(m_dbg[0].tolist())
+
+    model.train()
+    with torch.no_grad():
+        logits_dbg = model(imgs_dbg.to(device))
+        probs_dbg = torch.sigmoid(logits_dbg)
+    print("[DEBUG] First sample logits:")
+    print(logits_dbg[0].cpu().tolist())
+    print("[DEBUG] First sample probs (sigmoid):")
+    print(probs_dbg[0].cpu().tolist())
+
     for epoch in range(1, config.num_epochs + 1):
-        # ---- Train ----
         model.train()
         train_loss_sum = 0.0
         train_batches = 0
@@ -267,7 +430,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         train_loss = train_loss_sum / max(train_batches, 1)
         history["train_loss"].append(train_loss)
 
-        # ---- Validation ----
+        # ---- Validate ----
         model.eval()
         val_loss_sum = 0.0
         val_batches = 0
@@ -279,7 +442,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
                 m = m.to(device, non_blocking=True)
 
                 logits = model(imgs)
-                val_loss = focal_loss_with_mask(
+                loss = focal_loss_with_mask(
                     logits=logits,
                     targets=y,
                     masks=m,
@@ -287,24 +450,59 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
                     alpha=config.alpha_focal,
                     gamma=config.gamma_focal,
                 )
-                val_loss_sum += val_loss.item()
+                val_loss_sum += loss.item()
                 val_batches += 1
 
-        val_loss_mean = val_loss_sum / max(val_batches, 1)
-        history["val_loss"].append(val_loss_mean)
+        val_loss = val_loss_sum / max(val_batches, 1)
+        history["val_loss"].append(val_loss)
+
+                # ---- Validation metrics ----
+        all_val_logits = []
+        all_val_targets = []
+        all_val_masks = []
+
+        with torch.no_grad():
+            for imgs, y, m in val_loader:
+                imgs = imgs.to(device)
+                y = y.to(device)
+                m = m.to(device)
+                logits = model(imgs)
+
+                all_val_logits.append(logits)
+                all_val_targets.append(y)
+                all_val_masks.append(m)
+
+        all_val_logits = torch.cat(all_val_logits, dim=0)
+        all_val_targets = torch.cat(all_val_targets, dim=0)
+        all_val_masks = torch.cat(all_val_masks, dim=0)
+
+        val_metrics = compute_metrics(
+            logits=all_val_logits,
+            targets=all_val_targets,
+            masks=all_val_masks,
+            threshold=0.5
+        )
+
+        print(f"[VAL METRICS] "
+              f"Precision={val_metrics['precision']:.4f} "
+              f"Recall={val_metrics['recall']:.4f} "
+              f"F1={val_metrics['f1']:.4f} "
+              f"Acc={val_metrics['accuracy']:.4f} "
+              f"TP={val_metrics['tp']} FP={val_metrics['fp']} "
+              f"TN={val_metrics['tn']} FN={val_metrics['fn']}")
+
 
         print(
             f"[EPOCH {epoch:03d}/{config.num_epochs:03d}] "
-            f"train_loss={train_loss:.4f}  val_loss={val_loss_mean:.4f}"
+            f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}"
         )
 
-        # ------------------------------------------------------------------
-    # 7. Final evaluation on test set
+    # ------------------------------------------------------------------
+    # 10. Final test loss
     # ------------------------------------------------------------------
     model.eval()
     test_loss_sum = 0.0
     test_batches = 0
-
     with torch.no_grad():
         for imgs, y, m in test_loader:
             imgs = imgs.to(device, non_blocking=True)
@@ -327,22 +525,75 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     history["test_loss"] = test_loss
     print(f"[TEST] test_loss={test_loss:.4f}")
 
+        # ---- Test metrics ----
+    all_test_logits = []
+    all_test_targets = []
+    all_test_masks = []
+
+    with torch.no_grad():
+        for imgs, y, m in test_loader:
+            imgs = imgs.to(device)
+            y = y.to(device)
+            m = m.to(device)
+            logits = model(imgs)
+
+            all_test_logits.append(logits)
+            all_test_targets.append(y)
+            all_test_masks.append(m)
+
+    all_test_logits = torch.cat(all_test_logits, dim=0)
+    all_test_targets = torch.cat(all_test_targets, dim=0)
+    all_test_masks = torch.cat(all_test_masks, dim=0)
+
+    test_metrics = compute_metrics(
+        logits=all_test_logits,
+        targets=all_test_targets,
+        masks=all_test_masks,
+        threshold=0.5
+    )
+
+    print(f"[TEST METRICS] "
+          f"Precision={test_metrics['precision']:.4f} "
+          f"Recall={test_metrics['recall']:.4f} "
+          f"F1={test_metrics['f1']:.4f} "
+          f"Acc={test_metrics['accuracy']:.4f} "
+          f"TP={test_metrics['tp']} FP={test_metrics['fp']} "
+          f"TN={test_metrics['tn']} FN={test_metrics['fn']}")
+
 
     # ------------------------------------------------------------------
-    # 7) Save model + metadata
+    # 11. Save model + metadata
     # ------------------------------------------------------------------
-    run_name = f"aidataset_{config.dataset_id}_RN50_GastroNet1M_DINO_multilabel"
+    run_name = (
+        f"aidataset_{config.dataset_id}_"
+        f"RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
+    )
     model_path = RUNS_DIR / f"{run_name}.pth"
     meta_path = RUNS_DIR / f"{run_name}_meta.json"
 
     torch.save(model.state_dict(), model_path)
 
     meta = {
-        "config": asdict(config),
-        "labelset_id": labelset.id,
-        "labelset_name": labelset.name,
-        "labelset_version": labelset.version,
-        "labels": [lbl.name for lbl in labels],
+        "config": {
+            "dataset_id": config.dataset_id,
+            "labelset_version_to_train": config.labelset_version_to_train,
+            "backbone_checkpoint": config.backbone_checkpoint,
+            "num_epochs": config.num_epochs,
+            "batch_size": config.batch_size,
+            "val_split": config.val_split,
+            "test_split": config.test_split,
+            "lr_head": config.lr_head,
+            "lr_backbone": config.lr_backbone,
+            "gamma_focal": config.gamma_focal,
+            "alpha_focal": config.alpha_focal,
+            "device": config.device,
+            "random_seed": config.random_seed,
+        },
+        "original_labelset_id": labelset.id,
+        "original_labelset_name": labelset.name,
+        "original_labelset_version": labelset.version,
+        "used_label_names": [lbl.name for lbl in labels],
+        "used_label_indices_original": kept_indices,
         "history": history,
     }
     with meta_path.open("w", encoding="utf-8") as f:

@@ -25,7 +25,7 @@ RUNS_DIR = TRAINING_ROOT / "runs"
 for d in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-
+DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2
 # ---------------------------------------------------------------------
 # TRAINING CONFIG
 # ---------------------------------------------------------------------
@@ -34,8 +34,9 @@ for d in (TRAINING_ROOT, CHECKPOINTS_DIR, RUNS_DIR):
 @dataclass
 class TrainingConfig:
     dataset_id: int
+    labelset_version_to_train: int = DEFAULT_LABELSET_VERSION_TO_TRAIN
     backbone_checkpoint: Optional[str] = None
-    num_epochs: int = 10
+    num_epochs: int = 5
     batch_size: int = 32
     val_split: float = 0.2
     test_split: float = 0.1      
@@ -45,4 +46,5 @@ class TrainingConfig:
     alpha_focal: float = 0.25
     device: str = "auto"
     random_seed: int = 42
+    target_labelset_version: int = 2
 

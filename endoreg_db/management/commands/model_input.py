@@ -8,7 +8,10 @@ from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import (
     build_dataset_for_training,
 )
-from endoreg_db.utils.ai.model_training.config import TrainingConfig
+from endoreg_db.utils.ai.model_training.config import (
+    TrainingConfig,
+    TRAINING_ROOT,
+)
 from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
     train_gastronet_multilabel,
 )
@@ -87,6 +90,8 @@ class Command(BaseCommand):
         self.stdout.write("  Labels (index, id, name):")
         for idx, lbl in enumerate(labels):
             self.stdout.write(f"    [{idx}] id={lbl.id}, name={lbl.name!r}")
+
+        
 
         self.stdout.write(
             self.style.SUCCESS(
