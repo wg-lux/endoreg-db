@@ -233,15 +233,93 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     for new_idx, orig_idx in enumerate(kept_indices):
         print(f"    [{new_idx}] (orig {orig_idx}) {labels[new_idx].name}")
 
+        # ------------------------------------------------------------------
+    # 2b. OPTION A: Treat UNLABELED v2 labels as NEGATIVE (0) + KNOWN
+    # ------------------------------------------------------------------
+    #
+    # After filtering to the v2 labels, we now enforce:
+    #   - vec[j] == 1  -> positive, mask[j] = 1
+    #   - vec[j] is None (unlabeled) -> treated as 0 (negative), mask[j] = 1
+    #
+    # That means:
+    #   - no None values remain for v2 labels
+    #   - all mask entries for v2 labels become 1 (fully supervised)
+    #
+    # This implements the "practical" interpretation:
+    #   "if a v2 label is not in the JSON for this frame, we assume it is absent".
+    #
+    # IMPORTANT: This is ONLY applied AFTER we filter to v2 labels.
+    #            We are not changing the DB, just the in-memory training data.
+    # ------------------------------------------------------------------
+    # 2b. OPTION A: Treat UNLABELED vX labels as NEGATIVE (0) + KNOWN
+    # ------------------------------------------------------------------
+    if config.treat_unlabeled_as_negative:
+        for i in range(len(label_vectors)):
+            vec = label_vectors[i]
+            mask = label_masks[i]
+
+            new_vec = []
+            new_mask = []
+            for x in vec:
+                if x is None:
+                    # unlabeled -> assume negative but KNOWN
+                    new_vec.append(0)
+                    new_mask.append(1)
+                else:
+                    # explicit label (1 or 0) -> keep value, mark as known
+                    new_vec.append(int(x))
+                    new_mask.append(1)
+
+            label_vectors[i] = new_vec
+            label_masks[i] = new_mask
+    else:
+        # Respect original semantics: None = unknown -> mask=0
+        # Just ensure Python types are clean ints/floats.
+        cleaned_vectors = []
+        cleaned_masks = []
+        for vec, mask in zip(label_vectors, label_masks):
+            v = []
+            m = []
+            for x, ms in zip(vec, mask):
+                if x is None:
+                    v.append(0)          # value won't be used
+                    m.append(0)          # unknown -> ignore in loss/metrics
+                else:
+                    v.append(int(x))     # 0 or 1
+                    m.append(int(ms))    # usually 1
+            cleaned_vectors.append(v)
+            cleaned_masks.append(m)
+
+        label_vectors = cleaned_vectors
+        label_masks = cleaned_masks
+
+
     # ------------------------------------------------------------------
     # 3. Dataset statistics AFTER filtering
     # ------------------------------------------------------------------
-    labels_arr = []
+    ''''labels_arr = []
     masks_arr = []
     for vec, mask in zip(label_vectors, label_masks):
         v = [0 if (x is None) else int(x) for x in vec]
         labels_arr.append(v)
         masks_arr.append([int(x) for x in mask])
+
+    labels_tensor = torch.tensor(labels_arr, dtype=torch.float32)
+    masks_tensor = torch.tensor(masks_arr, dtype=torch.float32)'''
+
+        # ------------------------------------------------------------------
+    # 3. Dataset statistics AFTER filtering + Option A conversion
+    # ------------------------------------------------------------------
+    # At this point:
+    #   - label_vectors contain only 0/1
+    #   - label_masks are all 1
+    labels_arr = []
+    masks_arr = []
+    for vec, mask in zip(label_vectors, label_masks):
+        v = [int(x) for x in vec]   # now guaranteed 0/1
+        m = [int(x) for x in mask]  # now guaranteed 1
+        labels_arr.append(v)
+        masks_arr.append(m)
 
     labels_tensor = torch.tensor(labels_arr, dtype=torch.float32)
     masks_tensor = torch.tensor(masks_arr, dtype=torch.float32)

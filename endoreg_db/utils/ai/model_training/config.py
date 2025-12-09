@@ -31,7 +31,6 @@ DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2
 # ---------------------------------------------------------------------
 
 @dataclass
-@dataclass
 class TrainingConfig:
     dataset_id: int
     labelset_version_to_train: int = DEFAULT_LABELSET_VERSION_TO_TRAIN
@@ -47,4 +46,9 @@ class TrainingConfig:
     device: str = "auto"
     random_seed: int = 42
     target_labelset_version: int = 2
+    # how to treat unlabeled labels after filtering
+    # True  -> Option A (unlabeled => negative, mask=1)
+    # False -> keep unlabeled as unknown (mask=0)
+    treat_unlabeled_as_negative: bool = False
+
 

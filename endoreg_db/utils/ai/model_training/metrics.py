@@ -38,10 +38,10 @@ def compute_metrics(logits, targets, masks, threshold=0.5):
     fn = np.sum((y_true == 1) & (y_pred == 0))
 
     precision = tp / max(tp + fp, 1)
-    recall    = fn / max(tp + fn, 1)
     recall    = tp / max(tp + fn, 1)
     f1        = 2 * precision * recall / max(precision + recall, 1)
     accuracy  = (tp + tn) / max(tp + tn + fp + fn, 1)
+
 
     return {
         "precision": precision,
