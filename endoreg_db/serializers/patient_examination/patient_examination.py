@@ -135,7 +135,7 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
     
     def get_findings(self, patient_examination_id):
         """Gibt die zugehörigen Befunde zurück"""
-        obj = PatientExamination.get_or_create_patient_examination_by_id(PatientExamination, patient_examination_id)
+        pe = PatientExamination()
+        obj = pe.get_or_create_patient_examination_by_id(patient_examination_id)
         self.instance = obj
-        response = PatientExaminationSerializer()
-        return self.instance.patient_findings.all() if self.instance else []
+        return self.instance.get_available_findings() if self.instance else []

@@ -99,7 +99,7 @@ class Command(BaseCommand):
 
             self.stdout.write("Starting file monitoring...")
             self.stdout.write(f"Video directory: {service.video_dir}")
-            self.stdout.write(f"report directory: {service.pdf_dir}")
+            self.stdout.write(f"report directory: {service.report_dir}")
             self.stdout.write("Press Ctrl+C to stop")
 
             service.start()

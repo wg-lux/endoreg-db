@@ -7,7 +7,7 @@ from lx_anonymizer import FrameCleaner
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
 
 
-from endoreg_db.import_files.storage.sensitive_meta_storage import sensitive_meta_storage
+from endoreg_db.import_files.file_storage.sensitive_meta_storage import sensitive_meta_storage
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.utils.paths import ANONYM_VIDEO_DIR
 from endoreg_db.models import EndoscopyProcessor, VideoFile

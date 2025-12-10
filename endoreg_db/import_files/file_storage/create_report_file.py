@@ -4,7 +4,7 @@ from typing import Tuple
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile
-from endoreg_db.models.media.storage.processing_history import ProcessingHistory
+from endoreg_db.models.media.processing_history.processing_history import ProcessingHistory
 from endoreg_db.import_files.context.ensure_center import ensure_center
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-from endoreg_db.models.media.storage.processing_history import ProcessingHistory
+from endoreg_db.models.media.processing_history.processing_history import ProcessingHistory
 from endoreg_db.utils.paths import IMPORT_REPORT_DIR, IMPORT_VIDEO_DIR, ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
 

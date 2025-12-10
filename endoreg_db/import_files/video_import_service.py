@@ -8,16 +8,16 @@ from endoreg_db.import_files.context import (
     ImportContext,
     file_lock,
 )
-from endoreg_db.import_files.storage.state_management import (
+from endoreg_db.import_files.file_storage.state_management import (
     finalize_failure,
     finalize_video_success
 )
-from endoreg_db.import_files.storage.storage import create_sensitive_copy
-from endoreg_db.import_files.storage.create_video_file import (
+from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
+from endoreg_db.import_files.file_storage.create_video_file import (
     create_or_retrieve_video_file,
 )
 from endoreg_db.import_files.context.validate_directories import validate_directories
-from endoreg_db.import_files.storage.state_management import (
+from endoreg_db.import_files.file_storage.state_management import (
     mark_instance_processing_started,
 )
 from endoreg_db.models import VideoFile

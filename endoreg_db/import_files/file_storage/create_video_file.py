@@ -7,7 +7,7 @@ from django.db import IntegrityError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.models.media import VideoFile
-from endoreg_db.models.media.storage.processing_history import ProcessingHistory
+from endoreg_db.models.media.processing_history.processing_history import ProcessingHistory
 from endoreg_db.utils.hashs import get_video_hash
 
 logger = logging.getLogger(__name__)

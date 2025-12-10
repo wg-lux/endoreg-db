@@ -11,17 +11,17 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 
-from endoreg_db.import_files.storage.create_report_file import (
+from endoreg_db.import_files.file_storage.create_report_file import (
     create_or_retrieve_report_file,
 )
-from endoreg_db.import_files.storage.state_management import (
+from endoreg_db.import_files.file_storage.state_management import (
     finalize_report_success,
     finalize_failure,
     mark_instance_processing_started,
 )
 from endoreg_db.import_files.context.validate_directories import validate_directories
 
-from endoreg_db.import_files.storage.storage import create_sensitive_copy
+from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
 from endoreg_db.models.media import RawPdfFile
 from endoreg_db.utils.paths import (
     SENSITIVE_REPORT_DIR,
