@@ -1,7 +1,7 @@
 from endoreg_db.models.media.processing_history.processing_history import ProcessingHistory
 from endoreg_db.utils.paths import IMPORT_REPORT_DIR, IMPORT_VIDEO_DIR, ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
-
+import os
 import logging
 import shutil
 from pathlib import Path
@@ -396,5 +396,7 @@ def delete_associated_files(ctx:ImportContext):
 
             raise
         
+    for file in os.listdir(path_utils.data_paths["transcoding"]):
+        Path(file).unlink()
     ctx.sensitive_path = None
     

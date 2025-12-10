@@ -117,6 +117,7 @@ class VideoState(models.Model):
             return AnonymizationState.STARTED
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
+        
         return AnonymizationState.NOT_STARTED
 
     def mark_processing_not_started(self) -> None:
