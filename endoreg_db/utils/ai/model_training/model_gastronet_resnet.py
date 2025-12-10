@@ -65,7 +65,7 @@ class GastroNetResNet50MultiLabel(nn.Module):
         # Remove final fc → feature extractor
         self.backbone = nn.Sequential(*list(base.children())[:-1])  # [B, 2048, 1, 1]
         in_features = base.fc.in_features
-
+        
         # New classifier for your multi-label problem
         self.classifier = nn.Linear(in_features, num_labels)
 
