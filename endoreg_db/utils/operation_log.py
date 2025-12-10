@@ -51,3 +51,13 @@ def record_operation(
             resource_type,
             resource_id,
         )
+
+
+
+def get_resource_type_from_instance(obj):
+    name = obj.__class__.__name__
+    '''if name == "VideoFile":
+        return "video"
+    if name == "RawPdfFile":
+        return "pdf"'''
+    return name.lower()
