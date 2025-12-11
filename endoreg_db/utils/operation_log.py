@@ -53,7 +53,7 @@ def record_operation(
         )
 
 
-
+# TODO: will make the name more generic later base don the requirement,after merge
 def get_resource_type_from_instance(obj):
     name = obj.__class__.__name__
     '''if name == "VideoFile":

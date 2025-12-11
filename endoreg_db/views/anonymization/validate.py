@@ -131,7 +131,7 @@ class AnonymizationValidateView(APIView):
                         logger.exception("Failed to read video anonymization_status after validation")
 
                     # --- write operation log ---
-                    # ToDO: update the function call bases on the status , once merged
+                    # TODO: update the function call bases on the status , once merged
                     record_operation(
                         request,
                         action="anonymization.validated",
