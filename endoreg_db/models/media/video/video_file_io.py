@@ -53,7 +53,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
 
     for candidate in candidates:
         if candidate.is_file():
-            return candidate.resolve()
+            return candidate
 
     logger.warning(
         "Raw video file '%s' not found in import/sensitive paths or via stored FileField path for video %s.",

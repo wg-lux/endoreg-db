@@ -68,7 +68,8 @@ class ReportImportService:
             file_path=Path(file_path),
             center_name=center_name,
             delete_source=delete_source,
-            file_type="report"
+            file_type="report",
+            original_path=Path(file_path)
         )
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
@@ -83,20 +84,26 @@ class ReportImportService:
             logger.info("Acquired file lock for %s", ctx.file_path)
 
             # create or retrieve RawPdfFile + update history
-            ctx.current_report, needs_processing = create_or_retrieve_report_file(ctx)
+            ctx.current_report, processed, needs_processing = create_or_retrieve_report_file(ctx)
             ctx.current_report.get_or_create_state()
             assert(ctx.current_report.state is not None)
             ctx.current_report = ctx.current_report
             
-            ctx.retry = retry
+            if processed == True or retry == True:
+                ctx.retry = True
+            
             # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
-            if retry and needs_processing and not ctx.current_report.state.anonymization_validated:
+            if ctx.retry and needs_processing and not ctx.current_report.state.anonymization_validated:
                 # ensure clean slate for forced reprocessing
                 finalize_failure(ctx)
-                ctx.current_report, needs_processing = create_or_retrieve_report_file(ctx)
+                ctx.current_report, processed, needs_processing = create_or_retrieve_report_file(ctx)
                 assert(needs_processing is True)
-            elif not needs_processing and not retry:
+            elif not needs_processing and not ctx.retry:
                 return ctx.current_report
+            else:
+                finalize_failure(ctx)
+                ctx.current_report, processed, needs_processing = create_or_retrieve_report_file(ctx)
+                assert(needs_processing is True)
 
             mark_instance_processing_started(ctx.current_report, ctx)
             try:

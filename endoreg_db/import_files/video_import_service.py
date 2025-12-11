@@ -92,7 +92,7 @@ class VideoImportService:
 
 
             # create or retrieve VideoFile + update history
-            ctx.current_video, needs_processing = (
+            ctx.current_video, processed, needs_processing = (
                 create_or_retrieve_video_file(ctx)
             )
             ctx.current_video.get_or_create_state()
@@ -104,7 +104,7 @@ class VideoImportService:
 
             if retry and needs_processing and not ctx.current_video.state.anonymization_validated:
                 finalize_failure(ctx)
-                ctx.current_video, needs_processing = create_or_retrieve_video_file(ctx)
+                ctx.current_video, processed, needs_processing = create_or_retrieve_video_file(ctx)
                 assert(needs_processing is True)
             elif not needs_processing and not retry:
                 return ctx.current_video

@@ -1,4 +1,4 @@
-from endoreg_db.models.media.processing_history.processing_history import ProcessingHistory
+from endoreg_db.models.state.processing_history.processing_history import ProcessingHistory
 from endoreg_db.utils.paths import IMPORT_REPORT_DIR, IMPORT_VIDEO_DIR, ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
 import logging
@@ -14,6 +14,15 @@ from endoreg_db.models.state import RawPdfState, VideoState
 from endoreg_db.utils import paths as path_utils
 
 logger = logging.getLogger(__name__)
+
+def _get_history_filename(ctx: ImportContext) -> str:
+    """
+    Prefer original_path.name if provided, otherwise fall back to file_path.name.
+    """
+    if ctx.original_path is not None:
+        return ctx.original_path.name
+    # ctx.file_path is always present and already a Path in your tests
+    return Path(ctx.file_path).name
 
 
 def _ensure_instance_state(instance: Union[VideoFile, RawPdfFile]) -> Optional[Union[RawPdfState, VideoState]]:
@@ -41,7 +50,7 @@ def mark_instance_processing_started(
     ctx: ImportContext,):
     
     state = _ensure_instance_state(instance)
-    
+
     with transaction.atomic():
         if state is not None:
 
@@ -152,8 +161,9 @@ def finalize_report_success(
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
-            ProcessingHistory.get_or_create_for_object(
+            ProcessingHistory.get_or_create_for_hash(
                 obj=instance,
+                file_hash=ctx.file_hash,
                 success=True,
             )
     except Exception as e:
@@ -278,8 +288,8 @@ def finalize_video_success(
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
-            ProcessingHistory.get_or_create_for_object(
-                obj=instance,
+            ProcessingHistory.get_or_create_for_hash(
+                file_hash=ctx.file_hash,
                 success=True,
             )
     except Exception as e:
@@ -299,6 +309,7 @@ def finalize_failure(
     - Reset RawPdfState flags to "not processed"
     - Mark ProcessingHistory.success = False
     """
+    
     if ctx.instance is None:
         if isinstance(ctx.current_report, RawPdfFile):
             ctx.instance = ctx.current_report
@@ -306,6 +317,13 @@ def finalize_failure(
             ctx.instance = ctx.current_video
         else:
             raise Exception
+    
+    # History entry with success=False
+    ProcessingHistory.get_or_create_for_hash(
+        file_hash=ctx.file_hash,
+        success=False,
+    )
+    
     # Reset state flags similar to _mark_processing_incomplete / _cleanup_on_error
     state = _ensure_instance_state(ctx.instance)
 
@@ -330,18 +348,7 @@ def finalize_failure(
     except Exception as e:
         logger.warning(f"There might be files remaining. {e}")
 
-    # History entry with success=False
-    if ctx.file_hash:
-        ProcessingHistory.get_or_create_for_object(
-            obj=ctx.instance,
-            success=False,
-        )
-    else:
-        logger.debug(
-            "No file_hash in context for instance %s when finalizing failure; "
-            "skipping ProcessingHistory.",
-            ctx.instance.pk,
-        )
+
 
     logger.error(
         "Report processing failed for %s",

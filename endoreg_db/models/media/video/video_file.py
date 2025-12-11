@@ -884,4 +884,4 @@ class VideoFile(models.Model):
         Raises:
             VideoFile.DoesNotExist: If no VideoFile with the given ID exists.
         """
-        return VideoFile.objects.get(pk=video_id)
+        return VideoFile.objects.get(pk=pk)

@@ -14,7 +14,6 @@ ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 
 def load_default_ai_model():
-def load_default_ai_model():
     """
     Loads the default AI model into the application using a predefined checkpoint file.
 

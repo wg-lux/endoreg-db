@@ -1,22 +1,52 @@
+import hashlib
+import os
 import shutil
 from pathlib import Path
-from endoreg_db.utils.uuid import get_uuid
-import os
 
-def get_uuid_filename(file:Path) -> tuple[str, str]:
+from endoreg_db.utils.uuid import get_uuid
+
+
+def get_content_hash_filename(file: Path) -> tuple[str, str]:
     """
-    Returns a new filename with a uuid
+    Returns a new filename with a uuid - This is the content hash -
+    it is used to identify a raw video before processing when no other
+    reliable info exists.
+    It gets stored in processing_history model.
     """
     # Get the file extension
     file_extension = file.suffix
     # Generate a new file name
-    uuid = get_uuid()
+    uuid = sha256_file(file)
     new_file_name = f"{uuid}{file_extension}"
     return new_file_name, uuid
-    
-def rename_file_uuid(old_file:Path):
+
+
+def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     """
-    Rename a file by assigning a uuid while preserving file extension. Returns new filepath and uuid
+    Compute a SHA-256 hash of the file contents in a streaming manner.
+
+    Args:
+        path: Path to the file on disk.
+        chunk_size: Size of the chunks to read (default: 1MB).
+
+    Returns:
+        Hexadecimal SHA-256 digest (64 characters).
+    """
+    h = hashlib.sha256()
+
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+
+    return h.hexdigest()
+
+
+def rename_file_uuid(old_file: Path):
+    """
+    Rename a file by assigning a random uuid while preserving file extension. Returns new filepath and uuid
     """
     # Get the file extension
     file_extension = old_file.suffix
@@ -29,6 +59,7 @@ def rename_file_uuid(old_file:Path):
     shutil.move(old_file.as_posix(), new_file.as_posix())
 
     return new_file, uuid
+
 
 def copy_with_progress(src: str, dst: str, buffer_size=1024 * 1024):
     """
