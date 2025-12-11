@@ -218,7 +218,7 @@ def _create_from_file(
     try:
         # Ensure we operate under the canonical video path root
         data_paths = _get_data_paths()
-        resolved_video_dir = _get_path(data_paths, "video", video_dir)
+        resolved_video_dir = _get_path(data_paths, "sensitive_video", video_dir)
         video_dir = Path(resolved_video_dir)
         storage_root_default = Path(video_dir).parent
         resolved_storage_root = _get_path(data_paths, "storage", storage_root_default)
@@ -367,7 +367,7 @@ def _create_from_file(
         # 8. Create the VideoFile instance
         logger.info("Creating new VideoFile instance with UUID: %s", uuid_val)
         # Store FileField path relative to storage root including the videos prefix
-        # TODO Review removal, since this is now newly handled by path_utils
+        # TODO Review removal, since this is now handled by path_utils and file_import/storage logic
         #storage_base = Path(_get_path(data_paths, "storage", final_storage_path.parent))
         
         relative_name = path_utils.to_storage_relative(final_storage_path)        

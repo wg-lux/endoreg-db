@@ -1,7 +1,6 @@
 from endoreg_db.models.media.processing_history.processing_history import ProcessingHistory
 from endoreg_db.utils.paths import IMPORT_REPORT_DIR, IMPORT_VIDEO_DIR, ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
-import os
 import logging
 import shutil
 from pathlib import Path
@@ -40,8 +39,9 @@ def _ensure_instance_state(instance: Union[VideoFile, RawPdfFile]) -> Optional[U
 def mark_instance_processing_started(    
     instance: Union[RawPdfFile, VideoFile],
     ctx: ImportContext,):
+    
     state = _ensure_instance_state(instance)
-
+    
     with transaction.atomic():
         if state is not None:
 
@@ -125,19 +125,7 @@ def finalize_report_success(
             if current_name != relative_name:
                 instance.processed_file.name = relative_name
                 logger.info("Updated processed_file to %s", relative_name)
-        try:
-            relative_name = str(ctx.anonymized_path)
-        except ValueError:
-            # Fallback: absolute path if outside STORAGE_DIR
-            relative_name = str(final_path)
 
-        current_name = getattr(instance.processed_file, "name", None)
-        if current_name != relative_name:
-            instance.processed_file.name = relative_name
-            logger.info(
-                "Updated processed_file reference to: %s",
-                instance.processed_file.name,
-            )
 
 
     # --- Update RawPdfState flags (mirrors _finalize_processing) ---
@@ -146,7 +134,6 @@ def finalize_report_success(
     with transaction.atomic():
         if state is not None:
 
-            # In the old code, processing_started was set earlier; we guard here
             if not getattr(state, "processing_started", False) and hasattr(
                 state, "mark_processing_started"
             ):
@@ -187,6 +174,7 @@ def finalize_video_success(
     - Mark VideoState as anonymized + sensitive_meta_processed
     - Mark ProcessingHistory.success = True
     """
+
     instance = ctx.current_video
     if not isinstance(instance, VideoFile):
         logger.warning("finalize_video_success called with non-VideoFile instance")
@@ -262,12 +250,14 @@ def finalize_video_success(
             if current_name != relative_name:
                 instance.processed_file.name = relative_name
                 logger.info("Updated video processed_file to %s", relative_name)
+    
+    if not nuke_transcoding_dir():
+        logger.warning("Transcoding directory cleanup returned False after finalize_video_success; there may be leftover files.")
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
     
-    for file in os.listdir(path_utils.data_paths["transcoding"]):
-        Path(file).unlink()
+
 
     with transaction.atomic():
         if state is not None:
@@ -335,10 +325,10 @@ def finalize_failure(
                 e,
             )
 
-        try:
-            delete_associated_files(ctx)
-        except Exception as e:
-            logger.warning(f"There might be files remaining. {e}")
+    try:
+        delete_associated_files(ctx)
+    except Exception as e:
+        logger.warning(f"There might be files remaining. {e}")
 
     # History entry with success=False
     if ctx.file_hash:
@@ -358,48 +348,117 @@ def finalize_failure(
         ctx.file_path,
     )
 
-def delete_associated_files(ctx:ImportContext):
-    try:
-        assert isinstance(ctx.original_path, Path)
-    except AssertionError as e:
-        logger.warning(f"Original file restored from sensitive copy. This is because the original file is gone. {e}")
-        if ctx.file_type =="video":
-            if isinstance(ctx.sensitive_path, Path):
-                try:
-                    ctx.original_path = Path(shutil.copy2(ctx.sensitive_path, IMPORT_VIDEO_DIR))
-                except Exception as e:
-                    logger.error(f"Error during safety copy: {e} Original file could not be restored!")
-                    raise
-        elif ctx.file_type == "report":
-            if isinstance(ctx.sensitive_path, Path):
-                try:
-                    ctx.original_path = Path(shutil.copy2(ctx.sensitive_path, IMPORT_REPORT_DIR))
-                except Exception as e:
-                    logger.error(f"Error during safety copy: {e} Original file could not be restored!")
-                    raise
-        
+def delete_associated_files(ctx: ImportContext) -> None:
+    """
+    Best-effort cleanup of anonymized, sensitive and transcoding artefacts.
+
+    - Ensure ctx.original_path points to an existing import file; if not, try to restore
+      from ctx.sensitive_path into the appropriate IMPORT_*_DIR.
+    - Delete anonymized file (if any).
+    - Nuke transcoding directory.
+    - Delete sensitive file (if any).
+
+    This function should *not* raise on non-critical cleanup errors; it logs instead.
+    Only restoration of the original import file is treated as critical.
+    """
+
+    # --- 1. Restore original import file if needed (critical) ---
+    original_path = getattr(ctx, "original_path", None)
+    original_missing = not isinstance(original_path, Path) or not original_path.exists()
+    if original_missing:
+        logger.warning(
+            "Original file missing in ctx (file_type=%s); "
+            "trying to restore from sensitive copy.",
+            ctx.file_type,
+        )
+
+        if not isinstance(ctx.sensitive_path, Path) or not ctx.sensitive_path.exists():
+            # This is serious: we lost both original and sensitive copy
+            msg = (
+                f"Cannot restore original file for {ctx.file_type}: "
+                "sensitive copy missing as well."
+            )
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        try:
+            if ctx.file_type == "video":
+                target_dir = IMPORT_VIDEO_DIR
+            elif ctx.file_type == "report":
+                target_dir = IMPORT_REPORT_DIR
+            else:
+                raise ValueError(f"Unknown file_type in context: {ctx.file_type}")
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+            restored_path = shutil.copy2(ctx.sensitive_path, target_dir)
+            ctx.original_path = Path(restored_path)
+            logger.info("Restored original file for %s to %s", ctx.file_type, ctx.original_path)
+        except Exception as e:
+            logger.error("Error during safety copy / restore of original file: %s", e, exc_info=True)
+            raise
+
+    # --- 2. Delete anonymized file (best-effort) ---
     if isinstance(ctx.anonymized_path, Path):
         try:
-            Path.unlink(ctx.anonymized_path)
-            assert(ctx.anonymized_path is not Path)
-
+            if ctx.anonymized_path.exists():
+                ctx.anonymized_path.unlink()
+                logger.info("Deleted anonymized file %s", ctx.anonymized_path)
         except Exception as e:
-            logger.error(f"Error when unlinking anonymized path. {e}")
-            raise
-        
-    ctx.anonymized_path = None
-    
+            logger.error("Error when unlinking anonymized path %s: %s", ctx.anonymized_path, e, exc_info=True)
+        finally:
+            ctx.anonymized_path = None
+
+    # --- 3. Nuke transcoding directory (best-effort) ---
+    if not nuke_transcoding_dir():
+        logger.warning("Transcoding directory cleanup returned False; there may be leftover files.")
+
+    # --- 4. Delete sensitive file (best-effort) ---
     if isinstance(ctx.sensitive_path, Path):
         try:
-            Path.unlink(ctx.sensitive_path)
-            assert(ctx.sensitive_path is not Path)
-            
+            if ctx.sensitive_path.exists():
+                ctx.sensitive_path.unlink()
+                logger.info("Deleted sensitive file %s", ctx.sensitive_path)
         except Exception as e:
-            logger.error(f"Error when unlinking anonymized path. {e}")
+            logger.error("Error when unlinking sensitive path %s: %s", ctx.sensitive_path, e, exc_info=True)
+        finally:
+            ctx.sensitive_path = None
 
-            raise
-        
-    for file in os.listdir(path_utils.data_paths["transcoding"]):
-        Path(file).unlink()
-    ctx.sensitive_path = None
     
+def nuke_transcoding_dir(
+    transcoding_dir: Union[str, Path, None] = None
+) -> bool:
+    """
+    Delete all files and subdirectories inside the transcoding directory.
+
+    Returns:
+        True if the directory was either empty / successfully cleaned,
+        False if something went wrong (error is logged).
+    """
+    try:
+        if transcoding_dir is None:
+            transcoding_dir = path_utils.data_paths["transcoding"]
+
+        transcoding_dir = Path(transcoding_dir)
+
+        if not transcoding_dir.exists():
+            logger.info("Transcoding dir %s does not exist; nothing to clean.", transcoding_dir)
+            return True
+
+        if not transcoding_dir.is_dir():
+            logger.error("Configured transcoding path %s is not a directory.", transcoding_dir)
+            return False
+
+        for entry in transcoding_dir.iterdir():
+            try:
+                if entry.is_file() or entry.is_symlink():
+                    entry.unlink()
+                elif entry.is_dir():
+                    shutil.rmtree(entry)
+            except Exception as e:
+                logger.warning("Failed to remove entry %s in transcoding dir: %s", entry, e)
+                # Continue trying to delete other entries
+        return True
+
+    except Exception as e:
+        logger.error("Unexpected error while nuking transcoding dir: %s", e, exc_info=True)
+        return False

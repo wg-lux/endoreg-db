@@ -4,6 +4,9 @@ Django model for AI models.
 from django.db import models
 from icecream import ic
 from typing import TYPE_CHECKING
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 if TYPE_CHECKING:
     from .model_type import ModelType
@@ -107,17 +110,32 @@ class AiModel(models.Model):
 
         raise ValueError(f"No model metadata found for version {version}.")
 
+
     def get_latest_version(self) -> "ModelMeta":
-        """
-        Get the model_metadata object from metadata_versions with the highest version number.
-        """
         if self.active_meta is not None:
             return self.active_meta
 
-        # Get the latest version of the model metadata
         latest_version = self.metadata_versions.order_by("-version").first()
         if latest_version is not None:
             return latest_version
+
+        # Only in environments where auto-download is acceptable:
+        try:
+            logger.info("Locally, no segmentation model was available. We are using colo_segmentation_RegNetX800MF_base.")
+            from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+
+            model_meta = ensure_model_meta_from_hf(
+                model_id="wg-lux/colo_segmentation_RegNetX800MF_base",
+                model_name="image_multilabel_classification_colonoscopy_default",
+                labelset_name="multilabel_classification_colonoscopy_default",
+                meta_version="1",
+            )
+            return model_meta
+        except Exception:
+            logger.exception(
+                "Failed to ensure ModelMeta from Hugging Face for AiModel '%s'",
+                self.name,
+            )
 
         raise ValueError("No model metadata found for this model.")
 
