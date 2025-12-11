@@ -102,3 +102,16 @@ class TrainingConfig:
     # Minimum learning rate at the end of cosine decay for all param groups.
     # (Both head and backbone decay towards this value.)
     min_lr: float = 1e-6
+
+
+    #which CNN backbone / weights to use
+    # "gastro_rn50"          → current behavior (ResNet50 + GastroNet checkpoint)
+    # "resnet50_imagenet"    → ResNet50 with ImageNet weights
+    # "resnet50_random"      → ResNet50 with random initialization
+    # (later) "efficientnet_b0_imagenet", etc.
+    backbone_name: str = "gastro_rn50"
+
+    # whether to freeze backbone (feature extractor)
+    freeze_backbone: bool = True
+
+    #backbone_name: str = "gastro_rn50"

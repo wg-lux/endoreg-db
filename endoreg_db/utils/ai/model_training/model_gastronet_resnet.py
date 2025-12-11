@@ -9,7 +9,44 @@ import torch
 from torch import nn
 
 
+from .model_backbones import create_multilabel_model
+
+
 class GastroNetResNet50MultiLabel(nn.Module):
+    """
+    Backwards-compatible wrapper around the new factory.
+
+    This keeps the old API but internally uses:
+      backbone_name = "gastro_rn50"
+    """
+
+    def __init__(
+        self,
+        num_labels: int,
+        backbone_checkpoint: Optional[Path] = None,
+        freeze_backbone: bool = True,
+    ) -> None:
+        super().__init__()
+
+        # reuse the factory to avoid code duplication
+        model = create_multilabel_model(
+            backbone_name="gastro_rn50",
+            num_labels=num_labels,
+            backbone_checkpoint=backbone_checkpoint,
+            freeze_backbone=freeze_backbone,
+        )
+
+        # copy modules so forward() can use them as before
+        self.backbone = model.backbone
+        self.classifier = model.classifier
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        feats = self.backbone(x)
+        if feats.ndim == 4:
+            feats = feats.flatten(1)
+        return self.classifier(feats)
+
+'''class GastroNetResNet50MultiLabel(nn.Module):
     """
     ResNet50 backbone (pretrained on GastroNet-1M/5M) with a new multi-label head.
 
@@ -77,4 +114,4 @@ class GastroNetResNet50MultiLabel(nn.Module):
         feats = self.backbone(x)            # [B, 2048, 1, 1]
         feats = feats.flatten(1)            # [B, 2048]
         logits = self.classifier(feats)     # [B, num_labels]
-        return logits
+        return logits'''

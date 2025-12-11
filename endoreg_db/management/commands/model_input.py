@@ -47,6 +47,15 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--backbone-name",
+            type=str,
+            default="gastro_rn50",
+            help=(
+                "Backbone name, e.g. 'gastro_rn50' (default), "
+               "'resnet50_imagenet', 'resnet50_random', 'efficientnet_b0_imagenet', etc."
+        ),
+    )
+        parser.add_argument(
             "--epochs",
             type=int,
             default=10,
@@ -56,6 +65,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         dataset_id = options["dataset_id"]
         backbone_ckpt = options["backbone_checkpoint"]
+        backbone_name = options["backbone_name"]
         num_epochs = options["epochs"]
 
         try:
@@ -149,6 +159,7 @@ class Command(BaseCommand):
         cfg = TrainingConfig(
             dataset_id=dataset.id,
             backbone_checkpoint=backbone_ckpt,
+            backbone_name=backbone_name,
             num_epochs=num_epochs,
         )
         result = train_gastronet_multilabel(cfg)

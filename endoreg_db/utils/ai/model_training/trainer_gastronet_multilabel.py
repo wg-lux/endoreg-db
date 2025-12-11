@@ -32,6 +32,9 @@ from endoreg_db.utils.ai.model_training.model_gastronet_resnet import (
 )
 from endoreg_db.utils.ai.model_training.metrics import compute_metrics
 
+from endoreg_db.utils.ai.model_training.model_backbones import (
+    create_multilabel_model,
+)
 
 # ---------------------------------------------------------------------
 # HELPER: FILTER LABELS BY LABELSET VERSION
@@ -394,7 +397,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     else:
         device = torch.device(config.device)
 
-    backbone_ckpt = (
+    '''backbone_ckpt = (
         Path(config.backbone_checkpoint)
         if config.backbone_checkpoint is not None
         else None
@@ -405,7 +408,22 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         backbone_checkpoint=backbone_ckpt,
         freeze_backbone=True,  # start with head-only training
     )
+    model.to(device)'''
+
+    backbone_ckpt = (
+        Path(config.backbone_checkpoint)
+        if config.backbone_checkpoint is not None
+        else None
+    )
+
+    model = create_multilabel_model(
+        backbone_name=config.backbone_name,
+        num_labels=num_labels_filtered,
+        backbone_checkpoint=backbone_ckpt,
+        freeze_backbone=config.freeze_backbone,
+    )
     model.to(device)
+
 
     # ------------------------------------------------------------------
     # 7. Class weights from full (filtered) dataset
@@ -587,6 +605,28 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}"
         )
 
+
+        # Print table of per-label metrics
+        print("\n[VAL PER-LABEL METRICS]") 
+        print(f"{'Label':20s} {'Prec':>8s} {'Rec':>8s} {'F1':>8s} {'Support':>8s}")
+        print("-" * 60)
+
+        for j, stats in enumerate(val_metrics["per_label"]):
+            name = labels[j].name
+            p = stats["precision"]
+            r = stats["recall"]
+            f = stats["f1"]
+            sup = stats["support"]
+
+            if p is None:
+                print(f"{name:20s} {'N/A':>8} {'N/A':>8} {'N/A':>8} {sup:8d}")
+            else:
+                print(f"{name:20s} {p:8.4f} {r:8.4f} {f:8.4f} {sup:8d}")
+
+        print("-" * 60)
+
+        
+
     # ------------------------------------------------------------------
     # 10. Final test loss + metrics
     # ------------------------------------------------------------------
@@ -644,14 +684,51 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         f"TP={test_metrics['tp']} FP={test_metrics['fp']} "
         f"TN={test_metrics['tn']} FN={test_metrics['fn']}"
     )
+    
 
+    # Print table of per-label metrics
+    print("\n[VAL PER-LABEL METRICS]")
+    print(f"{'Label':20s} {'Prec':>8s} {'Rec':>8s} {'F1':>8s} {'Support':>8s}")
+    print("-" * 60)
+
+    for j, stats in enumerate(val_metrics["per_label"]):
+        name = labels[j].name
+        p = stats["precision"]
+        r = stats["recall"]
+        f = stats["f1"]
+        sup = stats["support"]
+
+    if p is None:
+        print(f"{name:20s} {'N/A':>8} {'N/A':>8} {'N/A':>8} {sup:8d}")
+    else:
+        print(f"{name:20s} {p:8.4f} {r:8.4f} {f:8.4f} {sup:8d}")
+
+    print("-" * 60)
+    
     # ------------------------------------------------------------------
     # 11. Save model + metadata
     # ------------------------------------------------------------------
-    run_name = (
+    backbone_tag = config.backbone_name.replace(" ", "_")
+   
+    ''''run_name = (
+        f"aidataset_{config.dataset_id}_"
+        f"RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
+    )'''
+   
+    # Keep the old name for the GastroNet RN50 backbone
+    if getattr(config, "backbone_name", "gastro_rn50") == "gastro_rn50":
+        run_name = (
         f"aidataset_{config.dataset_id}_"
         f"RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
     )
+    else:
+      # For all other backbones, use a generic name that includes backbone_name
+        backbone_tag = config.backbone_name.replace(" ", "_")
+        run_name = (
+        f"aidataset_{config.dataset_id}_"
+        f"{backbone_tag}_v{config.labelset_version_to_train}_multilabel")
+
+
     model_path = RUNS_DIR / f"{run_name}.pth"
     meta_path = RUNS_DIR / f"{run_name}_meta.json"
 
