@@ -10,6 +10,7 @@ This script demonstrates the complete pipeline for importing and processing a vi
 """
 
 from pathlib import Path
+
 from endoreg_db.models import VideoFile
 from endoreg_db.services.video_import import VideoImportService
 
@@ -21,18 +22,19 @@ VIDEO_PATH = Path("/home/admin/dev/endoreg-db/tests/assets/test_outside.mp4")
 vis = VideoImportService()
 import_and_anonymize = vis.import_and_anonymize
 
+
 def main():
     """Execute the complete video processing pipeline."""
-    
+
     print("=== Video Import and Anonymization Pipeline ===")
-    
+
     # Step 1: Import video with complete Pipe 1 processing
     print(f"\n1. Importing video: {VIDEO_PATH}")
-    
+
     if not VIDEO_PATH.exists():
         print(f"ERROR: Video file not found at {VIDEO_PATH}")
         return
-    
+
     try:
         # This now includes Pipe 1 processing automatically
         video_file = import_and_anonymize(
@@ -41,8 +43,8 @@ def main():
             processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
             delete_source=False,  # Keep original for testing
         )
-        
-        print(f"✓ Video imported successfully with UUID: {video_file.uuid}")
+
+        print(f"✓ Video imported successfully with UUID: {video_file.video_hash}")
         assert isinstance(video_file, VideoFile)
         asser
 
@@ -57,22 +59,21 @@ def main():
             print(f"✓ Sensitive metadata created: {video_file.sensitive_meta.id}")
         else:
             print("⚠ No sensitive metadata found")
-        
-        
+
     except Exception as e:
         print(f"✗ Error during import: {e}")
         return
-    
+
     # Step 2: Simulate user validation (test_after_pipe_1)
     print(f"\n2. Simulating user validation...")
-    
+
     try:
         # This marks outside segments as validated and sensitive meta as verified
         success = video_file.test_after_pipe_1()
-        
+
         if success:
             print("✓ User validation simulation completed")
-            
+
             # Verify validation state
             video_file.refresh_from_db()
             if video_file.sensitive_meta:
@@ -84,45 +85,50 @@ def main():
         else:
             print("✗ User validation simulation failed")
             return
-            
+
     except Exception as e:
         print(f"✗ Error during validation: {e}")
         return
-    
+
     # Step 3: Run Pipe 2 (Anonymization)
     print(f"\n3. Starting video anonymization (Pipe 2)...")
-    
+
     try:
         # This creates the anonymized video
         success = video_file.pipe_2()
-        
+
         if success:
             print("✓ Video anonymization completed")
-            
+
             # Verify anonymization results
             video_file.refresh_from_db()
             print(f"✓ Video processed: {video_file.is_processed}")
             print(f"✓ Has processed file: {bool(video_file.processed_file)}")
-            print(f"✓ Processed video hash: {video_file.processed_video_hash[:8] if video_file.processed_video_hash else 'None'}...")
-            
+            print(
+                f"✓ Processed video hash: {video_file.processed_video_hash[:8] if video_file.processed_video_hash else 'None'}..."
+            )
+
             # Check if raw file was deleted (should be)
             print(f"✓ Raw file deleted: {not video_file.has_raw}")
-            
+
             # Check final state
             final_state = video_file.get_or_create_state()
             print(f"✓ Finally anonymized: {final_state.anonymized}")
-            
+
         else:
             print("✗ Video anonymization failed")
             return
-            
+
     except Exception as e:
         print(f"✗ Error during anonymization: {e}")
         return
-    
+
     print(f"\n=== Pipeline Completed Successfully ===")
-    print(f"Video UUID: {video_file.uuid}")
-    print(f"Processed file: {video_file.processed_file.name if video_file.processed_file else 'None'}")
+    print(f"Video UUID: {video_file.video_hash}")
+    print(
+        f"Processed file: {video_file.processed_file.name if video_file.processed_file else 'None'}"
+    )
+
 
 if __name__ == "__main__":
     main()

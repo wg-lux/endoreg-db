@@ -199,7 +199,8 @@ def _create_from_file(
     cls_model: Type["VideoFile"],
     file_path: Path,
     center_name: str,
-    processor_name: Optional[str] = None,
+    processor_name: Optional[str],
+    video_hash: str,
     video_dir: Path = IMPORT_VIDEO_DIR,
     save: bool = True,
     delete_source: bool = False,
@@ -258,23 +259,13 @@ def _create_from_file(
 
         logger.debug("Using file for hashing: %s", transcoded_file_path)
 
-        # 2. Calculate hash (this will be the raw_video_hash)
-        video_hash = get_video_hash(transcoded_file_path)
-        if not video_hash:
-            raise ValueError(
-                f"Could not calculate video hash for {transcoded_file_path}"
-            )
-        logger.info(
-            "Calculated raw video hash: %s for %s", video_hash, original_file_name
-        )
-
         # 3. Check if hash already exists
         if cls_model.check_hash_exists(video_hash=video_hash):
             existing_video = cls_model.objects.get(video_hash=video_hash)
             logger.warning(
                 "Video with hash %s already exists (UUID: %s)",
                 video_hash,
-                existing_video.uuid,
+                existing_video.video_hash,
             )
 
             # Check if the existing video has a valid file
@@ -299,9 +290,7 @@ def _create_from_file(
             )
             existing_video.delete()
 
-        # 4. Generate UUID and final storage path
-        new_file_name, uuid_val = get_content_hash_filename(transcoded_file_path)
-        final_storage_path = video_dir / new_file_name
+        final_storage_path = video_dir / video_hash / transcoded_file_path.suffix
         final_storage_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 5. Move or Copy the file to final storage using improved method
@@ -334,19 +323,6 @@ def _create_from_file(
         except Exception as e:
             raise RuntimeError(f"Failed to move file to final storage: {e}") from e
 
-        # 6. Verify hash after move/copy
-        final_hash = get_video_hash(final_storage_path)
-        if final_hash != video_hash:
-            logger.error(
-                "Hash mismatch after file operation! Expected %s, got %s",
-                video_hash,
-                final_hash,
-            )
-            final_storage_path.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"Hash mismatch after file operation for {final_storage_path}"
-            )
-
         # 7. Get related objects
         try:
             center = Center.objects.get(name=center_name)
@@ -372,14 +348,11 @@ def _create_from_file(
             raise ValueError(f"Processor '{processor_name}' not found.") from e
 
         # 8. Create the VideoFile instance
-        logger.info("Creating new VideoFile instance with UUID: %s", uuid_val)
+        logger.info("Creating new VideoFile instance with hash: %s", video_hash)
         # Store FileField path relative to storage root including the videos prefix
-        # TODO Review removal, since this is now handled by path_utils and file_import/storage logic
-        # storage_base = Path(_get_path(data_paths, "storage", final_storage_path.parent))
 
         relative_name = path_utils.to_storage_relative(final_storage_path)
         video = cls_model(
-            uuid=uuid_val,
             raw_file=relative_name,
             processed_file=None,
             center=center,
@@ -392,10 +365,11 @@ def _create_from_file(
 
         # 9. Save the instance if requested
         if save:
-            logger.info("Saving new VideoFile instance (UUID: %s)", uuid_val)
+            logger.info("Saving new VideoFile instance (Hash:%s", video_hash)
             video.save()
             logger.info(
-                "Successfully created VideoFile PK %s (UUID: %s)", video.pk, video.uuid
+                "Successfully created VideoFile PK %s ",
+                video.pk,
             )
 
         return video

@@ -22,7 +22,6 @@ from .env import DEBUG, DJANGO_SETTINGS_MODULE, get_env_var
 from .file_operations import (
     copy_with_progress,
     get_content_hash_filename,
-    rename_file_uuid,
 )
 
 # hashs
@@ -84,7 +83,6 @@ __all__ = [
     "load_model_data_from_yaml",
     "random_day_by_month_year",
     "random_day_by_year",
-    "rename_file_uuid",
     "validate_endo_roi",
     "assemble_video_from_frames",  # Updated name
     "get_stream_info",

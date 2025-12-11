@@ -22,7 +22,7 @@ def _pipe_2(video_file: "VideoFile") -> bool:
     Returns:
         bool: True if all operations complete successfully; otherwise, False.
     """
-    logger.info("Starting Pipe 2 for video %s", video_file.uuid)
+    logger.info("Starting Pipe 2 for video %s", video_file.video_hash)
     try:
         # --- Part 1: Frame Extraction ---
         # Determine if frames are needed (short transaction for state read)
@@ -31,7 +31,9 @@ def _pipe_2(video_file: "VideoFile") -> bool:
             frames_needed = not state.frames_extracted
 
         if frames_needed:
-            logger.info("Pipe 2: Frames not extracted. Extracting outside main DB transaction...")
+            logger.info(
+                "Pipe 2: Frames not extracted. Extracting outside main DB transaction..."
+            )
             if not video_file.extract_frames(overwrite=False):  # Heavy I/O work
                 logger.error("Pipe 2 failed: Frame extraction method returned False.")
                 return False
@@ -40,7 +42,9 @@ def _pipe_2(video_file: "VideoFile") -> bool:
             with transaction.atomic():
                 video_file.refresh_from_db()
                 if not video_file.state or not video_file.state.frames_extracted:
-                    logger.error("Pipe 2 failed: Frame extraction did not update state successfully.")
+                    logger.error(
+                        "Pipe 2 failed: Frame extraction did not update state successfully."
+                    )
                     return False
                 logger.info("Pipe 2: Frame extraction complete.")
         else:
@@ -55,17 +59,25 @@ def _pipe_2(video_file: "VideoFile") -> bool:
                 state.sensitive_meta_processed = False
 
         if anonymization_needed:
-            logger.info("Pipe 2: Video not anonymized. Anonymizing outside main DB transaction...")
-            anonymize_success = video_file.anonymize(delete_original_raw=True)  # Heavy I/O work
+            logger.info(
+                "Pipe 2: Video not anonymized. Anonymizing outside main DB transaction..."
+            )
+            anonymize_success = video_file.anonymize(
+                delete_original_raw=True
+            )  # Heavy I/O work
             if not anonymize_success:
-                logger.error("Pipe 2 failed: Anonymization process failed (returned False).")
+                logger.error(
+                    "Pipe 2 failed: Anonymization process failed (returned False)."
+                )
                 return False
 
             # Verify anonymization and update state (short transaction)
             with transaction.atomic():
                 video_file.refresh_from_db()
                 if not video_file.state or not video_file.state.anonymized:
-                    logger.error("Pipe 2 Error: State.anonymized is False even after anonymize() call.")
+                    logger.error(
+                        "Pipe 2 Error: State.anonymized is False even after anonymize() call."
+                    )
                     return False
                 logger.info("Pipe 2: Anonymization complete.")
         else:
@@ -86,19 +98,32 @@ def _pipe_2(video_file: "VideoFile") -> bool:
                     sm_pk = video_file.sensitive_meta.pk
                     video_file.sensitive_meta.delete()
                     video_file.sensitive_meta = None  # Important after SET_NULL
-                    video_file.save(update_fields=["sensitive_meta"])  # Persist the null relation
-                    logger.info("Pipe 2: Deleted sensitive meta object (PK: %s).", sm_pk)
+                    video_file.save(
+                        update_fields=["sensitive_meta"]
+                    )  # Persist the null relation
+                    logger.info(
+                        "Pipe 2: Deleted sensitive meta object (PK: %s).", sm_pk
+                    )
                 except Exception as e:
-                    logger.error("Pipe 2: Failed to delete sensitive meta object: %s", e, exc_info=True)
+                    logger.error(
+                        "Pipe 2: Failed to delete sensitive meta object: %s",
+                        e,
+                        exc_info=True,
+                    )
                     raise  # Reraise to ensure this transaction rolls back
             else:
                 logger.info("Pipe 2: No sensitive meta object found to delete.")
 
-            logger.info(f"Pipe 2 completed successfully for video {video_file.uuid}")
+            logger.info(
+                f"Pipe 2 completed successfully for video {video_file.video_hash}"
+            )
             return True
 
     except Exception as e:
         # This will catch exceptions from I/O operations if they raise,
         # or from the final transaction block, or any other unhandled error.
-        logger.error(f"Pipe 2 failed for video {video_file.uuid} with unhandled exception: {e}", exc_info=True)
+        logger.error(
+            f"Pipe 2 failed for video {video_file.video_hash} with unhandled exception: {e}",
+            exc_info=True,
+        )
         return False

@@ -5,12 +5,9 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, SENSITIVE_VIDEO_DIR, data_paths
+
 from ....utils import delete_field_file, ensure_local_file, storage_file_exists
-from endoreg_db.utils.paths import (
-    ANONYM_VIDEO_DIR,
-    SENSITIVE_VIDEO_DIR,
-    data_paths,
-)
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -31,13 +28,13 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
         else:
             logger.debug(
                 "raw_file.path for video %s is not a regular file: %s",
-                video.uuid,
+                video.video_hash,
                 direct_path,
             )
     except Exception as exc:
         logger.debug(
             "Could not access raw_file.path for video %s: %s",
-            video.uuid,
+            video.video_hash,
             exc,
         )
 
@@ -50,7 +47,6 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
         data_paths["sensitive_video"] / filename,
     ]
 
-
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -58,7 +54,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     logger.warning(
         "Raw video file '%s' not found in import/sensitive paths or via stored FileField path for video %s.",
         video.raw_file.name,
-        video.uuid,
+        video.video_hash,
     )
     return None
 
@@ -67,7 +63,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
 def _ensure_local_raw_file(video: "VideoFile") -> Iterator[Path]:
     """Yield a local filesystem path for the raw file, downloading if required."""
     if not video.has_raw:
-        raise ValueError(f"Video {video.uuid} has no raw file")
+        raise ValueError(f"Video {video.video_hash} has no raw file")
 
     with ensure_local_file(video.raw_file) as local_path:
         yield local_path
@@ -85,17 +81,19 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     except Exception as exc:
         logger.debug(
             "Could not access direct processed_file.path for video %s: %s",
-            video.uuid,
+            video.video_hash,
             exc,
         )
         direct_path = None
 
     if processed_field and storage_file_exists(processed_field):
-        logger.debug("Processed file for %s available only via storage backend", video.uuid)
+        logger.debug(
+            "Processed file for %s available only via storage backend", video.video_hash
+        )
     else:
         logger.warning(
             "Could not get path for processed file of VideoFile %s: %s",
-            video.uuid,
+            video.video_hash,
             "path unavailable",
         )
     return None
@@ -105,7 +103,7 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
 def _ensure_local_processed_file(video: "VideoFile") -> Iterator[Path]:
     """Yield a local path to the processed file, downloading if necessary."""
     if not video.is_processed:
-        raise ValueError(f"Video {video.uuid} has no processed file")
+        raise ValueError(f"Video {video.video_hash} has no processed file")
 
     with ensure_local_file(video.processed_file) as local_path:
         yield local_path
@@ -118,10 +116,17 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
     try:
         # delete_frames raises RuntimeError on state update failure
         frame_delete_msg = video.delete_frames()
-        logger.info("Frame deletion result for video %s: %s", video.uuid, frame_delete_msg)
+        logger.info(
+            "Frame deletion result for video %s: %s", video.video_hash, frame_delete_msg
+        )
     except Exception as frame_del_e:
         # Log error but continue, as file deletion might still be possible
-        logger.error("Error during frame file/state deletion for video %s: %s", video.uuid, frame_del_e, exc_info=True)
+        logger.error(
+            "Error during frame file/state deletion for video %s: %s",
+            video.video_hash,
+            frame_del_e,
+            exc_info=True,
+        )
 
     # 2. Delete Raw File
     raw_file_path = _get_raw_file_path(video)
@@ -129,18 +134,33 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         try:
             if raw_file_path.exists():
                 raw_file_path.unlink()
-                logger.info("Deleted raw video file for %s: %s", video.uuid, raw_file_path)
+                logger.info(
+                    "Deleted raw video file for %s: %s", video.video_hash, raw_file_path
+                )
             else:
-                logger.warning("Raw video file not found at %s for video %s, skipping deletion.", raw_file_path, video.uuid)
+                logger.warning(
+                    "Raw video file not found at %s for video %s, skipping deletion.",
+                    raw_file_path,
+                    video.video_hash,
+                )
 
         except Exception as e:
             # Log error but continue
-            logger.error("Error deleting raw video file %s for video %s: %s", raw_file_path, video.uuid, e, exc_info=True)
+            logger.error(
+                "Error deleting raw video file %s for video %s: %s",
+                raw_file_path,
+                video.video_hash,
+                e,
+                exc_info=True,
+            )
     else:
         if delete_field_file(getattr(video, "raw_file", None), save=False):
-            logger.info("Deleted raw file from storage for video %s", video.uuid)
+            logger.info("Deleted raw file from storage for video %s", video.video_hash)
         else:
-            logger.warning("Raw video file not found during deletion for video %s.", video.uuid)
+            logger.warning(
+                "Raw video file not found during deletion for video %s.",
+                video.video_hash,
+            )
 
     # 3. Delete Processed File
     processed_file_path = _get_processed_file_path(video)
@@ -148,34 +168,62 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         try:
             if processed_file_path.exists():
                 processed_file_path.unlink()
-                logger.info("Deleted processed video file for %s: %s", video.uuid, processed_file_path)
+                logger.info(
+                    "Deleted processed video file for %s: %s",
+                    video.video_hash,
+                    processed_file_path,
+                )
             else:
-                logger.warning("Processed video file not found at %s for video %s, skipping deletion.", processed_file_path, video.uuid)
+                logger.warning(
+                    "Processed video file not found at %s for video %s, skipping deletion.",
+                    processed_file_path,
+                    video.video_hash,
+                )
         except Exception as e:
             # Log error but continue
-            logger.error("Error deleting processed video file %s for video %s: %s", processed_file_path, video.uuid, e, exc_info=True)
+            logger.error(
+                "Error deleting processed video file %s for video %s: %s",
+                processed_file_path,
+                video.video_hash,
+                e,
+                exc_info=True,
+            )
     else:
         if delete_field_file(getattr(video, "processed_file", None), save=False):
-            logger.info("Deleted processed file from storage for video %s", video.uuid)
+            logger.info(
+                "Deleted processed file from storage for video %s", video.video_hash
+            )
         else:
-            logger.warning("Processed file missing in storage for video %s", video.uuid)
+            logger.warning(
+                "Processed file missing in storage for video %s", video.video_hash
+            )
 
     # 4. Delete Database Record
     try:
         # Use 'super(type(video), video)' to call the parent's delete method
         super(type(video), video).delete(*args, **kwargs)
-        logger.info("Deleted VideoFile database record PK %s (UUID: %s).", video.pk, video.uuid)
+        logger.info(
+            "Deleted VideoFile database record PK %s (UUID: %s).",
+            video.pk,
+            video.video_hash,
+        )
 
-        return f"Successfully deleted VideoFile {video.uuid} and attempted file cleanup."
+        return f"Successfully deleted VideoFile {video.video_hash} and attempted file cleanup."
     except Exception as e:
-        logger.error("Error deleting VideoFile database record PK %s (UUID: %s): %s", video.pk, video.uuid, e, exc_info=True)
+        logger.error(
+            "Error deleting VideoFile database record PK %s (UUID: %s): %s",
+            video.pk,
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         raise  # Re-raise the exception for DB deletion failure
 
 
 def _get_base_frame_dir(video: "VideoFile") -> Path:
     """Gets the base directory path for storing extracted frames."""
     # Assuming data_paths['frame'] is the root directory for all frame storage
-    return data_paths["frame"] / str(video.uuid)
+    return data_paths["frame"] / str(video.video_hash)
 
 
 def _set_frame_dir(video: "VideoFile", force_update: bool = False):
@@ -185,7 +233,9 @@ def _set_frame_dir(video: "VideoFile", force_update: bool = False):
 
     if not video.frame_dir or video.frame_dir != target_path_str or force_update:
         video.frame_dir = target_path_str
-        logger.info("Set frame_dir for video %s to %s", video.uuid, video.frame_dir)
+        logger.info(
+            "Set frame_dir for video %s to %s", video.video_hash, video.frame_dir
+        )
         # Avoid saving if called from within the save method itself
         if not getattr(video, "_saving", False):
             video.save(update_fields=["frame_dir"])
@@ -212,7 +262,9 @@ def _get_target_anonymized_video_path(video: "VideoFile") -> Path:
     if not video.has_raw or not video.raw_file.name:
         # If raw is gone, maybe base it on UUID? Requires careful thought.
         # For now, assume raw is needed to determine the original filename base.
-        raise ValueError("Cannot determine target anonymized path without a raw file reference.")
+        raise ValueError(
+            "Cannot determine target anonymized path without a raw file reference."
+        )
 
     # Use the filename part of the raw file's relative path
     raw_path_relative = Path(video.raw_file.name)

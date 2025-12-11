@@ -13,7 +13,10 @@ def _get_frame_path(video: "VideoFile", frame_number: int) -> Optional[Path]:
     """Constructs the expected path for a given frame number."""
     target_dir = video.get_frame_dir_path()  # Use IO helper
     if not target_dir:
-        logger.warning("Cannot get frame path for video %s: Frame directory not set.", video.uuid)
+        logger.warning(
+            "Cannot get frame path for video %s: Frame directory not set.",
+            video.video_hash,
+        )
         return None
 
     frame_filename = f"frame_{frame_number:07d}.jpg"

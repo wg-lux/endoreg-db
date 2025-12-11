@@ -1,14 +1,20 @@
-from endoreg_db.models import (
-    VideoFile, Center, EndoscopyProcessor, AiModel, ModelMeta,
-    LabelVideoSegment, SensitiveMeta
-)
+import logging
+import os
 from pathlib import Path
+from django.core.exceptions import ObjectDoesNotExist
+from django.core.management import call_command
 from icecream import ic
 from tqdm import tqdm
-import os
-from django.core.management import call_command
-import logging
-from django.core.exceptions import ObjectDoesNotExist
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.models import (
+    AiModel,
+    Center,
+    EndoscopyProcessor,
+    LabelVideoSegment,
+    ModelMeta,
+    SensitiveMeta,
+    VideoFile,
+)
 
 logger = logging.getLogger(__name__)
 # Usage
@@ -24,11 +30,14 @@ MODEL_WEIGHTS_PATH = "./tests/assets/colo_segmentation_RegNetX800MF_6.safetensor
 ic(DEFAULT_DIR)
 
 
-
-def process_video_dir(video_dir: Path=DEFAULT_DIR, center_name: str = CENTER_NAME, endoscopy_processor_name: str = ENDOSCOPY_PROCESSOR_NAME):
+def process_video_dir(
+    video_dir: Path = DEFAULT_DIR,
+    center_name: str = CENTER_NAME,
+    endoscopy_processor_name: str = ENDOSCOPY_PROCESSOR_NAME,
+):
     """
     Process a directory of video files and create VideoFile objects in the database.
-    
+
     Args:
         video_dir (Path): Path to the directory containing video files.
         center_name (str): Name of the center to associate with the video files.
@@ -50,28 +59,32 @@ def process_video_dir(video_dir: Path=DEFAULT_DIR, center_name: str = CENTER_NAM
             MODEL_WEIGHTS_PATH,
         )
 
-
-
     # Get the center and endoscopy processor objects
 
     # Iterate through all files in the directory
     for file_path in tqdm(video_dir.iterdir()):
         logger.info(f"Processing file: {file_path}")
-        if file_path.is_file() and file_path.suffix in ['.mp4', '.avi', '.mov']:
+        if file_path.is_file() and file_path.suffix in [".mp4", ".avi", ".mov"]:
             # Create a VideoFile object
             video_file = VideoFile.create_from_file_initialized(
                 file_path=file_path,
                 center_name=center_name,
                 processor_name=endoscopy_processor_name,
+                video_hash=sha256_file(file_path)
             )
             logger.warning(f"Processing video file: {video_file}")
             try:
                 success_pipe_1 = video_file.pipe_1(
-                    model_name = MODEL_NAME,
+                    model_name=MODEL_NAME,
                 )
-                assert success_pipe_1, f"Pipe 1 failed for video {video_file.uuid}"
+                assert success_pipe_1, (
+                    f"Pipe 1 failed for video {video_file.video_hash}"
+                )
             except Exception as e:
-                logger.error(f"Pipe 1 failed for video {video_file.uuid}: {e}", exc_info=True)
+                logger.error(
+                    f"Pipe 1 failed for video {video_file.video_hash}: {e}",
+                    exc_info=True,
+                )
                 raise e
 
             video_file.refresh_from_db()
@@ -88,10 +101,14 @@ def process_video_dir(video_dir: Path=DEFAULT_DIR, center_name: str = CENTER_NAM
                         seg_state.save()
                         logger.info(f"Simulated validation for segment {segment.id}")
                     except LabelVideoSegment.state.RelatedObjectDoesNotExist:
-                        logger.warning(f"Cannot simulate validation for segment {segment.id}: Related state object does not exist.")
+                        logger.warning(
+                            f"Cannot simulate validation for segment {segment.id}: Related state object does not exist."
+                        )
                     except Exception as e:
-                        logger.error(f"Error during segment state simulation for segment {segment.id}: {e}", exc_info=True)
-
+                        logger.error(
+                            f"Error during segment state simulation for segment {segment.id}: {e}",
+                            exc_info=True,
+                        )
 
             # Simulate the validation process for the video files sensitive meta obj
             if video_file.sensitive_meta:
@@ -100,12 +117,19 @@ def process_video_dir(video_dir: Path=DEFAULT_DIR, center_name: str = CENTER_NAM
                     sm_state.dob_verified = True
                     sm_state.names_verified = True
                     sm_state.save()
-                    logger.info(f"Simulated validation for sensitive meta of video {video_file.uuid}")
+                    logger.info(
+                        f"Simulated validation for sensitive meta of video {video_file.video_hash}"
+                    )
                 except Exception as e:
-                    logger.error(f"Error during sensitive meta state simulation for video {video_file.uuid}: {e}", exc_info=True)
+                    logger.error(
+                        f"Error during sensitive meta state simulation for video {video_file.video_hash}: {e}",
+                        exc_info=True,
+                    )
 
             else:
-                logger.warning(f"Cannot simulate validation for sensitive meta of video {video_file.uuid}: SensitiveMeta object does not exist (likely due to pipe_1 failure or incomplete text extraction).")
+                logger.warning(
+                    f"Cannot simulate validation for sensitive meta of video {video_file.video_hash}: SensitiveMeta object does not exist (likely due to pipe_1 failure or incomplete text extraction)."
+                )
 
             ######## SIMULATION OF VALIDATION ########
 
@@ -114,7 +138,11 @@ def process_video_dir(video_dir: Path=DEFAULT_DIR, center_name: str = CENTER_NAM
                 try:
                     video_file.pipe_2()
                 except Exception as e:
-                    logger.error(f"Pipe 2 failed for video {video_file.uuid}: {e}", exc_info=True)
+                    logger.error(
+                        f"Pipe 2 failed for video {video_file.video_hash}: {e}",
+                        exc_info=True,
+                    )
             else:
-                logger.warning(f"Skipping Pipe 2 for video {video_file.uuid} because Pipe 1 did not complete successfully.")
-
+                logger.warning(
+                    f"Skipping Pipe 2 for video {video_file.video_hash} because Pipe 1 did not complete successfully."
+                )

@@ -18,15 +18,34 @@ class VideoMetadata(models.Model):
     and provides metrics for the correction UI.
     """
 
-    video = models.OneToOneField(VideoFile, on_delete=models.CASCADE, related_name="metadata", help_text="Video file this metadata belongs to")
+    video = models.OneToOneField(
+        VideoFile,
+        on_delete=models.CASCADE,
+        related_name="metadata",
+        help_text="Video file this metadata belongs to",
+    )
 
     # Analysis Results
-    sensitive_frame_count = models.IntegerField(null=True, blank=True, help_text="Number of frames detected as containing sensitive information")
-    sensitive_ratio = models.FloatField(null=True, blank=True, help_text="Ratio of sensitive frames to total frames (0.0-1.0)")
-    sensitive_frame_ids = models.TextField(null=True, blank=True, help_text="JSON array of sensitive frame indices (0-based)")
+    sensitive_frame_count = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of frames detected as containing sensitive information",
+    )
+    sensitive_ratio = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Ratio of sensitive frames to total frames (0.0-1.0)",
+    )
+    sensitive_frame_ids = models.TextField(
+        null=True,
+        blank=True,
+        help_text="JSON array of sensitive frame indices (0-based)",
+    )
 
     # Metadata
-    analyzed_at = models.DateTimeField(auto_now=True, help_text="Timestamp of last analysis")
+    analyzed_at = models.DateTimeField(
+        auto_now=True, help_text="Timestamp of last analysis"
+    )
 
     class Meta:
         db_table = "video_metadata"
@@ -34,7 +53,7 @@ class VideoMetadata(models.Model):
         verbose_name_plural = "Video Metadata"
 
     def __str__(self):
-        return f"Metadata for {self.video.uuid} ({self.sensitive_frame_count or 0} sensitive frames)"
+        return f"Metadata for {self.video.video_hash} ({self.sensitive_frame_count or 0} sensitive frames)"
 
     @property
     def has_analysis(self) -> bool:

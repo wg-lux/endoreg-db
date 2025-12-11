@@ -40,18 +40,24 @@ def _pipe_1(
     video_file.refresh_from_db()
     video_file.update_video_meta()
 
-    logger.info(f"Starting Pipe 1 for video {video_file.uuid}")
+    logger.info(f"Starting Pipe 1 for video {video_file.video_hash}")
     try:
         # 1. Heavy I/O operations outside the transaction block
         logger.info("Pipe 1: Extracting frames...")
-        video_file.extract_frames(overwrite=False)  # Avoid overwriting if already extracted
+        video_file.extract_frames(
+            overwrite=False
+        )  # Avoid overwriting if already extracted
 
         logger.info("Pipe 1: Extracting text metadata...")
-        video_file.update_text_metadata(ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False)
+        video_file.update_text_metadata(
+            ocr_frame_fraction=ocr_frame_fraction, cap=ocr_cap, overwrite=False
+        )
         with transaction.atomic():
             state = video_file.get_or_create_state()
             if not state.frames_extracted:
-                logger.error("Pipe 1 failed: Frame extraction did not complete successfully.")
+                logger.error(
+                    "Pipe 1 failed: Frame extraction did not complete successfully."
+                )
                 return False
 
             # 3. Perform Initial Prediction
@@ -59,7 +65,9 @@ def _pipe_1(
             try:
                 ai_model_obj = AiModel.objects.get(name=model_name)
                 if model_meta_version is not None:
-                    model_meta = ai_model_obj.metadata_versions.get(version=model_meta_version)
+                    model_meta = ai_model_obj.metadata_versions.get(
+                        version=model_meta_version
+                    )
                 else:
                     model_meta = ai_model_obj.get_latest_version()
             except AiModel.DoesNotExist:
@@ -68,7 +76,9 @@ def _pipe_1(
                     model_name = download_segmentation_model()
                     ai_model_obj = AiModel.objects.get(name=model_name)
                     if model_meta_version is not None:
-                        model_meta = ai_model_obj.metadata_versions.get(version=model_meta_version)
+                        model_meta = ai_model_obj.metadata_versions.get(
+                            version=model_meta_version
+                        )
                     else:
                         model_meta = ai_model_obj.get_latest_version()
                 except AiModel.DoesNotExist:
@@ -80,19 +90,25 @@ def _pipe_1(
                     model_name = download_segmentation_model()
                     ai_model_obj = AiModel.objects.get(name=model_name)
                     if model_meta_version is not None:
-                        model_meta = ai_model_obj.metadata_versions.get(version=model_meta_version)
+                        model_meta = ai_model_obj.metadata_versions.get(
+                            version=model_meta_version
+                        )
                     else:
                         model_meta = ai_model_obj.get_latest_version()
                 except ModelMeta.DoesNotExist:
-                    logger.error(f"Pipe 1 failed: ModelMeta version {model_meta_version} for model '{model_name}' not found.")
+                    logger.error(
+                        f"Pipe 1 failed: ModelMeta version {model_meta_version} for model '{model_name}' not found."
+                    )
                     return False
             try:
-                sequences: Optional[Dict[str, List[Tuple[int, int]]]] = video_file.predict_video(
-                    model_meta=model_meta,
-                    smooth_window_size_s=smooth_window_size_s,
-                    binarize_threshold=binarize_threshold,
-                    test_run=test_run,
-                    n_test_frames=n_test_frames,
+                sequences: Optional[Dict[str, List[Tuple[int, int]]]] = (
+                    video_file.predict_video(
+                        model_meta=model_meta,
+                        smooth_window_size_s=smooth_window_size_s,
+                        binarize_threshold=binarize_threshold,
+                        test_run=test_run,
+                        n_test_frames=n_test_frames,
+                    )
                 )
             except Exception as e:
                 logger.error(f"Pipe 1 failed during prediction: {e}", exc_info=True)
@@ -110,13 +126,19 @@ def _pipe_1(
 
             logger.info(f"Pipe 1: Sequences returned from prediction: {sequences}")
             if not sequences:
-                logger.warning("Pipe 1: Prediction returned empty sequences dictionary. No LabelVideoSegments will be created.")
+                logger.warning(
+                    "Pipe 1: Prediction returned empty sequences dictionary. No LabelVideoSegments will be created."
+                )
 
             # 4. Create LabelVideoSegments
             logger.info("Pipe 1: Creating LabelVideoSegments from predictions...")
             try:
-                video_prediction_meta = VideoPredictionMeta.objects.get(video_file=video_file, model_meta=model_meta)
-                logger.info(f"Pipe 1: Calling _convert_sequences_to_db_segments for video {video_file.uuid} with prediction meta {video_prediction_meta.pk}")
+                video_prediction_meta = VideoPredictionMeta.objects.get(
+                    video_file=video_file, model_meta=model_meta
+                )
+                logger.info(
+                    f"Pipe 1: Calling _convert_sequences_to_db_segments for video {video_file.video_hash} with prediction meta {video_prediction_meta.pk}"
+                )
                 _convert_sequences_to_db_segments(
                     video=video_file,
                     sequences=sequences,
@@ -128,18 +150,26 @@ def _pipe_1(
                 state.save(update_fields=["lvs_created"])
                 logger.info("Pipe 1: Set lvs_created state to True.")
                 logger.info("Pipe 1: LabelVideoSegment creation complete.")
-                lvs_count_after = LabelVideoSegment.objects.filter(video_file=video_file).count()
-                logger.info(f"Pipe 1: Found {lvs_count_after} LabelVideoSegments after conversion attempt.")
+                lvs_count_after = LabelVideoSegment.objects.filter(
+                    video_file=video_file
+                ).count()
+                logger.info(
+                    f"Pipe 1: Found {lvs_count_after} LabelVideoSegments after conversion attempt."
+                )
             except VideoPredictionMeta.DoesNotExist:
-                logger.error("Pipe 1 failed: Could not find VideoPredictionMeta after prediction.")
+                logger.error(
+                    "Pipe 1 failed: Could not find VideoPredictionMeta after prediction."
+                )
                 raise
 
-        logger.info(f"Pipe 1 completed successfully for video {video_file.uuid}")
+        logger.info(f"Pipe 1 completed successfully for video {video_file.video_hash}")
         success = True  # Set success flag
         return True
 
     except Exception as e:
-        logger.error(f"Pipe 1 failed for video {video_file.uuid}: {e}", exc_info=True)
+        logger.error(
+            f"Pipe 1 failed for video {video_file.video_hash}: {e}", exc_info=True
+        )
         return False
     finally:
         # 5. Optionally delete frames
@@ -155,19 +185,23 @@ def _pipe_1(
 
 
 # --- Test after Pipe 1 ---
-def _test_after_pipe_1(video_file: "VideoFile", start_frame: int = 0, end_frame: int = 100) -> bool:
+def _test_after_pipe_1(
+    video_file: "VideoFile", start_frame: int = 0, end_frame: int = 100
+) -> bool:
     """
     Simulates human annotation validation after Pipe 1.
     Creates 'outside' segments and marks sensitive meta as verified.
     """
     from ...label import Label, LabelVideoSegment
 
-    logger.info(f"Starting _test_after_pipe_1 for video {video_file.uuid}")
+    logger.info(f"Starting _test_after_pipe_1 for video {video_file.video_hash}")
     try:
         # 1. Create 'outside' LabelVideoSegments
         try:
             outside_label = Label.objects.get(name__iexact="outside")
-            logger.info(f"Creating 'outside' annotation segment [{start_frame}-{end_frame}]")
+            logger.info(
+                f"Creating 'outside' annotation segment [{start_frame}-{end_frame}]"
+            )
             # Create a segment - assuming custom_create handles saving
             outside_segment = LabelVideoSegment.objects.create(  # Assign to variable
                 video_file=video_file,
@@ -177,16 +211,22 @@ def _test_after_pipe_1(video_file: "VideoFile", start_frame: int = 0, end_frame:
                 prediction_meta=None,
             )
             # Ensure the segment has a state and mark it as validated
-            segment_state, created = outside_segment.get_or_create_state()  # Unpack the tuple
+            segment_state, created = (
+                outside_segment.get_or_create_state()
+            )  # Unpack the tuple
             segment_state.is_validated = True
             segment_state.save()
-            logger.info(f"Marked 'outside' segment {outside_segment.pk} as validated. Created: {created}")
+            logger.info(
+                f"Marked 'outside' segment {outside_segment.pk} as validated. Created: {created}"
+            )
 
         except Label.DoesNotExist:
             logger.error("_test_after_pipe_1 failed: 'outside' Label not found.")
             return False
         except Exception as e:
-            logger.error(f"_test_after_pipe_1 failed during segment creation: {e}", exc_info=True)
+            logger.error(
+                f"_test_after_pipe_1 failed during segment creation: {e}", exc_info=True
+            )
             return False
 
         # 2. Set Sensitive Metadata state to verified
@@ -205,9 +245,14 @@ def _test_after_pipe_1(video_file: "VideoFile", start_frame: int = 0, end_frame:
         else:
             logger.warning("_test_after_pipe_1: No sensitive meta found to verify.")
 
-        logger.info(f"_test_after_pipe_1 completed successfully for video {video_file.uuid}")
+        logger.info(
+            f"_test_after_pipe_1 completed successfully for video {video_file.video_hash}"
+        )
         return True
 
     except Exception as e:
-        logger.error(f"_test_after_pipe_1 failed for video {video_file.uuid}: {e}", exc_info=True)
+        logger.error(
+            f"_test_after_pipe_1 failed for video {video_file.video_hash}: {e}",
+            exc_info=True,
+        )
         return False

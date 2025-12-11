@@ -45,8 +45,7 @@ def create_or_retrieve_video_file(
         logger.info(
             "VideoFile pk=%s already has successful processing history (file_type=%s) "
             "- short-circuiting",
-            video.pk,
-            file_type,
+            ctx.file_hash,
         )
         processed = True
         needs_processing = False
@@ -67,6 +66,7 @@ def create_or_retrieve_video_file(
             center_name=center_name,
             processor_name=processor_name,
             delete_source=delete_source,
+            video_hash=ctx.file_hash
         )
 
         center = ensure_center(video, ctx.center_name)

@@ -31,24 +31,38 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
         video_path = video.active_file_path  # Use property relying on IO helpers
         target_file_name = video.active_file.name
     else:
-        logger.error("No suitable video file found for spec initialization for %s.", video.uuid)
+        logger.error(
+            "No suitable video file found for spec initialization for %s.",
+            video.video_hash,
+        )
         return False
 
     if not video_path:
         # Raise exception
-        raise FileNotFoundError(f"Could not determine video file path for spec initialization for {video.uuid}.")
+        raise FileNotFoundError(
+            f"Could not determine video file path for spec initialization for {video.video_hash}."
+        )
 
-    logger.info("Initializing video specs directly from file %s (%s) for %s", target_file_name, video_path, video.uuid)
+    logger.info(
+        "Initializing video specs directly from file %s (%s) for %s",
+        target_file_name,
+        video_path,
+        video.video_hash,
+    )
     try:
         if not video_path.exists():
             # Raise exception
-            raise FileNotFoundError(f"Video file not found at {video_path} for spec initialization (Video: {video.uuid}).")
+            raise FileNotFoundError(
+                f"Video file not found at {video_path} for spec initialization (Video: {video.video_hash})."
+            )
 
         video_cap = cv2.VideoCapture(video_path.as_posix())
         if not video_cap.isOpened():
             # Raise exception
             video_cap.release()  # Ensure release
-            raise RuntimeError(f"Could not open video file {video_path} with OpenCV for spec initialization (Video: {video.uuid}).")
+            raise RuntimeError(
+                f"Could not open video file {video_path} with OpenCV for spec initialization (Video: {video.video_hash})."
+            )
 
         updated = False
         fields_to_update = []
@@ -67,8 +81,16 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
             file_height = int(video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             file_frame_count = int(video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
         except Exception as cv_err:
-            logger.error("Error getting properties from OpenCV for %s (Video: %s): %s", video_path, video.uuid, cv_err, exc_info=True)
-            raise RuntimeError(f"OpenCV failed to get properties for {video_path}") from cv_err
+            logger.error(
+                "Error getting properties from OpenCV for %s (Video: %s): %s",
+                video_path,
+                video.video_hash,
+                cv_err,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                f"OpenCV failed to get properties for {video_path}"
+            ) from cv_err
         finally:
             video_cap.release()  # Ensure release after getting props
 
@@ -96,42 +118,81 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
             video.frame_count = file_frame_count
             fields_to_update.append("frame_count")
             updated = True
-        elif file_frame_count is None or file_frame_count <= 0:  # Log if not updated due to invalid file_frame_count
-            logger.warning("Invalid frame count (value: %s) obtained from OpenCV for %s. Video frame_count not updated.", file_frame_count, video_path)
+        elif (
+            file_frame_count is None or file_frame_count <= 0
+        ):  # Log if not updated due to invalid file_frame_count
+            logger.warning(
+                "Invalid frame count (value: %s) obtained from OpenCV for %s. Video frame_count not updated.",
+                file_frame_count,
+                video_path,
+            )
 
         # --- Update Duration ---
         if current_duration is None:  # Only if duration isn't already set
             # Use the potentially updated video.frame_count and current_fps (which reflects video.fps or file_fps)
             final_frame_count_for_duration = video.frame_count
-            final_fps_for_duration = current_fps  # This is video.fps after potential update from file_fps
+            final_fps_for_duration = (
+                current_fps  # This is video.fps after potential update from file_fps
+            )
 
-            if final_frame_count_for_duration and final_frame_count_for_duration > 0 and final_fps_for_duration and final_fps_for_duration > 0:
+            if (
+                final_frame_count_for_duration
+                and final_frame_count_for_duration > 0
+                and final_fps_for_duration
+                and final_fps_for_duration > 0
+            ):
                 video.duration = final_frame_count_for_duration / final_fps_for_duration
                 fields_to_update.append("duration")
                 updated = True
             else:
                 # Log if duration could not be calculated, indicating which component was missing/invalid
-                if not (final_frame_count_for_duration and final_frame_count_for_duration > 0):
+                if not (
+                    final_frame_count_for_duration
+                    and final_frame_count_for_duration > 0
+                ):
                     logger.warning(
-                        "Duration not calculated for %s: frame count is unavailable or invalid (value: %s).", video_path, final_frame_count_for_duration
+                        "Duration not calculated for %s: frame count is unavailable or invalid (value: %s).",
+                        video_path,
+                        final_frame_count_for_duration,
                     )
                 if not (final_fps_for_duration and final_fps_for_duration > 0):
-                    logger.warning("Duration not calculated for %s: FPS is unavailable or invalid (value: %s).", video_path, final_fps_for_duration)
+                    logger.warning(
+                        "Duration not calculated for %s: FPS is unavailable or invalid (value: %s).",
+                        video_path,
+                        final_fps_for_duration,
+                    )
 
         # --- Save if updated ---
         if updated:
-            logger.info("Updated video specs for %s from file %s: %s", video.uuid, target_file_name, ", ".join(fields_to_update))
+            logger.info(
+                "Updated video specs for %s from file %s: %s",
+                video.video_hash,
+                target_file_name,
+                ", ".join(fields_to_update),
+            )
             video.save(update_fields=fields_to_update)
             return True
         else:
-            logger.info("No video specs needed updating for %s from file %s.", video.uuid, target_file_name)
+            logger.info(
+                "No video specs needed updating for %s from file %s.",
+                video.video_hash,
+                target_file_name,
+            )
             return True
 
     except Exception as e:
         # Log and re-raise exception
-        logger.error("Error initializing video specs for %s from file %s: %s", video.uuid, video_path, e, exc_info=True)
+        logger.error(
+            "Error initializing video specs for %s from file %s: %s",
+            video.video_hash,
+            video_path,
+            e,
+            exc_info=True,
+        )
         # Ensure capture is released in case of unexpected error
         if "video_cap" in locals() and video_cap.isOpened():
             video_cap.release()
         # Re-raise as RuntimeError
-        raise RuntimeError(f"Failed to initialize video specs for {video.uuid} from {video_path}") from e
+        raise RuntimeError(
+            f"Failed to initialize video specs for {video.video_hash} from {video_path}"
+        ) from e

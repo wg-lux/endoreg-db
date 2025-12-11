@@ -13,11 +13,11 @@ from django.db.models import F
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, SENSITIVE_VIDEO_DIR
 from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 
 from ...label import Label, LabelVideoSegment
 from ...state import VideoState
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, SENSITIVE_VIDEO_DIR
 
 # --- Import model-specific function modules ---
 from .create_from_file import _create_from_file
@@ -112,8 +112,6 @@ class VideoQuerySet(models.QuerySet):
 
 
 class VideoFile(models.Model):
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-
     objects = VideoQuerySet.as_manager()
 
     raw_file = models.FileField(
@@ -447,7 +445,7 @@ class VideoFile(models.Model):
         except Exception as exc:  # storage backends may raise when missing
             logger.warning(
                 "Active file URL unavailable for video %s: %s",
-                self.uuid,
+                self.video_hash,
                 exc,
             )
             raise ValueError(
@@ -482,9 +480,10 @@ class VideoFile(models.Model):
         cls,
         file_path: Union[str, Path],
         center_name: str,
-        processor_name: Optional[str] = None,
+        processor_name: Optional[str],
+        video_hash: str,
         delete_source: bool = False,
-        save_video_file: bool = True,  # Add this line
+        save_video_file: bool = True,
     ):
         """
         Creates a VideoFile instance from a given video file path.
@@ -494,6 +493,8 @@ class VideoFile(models.Model):
         # Ensure file_path is a Path object
         if isinstance(file_path, str):
             file_path = Path(file_path)
+            
+
 
         # Call the helper function to create the VideoFile instance
         video_file = _create_from_file(
@@ -501,6 +502,7 @@ class VideoFile(models.Model):
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,
+            video_hash=video_hash,
             delete_source=delete_source,
             save=save_video_file,  # Add this line
         )
@@ -520,10 +522,12 @@ class VideoFile(models.Model):
         # Call the original delete method to remove the instance from the database
         try:
             active_path = self.active_file_path
-            logger.info(f"Deleting VideoFile: {self.uuid} - {active_path}")
+            logger.info(f"Deleting VideoFile: {self.video_hash} - {active_path}")
 
         except ValueError:
-            logger.info(f"Deleting VideoFile: {self.uuid} - No active file path found.")
+            logger.info(
+                f"Deleting VideoFile: {self.video_hash} - No active file path found."
+            )
             active_path = None
 
         # Delete associated files if they exist
@@ -556,10 +560,10 @@ class VideoFile(models.Model):
         try:
             # Call parent delete with proper parameters
             result = super().delete(using=using, keep_parents=keep_parents)
-            logger.info(f"VideoFile {self.uuid} deleted successfully.")
+            logger.info(f"VideoFile {self.video_hash} deleted successfully.")
             return result
         except Exception as e:
-            logger.error(f"Error deleting VideoFile {self.uuid}: {e}")
+            logger.error(f"Error deleting VideoFile {self.video_hash}: {e}")
             raise
 
     def validate_metadata_annotation(
@@ -596,12 +600,12 @@ class VideoFile(models.Model):
             if self.raw_file:
                 self.raw_file.delete(save=False)
             logger.info(
-                f"Raw video deleted for {self.uuid}. Anonymized video preserved."
+                f"Raw video deleted for {self.video_hash}. Anonymized video preserved."
             )
         else:
             logger.warning(
                 "Raw video file not found for deletion during validation %s.",
-                self.uuid,
+                self.video_hash,
             )
 
         if self.sensitive_meta:
@@ -610,12 +614,12 @@ class VideoFile(models.Model):
             # Save the VideoFile instance to persist changes
             self.save()
             logger.info(
-                f"Metadata annotation validated and saved for video {self.uuid}."
+                f"Metadata annotation validated and saved for video {self.video_hash}."
             )
             return True
         else:
             logger.error(
-                f"Failed to validate metadata annotation for video {self.uuid}."
+                f"Failed to validate metadata annotation for video {self.video_hash}."
             )
             return False
 
@@ -652,7 +656,7 @@ class VideoFile(models.Model):
         state = (
             "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
         )
-        return f"VideoFile ({state}): {file_name} (UUID: {self.uuid})"
+        return f"VideoFile ({state}): {file_name} (UUID: {self.video_hash})"
 
     # --- Convenience state/meta helpers used in tests and admin workflows ---
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> "VideoFile":
@@ -746,7 +750,7 @@ class VideoFile(models.Model):
         except Exception as e:
             logger.error(
                 "Error getting outside segments for video %s: %s",
-                self.uuid,
+                self.video_hash,
                 e,
                 exc_info=True,
             )
@@ -769,7 +773,7 @@ class VideoFile(models.Model):
 
         if not video:
             logger.warning(
-                "No processed video file available for VideoFile %s.", cls.uuid
+                "No processed video file available for VideoFile %s.", cls.video_hash
             )
             return False
         try:
@@ -805,7 +809,7 @@ class VideoFile(models.Model):
             # assert isinstance(frames, list[Path]) #TODO improve TypeCheck
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
-            output_video_path = Path(f"/path/to/output/{cls.uuid}_filtered.mp4")
+            output_video_path = Path(f"/path/to/output/{cls.video_hash}_filtered.mp4")
             fps = cls.fps if cls.fps else 30.0  # Default to 30 FPS if fps is not set
             new_video_file = assemble_video_from_frames(
                 frames, output_video_path, fps, width=video.width, height=video.height
@@ -814,7 +818,7 @@ class VideoFile(models.Model):
             return True
         except AssertionError as ae:
             logger.error(
-                f"Assertion error while creating video without 'outside' frames for VideoFile {cls.uuid}: {ae}",
+                f"Assertion error while creating video without 'outside' frames for VideoFile {cls.video_hash}: {ae}",
                 exc_info=True,
             )
             return False
@@ -823,7 +827,7 @@ class VideoFile(models.Model):
             return False
         except Exception as e:
             logger.error(
-                f"Error creating video without 'outside' frames for VideoFile {cls.uuid}: {e}",
+                f"Error creating video without 'outside' frames for VideoFile {cls.video_hash}: {e}",
                 exc_info=True,
             )
             return False
