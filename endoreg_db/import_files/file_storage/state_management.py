@@ -265,6 +265,9 @@ def finalize_video_success(
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
+    
+    for file in os.listdir(path_utils.data_paths["transcoding"]):
+        Path(file).unlink()
 
     with transaction.atomic():
         if state is not None:
