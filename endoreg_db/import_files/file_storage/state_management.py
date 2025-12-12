@@ -12,7 +12,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state import RawPdfState, VideoState
 from endoreg_db.utils import paths as path_utils
-
+from endoreg_db.utils.file_operations import sha256_file
 logger = logging.getLogger(__name__)
 
 def _get_history_filename(ctx: ImportContext) -> str:
@@ -161,6 +161,8 @@ def finalize_report_success(
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
+            if not isinstance(ctx.file_hash, str):
+                ctx.file_hash=sha256_file(ctx.file_path)
             ProcessingHistory.get_or_create_for_hash(
                 obj=instance,
                 file_hash=ctx.file_hash,
@@ -288,6 +290,8 @@ def finalize_video_success(
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
+            if not isinstance(ctx.file_hash, str):
+                ctx.file_hash=sha256_file(ctx.file_path)
             ProcessingHistory.get_or_create_for_hash(
                 file_hash=ctx.file_hash,
                 success=True,
@@ -308,6 +312,7 @@ def finalize_failure(
 
     - Reset RawPdfState flags to "not processed"
     - Mark ProcessingHistory.success = False
+    - Delete all associated files
     """
     
     if ctx.instance is None:
@@ -319,6 +324,8 @@ def finalize_failure(
             raise Exception
     
     # History entry with success=False
+    if not isinstance(ctx.file_hash, str):
+        ctx.file_hash=sha256_file(ctx.file_path)
     ProcessingHistory.get_or_create_for_hash(
         file_hash=ctx.file_hash,
         success=False,
@@ -351,7 +358,7 @@ def finalize_failure(
 
 
     logger.error(
-        "Report processing failed for %s",
+        "File processing failed for %s - state reset, ready for retry.",
         ctx.file_path,
     )
 
@@ -369,42 +376,8 @@ def delete_associated_files(ctx: ImportContext) -> None:
     Only restoration of the original import file is treated as critical.
     """
 
-    # --- 1. Restore original import file if needed (critical) ---
-    original_path = getattr(ctx, "original_path", None)
-    original_missing = not isinstance(original_path, Path) or not original_path.exists()
-    if original_missing:
-        logger.warning(
-            "Original file missing in ctx (file_type=%s); "
-            "trying to restore from sensitive copy.",
-            ctx.file_type,
-        )
 
-        if not isinstance(ctx.sensitive_path, Path) or not ctx.sensitive_path.exists():
-            # This is serious: we lost both original and sensitive copy
-            msg = (
-                f"Cannot restore original file for {ctx.file_type}: "
-                "sensitive copy missing as well."
-            )
-            logger.error(msg)
-            raise RuntimeError(msg)
-
-        try:
-            if ctx.file_type == "video":
-                target_dir = IMPORT_VIDEO_DIR
-            elif ctx.file_type == "report":
-                target_dir = IMPORT_REPORT_DIR
-            else:
-                raise ValueError(f"Unknown file_type in context: {ctx.file_type}")
-
-            target_dir.mkdir(parents=True, exist_ok=True)
-            restored_path = shutil.copy2(ctx.sensitive_path, target_dir)
-            ctx.original_path = Path(restored_path)
-            logger.info("Restored original file for %s to %s", ctx.file_type, ctx.original_path)
-        except Exception as e:
-            logger.error("Error during safety copy / restore of original file: %s", e, exc_info=True)
-            raise
-
-    # --- 2. Delete anonymized file (best-effort) ---
+    # --- Delete anonymized file (best-effort) ---
     if isinstance(ctx.anonymized_path, Path):
         try:
             if ctx.anonymized_path.exists():
@@ -415,11 +388,11 @@ def delete_associated_files(ctx: ImportContext) -> None:
         finally:
             ctx.anonymized_path = None
 
-    # --- 3. Nuke transcoding directory (best-effort) ---
+    # --- Nuke transcoding directory (best-effort) ---
     if not nuke_transcoding_dir():
         logger.warning("Transcoding directory cleanup returned False; there may be leftover files.")
 
-    # --- 4. Delete sensitive file (best-effort) ---
+    # --- Delete sensitive file (best-effort) ---
     if isinstance(ctx.sensitive_path, Path):
         try:
             if ctx.sensitive_path.exists():

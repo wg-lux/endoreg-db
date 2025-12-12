@@ -889,3 +889,12 @@ class VideoFile(models.Model):
             VideoFile.DoesNotExist: If no VideoFile with the given ID exists.
         """
         return VideoFile.objects.get(pk=pk)
+    
+    @staticmethod
+    def get_video_by_content_hash(hash: str) -> "VideoFile":
+        try:
+            return VideoFile.objects.get(video_hash=hash)
+        except Exception as e:
+            logger.error(f"Video cant be returned for known hash. {e}")
+            raise
+        

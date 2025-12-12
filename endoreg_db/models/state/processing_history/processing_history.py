@@ -61,10 +61,6 @@ class ProcessingHistory(models.Model):
             - success flag
         """
         defaults: dict[str, object] = {}
-        if obj is not None:
-            ct = ContentType.objects.get_for_model(obj, for_concrete_model=False)
-            defaults["content_type"] = ct
-            defaults["object_id"] = obj.pk
         if success is not None:
             defaults["success"] = success
 
@@ -76,7 +72,6 @@ class ProcessingHistory(models.Model):
         changed: list[str] = []
 
         if obj is not None:
-            ct = ContentType.objects.get_for_model(obj, for_concrete_model=False)
             if ph.object_id != obj.pk:
                 ph.object_id = obj.pk
                 changed.append("object_id")

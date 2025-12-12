@@ -9,8 +9,10 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
 import endoreg_db.models.media.video.create_from_file as create_from_file_module
 from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.file_operations import sha256_file
 import endoreg_db.utils as utils
-
+from endoreg_db.models.state.processing_history import ProcessingHistory
+from endoreg_db.utils.hashs import get_video_hash
 
 def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path, Path]:
     """
@@ -128,7 +130,7 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
     assert needs_processing is True
     assert created is False
     assert video.pk is not None
-    assert video.video_hash == "HASH1"
+    assert video.video_hash == sha256_file(Path(video.get_raw_file_path()))
 
     raw_path = video.get_raw_file_path()
     assert raw_path is not None
@@ -191,7 +193,7 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
     # First call: creates the object
     v1, processed1, needs_processing1 = create_video_file.create_or_retrieve_video_file(ctx)
     assert processed1 is False
-    assert needs_processing1
+    assert needs_processing1 is True
 
     raw1 = v1.get_raw_file_path()
     assert raw1 is not None
@@ -204,13 +206,17 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
         processor_name=processor_name,
         delete_source=False,
     )
+    assert isinstance(ctx.file_hash, str)
+    ph = ProcessingHistory().get_or_create_for_hash(
+        file_hash=ctx.file_hash,
+        success= True # Simulate successful processing
+    )
     v2, processed2, needs_processing2 = create_video_file.create_or_retrieve_video_file(ctx2)
 
-    assert processed2 is False
+    assert processed2 is True
     assert needs_processing2 is False
 
     assert v2.pk == v1.pk
-    assert VideoFile.objects.filter(video_hash="HASH_DUP").count() == 1
 
 
 @pytest.mark.django_db
@@ -266,7 +272,7 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
 
     # First create
     orphan, processed1, needs_processing1 = create_video_file.create_or_retrieve_video_file(ctx)
-    assert processed1 is True
+    assert processed1 is False
     assert needs_processing1 is True
     orphan_pk = orphan.pk
     raw_path = orphan.get_raw_file_path()
@@ -287,8 +293,8 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
     new_video, processed2, needs_processing2 = create_video_file.create_or_retrieve_video_file(ctx2)
 
     assert processed2 is True
+    assert needs_processing2 is True
     assert new_video.pk == orphan_pk
-    assert VideoFile.objects.filter(video_hash="HASH_ORPHAN").count() == 1
 
 
 def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypatch):

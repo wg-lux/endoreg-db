@@ -195,12 +195,10 @@ class MediaManagementView(APIView):
         pdf_file_obj = None
 
         if media_type == "video":
-            video_file_obj = (
-                VideoFile.get_video_by_pk(pk=file_id) if file_id else None
-            )
+            video_file_obj = VideoFile.get_video_by_pk(pk=file_id) if file_id else None
 
         elif media_type == "pdf":
-            pdf_file_obj = RawPdfFile.get_pdf_by_pk(pk=file_id) if file_id else None
+            pdf_file_obj = RawPdfFile.get_report_by_pk(pk=file_id) if file_id else None
 
         with transaction.atomic():
             if video_file_obj:

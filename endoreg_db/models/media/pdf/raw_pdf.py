@@ -750,8 +750,17 @@ class RawPdfFile(models.Model):
         return settings_dict
 
     @staticmethod
-    def get_pdf_by_pk(pk: int) -> "RawPdfFile":
+    def get_report_by_pk(pk: int) -> "RawPdfFile":
         try:
             return RawPdfFile.objects.get(pk=pk)
         except RawPdfFile.DoesNotExist:
             raise ValueError(f"report with ID {pdf_id} does not exist.")
+
+    @staticmethod
+    def get_report_by_hash(hash: str) -> "RawPdfFile":
+        try:
+            return RawPdfFile.objects.get(pdf_hash=hash)
+        except RawPdfFile.DoesNotExist:
+            raise ValueError(f"report with ID {hash} does not exist.")
+
+    
