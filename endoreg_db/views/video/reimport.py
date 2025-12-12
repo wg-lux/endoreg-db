@@ -133,12 +133,6 @@ class VideoReimportView(APIView):
 
                 logger.info(f"Pipe 1 processing completed for {video.video_hash}")
 
-                # Ensure minimum patient data is available
-                logger.info(f"Ensuring minimum patient data for {video.video_hash}")
-                self.video_service._ensure_default_patient_data(video)
-
-                # Refresh from database to get updated data
-                video.refresh_from_db()
 
                 # Use VideoImportService for anonymization
                 try:
@@ -154,7 +148,6 @@ class VideoReimportView(APIView):
                         file_path=raw_file_path,
                         center_name=video.center.name,
                         processor_name=processor_name,
-                        save_video=True,
                         delete_source=False,
                     )
 
@@ -183,8 +176,6 @@ class VideoReimportView(APIView):
                         f"VideoImportService anonymization failed for video {video.video_hash}: {e}"
                     )
                     logger.warning("Continuing without anonymization due to error")
-
-                state.mark_sensitive_meta_processed(save=True)
 
             # If we reach here, everything was successful
             logger.info(
