@@ -112,7 +112,7 @@ def _build_sensitive_meta_qi_queryset(
             qs = qs.filter(center=instance.center.pk)
 
     # --- Gender ---
-    if use_gender and instance.patient_gender is not None
+    if use_gender and instance.patient_gender is not None:
         if instance.patient_gender.pk is not None:
             qs = qs.filter(patient_gender_id=instance.patient_gender)
 

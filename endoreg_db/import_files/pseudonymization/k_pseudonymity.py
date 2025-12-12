@@ -44,8 +44,6 @@ def k_pseudonymize(
     Returns:
         (instance, k_value_after, is_k_anonymous_after)
     """
-    if qi_subset is None:
-        qi_subset = tuple(QI_FLAGS)
 
     # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
     use_first_name = "first_name" in qi_subset
@@ -95,7 +93,7 @@ def k_pseudonymize(
     # Assign to instance (SensitiveMeta.patient_dob is a DateTimeField)
     instance.patient_first_name = first_name
     instance.patient_last_name = last_name
-    instance.patient_dob = datetime(
+    instance.patient_dob = Date(
         fake_dob.year, fake_dob.month, fake_dob.day
     )  # naive is usually fine for DOB
 
