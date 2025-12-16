@@ -48,6 +48,14 @@ def k_pseudonymize(
     """
 
     # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
+    if qi_subset is None:
+     qi_subset = ("first_name", "last_name", "center", "gender", "dob_band")
+     # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
+     use_first_name = "first_name" in qi_subset
+     use_last_name = "last_name" in qi_subset
+     use_center = "center" in qi_subset
+     use_gender = "gender" in qi_subset
+     use_dob_band = "dob_band" in qi_subset
     use_first_name = "first_name" in qi_subset
     use_last_name = "last_name" in qi_subset
     use_center = "center" in qi_subset
