@@ -1,6 +1,5 @@
 import logging
 import shutil
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
@@ -420,7 +419,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
 
             transaction.on_commit(
                 lambda: _cleanup_raw_assets(
-                    video_uuid=video.video_hash,
+                    video_content_hash=video.video_hash,
                     raw_file_path=original_raw_file_path_to_delete,
                     raw_frame_dir=original_raw_frame_dir_to_delete,
                 )
@@ -456,7 +455,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
 
 
 def _cleanup_raw_assets(
-    video_uuid: uuid.UUID,
+    video_hash: "str",
     raw_file_path: Optional[Path] = None,
     raw_frame_dir: Optional[Path] = None,
 ):
@@ -470,21 +469,21 @@ def _cleanup_raw_assets(
     from endoreg_db.models import VideoFile, VideoState
 
     logger.info(
-        "Performing post-commit cleanup of raw assets for video %s.", video_uuid
+        "Performing post-commit cleanup of raw assets for video %s.", video_content_hash
     )
     try:
         video_file = (
-            VideoFile.objects.select_related("state").filter(uuid=video_uuid).first()
+            VideoFile.objects.select_related("state").filter(content_hash=video_content_hash).first()
         )
         if not video_file:
             logger.error(
-                "VideoFile %s not found during post-commit cleanup.", video_uuid
+                "VideoFile %s not found during post-commit cleanup.", video_content_hash
             )
             return
         if not video_file.state:
             logger.error(
                 "VideoState not found for VideoFile %s during post-commit cleanup.",
-                video_uuid,
+                video_content_hash,
             )
             video_file.state = VideoState.objects.create(video_file=video_file)
 
@@ -511,13 +510,13 @@ def _cleanup_raw_assets(
             video_file.state.save(update_fields=["frames_extracted"])
             logger.info(
                 "Set state.frames_extracted=False for video %s after raw asset cleanup.",
-                video_uuid,
+                video_content_hash,
             )
 
     except Exception as e:
         logger.error(
             "Error during post-commit cleanup of raw assets for video %s: %s",
-            video_uuid,
+            video_content_hash,
             e,
             exc_info=True,
         )
