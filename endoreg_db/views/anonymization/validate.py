@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 from endoreg_db.models import RawPdfFile, VideoFile
 from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.serializers.anonymization import SensitiveMetaValidateSerializer
+from endoreg_db.utils.operation_log import record_operation # only touched the parts where validation succeeds
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +18,11 @@ logger = logging.getLogger(__name__)
 class AnonymizationValidateView(APIView):
     """
     POST /api/anonymization/<int:file_id>/validate/
-
+    
     Validiert und aktualisiert SensitiveMeta-Felder für Videos oder PDFs.
-
+    
     DATA HERE IS COMING FROM THE ANONYIZATION VALIDATION COMPONENT
-
+    
     Body (Datumsfelder bevorzugt in deutschem Format DD.MM.YYYY; ISO YYYY-MM-DD ebenfalls akzeptiert):
     {
       "patient_first_name": "Max",
@@ -32,12 +34,12 @@ class AnonymizationValidateView(APIView):
       "casenumber":         "12345",
       "anonymized_text":    "...",             // nur für PDFs; Videos ignorieren
       "is_verified":        true               // optional; default true
-      "file_type":        "video"            // optional; "video" oder "pdf"; wenn nicht angegeben, wird zuerst Video, dann report versucht
+      "file_type":        "video"            // optional; "video" oder "pdf"; wenn nicht angegeben, wird zuerst Video, dann PDF versucht
       "center_name":       editedPatient.value.centerName || '',
       "external_id":       editedPatient.value.externalId || '',
-      "external_id_origin":editedPatient.value.externalIdOrigin || '',
+      "external_id_origin":editedPatient.value.externalIdOrigin || '', 
     }
-
+    
     Rückwärtskompatibilität: ISO-Format (YYYY-MM-DD) wird ebenfalls akzeptiert.
     """
 
@@ -66,6 +68,15 @@ class AnonymizationValidateView(APIView):
                     .first()
                 )
                 if video is not None:
+                    status_before = None
+                    try:
+                        if video.state is not None:
+                            st = getattr(video.state, "anonymization_status", None)
+                            if st is not None:
+                                status_before = str(getattr(st, "value",st))
+                    except Exception:
+                        logger.exception("Failed to read video anonymization_status before validation")
+                 
                     prepared_payload = self._prepare_payload(payload, video)
                     try:
                         ok = video.validate_metadata_annotation(prepared_payload)
@@ -98,14 +109,39 @@ class AnonymizationValidateView(APIView):
                         video.sensitive_meta.create_anonymized_record()
                     else:
                         return Response(
-                            {"message": "Video not validated, failed to create State."},
+                            {
+                                "message": "Video not validated, failed to create State."
+                            },
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
+                    
+                
 
                     if video.state is not None:
-                        video.state.state.anonymization_status.mark_anonymized()
-                        video.state.save(update_fields=["anonymized"])
+                        video.state.anonymized = True
                         video.sensitive_meta.state.save()
+
+                            # --- NEW: status AFTER validation ---
+                    status_after = status_before
+                    try:
+                       if video.state is not None:
+                          video.state.refresh_from_db()
+                          st_after = getattr(video.state, "anonymization_status", None)
+                          if st_after is not None:
+                             status_after = str(getattr(st_after, "value", st_after))
+                    except Exception:
+                        logger.exception("Failed to read video anonymization_status after validation")
+
+                    # --- write operation log ---
+                    # TODO: update the function call bases on the status , once merged
+                    record_operation(
+                        request,
+                        action="anonymization.validated",
+                        resource_type=video,
+                        resource_id=file_id,
+                        status_before=status_before,
+                        status_after=status_after,
+                        )
 
                     return Response(
                         {"message": "Video validated."},
@@ -175,13 +211,33 @@ class AnonymizationValidateView(APIView):
                         else:
                             return Response(
                                 {
-                                    "message": "report not validated, failed to create State."
+                                    "message": "PDF not validated, failed to create State."
                                 },
                                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             )
+                    # ----- status after validation -----
+                    status_after = status_before
+                    try:
+                       if pdf.state is not None:
+                          pdf.state.refresh_from_db()
+                          st_after = getattr(pdf.state, "anonymization_status", None)
+                          if st_after is not None:
+                             status_after = str(getattr(st_after, "value", st_after))
+                    except Exception:
+                        logger.exception("Failed to read pdf anonymization_status after validation")
+
+                    # --- NEW: write operation log ---
+                    record_operation(
+                        request,
+                        action="anonymization.validated",
+                        resource_type=pdf,
+                        resource_id=file_id,
+                        status_before=status_before,
+                        status_after=status_after,
+                        )
 
                     return Response(
-                        {"message": "report validated."},
+                        {"message": "PDF validated."},
                         status=status.HTTP_200_OK,
                     )
 
