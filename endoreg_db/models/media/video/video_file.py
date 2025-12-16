@@ -810,7 +810,7 @@ class VideoFile(models.Model):
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
             output_video_path = Path(f"/path/to/output/{instance.video_hash}_filtered.mp4")
-            fps = cls.fps if cls.fps else 30.0  # Default to 30 FPS if fps is not set
+            fps = video.fps if video.fps else 30.0  # Default to 30 FPS if fps is not set
             new_video_file = assemble_video_from_frames(
                 frames, output_video_path, fps, width=video.width, height=video.height
             )
