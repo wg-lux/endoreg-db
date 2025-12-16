@@ -103,9 +103,8 @@ def _build_sensitive_meta_qi_queryset(
     if use_first_name and instance.patient_first_name is not None:
         qs = qs.filter(patient_first_name=instance.patient_first_name)
             
-    if use_last_name and instance.patient_first_name is not None:
-        qs = qs.filter(patient_first_name=instance.patient_first_name)
-    
+    if use_last_name and instance.patient_last_name is not None:
+        qs = qs.filter(patient_last_name=instance.patient_last_name)
     # --- Center ---
     if use_center and instance.center is not None:
         if instance.center.pk is not None:
