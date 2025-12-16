@@ -133,9 +133,11 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
         except Exception as e:
             raise serializers.ValidationError(f"Fehler beim Aktualisieren der Patientenuntersuchung: {str(e)}")
     
-    def get_findings(self, patient_examination_id):
-        """Gibt die zugehörigen Befunde zurück"""
-        pe = PatientExamination()
-        obj = pe.get_or_create_patient_examination_by_id(patient_examination_id)
-        self.instance = obj
-        return self.instance.get_available_findings() if self.instance else []
+
+     def get_findings(self, patient_examination_id):
+         """Gibt die zugehörigen Befunde zurück"""
+         obj = PatientExamination.objects.filter(pk=patient_examination_id).first()
+         if obj is None:
+             return []
+         self.instance = obj
+         return self.instance.get_available_findings()
