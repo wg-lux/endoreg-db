@@ -1,5 +1,6 @@
 # endoreg_db/import_files/processing/create_sensitive_meta.py
 
+import os
 import logging
 from datetime import date
 from typing import Optional, Union
@@ -16,7 +17,7 @@ DEFAULT_CENTER_NAME = "endoreg_db_demo"
 DEFAULT_PATIENT_DOB = date(1970, 1, 1)
 
 
-def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> None:
+def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> SensitiveMeta | None:
     """
     Ensure the given instance has a minimal SensitiveMeta attached.
 
@@ -37,6 +38,15 @@ def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> None:
         "No SensitiveMeta found for report %s, creating default",
         getattr(instance, "pdf_hash", instance.pk),
     )
+    if not isinstance(instance.center.name, str):
+        try:
+            center_name = os.environ.get("DEFAULT_CENTER_NAME")
+            assert center_name is not None
+            instance.center.name = center_name
+        except AssertionError as e:
+            logger.debug(f"{e}Center name is not set! You can set it in .env under DEFAULT_CENTER_NAME using default from default_sensitive_meta")
+            instance.center.name = DEFAULT_CENTER_NAME
+            instance.center.get_by_name(DEFAULT_CENTER_NAME)
 
     default_data = {
         "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
@@ -60,9 +70,12 @@ def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> None:
             "Created default SensitiveMeta for report %s",
             getattr(instance, "pdf_hash", instance.pk),
         )
+        return meta
     except Exception as e:
         logger.error(
             "Failed to create default SensitiveMeta for report %s: %s",
             getattr(instance, "pdf_hash", instance.pk),
             e,
         )
+        return None
+

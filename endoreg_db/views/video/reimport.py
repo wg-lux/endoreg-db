@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from django.db import transaction
 from ...models import VideoFile, SensitiveMeta
-from ...services.video_import import VideoImportService
+from ...services.__old.video_import import VideoImportService
 logger = logging.getLogger(__name__)
 
 class VideoReimportView(APIView):

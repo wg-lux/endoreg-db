@@ -6,12 +6,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ...models import RawPdfFile, SensitiveMeta
-from ...services.pdf_import import PdfImportService
+from endoreg_db.services.report_import import ReportImportService
 
 logger = logging.getLogger(__name__)
 
 
-class PdfReimportView(APIView):
+class  ReportReimportView(APIView):
     """
     API endpoint to re-import a pdf file and regenerate metadata.
     This is useful when OCR failed or metadata is incomplete.
@@ -19,7 +19,7 @@ class PdfReimportView(APIView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.pdf_service = PdfImportService()
+        self.pdf_service = ReportImportService()
 
     def post(self, request, pk):
         """
@@ -94,10 +94,10 @@ class PdfReimportView(APIView):
                             f"Could not delete old SensitiveMeta {old_meta_id}: {e}"
                         )
 
-                # Use PdfImportService for reprocessing
+                # Use ReportImportService for reprocessing
                 try:
                     logger.info(
-                        f"Starting reprocessing using PdfImportService for {pdf.pdf_hash}"
+                        f"Starting reprocessing using ReportImportService for {pdf.pdf_hash}"
                     )
                     self.pdf_service.import_and_anonymize(
                         file_path=raw_file_path,
@@ -107,7 +107,7 @@ class PdfReimportView(APIView):
                     )
 
                     logger.info(
-                        f"PdfImportService reprocessing completed for {pdf.pdf_hash}"
+                        f"ReportImportService reprocessing completed for {pdf.pdf_hash}"
                     )
 
                     # Refresh to get updated state
@@ -131,7 +131,7 @@ class PdfReimportView(APIView):
 
                 except Exception as e:
                     logger.exception(
-                        f"PdfImportService reprocessing failed for report {pdf.pdf_hash}: {e}"
+                        f"ReportImportService reprocessing failed for report {pdf.pdf_hash}: {e}"
                     )
                     return Response(
                         {

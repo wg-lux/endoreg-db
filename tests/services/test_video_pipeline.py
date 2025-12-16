@@ -11,12 +11,15 @@ This script demonstrates the complete pipeline for importing and processing a vi
 
 from pathlib import Path
 from endoreg_db.models import VideoFile
-from endoreg_db.services.video_import import import_and_anonymize
+from endoreg_db.services.video_import import VideoImportService
 
 # Configuration
 DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
 DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
 VIDEO_PATH = Path("/home/admin/dev/endoreg-db/tests/assets/test_outside.mp4")
+
+vis = VideoImportService()
+import_and_anonymize = vis.import_and_anonymize
 
 def main():
     """Execute the complete video processing pipeline."""
@@ -37,27 +40,24 @@ def main():
             center_name=DEFAULT_CENTER_NAME,
             processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
             delete_source=False,  # Keep original for testing
-            save_video=True
         )
         
         print(f"✓ Video imported successfully with UUID: {video_file.uuid}")
-        
+        assert isinstance(video_file, VideoFile)
+        asser
+
         # Verify Pipe 1 completed
         state = video_file.get_or_create_state()
         print(f"✓ Frames extracted: {state.frames_extracted}")
         print(f"✓ Text metadata extracted: {state.text_meta_extracted}")
         print(f"✓ Initial prediction completed: {state.initial_prediction_completed}")
         print(f"✓ Label video segments created: {state.lvs_created}")
-        
         # Check sensitive metadata
         if video_file.sensitive_meta:
             print(f"✓ Sensitive metadata created: {video_file.sensitive_meta.id}")
         else:
             print("⚠ No sensitive metadata found")
         
-        # Check label video segments
-        segments = video_file.label_video_segments.all()
-        print(f"✓ Created {segments.count()} label video segments")
         
     except Exception as e:
         print(f"✗ Error during import: {e}")

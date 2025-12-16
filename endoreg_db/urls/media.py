@@ -13,8 +13,8 @@ from endoreg_db.views.media import (
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
 )
-from endoreg_db.views.pdf.pdf_stream import PdfStreamView
-from endoreg_db.views.pdf.reimport import PdfReimportView
+from endoreg_db.views.report.reimport import ReportReimportView
+from endoreg_db.views.report.report_stream import ReportStreamView
 from endoreg_db.views.video import (
     VideoReimportView,
     video_segment_detail,
@@ -253,13 +253,13 @@ urlpatterns = [
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
     path("media/pdfs/<int:pk>/", PdfMediaView.as_view(), name="pdf-detail"),
     path(
-        "media/pdfs/<int:pk>/stream/", PdfStreamView.as_view(), name="pdf-stream"
+        "media/pdfs/<int:pk>/stream/", ReportStreamView.as_view(), name="pdf-stream"
     ),  # Support ?type=raw|anonymized params
     # report Re-import API endpoint (modern media framework)
     # POST /api/media/pdfs/<int:pk>/reimport/
     # Re-imports a report file to regenerate metadata when OCR failed or data is incomplete
     path(
-        "media/pdfs/<int:pk>/reimport/", PdfReimportView.as_view(), name="pdf-reimport"
+        "media/pdfs/<int:pk>/reimport/", ReportReimportView.as_view(), name="report-reimport"
     ),
 ]
 # ---------------------------------------------------------------------------------------

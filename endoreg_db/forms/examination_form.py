@@ -1,5 +1,5 @@
 from django import forms
-from endoreg_db.models.examination.examination import Examination
+from endoreg_db.models.medical import Examination
 
 class ExaminationForm(forms.ModelForm):
     class Meta:

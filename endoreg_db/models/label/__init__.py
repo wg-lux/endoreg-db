@@ -1,6 +1,5 @@
 from .annotation import (
     ImageClassificationAnnotation,
-    VideoSegmentationAnnotation,
 )
 from .label import Label
 from .label_set import LabelSet
@@ -10,6 +9,7 @@ from .label_video_segment import (
 )
 from .video_segmentation_label import VideoSegmentationLabel
 from .video_segmentation_labelset import VideoSegmentationLabelSet
+from .annotation import VideoSegmentationAnnotation
 
 __all__ = [
     "Label",
@@ -19,5 +19,5 @@ __all__ = [
     "VideoSegmentationLabelSet",
     "LabelVideoSegment",
     "ImageClassificationAnnotation",
-    "VideoSegmentationAnnotation",
+    "VideoSegmentationAnnotation"
 ]

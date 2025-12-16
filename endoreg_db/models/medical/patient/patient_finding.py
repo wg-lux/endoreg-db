@@ -54,7 +54,7 @@ class PatientFinding(models.Model):
                 fields=["patient_examination", "finding"], condition=models.Q(is_active=True), name="unique_active_finding_per_examination"
             ),
             models.CheckConstraint(
-                check=models.Q(  # called .check in future?
+                condition=models.Q(  # called .check in future?
                     deactivated_at__isnull=True, deactivated_by__isnull=True
                 )
                 | models.Q(deactivated_at__isnull=False, deactivated_by__isnull=False, is_active=False),
