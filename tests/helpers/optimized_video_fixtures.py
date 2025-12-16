@@ -90,7 +90,7 @@ def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
     """Capture immutable info so stub videos can be rebuilt after DB flush."""
 
     return {
-        "uuid": str(video.uuid),
+        "uuid": str(video.video_hash),
         "video_hash": video.video_hash,
         "original_file_name": video.original_file_name or "segment_stub.mp4",
         "raw_file_name": os.path.basename(video.raw_file.name)
@@ -139,7 +139,8 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
     if existing is not None:
         if not existing.has_raw:
             raw_name = (
-                payload.get("raw_file_name") or f"segment_stub_{existing.uuid.hex}.mp4"
+                payload.get("raw_file_name")
+                or f"segment_stub_{existing.video_hash.hex}.mp4"
             )
             existing.raw_file.save(raw_name, ContentFile(b""), save=True)
         return existing
@@ -312,7 +313,7 @@ class MockVideoFile:
         # Set a mock ID for database queries
         self.id = 999999  # Use a high number to avoid conflicts with real data
         self.pk = self.id
-        self.uuid = uuid.uuid4()
+        self.video_hash = uuid.uuid4()
         # Try to get real objects, but create mock ones if they don't exist
         try:
             self.center = Center.objects.get(name=center_name)
@@ -328,8 +329,8 @@ class MockVideoFile:
             self.processor = MagicMock()
             self.processor.name = processor_name
 
-        self.raw_file = f"mock_video_{self.uuid}.mp4"
-        self.video_hash = f"mock_hash_{str(self.uuid)[:8]}"
+        self.raw_file = f"mock_video_{self.video_hash}.mp4"
+        self.video_hash = f"mock_hash_{str(self.video_hash)[:8]}"
         self._video_meta = None
         self._sensitive_meta = None
         self.is_processed = False

@@ -5,9 +5,9 @@ from .context.import_context import ImportContext  # if needed
 from .context.validate_directories import validate_directories  # if needed
 
 # Re-export storage helpers
-from .storage import create_report_file
-from .storage import create_video_file
-from .storage import sensitive_meta_storage
+from .file_storage import create_report_file
+from .file_storage import create_video_file
+from .file_storage import sensitive_meta_storage
 
 # Re-export import services
 from .report_import_service import ReportImportService

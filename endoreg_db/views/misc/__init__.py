@@ -8,18 +8,6 @@ from .stats import (
     GeneralStatsView,
 )
 
-
-from .translation import (
-    ExaminationTranslationOptions,
-    FindingTranslationOptions,
-    FindingClassificationTranslationOptions,
-    FindingClassificationChoiceTranslationOptions,
-    InterventionTranslationOptions,
-    TranslatedFieldMixin,
-    TranslationMigrationHelper,
-    TranslatedFixtureLoader,
-    MODELTRANSLATION_SETTINGS
-)
 from .upload_views import (
     UploadFileView,
     UploadStatusView,
@@ -37,18 +25,6 @@ __all__ = [
     'VideoSegmentStatsView',
     'SensitiveMetaStatsView',
     "GeneralStatsView",
-
-
-    # Translation options
-    'ExaminationTranslationOptions',
-    'FindingTranslationOptions',
-    'FindingClassificationTranslationOptions',
-    'FindingClassificationChoiceTranslationOptions',
-    'InterventionTranslationOptions',
-    'TranslatedFieldMixin',
-    'TranslationMigrationHelper',
-    'TranslatedFixtureLoader',
-    'MODELTRANSLATION_SETTINGS',
 
     # Upload views
     'UploadFileView',

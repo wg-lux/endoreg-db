@@ -31,7 +31,11 @@ def _resolve_ffmpeg_executable() -> Optional[str]:
     try:
         from django.conf import settings
 
-        env_candidates.extend(getattr(settings, attr) for attr in ("FFMPEG_EXECUTABLE", "FFMPEG_BINARY", "FFMPEG_PATH") if hasattr(settings, attr))
+        env_candidates.extend(
+            getattr(settings, attr)
+            for attr in ("FFMPEG_EXECUTABLE", "FFMPEG_BINARY", "FFMPEG_PATH")
+            if hasattr(settings, attr)
+        )
     except Exception:
         # Django might not be configured for every consumer
         pass
@@ -83,9 +87,24 @@ def _detect_nvenc_support() -> bool:
     """
     try:
         # Test NVENC availability with a minimal command (minimum size for NVENC)
-        cmd = ["ffmpeg", "-f", "lavfi", "-i", "testsrc=duration=1:size=256x256:rate=1", "-c:v", "h264_nvenc", "-preset", "p1", "-f", "null", "-"]
+        cmd = [
+            "ffmpeg",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=256x256:rate=1",
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "p1",
+            "-f",
+            "null",
+            "-",
+        ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15, check=False
+        )
 
         if result.returncode == 0:
             logger.debug("NVENC h264 encoding test successful")
@@ -141,7 +160,11 @@ def _get_preferred_encoder() -> Dict[str, str]:
     return _preferred_encoder
 
 
-def _build_encoder_args(quality_mode: str = "balanced", fallback: bool = False, custom_crf: Optional[int] = None) -> Tuple[List[str], str]:
+def _build_encoder_args(
+    quality_mode: str = "balanced",
+    fallback: bool = False,
+    custom_crf: Optional[int] = None,
+) -> Tuple[List[str], str]:
     """
     Build encoder command arguments based on available hardware and quality requirements.
 
@@ -207,7 +230,16 @@ def _build_encoder_args(quality_mode: str = "balanced", fallback: bool = False, 
         if custom_crf is not None:
             quality = str(custom_crf)
 
-        return ["-c:v", encoder["name"], encoder["preset_param"], preset, encoder["quality_param"], quality, "-profile:v", "high"], encoder["type"]
+        return [
+            "-c:v",
+            encoder["name"],
+            encoder["preset_param"],
+            preset,
+            encoder["quality_param"],
+            quality,
+            "-profile:v",
+            "high",
+        ], encoder["type"]
 
 
 def is_ffmpeg_available() -> bool:
@@ -231,7 +263,9 @@ def check_ffmpeg_availability():
         True if FFmpeg is available.
     """
     if not is_ffmpeg_available():
-        error_msg = "FFmpeg is not available. Please install it and ensure it's in your PATH."
+        error_msg = (
+            "FFmpeg is not available. Please install it and ensure it's in your PATH."
+        )
         logger.error(error_msg)
         raise FileNotFoundError(error_msg)
     # logger.info("FFmpeg is available.") # Caller can log if needed
@@ -292,9 +326,15 @@ def assemble_video_from_frames(  # Renamed from assemble_video
             if first_frame is None:
                 raise IOError(f"Could not read first frame: {frame_paths[0]}")
             height, width, _ = first_frame.shape
-            logger.info("Determined video dimensions from first frame: %dx%d", width, height)
+            logger.info(
+                "Determined video dimensions from first frame: %dx%d", width, height
+            )
         except Exception as e:
-            logger.error("Error reading first frame to determine dimensions: %s", e, exc_info=True)
+            logger.error(
+                "Error reading first frame to determine dimensions: %s",
+                e,
+                exc_info=True,
+            )
             return None
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -305,7 +345,9 @@ def assemble_video_from_frames(  # Renamed from assemble_video
         logger.error("Could not open video writer for path: %s", output_path)
         return None
 
-    logger.info("Assembling video %s from %d frames...", output_path.name, len(frame_paths))
+    logger.info(
+        "Assembling video %s from %d frames...", output_path.name, len(frame_paths)
+    )
     try:
         for frame_path in tqdm(frame_paths, desc=f"Assembling {output_path.name}"):
             frame = cv2.imread(str(frame_path))
@@ -314,7 +356,9 @@ def assemble_video_from_frames(  # Renamed from assemble_video
                 continue
             # Ensure frame dimensions match - resize if necessary (or log error)
             if frame.shape[1] != width or frame.shape[0] != height:
-                logger.warning(f"Frame {frame_path} has dimensions {frame.shape[1]}x{frame.shape[0]}, expected {width}x{height}. Resizing.")
+                logger.warning(
+                    f"Frame {frame_path} has dimensions {frame.shape[1]}x{frame.shape[0]}, expected {width}x{height}. Resizing."
+                )
                 frame = cv2.resize(frame, (width, height))
             video_writer.write(frame)
     finally:
@@ -364,7 +408,9 @@ def transcode_video(
     if codec == "auto" or preset == "auto":
         if force_cpu:
             # Force CPU encoding
-            encoder_args, encoder_type = _build_encoder_args(quality_mode, fallback=False, custom_crf=crf)
+            encoder_args, encoder_type = _build_encoder_args(
+                quality_mode, fallback=False, custom_crf=crf
+            )
             # Override to use CPU encoder
             encoder_args[1] = "libx264"  # Replace encoder name
             encoder_args[3] = "medium" if preset == "auto" else preset  # Replace preset
@@ -372,7 +418,9 @@ def transcode_video(
                 encoder_args[5] = str(crf)  # Replace quality value
         else:
             # Use automatic hardware detection
-            encoder_args, encoder_type = _build_encoder_args(quality_mode, fallback=False, custom_crf=crf)
+            encoder_args, encoder_type = _build_encoder_args(
+                quality_mode, fallback=False, custom_crf=crf
+            )
     else:
         # Manual codec/preset specification (backward compatibility)
         encoder_args = [
@@ -402,11 +450,18 @@ def transcode_video(
         command.extend(extra_args)
     command.append(str(output_path))
 
-    logger.info("Starting transcoding: %s -> %s (using %s)", input_path.name, output_path.name, encoder_type)
+    logger.info(
+        "Starting transcoding: %s -> %s (using %s)",
+        input_path.name,
+        output_path.name,
+        encoder_type,
+    )
     logger.debug("FFmpeg command: %s", " ".join(command))
 
     try:
-        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+        process = subprocess.Popen(
+            command, stderr=subprocess.PIPE, text=True, universal_newlines=True
+        )
 
         # Progress reporting and error handling
         stderr_output = ""
@@ -420,32 +475,56 @@ def transcode_video(
             logger.info("Transcoding finished successfully: %s", output_path)
             return output_path
         else:
-            logger.error("FFmpeg transcoding failed for %s with return code %d.", input_path.name, process.returncode)
+            logger.error(
+                "FFmpeg transcoding failed for %s with return code %d.",
+                input_path.name,
+                process.returncode,
+            )
             logger.error("FFmpeg stderr:\n%s", stderr_output)
 
             # Try fallback to CPU if NVENC failed
             if encoder_type == "nvenc" and not force_cpu:
                 logger.warning("NVENC transcoding failed, trying CPU fallback...")
-                return _transcode_video_fallback(input_path, output_path, audio_codec, audio_bitrate, extra_args, quality_mode, crf)
+                return _transcode_video_fallback(
+                    input_path,
+                    output_path,
+                    audio_codec,
+                    audio_bitrate,
+                    extra_args,
+                    quality_mode,
+                    crf,
+                )
 
             # Clean up potentially corrupted output file
             if output_path.exists():
                 try:
                     output_path.unlink()
                 except OSError as e:
-                    logger.error("Failed to delete incomplete output file %s: %s", output_path, e)
+                    logger.error(
+                        "Failed to delete incomplete output file %s: %s", output_path, e
+                    )
             return None
 
     except FileNotFoundError:
-        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
         return None
     except Exception as e:
-        logger.error("Error during transcoding of %s: %s", input_path.name, e, exc_info=True)
+        logger.error(
+            "Error during transcoding of %s: %s", input_path.name, e, exc_info=True
+        )
         return None
 
 
 def _transcode_video_fallback(
-    input_path: Path, output_path: Path, audio_codec: str, audio_bitrate: str, extra_args: Optional[List[str]], quality_mode: str, custom_crf: Optional[int]
+    input_path: Path,
+    output_path: Path,
+    audio_codec: str,
+    audio_bitrate: str,
+    extra_args: Optional[List[str]],
+    quality_mode: str,
+    custom_crf: Optional[int],
 ) -> Optional[Path]:
     """
     Fallback transcoding using CPU encoding.
@@ -464,7 +543,9 @@ def _transcode_video_fallback(
     """
     try:
         # Build CPU encoder arguments
-        encoder_args, _ = _build_encoder_args(quality_mode, fallback=True, custom_crf=custom_crf)
+        encoder_args, _ = _build_encoder_args(
+            quality_mode, fallback=True, custom_crf=custom_crf
+        )
         # Force CPU encoder
         encoder_args[1] = "libx264"
 
@@ -484,10 +565,14 @@ def _transcode_video_fallback(
             command.extend(extra_args)
         command.append(str(output_path))
 
-        logger.info("CPU fallback transcoding: %s -> %s", input_path.name, output_path.name)
+        logger.info(
+            "CPU fallback transcoding: %s -> %s", input_path.name, output_path.name
+        )
         logger.debug("Fallback FFmpeg command: %s", " ".join(command))
 
-        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+        process = subprocess.Popen(
+            command, stderr=subprocess.PIPE, text=True, universal_newlines=True
+        )
         stderr_output = ""
         if process.stderr:
             for line in process.stderr:
@@ -511,7 +596,9 @@ def _transcode_video_fallback(
     logger.debug("FFmpeg command: %s", " ".join(command))
 
     try:
-        process = subprocess.Popen(command, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+        process = subprocess.Popen(
+            command, stderr=subprocess.PIPE, text=True, universal_newlines=True
+        )
 
         # Optional: Progress reporting (can be complex to parse ffmpeg output reliably)
         # For simplicity, just wait and check the return code
@@ -528,21 +615,31 @@ def _transcode_video_fallback(
             logger.info("Transcoding finished successfully: %s", output_path)
             return output_path
         else:
-            logger.error("FFmpeg transcoding failed for %s with return code %d.", input_path.name, process.returncode)
+            logger.error(
+                "FFmpeg transcoding failed for %s with return code %d.",
+                input_path.name,
+                process.returncode,
+            )
             logger.error("FFmpeg stderr:\n%s", stderr_output)
             # Clean up potentially corrupted output file
             if output_path.exists():
                 try:
                     output_path.unlink()
                 except OSError as e:
-                    logger.error("Failed to delete incomplete output file %s: %s", output_path, e)
+                    logger.error(
+                        "Failed to delete incomplete output file %s: %s", output_path, e
+                    )
             return None
 
     except FileNotFoundError:
-        logger.error("ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH.")
+        logger.error(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
+        )
         return None
     except Exception as e:
-        logger.error("Error during transcoding of %s: %s", input_path.name, e, exc_info=True)
+        logger.error(
+            "Error during transcoding of %s: %s", input_path.name, e, exc_info=True
+        )
         return None
 
 
@@ -561,10 +658,15 @@ def transcode_videofile_if_required(
     """
     stream_info = get_stream_info(input_path)
     if not stream_info or "streams" not in stream_info:
-        logger.error("Could not get stream info for %s to check if transcoding is required.", input_path)
+        logger.error(
+            "Could not get stream info for %s to check if transcoding is required.",
+            input_path,
+        )
         return None
 
-    video_stream = next((s for s in stream_info["streams"] if s.get("codec_type") == "video"), None)
+    video_stream = next(
+        (s for s in stream_info["streams"] if s.get("codec_type") == "video"), None
+    )
 
     if not video_stream:
         logger.error("No video stream found in %s.", input_path)
@@ -573,7 +675,9 @@ def transcode_videofile_if_required(
     codec_name = video_stream.get("codec_name")
     pixel_format = video_stream.get("pix_fmt")
     # Check color range as well, default is usually 'tv' (limited)
-    color_range = video_stream.get("color_range", "tv")  # Default to tv if not specified
+    color_range = video_stream.get(
+        "color_range", "tv"
+    )  # Default to tv if not specified
 
     needs_transcoding = False
     transcode_reason = []
@@ -583,16 +687,25 @@ def transcode_videofile_if_required(
         transcode_reason.append(reason)
         needs_transcoding = True
     # Check both pixel format and color range for yuv420p
-    if pixel_format != required_pixel_format or (pixel_format == "yuv420p" and color_range != "pc"):
+    if pixel_format != required_pixel_format or (
+        pixel_format == "yuv420p" and color_range != "pc"
+    ):
         reason = f"Pixel format/color range mismatch (pix_fmt: {pixel_format}, color_range: {color_range} != {required_pixel_format} with color_range=pc)"
         logger.info("%s for %s. Transcoding required.", reason, input_path.name)
         transcode_reason.append(reason)
         needs_transcoding = True
 
     if needs_transcoding:
-        logger.info("Transcoding %s to %s due to: %s", input_path.name, output_path.name, "; ".join(transcode_reason))
+        logger.info(
+            "Transcoding %s to %s due to: %s",
+            input_path.name,
+            output_path.name,
+            "; ".join(transcode_reason),
+        )
         # Ensure codec and pixel format are set in options if not already present
-        transcode_options.setdefault("codec", "libx264" if required_codec == "h264" else required_codec)
+        transcode_options.setdefault(
+            "codec", "libx264" if required_codec == "h264" else required_codec
+        )
         transcode_options.setdefault("extra_args", [])
 
         # Ensure pixel format and color range are correctly set in extra_args
@@ -604,11 +717,17 @@ def transcode_videofile_if_required(
             try:
                 pix_fmt_index = extra_args.index("-pix_fmt")
                 if extra_args[pix_fmt_index + 1] != required_pixel_format:
-                    logger.warning("Overriding existing -pix_fmt '%s' with '%s'", extra_args[pix_fmt_index + 1], required_pixel_format)
+                    logger.warning(
+                        "Overriding existing -pix_fmt '%s' with '%s'",
+                        extra_args[pix_fmt_index + 1],
+                        required_pixel_format,
+                    )
                     extra_args[pix_fmt_index + 1] = required_pixel_format
             except (ValueError, IndexError):
                 # Should not happen if '-pix_fmt' is in extra_args, but handle defensively
-                logger.error("Error processing existing -pix_fmt argument. Appending required format.")
+                logger.error(
+                    "Error processing existing -pix_fmt argument. Appending required format."
+                )
                 extra_args.extend(["-pix_fmt", required_pixel_format])
 
         if "-color_range" not in extra_args:
@@ -619,16 +738,24 @@ def transcode_videofile_if_required(
             try:
                 color_range_index = extra_args.index("-color_range")
                 if extra_args[color_range_index + 1] != "pc":
-                    logger.warning("Overriding existing -color_range '%s' with 'pc'", extra_args[color_range_index + 1])
+                    logger.warning(
+                        "Overriding existing -color_range '%s' with 'pc'",
+                        extra_args[color_range_index + 1],
+                    )
                     extra_args[color_range_index + 1] = "pc"
             except (ValueError, IndexError):
-                logger.error("Error processing existing -color_range argument. Appending 'pc'.")
+                logger.error(
+                    "Error processing existing -color_range argument. Appending 'pc'."
+                )
                 extra_args.extend(["-color_range", "pc"])
 
         return transcode_video(input_path, output_path, **transcode_options)
     else:
         logger.info(
-            "Video %s already meets requirements (%s, %s, color_range=pc). No transcoding needed.", input_path.name, required_codec, required_pixel_format
+            "Video %s already meets requirements (%s, %s, color_range=pc). No transcoding needed.",
+            input_path.name,
+            required_codec,
+            required_pixel_format,
         )
         # If no transcoding is needed, should we copy/link or just return the original path?
         # For simplicity, let's assume the caller handles the file location.
@@ -638,15 +765,27 @@ def transcode_videofile_if_required(
             try:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(input_path, output_path)
-                logger.info("Copied %s to %s as it met requirements.", input_path.name, output_path.name)
+                logger.info(
+                    "Copied %s to %s as it met requirements.",
+                    input_path.name,
+                    output_path.name,
+                )
                 return output_path
             except Exception as e:
-                logger.error("Failed to copy %s to %s: %s", input_path.name, output_path.name, e)
+                logger.error(
+                    "Failed to copy %s to %s: %s", input_path.name, output_path.name, e
+                )
                 return None
         return input_path  # Return original path if no copy needed
 
 
-def extract_frames(video_path: Path, output_dir: Path, quality: int, ext: str = "jpg", fps: Optional[float] = None) -> List[Path]:
+def extract_frames(
+    video_path: Path,
+    output_dir: Path,
+    quality: int,
+    ext: str = "jpg",
+    fps: Optional[float] = None,
+) -> List[Path]:
     """
     Extracts frames from a video file using FFmpeg.
 
@@ -702,7 +841,9 @@ def extract_frames(video_path: Path, output_dir: Path, quality: int, ext: str = 
         # Return empty list on error as frames were likely not created correctly
         return []
     except Exception as e:
-        logger.error("An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True)
+        logger.error(
+            "An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True
+        )
         return []
 
     # Collect paths of extracted frames
@@ -743,7 +884,11 @@ def extract_frame_range(
         RuntimeError: If FFmpeg fails to extract the requested frames.
     """
     if start_frame >= end_frame:
-        logger.warning("extract_frame_range called with start_frame (%d) >= end_frame (%d). No frames to extract.", start_frame, end_frame)
+        logger.warning(
+            "extract_frame_range called with start_frame (%d) >= end_frame (%d). No frames to extract.",
+            start_frame,
+            end_frame,
+        )
         return []
 
     ffmpeg_executable = _resolve_ffmpeg_executable()
@@ -790,18 +935,30 @@ def extract_frame_range(
         logger.error("FFmpeg stderr:\n%s", e.stderr)
         logger.error("FFmpeg stdout:\n%s", e.stdout)
         # Clean up potentially partially created files in the target directory within the expected range
-        logger.warning("Attempting cleanup of potentially incomplete frames in %s", output_dir)
+        logger.warning(
+            "Attempting cleanup of potentially incomplete frames in %s", output_dir
+        )
         for i in range(start_frame, end_frame):
             potential_file = output_dir / f"frame_{i:07d}.{ext}"
             if potential_file.exists():
                 try:
                     potential_file.unlink()
                 except OSError as unlink_err:
-                    logger.error("Failed to delete potential frame %s during cleanup: %s", potential_file, unlink_err)
-        raise RuntimeError(f"FFmpeg frame range extraction failed for {video_path}") from e
+                    logger.error(
+                        "Failed to delete potential frame %s during cleanup: %s",
+                        potential_file,
+                        unlink_err,
+                    )
+        raise RuntimeError(
+            f"FFmpeg frame range extraction failed for {video_path}"
+        ) from e
     except Exception as e:
-        logger.error("An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True)
-        raise RuntimeError(f"Unexpected error during FFmpeg frame range extraction for {video_path}") from e
+        logger.error(
+            "An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True
+        )
+        raise RuntimeError(
+            f"Unexpected error during FFmpeg frame range extraction for {video_path}"
+        ) from e
 
     # Collect paths of extracted frames matching the pattern and expected range
     # FFmpeg might create files outside the exact range depending on version/flags,
@@ -813,9 +970,17 @@ def extract_frame_range(
             extracted_files.append(frame_file)
         else:
             # This might happen if ffmpeg fails silently for some frames or if the video ends early.
-            logger.warning("Expected frame file %s not found after extraction.", frame_file)
+            logger.warning(
+                "Expected frame file %s not found after extraction.", frame_file
+            )
 
-    logger.info("Found %d extracted frame files in range [%d, %d) for video %s.", len(extracted_files), start_frame, end_frame, video_path.name)
+    logger.info(
+        "Found %d extracted frame files in range [%d, %d) for video %s.",
+        len(extracted_files),
+        start_frame,
+        end_frame,
+        video_path.name,
+    )
     return extracted_files
 
 

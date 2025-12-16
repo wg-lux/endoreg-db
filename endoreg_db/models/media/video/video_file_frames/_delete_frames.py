@@ -4,7 +4,10 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 
-from endoreg_db.models.media.video.video_file_io import _get_frame_dir_path, _get_temp_anonymized_frame_dir
+from endoreg_db.models.media.video.video_file_io import (
+    _get_frame_dir_path,
+    _get_temp_anonymized_frame_dir,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile, VideoState
@@ -44,7 +47,7 @@ def _delete_frames(video: "VideoFile") -> str:
         msg = f"Frame directory not found, skipping deletion: {frame_dir}"
         logger.debug(msg)
     else:
-        msg = f"Frame directory path not set for video {video.uuid}, cannot delete standard frames."
+        msg = f"Frame directory path not set for video {video.video_hash}, cannot delete standard frames."
         logger.warning(msg)
 
     temp_anonym_frame_dir = None
@@ -52,7 +55,9 @@ def _delete_frames(video: "VideoFile") -> str:
         temp_anonym_frame_dir = _get_temp_anonymized_frame_dir(video)
         if temp_anonym_frame_dir and temp_anonym_frame_dir.exists():
             shutil.rmtree(temp_anonym_frame_dir)
-            msg = f"Deleted temporary anonymized frame directory: {temp_anonym_frame_dir}"
+            msg = (
+                f"Deleted temporary anonymized frame directory: {temp_anonym_frame_dir}"
+            )
             logger.info(msg)
             deleted_messages.append(msg)
     except Exception as e:
@@ -69,16 +74,28 @@ def _delete_frames(video: "VideoFile") -> str:
 
         if update_fields_state:
             state.save(update_fields=update_fields_state)
-            logger.info("Reset frame state flags (%s) for video %s.", ", ".join(update_fields_state), video.uuid)
+            logger.info(
+                "Reset frame state flags (%s) for video %s.",
+                ", ".join(update_fields_state),
+                video.video_hash,
+            )
             state_updated = True
         else:
-            logger.info("Frame state flags already False for video %s.", video.uuid)
+            logger.info(
+                "Frame state flags already False for video %s.", video.video_hash
+            )
             state_updated = True
 
         try:
-            update_count = Frame.objects.filter(video=video, is_extracted=True).update(is_extracted=False)
+            update_count = Frame.objects.filter(video=video, is_extracted=True).update(
+                is_extracted=False
+            )
             if update_count > 0:
-                logger.info("Marked %d Frame objects as is_extracted=False for video %s.", update_count, video.uuid)
+                logger.info(
+                    "Marked %d Frame objects as is_extracted=False for video %s.",
+                    update_count,
+                    video.video_hash,
+                )
             db_updated = True
         except Exception as db_err:
             msg = f"Failed to update is_extracted flag for Frame objects for video %s: {db_err}"
@@ -87,10 +104,14 @@ def _delete_frames(video: "VideoFile") -> str:
             db_updated = False
 
     except Exception as state_e:
-        msg = f"Failed to update state after deleting frame files for video %s: {state_e}"
+        msg = (
+            f"Failed to update state after deleting frame files for video %s: {state_e}"
+        )
         logger.error(msg, exc_info=True)
         error_messages.append(msg)
-        raise RuntimeError(f"Failed to update state during frame file deletion for video {video.uuid}") from state_e
+        raise RuntimeError(
+            f"Failed to update state during frame file deletion for video {video.video_hash}"
+        ) from state_e
 
     final_message = "; ".join(deleted_messages)
     if error_messages:

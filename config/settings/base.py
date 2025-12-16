@@ -30,13 +30,10 @@ LANGUAGES = [
 
 #ROOT_URLCONF = 'endoreg_db.urls.root_urls'
 
-# Configure modeltranslation to only use our supported languages
-MODELTRANSLATION_LANGUAGES = ("de", "en")
-MODELTRANSLATION_DEFAULT_LANGUAGE = "de"
+
 
 # Core apps
 INSTALLED_APPS = [
-    "modeltranslation",  # Must be before endoreg_db to register translations
     "endoreg_db.apps.EndoregDbConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -148,6 +145,4 @@ __all__ = [
     "USE_I18N",
     "USE_TZ",
     "LANGUAGES",
-    "MODELTRANSLATION_LANGUAGES",
-    "MODELTRANSLATION_DEFAULT_LANGUAGE",
 ]

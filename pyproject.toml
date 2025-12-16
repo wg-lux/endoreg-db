@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg-db"
 readme = "README.md"
-version = "0.8.8.4"
+version = "0.8.9.6"
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -76,7 +76,6 @@ dependencies = [
     "safetensors>=0.4.5",
     "celery>=5.5.3",
     "python-magic>=0.4.27",
-    "django-modeltranslation>=0.19.16",
     "pip>=25.2",
     "oauth2-proxy>=1.0.11",
     "python-jose[cryptography]>=3.5.0",

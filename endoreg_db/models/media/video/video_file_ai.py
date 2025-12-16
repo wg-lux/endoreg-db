@@ -122,7 +122,9 @@ def _infer_output_classes(weights_path: Path) -> Optional[int]:
         return None
 
 
-def _build_label_mapping(source_labels: List[str], target_labels: List[str]) -> Dict[str, List[str]]:
+def _build_label_mapping(
+    source_labels: List[str], target_labels: List[str]
+) -> Dict[str, List[str]]:
     if source_labels == target_labels:
         return {label: [label] for label in target_labels}
 
@@ -142,7 +144,9 @@ def _build_label_mapping(source_labels: List[str], target_labels: List[str]) -> 
     return mapping
 
 
-def _remap_prediction_dict(predictions: Dict[str, Any], mapping: Dict[str, List[str]]) -> Dict[str, Any]:
+def _remap_prediction_dict(
+    predictions: Dict[str, Any], mapping: Dict[str, List[str]]
+) -> Dict[str, Any]:
     remapped: Dict[str, Any] = {}
     for target, sources in mapping.items():
         values: List[Any] = []
@@ -167,7 +171,9 @@ def _remap_prediction_dict(predictions: Dict[str, Any], mapping: Dict[str, List[
     return remapped
 
 
-def _extract_text_from_video_frames(video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15) -> Optional[Dict[str, str]]:
+def _extract_text_from_video_frames(
+    video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15
+) -> Optional[Dict[str, str]]:
     """
     Extracts text from a sample of video frames using OCR based on processor ROIs.
     Requires frames to be extracted. Raises ValueError on pre-condition failure.
@@ -178,31 +184,47 @@ def _extract_text_from_video_frames(video: "VideoFile", frame_fraction: float = 
         - Post-condition: No state changes.
     """
     from endoreg_db.utils.ocr import (
-        extract_text_from_rois,
-    )  # Local import for dependency isolation
+        extract_text_from_rois,  # Local import for dependency isolation
+    )
 
     state = video.get_or_create_state()  # Use State helper
     # --- Pre-condition Check ---
     if not state.frames_extracted:
         # Raise exception
-        raise ValueError(f"Frames not extracted for video {video.uuid}. Cannot extract text.")
+        raise ValueError(
+            f"Frames not extracted for video {video.video_hash}. Cannot extract text."
+        )
     # --- End Pre-condition Check ---
 
     processor: Optional["EndoscopyProcessor"] = video.processor
     if not processor:
         # Raise exception
-        raise ValueError(f"Processor not set for video {video.uuid}. Cannot extract text.")
+        raise ValueError(
+            f"Processor not set for video {video.video_hash}. Cannot extract text."
+        )
 
     try:
         frame_paths = video.get_frame_paths()  # Use Frame helper
     except Exception as e:
-        logger.error("Error getting frame paths for video %s: %s", video.uuid, e, exc_info=True)
-        raise RuntimeError(f"Could not get frame paths for video {video.uuid}") from e
+        logger.error(
+            "Error getting frame paths for video %s: %s",
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Could not get frame paths for video {video.video_hash}"
+        ) from e
 
     n_frames = len(frame_paths)
     if n_frames == 0:
-        logger.warning("No frame paths found for video %s during text extraction.", video.uuid)
-        return None  # Return None if no frames, not an error condition for this function
+        logger.warning(
+            "No frame paths found for video %s during text extraction.",
+            video.video_hash,
+        )
+        return (
+            None  # Return None if no frames, not an error condition for this function
+        )
 
     # Determine number of frames to process
     n_frames_to_process = max(1, int(frame_fraction * n_frames))
@@ -212,7 +234,7 @@ def _extract_text_from_video_frames(video: "VideoFile", frame_fraction: float = 
         "Processing %d frames (out of %d) for text extraction from video %s.",
         n_frames_to_process,
         n_frames,
-        video.uuid,
+        video.video_hash,
     )
 
     # Select evenly spaced frames
@@ -230,7 +252,13 @@ def _extract_text_from_video_frames(video: "VideoFile", frame_fraction: float = 
                     rois_texts[roi].append(text)
         except Exception as e:
             # Log error but continue processing other frames
-            logger.error("Error extracting text from frame %s for video %s: %s", frame_path, video.uuid, e, exc_info=True)
+            logger.error(
+                "Error extracting text from frame %s for video %s: %s",
+                frame_path,
+                video.video_hash,
+                e,
+                exc_info=True,
+            )
             errors_encountered = True  # Flag that an error occurred
 
     # Determine the most frequent text for each ROI
@@ -247,17 +275,24 @@ def _extract_text_from_video_frames(video: "VideoFile", frame_fraction: float = 
             else:
                 most_frequent_texts[roi] = None
         except Exception as e:
-            logger.error("Error finding most common text for ROI %s: %s", roi, e, exc_info=True)
+            logger.error(
+                "Error finding most common text for ROI %s: %s", roi, e, exc_info=True
+            )
             most_frequent_texts[roi] = None
 
     if errors_encountered:
-        logger.warning("Errors occurred during text extraction for some frames of video %s. Results may be incomplete.", video.uuid)
+        logger.warning(
+            "Errors occurred during text extraction for some frames of video %s. Results may be incomplete.",
+            video.video_hash,
+        )
 
     if not most_frequent_texts:
-        logger.info("No text extracted for any ROI for video %s.", video.uuid)
+        logger.info("No text extracted for any ROI for video %s.", video.video_hash)
         return None  # Return None if no text found
 
-    logger.info("Extracted text for video %s: %s", video.uuid, most_frequent_texts)
+    logger.info(
+        "Extracted text for video %s: %s", video.video_hash, most_frequent_texts
+    )
     return most_frequent_texts
 
 
@@ -282,16 +317,26 @@ def _predict_video_pipeline(
     from ...administration.ai import AiModel
 
     try:
-        from ....utils.ai import Classifier, InferenceDataset, MultiLabelClassificationNet
+        from ....utils.ai import (
+            Classifier,
+            InferenceDataset,
+            MultiLabelClassificationNet,
+        )
         from ....utils.ai.postprocess import (
             concat_pred_dicts,
             find_true_pred_sequences,
             make_smooth_preds,
         )
     except ImportError as e:
-        logger.error("Failed to import endo_ai components: %s. Prediction unavailable.", e, exc_info=True)
+        logger.error(
+            "Failed to import endo_ai components: %s. Prediction unavailable.",
+            e,
+            exc_info=True,
+        )
         # Raise exception
-        raise ImportError("Failed to import required AI components for prediction.") from e
+        raise ImportError(
+            "Failed to import required AI components for prediction."
+        ) from e
 
     if not test_run and GLOBAL_TEST_RUN:
         test_run = True
@@ -302,48 +347,72 @@ def _predict_video_pipeline(
     # --- Pre-condition Check ---
     if not state.frames_extracted:
         # Raise exception
-        raise ValueError(f"Frames not extracted for video {video.uuid}. Prediction aborted.")
+        raise ValueError(
+            f"Frames not extracted for video {video.video_hash}. Prediction aborted."
+        )
     # --- End Pre-condition Check ---
 
     # Frame directory check
     frame_dir = video.get_frame_dir_path()  # Use IO helper
     if not frame_dir or not frame_dir.exists() or not any(frame_dir.iterdir()):
         # Raise exception
-        raise FileNotFoundError(f"Frame directory {frame_dir} is empty or does not exist for video {video.uuid}. Prediction aborted.")
+        raise FileNotFoundError(
+            f"Frame directory {frame_dir} is empty or does not exist for video {video.video_hash}. Prediction aborted."
+        )
 
     model: Optional[AiModel] = model_meta.model
     if not model:
         # Raise exception
-        raise ValueError(f"Model not found in ModelMeta {model_meta.name} (Version: {model_meta.version}) for video {video.uuid}. Prediction aborted.")
+        raise ValueError(
+            f"Model not found in ModelMeta {model_meta.name} (Version: {model_meta.version}) for video {video.video_hash}. Prediction aborted."
+        )
 
     # Ensure weights file exists
     try:
         weights_path = Path(model_meta.weights.path)
         if not weights_path.exists():
             # Raise exception
-            raise FileNotFoundError(f"Model weights file {weights_path} not found for {model_meta.name} (Video: {video.uuid}). Prediction aborted.")
+            raise FileNotFoundError(
+                f"Model weights file {weights_path} not found for {model_meta.name} (Video: {video.video_hash}). Prediction aborted."
+            )
     except Exception as e:
-        logger.error("Error accessing model weights path for %s (Video: %s): %s", model_meta.name, video.uuid, e, exc_info=True)
-        raise RuntimeError(f"Error accessing model weights for {model_meta.name}") from e
+        logger.error(
+            "Error accessing model weights path for %s (Video: %s): %s",
+            model_meta.name,
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"Error accessing model weights for {model_meta.name}"
+        ) from e
 
     # Get or create VideoPredictionMeta
     try:
-        _video_prediction_meta, created = VideoPredictionMeta.objects.get_or_create(video_file=video, model_meta=model_meta)
+        _video_prediction_meta, created = VideoPredictionMeta.objects.get_or_create(
+            video_file=video, model_meta=model_meta
+        )
         if created:
             logger.info(
                 "Created new VideoPredictionMeta for video %s, model %s.",
-                video.uuid,
+                video.video_hash,
                 model_meta.name,
             )
         else:
             logger.info(
                 "Found existing VideoPredictionMeta for video %s, model %s.",
-                video.uuid,
+                video.video_hash,
                 model_meta.name,
             )
         # video_prediction_meta.save() # Save is handled by get_or_create
     except Exception as e:
-        logger.error("Failed to get or create VideoPredictionMeta for video %s, model %s: %s", video.uuid, model_meta.name, e, exc_info=True)
+        logger.error(
+            "Failed to get or create VideoPredictionMeta for video %s, model %s: %s",
+            video.video_hash,
+            model_meta.name,
+            e,
+            exc_info=True,
+        )
         # Raise exception
         raise RuntimeError("Failed to get or create VideoPredictionMeta") from e
 
@@ -351,7 +420,7 @@ def _predict_video_pipeline(
         logger.info(
             "Detected stub weights at %s for video %s; skipping model inference and returning empty predictions.",
             weights_path,
-            video.uuid,
+            video.video_hash,
         )
         return {}
 
@@ -363,33 +432,56 @@ def _predict_video_pipeline(
     dataset_model_class = datasets.get(dataset_name)
     if not dataset_model_class:
         # Raise exception
-        raise ValueError(f"Dataset class '{dataset_name}' not found for video {video.uuid}. Prediction aborted.")
+        raise ValueError(
+            f"Dataset class '{dataset_name}' not found for video {video.video_hash}. Prediction aborted."
+        )
 
     try:
         paths = video.get_frame_paths()  # Use Frame helper
         if not paths:
-            raise FileNotFoundError(f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.uuid})")
+            raise FileNotFoundError(
+                f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.video_hash})"
+            )
     except Exception as e:
-        logger.error("Error listing or getting frame files from %s for video %s: %s", frame_dir, video.uuid, e, exc_info=True)
+        logger.error(
+            "Error listing or getting frame files from %s for video %s: %s",
+            frame_dir,
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         raise RuntimeError(f"Error getting frame paths from {frame_dir}") from e
 
-    logger.info("Found %d frame files in %s for video %s.", len(paths), frame_dir, video.uuid)
+    logger.info(
+        "Found %d frame files in %s for video %s.",
+        len(paths),
+        frame_dir,
+        video.video_hash,
+    )
 
     crop_template = video.get_crop_template()  # Use Meta helper
     string_paths = [p.as_posix() for p in paths]
     crops = [crop_template] * len(paths)  # Assuming same crop for all frames
 
     if test_run:
-        logger.info("TEST RUN: Using first %d frames for video %s.", n_test_frames, video.uuid)
+        logger.info(
+            "TEST RUN: Using first %d frames for video %s.",
+            n_test_frames,
+            video.video_hash,
+        )
         string_paths = string_paths[:n_test_frames]
         crops = crops[:n_test_frames]
         if not string_paths:
             # Raise exception
-            raise ValueError(f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.uuid}.")
+            raise ValueError(
+                f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.video_hash}."
+            )
 
     label_names = _resolve_label_names(model_meta)
     if not label_names:
-        raise ValueError(f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured.")
+        raise ValueError(
+            f"Label set '{getattr(model_meta.labelset, 'name', 'unknown')}' has no labels configured."
+        )
 
     outputs_hint = _infer_output_classes(weights_path)
 
@@ -428,7 +520,12 @@ def _predict_video_pipeline(
     try:
         ds_config = model_meta.get_inference_dataset_config()
         ds = dataset_model_class(string_paths, crops, config=ds_config)
-        logger.info("Created dataset '%s' with %d items for video %s.", dataset_name, len(ds), video.uuid)
+        logger.info(
+            "Created dataset '%s' with %d items for video %s.",
+            dataset_name,
+            len(ds),
+            video.video_hash,
+        )
         if len(ds) > 0:
             sample = ds[0]  # Get a sample for debugging shape
             logger.debug("Sample shape: %s", getattr(sample, "shape", None))
@@ -451,7 +548,13 @@ def _predict_video_pipeline(
             "labels": network_labels,
         }
     except Exception as e:
-        logger.error("Failed to create dataset '%s' for video %s: %s", dataset_name, video.uuid, e, exc_info=True)
+        logger.error(
+            "Failed to create dataset '%s' for video %s: %s",
+            dataset_name,
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         # Raise exception
         raise RuntimeError(f"Failed to create dataset '{dataset_name}'") from e
 
@@ -469,11 +572,11 @@ def _predict_video_pipeline(
                     **load_kwargs,
                 )
                 ai_model_instance = ai_model_instance.to(device)
-                logger.info("Loaded model on GPU for video %s.", video.uuid)
+                logger.info("Loaded model on GPU for video %s.", video.video_hash)
             except RuntimeError as cuda_err:
                 logger.warning(
                     "GPU loading failed for video %s: %s. Falling back to CPU.",
-                    video.uuid,
+                    video.video_hash,
                     cuda_err,
                 )
                 device = torch.device("cpu")
@@ -483,10 +586,13 @@ def _predict_video_pipeline(
                     **load_kwargs,
                 )
                 ai_model_instance = ai_model_instance.to(device)
-                logger.info("Loaded model on CPU for video %s.", video.uuid)
+                logger.info("Loaded model on CPU for video %s.", video.video_hash)
         else:
             # No CUDA available, load directly on CPU
-            logger.info("CUDA not available. Loading model on CPU for video %s.", video.uuid)
+            logger.info(
+                "CUDA not available. Loading model on CPU for video %s.",
+                video.video_hash,
+            )
             device = torch.device("cpu")
             ai_model_instance = MultiLabelClassificationNet.load_from_checkpoint(
                 checkpoint_path=weights_path.as_posix(),
@@ -496,28 +602,49 @@ def _predict_video_pipeline(
             ai_model_instance = ai_model_instance.to(device)
 
         _ = ai_model_instance.eval()  # Set to evaluation mode
-        classifier = Classifier(ai_model_instance, config=classifier_config or {}, verbose=True)
-        logger.info("AI model loaded successfully for video %s from %s.", video.uuid, weights_path)
+        classifier = Classifier(
+            ai_model_instance, config=classifier_config or {}, verbose=True
+        )
+        logger.info(
+            "AI model loaded successfully for video %s from %s.",
+            video.video_hash,
+            weights_path,
+        )
     except Exception as e:
-        logger.error("Failed to load AI model for video %s from %s: %s", video.uuid, weights_path, e, exc_info=True)
+        logger.error(
+            "Failed to load AI model for video %s from %s: %s",
+            video.video_hash,
+            weights_path,
+            e,
+            exc_info=True,
+        )
         # Raise exception
         raise RuntimeError(f"Failed to load AI model from {weights_path}") from e
 
     # --- Inference ---
     try:
-        logger.info("Starting inference on %d frames for video %s...", len(string_paths), video.uuid)
+        logger.info(
+            "Starting inference on %d frames for video %s...",
+            len(string_paths),
+            video.video_hash,
+        )
         predictions = classifier.pipe(string_paths, crops)
-        logger.info("Inference completed for video %s.", video.uuid)
+        logger.info("Inference completed for video %s.", video.video_hash)
     except Exception as e:
-        logger.error("Inference failed for video %s: %s", video.uuid, e, exc_info=True)
+        logger.error(
+            "Inference failed for video %s: %s", video.video_hash, e, exc_info=True
+        )
         # CUDA-OOM Fallback: Speicher freigeben und CPU versuchen
         try:
             import gc
 
             import torch
 
-            is_oom = isinstance(e, (getattr(torch.cuda, "OutOfMemoryError", RuntimeError), RuntimeError)) and (
-                "out of memory" in str(e).lower() or "cuda out of memory" in str(e).lower()
+            is_oom = isinstance(
+                e, (getattr(torch.cuda, "OutOfMemoryError", RuntimeError), RuntimeError)
+            ) and (
+                "out of memory" in str(e).lower()
+                or "cuda out of memory" in str(e).lower()
             )
         except Exception:
             is_oom = False
@@ -526,7 +653,9 @@ def _predict_video_pipeline(
                 import torch  # ensure available in this scope
 
                 if torch.cuda.is_available() and is_oom:
-                    logger.warning("CUDA OOM detected. Freeing CUDA cache and retrying on CPU…")
+                    logger.warning(
+                        "CUDA OOM detected. Freeing CUDA cache and retrying on CPU…"
+                    )
                     try:
                         torch.cuda.empty_cache()
                         gc.collect()
@@ -537,9 +666,17 @@ def _predict_video_pipeline(
                         _ = ai_model_instance.cpu()
                         classifier = Classifier(ai_model_instance, verbose=True)
                         predictions = classifier.pipe(string_paths, crops)
-                        logger.info("Inference completed on CPU after CUDA OOM for video %s.", video.uuid)
+                        logger.info(
+                            "Inference completed on CPU after CUDA OOM for video %s.",
+                            video.video_hash,
+                        )
                     except Exception as e2:
-                        logger.error("CPU fallback inference failed for video %s: %s", video.uuid, e2, exc_info=True)
+                        logger.error(
+                            "CPU fallback inference failed for video %s: %s",
+                            video.video_hash,
+                            e2,
+                            exc_info=True,
+                        )
                         # Raise exception
                         raise RuntimeError("Inference failed") from e2
                 else:
@@ -554,10 +691,13 @@ def _predict_video_pipeline(
 
     # --- Post-processing ---
     try:
-        logger.info("Post-processing predictions for video %s...", video.uuid)
+        logger.info("Post-processing predictions for video %s...", video.video_hash)
         readable_predictions = [classifier.readable(p) for p in predictions]
         if label_mapping:
-            readable_predictions = [_remap_prediction_dict(prediction, label_mapping) for prediction in readable_predictions]
+            readable_predictions = [
+                _remap_prediction_dict(prediction, label_mapping)
+                for prediction in readable_predictions
+            ]
 
         merged_predictions = concat_pred_dicts(readable_predictions)
 
@@ -565,7 +705,7 @@ def _predict_video_pipeline(
         if not fps:
             logger.warning(
                 "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default 30 FPS.",
-                video.uuid,
+                video.video_hash,
             )
             fps = 30  # Default FPS if unknown
 
@@ -580,7 +720,9 @@ def _predict_video_pipeline(
 
         binary_smooth_merged_predictions = {}
         for key in smooth_merged_predictions.keys():
-            binary_smooth_merged_predictions[key] = smooth_merged_predictions[key] > binarize_threshold
+            binary_smooth_merged_predictions[key] = (
+                smooth_merged_predictions[key] > binarize_threshold
+            )
 
         sequences = {}
         for label, prediction_array in binary_smooth_merged_predictions.items():
@@ -588,13 +730,18 @@ def _predict_video_pipeline(
 
         logger.info(
             "Post-processing completed for video %s. Found sequences for labels: %s",
-            video.uuid,
+            video.video_hash,
             list(sequences.keys()),
         )
         return sequences if sequences is not None else {}
 
     except Exception as e:
-        logger.error("Post-processing failed for video %s: %s", video.uuid, e, exc_info=True)
+        logger.error(
+            "Post-processing failed for video %s: %s",
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         # Raise exception
         raise RuntimeError("Post-processing failed") from e
 
@@ -617,14 +764,26 @@ def _predict_video_entry(
         ai_model = AiModel.objects.get(name=model_name)
         if not model_meta_version:
             model_meta = ai_model.get_latest_version()
-            logger.info("Using latest ModelMeta version %s for model %s.", model_meta_version, model_name)
+            logger.info(
+                "Using latest ModelMeta version %s for model %s.",
+                model_meta_version,
+                model_name,
+            )
         else:
             model_meta = ai_model.get_version(model_meta_version)
-            logger.info("Using specified ModelMeta version %s for model %s.", model_meta_version, model_name)
+            logger.info(
+                "Using specified ModelMeta version %s for model %s.",
+                model_meta_version,
+                model_name,
+            )
 
-        logger.info("Using ModelMeta: %s (Version: %s)", model_meta.name, model_meta.version)
+        logger.info(
+            "Using ModelMeta: %s (Version: %s)", model_meta.name, model_meta.version
+        )
     except ModelMeta.DoesNotExist:
-        logger.error("ModelMeta '%s' (Version: %s) not found.", model_name, model_meta_version)
+        logger.error(
+            "ModelMeta '%s' (Version: %s) not found.", model_name, model_meta_version
+        )
         raise
 
     # --- Explicitly pass only the arguments expected by _predict_video_pipeline ---
@@ -643,15 +802,21 @@ def _predict_video_entry(
     return predicted_sequences, model_meta
 
 
-def _extract_text_information(video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15) -> Optional[Dict[str, str]]:
+def _extract_text_information(
+    video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15
+) -> Optional[Dict[str, str]]:
     """Facade function to call the text extraction logic."""
-    logger.info("Attempting text extraction for video %s.", video.uuid)
+    logger.info("Attempting text extraction for video %s.", video.video_hash)
 
-    extracted_data = _extract_text_from_video_frames(video=video, frame_fraction=frame_fraction, cap=cap)
+    extracted_data = _extract_text_from_video_frames(
+        video=video, frame_fraction=frame_fraction, cap=cap
+    )
 
     if extracted_data is not None:
-        logger.info("Text extraction successful for video %s.", video.uuid)
+        logger.info("Text extraction successful for video %s.", video.video_hash)
     else:
-        logger.warning("Text extraction returned no data for video %s.", video.uuid)
+        logger.warning(
+            "Text extraction returned no data for video %s.", video.video_hash
+        )
 
     return extracted_data

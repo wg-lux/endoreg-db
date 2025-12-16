@@ -83,8 +83,8 @@ def video_with_files(
         video_hash=f"hash-{uuid.uuid4()}",
     )
 
-    raw_name = f"videos/{video.uuid}_raw.mp4"
-    processed_name = f"anonym_videos/{video.uuid}_processed.mp4"
+    raw_name = f"videos/{video.video_hash}_raw.mp4"
+    processed_name = f"anonym_videos/{video.video_hash}_processed.mp4"
 
     with video_asset_file.open("rb") as raw_handle:
         video.raw_file.save(raw_name, File(raw_handle), save=True)
@@ -164,7 +164,9 @@ def test_ensure_local_raw_file_downloads_without_path(video_with_files: VideoFil
         assert not local_path.exists()
 
 
-def test_ensure_local_processed_file_downloads_without_path(video_with_files: VideoFile):
+def test_ensure_local_processed_file_downloads_without_path(
+    video_with_files: VideoFile,
+):
     video = video_with_files
 
     with patch("endoreg_db.utils.storage._resolve_local_path", return_value=None):

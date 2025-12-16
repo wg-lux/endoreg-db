@@ -1,17 +1,23 @@
 from pathlib import Path
+
 from rest_framework import serializers
-from ...models import VideoFile 
+
+from ...models import VideoFile
+
 try:
     import cv2
 except ImportError:
     cv2 = None
-from django.conf import settings
 # from django.conf import settings
 from typing import TYPE_CHECKING
+
+from django.conf import settings
 from rest_framework.exceptions import ValidationError
+
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
-    
+
+
 class VideoFileSerializer(serializers.ModelSerializer):
     """
     Serializer that dynamically handles video retrieval and streaming.
@@ -55,24 +61,24 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     # @staticmethod #using @staticmethod makes it reusable without needing to create a serializer instance.
     #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
-    def get_video_selection_field(self, obj:"Video"):
+    def get_video_selection_field(self, obj: "VideoFile"):
         """
         Return the UUID of the video for use as a selection value in frontend dropdowns.
-        
+
         Parameters:
             obj (Video): The video instance being serialized.
-        
+
         Returns:
             str: The UUID of the video.
         """
-        return obj.uuid
+        return obj.video_hash
 
     def get_video_url(
         self, obj
     ):  # when we serialize a RawVideoFile object (video metadata), the get_video_url method is automatically invoked by DRF
         """
         Return the absolute API URL for accessing the video file.
-        
+
         If the video ID is invalid or the request context is missing, returns a dictionary with an error message.
         """
         if not obj.id:
@@ -82,14 +88,16 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(f"/api/video/{obj.id}/")  # Added api/ prefix
+            return request.build_absolute_uri(
+                f"/api/video/{obj.id}/"
+            )  # Added api/ prefix
 
         return {"error": "Video URL not available"}
 
-    def get_duration(self, obj:"Video"):
+    def get_duration(self, obj: "VideoFile"):
         """
         Return the duration of the video in seconds, using the stored value if available or extracting it dynamically with OpenCV.
-        
+
         If the duration is not present in the database, the method opens the video file, retrieves its frame count and frames per second (FPS), and calculates the duration. Returns `None` if the video cannot be opened or FPS is zero.
         """
         if hasattr(obj, "duration") and obj.duration:
@@ -99,7 +107,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         # Dynamically extract duration if not stored
         video_path = obj.active_file.path
-        
+
         cap = cv2.VideoCapture(video_path)
         try:
             if not cap.isOpened():
@@ -114,13 +122,13 @@ class VideoFileSerializer(serializers.ModelSerializer):
         finally:
             cap.release()
 
-    def get_file(self, obj:"Video"):
+    def get_file(self, obj: "VideoFile"):
         """
         Returns the relative file path of the active video file, or an error message if the file is missing or invalid.
-        
+
         Parameters:
             obj (Video): The video instance whose file path is to be retrieved.
-        
+
         Returns:
             str or dict: The relative file path as a string, or a dictionary with an error message if the file is missing or invalid.
         """
@@ -134,10 +142,10 @@ class VideoFileSerializer(serializers.ModelSerializer):
             obj.active_file.name
         ).strip()  #  Only return the file path, no URL,#obj.active_file returning a FieldFile object instead of a string
 
-    def get_full_video_path(self, obj:"Video"):
+    def get_full_video_path(self, obj: "VideoFile"):
         """
         Return the absolute filesystem path to the video's active file.
-        
+
         If the file does not exist or an error occurs during path construction, returns a dictionary with an error message.
         """
         if not obj.active_file:
@@ -145,26 +153,34 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         try:
             # Use the active_file_path property which handles both processed and raw files
-            if hasattr(obj, 'active_file_path') and obj.active_file_path:
+            if hasattr(obj, "active_file_path") and obj.active_file_path:
                 full_path = obj.active_file_path
-                return str(full_path) if full_path.exists() else {"error": f"file not found at: {full_path}"}
+                return (
+                    str(full_path)
+                    if full_path.exists()
+                    else {"error": f"file not found at: {full_path}"}
+                )
             else:
                 # Fallback: construct path manually
                 video_relative_path = str(obj.active_file.name).strip()
                 if not video_relative_path:
                     return {"error": "Video file path is empty or invalid"}
-                
+
                 # Construct the path using the file's actual path
                 full_path = obj.active_file.path
-                return str(full_path) if Path(full_path).exists() else {"error": f"file not found at: {full_path}"}
-                
+                return (
+                    str(full_path)
+                    if Path(full_path).exists()
+                    else {"error": f"file not found at: {full_path}"}
+                )
+
         except Exception as e:
             return {"error": f"Error constructing file path: {str(e)}"}
 
-    def get_sequences(self, obj:"Video"):
+    def get_sequences(self, obj: "VideoFile"):
         """
         Retrieve frame sequences for each label from the video object.
-        
+
         Returns:
             dict: A mapping of label names to lists of frame ranges, or an error message if no sequences are found.
         """
@@ -172,25 +188,25 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "error": "no sequence found, check database first"
         }  #  Get from sequences, return {} if missing
 
-    def get_label_names(self, obj:"Video"):
+    def get_label_names(self, obj: "VideoFile"):
         """
         Return a list of label names present in the video's frame sequences.
-        
+
         Parameters:
             obj (Video): The video instance to extract label names from.
-        
+
         Returns:
             list[str]: List of label names, or an empty list if no sequences are found.
         """
         sequences = self.get_sequences(obj)
         return list(sequences.keys()) if sequences else []
 
-    def get_label_time_segments(self, obj:"Video"):
+    def get_label_time_segments(self, obj: "VideoFile"):
         """
         Convert frame sequences for each label into time segments with frame-level metadata.
-        
+
         For each label in the video, this method generates a list of time segments based on frame index ranges, converting them to seconds using the video's FPS. Each segment includes the raw frame indices, start and end times in seconds, and detailed information for each frame in the segment, such as filename, full file path, and a placeholder for predictions.
-        
+
         Returns:
             dict: A dictionary mapping each label to its list of time segments and associated frame metadata.
         """
@@ -201,13 +217,18 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         if not fps or fps <= 0:
             # Strict by default — only use fallback if explicitly enabled and > 0
-            if getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False) and getattr(settings, "VIDEO_DEFAULT_FPS", 0) > 0:
+            if (
+                getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False)
+                and getattr(settings, "VIDEO_DEFAULT_FPS", 0) > 0
+            ):
                 fps = settings.VIDEO_DEFAULT_FPS
             else:
-                raise ValidationError({
-                    "label_time_segments": "FPS unavailable — cannot calculate time segments",
-                    "video_id": getattr(obj, "id", None),
-                })
+                raise ValidationError(
+                    {
+                        "label_time_segments": "FPS unavailable — cannot calculate time segments",
+                        "video_id": getattr(obj, "id", None),
+                    }
+                )
 
         sequences = self.get_sequences(obj)  # Fetch sequence data
         frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model
@@ -229,17 +250,16 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
                 # Fetch predictions for frames within this range
                 for frame_num in range(start_frame, end_frame + 1):
+                    frame_filename = (
+                        f"frame_{str(frame_num).zfill(7)}.jpg"  # Frame filename format
+                    )
+                    frame_path = frame_dir / frame_filename  # Full path to the frame
 
-                        frame_filename = f"frame_{str(frame_num).zfill(7)}.jpg"  # Frame filename format
-                        frame_path = (
-                            frame_dir / frame_filename
-                        )  # Full path to the frame
-
-                        frame_data[frame_num] = {
-                            "frame_filename": frame_filename,
-                            "frame_file_path": str(frame_path),
-                            "predictions": None,
-                        }
+                    frame_data[frame_num] = {
+                        "frame_filename": frame_filename,
+                        "frame_file_path": str(frame_path),
+                        "predictions": None,
+                    }
 
                 # Append the converted time segment
                 label_times.append(
@@ -261,4 +281,3 @@ class VideoFileSerializer(serializers.ModelSerializer):
             }
 
         return time_segments
-

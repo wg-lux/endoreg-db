@@ -472,7 +472,7 @@ class VideoRemoveFramesView(APIView):
             output_path = (
                 Path(settings.MEDIA_ROOT)
                 / "anonym_videos"
-                / f"{video.uuid}_cleaned.mp4"
+                / f"{video.video_hash}_cleaned.mp4"
             )
             output_path.parent.mkdir(parents=True, exist_ok=True)
 

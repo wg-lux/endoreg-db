@@ -16,5 +16,10 @@ def _bulk_create_frames(video: "VideoFile", frames_to_create: List["Frame"]):
     try:
         Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
     except Exception as e:
-        logger.error("Error during bulk creation of frames for video %s: %s", video.uuid, e, exc_info=True)
+        logger.error(
+            "Error during bulk creation of frames for video %s: %s",
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         raise

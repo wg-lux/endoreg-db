@@ -13,7 +13,10 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
     """Generates a crop template [y1, y2, x1, x2] from the endo ROI."""
     endo_roi = _get_endo_roi(video)  # Use the helper function
     if not endo_roi:
-        logger.warning("Cannot generate crop template for video %s: Endo ROI not available.", video.uuid)
+        logger.warning(
+            "Cannot generate crop template for video %s: Endo ROI not available.",
+            video.video_hash,
+        )
         return None
 
     x = endo_roi["x"]
@@ -23,7 +26,9 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
 
     # Validate dimensions
     if None in [x, y, width, height] or width <= 0 or height <= 0:
-        logger.warning("Invalid ROI dimensions for video %s: %s", video.uuid, endo_roi)
+        logger.warning(
+            "Invalid ROI dimensions for video %s: %s", video.video_hash, endo_roi
+        )
         return None
 
     # Ensure crop boundaries are within image dimensions if available
@@ -34,12 +39,20 @@ def _get_crop_template(video: "VideoFile") -> Optional[List[int]]:
         x1 = max(0, x)
         x2 = min(img_w, x + width)
         if y1 >= y2 or x1 >= x2:
-            logger.warning("Calculated crop template has zero or negative size for video %s. ROI: %s, Img: %dx%d", video.uuid, endo_roi, img_w, img_h)
+            logger.warning(
+                "Calculated crop template has zero or negative size for video %s. ROI: %s, Img: %dx%d",
+                video.video_hash,
+                endo_roi,
+                img_w,
+                img_h,
+            )
             return None
         crop_template = [y1, y2, x1, x2]
     else:
         # Proceed without boundary check if image dimensions unknown
         crop_template = [y, y + height, x, x + width]
 
-    logger.debug("Generated crop template for video %s: %s", video.uuid, crop_template)
+    logger.debug(
+        "Generated crop template for video %s: %s", video.video_hash, crop_template
+    )
     return crop_template

@@ -45,10 +45,10 @@ def _get_fps(video: "VideoFile") -> float:
     if video.fps is not None:
         return video.fps
 
-    logger.debug("FPS not set on instance %s, checking VideoMeta.", video.uuid)
+    logger.debug("FPS not set on instance %s, checking VideoMeta.", video.video_hash)
 
     if not video.video_meta:
-        logger.info("VideoMeta not linked for %s, attempting update.", video.uuid)
+        logger.info("VideoMeta not linked for %s, attempting update.", video.video_hash)
 
         _update_video_meta(video, save_instance=True)  # Call the helper function
 
@@ -56,20 +56,33 @@ def _get_fps(video: "VideoFile") -> float:
     if video.fps is not None:
         return video.fps
     elif video.video_meta and video.video_meta.fps is not None:
-        logger.info("Retrieved FPS %.2f from VideoMeta for %s.", video.video_meta.fps, video.uuid)
+        logger.info(
+            "Retrieved FPS %.2f from VideoMeta for %s.",
+            video.video_meta.fps,
+            video.video_hash,
+        )
         _fps = video.video_meta.fps
         try:
             _fps = float(_fps)
         except (TypeError, ValueError):
-            logger.warning("Invalid FPS value %.2f in VideoMeta for video %s.", video.video_meta.fps, video.uuid)
-            raise ValueError(f"Could not determine FPS for video {video.uuid} due to invalid VideoMeta FPS value.")
+            logger.warning(
+                "Invalid FPS value %.2f in VideoMeta for video %s.",
+                video.video_meta.fps,
+                video.video_hash,
+            )
+            raise ValueError(
+                f"Could not determine FPS for video {video.video_hash} due to invalid VideoMeta FPS value."
+            )
         video.fps = _fps
         # Avoid saving if called from within the save method itself
         if not getattr(video, "_saving", False):
             video.save(update_fields=["fps"])
         return _fps
     else:
-        logger.warning("Could not determine FPS from VideoMeta for video %s. Trying direct raw file access.", video.uuid)
+        logger.warning(
+            "Could not determine FPS from VideoMeta for video %s. Trying direct raw file access.",
+            video.video_hash,
+        )
         try:
             if video.has_raw:
                 video_path = video.get_raw_file_path()  # Use helper
@@ -88,23 +101,39 @@ def _get_fps(video: "VideoFile") -> float:
                         cap.release()
                     if fps and fps > 0:
                         video.fps = fps
-                        logger.info("Determined FPS %.2f directly from file for %s.", video.fps, video.uuid)
+                        logger.info(
+                            "Determined FPS %.2f directly from file for %s.",
+                            video.fps,
+                            video.video_hash,
+                        )
                         if not getattr(video, "_saving", False):
                             video.save(update_fields=["fps"])
                         return fps
                     else:
-                        logger.warning("Could not determine a valid FPS for video file %s.", video_path)
+                        logger.warning(
+                            "Could not determine a valid FPS for video file %s.",
+                            video_path,
+                        )
                 elif video_path:
-                    logger.warning("Raw file path %s does not exist for direct FPS check.", video_path)
+                    logger.warning(
+                        "Raw file path %s does not exist for direct FPS check.",
+                        video_path,
+                    )
                 else:
                     logger.warning("Raw file path is None for direct FPS check.")
             else:
                 logger.warning("Raw file not available for direct FPS check.")
 
         except Exception as e:
-            logger.error("Error getting FPS directly from file %s: %s", video.raw_file.name if video.has_raw else "N/A", e)
+            logger.error(
+                "Error getting FPS directly from file %s: %s",
+                video.raw_file.name if video.has_raw else "N/A",
+                e,
+            )
 
-        raise ValueError(f"Could not determine FPS for video {video.uuid}. Ensure the video file is valid and accessible.")
+        raise ValueError(
+            f"Could not determine FPS for video {video.video_hash}. Ensure the video file is valid and accessible."
+        )
 
 
 # TODO Refactor to utils / check if similar function exists in utils
@@ -132,7 +161,9 @@ def _calculate_fps_manually(cap, video_path: Path) -> float:
     Returns:
         float: The estimated FPS, or 0.0 if the duration is zero or calculation fails.
     """
-    logger.warning(f"Could not get a valid FPS for {video_path}. Trying to calculate manually.")
+    logger.warning(
+        f"Could not get a valid FPS for {video_path}. Trying to calculate manually."
+    )
     # This is less accurate and slower
     num_frames = 0
     start_time = cv2.getTickCount()
@@ -146,5 +177,7 @@ def _calculate_fps_manually(cap, video_path: Path) -> float:
     if seconds > 0:
         return num_frames / seconds
 
-    logger.error(f"Manual FPS calculation failed for {video_path} due to zero duration.")
+    logger.error(
+        f"Manual FPS calculation failed for {video_path} due to zero duration."
+    )
     return 0.0

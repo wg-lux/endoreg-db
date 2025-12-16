@@ -124,3 +124,56 @@ class Command(BaseCommand):
 
             traceback.print_exc()
             raise CommandError("ModelMeta creation failed") from e
+
+
+#TODO Review slimmed down version using service endoreg_db/services/model_meta_from_hf.py
+# your management command file
+# from django.core.management.base import BaseCommand, CommandError
+
+# from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+
+
+# class Command(BaseCommand):
+#     help = "Create ModelMeta by downloading model from Hugging Face"
+
+#     def add_arguments(self, parser):
+#         parser.add_argument(
+#             "--model_id",
+#             type=str,
+#             default="wg-lux/colo_segmentation_RegNetX800MF_base",
+#         )
+#         parser.add_argument(
+#             "--model_name",
+#             type=str,
+#             default="image_multilabel_classification_colonoscopy_default",
+#         )
+#         parser.add_argument(
+#             "--labelset_name",
+#             type=str,
+#             default="multilabel_classification_colonoscopy_default",
+#         )
+#         parser.add_argument(
+#             "--meta_version",
+#             type=str,
+#             default="1",
+#         )
+#         parser.add_argument(
+#             "--labelset_version",
+#             type=int,
+#             default=None,
+#         )
+
+#     def handle(self, *args, **options):
+#         try:
+#             model_meta = ensure_model_meta_from_hf(
+#                 model_id=options["model_id"],
+#                 model_name=options["model_name"],
+#                 labelset_name=options["labelset_name"],
+#                 meta_version=options["meta_version"],
+#                 labelset_version=options.get("labelset_version"),
+#             )
+#             self.stdout.write(
+#                 self.style.SUCCESS(f"Successfully ensured ModelMeta: {model_meta}")
+#             )
+#         except Exception as e:
+#             raise CommandError(f"ModelMeta creation failed: {e}") from e

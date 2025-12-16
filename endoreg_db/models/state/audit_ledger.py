@@ -89,7 +89,7 @@ class AuditLedger(models.Model):
         """
         payload = {
             "ts": self.ts.isoformat(),
-            "uid": str(self.user_id),
+            "uid": str(self.id),
             "obj": f"{self.object_type}:{self.object_pk}",
             "act": self.action,
             "data": self.data,
@@ -97,7 +97,7 @@ class AuditLedger(models.Model):
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
-    def log_validation(user, instance, action: str, extra=None):
+    def log_validation(self, user, instance, action: str, extra=None):
         """
         Creates an audit record for a validation action performed by a user on a specific model instance.
 
@@ -115,7 +115,8 @@ class AuditLedger(models.Model):
             data=extra or {},
         )
 
-    def _distinct(object_type: str, action: str):
+    @classmethod
+    def _distinct(self, object_type: str, action: str):
         """
         Returns the number of distinct objects of a given type that have a specific audit action recorded.
 
@@ -142,8 +143,6 @@ class AuditLedger(models.Model):
             "totalAnnotations": AuditLedger.objects.filter(action="annotation_added").count(),
             "totalAnonymizations": AuditLedger._distinct("VideoFile", "anonymized"),
             "totalImages": AuditLedger._distinct("Image", "created"),
-            # video breakdown
             "videosCompleted": AuditLedger._distinct("VideoFile", "validated"),
             "videosAnonym": AuditLedger._distinct("VideoFile", "anonymized"),
-            # add more as needed …
         }

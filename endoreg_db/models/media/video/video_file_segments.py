@@ -27,7 +27,11 @@ def _convert_sequences_to_db_segments(
     """
     from ...label import Label, LabelVideoSegment  # Local import for models
 
-    logger.info("Converting sequences to LabelVideoSegments for video %s, prediction meta %s", video.uuid, video_prediction_meta.pk)
+    logger.info(
+        "Converting sequences to LabelVideoSegments for video %s, prediction meta %s",
+        video.video_hash,
+        video_prediction_meta.pk,
+    )
     created_count = 0
     skipped_count = 0
     error_count = 0
@@ -45,14 +49,21 @@ def _convert_sequences_to_db_segments(
         try:
             label = Label.objects.get(name=label_name)  # require pre-existing label
         except Exception as e:
-            logger.error("Could not get or create Label '%s': %s", label_name, e, exc_info=True)
+            logger.error(
+                "Could not get or create Label '%s': %s", label_name, e, exc_info=True
+            )
             error_count += len(sequence_list)
             continue
 
         segments_to_create = []
         for start_frame, end_frame in sequence_list:
             if start_frame > end_frame or start_frame < 0:
-                logger.warning("Skipping invalid sequence for label '%s': start=%d, end=%d", label_name, start_frame, end_frame)
+                logger.warning(
+                    "Skipping invalid sequence for label '%s': start=%d, end=%d",
+                    label_name,
+                    start_frame,
+                    end_frame,
+                )
                 skipped_count += 1
                 continue
 
@@ -68,19 +79,34 @@ def _convert_sequences_to_db_segments(
 
         if segments_to_create:
             try:
-                LabelVideoSegment.objects.bulk_create(segments_to_create, ignore_conflicts=True)
+                LabelVideoSegment.objects.bulk_create(
+                    segments_to_create, ignore_conflicts=True
+                )
                 created_count += len(segments_to_create)
-                logger.debug("Bulk created %d segments for label '%s'", len(segments_to_create), label_name)
+                logger.debug(
+                    "Bulk created %d segments for label '%s'",
+                    len(segments_to_create),
+                    label_name,
+                )
             except Exception as e:
-                logger.error("Error bulk creating segments for label '%s': %s", label_name, e, exc_info=True)
+                logger.error(
+                    "Error bulk creating segments for label '%s': %s",
+                    label_name,
+                    e,
+                    exc_info=True,
+                )
                 error_count += len(segments_to_create)
 
-    newly_created_segments = LabelVideoSegment.objects.filter(video_file=video, prediction_meta=video_prediction_meta, label__name__in=processed_labels)
+    newly_created_segments = LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=video_prediction_meta,
+        label__name__in=processed_labels,
+    )
 
     logger.info(
         "Attempting to create state objects for %d potentially new segments (Video: %s, PredictionMeta: %s)",
         newly_created_segments.count(),
-        video.uuid,
+        video.video_hash,
         video_prediction_meta.pk,
     )
 
@@ -90,12 +116,18 @@ def _convert_sequences_to_db_segments(
             if created:
                 state_created_count += 1
         except Exception as e:
-            logger.error("Failed to get or create state for segment %s (Video: %s): %s", segment.pk, video.uuid, e, exc_info=True)
+            logger.error(
+                "Failed to get or create state for segment %s (Video: %s): %s",
+                segment.pk,
+                video.video_hash,
+                e,
+                exc_info=True,
+            )
             state_error_count += 1
 
     logger.info(
         "LabelVideoSegment conversion finished for video %s. Segments Created: %d, Skipped: %d, Errors: %d. States Created: %d, State Errors: %d",
-        video.uuid,
+        video.video_hash,
         created_count,
         skipped_count,
         error_count,
@@ -122,7 +154,9 @@ def _sequences_to_label_video_segments(
     )
 
 
-def _get_outside_segments(video: "VideoFile", outside_label_name: str = "outside") -> "QuerySet[LabelVideoSegment]":
+def _get_outside_segments(
+    video: "VideoFile", outside_label_name: str = "outside"
+) -> "QuerySet[LabelVideoSegment]":
     """Gets LabelVideoSegments marked with the 'outside' label."""
     from ...label import Label, LabelVideoSegment  # Local import for models
 
@@ -133,29 +167,52 @@ def _get_outside_segments(video: "VideoFile", outside_label_name: str = "outside
         logger.warning("Label '%s' not found in the database.", outside_label_name)
         return LabelVideoSegment.objects.none()
     except AttributeError:
-        logger.error("VideoFile instance does not have 'label_video_segments' related manager.")
+        logger.error(
+            "VideoFile instance does not have 'label_video_segments' related manager."
+        )
         return LabelVideoSegment.objects.none()
     except Exception as e:
-        logger.error("Error getting '%s' segments for video %s: %s", outside_label_name, video.uuid, e, exc_info=True)
+        logger.error(
+            "Error getting '%s' segments for video %s: %s",
+            outside_label_name,
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         return LabelVideoSegment.objects.none()
 
 
-def _get_outside_frame_numbers(video: "VideoFile", outside_label_name: str = "outside") -> Set[int]:
+def _get_outside_frame_numbers(
+    video: "VideoFile", outside_label_name: str = "outside"
+) -> Set[int]:
     """
     Gets a set of frame numbers corresponding to segments labeled as 'outside'.
     """
     outside_segments = _get_outside_segments(video, outside_label_name)
     frame_numbers = set()
     for segment in outside_segments:
-        frame_numbers.update(range(segment.start_frame_number, segment.end_frame_number + 1))
+        frame_numbers.update(
+            range(segment.start_frame_number, segment.end_frame_number + 1)
+        )
     if frame_numbers:
-        logger.info("Found %d frame numbers marked as '%s' for video %s.", len(frame_numbers), outside_label_name, video.uuid)
+        logger.info(
+            "Found %d frame numbers marked as '%s' for video %s.",
+            len(frame_numbers),
+            outside_label_name,
+            video.video_hash,
+        )
     else:
-        logger.info("No frame numbers marked as '%s' found for video %s.", outside_label_name, video.uuid)
+        logger.info(
+            "No frame numbers marked as '%s' found for video %s.",
+            outside_label_name,
+            video.video_hash,
+        )
     return frame_numbers
 
 
-def _get_outside_frames(video: "VideoFile", outside_label_name: str = "outside") -> "QuerySet[Frame]":
+def _get_outside_frames(
+    video: "VideoFile", outside_label_name: str = "outside"
+) -> "QuerySet[Frame]":
     """
     Gets a QuerySet of all unique Frame objects that fall within any segment
     labeled with the specified 'outside_label_name'.
@@ -168,7 +225,10 @@ def _get_outside_frames(video: "VideoFile", outside_label_name: str = "outside")
 
     q_objects: Q | None = None
     for segment in outside_segments:
-        clause = Q(frame_number__gte=segment.start_frame_number, frame_number__lt=segment.end_frame_number)
+        clause = Q(
+            frame_number__gte=segment.start_frame_number,
+            frame_number__lt=segment.end_frame_number,
+        )
         q_objects = clause if q_objects is None else q_objects | clause
 
     if q_objects is None:
@@ -177,11 +237,18 @@ def _get_outside_frames(video: "VideoFile", outside_label_name: str = "outside")
     try:
         return video.frames.filter(q_objects).distinct().order_by("frame_number")
     except Exception as e:
-        logger.error("Error filtering outside frames for video %s: %s", video.uuid, e, exc_info=True)
+        logger.error(
+            "Error filtering outside frames for video %s: %s",
+            video.video_hash,
+            e,
+            exc_info=True,
+        )
         return Frame.objects.none()
 
 
-def _get_outside_frame_paths(video: "VideoFile", outside_label_name: str = "outside") -> List["Path"]:
+def _get_outside_frame_paths(
+    video: "VideoFile", outside_label_name: str = "outside"
+) -> List["Path"]:
     """Gets the file paths of frames that fall within 'outside' segments."""
     from pathlib import Path  # Local import
 
@@ -191,16 +258,28 @@ def _get_outside_frame_paths(video: "VideoFile", outside_label_name: str = "outs
         try:
             frame_paths.append(Path(frame.relative_path))
         except Exception as e:
-            logger.warning("Could not get path for frame %s (Number: %d): %s", frame.pk, frame.frame_number, e)
+            logger.warning(
+                "Could not get path for frame %s (Number: %d): %s",
+                frame.pk,
+                frame.frame_number,
+                e,
+            )
             ic(f"Could not get path for frame {frame.pk}: {e}")
 
-    logger.info("Found %d frame paths within '%s' segments for video %s", len(frame_paths), outside_label_name, video.uuid)
+    logger.info(
+        "Found %d frame paths within '%s' segments for video %s",
+        len(frame_paths),
+        outside_label_name,
+        video.video_hash,
+    )
     return frame_paths
 
 
 def _label_segments_to_frame_annotations(video: "VideoFile"):
     """Generates frame annotations based on existing LabelVideoSegments."""
-    logger.info("Generating frame annotations from segments for video %s", video.uuid)
+    logger.info(
+        "Generating frame annotations from segments for video %s", video.video_hash
+    )
     processed_count = 0
     try:
         for lvs in video.label_video_segments.all():
@@ -210,7 +289,19 @@ def _label_segments_to_frame_annotations(video: "VideoFile"):
                     lvs.generate_annotations()
                     processed_count += 1
                 except Exception as e:
-                    logger.error("Error generating annotations for segment %s (Video %s): %s", lvs.pk, video.uuid, e)
-        logger.info("Processed %d segments for frame annotations for video %s", processed_count, video.uuid)
+                    logger.error(
+                        "Error generating annotations for segment %s (Video %s): %s",
+                        lvs.pk,
+                        video.video_hash,
+                        e,
+                    )
+        logger.info(
+            "Processed %d segments for frame annotations for video %s",
+            processed_count,
+            video.video_hash,
+        )
     except AttributeError:
-        logger.error("Could not generate frame annotations for video %s. 'label_video_segments' related manager not found.", video.uuid)
+        logger.error(
+            "Could not generate frame annotations for video %s. 'label_video_segments' related manager not found.",
+            video.video_hash,
+        )

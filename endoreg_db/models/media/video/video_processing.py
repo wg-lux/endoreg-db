@@ -53,26 +53,57 @@ class VideoProcessingHistory(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     ]
 
-    video = models.ForeignKey(VideoFile, on_delete=models.CASCADE, related_name="processing_history", help_text="Video file this operation was performed on")
+    video = models.ForeignKey(
+        VideoFile,
+        on_delete=models.CASCADE,
+        related_name="processing_history",
+        help_text="Video file this operation was performed on",
+    )
 
-    operation = models.CharField(max_length=50, choices=OPERATION_CHOICES, help_text="Type of processing operation")
+    operation = models.CharField(
+        max_length=50,
+        choices=OPERATION_CHOICES,
+        help_text="Type of processing operation",
+    )
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, help_text="Current status of the operation")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        help_text="Current status of the operation",
+    )
 
     # Configuration & Results
-    config = models.JSONField(default=dict, help_text="Operation configuration (mask settings, frame list, etc.)")
+    config = models.JSONField(
+        default=dict,
+        help_text="Operation configuration (mask settings, frame list, etc.)",
+    )
 
-    output_file = models.CharField(max_length=500, blank=True, help_text="Path to output file (relative to MEDIA_ROOT)")
+    output_file = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Path to output file (relative to MEDIA_ROOT)",
+    )
 
-    details = models.TextField(blank=True, help_text="Additional details or error messages")
+    details = models.TextField(
+        blank=True, help_text="Additional details or error messages"
+    )
 
     # Celery Integration
-    task_id = models.CharField(max_length=100, blank=True, help_text="Celery task ID for progress tracking")
+    task_id = models.CharField(
+        max_length=100, blank=True, help_text="Celery task ID for progress tracking"
+    )
 
     # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True, help_text="When the operation was started")
+    created_at = models.DateTimeField(
+        auto_now_add=True, help_text="When the operation was started"
+    )
 
-    completed_at = models.DateTimeField(null=True, blank=True, help_text="When the operation completed (success or failure)")
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the operation completed (success or failure)",
+    )
 
     class Meta:
         db_table = "video_processing_history"
@@ -89,9 +120,11 @@ class VideoProcessingHistory(models.Model):
         operation_display = getattr(self, "get_operation_display", None)
         status_display = getattr(self, "get_status_display", None)
 
-        operation = operation_display() if callable(operation_display) else self.operation
+        operation = (
+            operation_display() if callable(operation_display) else self.operation
+        )
         status = status_display() if callable(status_display) else self.status
-        return f"{operation} on {self.video.uuid} - {status}"
+        return f"{operation} on {self.video.video_hash} - {status}"
 
     def mark_running(self, save=True):
         """Mark operation as running."""
@@ -130,7 +163,9 @@ class VideoProcessingHistory(models.Model):
         if details:
             self.details = details
         if save:
-            self.save(update_fields=["status", "completed_at", "output_file", "details"])
+            self.save(
+                update_fields=["status", "completed_at", "output_file", "details"]
+            )
 
     def mark_failure(self, error_message, save=True):
         """Mark operation as failed."""
@@ -150,4 +185,8 @@ class VideoProcessingHistory(models.Model):
     @property
     def is_complete(self) -> bool:
         """Check if operation is in a terminal state."""
-        return self.status in [self.STATUS_SUCCESS, self.STATUS_FAILURE, self.STATUS_CANCELLED]
+        return self.status in [
+            self.STATUS_SUCCESS,
+            self.STATUS_FAILURE,
+            self.STATUS_CANCELLED,
+        ]

@@ -266,7 +266,7 @@ class Command(BaseCommand):
         for video in completed_videos:
             try:
                 # Find frame directories for this video
-                video_frame_dirs = list(frames_dir.glob(f"*{video.uuid}*"))
+                video_frame_dirs = list(frames_dir.glob(f"*{video.video_hash}*"))
 
                 for frame_dir in video_frame_dirs:
                     if frame_dir.is_dir():
@@ -277,11 +277,13 @@ class Command(BaseCommand):
 
                         total_freed += dir_size
                         self.stdout.write(
-                            f"  Removed frames for {video.uuid}: {dir_size / (1024**2):.1f} MB"
+                            f"  Removed frames for {video.video_hash}: {dir_size / (1024**2):.1f} MB"
                         )
 
             except Exception as e:
-                logger.warning(f"Failed to clean frames for video {video.uuid}: {e}")
+                logger.warning(
+                    f"Failed to clean frames for video {video.video_hash}: {e}"
+                )
                 continue
 
         self.stdout.write(f"✅ Frames cleanup: {total_freed / (1024**3):.2f} GB freed")
@@ -443,11 +445,13 @@ class Command(BaseCommand):
 
                         total_freed += file_size
                         self.stdout.write(
-                            f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
+                            f"  Removed processed video {video.video_hash}: {file_size / (1024**2):.1f} MB"
                         )
 
             except Exception as e:
-                logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
+                logger.warning(
+                    f"Failed to clean processed video {video.video_hash}: {e}"
+                )
                 continue
 
         self.stdout.write(
@@ -558,7 +562,9 @@ class Command(BaseCommand):
                     freed = self._cleanup_processed_video_file(video)
                     total_freed += freed
                 except Exception as e:
-                    logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
+                    logger.warning(
+                        f"Failed to clean processed video {video.video_hash}: {e}"
+                    )
                     continue
 
         except Exception as e:
@@ -582,7 +588,7 @@ class Command(BaseCommand):
                     video.processed_file = None
                     video.save(update_fields=["processed_file"])
                 self.stdout.write(
-                    f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
+                    f"  Removed processed video {video.video_hash}: {file_size / (1024**2):.1f} MB"
                 )
                 return file_size
         return 0

@@ -29,7 +29,6 @@ from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
     VideoCorrectionView,
     VideoMetadataStatsView,
-    VideoProcessingHistoryView,
     VideoRemoveFramesView,
 )
 
@@ -94,14 +93,6 @@ urlpatterns = [
         "media/videos/<int:pk>/metadata/",
         VideoMetadataStatsView.as_view(),
         name="video-metadata",
-    ),
-    # Video Processing History API
-    # GET /api/media/videos/<int:pk>/processing-history/
-    # Returns history of all processing operations (masking, frame removal, analysis)
-    path(
-        "media/videos/<int:pk>/processing-history/",
-        VideoProcessingHistoryView.as_view(),
-        name="video-processing-history",
     ),
     # Video Analysis API
     # POST /api/media/videos/<int:pk>/analyze/

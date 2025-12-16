@@ -8,7 +8,7 @@ from typing import Optional
 from django.conf import settings  # Import settings
 from django.core.files.storage import default_storage  # Import default storage
 from django.db.models.fields.files import FieldFile
-
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models import (
     AiModel,
     Center,
@@ -408,6 +408,7 @@ def get_default_video_file():
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
+        video_hash=sha256_file(video_path)
     )
 
     return video_file

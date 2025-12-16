@@ -11,7 +11,7 @@ from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
 
-from endoreg_db.utils.file_operations import get_uuid_filename
+from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
@@ -515,7 +515,7 @@ class RawPdfFile(models.Model):
             raise
 
         # Generate a unique filename (e.g., using UUID)
-        new_file_name, _uuid = get_uuid_filename(file_path)
+        new_file_name, _uuid = get_content_hash_filename(file_path)
         logger.info(f"Generated new filename: {new_file_name}")
 
         # Create model instance via manager so creation can be intercepted/mocked during tests
@@ -750,8 +750,17 @@ class RawPdfFile(models.Model):
         return settings_dict
 
     @staticmethod
-    def get_pdf_by_pk(pk: int) -> "RawPdfFile":
+    def get_report_by_pk(pk: int) -> "RawPdfFile":
         try:
             return RawPdfFile.objects.get(pk=pk)
         except RawPdfFile.DoesNotExist:
-            raise ValueError(f"report with ID {pdf_id} does not exist.")
+            raise ValueError(f"report with ID {pk} does not exist.")
+
+    @staticmethod
+    def get_report_by_hash(hash: str) -> "RawPdfFile":
+        try:
+            return RawPdfFile.objects.get(pdf_hash=hash)
+        except RawPdfFile.DoesNotExist:
+            raise ValueError(f"report with ID {hash} does not exist.")
+
+    

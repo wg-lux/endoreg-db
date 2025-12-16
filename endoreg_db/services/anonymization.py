@@ -6,7 +6,7 @@ from typing import Optional
 from django.db import transaction
 
 from endoreg_db.models import RawPdfFile, VideoFile
-from endoreg_db.services.__old.video_import import VideoImportService
+from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file, file_exists
@@ -52,7 +52,7 @@ class AnonymizationService:
                 if vf.state
                 else "not_started",
                 "fileExists": file_exists(vf.raw_file),
-                "uuid": str(vf.uuid) if vf.uuid else None,
+                "uuid": str(vf.video_hash) if vf.video_hash else None,
             }
 
         pdf = (

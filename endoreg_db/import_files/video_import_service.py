@@ -8,16 +8,16 @@ from endoreg_db.import_files.context import (
     ImportContext,
     file_lock,
 )
-from endoreg_db.import_files.storage.state_management import (
+from endoreg_db.import_files.file_storage.state_management import (
     finalize_failure,
     finalize_video_success
 )
-from endoreg_db.import_files.storage.storage import create_sensitive_copy
-from endoreg_db.import_files.storage.create_video_file import (
+from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
+from endoreg_db.import_files.file_storage.create_video_file import (
     create_or_retrieve_video_file,
 )
 from endoreg_db.import_files.context.validate_directories import validate_directories
-from endoreg_db.import_files.storage.state_management import (
+from endoreg_db.import_files.file_storage.state_management import (
     mark_instance_processing_started,
 )
 from endoreg_db.models import VideoFile
@@ -92,7 +92,7 @@ class VideoImportService:
 
 
             # create or retrieve VideoFile + update history
-            ctx.current_video, needs_processing = (
+            ctx.current_video, processed, needs_processing = (
                 create_or_retrieve_video_file(ctx)
             )
             ctx.current_video.get_or_create_state()
@@ -104,7 +104,7 @@ class VideoImportService:
 
             if retry and needs_processing and not ctx.current_video.state.anonymization_validated:
                 finalize_failure(ctx)
-                ctx.current_video, needs_processing = create_or_retrieve_video_file(ctx)
+                ctx.current_video, processed, needs_processing = create_or_retrieve_video_file(ctx)
                 assert(needs_processing is True)
             elif not needs_processing and not retry:
                 return ctx.current_video
