@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+import logging
 
 from datetime import date as Date
 import datetime
@@ -8,6 +9,7 @@ from .fake import fake_name_with_similar_dob_and_gender
 
 from endoreg_db.models import SensitiveMeta
 
+logger = logging.getLogger(__name__)
 def k_pseudonymize(
     instance: SensitiveMeta,
     *,
