@@ -69,7 +69,7 @@ def _mark_frames_extracted_status(
             ):
                 try:
                     # Check the status of frame 0 directly after the update attempt
-                    frame_zero = Frame.objects.get(video_file=video, frame_number=0)
+                    frame_zero = Frame.objects.get(video=video, frame_number=0)
                     if not frame_zero.is_extracted:
                         logger.error(
                             "Verification check: Frame 0 (PK: %s) was NOT updated to is_extracted=True for video %s.",
