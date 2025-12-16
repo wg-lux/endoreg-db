@@ -61,7 +61,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
     # @staticmethod #using @staticmethod makes it reusable without needing to create a serializer instance.
     #  Without @staticmethod, you would need to instantiate the serializer before calling the method, which is unnecessary her
-    def get_video_selection_field(self, obj: "Video"):
+    def get_video_selection_field(self, obj: "VideoFile"):
         """
         Return the UUID of the video for use as a selection value in frontend dropdowns.
 
@@ -94,7 +94,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         return {"error": "Video URL not available"}
 
-    def get_duration(self, obj: "Video"):
+    def get_duration(self, obj: "VideoFile"):
         """
         Return the duration of the video in seconds, using the stored value if available or extracting it dynamically with OpenCV.
 
@@ -122,7 +122,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         finally:
             cap.release()
 
-    def get_file(self, obj: "Video"):
+    def get_file(self, obj: "VideoFile"):
         """
         Returns the relative file path of the active video file, or an error message if the file is missing or invalid.
 
@@ -142,7 +142,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             obj.active_file.name
         ).strip()  #  Only return the file path, no URL,#obj.active_file returning a FieldFile object instead of a string
 
-    def get_full_video_path(self, obj: "Video"):
+    def get_full_video_path(self, obj: "VideoFile"):
         """
         Return the absolute filesystem path to the video's active file.
 
@@ -177,7 +177,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         except Exception as e:
             return {"error": f"Error constructing file path: {str(e)}"}
 
-    def get_sequences(self, obj: "Video"):
+    def get_sequences(self, obj: "VideoFile"):
         """
         Retrieve frame sequences for each label from the video object.
 
@@ -188,7 +188,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "error": "no sequence found, check database first"
         }  #  Get from sequences, return {} if missing
 
-    def get_label_names(self, obj: "Video"):
+    def get_label_names(self, obj: "VideoFile"):
         """
         Return a list of label names present in the video's frame sequences.
 
@@ -201,7 +201,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
         sequences = self.get_sequences(obj)
         return list(sequences.keys()) if sequences else []
 
-    def get_label_time_segments(self, obj: "Video"):
+    def get_label_time_segments(self, obj: "VideoFile"):
         """
         Convert frame sequences for each label into time segments with frame-level metadata.
 
