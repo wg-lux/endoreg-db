@@ -58,10 +58,12 @@ class AnonymizationValidateView(APIView):
         file_type = payload.get("file_type")
 
         with transaction.atomic():
-            # Try Video first (unless explicitly requesting PDF)
+            # Try Video first (unless explicitly requesting report)
             if file_type in (None, "video"):
                 video = (
-                    VideoFile.objects.select_related("center", "sensitive_meta", "state")
+                    VideoFile.objects.select_related(
+                        "center", "sensitive_meta", "state"
+                    )
                     .filter(pk=file_id)
                     .first()
                 )
@@ -152,32 +154,24 @@ class AnonymizationValidateView(APIView):
                         status=status.HTTP_404_NOT_FOUND,
                     )
 
-            # Then PDF (unless explicitly requesting Video)
-            
+            # Then report (unless explicitly requesting Video)
             if file_type in (None, "pdf"):
                 pdf = (
-                    RawPdfFile.objects.select_related("center", "sensitive_meta", "state")
+                    RawPdfFile.objects.select_related(
+                        "center", "sensitive_meta", "state"
+                    )
                     .filter(pk=file_id)
                     .first()
                 )
                 if pdf is not None:
-                    #----- status before validation -----
-                    status_before = None
-                    try:
-                        if pdf.state is not None:
-                            st = getattr(pdf.state, "anonymization_status", None)
-                            if st is not None:
-                                status_before = str(getattr(st, "value",st))
-                    except Exception:
-                        logger.exception("Failed to read pdf anonymization_status before validation")
                     prepared_payload = self._prepare_payload(payload, pdf)
                     try:
                         ok = pdf.validate_metadata_annotation(prepared_payload)
                     except Exception:  # pragma: no cover - defensive safety net
-                        logger.exception("PDF validation crashed for id=%s", file_id)
+                        logger.exception("report validation crashed for id=%s", file_id)
                         return Response(
                             {
-                                "error": "PDF validation encountered an unexpected error."
+                                "error": "report validation encountered an unexpected error."
                             },
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
@@ -191,7 +185,7 @@ class AnonymizationValidateView(APIView):
 
                     if not ok:
                         return Response(
-                            {"error": "PDF validation failed."},
+                            {"error": "report validation failed."},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     else:
@@ -211,7 +205,8 @@ class AnonymizationValidateView(APIView):
                             pdf.sensitive_meta.state.mark_dob_verified()
                             pdf.sensitive_meta.state.mark_names_verified()
                             pdf.sensitive_meta.create_anonymized_record()
-                            pdf.state.anonymized = True
+                            pdf.state.state.anonymization_status.mark_anonymized()
+                            pdf.state.save(update_fields=["anonymized"])
                             pdf.sensitive_meta.state.save()
                         else:
                             return Response(
@@ -248,7 +243,7 @@ class AnonymizationValidateView(APIView):
 
                 if file_type == "pdf":
                     return Response(
-                        {"error": f"PDF {file_id} not found."},
+                        {"error": f"report {file_id} not found."},
                         status=status.HTTP_404_NOT_FOUND,
                     )
 

@@ -1,17 +1,16 @@
-from typing import TYPE_CHECKING, Optional, List, Tuple
-from django.db import models
 import logging
+import pickle
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
+import numpy as np
+from django.db import models
 
 from endoreg_db.models.label import LabelSet
 
 from ..label.label_video_segment import (
     LabelVideoSegment,
-
 )
 from ..utils import find_segments_in_prediction_array
-
-import numpy as np
-import pickle
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,8 @@ DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from endoreg_db.models import ModelMeta, Label
+    from endoreg_db.models import Label, ModelMeta
+
     from ..media.video.video_file import VideoFile
 
 
@@ -29,6 +29,7 @@ class VideoPredictionMeta(models.Model):
 
     Must be associated with exactly one `VideoFile`.
     """
+
     model_meta = models.ForeignKey("ModelMeta", on_delete=models.CASCADE)
     date_created = models.DateTimeField(auto_now_add=True)
     date_modified = models.DateTimeField(auto_now=True)
@@ -43,17 +44,23 @@ class VideoPredictionMeta(models.Model):
     )
 
     if TYPE_CHECKING:
-        model_meta: "ModelMeta"
-        video_file: "VideoFile"
+        model_meta: models.ForeignKey["ModelMeta"]
+        video_file: models.ForeignKey["VideoFile|None"]
         label_video_segments: "models.Manager[LabelVideoSegment]"
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=['model_meta', 'video_file'], name='unique_prediction_per_video_model')
-        ]
+        constraints = [models.UniqueConstraint(fields=["model_meta", "video_file"], name="unique_prediction_per_video_model")]
         indexes = [
             models.Index(fields=["model_meta", "video_file"]),
         ]
+
+    @property
+    def video_file_safe(self) -> "VideoFile":
+        """Returns the associated VideoFile instance."""
+        video_file = self.video_file
+        if not video_file:
+            raise ValueError("VideoPredictionMeta is not associated with a VideoFile.")
+        return video_file
 
     def get_video(self) -> "VideoFile":
         """Returns the associated VideoFile instance."""
@@ -83,12 +90,12 @@ class VideoPredictionMeta(models.Model):
             return labelset.get_labels_in_order()
         return []
 
-    def save_prediction_array(self, prediction_array: np.array):
+    def save_prediction_array(self, prediction_array: np.typing.NDArray):
         """
         Save the prediction array to the database.
         """
         self.prediction_array = pickle.dumps(prediction_array)
-        self.save(update_fields=['prediction_array', 'date_modified'])
+        self.save(update_fields=["prediction_array", "date_modified"])
 
     def get_prediction_array(self):
         """
@@ -103,7 +110,7 @@ class VideoPredictionMeta(models.Model):
                 logger.error(f"Error unpickling prediction array for {self}: {e}")
                 return None
 
-    def calculate_prediction_array(self, window_size_in_seconds: int = None):
+    def calculate_prediction_array(self, window_size_in_seconds: Optional[int] = None):
         """
         Fetches all predictions for the associated video, labelset, and model meta,
         applies smoothing, and saves the resulting binary prediction array.
@@ -125,15 +132,10 @@ class VideoPredictionMeta(models.Model):
 
         prediction_array = np.zeros((num_frames, len(label_list)))
 
-        base_pred_qs = ImageClassificationAnnotation.objects.filter(
-            model_meta=model_meta,
-            frame__video_file=video_obj
-        )
+        base_pred_qs = ImageClassificationAnnotation.objects.filter(model_meta=model_meta, frame__video_file=video_obj)
 
         for i, label in enumerate(label_list):
-            predictions = base_pred_qs.filter(label=label).order_by("frame__frame_number").values_list(
-                "frame__frame_number", "float_value"
-            )
+            predictions = base_pred_qs.filter(label=label).order_by("frame__frame_number").values_list("frame__frame_number", "float_value")
 
             confidences = np.full(num_frames, 0.5)
             found_predictions = False
@@ -142,21 +144,19 @@ class VideoPredictionMeta(models.Model):
                     confidences[frame_num] = confidence
                     found_predictions = True
                 else:
-                    logger.warning(f"Prediction found for out-of-bounds frame number {frame_num} (max: {num_frames-1}). Skipping.")
+                    logger.warning(f"Prediction found for out-of-bounds frame number {frame_num} (max: {num_frames - 1}). Skipping.")
 
             if not found_predictions:
                 logger.warning(f"No predictions found for label '{label.name}' in {video_obj}. Using default confidence.")
 
-            smooth_confidences = self.apply_running_mean(
-                confidences, window_size_in_seconds
-            )
+            smooth_confidences = self.apply_running_mean(confidences, window_size_in_seconds)
             binary_predictions = smooth_confidences > 0.5
             prediction_array[:, i] = binary_predictions
 
         self.save_prediction_array(prediction_array)
         logger.info(f"Calculated and saved prediction array for {self}")
 
-    def apply_running_mean(self, confidence_array, window_size_in_seconds: int = None):
+    def apply_running_mean(self, confidence_array, window_size_in_seconds: Optional[float] = None):
         """
         Apply a running mean filter to the confidence array for smoothing, assuming a padding
         of 0.5 for the edges.
@@ -215,11 +215,7 @@ class VideoPredictionMeta(models.Model):
                 "video_file": video_obj,
             }
             if not LabelVideoSegment.objects.filter(
-                video_file=video_obj,
-                prediction_meta=self,
-                label=label,
-                start_frame_number=start_frame,
-                end_frame_number=end_frame
+                video_file=video_obj, prediction_meta=self, label=label, start_frame_number=start_frame, end_frame_number=end_frame
             ).exists():
                 segments_to_create.append(LabelVideoSegment(**segment_data))
 
@@ -229,7 +225,7 @@ class VideoPredictionMeta(models.Model):
         else:
             logger.info(f"No new video segments needed for label '{label.name}' in {video_obj}.")
 
-    def create_video_segments(self, segment_length_threshold_in_s: float = None):
+    def create_video_segments(self, segment_length_threshold_in_s: Optional[float] = None):
         """
         Generates LabelVideoSegments based on the stored prediction array.
         """

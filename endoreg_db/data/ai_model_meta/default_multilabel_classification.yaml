@@ -1,5 +1,27 @@
+# Model metadata configuration with setup hints
 - model: endoreg_db.model_meta
   fields:
     name: "image_multilabel_classification_colonoscopy_default"
-    version: 1
+    version: "1"
+    model: "image_multilabel_classification_colonoscopy_default"
     labelset: "multilabel_classification_colonoscopy_default"
+    labelset_version: 1
+    activation: "sigmoid"
+    mean: "0.485,0.456,0.406" # ImageNet defaults
+    std: "0.229,0.224,0.225" # ImageNet defaults
+    size_x: 224
+    size_y: 224
+    axes: "CHW"
+    batchsize: 32
+    num_workers: 4
+    description: "Default colonoscopy image multilabel classification model from YAML"
+    # Note: weights field intentionally left empty - will be set by setup command or model meta logic
+
+  # Setup configuration hints for this model
+  setup_config:
+    is_primary_model: true # Mark this as the primary model for setup
+    weight_filenames: # Specific weight file patterns for this model
+      - "colo_segmentation_RegNetX800MF_6.safetensors"
+    huggingface_fallback: # HF configuration for this model
+      repo_id: "wg-lux/colo_segmentation_RegNetX800MF_base"
+      filename: "colo_segmentation_RegNetX800MF_base.safetensors"

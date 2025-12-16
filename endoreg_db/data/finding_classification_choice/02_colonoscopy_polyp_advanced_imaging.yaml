@@ -1,0 +1,76 @@
+# JNET
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_2a"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_2b"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_jnet_3"
+
+# NICE
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_NICE_type_1"
+    name_de: "Kolonläsion - NICE Typ 1"
+    name_en: "Colon lesion - NICE type 1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_NICE_type_2"
+    name_de: "Kolonläsion - NICE Typ 2"
+    name_en: "Colon lesion - NICE type 2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_NICE_type_3"
+    name_de: "Kolonläsion - NICE Typ 3"
+    name_en: "Colon lesion - NICE type 3"
+
+# Kudo
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_3s"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_3l"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_4"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_5i"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_kudo_5n"
+
+# Sano
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_1"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_2"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_3a"
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colon_lesion_sano_3b"

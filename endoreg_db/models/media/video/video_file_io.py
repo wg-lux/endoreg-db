@@ -1,45 +1,115 @@
 import logging
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Iterator, Optional
+
 from django.db import transaction
 
-from ...utils import data_paths, ANONYM_VIDEO_DIR, VIDEO_DIR # Import VIDEO_DIR for correct path resolution
+from ....utils import delete_field_file, ensure_local_file, storage_file_exists
+from endoreg_db.utils.paths import (
+    ANONYM_VIDEO_DIR,
+    SENSITIVE_VIDEO_DIR,
+    data_paths,
+)
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
 
 logger = logging.getLogger("video_file")
 
+
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
-    """
-    Resolves and returns the absolute path to the raw video file if available.
-    The FileField stores a path relative to the storage root. We need to join
-    that relative path onto the actual video directory under STORAGE_DIR.
-    """
-    try:
-        if video.has_raw and video.raw_file.name:
-            # raw_file.name is a relative storage path like 'videos/<filename>'
-            raw_rel = Path(video.raw_file.name)
-            # If it already contains the video directory name, keep the tail
-            rel_name = raw_rel.name if raw_rel.parent.name == VIDEO_DIR.name else raw_rel
-            full_path = data_paths["video"] / rel_name
-            return full_path.resolve()
-        else:
-            return None
-    except Exception as e:
-        logger.warning("Could not get path for raw file of VideoFile %s: %s", video.uuid, e)
+    """Return the best-effort absolute path to the raw video on disk."""
+    if not (video.has_raw and video.raw_file.name):
         return None
+
+    # 1) Canonical: use Django's storage path
+    try:
+        direct_path = Path(video.raw_file.path)
+        if direct_path.is_file():
+            return direct_path.resolve()
+        else:
+            logger.debug(
+                "raw_file.path for video %s is not a regular file: %s",
+                video.uuid,
+                direct_path,
+            )
+    except Exception as exc:
+        logger.debug(
+            "Could not access raw_file.path for video %s: %s",
+            video.uuid,
+            exc,
+        )
+
+    # 2) Fallback: use just the filename and search in known dirs
+    raw_rel = Path(video.raw_file.name)
+    filename = raw_rel.name  # strip any (possibly wrong) prefix
+
+    candidates = [
+        data_paths["import_video"] / filename,
+        data_paths["sensitive_video"] / filename,
+    ]
+
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+
+    logger.warning(
+        "Raw video file '%s' not found in import/sensitive paths or via stored FileField path for video %s.",
+        video.raw_file.name,
+        video.uuid,
+    )
+    return None
+
+
+@contextmanager
+def _ensure_local_raw_file(video: "VideoFile") -> Iterator[Path]:
+    """Yield a local filesystem path for the raw file, downloading if required."""
+    if not video.has_raw:
+        raise ValueError(f"Video {video.uuid} has no raw file")
+
+    with ensure_local_file(video.raw_file) as local_path:
+        yield local_path
+
 
 def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     """Returns the absolute Path object for the processed file, if it exists."""
-    try:
-        if video.is_processed and video.processed_file.name:
-            return Path(video.processed_file.path)
-        else:
-            return None
-    except Exception as e:
-        logger.warning("Could not get path for processed file of VideoFile %s: %s", video.uuid, e)
+    processed_field = getattr(video, "processed_file", None)
+    if not (video.is_processed and processed_field and processed_field.name):
         return None
+    try:
+        direct_path = Path(processed_field.path)
+        if direct_path.exists():
+            return direct_path.resolve()
+    except Exception as exc:
+        logger.debug(
+            "Could not access direct processed_file.path for video %s: %s",
+            video.uuid,
+            exc,
+        )
+        direct_path = None
+
+    if processed_field and storage_file_exists(processed_field):
+        logger.debug("Processed file for %s available only via storage backend", video.uuid)
+    else:
+        logger.warning(
+            "Could not get path for processed file of VideoFile %s: %s",
+            video.uuid,
+            "path unavailable",
+        )
+    return None
+
+
+@contextmanager
+def _ensure_local_processed_file(video: "VideoFile") -> Iterator[Path]:
+    """Yield a local path to the processed file, downloading if necessary."""
+    if not video.is_processed:
+        raise ValueError(f"Video {video.uuid} has no processed file")
+
+    with ensure_local_file(video.processed_file) as local_path:
+        yield local_path
+
 
 @transaction.atomic
 def _delete_with_file(video: "VideoFile", *args, **kwargs):
@@ -66,6 +136,11 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         except Exception as e:
             # Log error but continue
             logger.error("Error deleting raw video file %s for video %s: %s", raw_file_path, video.uuid, e, exc_info=True)
+    else:
+        if delete_field_file(getattr(video, "raw_file", None), save=False):
+            logger.info("Deleted raw file from storage for video %s", video.uuid)
+        else:
+            logger.warning("Raw video file not found during deletion for video %s.", video.uuid)
 
     # 3. Delete Processed File
     processed_file_path = _get_processed_file_path(video)
@@ -79,6 +154,11 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         except Exception as e:
             # Log error but continue
             logger.error("Error deleting processed video file %s for video %s: %s", processed_file_path, video.uuid, e, exc_info=True)
+    else:
+        if delete_field_file(getattr(video, "processed_file", None), save=False):
+            logger.info("Deleted processed file from storage for video %s", video.uuid)
+        else:
+            logger.warning("Processed file missing in storage for video %s", video.uuid)
 
     # 4. Delete Database Record
     try:
@@ -89,7 +169,8 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         return f"Successfully deleted VideoFile {video.uuid} and attempted file cleanup."
     except Exception as e:
         logger.error("Error deleting VideoFile database record PK %s (UUID: %s): %s", video.pk, video.uuid, e, exc_info=True)
-        raise # Re-raise the exception for DB deletion failure
+        raise  # Re-raise the exception for DB deletion failure
+
 
 def _get_base_frame_dir(video: "VideoFile") -> Path:
     """Gets the base directory path for storing extracted frames."""
@@ -100,22 +181,23 @@ def _get_base_frame_dir(video: "VideoFile") -> Path:
 def _set_frame_dir(video: "VideoFile", force_update: bool = False):
     """Sets the frame_dir field based on the video's UUID."""
     target_dir = _get_base_frame_dir(video)
-    target_path_str = target_dir.as_posix() # Store as POSIX path string
+    target_path_str = target_dir.as_posix()  # Store as POSIX path string
 
     if not video.frame_dir or video.frame_dir != target_path_str or force_update:
         video.frame_dir = target_path_str
         logger.info("Set frame_dir for video %s to %s", video.uuid, video.frame_dir)
         # Avoid saving if called from within the save method itself
-        if not getattr(video, '_saving', False):
-            video.save(update_fields=['frame_dir'])
+        if not getattr(video, "_saving", False):
+            video.save(update_fields=["frame_dir"])
 
 
 def _get_frame_dir_path(video: "VideoFile") -> Optional[Path]:
     """Returns the Path object for the frame directory, if set."""
     if not video.frame_dir:
         _set_frame_dir(video)
-    
-    return Path(video.frame_dir) 
+
+    return Path(video.frame_dir)
+
 
 def _get_temp_anonymized_frame_dir(video: "VideoFile") -> Path:
     """Gets the path for the temporary directory used during anonymization frame creation."""

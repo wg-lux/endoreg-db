@@ -1,13 +1,15 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
 # Use centralized environment helpers
 from endoreg_db.config.env import env_bool, env_path
+
 
 # Small helper to coerce relative paths to absolute under BASE_DIR
 def _abs_under_base(path_str: str, default_relative: str) -> Path:
     p = env_path(path_str, default_relative)
     return p
+
 
 BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 
@@ -16,21 +18,21 @@ ASSET_DIR = _abs_under_base("ASSET_DIR", "tests/assets")
 RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
 
 # Internationalization
-LANGUAGE_CODE = 'de'
+LANGUAGE_CODE = "de"
 USE_I18N = True
 USE_TZ = True
 
 # Only support German and English
 LANGUAGES = [
-    ('de', 'German'),
-    ('en', 'English'),
+    ("de", "German"),
+    ("en", "English"),
 ]
 
 #ROOT_URLCONF = 'endoreg_db.urls.root_urls'
 
 # Configure modeltranslation to only use our supported languages
-MODELTRANSLATION_LANGUAGES = ('de', 'en')
-MODELTRANSLATION_DEFAULT_LANGUAGE = 'de'
+MODELTRANSLATION_LANGUAGES = ("de", "en")
+MODELTRANSLATION_DEFAULT_LANGUAGE = "de"
 
 # Core apps
 INSTALLED_APPS = [
@@ -45,27 +47,27 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 # Use a distinct module name to avoid ambiguity and mount API under /api/
-ROOT_URLCONF = 'endoreg_db.root_urls'
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+ROOT_URLCONF = "endoreg_db.root_urls"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 TIME_ZONE = os.environ.get("TIME_ZONE", "Europe/Berlin")
 
 STATIC_URL = os.environ.get("STATIC_URL", "/static/")
-STATIC_ROOT = env_path("STATIC_ROOT", 'staticfiles')
+STATIC_ROOT = env_path("STATIC_ROOT", "staticfiles")
 
 # Media/storage root can be overridden from env (important when embedded)
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
-MEDIA_ROOT = env_path("STORAGE_DIR", 'storage')
+MEDIA_ROOT = env_path("STORAGE_DIR", "storage")
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
 CACHES = {
@@ -119,9 +121,33 @@ TEST_LOGGER_NAMES = [
     "endoreg_db.models.metadata.sensitive_meta",
 ]
 
-#TODO implement
+# TODO implement
 # LOGGING = get_logging_config(
 #     TEST_LOGGER_NAMES,
 #     file_log_level="INFO",
 #     console_log_level="WARNING",
 # )
+__all__ = [
+    "BASE_DIR",
+    "ASSET_DIR",
+    "RUN_VIDEO_TESTS",
+    "TEMPLATES",
+    "TEST_LOGGER_NAMES",
+    "REST_FRAMEWORK",
+    "INSTALLED_APPS",
+    "MIDDLEWARE",
+    "TIME_ZONE",
+    "STATIC_URL",
+    "STATIC_ROOT",
+    "MEDIA_URL",
+    "MEDIA_ROOT",
+    "CACHES",
+    "ROOT_URLCONF",
+    "DEFAULT_AUTO_FIELD",
+    "LANGUAGE_CODE",
+    "USE_I18N",
+    "USE_TZ",
+    "LANGUAGES",
+    "MODELTRANSLATION_LANGUAGES",
+    "MODELTRANSLATION_DEFAULT_LANGUAGE",
+]

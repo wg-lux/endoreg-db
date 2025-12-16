@@ -1,62 +1,58 @@
-from .media import (
-    VideoMediaView,
-    VideoCorrectionView,
-    VideoMetadataView,
+from .correction import (
     VideoProcessingHistoryView,
-    VideoAnalyzeView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
-    VideoReprocessView,
-    TaskStatusView,
-    VideoDownloadProcessedView,
+    VideoCorrectionView,
 )
+
+from ..media.video_media import VideoMediaView
 
 from .reimport import (
     VideoReimportView
 )
-
-from .segmentation import (
-    VideoViewSet,
-    VideoStreamView,
-    VideoLabelView,
-    UpdateLabelSegmentsView,
-    rerun_segmentation,
-
-
-)
-
-from .timeline import (
-    video_timeline_view
-)
-
+from .video_stream import VideoStreamView
 from .video_examination_viewset import VideoExaminationViewSet
+from .video_meta_stats import VideoMetadataStatsView
+
+
+from .segments_crud import (
+    video_segments_collection,
+    video_segments_by_video,
+    video_segment_detail,
+    video_segments_stats,
+    video_segment_validate,
+    video_segments_validate_bulk,
+    video_segments_validation_status,
+)
+from ..ai.label import label_list
 
 __all__ = [
-    # Media views
-    'VideoMediaView',
-    'VideoCorrectionView',
-    'VideoMetadataView',
+    # Video Correction (Phase 1.1) - Implemented
     'VideoProcessingHistoryView',
-    'VideoAnalyzeView',
     'VideoApplyMaskView',
     'VideoRemoveFramesView',
-    'VideoReprocessView',
-    'TaskStatusView',
-    'VideoDownloadProcessedView',
+    'VideoMetadataStatsView',
+    
+    'VideoMediaView',
+    
+    'VideoCorrectionView',
 
     # Reimport views
     'VideoReimportView',
 
     # Segmentation views
-    'VideoViewSet',
     'VideoStreamView',
-    'VideoLabelView',
-    'UpdateLabelSegmentsView',
-    'rerun_segmentation',
-
-    # Timeline views
-    'video_timeline_view',
 
     # Video Examination ViewSet
     "VideoExaminationViewSet",
+    
+    'video_segments_collection',
+    'video_segments_by_video',
+    'video_segment_detail',
+    'video_segments_stats',
+    'video_segment_validate',
+    'video_segments_validate_bulk',
+    'video_segments_validation_status',
+    
+    'label_list',
 ]

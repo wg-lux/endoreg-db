@@ -1,25 +1,26 @@
 from django.core.management.base import BaseCommand
+
 from endoreg_db.models import (
+    Disease,
+    DiseaseClassificationChoice,
+    Event,
+    InformationSource,
     Medication,
     MedicationIndication,
     MedicationIndicationType,
     MedicationIntakeTime,
     MedicationSchedule,
     Unit,
-    Disease,
-    Event,
-    InformationSource,
-    DiseaseClassificationChoice,
 )
-from ...utils import load_model_data_from_yaml
+
 from ...data import (
     MEDICATION_DATA_DIR,
+    MEDICATION_INDICATION_DATA_DIR,
     MEDICATION_INDICATION_TYPE_DATA_DIR,
     MEDICATION_INTAKE_TIME_DATA_DIR,
     MEDICATION_SCHEDULE_DATA_DIR,
-    MEDICATION_INDICATION_DATA_DIR,
 )
-
+from ...utils import load_model_data_from_yaml
 
 IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     Medication.__name__,
@@ -32,25 +33,25 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
 IMPORT_METADATA = {
     Medication.__name__: {
         "dir": MEDICATION_DATA_DIR,  # e.g. "interventions"
-        "model": Medication,  # e.g. Intervention
+        "model": Medication,
         "foreign_keys": ["default_unit"],  # e.g. ["intervention_types"]
         "foreign_key_models": [Unit],  # e.g. [InterventionType]
     },
     MedicationIndicationType.__name__: {
         "dir": MEDICATION_INDICATION_TYPE_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationIndicationType,  # e.g. Intervention
+        "model": MedicationIndicationType,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     MedicationIntakeTime.__name__: {
         "dir": MEDICATION_INTAKE_TIME_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationIntakeTime,  # e.g. Intervention
+        "model": MedicationIntakeTime,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     MedicationSchedule.__name__: {
         "dir": MEDICATION_SCHEDULE_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationSchedule,  # e.g. Intervention
+        "model": MedicationSchedule,
         "foreign_keys": [
             "medication",
             "intake_times",
@@ -64,7 +65,7 @@ IMPORT_METADATA = {
     },
     MedicationIndication.__name__: {
         "dir": MEDICATION_INDICATION_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationIndication,  # e.g. Intervention
+        "model": MedicationIndication,
         "foreign_keys": [
             "indication_type",
             "medication_schedules",

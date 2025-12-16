@@ -198,7 +198,6 @@ To load the data back into the database
 ```
 endoreg-db/
 ├── endoreg_db/                # Main Django app for medical data
-│   ├── case_generator/        # Sample case generator
 │   ├── data/                  # Medical knowledge base
 │   ├── management/            # Data wrangling operations
 │   ├── models/                # Data models

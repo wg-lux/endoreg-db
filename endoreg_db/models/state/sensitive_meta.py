@@ -1,6 +1,9 @@
-from django.db import models
-from .abstract import AbstractState
 from typing import TYPE_CHECKING
+
+from django.db import models
+
+from .abstract import AbstractState
+
 
 class SensitiveMetaState(AbstractState):
     """State for sensitive meta data."""
@@ -19,7 +22,7 @@ class SensitiveMetaState(AbstractState):
     if TYPE_CHECKING:
         from endoreg_db.models import SensitiveMeta
 
-        origin: "SensitiveMeta"
+        origin: models.OneToOneField["SensitiveMeta|None"]
 
     @property
     def is_verified(self) -> bool:
@@ -41,6 +44,7 @@ class SensitiveMetaState(AbstractState):
         """
         self.names_verified = True
         self.save(update_fields=["names_verified"])
+
     class Meta:
         verbose_name = "Sensitive Meta State"
         verbose_name_plural = "Sensitive Meta States"

@@ -1,19 +1,13 @@
 # AI
 from .ai import (
-    AiModel,
     ActiveModel,
+    AiModel,
     ModelType,
 )
 
 # Case
 from .case import (
     Case,
-    CaseTemplate,
-    CaseTemplateRule,
-    CaseTemplateRuleType,
-    CaseTemplateRuleValue,
-    CaseTemplateRuleValueType,
-    CaseTemplateType,
 )
 
 # Center
@@ -21,46 +15,43 @@ from .center import (
     Center,
     CenterProduct,
     CenterResource,
-    CenterWaste,
     CenterShift,
+    CenterWaste,
 )
 
-
-#TODO Review module
-# from .permissions import () 
-
+# TODO Review module
+# from .permissions import ()
 # Person
 from .person import (
-    Person,
-    Examiner, 
-    Patient, 
-    PortalUserInfo,     
+    Employee,
+    EmployeeQualification,
+    EmployeeType,
+    Examiner,
     FirstName,
     LastName,
+    Patient,
+    PatientExternalID,
+    Person,
+    PortalUserInfo,
     Profession,
-    Employee,
-    EmployeeType,
-    EmployeeQualification,
 )
 
 # Product
 from .product import (
     Product,
-    ProductMaterial,
     ProductGroup,
-    ReferenceProduct,
+    ProductMaterial,
     ProductWeight,
+    ReferenceProduct,
 )
-
 from .qualification import (
     Qualification,
     QualificationType,
 )
-
 from .shift import (
+    ScheduledDays,
     Shift,
     ShiftType,
-    ScheduledDays,
 )
 
 __all__ = [
@@ -68,26 +59,18 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ModelType",
-
     # Case
     "Case",
-    "CaseTemplate",
-    "CaseTemplateRule",
-    "CaseTemplateRuleType",
-    "CaseTemplateRuleValue",
-    "CaseTemplateRuleValueType",
-    "CaseTemplateType",
-
     # Center
     "Center",
     "CenterProduct",
     "CenterResource",
     "CenterWaste",
     "CenterShift",
-
     # Person
     "Person",
     "Patient",
+    "PatientExternalID",
     "Examiner",
     "PortalUserInfo",
     "FirstName",
@@ -96,21 +79,17 @@ __all__ = [
     "Employee",
     "EmployeeType",
     "EmployeeQualification",
-
     # Product
-    'Product',
-    'ProductMaterial',
-    'ProductGroup',
-    'ReferenceProduct',
-    'ProductWeight',
-
+    "Product",
+    "ProductMaterial",
+    "ProductGroup",
+    "ReferenceProduct",
+    "ProductWeight",
     # Qualification
     "Qualification",
     "QualificationType",
-
     # Shift
     "Shift",
     "ShiftType",
     "ScheduledDays",
 ]
-

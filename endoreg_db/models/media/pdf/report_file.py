@@ -1,6 +1,8 @@
-from ...utils import DOCUMENT_DIR, STORAGE_DIR
-from django.db import models
 from typing import TYPE_CHECKING
+
+from django.db import models
+
+from ...utils import DOCUMENT_DIR, STORAGE_DIR
 
 if TYPE_CHECKING:
     from ...administration import (
@@ -12,17 +14,21 @@ if TYPE_CHECKING:
     )
     from ...metadata import SensitiveMeta
 
+
 class DocumentTypeManager(models.Manager):
     """
     Custom manager for DocumentType.
     """
+
     def get_by_natural_key(self, name):
         return self.get(name=name)
+
 
 class DocumentType(models.Model):
     """
     Represents the type of a document.
     """
+
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
 
@@ -33,21 +39,23 @@ class DocumentType(models.Model):
 
     def __str__(self):
         return str(self.name)
-    
+
     class Meta:
         verbose_name = "Document Type"
         verbose_name_plural = "Document Types"
+
 
 class AbstractDocument(models.Model):
     """
     Abstract base class for documents.
     """
+
     meta = models.JSONField(blank=True, null=True)
     text = models.TextField(blank=True, null=True)
     date = models.DateField(blank=True, null=True)
     time = models.TimeField(blank=True, null=True)
     file = models.FileField(
-        upload_to=DOCUMENT_DIR.relative_to(STORAGE_DIR),
+        upload_to=DOCUMENT_DIR.relative_to(STORAGE_DIR).as_posix(),
         blank=True,
         null=True,
     )
@@ -67,22 +75,19 @@ class AbstractDocument(models.Model):
     )
 
     if TYPE_CHECKING:
-        center: "Center"
-        type: "DocumentType"
+        center: models.ForeignKey["Center|None"]
+        type: models.ForeignKey["DocumentType|None"]
 
     class Meta:
         abstract = True
 
 
-    
-
 class AbstractExaminationReport(AbstractDocument):
     """
     Abstract base class for examination reports.
     """
-    patient = models.ForeignKey(
-        "Patient", on_delete=models.DO_NOTHING, blank=True, null=True
-    )
+
+    patient = models.ForeignKey("Patient", on_delete=models.DO_NOTHING, blank=True, null=True)
 
     patient_examination = models.ForeignKey(
         "PatientExamination",
@@ -96,25 +101,18 @@ class AbstractExaminationReport(AbstractDocument):
         blank=True,
     )
 
-    sensitive_meta = models.ForeignKey(
-        "SensitiveMeta",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True
-    )
+    sensitive_meta = models.ForeignKey("SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True)
 
     if TYPE_CHECKING:
-        center: "Center"
-        type: "DocumentType"
-        patient: "Patient"
-        patient_examination: "PatientExamination"
-        sensitive_meta: "SensitiveMeta"
-
+        center: models.ForeignKey["Center|None"]
+        type: models.ForeignKey["DocumentType|None"]
+        patient: models.ForeignKey["Patient|None"]
+        patient_examination: models.ForeignKey["PatientExamination|None"]
+        sensitive_meta: models.ForeignKey["SensitiveMeta|None"]
 
     class Meta:
         abstract = True
 
-    
     def get_or_create_examiner(self, examiner_first_name, examiner_last_name):
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -122,10 +120,8 @@ class AbstractExaminationReport(AbstractDocument):
         raise NotImplementedError("Subclasses must implement this method.")
 
 
-
 class AnonymExaminationReport(AbstractExaminationReport):
-
-    def get_or_create_examiner(self, examiner_first_name:str, examiner_last_name:str):
+    def get_or_create_examiner(self, examiner_first_name: str, examiner_last_name: str):
         from ...administration.person import Examiner
 
         examiner_center = self.center
@@ -139,7 +135,7 @@ class AnonymExaminationReport(AbstractExaminationReport):
         return examiner, created
 
     def set_examination_date_and_time(self, report_meta=None):
-        #TODO
+        # TODO
         if not report_meta:
             report_meta = self.meta
         # examination_date_str = report_meta["examination_date"]
@@ -152,11 +148,11 @@ class AnonymExaminationReport(AbstractExaminationReport):
         #     # TODO: get django TimeField compatible time from string (e.g. "12:00")
         #     self.time = time.fromisoformat(examination_time_str)
 
+
 class AnonymHistologyReport(AbstractExaminationReport):
     """
     Represents a histology report.
     """
-
 
     def get_or_create_examiner(self, examiner_first_name, examiner_last_name):
         raise NotImplementedError("Subclasses must implement this method.")

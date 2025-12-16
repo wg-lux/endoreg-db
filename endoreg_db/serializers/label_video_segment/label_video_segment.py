@@ -142,7 +142,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             logger.debug(f"Serializer initialized with data: {self.initial_data}")
 
 
-    def get_time_segments(self, obj: LabelVideoSegment) -> List[dict]:
+    def get_time_segments(self, obj: LabelVideoSegment) -> dict[str, dict]:
         frames = obj.frames
         time_segments = {
             "segment_id": obj.id,
@@ -225,34 +225,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         return ImageClassificationAnnotationSerializer(obj.all_frame_annotations, many=True).data
 
-    def get_label_display(self, obj:LabelVideoSegment):
-        """
-        Return the German translation of the label name for display purposes.
-        
-        If the segment has no label, returns "Unbekannt". If a translation is not available, returns the original label name.
-        """
-        if not obj.label:
-            return "Unbekannt"
-            
-        label_name = obj.label.name
-        #TODO Refactor
-        translations = {
-            'appendix': 'Appendix',
-            'blood': 'Blut',
-            'diverticule': 'Divertikel',
-            'grasper': 'Greifer',
-            'ileocaecalvalve': 'Ileozäkalklappe',
-            'ileum': 'Ileum',
-            'low_quality': 'Niedrige Bildqualität',
-            'nbi': 'Narrow Band Imaging',
-            'needle': 'Nadel',
-            'outside': 'Außerhalb',
-            'polyp': 'Polyp',
-            'snare': 'Snare',
-            'water_jet': 'Wasserstrahl',
-            'wound': 'Wunde'
-        }
-        return translations.get(label_name, label_name)
+
     
     def get_video_name(self, obj):
         """

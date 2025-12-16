@@ -87,7 +87,7 @@ class Command(BaseCommand):
             help="Display verbose output",
         )
         parser.add_argument(
-            "--center_name",
+            "--",
             type=str,
             default="university_hospital_wuerzburg",
             help="Name of the center to associate with video",
@@ -188,7 +188,6 @@ class Command(BaseCommand):
         center_name = options["center_name"]
         video_file = options["video_file"]
         frame_dir_root = options["frame_dir_root"]
-        video_dir_root = options["video_dir_root"]
         delete_source = options["delete_source"]
         save_video_file = options["save_video_file"]
         model_name = options["model_name"]
@@ -205,7 +204,7 @@ class Command(BaseCommand):
                 # Assert Center exists -> Does not exist methods are deprecated
         try:
             center = Center.objects.get(name=center_name)
-            self.stdout.write(self.style.SUCCESS(f"Using center: {center.name_en}"))
+            self.stdout.write(self.style.SUCCESS(f"Using center: {center.name}"))
         except Center.DoesNotExist:
             self.stdout.write(self.style.ERROR(f"Center not found: {center_name}"))
             return
@@ -294,10 +293,11 @@ class Command(BaseCommand):
                 
                 # Updated to handle new return signature (path, metadata)
                 cleaned_video_path, extracted_metadata = frame_cleaner.clean_video(
-                    Path(video_file_obj.raw_file.path),
-                    video_file_obj=video_file_obj,  # Pass VideoFile object to store metadata
-                    report_reader=report_reader,
-                    device_name=processor_name
+                    video_path=Path(video_file_obj.raw_file.path),
+                    endoscope_image_roi=video_file_obj.processor.get_roi_endoscope_image() if video_file_obj.processor else None,
+                    endoscope_data_roi_nested=video_file_obj.processor.get_rois() if video_file_obj.processor else None,
+                    output_path=video_file_obj.get_processed_file_path(),
+                    technique="mask_overlay"  # Use mask overlay technique as default, if not set this will be inferred.
                 )
                 
                 # Save the cleaned video using Django's FileField
@@ -335,11 +335,11 @@ class Command(BaseCommand):
             
             # Create default SensitiveMeta with placeholder data
             default_data = {
-                "patient_first_name": "Patient",
-                "patient_last_name": "Unknown", 
-                "patient_dob": date(1990, 1, 1),  # Default DOB
-                "examination_date": date.today(),
-                "center_name": video_file.center.name if video_file.center else "university_hospital_wuerzburg"
+                "patient_first_name": None,
+                "patient_last_name": None, 
+                "patient_dob": None,
+                "examination_date": None,
+                "center_name": video_file.center.name if video_file.center else "unknown",
             }
             
             try:

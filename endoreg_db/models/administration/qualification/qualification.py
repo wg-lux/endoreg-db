@@ -1,10 +1,12 @@
+from typing import TYPE_CHECKING, cast
+
 from django.db import models
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
         QualificationType,
     )
+
 
 class QualificationManager(models.Manager):
     def get_queryset(self):
@@ -12,11 +14,13 @@ class QualificationManager(models.Manager):
         Returns a queryset of qualifications filtered to include only active entries.
         """
         return super().get_queryset().filter(is_active=True)
-    
+
+
 class Qualification(models.Model):
     """
     Model representing a qualification.
     """
+
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
@@ -26,7 +30,7 @@ class Qualification(models.Model):
         related_name="qualifications",
     )
     if TYPE_CHECKING:
-        qualification_types: models.QuerySet["QualificationType"]
+        qualification_types = cast(models.manager.RelatedManager["QualificationType"], qualification_types)
 
     objects = QualificationManager()
 

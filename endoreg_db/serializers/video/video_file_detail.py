@@ -37,13 +37,13 @@ class VideoDetailSerializer(VideoBriefSerializer):
 
     def get_video_url(self, obj):
         """
-        Return the absolute URL for accessing the video resource.
+        Return the absolute URL for accessing the video streaming resource.
         
         Returns:
-            str or None: The absolute URL to the video if a request context is available; otherwise, None.
+            str or None: The absolute URL to the video streaming endpoint if a request context is available; otherwise, None.
         """
         request = self.context.get("request")
-        #TODO remove hardcoded path here 
+        # Use video streaming endpoint (VideoStreamView)
         return request.build_absolute_uri(f"/api/media/videos/{obj.pk}/") if request else None
     
     def get_duration(self, obj:VideoFile):

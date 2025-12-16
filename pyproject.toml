@@ -1,30 +1,27 @@
 [project]
-name = "endoreg-db"
-version = "0.7.0"
-description = "EndoReg Db Django App"
-readme = "README.md"
 authors = [
-    { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
-    { name = "Max Hild" },
-    { name = "Hamza Zahid" },
-    { name = "Peter Kowalczyk" },
+  {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
+  {name = "Max Hild"},
+  {name = "Hamza Zahid"},
+  {name = "Peter Kowalczyk"},
 ]
+description = "EndoReg Db Django App"
 maintainers = [
-    { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
-    { name = "Max Hild" },
-    { name = "Hamza Zahid" },
-    { name = "Peter Kowalczyk" },
+  {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
+  {name = "Max Hild"},
+  {name = "Hamza Zahid"},
+  {name = "Peter Kowalczyk"},
 ]
+name = "endoreg-db"
+readme = "README.md"
+version = "0.8.8.4"
 
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Topic :: Scientific/Engineering :: Medical Science Apps.",
-
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+  "Development Status :: 3 - Alpha",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+  "Programming Language :: Python :: 3.12",
 ]
 
-requires-python = ">=3.12,<3.13"
 dependencies = [
     "agl-report-reader>=0.4.0",
     "django-bootstrap5>=25.2",
@@ -76,6 +73,7 @@ dependencies = [
     "vocos==0.1.0",
     "decord==0.6.0",
     "moviepy==2.2.1",
+    "safetensors>=0.4.5",
     "celery>=5.5.3",
     "python-magic>=0.4.27",
     "django-modeltranslation>=0.19.16",
@@ -83,7 +81,14 @@ dependencies = [
     "oauth2-proxy>=1.0.11",
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
+    "lx-anonymizer[llm,ocr]==0.8.9.7",
+    "ruff>=0.14.0",
+    "build>=1.3.0",
+    "flake8>=7.3.0",
+    "twine>=6.2.0",
+    "googlemaps>=4.10.0",
 ]
+requires-python = ">=3.12,<3.13"
 
 [project.urls]
 Homepage = "https://info.coloreg.de"
@@ -91,19 +96,45 @@ Repository = "https://github.com/wg-lux/endoreg-db"
 
 [project.optional-dependencies]
 dev = [
-    # Add development tools here, e.g.:
-    # "pytest",
-    # "ruff",
-    # "black",
+  # Add development tools here, e.g.:
+  # "pytest",
+  # "ruff",
+  # "black",
 ]
 
 [build-system]
-requires = ["hatchling"]
 build-backend = "hatchling.build"
+requires = ["hatchling"]
 
 [tool.setuptools]
 packages = ["endoreg_db"]
 
-[tool.uv.sources]
-endoreg-db = { path = "endoreg-db" }
+[tool.hatch.build]
+exclude = [
+  "tests",
+  "tests/**",
+  "docs/production",
+  "docs/production/**",
+  "htmlcov",
+  "htmlcov/**",
+  "storage",
+  "storage/**",
+]
 
+[tool.hatch.build.targets.wheel]
+packages = ["endoreg_db"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "tests",
+  "tests/**",
+  "docs/production",
+  "docs/production/**",
+  "htmlcov",
+  "htmlcov/**",
+  "storage",
+  "storage/**",
+]
+
+# [tool.uv.sources]
+# lx-anonymizer = { workspace = true }

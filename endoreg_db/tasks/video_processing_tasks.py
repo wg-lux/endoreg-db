@@ -53,7 +53,7 @@ def apply_video_mask_task(self, video_id: int, mask_type: str = 'device_default'
         self.update_state(state='PROGRESS', meta={'progress': 10, 'message': 'Setting up FrameCleaner...'})
         
         # Initialize FrameCleaner
-        cleaner = FrameCleaner(use_minicpm=True)
+        cleaner = FrameCleaner()
         
         # Determine mask configuration
         if mask_type == 'custom' and custom_mask:
@@ -110,14 +110,14 @@ def _setup_frame_removal(video_id: int, detection_engine: str):
     from lx_anonymizer.frame_cleaner import FrameCleaner
     from django.shortcuts import get_object_or_404
     video = get_object_or_404(VideoFile, pk=video_id)
-    video_path = Path(video.file.path)
+    video_path = Path(video.raw_file.path)
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
     output_dir = video_path.parent / "processed"
     output_dir.mkdir(exist_ok=True)
     output_path = output_dir / f"{video_path.stem}_cleaned{video_path.suffix}"
     use_minicpm = detection_engine == 'minicpm'
-    cleaner = FrameCleaner(use_minicpm=use_minicpm)
+    cleaner = FrameCleaner()
     return video, video_path, output_path, cleaner
 
 def _detect_sensitive_frames(self, cleaner, video_path, selection_method, manual_frames, total_frames):
@@ -257,7 +257,7 @@ def reprocess_video_task(self, video_id: int):
         self.update_state(state='PROGRESS', meta={'progress': 20, 'message': 'Initializing FrameCleaner...'})
         
         # Initialize FrameCleaner with optimal settings
-        cleaner = FrameCleaner(use_minicpm=True)
+        cleaner = FrameCleaner()
         
         # Create output path
         output_dir = video_path.parent / "processed"

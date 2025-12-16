@@ -1,0 +1,36 @@
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "model_attribute_numeric_in_range"
+    name_de: "Modellattribut numerisch im Bereich"
+    name_en: "Model attribute numeric in range"
+    description: "
+      Checks if a numeric model attribute is within a specified range.
+      If this operator is used in a requirement, the requirement
+      must define 'target_attributes', 'numeric_value_min', and 'numeric_value_max' fields.
+      "
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "model_attribute_set_any"
+    name_de: "Modellattribut Menge beliebig"
+    name_en: "Model attribute set any"
+    description: "
+      Checks if a model attribute is set to any value (not null or empty).
+      If this operator is used in a requirement, the requirement
+      must define 'target_attributes' field.
+      "
+
+- model: endoreg_db.requirement_operator
+  fields:
+    name: "model_attribute_is_among_values"
+    name_de: "Modellattribut ist unter Werten"
+    name_en: "Model attribute is among values"
+    description: "
+      Checks if a model attribute is among a specified set of values.
+      If this operator is used in a requirement, the requirement
+      must define 'target_attributes'. In this case,
+      target must contain a comma-separated list.
+      Entries without prefix are target fields to check against,
+      entries with prefix '?' define fields of the requirement to use
+      as reference during evaluation.
+      "

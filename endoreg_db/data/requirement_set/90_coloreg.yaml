@@ -1,0 +1,190 @@
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_patient_data"
+    name_de: "Coloreg Patientendaten"
+    name_en: "Coloreg Patient Data"
+    description: "Coloreg Patient Data"
+    requirement_set_type: "all"
+    requirements:
+      - "patient_has_gender_information" # Checks if any gender is set
+      # - "patient_has_valid_gender_information" # checks if gender is male or female
+      - "patient_has_dob_information" #TODO
+      - "patient_has_names_information" #TODO
+    links_to_sets:
+      - "colonoscopy_basic_patient_history" # includes previous bowel_surgery_known and last_colonoscopy_known
+    tags: [] # not tagged as report_mask_requirement_set, only used in top level requirement set
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_examination_data"
+    name_de: "Coloreg Untersuchungsdaten"
+    name_en: "Coloreg Examination Data"
+    description: "Coloreg Examination Data"
+    requirement_set_type: "all"
+    requirements:
+      - "examination_has_indication" #TODO
+      - "examination_has_sedation_information" #TODO
+      - "examination_bowel_prep_recorded" #TODO
+    links_to_sets:
+      - "colonoscopy_deepest_insertion_reached_recorded" #TODO # if not cecum or terminal ileum
+    tags: []
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_location_base"
+    name_de: "Coloreg Befund Kolon Polyp Lage"
+    name_en: "Coloreg Finding Colon Polyp Location"
+    description: "Coloreg Finding Colon Polyp Exact Location"
+    requirement_set_type: "any"
+    requirements:
+      - "colon_polyp_has_location" #TODO
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_rectosigmoid_location"
+    name_de: "Coloreg Befund Kolon Polyp Rektosigmoid Lage"
+    name_en: "Coloreg Finding Colon Polyp Rectosigmoid Location"
+    description: "Coloreg Finding Colon Polyp Rectosigmoid Location"
+    requirement_set_type: "all"
+    depends_on:
+      - "coloreg_finding_colon_polyp_location_base"
+    requirements:
+      - "coloreg_finding_colon_polyp_rectosigmoid_has_location_cm" #TODO Rektosigmoid muss cm haben
+      - "coloreg_finding_colon_polyp_non_rectosigmoid_has_location_cm" #TODO nicht rektosigmoid kann cm haben
+      - "coloreg_finding_colon_polyp_non_rectosigmoid_has_location_colon_segment" #TODO nicht rektosigmoid kann Segment haben
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_size"
+    name_de: "Coloreg Befund Kolon Polyp Größe"
+    name_en: "Coloreg Finding Colon Polyp Size"
+    description: "Coloreg Finding Colon Polyp Size"
+    requirement_set_type: "any"
+    requirements:
+      - "coloreg_finding_colon_polyp_size_measured_in_mm" #TODO
+      - "coloreg_finding_colon_polyp_size_categorical" #TODO
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_polyp_small_morphology"
+    name_de: "Coloreg Polyp Klein Morphologie"
+    name_en: "Coloreg Polyp Small Morphology"
+    description: "Coloreg Polyp Small Morphology"
+    requirement_set_type: "all"
+    requirements:
+      - "colon_polyp_size_smaller_10_mm" # any size_cat is <6 or 6 - 9 mm or size_mm is < 10 mm
+      - "colonoscopy_default_polyp_morphology_wli" # any (paris / description)
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_polyp_medium_morphology"
+    name_de: "Coloreg Polyp Mittel Morphologie"
+    name_en: "Coloreg Polyp Medium Morphology"
+    description: "Coloreg Polyp Medium Morphology"
+    requirement_set_type: "all"
+    requirements:
+      - "colon_polyp_size_smaller_10_19_mm" # size cat is 10-19 mm or size_mm between 10 and 19 mm
+      - "colonoscopy_default_polyp_morphology_wli"
+      - "colonoscopy_nbi_polyp_morphology" # (nice)
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_polyp_large_morphology"
+    name_de: "Coloreg Polyp Groß Morphologie"
+    name_en: "Coloreg Polyp Large Morphology"
+    description: "Coloreg Polyp Large Morphology"
+    requirement_set_type: "all"
+    requirements:
+      - "colon_polyp_size_20_mm_or_larger" # size cat is 20+ mm or size_mm >=20 mm
+      - "colonoscopy_nbi_polyp_morphology" # (nice)
+      - "colonoscopy_large_polyp_morphology" # ( LST )
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_morphology"
+    name_de: "Coloreg Befund Kolon Polyp Morphologie"
+    name_en: "Coloreg Finding Colon Polyp Morphology"
+    description: "Coloreg Finding Colon Polyp Morphology"
+    requirement_set_type: "any"
+    depends_on:
+      - "coloreg_finding_colon_polyp_size"
+    links_to_sets:
+      - "coloreg_polyp_small_morphology"
+      - "coloreg_polyp_medium_morphology"
+      - "coloreg_polyp_large_morphology"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_histology_expected_and_available"
+    name_de: "Coloreg Befund Kolon Polyp Histologie"
+    name_en: "Coloreg Finding Colon Polyp Histology"
+    description: "Coloreg Finding Colon Polyp Histology"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_default_polyp_resection"
+      - "colonoscopy_default_polyp_histology"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_histology_not_expected"
+    name_de: "Coloreg Befund Kolon Polyp Histologie"
+    name_en: "Coloreg Finding Colon Polyp Histology"
+    description: "Coloreg Finding Colon Polyp Histology"
+    requirement_set_type: "all"
+    requirements:
+      - "colonoscopy_default_polyp_no_resection"
+      # - "colonoscopy_finding_colon_polyp_no_resection_reason"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_histology"
+    name_de: "Coloreg Befund Kolon Polyp Histologie"
+    name_en: "Coloreg Finding Colon Polyp Histology"
+    description: "Coloreg Finding Colon Polyp Histology"
+    requirement_set_type: "any"
+    links_to_sets:
+      - "coloreg_finding_colon_polyp_histology_expected_and_available"
+      - "coloreg_finding_colon_polyp_histology_not_expected"
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_colon_polyp_base_description"
+    name_de: "Coloreg Befund Kolon Polyp"
+    name_en: "Coloreg Finding Colon Polyp"
+    description: "Coloreg Finding Colon Polyp"
+    requirement_set_type: "all"
+    requirements: []
+    links_to_sets:
+      - "coloreg_finding_colon_polyp_size"
+      - "coloreg_finding_colon_polyp_location_base"
+      - "coloreg_finding_colon_polyp_rectosigmoid_location"
+      - "coloreg_finding_colon_polyp_morphology"
+      - "coloreg_finding_colon_polyp_histology"
+    tags: []
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_finding_data_complete"
+    name_de: "Coloreg Befund Kolon Polyp Komplett"
+    name_en: "Coloreg Finding Colon Polyp Complete"
+    description: "Coloreg Finding Colon Polyp Complete"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "coloreg_finding_colon_polyp_base_description"
+    tags: []
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "coloreg_colonoscopy_report_complete"
+    name_de: "Koloskopie Coloreg"
+    name_en: "Colonoscopy Coloreg"
+    description: "Colonoscopy Coloreg"
+    requirement_set_type: "all"
+    links_to_sets:
+      - "coloreg_patient_data"
+      - "coloreg_examination_data"
+      - "coloreg_finding_data_complete"
+    tags:
+      - "report_mask_requirement_set"
+    reqset_exam_links:
+      - "colonoscopy_req_sets"

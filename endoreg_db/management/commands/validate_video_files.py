@@ -9,6 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# TODO Review if this is still used. Delete if not.
 
 class Command(BaseCommand):
     help = 'Validate video file existence and accessibility'
@@ -23,11 +24,6 @@ class Command(BaseCommand):
             '--verbose',
             action='store_true',
             help='Enable verbose output',
-        )
-        parser.add_argument(
-            '--fix-missing',
-            action='store_true',
-            help='Mark videos with missing files as inactive',
         )
 
     def handle(self, *args, **options):

@@ -1,6 +1,6 @@
+from typing import TYPE_CHECKING, List, cast
+
 from django.db import models
-from typing import List
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models import Finding
@@ -28,24 +28,43 @@ class Examination(models.Model):
     name = models.CharField(max_length=100, unique=True)
     examination_types = models.ManyToManyField("ExaminationType", blank=True)
     description = models.TextField(blank=True, null=True)
+    indications = models.ManyToManyField(
+        "ExaminationIndication",
+        related_name="examinations",
+        blank=True,
+    )
+    examination_times = models.ManyToManyField(
+        "ExaminationTime",
+        related_name="examinations",
+        blank=True,
+    )
+
+    findings = models.ManyToManyField(
+        "Finding",
+        blank=True,
+        related_name="examinations",
+    )
+    information_sources = models.ManyToManyField(
+        "InformationSource",
+        related_name="examinations",
+        blank=True,
+    )
 
     objects = ExaminationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import ExaminationIndication, Finding, FindingClassification
-        finding_classifications: models.QuerySet['FindingClassification']
-        indications: models.QuerySet[ExaminationIndication]
-        findings: models.QuerySet["Finding"]
-        exam_reqset_links: models.QuerySet["ExaminationRequirementSet"]
+        from endoreg_db.models import ExaminationIndication, ExaminationTime, Finding, FindingClassification, InformationSource
 
-    # # Requirement sets associated with the examination.
-    # requirement_sets = models.ManyToManyField(
-    #     "RequirementSet",
-    #     through="ExaminationRequirementSet",
-    #     related_name="examinations",
-    #     blank=True,
-    # )
+        indications = cast("models.manager.RelatedManager[ExaminationIndication]", indications)
+        examination_times = cast("models.manager.RelatedManager[ExaminationTime]", examination_times)
+        findings = cast("models.manager.RelatedManager[Finding]", findings)
+        information_sources = cast("models.manager.RelatedManager[InformationSource]", information_sources)
 
+        @property
+        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+
+        @property
+        def exam_reqset_links(self) -> "models.manager.RelatedManager[ExaminationRequirementSet]": ...
 
     @property
     def links(self) -> "RequirementLinks":
@@ -61,7 +80,7 @@ class Examination(models.Model):
             examinations=[self],
             findings=list(self.findings.all()),
             finding_classifications=list(self.finding_classifications.all()),
-            examination_indications=list(self.indications.all())
+            examination_indications=list(self.indications.all()),
         )
 
     def __str__(self) -> str:
@@ -108,12 +127,13 @@ class ExaminationRequirementSetManager(models.Manager):
     def get_by_natural_key(self, name: str) -> "ExaminationRequirementSet":
         return self.get(name=name)
 
-        
+
 class ExaminationRequirementSet(models.Model):
     """
     Through table for Examination ↔ RequirementSet link.
     Lets you store per-link metadata (order, default, etc.)
     """
+
     examinations = models.ManyToManyField(
         "Examination",
         related_name="exam_reqset_links",
@@ -126,7 +146,7 @@ class ExaminationRequirementSet(models.Model):
     # )
     # Optional metadata
     enabled_by_default = models.BooleanField(default=False)
-    
+
     name = models.CharField(max_length=100, unique=True)
 
     objects = ExaminationRequirementSetManager()
@@ -136,7 +156,7 @@ class ExaminationRequirementSet(models.Model):
 
     # def __str__(self) -> str:
     #     return f"{self.examination} ↔ {self.requirement_set} (prio={self.priority})"
-    
+
     def natural_key(self) -> tuple:
         """
         Returns the natural key for the ExaminationRequirementSet.
@@ -145,4 +165,3 @@ class ExaminationRequirementSet(models.Model):
             tuple: The natural key consisting of the name.
         """
         return (self.name,)
-

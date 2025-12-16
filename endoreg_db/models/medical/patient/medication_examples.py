@@ -1,12 +1,8 @@
 from endoreg_db.models import (
-    Patient,
-    PatientMedication,
-    PatientMedicationSchedule,
     Medication, 
     MedicationIndication, 
     MedicationIndicationType, 
-    MedicationIntakeTime, 
-    MedicationSchedule
+    MedicationIntakeTime
 )
 from endoreg_db.helpers.default_objects import generate_patient
 
@@ -32,7 +28,11 @@ daily_night = MedicationIntakeTime.dn()
 mi = MedicationIndication.objects.order_by('?').first()
 
 # Alternatively, we can use a specific indication type
-medication_indication_type = MedicationIndicationType.objects.filter(indication_type='thromboembolism-prevention-non_valvular_af').order_by('?').first()
+
+# FIXME MedicationIndicationType does not have a field named indication_type
+# It does have: id, medication_indications, name
+
+# medication_indication_type = MedicationIndicationType.objects.filter(indication_type='thromboembolism-prevention-non_valvular_af').order_by('?').first()
 
 patient = generate_patient()
 

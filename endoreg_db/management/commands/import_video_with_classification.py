@@ -10,7 +10,7 @@ from endoreg_db.models.administration.center import Center
 from endoreg_db.models.medical.hardware import EndoscopyProcessor
 
 # TODO Migrate
-from endoreg_db.serializers._old.Frames_NICE_and_PARIS_classifications import (
+from endoreg_db.serializers.Frames_NICE_and_PARIS_classifications import (
     ForNiceClassificationSerializer,
     ForParisClassificationSerializer
 )
@@ -99,7 +99,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--model_path",
             type=str,
-            default="./data/models/colo_segmentation_RegNetX800MF_6.ckpt",
+            default="./data/models/colo_segmentation_RegNetX800MF_6.safetensors",
             help="Path to the model file",
         )
         

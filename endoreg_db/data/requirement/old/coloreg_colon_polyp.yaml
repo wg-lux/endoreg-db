@@ -1,0 +1,49 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_default_size"
+    requirement_types:
+      - "patient_finding"
+    operators:
+      - "models_match_any"
+    finding_classifications:
+      - "colon_lesion_size_mm"
+      - "colon_lesion_size_categorical"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_default_location"
+    requirement_types:
+      - "patient_finding"
+    operators:
+      - "models_match_any"
+    finding_classifications:
+      - "colonoscopy_location_default"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_default_polyp_morphology"
+    operators:
+      - "models_match_any"
+    requirement_types:
+      - "patient_finding"
+    finding_classifications:
+      - "colon_lesion_paris"
+      - "colon_lesion_lst"
+      - "colon_lesion_planarity_default"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_default_polyp_histology"
+    requirement_types:
+      - "patient_finding"
+    operators:
+      - "models_match_all"
+    finding_classifications:
+      - "colonoscopy_polyp_histology"
+      - "colonoscopy_polyp_histology_dysplasia"
+      - "colonoscopy_histology_dignity"
+      - "colonoscopy_default_histology_in_sano"
+
+- models: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_finding_colon_polyp_histo_expected"

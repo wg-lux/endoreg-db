@@ -1,0 +1,49 @@
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_default_polyp_resection"
+    requirement_types:
+      - "patient_finding"
+    operators:
+      - "models_match_any"
+    finding_interventions:
+      - "colon_lesion_biopsy"
+      - "colon_lesion_polypectomy_cold_snare"
+      - "colon_lesion_polypectomy_hot_snare"
+      - "colon_lesion_emr"
+      - "colon_lesion_esd"
+      - "colon_lesion_eftr"
+
+- model: endoreg_db.requirement
+  fields:
+    name: "colonoscopy_default_polyp_no_resection"
+    requirement_types:
+      - "patient_finding"
+    operators:
+      - "models_match_none"
+    finding_interventions:
+      - "colon_lesion_biopsy"
+      - "colon_lesion_polypectomy_cold_snare"
+      - "colon_lesion_polypectomy_hot_snare"
+      - "colon_lesion_emr"
+      - "colon_lesion_esd"
+      - "colon_lesion_eftr"
+# - model: endoreg_db.requirement
+#   fields:
+#     name: "colonoscopy_finding_colon_polyp_no_resection_reason"
+#     requirement_types:
+#       - "patient_finding"
+#     operators:
+#       - "models_match_any"
+#     finding_classifications:
+#       - "colon_lesion_no_resection_reason"
+
+# - model: endoreg_db.requirement
+#   fields:
+#     name: "colonoscopy_polyp_clip_application"
+#     requirement_types:
+#       - "patient_finding"
+#     operators:
+#       - "models_match_any"
+#     finding_interventions:
+#       - "colon_lesion_over_the_scope_clip"
+#       - "colon_lesion_clip"

@@ -2,7 +2,7 @@
   fields:
     name: "patient_gender_generic"
     name_de: "Patientengeschlecht (männlich/weiblich)"
-    name_en: "Patient gender generic" 
+    name_en: "Patient gender generic"
     description: "Patient gender (generic)"
     requirement_set_type: "any"
     requirements:
@@ -11,17 +11,35 @@
 
 - models: endoreg_db.requirement_set
   fields:
-    name: "basic_lab_values_normal"
-    name_de: "Basis-Labortests (Unauffällig)"
-    name_en: "Basic Lab Tests (Normal)"
-    description: "Basic lab tests (normal)"
+    name: "patient_names_generic"
+    name_de: "Patientennamen (Vorname, Nachname)"
+    name_en: "Patient names generic"
+    description: "Patient names (generic)"
     requirement_set_type: "all"
     requirements:
-      - "lab_value_hb_normal"
-      - "lab_value_leukocytes_normal"
-      - "lab_value_platelets_normal"
-      - "lab_value_creatinine_normal"
-      - "lab_value_inr_normal"
+      - patient_first_name #TODO
+      - patient_last_name #TODO
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "patient_dob_generic"
+    name_de: "Patienten-Geburtsdatum"
+    name_en: "Patient date of birth generic"
+    description: "Patient date of birth (generic)"
+    requirement_set_type: "all"
+    requirements:
+      - patient_date_of_birth_present #TODO
+
+- models: endoreg_db.requirement_set
+  fields:
+    name: "colonoscopy_basic_patient_history"
+    name_de: "Koloskopie - Basis Patientenanamnese"
+    name_en: "Colonoscopy - Basic Patient History"
+    description: "Colonoscopy - Basic Patient History"
+    requirement_set_type: "all"
+    requirements:
+      - "patient_history_last_colonoscopy_known" #TODO
+      - "patient_history_previous_bowel_surgery_known" #TODO
 
 - models: endoreg_db.requirement_set
   fields:
@@ -34,7 +52,6 @@
       - "patient_age_gte_18"
       - "patient_age_lte_100"
 
-# - models: endoreg_db.requirement_set
 - models: endoreg_db.requirement_set
   fields:
     name: "generic_patient"

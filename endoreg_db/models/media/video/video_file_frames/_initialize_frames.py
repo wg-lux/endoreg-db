@@ -1,14 +1,14 @@
-from tqdm import tqdm
-from pathlib import Path
-from typing import List
-from typing import TYPE_CHECKING, Optional
 import logging
-from django.db import OperationalError
 import time
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional
+
+from django.db import OperationalError
+from tqdm import tqdm
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
-    
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +35,6 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
     from endoreg_db.models.media.video.video_file_frames._bulk_create_frames import _bulk_create_frames
     from endoreg_db.models.media.video.video_file_frames._create_frame_object import _create_frame_object
 
-
     frames_to_create = []
     num_expected_or_provided = 0
     mark_as_extracted = False
@@ -46,11 +45,9 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
         num_expected_or_provided = len(frame_paths)
         for frame_path in tqdm(frame_paths, desc=f"Initializing Frames from Paths {video.uuid}", unit="frame"):
             try:
-                frame_number = int(frame_path.stem.split('_')[-1])
+                frame_number = int(frame_path.stem.split("_")[-1])
                 relative_path_str = frame_path.name
-                frames_to_create.append(
-                    _create_frame_object(video, frame_number, relative_path_str, extracted=mark_as_extracted)
-                )
+                frames_to_create.append(_create_frame_object(video, frame_number, relative_path_str, extracted=mark_as_extracted))
             except (ValueError, IndexError) as e:
                 logger.warning("Could not parse frame number from %s: %s", frame_path.name, e)
                 continue
@@ -63,7 +60,7 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
                 if state.frames_initialized or state.frame_count is not None:
                     state.frames_initialized = False
                     state.frame_count = None
-                    state.save(update_fields=['frames_initialized', 'frame_count'])
+                    state.save(update_fields=["frames_initialized", "frame_count"])
             except Exception as state_e:
                 logger.error("Failed to reset state during empty initialization for video %s: %s", video.uuid, state_e, exc_info=True)
             return
@@ -73,13 +70,10 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
         num_expected_or_provided = expected_frame_count
         for frame_number in tqdm(range(expected_frame_count), desc=f"Initializing Expected Frames {video.uuid}", unit="frame"):
             relative_path_str = f"frame_{frame_number:07d}.jpg"
-            frames_to_create.append(
-                _create_frame_object(video, frame_number, relative_path_str, extracted=mark_as_extracted)
-            )
-            
+            frames_to_create.append(_create_frame_object(video, frame_number, relative_path_str, extracted=mark_as_extracted))
+
     if frames_to_create:
         for attempt in range(5):
-
             try:
                 _bulk_create_frames(video, frames_to_create)
                 num_created_or_ignored = len(frames_to_create)
@@ -88,11 +82,7 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
                 if mark_as_extracted:
                     frame_numbers_to_update = [f.frame_number for f in frames_to_create]
                     if frame_numbers_to_update:
-                        update_count = Frame.objects.filter(
-                        video=video,
-                        frame_number__in=frame_numbers_to_update,
-                        is_extracted=False
-                        ).update(is_extracted=True)
+                        update_count = Frame.objects.filter(video=video, frame_number__in=frame_numbers_to_update, is_extracted=False).update(is_extracted=True)
                         if update_count > 0:
                             logger.info("Marked %d existing Frame objects as is_extracted=True for video %s.", update_count, video.uuid)
 
@@ -100,7 +90,7 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
                     state = video.get_or_create_state()
                     state.frames_initialized = True
                     state.frame_count = num_expected_or_provided
-                    state.save(update_fields=['frames_initialized', 'frame_count'])
+                    state.save(update_fields=["frames_initialized", "frame_count"])
                     logger.info("Set frames_initialized=True and frame_count=%d for video %s.", num_expected_or_provided, video.uuid)
                 except Exception as state_e:
                     logger.error("Failed to update state after frame initialization for video %s: %s", video.uuid, state_e, exc_info=True)
@@ -109,7 +99,7 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
             except OperationalError as e:
                 if "database is locked" in str(e):
                     logger.warning("Database is locked, retrying frame initialization for video %s (attempt %d/5).", video.uuid, attempt + 1)
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
                     if attempt < 4:
                         continue
                     else:
@@ -124,6 +114,6 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
             if state.frames_initialized or state.frame_count is not None:
                 state.frames_initialized = False
                 state.frame_count = None
-                state.save(update_fields=['frames_initialized', 'frame_count'])
+                state.save(update_fields=["frames_initialized", "frame_count"])
         except Exception as state_e:
             logger.error("Failed to reset state during empty initialization for video %s: %s", video.uuid, state_e, exc_info=True)

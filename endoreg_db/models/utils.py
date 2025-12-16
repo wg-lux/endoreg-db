@@ -1,32 +1,29 @@
-from ..utils import (
-    data_paths,
-    DJANGO_NAME_SALT,
-)
-from django.core.files import File
-from django.core.files.storage import FileSystemStorage
 import io
 import os
-from tqdm import tqdm
-import numpy as np
-import cv2
-from typing import TYPE_CHECKING, List, Tuple
 from pathlib import Path
+from typing import TYPE_CHECKING, List, Tuple
+
+import cv2
+import numpy as np
+from django.core.files import File
+from django.core.files.storage import FileSystemStorage
+
+from ..utils import DJANGO_NAME_SALT, data_paths
+
 if TYPE_CHECKING:
-    from ..models.media import VideoFile
+    pass
 
 from logging import getLogger
 
 logger = getLogger(__name__)
 
 STORAGE_DIR = data_paths["storage"]
-FILE_STORAGE = FileSystemStorage(location = STORAGE_DIR)
-VIDEO_DIR = data_paths["video"]
-TMP_VIDEO_DIR = VIDEO_DIR / "tmp"
-ANONYM_VIDEO_DIR = data_paths["video_export"]
+FILE_STORAGE = FileSystemStorage(location=str(STORAGE_DIR))
+TRANSCODING_DIR = data_paths["transcoding"]
 FRAME_DIR = data_paths["frame"]
 WEIGHTS_DIR = data_paths["weights"]
-PDF_DIR = data_paths["raw_pdf"]
-DOCUMENT_DIR = data_paths["pdf"]
+REPORT_DIR = data_paths["import_report"]
+DOCUMENT_DIR = data_paths["documents"] #TODO Verify if this is still used and assign correct dir
 
 TEST_RUN = os.environ.get("TEST_RUN", "False")
 TEST_RUN = TEST_RUN.lower() == "true"
@@ -71,8 +68,13 @@ def find_segments_in_prediction_array(prediction_array: np.array, min_frame_len:
 
     return segments
 
+
 def anonymize_frame(
-    raw_frame_path: Path, target_frame_path: Path, endo_roi, all_black: bool = False, censor_color: Tuple[int, int, int] = (0, 0, 0) # Added censor_color param
+    raw_frame_path: Path,
+    target_frame_path: Path,
+    endo_roi,
+    all_black: bool = False,
+    censor_color: Tuple[int, int, int] = (0, 0, 0),  # Added censor_color param
 ):
     """
     Anonymize the frame by blacking out pixels outside the endoscope ROI or making the whole frame black.
@@ -89,7 +91,9 @@ def anonymize_frame(
         # Validate ROI dictionary keys
         required_keys = {"x", "y", "width", "height"}
         if not required_keys.issubset(endo_roi):
-            raise ValueError(f"Invalid endo_roi dictionary provided: {endo_roi}. Missing keys.")
+            raise ValueError(
+                f"Invalid endo_roi dictionary provided: {endo_roi}. Missing keys."
+            )
 
         x = endo_roi["x"]
         y = endo_roi["y"]
@@ -102,7 +106,9 @@ def anonymize_frame(
         x2, y2 = min(w_orig, x + width), min(h_orig, y + height)
 
         if x1 >= x2 or y1 >= y2:
-            logger.warning(f"ROI [{x},{y},{width},{height}] is outside or invalid for frame dimensions {w_orig}x{h_orig}. Resulting frame might be all black.")
+            logger.warning(
+                f"ROI [{x},{y},{width},{height}] is outside or invalid for frame dimensions {w_orig}x{h_orig}. Resulting frame might be all black."
+            )
         else:
             # copy valid endoscope roi part to black frame
             new_frame[y1:y2, x1:x2] = frame[y1:y2, x1:x2]
@@ -120,13 +126,10 @@ __all__ = [
     "DJANGO_NAME_SALT",
     "data_paths",
     "FILE_STORAGE",
-    "VIDEO_DIR",
-    "TMP_VIDEO_DIR",
     "ANONYM_VIDEO_DIR",
     "FRAME_DIR",
     "WEIGHTS_DIR",
-    "PDF_DIR",
-    "DOCUMENT_DIR",
+    "REPORT_DIR",
     "prepare_bulk_frames",
     "anonymize_frame",
     "find_segments_in_prediction_array",

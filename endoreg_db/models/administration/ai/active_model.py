@@ -1,5 +1,5 @@
 from django.db import models
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models.metadata import ModelMeta
@@ -27,7 +27,7 @@ class ActiveModel(models.Model):
 
     name = models.CharField(max_length=255, unique=True)
     
-    model_meta:Optional[models.ForeignKey["ModelMeta"]] = models.ForeignKey(
+    model_meta:models.ForeignKey["ModelMeta|None"] = models.ForeignKey(
         'ModelMeta', on_delete=models.SET_NULL, 
         blank=True, null=True
     )

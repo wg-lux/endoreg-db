@@ -1,17 +1,21 @@
-from django.db import models
 from typing import TYPE_CHECKING
+
+from django.db import models
+
 # models.py in your main app
 
 if TYPE_CHECKING:
-    from ..profession import Profession
-    from endoreg_db.models import Examiner
     from django.contrib.auth.models import User
+
+    from endoreg_db.models import Examiner
+
+    from ..profession import Profession
 
 
 class PortalUserInfo(models.Model):
     user = models.OneToOneField("auth.User", on_delete=models.CASCADE)
     profession = models.ForeignKey(
-        'endoreg_db.Profession',
+        "endoreg_db.Profession",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
@@ -29,9 +33,9 @@ class PortalUserInfo(models.Model):
     )
 
     if TYPE_CHECKING:
-        user: "User"
-        profession: "Profession"
-        examiner: "Examiner"
+        user: models.OneToOneField["User"]
+        profession: models.ForeignKey["Profession|None"]
+        examiner: models.OneToOneField["Examiner|None"]
 
     def __str__(self):
         return self.user.username

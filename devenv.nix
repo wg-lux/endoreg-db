@@ -18,7 +18,7 @@ let
   confDir = "./conf"; # Define confDir here
 
   # Pin to specific Python 3.12 version to match pyproject.toml
-  python = pkgs.python312;
+  python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
   uvPackage = pkgs.uv;
   
   buildInputs = with pkgs; [
@@ -46,16 +46,16 @@ let
 
   _module.args.buildInputs = baseBuildInputs;
 
-  lx-anonymizer-src = pkgs.fetchGit {
-    url = "https://github.com/wg-lux/lx-anonymizer";
-    ref = "prototype";
-    # If you know the specific revision, it's better to use rev for reproducibility
-    # rev = "abcdef1234567890"; 
-  };
+  # lx-anonymizer-src = pkgs.fetchGit {
+  #   url = "https://github.com/wg-lux/lx-anonymizer";
+  #   ref = "prototype";
+  #   # If you know the specific revision, it's better to use rev for reproducibility
+  #   # rev = "abcdef1234567890"; 
+  # };
 
-  imports = [ 
-    "${lx-anonymizer-src}/devenv.nix"
-  ]; 
+  # imports = [ 
+  #   "${lx-anonymizer-src}/devenv.nix"
+  # ]; 
 
 in 
 {
@@ -70,8 +70,8 @@ in
     # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
     LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     # Force uv to use the Nix-provided Python - override any conflicts
-    UV_PYTHON = lib.mkForce "${python}/bin/python";
-    UV_PYTHON_DOWNLOADS = "never";
+    # UV_PYTHON = lib.mkForce "${python}/bin/python";
+    # UV_PYTHON_DOWNLOADS = "never";
   };
 
   languages.python = {
@@ -85,6 +85,7 @@ in
   };
 
   scripts = {
+
     export-nix-vars.exec = ''
       cat > .devenv-vars.json << EOF
       {
@@ -93,6 +94,7 @@ in
         "PORT": "${port}",
         "CONF_DIR": "${confDir}",
         "HOME_DIR": "$HOME",
+        "IO_DIR": "HOME_DIR"
         "WORKING_DIR": "$PWD"
       }
       EOF
@@ -178,9 +180,7 @@ in
       echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
     fi
 
-    # . .devenv/state/venv/bin/activate
-    # runtests-dataloader
-    # hello
+    env-setup
   '';
 
   enterTest = ''

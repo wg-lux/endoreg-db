@@ -1,16 +1,21 @@
-from django.db import models
 from typing import TYPE_CHECKING
+
+from django.db import models
+
 from ..person import Person
+
 if TYPE_CHECKING:
     from endoreg_db.models import (
-        EmployeeType,
         EmployeeQualification,
+        EmployeeType,
     )
+
 
 class Employee(Person):
     """
     Model representing an employee.
     """
+
     employee_type = models.ForeignKey(
         "EmployeeType",
         on_delete=models.CASCADE,
@@ -18,9 +23,9 @@ class Employee(Person):
     )
 
     if TYPE_CHECKING:
-        employee_type: "EmployeeType"
-        qualification: "EmployeeQualification"
-
+        employee_type: models.ForeignKey["EmployeeType"]
+        # qualification is a OneToOneField defined in the EmployeeQualification model
+        qualification: models.OneToOneField["EmployeeQualification"]
 
     def __str__(self):
         """

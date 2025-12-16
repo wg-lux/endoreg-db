@@ -1,123 +1,220 @@
 """
 Data Loader Helpers and others
 """
-from django.core.management import call_command
+
 from pathlib import Path
+
+
+from pathlib import Path
+
+from django.core.management import call_command
+
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
-def load_default_ai_model(): 
+
+
+def load_default_ai_model():
+def load_default_ai_model():
     """
     Loads the default AI model into the application using a predefined checkpoint file.
-    
+
     The function constructs the path to the default AI model checkpoint and invokes the
     Django management command `create_multilabel_model_meta` to register the model.
     """
-    model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.ckpt"
+    model_path = f"{ASSET_DIR.as_posix()}/colo_segmentation_RegNetX800MF_6.safetensors"
     # Pass arguments individually to call_command
     call_command(
         "create_multilabel_model_meta",
         "--model_path",
         model_path,
-        "--bump_version"  # Handle existing models by bumping version
+        "--bump_version",  # Handle existing models by bumping version
+        "--bump_version",  # Handle existing models by bumping version
     )
+
+
 
 def load_qualification_data():
     """
     Loads qualification data into the application using the corresponding management command.
     """
-    call_command("load_qualification_data", )
+    call_command(
+        "load_qualification_data",
+    )
+
 
 def load_shift_data():
     """
     Loads shift data into the application by invoking the corresponding Django management command.
     """
-    call_command("load_shift_data", )
+    call_command(
+        "load_shift_data",
+    )
+
+    call_command(
+        "load_shift_data",
+    )
+
 
 def load_base_db_data():
     """
     Loads the base database data using the corresponding Django management command.
     """
-    call_command("load_base_db_data", )
+    call_command(
+        "load_base_db_data",
+    )
+
+    call_command(
+        "load_base_db_data",
+    )
+
 
 def load_information_source_data():
     """Load Information Source Data"""
-    call_command("load_information_source", )
+    call_command(
+        "load_information_source",
+    )
+
 
 def load_risk_data():
     """Load Risk Data"""
-    call_command("load_risk_data", )
+    call_command(
+        "load_risk_data",
+    )
+
 
 def load_center_data():
     """Load Center Data"""
-    call_command("load_center_data", )
+    call_command(
+        "load_center_data",
+    )
+
 
 def load_endoscope_data():
     """Load Endoscope Data"""
-    call_command("load_endoscope_data", )
+    call_command(
+        "load_endoscope_data",
+    )
+
 
 def load_distribution_data():
     """Load Distribution Data"""
-    call_command("load_distribution_data", )
+    call_command(
+        "load_distribution_data",
+    )
+
 
 def load_gender_data():
     """Load Gender Data"""
-    call_command("load_gender_data", )
+    call_command(
+        "load_gender_data",
+    )
+
 
 def load_report_reader_flag_data():
     """Load Report Reader Flag Data"""
-    call_command("load_report_reader_flag_data", )
-    
+    call_command(
+        "load_report_reader_flag_data",
+    )
+
+
 def load_pdf_type_data():
-    """Load PDF Type Data"""
-    call_command("load_pdf_type_data", )
-    
+    """Load report Type Data"""
+    call_command(
+        "load_pdf_type_data",
+    )
+
+
 def load_unit_data():
-    call_command("load_unit_data", )
-    
+    call_command(
+        "load_unit_data",
+    )
+
+
 def load_disease_data():
-    call_command("load_disease_data", )
-    
+    call_command(
+        "load_disease_data",
+    )
+
+
 def load_event_data():
-    call_command("load_event_data", )
-    
+    call_command(
+        "load_event_data",
+    )
+
+
 def load_organ_data():
-    call_command("load_organ_data", )
-    
+    call_command(
+        "load_organ_data",
+    )
+
+
 def load_contraindication_data():
-    call_command("load_contraindication_data", )
-    
+    call_command(
+        "load_contraindication_data",
+    )
+
+
 def load_examination_data():
-    call_command("load_examination_data", )
-    
+    call_command(
+        "load_examination_data",
+    )
+
+
 def load_lab_value_data():
-    call_command("load_lab_value_data", )
-    
+    call_command(
+        "load_lab_value_data",
+    )
+
+
 def load_finding_data():
-    call_command("load_finding_data", )
-    
+    call_command(
+        "load_finding_data",
+    )
+
+
 def load_examination_indication_data():
-    call_command("load_examination_indication_data", )
-    
+    call_command(
+        "load_examination_indication_data",
+    )
+
+
 def load_medication_data():
-    call_command("load_medication_data", )
+    call_command(
+        "load_medication_data",
+    )
+
 
 def load_requirement_data():
+    call_command(
+        "load_requirement_data",
+    )
 
-    call_command("load_requirement_data", )
 
 def load_ai_model_label_data():
-    call_command("load_ai_model_label_data", )
+    call_command(
+        "load_ai_model_label_data",
+    )
 
-def load_ai_model_data():    
-    call_command("load_ai_model_data", )
+
+def load_ai_model_data():
+    call_command(
+        "load_ai_model_label_data",
+    )
+    call_command(
+        "load_ai_model_data",
+    )
+
 
 def load_green_endoscopy_wuerzburg_data():
     """Load Green Endoscopy Wuerzburg Data"""
-    call_command("load_green_endoscopy_wuerzburg_data", )
+    call_command(
+        "load_green_endoscopy_wuerzburg_data",
+    )
+
 
 def load_data():
     """Load all data in correct order"""
-    
+
     load_information_source_data()
     load_risk_data()
     load_center_data()
@@ -132,10 +229,10 @@ def load_data():
     load_event_data()
     load_organ_data()
     load_contraindication_data()
-    load_examination_data()
-    load_lab_value_data()
     load_finding_data()
     load_examination_indication_data()
+    load_examination_data()
+    load_lab_value_data()
     load_medication_data()
     load_requirement_data()
 
@@ -143,6 +240,3 @@ def load_data():
     load_ai_model_data()
 
     load_green_endoscopy_wuerzburg_data()
-
-    
-    

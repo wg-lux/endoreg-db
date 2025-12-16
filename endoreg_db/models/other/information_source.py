@@ -1,12 +1,12 @@
-from django.db import models
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from endoreg_db.models import InformationSourceType
+
+from django.db import models
+
 
 def get_prediction_information_source():
     """
     Returns the InformationSource instance with the name "prediction".
-    
+
     Raises:
         AssertionError: If no InformationSource with the name "prediction" exists.
     """
@@ -21,10 +21,10 @@ class InformationSourceManager(models.Manager):
     def get_by_natural_key(self, name):
         """
         Retrieves a model instance using its natural key.
-        
+
         Args:
             name: The natural key value corresponding to the model's 'name' field.
-        
+
         Returns:
             The model instance that matches the provided natural key.
         """
@@ -42,11 +42,36 @@ class InformationSource(models.Model):
     date_created = models.DateField(auto_now_add=True)
     date_modified = models.DateField(auto_now=True)
     abbreviation = models.CharField(max_length=100, blank=True, null=True, unique=True)
-    
+
     if TYPE_CHECKING:
-        #information_source_types: models.QuerySet["InformationSourceType"]
-        # Avoid self-referential import; use forward references instead
-        pass
+        from endoreg_db.models import (
+            Examination,
+            ExaminationIndication,
+            ExaminationTime,
+            Finding,
+            FindingClassification,
+            FindingIntervention,
+            InformationSourceType,
+        )
+
+        @property
+        def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
+
+        @property
+        def examination_indications(self) -> "models.manager.RelatedManager[ExaminationIndication]": ...
+
+        @property
+        def examination_times(self) -> "models.manager.RelatedManager[ExaminationTime]": ...
+
+        @property
+        def findings(self) -> "models.manager.RelatedManager[Finding]": ...
+
+        @property
+        def finding_interventions(self) -> "models.manager.RelatedManager[FindingIntervention]": ...
+
+        @property
+        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+
     class Meta:
         verbose_name = "Information Source"
         verbose_name_plural = "Information Sources"
@@ -55,14 +80,13 @@ class InformationSource(models.Model):
         indexes = [
             models.Index(fields=["name"]),
             models.Index(fields=["abbreviation"]),
-        ] 
-
+        ]
 
     def natural_key(self):
         """
         Returns the natural key tuple for the information source.
-        
-        The tuple contains the object's name, which uniquely identifies it for 
+
+        The tuple contains the object's name, which uniquely identifies it for
         serialization and natural key lookup.
         """
         return (self.name,)
@@ -73,19 +97,21 @@ class InformationSource(models.Model):
         """
         return str(self.name)
 
+
 class InformationSourceTypeManager(models.Manager):
     def get_by_natural_key(self, name):
         """
         Retrieve an instance of the model by its natural key, which is the 'name' field.
-        
+
         Parameters:
             name (str): The value of the 'name' field to look up.
-        
+
         Returns:
             The model instance with the specified name.
         """
         return self.get(name=name)
-    
+
+
 class InformationSourceType(models.Model):
     objects = InformationSourceTypeManager()
 
@@ -108,10 +134,10 @@ class InformationSourceType(models.Model):
     def get_prediction_type(cls) -> "InformationSourceType":
         """
         Return the InformationSourceType instance with the name "prediction".
-        
+
         Returns:
             InformationSourceType: The instance representing the "prediction" information source type.
-        
+
         Raises:
             InformationSourceType.DoesNotExist: If no such instance exists.
 
@@ -119,20 +145,17 @@ class InformationSourceType(models.Model):
         try:
             return cls.objects.get(name="prediction")
         except cls.DoesNotExist as e:
-            raise cls.DoesNotExist(
-                "The 'prediction' InformationSourceType was not found. "
-                "Please check your data fixtures or initial data migrations."
-            ) from e
+            raise cls.DoesNotExist("The 'prediction' InformationSourceType was not found. Please check your data fixtures or initial data migrations.") from e
 
     @classmethod
     def get_manual_annotation_type(cls) -> "InformationSourceType":
         """
 
         Return the InformationSourceType instance representing manual annotation.
-        
+
         Returns:
             InformationSourceType: The instance with name "annotation".
-        
+
         Raises:
             AssertionError: If no InformationSourceType with name "annotation" exists.
 
@@ -141,10 +164,8 @@ class InformationSourceType(models.Model):
             return cls.objects.get(name="manual_annotation")
         except cls.DoesNotExist as e:
             raise cls.DoesNotExist(
-                "The 'manual_annotation' InformationSourceType was not found. "
-                "Please check your data fixtures or initial data migrations."
+                "The 'manual_annotation' InformationSourceType was not found. Please check your data fixtures or initial data migrations."
             ) from e
-
 
     def natural_key(self):
         """

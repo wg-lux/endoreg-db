@@ -1,79 +1,99 @@
 from django.core.management.base import BaseCommand
+
 from endoreg_db.models import (
-    RequirementType,
-    RequirementOperator,
-    Requirement,
-    RequirementSetType,
-    RequirementSet,
-    Examination,
-    ExaminationIndication,
     Disease,
     DiseaseClassificationChoice,
     Event,
-    LabValue,
+    Examination,
+    ExaminationIndication,
+    ExaminationRequirementSet,  # Added to avoid circular import issues
     Finding,
     FindingClassification,
     FindingClassificationChoice,
     FindingIntervention,
     InformationSource,
-    Unit,
-    Risk,
-    RiskType,
+    LabValue,
+    Medication,  # Added Medication model
     MedicationIndication,
     MedicationIndicationType,
-    MedicationSchedule,
-    Medication,  # Added Medication model
     MedicationIntakeTime,
+    MedicationSchedule,
+    Requirement,
+    RequirementOperator,
+    RequirementSet,
+    RequirementSetType,
+    RequirementType,
+    Risk,
+    RiskType,
     Tag,
-    ExaminationRequirementSet,  # Added to avoid circular import issues
+    Unit,
 )
 from endoreg_db.models.other.gender import Gender
-from ...utils import load_model_data_from_yaml
-from ...data import (
-    REQUIREMENT_TYPE_DATA_DIR,
-    REQUIREMENT_OPERATOR_DATA_DIR,
-    REQUIREMENT_DATA_DIR,
-    REQUIREMENT_SET_TYPE_DATA_DIR,
-    REQUIREMENT_SET_DATA_DIR,
-    EXAMINATION_REQUIREMENT_SET_DATA_DIR
-)
 
+from ...data import (
+    EXAMINATION_REQUIREMENT_SET_DATA_DIR,
+    REQUIREMENT_DATA_DIR,
+    REQUIREMENT_OPERATOR_DATA_DIR,
+    REQUIREMENT_SET_DATA_DIR,
+    REQUIREMENT_SET_TYPE_DATA_DIR,
+    REQUIREMENT_TYPE_DATA_DIR,
+)
+from ...utils import load_model_data_from_yaml
 
 IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     RequirementType.__name__,
     RequirementOperator.__name__,
     Requirement.__name__,
     RequirementSetType.__name__,
-    ExaminationRequirementSet.__name__,
+    # ExaminationRequirementSet.__name__,
     RequirementSet.__name__,
 ]
+
+
+def _validate_requirement_configuration(fields: dict, *, entry: dict, model):
+    """Ensures requirement fixtures declare both requirement_types and operators."""
+    name = fields.get("name") or entry.get("pk") or "<unnamed>"
+
+    def _values_missing(key: str) -> bool:
+        value = fields.get(key)
+        if not isinstance(value, list):
+            return True
+        if not value:
+            return True
+        return any(not item for item in value)
+
+    missing = [key for key in ("requirement_types", "operators") if _values_missing(key)]
+    if missing:
+        missing_display = ", ".join(missing)
+        raise ValueError(f"{model.__name__} '{name}' is missing required configuration for: {missing_display}.")
+
 
 IMPORT_METADATA = {
     RequirementType.__name__: {
         "dir": REQUIREMENT_TYPE_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementType,  # e.g. Intervention
+        "model": RequirementType,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     RequirementOperator.__name__: {
         "dir": REQUIREMENT_OPERATOR_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementOperator,  # e.g. Intervention
+        "model": RequirementOperator,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     ExaminationRequirementSet.__name__: {
         "dir": EXAMINATION_REQUIREMENT_SET_DATA_DIR,  # e.g. "interventions"
-        "model": ExaminationRequirementSet,  # e.g. Intervention
-        "foreign_keys": ["examinations",], # Through model uses foreign keys of both models
-        "foreign_key_models": [Examination,],
+        "model": ExaminationRequirementSet,
+        "foreign_keys": [],  # Through model uses foreign keys of both models
+        "foreign_key_models": [],
     },
     # ExaminationRequirementSet.__name__,
     Requirement.__name__: {
         "dir": REQUIREMENT_DATA_DIR,  # e.g. "interventions"
-        "model": Requirement,  # e.g. Intervention
+        "model": Requirement,
         "foreign_keys": [
             "requirement_types",
-            "operators",
+            "operator",
             "unit",
             "examinations",
             "examination_indications",
@@ -92,7 +112,7 @@ IMPORT_METADATA = {
             "medication_schedules",
             "medications",  # Added medications
             "medication_intake_times",
-            "genders"
+            "genders",
         ],
         "foreign_key_models": [
             RequirementType,
@@ -115,25 +135,27 @@ IMPORT_METADATA = {
             MedicationSchedule,
             Medication,  # Added Medication model
             MedicationIntakeTime,
-            Gender
+            Gender,
         ],
+        # "validators": [_validate_requirement_configuration],
     },
     RequirementSetType.__name__: {
         "dir": REQUIREMENT_SET_TYPE_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementSetType,  # e.g. Intervention
+        "model": RequirementSetType,
         "foreign_keys": [],  # e.g. ["intervention_types"]
         "foreign_key_models": [],  # e.g. [InterventionType]
     },
     RequirementSet.__name__: {
         "dir": REQUIREMENT_SET_DATA_DIR,  # e.g. "interventions"
-        "model": RequirementSet,  # e.g. Intervention
+        "model": RequirementSet,
         "foreign_keys": [
             "requirement_set_type",
             "requirements",  # This is a many-to-many field
             "links_to_sets",
             "information_sources",
             "tags",
-            "reqset_exam_links"
+            "reqset_exam_links",
+            "depends_on",
         ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
             RequirementSetType,
@@ -141,7 +163,8 @@ IMPORT_METADATA = {
             RequirementSet,
             InformationSource,
             Tag,
-            ExaminationRequirementSet
+            ExaminationRequirementSet,
+            RequirementSet,
         ],  # e.g. [InterventionType]
     },
 }
@@ -155,7 +178,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         """
         Add command-line arguments to enable verbose output.
-        
+
         Adds an optional '--verbose' flag to the command parser. When specified,
         this flag causes the command to display detailed output during execution.
         """
@@ -168,10 +191,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """
         Executes data import for requirement models from YAML files.
-        
-        Retrieves the verbosity setting from the command options and iterates over each model 
-        listed in IMPORT_MODELS. For each model, it obtains the corresponding metadata from 
-        IMPORT_METADATA and calls a helper to load the YAML data into the database. Verbose mode 
+
+        Retrieves the verbosity setting from the command options and iterates over each model
+        listed in IMPORT_MODELS. For each model, it obtains the corresponding metadata from
+        IMPORT_METADATA and calls a helper to load the YAML data into the database. Verbose mode
         enables detailed output during the process.
         """
         verbose = options["verbose"]
