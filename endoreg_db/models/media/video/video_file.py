@@ -773,7 +773,7 @@ class VideoFile(models.Model):
 
         if not video:
             logger.warning(
-                "No processed video file available for VideoFile %s.", cls.video_hash
+                "No processed video file available for VideoFile %s.", instance.video_hash
             )
             return False
         try:
@@ -809,7 +809,7 @@ class VideoFile(models.Model):
             # assert isinstance(frames, list[Path]) #TODO improve TypeCheck
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
-            output_video_path = Path(f"/path/to/output/{cls.video_hash}_filtered.mp4")
+            output_video_path = Path(f"/path/to/output/{instance.video_hash}_filtered.mp4")
             fps = cls.fps if cls.fps else 30.0  # Default to 30 FPS if fps is not set
             new_video_file = assemble_video_from_frames(
                 frames, output_video_path, fps, width=video.width, height=video.height
@@ -818,7 +818,7 @@ class VideoFile(models.Model):
             return True
         except AssertionError as ae:
             logger.error(
-                f"Assertion error while creating video without 'outside' frames for VideoFile {cls.video_hash}: {ae}",
+                f"Assertion error while creating video without 'outside' frames for VideoFile {instance.video_hash}: {ae}",
                 exc_info=True,
             )
             return False
@@ -827,7 +827,7 @@ class VideoFile(models.Model):
             return False
         except Exception as e:
             logger.error(
-                f"Error creating video without 'outside' frames for VideoFile {cls.video_hash}: {e}",
+                f"Error creating video without 'outside' frames for VideoFile {instance.video_hash}: {e}",
                 exc_info=True,
             )
             return False
