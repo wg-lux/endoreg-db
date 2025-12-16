@@ -33,7 +33,7 @@ class Command(BaseCommand):
         """Validate video files and their accessibility."""
         verbose = options["verbose"]
         video_id = options.get("video_id")
-        fix_missing = options["fix_missing"]
+        fix_missing = options["fix_missing", False]
 
         if verbose:
             self.stdout.write(self.style.SUCCESS("Starting video validation..."))
