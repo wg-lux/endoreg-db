@@ -754,7 +754,7 @@ class RawPdfFile(models.Model):
         try:
             return RawPdfFile.objects.get(pk=pk)
         except RawPdfFile.DoesNotExist:
-            raise ValueError(f"report with ID {pdf_id} does not exist.")
+            raise ValueError(f"report with ID {pk} does not exist.")
 
     @staticmethod
     def get_report_by_hash(hash: str) -> "RawPdfFile":
