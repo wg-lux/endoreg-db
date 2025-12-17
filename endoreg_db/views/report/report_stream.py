@@ -172,13 +172,13 @@ class ReportStreamView(APIView):
             logger.debug(f"Serving full {file_type} report {pk} ({file_size} bytes)")
 
             try:
-                with open(file_path, "rb") as file_handle:
-                    response = FileResponse(file_handle, content_type="application/pdf")
-                    response["Content-Length"] = str(file_size)
-                    response["Accept-Ranges"] = "bytes"
-                    response["Content-Disposition"] = (
-                        f'inline; filename="{safe_filename}"'
-                    )
+                file_handle = open(file_path, "rb")
+                response = FileResponse(file_handle, content_type="application/pdf")
+                response["Content-Length"] = str(file_size)
+                response["Accept-Ranges"] = "bytes"
+                response["Content-Disposition"] = (
+                    f'inline; filename="{safe_filename}"'
+                )
 
                 # FileResponse will take ownership of file_handle and close it after response
                 return response

@@ -47,117 +47,85 @@ class LabelSegmentUpdateSerializer(serializers.Serializer):
 
         return data
 
-    def save(self):
-        """
-        Synchronizes label segments in the database to match the provided frontend data for a specific video and label.
-        
-        Compares incoming segments to existing database entries, updating segments with changed end frames, creating new segments as needed, and deleting segments that are no longer present. All changes are performed within a transaction to ensure consistency. Raises a validation error if no prediction metadata exists for the specified video.
-        
-        Returns:
-            dict: A dictionary containing serialized updated segments, newly created segments, and the count of deleted segments.
-        """
+def save(self):
+        # Ensure validated_data exists
+        if not hasattr(self, 'validated_data'):
+            raise AssertionError("You must call `.is_valid()` before calling `.save()`.")
 
         video_id = self.validated_data["video_id"]
         label_id = self.validated_data["label_id"]
-        new_segments = self.validated_data["segments"] # Remove new_keys assignment
+        new_segments_data = self.validated_data["segments"]
 
-        # Fetch the correct `prediction_meta_id` based on `video_id`
         prediction_meta_entry = VideoPredictionMeta.objects.filter(
-            video_file_id=video_id # Changed from video_id to video_file_id
+            video_file_id=video_id
         ).first()
+        
         if not prediction_meta_entry:
             raise serializers.ValidationError(
                 {"error": "No prediction metadata found for this video."}
             )
 
-        prediction_meta_id = (
-            prediction_meta_entry.id
-        )  # Get the correct prediction_meta_id
+        prediction_meta_id = prediction_meta_entry.pk
 
+        # 1. Map existing segments for comparison and deletion logic
         existing_segments = LabelVideoSegment.objects.filter(
-            video_file_id=video_id, label_id=label_id  # FIXED: video_file_id instead of video_id
+            video_file_id=video_id, label_id=label_id
         )
-
-        # Convert existing segments into a dictionary for quick lookup
-        # Key format: (start_frame_number, end_frame_number)
+        
+        # Use a dict to track segments by their start_frame (assuming start_frame is the unique anchor)
         existing_segments_dict = {
-            (float(seg.start_frame_number), float(seg.end_frame_number)): seg
-            for seg in existing_segments
+            float(seg.start_frame_number): seg for seg in existing_segments
         }
-
-        # Prepare lists for batch processing
-        # Initialize sets to track updates and new entries
-        updated_segments = set()
+        
+        # Track which start_frames we see in the new data to identify what to delete
+        incoming_start_frames = set()
+        updated_segments = []
         new_entries = []
-        existing_keys = set()
-        new_keys = set()
 
-        # Iterate through the validated data to update or create label video segments
-        print(f" Before Update: Found {existing_segments.count()} existing segments.")
-        logger.debug(f"Before Update: Found %d existing segments.", existing_segments.count())
-        logger.debug(f"New Segments Received: %d", len(new_segments))
-        logger.debug(f"Using prediction_meta_id: %d", prediction_meta_id)
         with transaction.atomic():
-            for segment in new_segments:
+            for segment in new_segments_data:
                 start_frame = float(segment["start_frame_number"])
                 end_frame = float(segment["end_frame_number"])
+                incoming_start_frames.add(start_frame)
 
-                if (start_frame, end_frame) in existing_keys:
-                    # If segment with exact start_frame and end_frame already exists, no change is needed
-                    continue
+                if start_frame in existing_segments_dict:
+                    # Update if end_frame changed
+                    existing_seg = existing_segments_dict[start_frame]
+                    if float(existing_seg.end_frame_number) != end_frame:
+                        existing_seg.end_frame_number = int(end_frame)
+                        existing_seg.save()
+                        updated_segments.append(existing_seg)
                 else:
-                    # Check if a segment exists with the same start_frame but different end_frame
-                    existing_segment = LabelVideoSegment.objects.filter(
-                        video_file_id=video_id, # Changed from video_id to video_file_id
-                        label_id=label_id,
-                        start_frame_number=start_frame,
-                    ).first()
-
-                    if existing_segment:
-                        # If a segment with the same_start_frame exists but the end_frame is different, update it
-                        if float(existing_segment.end_frame_number) != end_frame:
-                            existing_segment.end_frame_number = end_frame
-                            existing_segment.save()
-                            updated_segments.append(existing_segment)
-                    else: # Added else block to create new segment if not existing
-                        new_entries.append(
-                            LabelVideoSegment(
-                                video_file_id=video_id, # Changed from video_id to video_file_id
-                                label_id=label_id,
-                                start_frame_number=start_frame,
-                                end_frame_number=end_frame,
-                                prediction_meta_id=prediction_meta_id,
-                            )
+                    # Create new
+                    new_entries.append(
+                        LabelVideoSegment(
+                            video_file_id=video_id,
+                            label_id=label_id,
+                            start_frame_number=start_frame,
+                            end_frame_number=end_frame,
+                            prediction_meta_id=prediction_meta_id,
                         )
-                        print(
-                            f" Adding new segment: Start {start_frame} → End {end_frame}"
-                        )
+                    )
 
-            # Delete segments that are no longer present in the frontend data
-            # Segments to delete are those in existing_keys but not in new_keys
-            keys_to_delete = existing_keys - set((float(s['start_frame_number']), float(s['end_frame_number'])) for s in new_segments)
-            segments_to_delete_ids = [existing_segments_dict[key].id for key in keys_to_delete]
+            # 2. Deletion Logic: If it's in DB but NOT in incoming data, delete it
+            existing_start_frames = set(existing_segments_dict.keys())
+            frames_to_delete = existing_start_frames - incoming_start_frames
+            
+            deleted_count = 0
+            if frames_to_delete:
+                segs_to_delete = existing_segments.filter(start_frame_number__in=frames_to_delete)
+                deleted_count = segs_to_delete.count()
+                segs_to_delete.delete()
 
-            if segments_to_delete_ids:
-                LabelVideoSegment.objects.filter(id__in=segments_to_delete_ids).delete()
-                deleted_count = len(segments_to_delete_ids)
-            else:
-                deleted_count = 0
-
-            # Insert new segments in bulk for efficiency
+            # 3. Bulk Create
             if new_entries:
                 LabelVideoSegment.objects.bulk_create(new_entries)
-
-        logger.debug(  
-            "After Update: Updated %d segments, Added %d, Deleted %d",  
-            len(updated_segments), len(new_entries), deleted_count  
-        )  
-  
+                # Note: bulk_create doesn't return IDs in all DB backends. 
+                # If you need serialized data back for new_entries, 
+                # you might need to re-fetch them.
 
         return {
-            "updated_segments": LabelVideoSegmentSerializer(
-                updated_segments, many=True
-            ).data,
+            "updated_segments": LabelVideoSegmentSerializer(updated_segments, many=True).data,
             "new_segments": LabelVideoSegmentSerializer(new_entries, many=True).data,
             "deleted_segments": deleted_count,
         }

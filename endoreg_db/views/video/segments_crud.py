@@ -535,8 +535,6 @@ def video_segments_validation_status(request, pk: int):
                 try:
                     if segment.state:
                         segment.state.is_validated = True
-                        if notes and hasattr(segment.state, "validation_notes"):
-                            segment.state.validation_notes = notes
                         segment.state.save()
                         updated_count += 1
                     else:
@@ -547,7 +545,7 @@ def video_segments_validation_status(request, pk: int):
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
         logger.info(f"Removing Outside Segments")
-        video_file.label_video_segments.filter(video_file=video, label="outside", state__is_validated=False).delete()
+        video.label_video_segments.filter(video_file=video, label__name="outside", state__is_validated=False).delete()
         return Response(
             {
                 "message": f"Video segment validation completed for video {pk}",

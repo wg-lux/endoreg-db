@@ -1,10 +1,10 @@
 from rest_framework import serializers
-from typing import List
+from typing import Any
 from django.core.exceptions import ObjectDoesNotExist
 from django.conf import settings
 from urllib.parse import urljoin
 from pathlib import Path
-
+from rest_framework.utils.serializer_helpers import ReturnList, ReturnDict
 from ...models import LabelVideoSegment, VideoFile
 import logging
 from ._lvs_create import (
@@ -79,7 +79,6 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     
     # Add support for label names (both Label and VideoSegmentationLabel)
     label_name = serializers.CharField(write_only=True, required=False, allow_null=True, help_text="Label name")
-    label_display = serializers.SerializerMethodField()
        
     # Read-only fields for response
     video_name = serializers.SerializerMethodField(read_only=True)
@@ -119,7 +118,6 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             'end_frame_number',
             'start_time',
             'end_time',
-            "label_display", 
             "frame_predictions",
             "manual_frame_annotations",
             "time_segments"
@@ -187,7 +185,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         if obj.label:
             return obj.label.name
-        return "unknown"
+        return "Unknown"
     
     def get_manual_frame_annotations(self, obj:LabelVideoSegment):
         """
@@ -201,7 +199,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         return ImageClassificationAnnotationSerializer(obj.manual_frame_annotations, many=True).data
     
-    def get_frame_predictions(self, obj:LabelVideoSegment) -> List[dict]:
+    def get_frame_predictions(self, obj:LabelVideoSegment) -> ReturnList | Any | ReturnDict:
         """
         Return serialized frame prediction annotations for the given video segment.
         
@@ -213,7 +211,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         return ImageClassificationAnnotationSerializer(obj.frame_predictions, many=True).data
     
-    def get_all_annotations(self, obj:LabelVideoSegment):
+    def get_all_annotations(self, obj:LabelVideoSegment) -> ReturnList | Any | ReturnDict:
         """
         Retrieve all image classification annotations for every frame in the given video segment.
         
@@ -273,11 +271,6 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         
         This allows the serializer to accept either set of keys and internally synchronize them before further processing.
         """
-        #TODO @coderabbitai create an issue for @Hamzaukw 
-        # we need to ensure consistent naming across serializers
-        # Currently we use it in various places, but it should be consistent
-        # Either make the usage consistent or create another serializer that handles this
-        # Map video_file → video_id and label → label_id
         if 'video_file' in data:
             data['video_id'] = data['video_file']
         if 'label' in data:
