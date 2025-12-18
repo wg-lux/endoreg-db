@@ -86,6 +86,7 @@ dependencies = [
     "flake8>=7.3.0",
     "twine>=6.2.0",
     "googlemaps>=4.10.0",
+    "pre-commit>=4.5.1",
 ]
 requires-python = ">=3.12,<3.13"
 

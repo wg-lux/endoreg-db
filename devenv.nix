@@ -43,6 +43,8 @@ let
     zlib
     ollama.out
   ];
+  
+  SYNC_CMD = "uv sync --extra dev --extra docs";
 
   _module.args.buildInputs = baseBuildInputs;
 
@@ -120,6 +122,13 @@ in
     runtests-administration.exec = "uv run python runtests.py 'administration'";
     runtests-medical.exec = "uv run python runtests.py 'medical'";
     pyshell.exec = "uv run python manage.py shell";
+        mkdocs.exec = ''
+      uv run make -C docs html
+      uv run make -C docs linkcheck
+    '';
+    uvsnc.exec = ''
+      ${SYNC_CMD}
+    '';
   };
 
   tasks = {
@@ -141,6 +150,7 @@ in
   };
 
   processes = {
+
   };
 
   enterShell = ''
@@ -157,7 +167,8 @@ in
     #   git clone -b "$LX_ANONYMIZER_BRANCH" "$LX_ANONYMIZER_REPO" "$LX_ANONYMIZER_DIR"
     # fi
 
-    export SYNC_CMD="uv sync"
+    export SYNC_CMD="${SYNC_CMD}"
+
 
     # Ensure dependencies are synced using uv
     # Check if venv exists. If not, run sync verbosely. If it exists, sync quietly.
