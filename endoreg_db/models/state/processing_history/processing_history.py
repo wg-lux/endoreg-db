@@ -1,7 +1,6 @@
 from typing import Optional
 from logging import getLogger
 from pathlib import Path
-from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from endoreg_db.utils.file_operations import get_content_hash_filename
 
@@ -33,9 +32,6 @@ class ProcessingHistory(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-
-    def __str__(self) -> str:
-        return f"{self.file_hash} (success={self.success})"
 
     # ------------------------------------------------------------------
     # Core helpers

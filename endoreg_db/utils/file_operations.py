@@ -1,6 +1,5 @@
 import hashlib
 import os
-import shutil
 from pathlib import Path
 
 
@@ -32,8 +31,9 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
         Hexadecimal SHA-256 digest (64 characters).
     """
     h = hashlib.sha256()
+    path_obj = Path(path)
 
-    with path.open("rb") as f:
+    with path_obj.open("rb") as f:
         while True:
             chunk = f.read(chunk_size)
             if not chunk:

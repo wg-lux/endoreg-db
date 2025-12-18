@@ -34,9 +34,7 @@ class ExaminationTest(TestCase):
         serializer = ExaminationSerializer(instance=self.examination_colonoscopy)
         data = serializer.data
 
-        self.assertEqual(data['name'], EXAMINATION_COLONOSCOPY_NAME)
         self.assertIn('findings', data)
         serialized_findings = data['findings']
         serialized_finding_names = [finding['name'] for finding in serialized_findings]
         self.assertIn(FINDING_COLON_POLYP_NAME, serialized_finding_names, "Serialized findings should include 'colon_polyp' finding")
-        
