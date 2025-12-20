@@ -12,6 +12,7 @@ class VideoMetadataStatsView(APIView):
     """
     GET media/videos/{pk}/metadata/ - Get video metadata including sensitivity analysis
     """
+
     permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, pk):
@@ -19,11 +20,11 @@ class VideoMetadataStatsView(APIView):
 
         # Get or calculate metadata
         metadata = {
-            'sensitiveFrameCount': getattr(video, 'sensitive_frame_count', None),
-            'totalFrames': getattr(video, 'total_frames', None),
-            'sensitiveRatio': getattr(video, 'sensitive_ratio', None),
-            'duration': getattr(video, 'duration', None),
-            'resolution': getattr(video, 'resolution', None),
+            "sensitiveFrameCount": getattr(video, "sensitive_frame_count", None),
+            "totalFrames": getattr(video, "total_frames", None),
+            "sensitiveRatio": getattr(video, "sensitive_ratio", None),
+            "duration": getattr(video, "duration", None),
+            "resolution": getattr(video, "resolution", None),
         }
 
         return Response(metadata, status=status.HTTP_200_OK)

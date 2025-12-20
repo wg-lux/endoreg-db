@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from django.db import models
 
+
 class Person(models.Model):
     """
     Abstract base class for a person.
@@ -32,4 +33,3 @@ class Person(models.Model):
 
     class Meta:
         abstract = True
-

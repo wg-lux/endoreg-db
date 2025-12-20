@@ -41,7 +41,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         """
         Adds the '--verbose' flag to the argument parser.
-        
+
         When specified, this flag enables verbose output for the management command.
         """
         parser.add_argument(
@@ -53,11 +53,11 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """
         Load YAML data for each predefined model.
-        
+
         Iterates over the models specified in IMPORT_MODELS, retrieving each model's metadata from
         IMPORT_METADATA and invoking load_model_data_from_yaml to load YAML data. The verbosity of
         the output is determined by the 'verbose' flag in the command options.
-        
+
         Args:
             *args: Additional positional arguments.
             **options: Command options; must include a 'verbose' key to control output detail.

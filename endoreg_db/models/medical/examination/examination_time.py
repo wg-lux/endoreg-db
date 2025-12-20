@@ -37,8 +37,12 @@ class ExaminationTime(models.Model):
     )
 
     if TYPE_CHECKING:
-        time_types = cast(models.manager.RelatedManager["ExaminationTimeType"], time_types)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        time_types = cast(
+            models.manager.RelatedManager["ExaminationTimeType"], time_types
+        )
+        information_sources = cast(
+            models.manager.RelatedManager["InformationSource"], information_sources
+        )
 
     def __str__(self) -> str:
         """

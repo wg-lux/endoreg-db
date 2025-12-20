@@ -20,7 +20,9 @@ class TransportRoute(models.Model):
 
     distance = models.FloatField()
     name = models.CharField(max_length=255)
-    emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+    emission_factor = models.ForeignKey(
+        "EmissionFactor", on_delete=models.SET_NULL, null=True
+    )
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:

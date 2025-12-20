@@ -29,10 +29,11 @@ from rest_framework.permissions import BasePermission
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import cached_property
 from endoreg_db.utils.permissions import is_debug_mode
-from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies, get_needed_role
+from .policy import REQUIRED_ROLES, satisfies, get_needed_role
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 def _normalized_route_name(request, view) -> str:
     """
@@ -50,6 +51,7 @@ def _normalized_route_name(request, view) -> str:
         if url_name:
             return url_name
     return view.__class__.__name__
+
 
 def _route_name(request, view):
     """
@@ -95,8 +97,12 @@ class PolicyPermission(BasePermission):
 
         # 1) DEBUG bypass
         if is_debug_mode():
-            logger.info("RBAC BYPASS (DEBUG): route=%s method=%s user=%s",
-                        route, method, getattr(getattr(request, "user", None), "username", "anon"))
+            logger.info(
+                "RBAC BYPASS (DEBUG): route=%s method=%s user=%s",
+                route,
+                method,
+                getattr(getattr(request, "user", None), "username", "anon"),
+            )
             return True
 
         # 2) Must be authenticated
@@ -108,11 +114,12 @@ class PolicyPermission(BasePermission):
         # 3) Determine needed role
         needed = get_needed_role(route, method)
         if not needed:
-          logger.info(
-            "RBAC DENY (NO ROLE): route=%s method=%s reason=no mapping",
-            route, method
-          )
-          return False
+            logger.info(
+                "RBAC DENY (NO ROLE): route=%s method=%s reason=no mapping",
+                route,
+                method,
+            )
+            return False
 
         # 4) Collect roles and decide
         user_roles = set(user.groups.values_list("name", flat=True))
@@ -120,8 +127,12 @@ class PolicyPermission(BasePermission):
 
         logger.info(
             "RBAC DECISION: route=%s method=%s need=%s user=%s roles=%s => %s",
-            route, method, needed, getattr(user, "username", "anon"),
-            sorted(user_roles), "ALLOW" if allowed else "DENY"
+            route,
+            method,
+            needed,
+            getattr(user, "username", "anon"),
+            sorted(user_roles),
+            "ALLOW" if allowed else "DENY",
         )
 
         return allowed

@@ -62,10 +62,14 @@ def _validate_requirement_configuration(fields: dict, *, entry: dict, model):
             return True
         return any(not item for item in value)
 
-    missing = [key for key in ("requirement_types", "operators") if _values_missing(key)]
+    missing = [
+        key for key in ("requirement_types", "operators") if _values_missing(key)
+    ]
     if missing:
         missing_display = ", ".join(missing)
-        raise ValueError(f"{model.__name__} '{name}' is missing required configuration for: {missing_display}.")
+        raise ValueError(
+            f"{model.__name__} '{name}' is missing required configuration for: {missing_display}."
+        )
 
 
 IMPORT_METADATA = {

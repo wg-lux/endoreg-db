@@ -5,9 +5,7 @@ from datetime import timedelta
 from typing import Any, Dict
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
-from numpy import delete
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response

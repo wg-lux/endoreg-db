@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -53,8 +51,12 @@ def test_create_anonymized_frame_files_masks_outside_frames(tmp_path, monkeypatc
     assert len(generated) == len(frame_specs)
     assert all(path.parent == anonymized_dir for path in generated)
 
-    inside_image = anonymize_module.cv2.imread((anonymized_dir / "frame_0000000.jpg").as_posix())
-    outside_image = anonymize_module.cv2.imread((anonymized_dir / "frame_0000001.jpg").as_posix())
+    inside_image = anonymize_module.cv2.imread(
+        (anonymized_dir / "frame_0000000.jpg").as_posix()
+    )
+    outside_image = anonymize_module.cv2.imread(
+        (anonymized_dir / "frame_0000001.jpg").as_posix()
+    )
 
     assert inside_image is not None and inside_image.mean() > 0
     assert outside_image is not None and np.all(outside_image == 5)

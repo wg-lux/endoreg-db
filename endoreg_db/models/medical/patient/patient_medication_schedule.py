@@ -7,7 +7,11 @@ if TYPE_CHECKING:
     from .patient_medication import PatientMedication
     from ..medication import MedicationSchedule
     from ....utils.links.requirement_link import RequirementLinks  # Added
-    from ..medication import Medication, MedicationIndication, MedicationIntakeTime  # Added
+    from ..medication import (
+        Medication,
+        MedicationIndication,
+        MedicationIntakeTime,
+    )  # Added
 
 
 class PatientMedicationSchedule(models.Model):
@@ -16,7 +20,9 @@ class PatientMedicationSchedule(models.Model):
     """
 
     patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
-    medication = models.ManyToManyField("PatientMedication", related_name="patient_medication_schedules", blank=True)
+    medication = models.ManyToManyField(
+        "PatientMedication", related_name="patient_medication_schedules", blank=True
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -24,7 +30,9 @@ class PatientMedicationSchedule(models.Model):
     if TYPE_CHECKING:
         patient: models.ForeignKey["Patient"]
 
-        medication = cast(models.manager.RelatedManager["PatientMedication"], medication)
+        medication = cast(
+            models.manager.RelatedManager["PatientMedication"], medication
+        )
 
     @property
     def links(self) -> "RequirementLinks":
@@ -37,14 +45,20 @@ class PatientMedicationSchedule(models.Model):
         aggregated_medication_indications: List["MedicationIndication"] = []
         aggregated_medication_intake_times: List["MedicationIntakeTime"] = []
 
-        patient_meds_in_schedule: List["PatientMedication"] = list(self.medication.all())
+        patient_meds_in_schedule: List["PatientMedication"] = list(
+            self.medication.all()
+        )
 
         for pm_instance in patient_meds_in_schedule:
             pm_links_obj = pm_instance.links
 
             aggregated_medications.extend(pm_links_obj.medications)
-            aggregated_medication_indications.extend(pm_links_obj.medication_indications)
-            aggregated_medication_intake_times.extend(pm_links_obj.medication_intake_times)
+            aggregated_medication_indications.extend(
+                pm_links_obj.medication_indications
+            )
+            aggregated_medication_intake_times.extend(
+                pm_links_obj.medication_intake_times
+            )
 
         return RequirementLinks(
             medications=list(set(aggregated_medications)),
@@ -64,12 +78,16 @@ class PatientMedicationSchedule(models.Model):
         from ..medication import MedicationIndicationType
         from .patient_medication import PatientMedication
 
-        medication_indication = MedicationIndicationType.get_random_indication_by_type(name=indication_type)
+        medication_indication = MedicationIndicationType.get_random_indication_by_type(
+            name=indication_type
+        )
 
         patient_medication_schedule = cls.objects.create(patient=patient)
         patient_medication_schedule.save()
 
-        patient_medication = PatientMedication.create_by_patient_and_indication(patient, medication_indication)
+        patient_medication = PatientMedication.create_by_patient_and_indication(
+            patient, medication_indication
+        )
         patient_medication_schedule.medication.add(patient_medication)
         patient_medication_schedule.save()
 
@@ -87,7 +105,9 @@ class PatientMedicationSchedule(models.Model):
         patient_medication_schedule = cls.objects.create(patient=patient)
         patient_medication_schedule.save()
 
-        patient_medication = PatientMedication.create_by_patient_and_indication(patient, medication_indication)
+        patient_medication = PatientMedication.create_by_patient_and_indication(
+            patient, medication_indication
+        )
         patient_medication_schedule.medication.add(patient_medication)
         patient_medication_schedule.save()
 
@@ -112,7 +132,11 @@ class PatientMedicationSchedule(models.Model):
         intake_times = medication_schedule.get_intake_times()
 
         patient_medication = PatientMedication.objects.create(
-            patient=self.patient, medication=drug, medication_indication=medication_indication, unit=unit, dosage=dosage
+            patient=self.patient,
+            medication=drug,
+            medication_indication=medication_indication,
+            unit=unit,
+            dosage=dosage,
         )
 
         patient_medication.intake_times.set(intake_times)

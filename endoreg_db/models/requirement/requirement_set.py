@@ -83,7 +83,7 @@ class RequirementSet(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    
+
     depends_on = models.ManyToManyField(
         "self",
         symmetrical=False,
@@ -94,7 +94,7 @@ class RequirementSet(models.Model):
             "bevor dieses Set geprüft wird ('after')."
         ),
     )
-    
+
     requirements = models.ManyToManyField(
         "Requirement",
         blank=True,
@@ -135,17 +135,31 @@ class RequirementSet(models.Model):
     if TYPE_CHECKING:
         from typing import Optional, cast
 
-        from endoreg_db.models import ExaminationRequirementSet, InformationSource, Requirement, Tag
+        from endoreg_db.models import (
+            ExaminationRequirementSet,
+            InformationSource,
+            Requirement,
+            Tag,
+        )
 
         tags = cast(models.manager.RelatedManager["Tag"], tags)
         requirements = cast(models.manager.RelatedManager["Requirement"], requirements)
-        links_to_sets = cast(models.manager.RelatedManager["RequirementSet"], links_to_sets)
-        reqset_exam_links = cast(models.manager.RelatedManager["ExaminationRequirementSet"], reqset_exam_links)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        links_to_sets = cast(
+            models.manager.RelatedManager["RequirementSet"], links_to_sets
+        )
+        reqset_exam_links = cast(
+            models.manager.RelatedManager["ExaminationRequirementSet"],
+            reqset_exam_links,
+        )
+        information_sources = cast(
+            models.manager.RelatedManager["InformationSource"], information_sources
+        )
         requirement_set_type: models.ForeignKey["RequirementSetType | None"]
 
         @property
-        def links_from_sets(self) -> "models.manager.RelatedManager[RequirementSet]": ...
+        def links_from_sets(
+            self,
+        ) -> "models.manager.RelatedManager[RequirementSet]": ...
 
     def natural_key(self):
         """Return the natural key as a tuple containing the instance's name."""
@@ -175,7 +189,9 @@ class RequirementSet(models.Model):
         results = []
         for requirement in self.requirements.all():
             # Get the appropriate input for this specific requirement
-            evaluation_input = self._get_evaluation_input_for_requirement(requirement, input_object)
+            evaluation_input = self._get_evaluation_input_for_requirement(
+                requirement, input_object
+            )
             result = requirement.evaluate(evaluation_input, mode=mode)
             results.append(result)
         return results
@@ -199,7 +215,9 @@ class RequirementSet(models.Model):
                 return input_object
 
         # Import here to avoid circular imports
-        from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+        from endoreg_db.models.medical.patient.patient_examination import (
+            PatientExamination,
+        )
         from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 
         # Handle PatientExamination -> PatientFinding conversion
@@ -239,7 +257,10 @@ class RequirementSet(models.Model):
 
         If the requirement set type is defined and matches a known type, returns the corresponding function from REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP. Returns None if no matching function is found.
         """
-        if self.requirement_set_type and self.requirement_set_type.name in REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP:
+        if (
+            self.requirement_set_type
+            and self.requirement_set_type.name in REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP
+        ):
             return REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP[self.requirement_set_type.name]
         return None
 
@@ -260,7 +281,9 @@ class RequirementSet(models.Model):
 
         results = evaluate_r_results + evaluate_rs_results
 
-        eval_result = self.eval_function(results) if self.eval_function else all(results)
+        eval_result = (
+            self.eval_function(results) if self.eval_function else all(results)
+        )
 
         return eval_result
 

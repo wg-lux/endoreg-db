@@ -16,7 +16,9 @@ class Material(models.Model):
     objects = MaterialManager()
 
     name = models.CharField(max_length=255)
-    emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+    emission_factor = models.ForeignKey(
+        "EmissionFactor", on_delete=models.SET_NULL, null=True
+    )
 
     if TYPE_CHECKING:
         emission_factor: models.ForeignKey["EmissionFactor|None"]

@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 
 import endoreg_db.utils.paths as path_utils
 
-from ....utils.file_operations import get_content_hash_filename
-from ....utils.hashs import get_video_hash
 from ....utils.video.ffmpeg_wrapper import transcode_videofile_if_required
 
 logger = logging.getLogger(__name__)

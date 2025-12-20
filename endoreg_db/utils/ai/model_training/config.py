@@ -33,6 +33,7 @@ DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2
 # TRAINING CONFIG
 # ---------------------------------------------------------------------
 
+
 @dataclass
 class TrainingConfig:
     """
@@ -73,15 +74,15 @@ class TrainingConfig:
 
     # --- LEARNING RATES --------------------------------------------------
     # Base learning rates for classifier head and backbone.
-    lr_head: float = 1e-3       # usually larger (newly initialized layer)
-    lr_backbone: float = 1e-4   # smaller (pretrained GastroNet backbone)
+    lr_head: float = 1e-3  # usually larger (newly initialized layer)
+    lr_backbone: float = 1e-4  # smaller (pretrained GastroNet backbone)
 
     # --- FOCAL LOSS HYPERPARAMETERS -------------------------------------
-    gamma_focal: float = 2.0    # how strongly to focus on hard examples
-    alpha_focal: float = 0.25   # weight for positives vs negatives
+    gamma_focal: float = 2.0  # how strongly to focus on hard examples
+    alpha_focal: float = 0.25  # weight for positives vs negatives
 
     # --- DEVICE & SEED ---------------------------------------------------
-    device: str = "auto"        # "auto", "cpu", or "cuda"
+    device: str = "auto"  # "auto", "cpu", or "cuda"
     random_seed: int = 42
 
     # --- LABEL SEMANTICS -------------------------------------------------
@@ -103,8 +104,7 @@ class TrainingConfig:
     # (Both head and backbone decay towards this value.)
     min_lr: float = 1e-6
 
-
-    #which CNN backbone / weights to use
+    # which CNN backbone / weights to use
     # "gastro_rn50"          → current behavior (ResNet50 + GastroNet checkpoint)
     # "resnet50_imagenet"    → ResNet50 with ImageNet weights
     # "resnet50_random"      → ResNet50 with random initialization
@@ -114,4 +114,4 @@ class TrainingConfig:
     # whether to freeze backbone (feature extractor)
     freeze_backbone: bool = True
 
-    #backbone_name: str = "gastro_rn50"
+    # backbone_name: str = "gastro_rn50"

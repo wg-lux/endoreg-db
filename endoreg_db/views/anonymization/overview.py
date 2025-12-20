@@ -19,7 +19,6 @@ from endoreg_db.services.polling_coordinator import (
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 from ...serializers import FileOverviewSerializer, VoPPatientDataSerializer
-from django.http import JsonResponse
 from endoreg_db.utils.operation_log import record_operation
 
 
@@ -131,7 +130,9 @@ def start_anonymization(request, file_id: int):
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
     file_type = info.get("mediaType") or "unknown"
-    status_before = info.get("anonymizationStatus") or info.get("status") or "not_started"
+    status_before = (
+        info.get("anonymizationStatus") or info.get("status") or "not_started"
+    )
 
     # Use processing lock context to prevent duplicate processing
     with ProcessingLockContext(file_id, file_type) as lock:
@@ -159,7 +160,9 @@ def start_anonymization(request, file_id: int):
         try:
             info_after = AnonymizationService.get_status(file_id) or {}
         except Exception:
-            logger.exception("Failed to refresh anonymization status for file %s", file_id)
+            logger.exception(
+                "Failed to refresh anonymization status for file %s", file_id
+            )
             info_after = {}
 
         status_after = (
@@ -172,7 +175,7 @@ def start_anonymization(request, file_id: int):
         record_operation(
             request,
             action="anonymization.start",
-            resource_type=kind,          # 'video' or 'pdf' as returned by service.start
+            resource_type=kind,  # 'video' or 'pdf' as returned by service.start
             resource_id=file_id,
             status_before=str(status_before),
             status_after=str(status_after),
@@ -189,7 +192,6 @@ def start_anonymization(request, file_id: int):
                 "processing_locked": True,
             }
         )
-
 
 
 # ---------- current with coordination ------------------------------------

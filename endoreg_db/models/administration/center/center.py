@@ -48,10 +48,14 @@ class Center(models.Model):
         def endoscopes(self) -> RelatedManager[Endoscope]: ...
 
         @property
-        def anonymexaminationreport_set(self) -> RelatedManager[AnonymExaminationReport]: ...
+        def anonymexaminationreport_set(
+            self,
+        ) -> RelatedManager[AnonymExaminationReport]: ...
 
         @property
-        def anonymhistologyreport_set(self) -> RelatedManager[AnonymHistologyReport]: ...
+        def anonymhistologyreport_set(
+            self,
+        ) -> RelatedManager[AnonymHistologyReport]: ...
 
     @classmethod
     def get_by_name(cls, name):

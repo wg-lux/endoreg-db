@@ -1,18 +1,14 @@
 import logging
 import os
 from pathlib import Path
-from django.core.exceptions import ObjectDoesNotExist
 from django.core.management import call_command
 from icecream import ic
 from tqdm import tqdm
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models import (
     AiModel,
-    Center,
-    EndoscopyProcessor,
     LabelVideoSegment,
     ModelMeta,
-    SensitiveMeta,
     VideoFile,
 )
 
@@ -70,7 +66,7 @@ def process_video_dir(
                 file_path=file_path,
                 center_name=center_name,
                 processor_name=endoscopy_processor_name,
-                video_hash=sha256_file(file_path)
+                video_hash=sha256_file(file_path),
             )
             logger.warning(f"Processing video file: {video_file}")
             try:

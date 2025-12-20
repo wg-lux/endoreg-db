@@ -16,10 +16,14 @@ class CenterWaste(models.Model):
         related_name="center_wastes",
     )
     year = models.IntegerField()
-    waste: models.ForeignKey["Waste"] = models.ForeignKey("Waste", on_delete=models.CASCADE)
+    waste: models.ForeignKey["Waste"] = models.ForeignKey(
+        "Waste", on_delete=models.CASCADE
+    )
     quantity = models.FloatField()
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
+    emission_factor = models.ForeignKey(
+        "EmissionFactor", on_delete=models.SET_NULL, null=True
+    )
 
     if TYPE_CHECKING:
         center: models.ForeignKey["Center"]

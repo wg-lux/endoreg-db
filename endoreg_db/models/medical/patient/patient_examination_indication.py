@@ -13,14 +13,25 @@ if TYPE_CHECKING:
 class PatientExaminationIndication(models.Model):
     """A model to store the indication for a patient examination."""
 
-    patient_examination = models.ForeignKey("PatientExamination", on_delete=models.CASCADE, related_name="indications")
-    examination_indication = models.ForeignKey("ExaminationIndication", on_delete=models.CASCADE)
-    indication_choice = models.ForeignKey("ExaminationIndicationClassificationChoice", on_delete=models.CASCADE, blank=True, null=True)
+    patient_examination = models.ForeignKey(
+        "PatientExamination", on_delete=models.CASCADE, related_name="indications"
+    )
+    examination_indication = models.ForeignKey(
+        "ExaminationIndication", on_delete=models.CASCADE
+    )
+    indication_choice = models.ForeignKey(
+        "ExaminationIndicationClassificationChoice",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
 
     if TYPE_CHECKING:
         patient_examination: models.ForeignKey["PatientExamination"]
         examination_indication: models.ForeignKey["ExaminationIndication"]
-        indication_choice: models.ForeignKey["ExaminationIndicationClassificationChoice|None"]
+        indication_choice: models.ForeignKey[
+            "ExaminationIndicationClassificationChoice|None"
+        ]
 
     def __str__(self):
         return f"{self.patient_examination} - {self.examination_indication}"

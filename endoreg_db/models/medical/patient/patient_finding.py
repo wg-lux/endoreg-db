@@ -16,32 +16,62 @@ if TYPE_CHECKING:
 
 
 class PatientFinding(models.Model):
-    patient_examination = models.ForeignKey("PatientExamination", on_delete=models.CASCADE, related_name="patient_findings")
-    finding = models.ForeignKey("Finding", on_delete=models.CASCADE, related_name="finding_patient_findings")
+    patient_examination = models.ForeignKey(
+        "PatientExamination", on_delete=models.CASCADE, related_name="patient_findings"
+    )
+    finding = models.ForeignKey(
+        "Finding", on_delete=models.CASCADE, related_name="finding_patient_findings"
+    )
 
     # Audit-Felder für medizinische Nachverfolgung
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey("auth.User", on_delete=models.PROTECT, related_name="created_findings", null=True, blank=True)
-    updated_by = models.ForeignKey("auth.User", on_delete=models.PROTECT, related_name="updated_findings", null=True, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.PROTECT,
+        related_name="created_findings",
+        null=True,
+        blank=True,
+    )
+    updated_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.PROTECT,
+        related_name="updated_findings",
+        null=True,
+        blank=True,
+    )
 
     # Soft Delete für historische Daten
-    is_active = models.BooleanField(default=True, help_text="Deaktiviert statt gelöscht für Audit-Trail")
+    is_active = models.BooleanField(
+        default=True, help_text="Deaktiviert statt gelöscht für Audit-Trail"
+    )
     deactivated_at = models.DateTimeField(null=True, blank=True)
-    deactivated_by = models.ForeignKey("auth.User", on_delete=models.PROTECT, related_name="deactivated_findings", null=True, blank=True)
+    deactivated_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.PROTECT,
+        related_name="deactivated_findings",
+        null=True,
+        blank=True,
+    )
 
     if TYPE_CHECKING:
         patient_examination: models.ForeignKey["PatientExamination"]
         finding: models.ForeignKey["Finding"]
 
         @property
-        def video_segments(self) -> models.manager.RelatedManager["LabelVideoSegment"]: ...
+        def video_segments(
+            self,
+        ) -> models.manager.RelatedManager["LabelVideoSegment"]: ...
 
         @property
-        def interventions(self) -> models.manager.RelatedManager["PatientFindingIntervention"]: ...
+        def interventions(
+            self,
+        ) -> models.manager.RelatedManager["PatientFindingIntervention"]: ...
 
         @property
-        def classifications(self) -> models.manager.RelatedManager["PatientFindingClassification"]: ...
+        def classifications(
+            self,
+        ) -> models.manager.RelatedManager["PatientFindingClassification"]: ...
 
     class Meta:
         verbose_name = "Patient Finding"
@@ -51,13 +81,19 @@ class PatientFinding(models.Model):
         # Wichtige Constraints für Datenintegrität
         constraints = [
             models.UniqueConstraint(
-                fields=["patient_examination", "finding"], condition=models.Q(is_active=True), name="unique_active_finding_per_examination"
+                fields=["patient_examination", "finding"],
+                condition=models.Q(is_active=True),
+                name="unique_active_finding_per_examination",
             ),
             models.CheckConstraint(
                 condition=models.Q(  # called .check in future?
                     deactivated_at__isnull=True, deactivated_by__isnull=True
                 )
-                | models.Q(deactivated_at__isnull=False, deactivated_by__isnull=False, is_active=False),
+                | models.Q(
+                    deactivated_at__isnull=False,
+                    deactivated_by__isnull=False,
+                    is_active=False,
+                ),
                 name="deactivation_fields_consistency",
             ),
         ]
@@ -89,10 +125,14 @@ class PatientFinding(models.Model):
 
         # Prüfe ob Finding für diese Examination erlaubt ist
         if self.finding and self.patient_examination:
-            available_findings = self.patient_examination.examination_safe.get_available_findings()
+            available_findings = (
+                self.patient_examination.examination_safe.get_available_findings()
+            )
             if self.finding not in available_findings:
                 raise ValidationError(
-                    {"finding": f'Finding "{self.finding.name}" ist nicht für Examination "{self.patient_examination.examination_safe.name}" erlaubt.'}
+                    {
+                        "finding": f'Finding "{self.finding.name}" ist nicht für Examination "{self.patient_examination.examination_safe.name}" erlaubt.'
+                    }
                 )
 
         # Prüfe Required Findings Logic
@@ -118,10 +158,15 @@ class PatientFinding(models.Model):
         required_findings = getattr(examination, "required_findings", None)
         if required_findings and required_findings.exists():
             # Prüfe ob alle Required Findings vorhanden sind
-            existing_findings = self.patient_examination.patient_findings.filter(is_active=True).values_list("finding", flat=True)
+            existing_findings = self.patient_examination.patient_findings.filter(
+                is_active=True
+            ).values_list("finding", flat=True)
 
             missing_required = required_findings.exclude(id__in=existing_findings)
-            if missing_required.exists() and self.finding not in required_findings.all():
+            if (
+                missing_required.exists()
+                and self.finding not in required_findings.all()
+            ):
                 missing_names = ", ".join([f.name for f in missing_required])
                 raise ValidationError(f"Erforderliche Findings fehlen: {missing_names}")
 
@@ -151,7 +196,14 @@ class PatientFinding(models.Model):
                 self.deactivated_at = None
                 self.deactivated_by = None
                 self.updated_by = user
-                self.save(update_fields=["is_active", "deactivated_at", "deactivated_by", "updated_by"])
+                self.save(
+                    update_fields=[
+                        "is_active",
+                        "deactivated_at",
+                        "deactivated_by",
+                        "updated_by",
+                    ]
+                )
             except ValidationError as e:
                 raise ValidationError(f"Reaktivierung nicht möglich: {e}")
 
@@ -189,20 +241,30 @@ class PatientFinding(models.Model):
 
         try:
             classification = FindingClassification.objects.get(id=classification_id)
-            classification_choice = FindingClassificationChoice.objects.filter(id=classification_choice_id).first()
+            classification_choice = FindingClassificationChoice.objects.filter(
+                id=classification_choice_id
+            ).first()
 
             if not classification.choices.filter(id=classification_choice_id).exists():
-                raise ValidationError(f"Classification Choice {classification_choice_id} gehört nicht zu Classification {classification_id}")
+                raise ValidationError(
+                    f"Classification Choice {classification_choice_id} gehört nicht zu Classification {classification_id}"
+                )
 
-            existing = self.classifications.filter(classification=classification, classification_choice=classification_choice, is_active=True).first()
+            existing = self.classifications.filter(
+                classification=classification,
+                classification_choice=classification_choice,
+                is_active=True,
+            ).first()
 
             if existing:
                 return existing
 
-            patient_finding_classification = PatientFindingClassification.objects.create(
-                finding=self,
-                classification_id=classification_id,
-                classification_choice_id=classification_choice_id,
+            patient_finding_classification = (
+                PatientFindingClassification.objects.create(
+                    finding=self,
+                    classification_id=classification_id,
+                    classification_choice_id=classification_choice_id,
+                )
             )
 
             return patient_finding_classification
@@ -233,7 +295,11 @@ class PatientFinding(models.Model):
             intervention = FindingIntervention.objects.get(id=intervention_id)
 
             patient_finding_intervention = PatientFindingIntervention.objects.create(
-                patient_finding=self, intervention=intervention, state=state, date=date or timezone.now(), created_by=user
+                patient_finding=self,
+                intervention=intervention,
+                state=state,
+                date=date or timezone.now(),
+                created_by=user,
             )
 
             return patient_finding_intervention
@@ -273,7 +339,9 @@ class PatientFinding(models.Model):
         Returns:
                 QuerySet: Classifications related to this finding filtered by the "location" classification type.
         """
-        classifications = self.classifications.filter(classification__classification_types__name__iexact="location")
+        classifications = self.classifications.filter(
+            classification__classification_types__name__iexact="location"
+        )
         return classifications
 
     @property
@@ -284,7 +352,9 @@ class PatientFinding(models.Model):
         Returns:
                 QuerySet: Classifications related to this finding filtered by the "morphology" classification type.
         """
-        classifications = self.classifications.filter(classification__classification_types__name__iexact="morphology")
+        classifications = self.classifications.filter(
+            classification__classification_types__name__iexact="morphology"
+        )
         return classifications
 
     @property
@@ -318,7 +388,9 @@ class PatientFinding(models.Model):
             if pf_classification.classification:
                 finding_classifications_list.append(pf_classification.classification)
             if pf_classification.classification_choice:
-                finding_classification_choices_list.append(pf_classification.classification_choice)
+                finding_classification_choices_list.append(
+                    pf_classification.classification_choice
+                )
 
         # Get all active finding interventions
         finding_interventions_list = []
@@ -327,8 +399,12 @@ class PatientFinding(models.Model):
                 finding_interventions_list.append(pf_intervention.intervention)
 
         # Include patient examination and patient for context
-        patient_examinations_list = [self.patient_examination] if self.patient_examination else []
-        patient_findings_list = cast("List[PatientFinding]", [self])  # Include self for direct patient finding evaluations
+        patient_examinations_list = (
+            [self.patient_examination] if self.patient_examination else []
+        )
+        patient_findings_list = cast(
+            "List[PatientFinding]", [self]
+        )  # Include self for direct patient finding evaluations
 
         return RequirementLinks(
             findings=findings_list,

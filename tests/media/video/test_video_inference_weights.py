@@ -49,7 +49,9 @@ def test_predict_video_with_huggingface_weights(base_db_data):
 
     weights_path = Path(model_meta.weights.path)
     assert weights_path.exists(), "Downloaded Hugging Face weights must exist"
-    assert not _is_stub_weights_file(weights_path), "Hugging Face weights should not be treated as stubs"
+    assert not _is_stub_weights_file(weights_path), (
+        "Hugging Face weights should not be treated as stubs"
+    )
 
     video_file = _prepare_video_file()
     try:
@@ -62,14 +64,18 @@ def test_predict_video_with_huggingface_weights(base_db_data):
         assert isinstance(sequences, dict)
         assert sequences, "Inference with Hugging Face weights should yield predictions"
         assert all(isinstance(spans, list) for spans in sequences.values())
-        label_names = {label.name for label in model_meta.labelset.get_labels_in_order()}
+        label_names = {
+            label.name for label in model_meta.labelset.get_labels_in_order()
+        }
         assert set(sequences.keys()).issubset(label_names)
 
         prediction_meta_exists = VideoPredictionMeta.objects.filter(
             video_file=video_file,
             model_meta=model_meta,
         ).exists()
-        assert prediction_meta_exists, "VideoPredictionMeta should be created for the inference run"
+        assert prediction_meta_exists, (
+            "VideoPredictionMeta should be created for the inference run"
+        )
 
     finally:
         weight_name = model_meta.weights.name
@@ -93,7 +99,9 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
     load_ai_model_label_data()
     load_ai_model_data()
 
-    fixture_path = Path("tests/assets/colo_segmentation_RegNetX800MF_6.safetensors").resolve()
+    fixture_path = Path(
+        "tests/assets/colo_segmentation_RegNetX800MF_6.safetensors"
+    ).resolve()
     assert fixture_path.exists(), "Local safetensors fixture must exist"
 
     meta_name = "test_local_colonoscopy_inference"
@@ -120,7 +128,9 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
 
     weights_path = Path(model_meta.weights.path)
     assert weights_path.exists(), "Copied local weights must be present"
-    assert not _is_stub_weights_file(weights_path), "Local fixture weights should not be treated as stubs"
+    assert not _is_stub_weights_file(weights_path), (
+        "Local fixture weights should not be treated as stubs"
+    )
 
     video_file = _prepare_video_file()
     try:
@@ -131,16 +141,22 @@ def test_predict_video_with_local_fixture_weights(base_db_data):
         )
 
         assert isinstance(sequences, dict)
-        assert sequences, "Inference with local fixture weights should yield predictions"
+        assert sequences, (
+            "Inference with local fixture weights should yield predictions"
+        )
         assert all(isinstance(spans, list) for spans in sequences.values())
-        label_names = {label.name for label in model_meta.labelset.get_labels_in_order()}
+        label_names = {
+            label.name for label in model_meta.labelset.get_labels_in_order()
+        }
         assert set(sequences.keys()).issubset(label_names)
 
         prediction_meta_exists = VideoPredictionMeta.objects.filter(
             video_file=video_file,
             model_meta=model_meta,
         ).exists()
-        assert prediction_meta_exists, "VideoPredictionMeta should be created for the inference run"
+        assert prediction_meta_exists, (
+            "VideoPredictionMeta should be created for the inference run"
+        )
 
     finally:
         weight_name = model_meta.weights.name

@@ -1,9 +1,11 @@
 # Modern Media Framework: Sensitive Metadata Management
-import string
 
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+import json
+import logging
+
 from numpy import number
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -15,7 +17,7 @@ from endoreg_db.serializers.meta import (
     SensitiveMetaUpdateSerializer,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-
+logger = logging.getLogger(__name__)    
 # === VIDEO SENSITIVE METADATA ===
 
 
@@ -190,7 +192,8 @@ def pdf_sensitive_metadata(request, pk):
         if serializer.is_valid():
             updated_instance = serializer.save()
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
-
+            sensitive_meta.update_from_dict(response_serializer.data)
+            logger.info("Updated sensitive metadata: %s", json.dumps(response_serializer.data))
             return Response(
                 {
                     "message": "Sensitive metadata updated successfully",
@@ -269,7 +272,7 @@ def sensitive_metadata_list(request):
     """
     GET /api/media/sensitive-metadata/
 
-    List all sensitive metadata (combined PDFs and Videos).
+    List all sensitive metadata (combined reports and Videos).
     Supports filtering by content_type, status, etc.
 
     Query parameters:
@@ -286,7 +289,7 @@ def sensitive_metadata_list(request):
     # Filter by content type
     content_type = request.query_params.get("content_type")
     if content_type == "pdf":
-        # Only PDFs - filter by existence of related PDFs
+        # Only reports - filter by existence of related reports
         queryset = queryset.filter(raw_pdf_files__isnull=False).distinct()
     elif content_type == "video":
         # Only Videos - filter by existence of related video
@@ -331,12 +334,12 @@ def pdf_sensitive_metadata_list(request):
     """
     GET /api/media/pdfs/sensitive-metadata/
 
-    List sensitive metadata for PDFs only.
+    List sensitive metadata for reports only.
     Replaces legacy /api/pdf/sensitivemeta/list/
     """
     from endoreg_db.serializers.meta import SensitiveMetaDetailSerializer
 
-    # Get all PDFs with sensitive metadata
+    # Get all reports with sensitive metadata
     queryset = (
         SensitiveMeta.objects.select_related("state")
         .filter(raw_pdf_files__isnull=False)

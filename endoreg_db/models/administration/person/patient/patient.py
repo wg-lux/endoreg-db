@@ -18,7 +18,6 @@ if TYPE_CHECKING:
         AnonymExaminationReport,
         AnonymHistologyReport,
         Center,
-        ExaminationIndication,
         Gender,
         PatientDisease,
         PatientEvent,

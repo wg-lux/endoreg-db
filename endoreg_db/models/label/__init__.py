@@ -19,5 +19,5 @@ __all__ = [
     "VideoSegmentationLabelSet",
     "LabelVideoSegment",
     "ImageClassificationAnnotation",
-    "VideoSegmentationAnnotation"
+    "VideoSegmentationAnnotation",
 ]

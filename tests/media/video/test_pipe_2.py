@@ -13,7 +13,10 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
     video_file = test.video_file
 
     # Check if this is a real VideoFile or MockVideoFile
-    is_mock_video = hasattr(video_file, "__class__") and video_file.__class__.__name__ == "MockVideoFile"
+    is_mock_video = (
+        hasattr(video_file, "__class__")
+        and video_file.__class__.__name__ == "MockVideoFile"
+    )
 
     # Store raw file path before it's deleted (only for real VideoFile)
     original_raw_file_path = None
@@ -27,7 +30,10 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
 
     if is_mock_video:
         # For MockVideoFile, only test basic properties
-        test.assertTrue(hasattr(video_file, "is_processed"), "MockVideoFile should have is_processed attribute")
+        test.assertTrue(
+            hasattr(video_file, "is_processed"),
+            "MockVideoFile should have is_processed attribute",
+        )
         return  # Skip detailed assertions for mock
 
     # Real VideoFile assertions - use type ignore to handle union type
@@ -38,12 +44,21 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
 
     # Check Anonymized Video
     test.assertTrue(video_file.is_processed, "VideoFile should be marked as processed")
-    test.assertIsNotNone(video_file.processed_file, "processed_file field should be set")
-    test.assertTrue(bool(video_file.processed_file.name), "processed_file field should have a name")
+    test.assertIsNotNone(
+        video_file.processed_file, "processed_file field should be set"
+    )
+    test.assertTrue(
+        bool(video_file.processed_file.name), "processed_file field should have a name"
+    )
     processed_path = video_file.get_processed_file_path()
     test.assertIsNotNone(processed_path, "Processed file path should be obtainable")
-    test.assertTrue(processed_path.exists(), f"Processed video file should exist at {processed_path}")
-    test.assertIsNotNone(video_file.processed_video_hash, "processed_video_hash should be set")
+    test.assertTrue(
+        processed_path.exists(),
+        f"Processed video file should exist at {processed_path}",
+    )
+    test.assertIsNotNone(
+        video_file.processed_video_hash, "processed_video_hash should be set"
+    )
 
     # CRITICAL: Verify frame count integrity during transcoding/anonymization
     # This ensures no frames are lost during the video processing pipeline
@@ -65,7 +80,10 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
 
             raw_info = get_stream_info(original_raw_path)
             if raw_info and "streams" in raw_info:
-                raw_video_stream = next((s for s in raw_info["streams"] if s.get("codec_type") == "video"), None)
+                raw_video_stream = next(
+                    (s for s in raw_info["streams"] if s.get("codec_type") == "video"),
+                    None,
+                )
                 if raw_video_stream:
                     raw_nb_frames = raw_video_stream.get("nb_frames", "N/A")
                     print(f"Original raw video nb_frames: {raw_nb_frames}")
@@ -79,7 +97,14 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
         try:
             processed_stream_info = get_stream_info(processed_path)
             if processed_stream_info and "streams" in processed_stream_info:
-                video_stream = next((s for s in processed_stream_info["streams"] if s.get("codec_type") == "video"), None)
+                video_stream = next(
+                    (
+                        s
+                        for s in processed_stream_info["streams"]
+                        if s.get("codec_type") == "video"
+                    ),
+                    None,
+                )
                 if video_stream:
                     # Use multiple methods to get accurate frame count
                     # Method 1: FFmpeg nb_frames (most reliable)
@@ -103,7 +128,9 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                         except Exception as cv_e:
                             import logging
 
-                            logging.getLogger(__name__).warning(f"OpenCV frame count failed: {cv_e}")
+                            logging.getLogger(__name__).warning(
+                                f"OpenCV frame count failed: {cv_e}"
+                            )
 
                     # Method 3: Duration * FPS calculation (least reliable, last resort)
                     if processed_frame_count is None:
@@ -115,14 +142,20 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                         else:
                             fps = float(fps_str) if fps_str else 30.0
 
-                        processed_frame_count = int(duration * fps) if duration > 0 and fps > 0 else 0
+                        processed_frame_count = (
+                            int(duration * fps) if duration > 0 and fps > 0 else 0
+                        )
                         frame_count_method = "Duration * FPS calculation"
 
                     if processed_frame_count is not None and processed_frame_count > 0:
                         print("\n📊 FRAME COUNT COMPARISON:")
                         print(f"  Original: {original_frame_count}")
-                        print(f"  Processed: {processed_frame_count} (via {frame_count_method})")
-                        print(f"  Difference: {original_frame_count - processed_frame_count}")
+                        print(
+                            f"  Processed: {processed_frame_count} (via {frame_count_method})"
+                        )
+                        print(
+                            f"  Difference: {original_frame_count - processed_frame_count}"
+                        )
 
                         # Detailed analysis of the processed video
                         print("\n📋 PROCESSED VIDEO DETAILS:")
@@ -133,8 +166,13 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
 
                         # Try all methods to double-check
                         all_methods = []
-                        if video_stream.get("nb_frames") and str(video_stream.get("nb_frames")).isdigit():
-                            all_methods.append(("FFmpeg nb_frames", int(video_stream.get("nb_frames"))))
+                        if (
+                            video_stream.get("nb_frames")
+                            and str(video_stream.get("nb_frames")).isdigit()
+                        ):
+                            all_methods.append(
+                                ("FFmpeg nb_frames", int(video_stream.get("nb_frames")))
+                            )
 
                         try:
                             cap = cv2.VideoCapture(str(processed_path))
@@ -152,7 +190,11 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                             fps_calc = float(num) / float(den) if den != "0" else 30.0
                         else:
                             fps_calc = float(fps_str) if fps_str else 30.0
-                        calc_count = int(duration * fps_calc) if duration > 0 and fps_calc > 0 else 0
+                        calc_count = (
+                            int(duration * fps_calc)
+                            if duration > 0 and fps_calc > 0
+                            else 0
+                        )
                         all_methods.append(("Duration*FPS", calc_count))
 
                         print("\n🔬 ALL FRAME COUNT METHODS:")
@@ -165,17 +207,26 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                         if frame_diff <= 1:
                             if frame_diff == 0:
                                 print("\n✅ Frame count preserved perfectly!")
-                                test.assertTrue(True, f"✓ Frame count preserved: {original_frame_count} frames (verified via {frame_count_method})")
+                                test.assertTrue(
+                                    True,
+                                    f"✓ Frame count preserved: {original_frame_count} frames (verified via {frame_count_method})",
+                                )
                             else:
-                                print(f"\n⚠️ Minor frame difference detected: {frame_diff} frame(s)")
-                                print("This is within acceptable tolerance (±1 frame) but should be investigated.")
+                                print(
+                                    f"\n⚠️ Minor frame difference detected: {frame_diff} frame(s)"
+                                )
+                                print(
+                                    "This is within acceptable tolerance (±1 frame) but should be investigated."
+                                )
                                 # For now, let's allow ±1 frame difference and just warn
                                 test.assertTrue(
                                     True,
                                     f"✓ Frame count within tolerance: {original_frame_count} → {processed_frame_count} (verified via {frame_count_method})",
                                 )
                         else:
-                            print(f"\n❌ Significant frame loss detected: {frame_diff} frames!")
+                            print(
+                                f"\n❌ Significant frame loss detected: {frame_diff} frames!"
+                            )
                             test.assertTrue(
                                 False,
                                 f"Frame count variance beyond tolerance: original={original_frame_count}, "
@@ -186,17 +237,25 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
                     else:
                         import logging
 
-                        logging.getLogger(__name__).warning("Could not determine processed video frame count using any method")
+                        logging.getLogger(__name__).warning(
+                            "Could not determine processed video frame count using any method"
+                        )
         except Exception as e:
             # If frame count verification fails, log warning but don't fail the test
             # since this is additional validation, not core functionality
             import logging
 
-            logging.getLogger(__name__).warning(f"Could not verify frame count integrity: {e}")
+            logging.getLogger(__name__).warning(
+                f"Could not verify frame count integrity: {e}"
+            )
 
     # Check Raw Video Deletion
-    test.assertFalse(video_file.has_raw, "VideoFile should not have raw file after pipe_2")
-    test.assertFalse(bool(video_file.raw_file.name), "raw_file field name should be empty")
+    test.assertFalse(
+        video_file.has_raw, "VideoFile should not have raw file after pipe_2"
+    )
+    test.assertFalse(
+        bool(video_file.raw_file.name), "raw_file field name should be empty"
+    )
     if original_raw_file_path:
         # In tests, the file cleanup might be asynchronous via transaction.on_commit()
         # For Django TestCase, this callback may not execute since transactions are rolled back
@@ -209,17 +268,31 @@ def _test_pipe_2(test: "VideoFileModelExtractedTest"):
         if not transaction.get_connection().in_atomic_block:
             # We're not in a transaction, cleanup should happen
             time.sleep(0.1)  # Brief wait for async cleanup
-            test.assertFalse(original_raw_file_path.exists(), f"Original raw video file {original_raw_file_path} should be deleted")
+            test.assertFalse(
+                original_raw_file_path.exists(),
+                f"Original raw video file {original_raw_file_path} should be deleted",
+            )
         else:
             # We're in a test transaction, on_commit callbacks won't execute
             # Just verify the file field was cleared
             pass
 
     # Check Metadata/State Updates
-    test.assertIsNone(video_file.sensitive_meta, "SensitiveMeta should be deleted (set to None) after pipe_2")
+    test.assertIsNone(
+        video_file.sensitive_meta,
+        "SensitiveMeta should be deleted (set to None) after pipe_2",
+    )
     video_file.refresh_from_db()
     state = video_file.state
     # Check VideoState flags (Add these flags to VideoState model if they don't exist)
-    test.assertTrue(state.anonymized, "State.is_anonymized should be True")  # Assuming this flag exists
-    test.assertTrue(state.frames_extracted, "State.frames_extracted should be True after pipe_2 (pipe_2 extracts frames)")
-    test.assertTrue(state.frames_initialized, "State.frames_initialized should still be True after pipe_2")
+    test.assertTrue(
+        state.anonymized, "State.is_anonymized should be True"
+    )  # Assuming this flag exists
+    test.assertTrue(
+        state.frames_extracted,
+        "State.frames_extracted should be True after pipe_2 (pipe_2 extracts frames)",
+    )
+    test.assertTrue(
+        state.frames_initialized,
+        "State.frames_initialized should still be True after pipe_2",
+    )

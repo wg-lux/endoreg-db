@@ -8,6 +8,7 @@ if TYPE_CHECKING:
         Requirement,
     )
 
+
 def get_values_from_kwargs(
     requirement: "Requirement",
     patient: Optional["Patient"] = None,
@@ -16,9 +17,9 @@ def get_values_from_kwargs(
 ) -> dict:
     """
     Aggregates and validates input values required for evaluating a requirement.
-    
+
     Checks the requirement's types to ensure that necessary parameters such as `patient` or `patient_examination` are provided when required. Raises a ValueError if a required parameter is missing. Returns a dictionary containing the validated inputs and any additional keyword arguments.
-    
+
     Returns:
         A dictionary with keys for 'patient', 'patient_examination', and any extra keyword arguments.
     """
@@ -37,4 +38,3 @@ def get_values_from_kwargs(
 
     # Prepare and return the extracted values
     return {"patient": patient, "patient_examination": patient_examination, **kwargs}
-

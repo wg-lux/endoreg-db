@@ -3,7 +3,9 @@ from typing import TYPE_CHECKING, cast  # Added List
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links.requirement_link import RequirementLinks  # Added RequirementLinks
+    from endoreg_db.utils.links.requirement_link import (
+        RequirementLinks,
+    )  # Added RequirementLinks
 
     from ...administration.person.patient.patient import Patient
     from ..disease import Disease, DiseaseClassificationChoice
@@ -17,8 +19,12 @@ class PatientDisease(models.Model):
     and stores associated subcategory values and numerical descriptors.
     """
 
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="diseases")
-    disease = models.ForeignKey("Disease", on_delete=models.CASCADE, related_name="patient_diseases")
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE, related_name="diseases"
+    )
+    disease = models.ForeignKey(
+        "Disease", on_delete=models.CASCADE, related_name="patient_diseases"
+    )
     classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
@@ -42,13 +48,19 @@ class PatientDisease(models.Model):
 
     @property
     def links(self) -> "RequirementLinks":
-        from endoreg_db.utils.links.requirement_link import RequirementLinks  # Added RequirementLinks
+        from endoreg_db.utils.links.requirement_link import (
+            RequirementLinks,
+        )  # Added RequirementLinks
 
         """
         Aggregates and returns related model instances relevant for requirement evaluation
         as a RequirementLinks object.
         """
-        links_data = {"patient_diseases": [self], "diseases": [], "disease_classification_choices": list(self.classification_choices.all())}
+        links_data = {
+            "patient_diseases": [self],
+            "diseases": [],
+            "disease_classification_choices": list(self.classification_choices.all()),
+        }
         if self.disease:
             links_data["diseases"].append(self.disease)
 

@@ -25,14 +25,18 @@ def _get_model_meta_class():
     return ModelMeta
 
 
-def get_latest_version_number_logic(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
+def get_latest_version_number_logic(
+    cls: Type["ModelMeta"], meta_name: str, model_name: str
+) -> int:
     """
     Finds the highest numerical version for a given meta_name and model_name.
     Iterates through all versions, attempts to parse them as integers,
     and returns the maximum integer found. If no numeric versions are found,
     returns 0.
     """
-    versions_qs = cls.objects.filter(name=meta_name, model__name=model_name).values_list("version", flat=True)
+    versions_qs = cls.objects.filter(
+        name=meta_name, model__name=model_name
+    ).values_list("version", flat=True)
 
     max_v = 0
     found_numeric_version = False
@@ -88,7 +92,9 @@ def create_from_file_logic(
     try:
         label_set = labelset_qs.get()
     except LabelSet.DoesNotExist as exc:
-        raise ValueError(f"LabelSet '{labelset_name}' with version '{labelset_version}' not found.") from exc
+        raise ValueError(
+            f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
+        ) from exc
     except LabelSet.MultipleObjectsReturned:
         # Prefer the highest version when duplicates remain and no explicit version requested
         label_set = labelset_qs.order_by("-version").first()
@@ -101,17 +107,23 @@ def create_from_file_logic(
 
     if requested_version:
         target_version = str(requested_version)
-        existing = cls.objects.filter(name=meta_name, model=ai_model, version=target_version).first()
+        existing = cls.objects.filter(
+            name=meta_name, model=ai_model, version=target_version
+        ).first()
         if existing and not bump_if_exists:
             raise ValueError(
                 f"ModelMeta '{meta_name}' version '{target_version}' for model '{model_name}' already exists. Use bump_if_exists=True to increment."
             )
         elif existing and bump_if_exists:
             target_version = str(latest_version_num + 1)
-            logger.info(f"Bumping version for {meta_name}/{model_name} to {target_version}")
+            logger.info(
+                f"Bumping version for {meta_name}/{model_name} to {target_version}"
+            )
     else:
         target_version = str(latest_version_num + 1)
-        logger.info(f"Setting next version for {meta_name}/{model_name} to {target_version}")
+        logger.info(
+            f"Setting next version for {meta_name}/{model_name} to {target_version}"
+        )
 
     # --- Prepare Weights File ---
     source_weights_path = Path(weights_file).resolve()
@@ -121,7 +133,10 @@ def create_from_file_logic(
     # Construct destination path within MEDIA_ROOT/WEIGHTS_DIR
     weights_filename = source_weights_path.name
     # Relative path for the FileField upload_to
-    relative_dest_path = Path(WEIGHTS_DIR.relative_to(STORAGE_DIR)) / f"{meta_name}_v{target_version}_{weights_filename}"
+    relative_dest_path = (
+        Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
+        / f"{meta_name}_v{target_version}_{weights_filename}"
+    )
     # Full path for shutil.copy
     full_dest_path = STORAGE_DIR / relative_dest_path
 
@@ -216,7 +231,9 @@ def _parse_float_sequence(value: Any, *, fallback: Iterable[float]) -> list[floa
         try:
             parsed.append(float(token))
         except (TypeError, ValueError):
-            logger.warning("Failed to parse normalisation value %r; using fallback", token)
+            logger.warning(
+                "Failed to parse normalisation value %r; using fallback", token
+            )
             return list(fallback)
 
     return parsed or list(fallback)
@@ -237,7 +254,9 @@ def _parse_axes(axes_value: str | Iterable[Any]) -> list[int]:
     if isinstance(axes_value, str):
         token_source = axes_value.strip()
         if "," in token_source:
-            tokens = [token.strip() for token in token_source.split(",") if token.strip()]
+            tokens = [
+                token.strip() for token in token_source.split(",") if token.strip()
+            ]
         else:
             tokens = [char for char in token_source if char.strip()]
     else:
@@ -316,14 +335,22 @@ def get_model_meta_by_name_version_logic(
         try:
             return cls.objects.get(name=meta_name, model=ai_model, version=version)
         except Exception as exc:
-            raise cls.DoesNotExist(f"ModelMeta '{meta_name}' version '{version}' for model '{model_name}' not found.") from exc
+            raise cls.DoesNotExist(
+                f"ModelMeta '{meta_name}' version '{version}' for model '{model_name}' not found."
+            ) from exc
     else:
         # Get latest version
-        latest = cls.objects.filter(name=meta_name, model=ai_model).order_by("-date_created").first()
+        latest = (
+            cls.objects.filter(name=meta_name, model=ai_model)
+            .order_by("-date_created")
+            .first()
+        )
         if latest:
             return latest
         else:
-            raise cls.DoesNotExist(f"No ModelMeta found for '{meta_name}' and model '{model_name}'.")
+            raise cls.DoesNotExist(
+                f"No ModelMeta found for '{meta_name}' and model '{model_name}'."
+            )
 
 
 import re
@@ -341,7 +368,9 @@ def infer_default_model_meta_from_hf(model_id: str) -> dict[str, Any]:
     """
 
     if not (info := model_info(model_id)):
-        logger.info(f"Could not retrieve model info for {model_id}, using ColoReg segmentation defaults.")
+        logger.info(
+            f"Could not retrieve model info for {model_id}, using ColoReg segmentation defaults."
+        )
         return {
             "name": "wg-lux/colo_segmentation_RegNetX800MF_base",
             "activation": "sigmoid",
@@ -409,7 +438,9 @@ def setup_default_from_huggingface_logic(
             local_dir=WEIGHTS_DIR,
         )
     except Exception as exc:  # pragma: no cover - network errors
-        raise RuntimeError("Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact.") from exc
+        raise RuntimeError(
+            "Failed to download safetensor weights from Hugging Face; ensure the repository provides a .safetensors artifact."
+        ) from exc
 
     ai_model, _ = AiModel.objects.get_or_create(name=meta["name"])
     if not labelset_name:
@@ -426,12 +457,16 @@ def setup_default_from_huggingface_logic(
             labelset_qs = labelset_qs.filter(version=version_value)
         labelset = labelset_qs.order_by("-version").first()
         if not labelset:
-            raise ValueError(f"LabelSet '{labelset_name}' with version '{labelset_version}' not found.")
+            raise ValueError(
+                f"LabelSet '{labelset_name}' with version '{labelset_version}' not found."
+            )
 
     ModelMeta = _get_model_meta_class()
     model_meta = ModelMeta.objects.filter(name=meta["name"], model=ai_model).first()
     if model_meta:
-        logger.info(f"ModelMeta {meta['name']} for model {ai_model.name} already exists. Skipping creation.")
+        logger.info(
+            f"ModelMeta {meta['name']} for model {ai_model.name} already exists. Skipping creation."
+        )
         return model_meta
 
     return create_from_file_logic(

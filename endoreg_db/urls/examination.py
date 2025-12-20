@@ -9,21 +9,21 @@ from endoreg_db.views import (
     PatientExaminationListView,
 )
 
-urlpatterns = [# URL patterns for ExaminationForm.vue API calls
+urlpatterns = [  # URL patterns for ExaminationForm.vue API calls
     path(
-        'examinations/<int:examination_id>/findings/',
+        "examinations/<int:examination_id>/findings/",
         get_findings_for_examination,
-        name='get_findings_for_examination'
+        name="get_findings_for_examination",
     ),
     path(
-        'findings/<int:finding_id>/classifications/',
+        "findings/<int:finding_id>/classifications/",
         get_classifications_for_finding,
-        name='get_classifications_for_finding'
+        name="get_classifications_for_finding",
     ),
     path(
-        'classifications/<int:classification_id>/choices/',
+        "classifications/<int:classification_id>/choices/",
         get_classification_choices,
-        name='get_choices_for_classification'
+        name="get_choices_for_classification",
     ),
     # NEW: Examination CRUD endpoints for SimpleExaminationForm
     # POST /api/examinations/create/ - Create new examination
@@ -34,21 +34,30 @@ urlpatterns = [# URL patterns for ExaminationForm.vue API calls
     # The views below handle PatientExamination instances, which represent a specific examination performed on a patient.
     # The URL names are updated to reflect this, using the 'patient_examination_*' prefix for clarity.
     # TODO: Clearly Distinguish between Examination and PatientExamination by using 'patient-examination' prefix for clarity
-    path('patient-examinations/create/', ExaminationCreateView.as_view(), name='patient_examination_create'),
-    path('patient-examinations/<int:pk>/',     PatientExaminationDetailView.as_view(), name='patient_examination_detail'),
-    path('patient-examinations/list/', PatientExaminationListView.as_view(), name='patient_examination_list'),
-
+    path(
+        "patient-examinations/create/",
+        ExaminationCreateView.as_view(),
+        name="patient_examination_create",
+    ),
+    path(
+        "patient-examinations/<int:pk>/",
+        PatientExaminationDetailView.as_view(),
+        name="patient_examination_detail",
+    ),
+    path(
+        "patient-examinations/list/",
+        PatientExaminationListView.as_view(),
+        name="patient_examination_list",
+    ),
     # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     path(
-        'patient-examinations/<int:exam_id>/classifications/',
+        "patient-examinations/<int:exam_id>/classifications/",
         get_classifications_for_examination,
-        name='get_classifications_for_examination'
+        name="get_classifications_for_examination",
     ),
-    
     path(
-        'patient-examinations/<int:examination_id>/findings/',
+        "patient-examinations/<int:examination_id>/findings/",
         get_findings_for_examination,
-        name='get_patient_examination_findings'
+        name="get_patient_examination_findings",
     ),
-
 ]

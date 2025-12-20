@@ -115,7 +115,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         # Keep user profile in sync with IdP data (safe truncation to field max length)
         user.email = claims.get("email", user.email)
         user.first_name = (claims.get("given_name") or user.first_name)[:150]
-        user.last_name  = (claims.get("family_name") or user.last_name)[:150]
+        user.last_name = (claims.get("family_name") or user.last_name)[:150]
         user.save(update_fields=["email", "first_name", "last_name"])
 
         # Keep roles (groups) in sync on every login

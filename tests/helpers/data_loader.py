@@ -5,12 +5,9 @@ Data Loader Helpers and others
 from pathlib import Path
 
 
-from pathlib import Path
-
 from django.core.management import call_command
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
-
 
 
 def load_default_ai_model():
@@ -29,7 +26,6 @@ def load_default_ai_model():
         "--bump_version",  # Handle existing models by bumping version
         "--bump_version",  # Handle existing models by bumping version
     )
-
 
 
 def load_qualification_data():

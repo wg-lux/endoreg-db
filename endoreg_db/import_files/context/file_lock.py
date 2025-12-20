@@ -3,8 +3,6 @@ from pathlib import Path
 import os
 import time
 from logging import getLogger
-import errno
-import shutil
 from typing import Generator, Any
 
 logger = getLogger(__name__)
@@ -45,7 +43,9 @@ def file_lock(path: Path) -> Generator[None, Any, None]:
                         )
                         lock_path.unlink()
                     except Exception as e:
-                        logger.warning("Failed to remove stale lock %s: %s", lock_path, e)
+                        logger.warning(
+                            "Failed to remove stale lock %s: %s", lock_path, e
+                        )
                     continue
 
                 if time.time() >= deadline:

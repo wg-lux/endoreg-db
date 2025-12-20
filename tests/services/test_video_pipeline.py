@@ -46,7 +46,6 @@ def main():
 
         print(f"✓ Video imported successfully with UUID: {video_file.video_hash}")
         assert isinstance(video_file, VideoFile)
-        asser
 
         # Verify Pipe 1 completed
         state = video_file.get_or_create_state()
@@ -65,7 +64,7 @@ def main():
         return
 
     # Step 2: Simulate user validation (test_after_pipe_1)
-    print(f"\n2. Simulating user validation...")
+    print("\n2. Simulating user validation...")
 
     try:
         # This marks outside segments as validated and sensitive meta as verified
@@ -91,7 +90,7 @@ def main():
         return
 
     # Step 3: Run Pipe 2 (Anonymization)
-    print(f"\n3. Starting video anonymization (Pipe 2)...")
+    print("\n3. Starting video anonymization (Pipe 2)...")
 
     try:
         # This creates the anonymized video
@@ -123,7 +122,7 @@ def main():
         print(f"✗ Error during anonymization: {e}")
         return
 
-    print(f"\n=== Pipeline Completed Successfully ===")
+    print("\n=== Pipeline Completed Successfully ===")
     print(f"Video UUID: {video_file.video_hash}")
     print(
         f"Processed file: {video_file.processed_file.name if video_file.processed_file else 'None'}"

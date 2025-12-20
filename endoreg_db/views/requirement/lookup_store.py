@@ -8,7 +8,6 @@ from typing import Any, Dict, Iterable, Optional
 from django.conf import settings
 from django.core.cache import cache
 
-from endoreg_db.models.medical import PatientExamination
 
 # Align TTL with Django cache TIMEOUT for consistency in tests and runtime
 

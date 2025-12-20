@@ -13,7 +13,9 @@ Important:
   So we MUST force DEBUG = False in these tests, otherwise
   everyone would be allowed and RBAC would never be exercised.
 """
+
 from django.contrib.auth.models import Group
+
 # libs/endoreg-db/tests/keycloak/test_policy_permission.py
 """
 Tests for the low-level PolicyPermission class.
@@ -46,6 +48,7 @@ User = get_user_model()
 
 class DummyView:
     """Minimal stand-in view for permission testing."""
+
     pass
 
 

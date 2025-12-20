@@ -46,21 +46,30 @@ def test_ensure_lab_values_creates_measurement(casegen_prereqs):
 
     prototype.ensure_lab_values(context, patient, {"lab_values": [lab_value]})
 
-    patient_lab_value = PatientLabValue.objects.get(patient=patient, lab_value=lab_value)
+    patient_lab_value = PatientLabValue.objects.get(
+        patient=patient, lab_value=lab_value
+    )
     assert patient_lab_value in context.lab_values
     assert patient_lab_value.sample is not None
     assert patient_lab_value.unit == unit
 
 
 def test_ensure_medications_creates_patient_medication(casegen_prereqs):
-    from endoreg_db.models import Medication, MedicationIntakeTime, PatientMedication, Unit
+    from endoreg_db.models import (
+        Medication,
+        MedicationIntakeTime,
+        PatientMedication,
+        Unit,
+    )
 
     context = prototype.initialize_generation_context()
     patient = context.ensure_patient()
 
     unit = Unit.objects.create(name="tablet")
     medication = Medication.objects.create(name="omeprazole", default_unit=unit)
-    intake_time = MedicationIntakeTime.objects.create(name="morning", time=time(hour=8, minute=0))
+    intake_time = MedicationIntakeTime.objects.create(
+        name="morning", time=time(hour=8, minute=0)
+    )
 
     prototype.ensure_medications(
         context,
@@ -68,7 +77,9 @@ def test_ensure_medications_creates_patient_medication(casegen_prereqs):
         {"medications": [medication], "medication_intake_times": [intake_time]},
     )
 
-    patient_medication = PatientMedication.objects.get(patient=patient, medication=medication)
+    patient_medication = PatientMedication.objects.get(
+        patient=patient, medication=medication
+    )
     assert patient_medication in context.medications
     assert patient_medication.intake_times.count() == 1
     assert patient_medication.intake_times.first() == intake_time
@@ -105,5 +116,7 @@ def test_ensure_examinations_and_findings_creates_patient_finding(casegen_prereq
     assert context.examinations
     patient_exam = context.examinations[0]
 
-    patient_finding = PatientFinding.objects.get(patient_examination=patient_exam, finding=finding)
+    patient_finding = PatientFinding.objects.get(
+        patient_examination=patient_exam, finding=finding
+    )
     assert patient_finding in context.findings

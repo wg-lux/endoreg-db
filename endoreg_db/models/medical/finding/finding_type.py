@@ -27,7 +27,9 @@ class FindingType(models.Model):
         from endoreg_db.models import Examination, Finding, FindingClassification
 
         @property
-        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+        def finding_classifications(
+            self,
+        ) -> "models.manager.RelatedManager[FindingClassification]": ...
 
     def natural_key(self):
         return (self.name,)

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.models import VideoFile, Center, EndoscopyProcessor
+from endoreg_db.models import Center, EndoscopyProcessor
 from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
@@ -12,7 +12,7 @@ from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import sha256_file
 import endoreg_db.utils as utils
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.utils.hashs import get_video_hash
+
 
 def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path, Path]:
     """
@@ -61,6 +61,7 @@ def _patch_video_initialize(monkeypatch):
         raising=True,
     )
 
+
 @pytest.mark.django_db
 def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
     """
@@ -90,18 +91,6 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
         raising=True,
     )
 
-    # Deterministic hash
-    def fake_hash(path: Path) -> str:
-        # Simple sanity check
-        assert path.suffix == ".mp4"
-        return "HASH1"
-
-    monkeypatch.setattr(
-        create_from_file_module,
-        "get_video_hash",
-        fake_hash,
-        raising=True,
-    )
 
     # --- Arrange: dummy input video -----------------------------------------
     import_dir = tmp_path / "import"
@@ -112,40 +101,52 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
     )
 
     # Center / Processor from base_db_data
-    center_name = Center.objects.first().name
-    processor_name = EndoscopyProcessor.objects.first().name
+    try:
+        assert Center.objects.first() is not None
+        assert EndoscopyProcessor.objects.first() is not None
+        center_name = Center.objects.first().name
+        processor_name = EndoscopyProcessor.objects.first().name
+    except Exception as e:
+        pytest.fail(
+            f"Failed to retrieve center/processor names, might be none were available: {str(e)}"
+        )
 
     ctx = ImportContext(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
         delete_source=False,  # keep import file
-        original_path=Path(src_file)
+        original_path=Path(src_file),
     )
 
     # --- Act ----------------------------------------------------------------
-    video, created, needs_processing = create_video_file.create_or_retrieve_video_file(ctx)
-
+    video, created, needs_processing = create_video_file.create_or_retrieve_video_file(
+        ctx
+    )
     # --- Assert -------------------------------------------------------------
     assert needs_processing is True
     assert created is False
     assert video.pk is not None
-    assert video.video_hash == sha256_file(Path(video.get_raw_file_path()))
-
+    assert isinstance(video.get_raw_file_path(), Path)
     raw_path = video.get_raw_file_path()
     assert raw_path is not None
     assert raw_path.exists()
     assert raw_path.is_file()
+    assert video.video_hash == sha256_file(raw_path)
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_duplicate_with_existing_file(
+    tmp_path, monkeypatch, base_db_data
+):
     """
     When a VideoFile with the same hash already exists *and* its raw file exists,
     create_or_retrieve_video_file should return the existing instance and not
     create a new one.
     """
-    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout("dup_existing")
+    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
+        "dup_existing"
+    )
 
     monkeypatch.setattr(
         create_from_file_module,
@@ -165,13 +166,6 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
         raising=True,
     )
 
-    # Always return same hash so the second call sees a duplicate
-    monkeypatch.setattr(
-        create_from_file_module,
-        "get_video_hash",
-        lambda p: "HASH_DUP",
-        raising=True,
-    )
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -191,7 +185,9 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
     )
 
     # First call: creates the object
-    v1, processed1, needs_processing1 = create_video_file.create_or_retrieve_video_file(ctx)
+    v1, processed1, needs_processing1 = create_video_file.create_or_retrieve_video_file(
+        ctx
+    )
     assert processed1 is False
     assert needs_processing1 is True
 
@@ -209,9 +205,13 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
     assert isinstance(ctx.file_hash, str)
     ph = ProcessingHistory().get_or_create_for_hash(
         file_hash=ctx.file_hash,
-        success= True # Simulate successful processing
+        success=True,  # Simulate successful processing
     )
-    v2, processed2, needs_processing2 = create_video_file.create_or_retrieve_video_file(ctx2)
+    v2, processed2, needs_processing2 = create_video_file.create_or_retrieve_video_file(
+        ctx2
+    )
+
+    assert ph.has_history_for_hash(file_hash=ctx.file_hash)
 
     assert processed2 is True
     assert needs_processing2 is False
@@ -220,12 +220,16 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_duplicate_with_missing_file_recreates(
+    tmp_path, monkeypatch, base_db_data
+):
     """
     When a VideoFile with the same hash exists but its raw file is missing,
     the orphaned record should be deleted and a new VideoFile created.
     """
-    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout("dup_orphan")
+    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
+        "dup_orphan"
+    )
 
     monkeypatch.setattr(
         create_from_file_module,
@@ -245,12 +249,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
         raising=True,
     )
 
-    monkeypatch.setattr(
-        create_from_file_module,
-        "get_video_hash",
-        lambda p: "HASH_ORPHAN",
-        raising=True,
-    )
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -267,11 +265,13 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
         center_name=center_name,
         processor_name=processor_name,
         delete_source=False,
-        original_path=Path(src_file)
+        original_path=Path(src_file),
     )
 
     # First create
-    orphan, processed1, needs_processing1 = create_video_file.create_or_retrieve_video_file(ctx)
+    orphan, processed1, needs_processing1 = (
+        create_video_file.create_or_retrieve_video_file(ctx)
+    )
     assert processed1 is False
     assert needs_processing1 is True
     orphan_pk = orphan.pk
@@ -290,7 +290,9 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
         processor_name=processor_name,
         delete_source=False,
     )
-    new_video, processed2, needs_processing2 = create_video_file.create_or_retrieve_video_file(ctx2)
+    new_video, processed2, needs_processing2 = (
+        create_video_file.create_or_retrieve_video_file(ctx2)
+    )
 
     assert processed2 is True
     assert needs_processing2 is True
@@ -324,11 +326,15 @@ def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypat
 
 
 @pytest.mark.django_db
-def test_create_from_file_transcoding_error_is_wrapped(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_transcoding_error_is_wrapped(
+    tmp_path, monkeypatch, base_db_data
+):
     """
     If the transcoder raises, create_or_retrieve_video_file should propagate TranscodingError.
     """
-    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout("transcode_error")
+    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
+        "transcode_error"
+    )
 
     monkeypatch.setattr(
         create_from_file_module,
@@ -362,7 +368,7 @@ def test_create_from_file_transcoding_error_is_wrapped(tmp_path, monkeypatch, ba
         center_name=center_name,
         processor_name=processor_name,
         delete_source=False,
-        original_path=Path(src_file)
+        original_path=Path(src_file),
     )
 
     with pytest.raises(TranscodingError):

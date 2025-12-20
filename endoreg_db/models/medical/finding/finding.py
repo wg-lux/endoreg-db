@@ -12,11 +12,21 @@ class FindingManager(models.Manager):
 class Finding(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    finding_types = models.ManyToManyField("FindingType", blank=True, related_name="findings")
-    finding_interventions = models.ManyToManyField("FindingIntervention", blank=True, related_name="findings")
-    caused_by_interventions = models.ManyToManyField("FindingIntervention", blank=True, related_name="causes_findings")
-    finding_classifications = models.ManyToManyField("FindingClassification", blank=True, related_name="findings")
-    information_sources = models.ManyToManyField("InformationSource", blank=True, related_name="findings")
+    finding_types = models.ManyToManyField(
+        "FindingType", blank=True, related_name="findings"
+    )
+    finding_interventions = models.ManyToManyField(
+        "FindingIntervention", blank=True, related_name="findings"
+    )
+    caused_by_interventions = models.ManyToManyField(
+        "FindingIntervention", blank=True, related_name="causes_findings"
+    )
+    finding_classifications = models.ManyToManyField(
+        "FindingClassification", blank=True, related_name="findings"
+    )
+    information_sources = models.ManyToManyField(
+        "InformationSource", blank=True, related_name="findings"
+    )
     objects = FindingManager()
 
     if TYPE_CHECKING:
@@ -30,9 +40,16 @@ class Finding(models.Model):
             PatientFindingClassification,
         )
 
-        finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
-        finding_interventions = cast(models.manager.RelatedManager["FindingIntervention"], finding_interventions)
-        finding_classifications = cast(models.manager.RelatedManager["FindingClassification"], finding_classifications)
+        finding_types = cast(
+            models.manager.RelatedManager["FindingType"], finding_types
+        )
+        finding_interventions = cast(
+            models.manager.RelatedManager["FindingIntervention"], finding_interventions
+        )
+        finding_classifications = cast(
+            models.manager.RelatedManager["FindingClassification"],
+            finding_classifications,
+        )
 
     def natural_key(self):
         """
@@ -55,7 +72,9 @@ class Finding(models.Model):
         """
         return self.finding_types.all()
 
-    def get_classifications(self, classification_type: Optional[str] = None) -> models.QuerySet["FindingClassification"]:
+    def get_classifications(
+        self, classification_type: Optional[str] = None
+    ) -> models.QuerySet["FindingClassification"]:
         """
         Retrieve all classifications associated with this finding, optionally filtered by classification type.
 
@@ -66,7 +85,9 @@ class Finding(models.Model):
                 List[FindingClassification]: List of related classification objects, filtered by type if specified.
         """
         if classification_type:
-            return self.finding_classifications.filter(classification_types__name=classification_type)
+            return self.finding_classifications.filter(
+                classification_types__name=classification_type
+            )
         return self.finding_classifications.all()
 
     def get_location_classifications(self):
@@ -76,7 +97,9 @@ class Finding(models.Model):
         Returns:
             QuerySet: All FindingClassification instances linked to this finding where the classification type name is 'location' (case-insensitive).
         """
-        return self.finding_classifications.filter(classification_types__name__iexact="location")
+        return self.finding_classifications.filter(
+            classification_types__name__iexact="location"
+        )
 
     def get_morphology_classifications(self):
         """
@@ -85,4 +108,6 @@ class Finding(models.Model):
         Returns:
             QuerySet: A queryset of FindingClassification instances associated with this finding and classified as 'morphology'.
         """
-        return self.finding_classifications.filter(classification_types__name__iexact="morphology")
+        return self.finding_classifications.filter(
+            classification_types__name__iexact="morphology"
+        )

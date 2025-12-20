@@ -15,11 +15,9 @@ from endoreg_db.models import (
     Examiner,
 )
 from endoreg_db.views.media.sensitive_metadata import (
-    get_sensitive_metadata_pk,
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
     pdf_sensitive_metadata,
-    pdf_sensitive_metadata_list,
     pdf_sensitive_metadata_verify,
 )
 
@@ -61,7 +59,6 @@ class TestSensitiveMetadataView:
             examination_time=time(9, 30),
             casenumber="CASE-123",
             file_path="/tmp/some/file.pdf",
-
             # FK fields
             pseudo_patient=patient,
             pseudo_examination=examination,
@@ -89,7 +86,7 @@ class TestSensitiveMetadataView:
 
     @pytest.fixture
     def video(self, sensitive_meta: SensitiveMeta) -> VideoFile:
-        v = VideoFile.objects.create(sensitive_meta=sensitive_meta)
+        v = VideoFile.objects.create(sensitive_meta=sensitive_meta, center=sensitive_meta.center)
         yield v
         v.delete()
 
@@ -102,6 +99,7 @@ class TestSensitiveMetadataView:
     def _call_view(self, view, request, **kwargs):
         response = view(request, **kwargs)
         from rest_framework.response import Response as DRFResponse
+
         assert isinstance(response, DRFResponse)
         return response
 
@@ -119,9 +117,7 @@ class TestSensitiveMetadataView:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["patient_first_name"] == "Max"
 
-    def test_patch_video_sensitive_metadata(
-        self, factory, user, sensitive_meta
-    ):
+    def test_patch_video_sensitive_metadata(self, factory, user, sensitive_meta):
         payload = {"patient_first_name": "Anna"}
         request = factory.patch(
             f"/api/media/videos/{sensitive_meta.pk}/sensitive-metadata/",
@@ -136,9 +132,7 @@ class TestSensitiveMetadataView:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["sensitive_meta"]["patient_first_name"] == "Anna"
 
-    def test_verify_video_sensitive_metadata(
-        self, factory, user, video
-    ):
+    def test_verify_video_sensitive_metadata(self, factory, user, video):
         payload = {"dob_verified": True, "names_verified": False}
         request = factory.post(
             f"/api/media/videos/{video.pk}/sensitive-metadata/verify/",
@@ -168,9 +162,7 @@ class TestSensitiveMetadataView:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["patient_first_name"] == "Max"
 
-    def test_patch_pdf_sensitive_metadata(
-        self, factory, user, sensitive_meta
-    ):
+    def test_patch_pdf_sensitive_metadata(self, factory, user, sensitive_meta):
         payload = {"patient_first_name": "Anna"}
         request = factory.patch(
             f"/api/media/pdfs/{sensitive_meta.pk}/sensitive-metadata/",
@@ -185,9 +177,7 @@ class TestSensitiveMetadataView:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["sensitive_meta"]["patient_first_name"] == "Anna"
 
-    def test_verify_pdf_sensitive_metadata(
-        self, factory, user, pdf
-    ):
+    def test_verify_pdf_sensitive_metadata(self, factory, user, pdf):
         payload = {"dob_verified": True, "names_verified": False}
         request = factory.post(
             f"/api/media/pdfs/{pdf.pk}/sensitive-metadata/verify/",

@@ -1,7 +1,3 @@
-import os
-
-import yaml
-from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from ...data import REPORT_READER_FLAG_DATA_DIR

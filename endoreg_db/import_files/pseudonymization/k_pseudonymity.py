@@ -2,7 +2,6 @@ from typing import Optional, Tuple
 import logging
 
 from datetime import date as Date
-import datetime
 
 from .k_anonymity import _build_sensitive_meta_qi_queryset
 from .fake import fake_name_with_similar_dob_and_gender
@@ -10,6 +9,8 @@ from .fake import fake_name_with_similar_dob_and_gender
 from endoreg_db.models import SensitiveMeta
 
 logger = logging.getLogger(__name__)
+
+
 def k_pseudonymize(
     instance: SensitiveMeta,
     *,
@@ -49,13 +50,13 @@ def k_pseudonymize(
 
     # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
     if qi_subset is None:
-     qi_subset = ("first_name", "last_name", "center", "gender", "dob_band")
-     # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
-     use_first_name = "first_name" in qi_subset
-     use_last_name = "last_name" in qi_subset
-     use_center = "center" in qi_subset
-     use_gender = "gender" in qi_subset
-     use_dob_band = "dob_band" in qi_subset
+        qi_subset = ("first_name", "last_name", "center", "gender", "dob_band")
+        # --- 1) Compute k for the requested subset BEFORE pseudonymization ---
+        use_first_name = "first_name" in qi_subset
+        use_last_name = "last_name" in qi_subset
+        use_center = "center" in qi_subset
+        use_gender = "gender" in qi_subset
+        use_dob_band = "dob_band" in qi_subset
     use_first_name = "first_name" in qi_subset
     use_last_name = "last_name" in qi_subset
     use_center = "center" in qi_subset
@@ -108,7 +109,9 @@ def k_pseudonymize(
     )  # naive is usually fine for DOB
 
     if save:
-        instance.save(update_fields=["patient_first_name", "patient_last_name", "patient_dob"])
+        instance.save(
+            update_fields=["patient_first_name", "patient_last_name", "patient_dob"]
+        )
 
     # --- 3) Recompute k AFTER pseudonymization ---
     qs_after = _build_sensitive_meta_qi_queryset(

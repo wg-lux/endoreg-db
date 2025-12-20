@@ -21,10 +21,10 @@ def normalize_lx_sensitive_meta(meta: LxSensitiveMeta) -> Dict[str, Any]:
         "file_path",
         "patient_first_name",
         "patient_last_name",
-        "patient_dob",          # string; logic has parsing
+        "patient_dob",  # string; logic has parsing
         "casenumber",
-        "examination_date",     # string; logic has parsing
-        "examination_time",     # string "HH:MM" is fine
+        "examination_date",  # string; logic has parsing
+        "examination_time",  # string "HH:MM" is fine
         "examiner_first_name",
         "examiner_last_name",
         "text",

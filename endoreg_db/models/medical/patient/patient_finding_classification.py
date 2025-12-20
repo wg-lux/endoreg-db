@@ -18,11 +18,23 @@ class PatientFindingClassification(models.Model):
     Links a PatientFinding to a specific classification and choice, with optional subcategory values.
     """
 
-    finding = models.ForeignKey("PatientFinding", on_delete=models.CASCADE, related_name="classifications")
-    classification = models.ForeignKey("FindingClassification", on_delete=models.CASCADE, related_name="patient_finding_classifications")
-    classification_choice = models.ForeignKey("FindingClassificationChoice", on_delete=models.CASCADE, related_name="patient_finding_classifications")
+    finding = models.ForeignKey(
+        "PatientFinding", on_delete=models.CASCADE, related_name="classifications"
+    )
+    classification = models.ForeignKey(
+        "FindingClassification",
+        on_delete=models.CASCADE,
+        related_name="patient_finding_classifications",
+    )
+    classification_choice = models.ForeignKey(
+        "FindingClassificationChoice",
+        on_delete=models.CASCADE,
+        related_name="patient_finding_classifications",
+    )
 
-    is_active = models.BooleanField(default=True, help_text="Indicates if the classification is currently active.")
+    is_active = models.BooleanField(
+        default=True, help_text="Indicates if the classification is currently active."
+    )
     subcategories = models.JSONField(blank=True, null=True)
     numerical_descriptors = models.JSONField(blank=True, null=True)
 
@@ -55,7 +67,9 @@ class PatientFindingClassification(models.Model):
             self.subcategories = self.classification_choice.subcategories
 
         if not self.numerical_descriptors:
-            self.numerical_descriptors = self.classification_choice.numerical_descriptors
+            self.numerical_descriptors = (
+                self.classification_choice.numerical_descriptors
+            )
 
         super().save(*args, **kwargs)
 
@@ -80,7 +94,9 @@ class PatientFindingClassification(models.Model):
             self.save()
         return self.numerical_descriptors
 
-    def set_subcategory(self, subcategory_name: str, subcategory_value: Dict[str, dict]):
+    def set_subcategory(
+        self, subcategory_name: str, subcategory_value: Dict[str, dict]
+    ):
         """
         Update the value of a specified subcategory and save the classification.
 
@@ -92,7 +108,9 @@ class PatientFindingClassification(models.Model):
             dict: The updated subcategory dictionary.
         """
         assert self.subcategories, "Subcategories must be initialized."
-        assert subcategory_name in self.subcategories, "Subcategory must be in subcategories."
+        assert subcategory_name in self.subcategories, (
+            "Subcategory must be in subcategories."
+        )
         self.subcategories[subcategory_name]["value"] = subcategory_value
         self.save()
 
@@ -136,8 +154,12 @@ class PatientFindingClassification(models.Model):
         Raises:
             ValueError: If the descriptor's distribution type is not supported.
         """
-        assert self.numerical_descriptors is not None, "Numerical descriptors must be initialized."
-        assert descriptor_name in self.numerical_descriptors, "Descriptor must be in numerical descriptors."
+        assert self.numerical_descriptors is not None, (
+            "Numerical descriptors must be initialized."
+        )
+        assert descriptor_name in self.numerical_descriptors, (
+            "Descriptor must be in numerical descriptors."
+        )
         descriptor = self.numerical_descriptors[descriptor_name]
         min_val = descriptor.get("min", 0)
         max_val = descriptor.get("max", 1)
@@ -173,7 +195,9 @@ class PatientFindingClassification(models.Model):
             raise ValueError("Descriptor name must be in numerical descriptors.")
 
         value = self.get_random_value_for_numerical_descriptor(descriptor_name)
-        assert self.numerical_descriptors is not None, "Numerical descriptors must be initialized."
+        assert self.numerical_descriptors is not None, (
+            "Numerical descriptors must be initialized."
+        )
         self.numerical_descriptors[descriptor_name]["value"] = value
         if save:
             self.save()
@@ -190,11 +214,16 @@ class PatientFindingClassification(models.Model):
         if not self.subcategories or not self.numerical_descriptors:
             self.save()
 
-        assert self.numerical_descriptors is not None, "Numerical descriptors must be initialized."
+        assert self.numerical_descriptors is not None, (
+            "Numerical descriptors must be initialized."
+        )
 
         numerical_descriptors = self.numerical_descriptors
 
-        for numerical_descriptor_name, _numerical_descriptor_dict in numerical_descriptors.items():
+        for (
+            numerical_descriptor_name,
+            _numerical_descriptor_dict,
+        ) in numerical_descriptors.items():
             self.set_random_numerical_descriptor(numerical_descriptor_name, save=False)
 
         self.save()

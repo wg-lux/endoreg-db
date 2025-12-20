@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional, Any, Mapping, TYPE_CHECKING
+
 if TYPE_CHECKING:
     from endoreg_db.models.requirement.requirement import Requirement
 
@@ -14,13 +15,13 @@ class RequirementEvaluationErrorContext:
     - user_message: optional pre-formatted text for UI
     - meta: optional arbitrary payload for logging / debugging
     """
+
     requirement: "Requirement"
     code: str
     technical_message: str
     user_message: Optional[str] = None
     description: Optional[str] = None
     meta: Optional[Mapping[str, Any]] = None
-    
 
 
 class RequirementEvaluationError(Exception):
@@ -36,7 +37,7 @@ class RequirementEvaluationError(Exception):
 
     def __init__(
         self,
-        requirement: "Requirement",     
+        requirement: "Requirement",
         code: str,
         technical_message: str,
         user_message: Optional[str] = None,
@@ -52,18 +53,16 @@ class RequirementEvaluationError(Exception):
         )
         # Base Exception message = technical message
         super().__init__(technical_message, *args)
-        
-    
 
     @property
-    def requirement(self) ->  "Requirement":
+    def requirement(self) -> "Requirement":
         return self.context.requirement
 
     @property
     def requirement_name(self) -> str:
         # This is the DB name, *not* the internal Python repr
         return getattr(self.context.requirement, "name", "unknown")
-    
+
     @property
     def requirement_description(self) -> str:
         return getattr(self.context.requirement, "description")

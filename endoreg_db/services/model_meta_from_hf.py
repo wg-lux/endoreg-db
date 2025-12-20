@@ -1,5 +1,4 @@
 # endoreg_db/services/model_meta_from_hf.py
-from pathlib import Path
 
 from django.core.files.base import ContentFile
 from huggingface_hub import hf_hub_download

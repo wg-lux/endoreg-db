@@ -18,8 +18,8 @@ from rest_framework.views import APIView
 from endoreg_db.models import VideoFile
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
-#for keycloak
+
+# for keycloak
 from rest_framework.permissions import IsAuthenticated
 from endoreg_db.authz.permissions import PolicyPermission
 
@@ -54,8 +54,8 @@ class VideoMediaView(APIView):
     - Integration with existing serializers
     """
 
-    #permission_classes = [EnvironmentAwarePermission]
-        #permission_classes = [EnvironmentAwarePermission]
+    # permission_classes = [EnvironmentAwarePermission]
+    # permission_classes = [EnvironmentAwarePermission]
     permission_classes = [IsAuthenticated, PolicyPermission]
 
     def get(self, request, pk=None):

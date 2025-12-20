@@ -18,7 +18,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from endoreg_db.models import Label, LabelVideoSegment, VideoFile
-from endoreg_db.serializers.label_video_segment.label_video_segment import LabelVideoSegmentSerializer
+from endoreg_db.serializers.label_video_segment.label_video_segment import (
+    LabelVideoSegmentSerializer,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
@@ -49,14 +51,21 @@ def video_segments_stats(request):
         stats = {
             "total_segments": total_segments,
             "videos_with_segments": videos_with_segments,
-            "by_label": {item["label__name"]: item["count"] for item in label_counts if item["label__name"]},
+            "by_label": {
+                item["label__name"]: item["count"]
+                for item in label_counts
+                if item["label__name"]
+            },
         }
 
         return Response(stats, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"Error fetching video segment stats: {e}")
-        return Response({"error": "Failed to fetch segment statistics"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": "Failed to fetch segment statistics"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["GET", "POST"])
@@ -84,13 +93,24 @@ def video_segments_collection(request):
                 try:
                     segment = serializer.save()
                     logger.info(f"Successfully created video segment {segment.pk}")
-                    return Response(LabelVideoSegmentSerializer(segment).data, status=status.HTTP_201_CREATED)
+                    return Response(
+                        LabelVideoSegmentSerializer(segment).data,
+                        status=status.HTTP_201_CREATED,
+                    )
                 except Exception as e:
                     logger.error(f"Error creating video segment: {str(e)}")
-                    return Response({"error": f"Failed to create segment: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    return Response(
+                        {"error": f"Failed to create segment: {str(e)}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
             else:
-                logger.warning(f"Invalid data for video segment creation: {serializer.errors}")
-                return Response({"error": "Invalid data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+                logger.warning(
+                    f"Invalid data for video segment creation: {serializer.errors}"
+                )
+                return Response(
+                    {"error": "Invalid data", "details": serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
     elif request.method == "GET":
         # Optional filtering by video_id
@@ -104,14 +124,20 @@ def video_segments_collection(request):
                 video = VideoFile.objects.get(id=video_id)
                 queryset = queryset.filter(video_file=video)
             except VideoFile.DoesNotExist:
-                return Response({"error": f"Video with id {video_id} not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"error": f"Video with id {video_id} not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
         if label_id:
             try:
                 label = Label.objects.get(id=label_id)
                 queryset = queryset.filter(label=label)
             except Label.DoesNotExist:
-                return Response({"error": f"Label with id {label_id} not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"error": f"Label with id {label_id} not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
         # Order by video and start time for consistent results
         segments = queryset.order_by("video_file__id", "start_frame_number")
@@ -152,7 +178,10 @@ def video_segments_by_video(request, pk):
                 label = Label.objects.get(name=label_name)
                 queryset = queryset.filter(label=label)
             except Label.DoesNotExist:
-                return Response({"error": f'Label "{label_name}" not found'}, status=status.HTTP_404_NOT_FOUND)
+                return Response(
+                    {"error": f'Label "{label_name}" not found'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
         segments = queryset.order_by("start_frame_number")
         serializer = LabelVideoSegmentSerializer(segments, many=True)
@@ -170,14 +199,27 @@ def video_segments_by_video(request, pk):
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
-                    logger.info(f"Successfully created segment {segment.pk} for video {pk}")
-                    return Response(LabelVideoSegmentSerializer(segment).data, status=status.HTTP_201_CREATED)
+                    logger.info(
+                        f"Successfully created segment {segment.pk} for video {pk}"
+                    )
+                    return Response(
+                        LabelVideoSegmentSerializer(segment).data,
+                        status=status.HTTP_201_CREATED,
+                    )
                 except Exception as e:
                     logger.error(f"Error creating segment for video {pk}: {str(e)}")
-                    return Response({"error": f"Failed to create segment: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    return Response(
+                        {"error": f"Failed to create segment: {str(e)}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
             else:
-                logger.warning(f"Invalid data for segment creation: {serializer.errors}")
-                return Response({"error": "Invalid data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+                logger.warning(
+                    f"Invalid data for segment creation: {serializer.errors}"
+                )
+                return Response(
+                    {"error": "Invalid data", "details": serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
 
 @api_view(["GET", "PATCH", "DELETE"])
@@ -208,10 +250,14 @@ def video_segment_detail(request, pk, segment_id):
         return Response(serializer.data)
 
     elif request.method == "PATCH":
-        logger.info(f"Updating segment {segment_id} for video {pk} with data: {request.data}")
+        logger.info(
+            f"Updating segment {segment_id} for video {pk} with data: {request.data}"
+        )
 
         with transaction.atomic():
-            serializer = LabelVideoSegmentSerializer(segment, data=request.data, partial=True)
+            serializer = LabelVideoSegmentSerializer(
+                segment, data=request.data, partial=True
+            )
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
@@ -219,10 +265,16 @@ def video_segment_detail(request, pk, segment_id):
                     return Response(LabelVideoSegmentSerializer(segment).data)
                 except Exception as e:
                     logger.error(f"Error updating segment {segment_id}: {str(e)}")
-                    return Response({"error": f"Failed to update segment: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    return Response(
+                        {"error": f"Failed to update segment: {str(e)}"},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
             else:
                 logger.warning(f"Invalid data for segment update: {serializer.errors}")
-                return Response({"error": "Invalid data", "details": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "Invalid data", "details": serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
     elif request.method == "DELETE":
         logger.info(f"Deleting segment {segment_id} from video {pk}")
@@ -230,10 +282,16 @@ def video_segment_detail(request, pk, segment_id):
             with transaction.atomic():
                 segment.delete()
                 logger.info(f"Successfully deleted segment {segment_id}")
-                return Response({"message": f"Segment {segment_id} deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+                return Response(
+                    {"message": f"Segment {segment_id} deleted successfully"},
+                    status=status.HTTP_204_NO_CONTENT,
+                )
         except Exception as e:
             logger.error(f"Error deleting segment {segment_id}: {str(e)}")
-            return Response({"error": f"Failed to delete segment: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": f"Failed to delete segment: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 # ============================================================================
@@ -282,7 +340,9 @@ def video_segment_validate(request, pk: int, segment_id: int):
     try:
         is_validated = request.data.get("is_validated", True)
         notes = request.data.get("notes", "")
-        information_source_name = request.data.get("information_source_name", "manual_annotation")
+        information_source_name = request.data.get(
+            "information_source_name", "manual_annotation"
+        )
 
         # Optional: update times (seconds) before validation
         start_time = request.data.get("start_time")
@@ -299,7 +359,9 @@ def video_segment_validate(request, pk: int, segment_id: int):
                     )
                     segment.start_frame_number = new_start
                     segment.end_frame_number = new_end
-                    segment.save(update_fields=["start_frame_number", "end_frame_number"])
+                    segment.save(
+                        update_fields=["start_frame_number", "end_frame_number"]
+                    )
 
             segment.mark_validated(
                 is_validated=is_validated,
@@ -323,9 +385,13 @@ def video_segment_validate(request, pk: int, segment_id: int):
 
     except Exception as e:
         logger.error(f"Error validating segment {segment_id} in video {pk}: {e}")
-        return Response({"error": f"Validation failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": f"Validation failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
-#TODO Pass user based information source to backend. This is the endpoint currently used by the VideoExamination endpoint
+
+# TODO Pass user based information source to backend. This is the endpoint currently used by the VideoExamination endpoint
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def video_segments_validate_bulk(request, pk: int):
@@ -351,22 +417,24 @@ def video_segments_validate_bulk(request, pk: int):
     segment_ids = request.data.get("segment_ids", [])
     is_validated = request.data.get("is_validated", True)
     notes = request.data.get("notes", "")
-    information_source_name = request.data.get("information_source_name", "manual_annotation")
+    information_source_name = request.data.get(
+        "information_source_name", "manual_annotation"
+    )
     if notes:
         logger.info(f"Segment Validiert ${notes}")
     if not segment_ids:
-        return Response({"error": "segment_ids is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "segment_ids is required"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     # optional per-segment timing info (seconds)
     segments_data_list = request.data.get("segments", []) or []
     segments_data = {int(s["id"]): s for s in segments_data_list if "id" in s}
 
     try:
-        segments = (
-            LabelVideoSegment.objects
-            .filter(pk__in=segment_ids, video_file=video)
-            .select_related("state", "video_file")
-        )
+        segments = LabelVideoSegment.objects.filter(
+            pk__in=segment_ids, video_file=video
+        ).select_related("state", "video_file")
 
         if not segments.exists():
             return Response(
@@ -396,13 +464,18 @@ def video_segments_validate_bulk(request, pk: int):
                                 segment.start_frame_number = new_start
                                 segment.end_frame_number = new_end
                                 segment.save(
-                                    update_fields=["start_frame_number", "end_frame_number"]
+                                    update_fields=[
+                                        "start_frame_number",
+                                        "end_frame_number",
+                                    ]
                                 )
 
                     # 2) mark as validated + update information source + notes
                     segment.mark_validated(
                         is_validated=is_validated,
-                        information_source_name=str(information_source_name) if is_validated else str(None),
+                        information_source_name=str(information_source_name)
+                        if is_validated
+                        else str(None),
                     )
                     updated_count += 1
 
@@ -422,13 +495,18 @@ def video_segments_validate_bulk(request, pk: int):
 
         if failed_ids:
             response_data["failed_ids"] = failed_ids
-            response_data["warning"] = f"{len(failed_ids)} segments could not be validated"
+            response_data["warning"] = (
+                f"{len(failed_ids)} segments could not be validated"
+            )
 
         return Response(response_data, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"Error in bulk validation for video {pk}: {e}")
-        return Response({"error": f"Bulk validation failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"error": f"Bulk validation failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["GET", "POST"])
@@ -478,7 +556,9 @@ def video_segments_validation_status(request, pk: int):
         # Get validation status
         label_name = request.query_params.get("label_name")
 
-        segments_query = LabelVideoSegment.objects.filter(video_file=video).select_related("state", "label")
+        segments_query = LabelVideoSegment.objects.filter(
+            video_file=video
+        ).select_related("state", "label")
 
         if label_name:
             segments_query = segments_query.filter(label__name=label_name)
@@ -505,7 +585,8 @@ def video_segments_validation_status(request, pk: int):
                 "total_segments": total_count,
                 "validated_count": validated_count,
                 "unvalidated_count": total_count - validated_count,
-                "validation_complete": validated_count == total_count and total_count > 0,
+                "validation_complete": validated_count == total_count
+                and total_count > 0,
                 "by_label": by_label,
                 "label_filter": label_name,
             },
@@ -517,7 +598,9 @@ def video_segments_validation_status(request, pk: int):
         label_name = request.data.get("label_name")
         notes = request.data.get("notes", "")
 
-        segments_query = LabelVideoSegment.objects.filter(video_file=video).select_related("state", "label")
+        segments_query = LabelVideoSegment.objects.filter(
+            video_file=video
+        ).select_related("state", "label")
 
         if label_name:
             segments_query = segments_query.filter(label__name=label_name)
@@ -525,7 +608,14 @@ def video_segments_validation_status(request, pk: int):
         segments = segments_query.all()
 
         if not segments.exists():
-            return Response({"message": "No segments found to validate", "video_id": pk, "updated_count": 0}, status=status.HTTP_200_OK)
+            return Response(
+                {
+                    "message": "No segments found to validate",
+                    "video_id": pk,
+                    "updated_count": 0,
+                },
+                status=status.HTTP_200_OK,
+            )
 
         updated_count = 0
         failed_count = 0
@@ -544,8 +634,10 @@ def video_segments_validation_status(request, pk: int):
                     failed_count += 1
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
-        logger.info(f"Removing Outside Segments")
-        video.label_video_segments.filter(video_file=video, label__name="outside", state__is_validated=False).delete()
+        logger.info("Removing Outside Segments")
+        video.label_video_segments.filter(
+            video_file=video, label__name="outside", state__is_validated=False
+        ).delete()
         return Response(
             {
                 "message": f"Video segment validation completed for video {pk}",

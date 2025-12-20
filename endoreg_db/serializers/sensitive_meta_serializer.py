@@ -1,9 +1,8 @@
 from rest_framework import serializers
 from django.db import transaction
-from typing import Dict, Any
 import logging
 
-from ..models import SensitiveMeta, SensitiveMetaState, Center, Gender
+from ..models import SensitiveMeta, Center, Gender
 
 logger = logging.getLogger(__name__)
 
@@ -13,23 +12,25 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
     Serializer for displaying SensitiveMeta details with verification state.
     Includes all relevant fields for annotation and verification.
     """
-    
+
     # State verification fields
     is_verified = serializers.SerializerMethodField()
     dob_verified = serializers.SerializerMethodField()
     names_verified = serializers.SerializerMethodField()
-    
+
     # Related fields for better display
     center_name = serializers.CharField(source="center.name", read_only=True)
-    patient_gender_name = serializers.CharField(source="patient_gender.name", read_only=True)
-    
+    patient_gender_name = serializers.CharField(
+        source="patient_gender.name", read_only=True
+    )
+
     # Examiner information
     examiners_display = serializers.SerializerMethodField()
-    
+
     # Formatted dates for display
     patient_dob_display = serializers.SerializerMethodField()
     examination_date_display = serializers.SerializerMethodField()
-    
+
     # Hash displays (last 8 characters for security)
     patient_hash_display = serializers.SerializerMethodField()
     examination_hash_display = serializers.SerializerMethodField()
@@ -37,28 +38,28 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = SensitiveMeta
         fields = [
-            'id',
-            'patient_first_name',
-            'patient_last_name', 
-            'patient_dob',
-            'patient_dob_display',
-            'examination_date',
-            'examination_date_display',
-            'center_name',
-            'patient_gender_name',
-            'endoscope_type',
-            'endoscope_sn',
-            'patient_hash_display',
-            'examination_hash_display',
-            'examiners_display',
-            'is_verified',
-            'dob_verified',
-            'names_verified',
+            "id",
+            "patient_first_name",
+            "patient_last_name",
+            "patient_dob",
+            "patient_dob_display",
+            "examination_date",
+            "examination_date_display",
+            "center_name",
+            "patient_gender_name",
+            "endoscope_type",
+            "endoscope_sn",
+            "patient_hash_display",
+            "examination_hash_display",
+            "examiners_display",
+            "is_verified",
+            "dob_verified",
+            "names_verified",
         ]
         read_only_fields = [
-            'id',
-            'patient_hash_display',
-            'examination_hash_display',
+            "id",
+            "patient_hash_display",
+            "examination_hash_display",
         ]
 
     def get_is_verified(self, obj):
@@ -68,7 +69,9 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
         except AttributeError:
             return False
         except Exception as e:
-            logger.exception(f"Unexpected error in get_is_verified for SensitiveMeta {getattr(obj, 'pk', None)}: {e}")
+            logger.exception(
+                f"Unexpected error in get_is_verified for SensitiveMeta {getattr(obj, 'pk', None)}: {e}"
+            )
             raise
 
     def get_dob_verified(self, obj):
@@ -126,32 +129,32 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     Serializer for updating SensitiveMeta fields including verification state.
     Handles partial updates and state management.
     """
-    
+
     # Verification state fields
     dob_verified = serializers.BooleanField(required=False)
     names_verified = serializers.BooleanField(required=False)
-    
+
     # Center can be updated by name
     center_name = serializers.CharField(write_only=True, required=False)
-    
+
     # Gender can be updated by name
     patient_gender_name = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = SensitiveMeta
         fields = [
-            'patient_first_name',
-            'patient_last_name',
-            'patient_dob',
-            'examination_date',
-            'center_name',
-            'patient_gender_name',
-            'endoscope_type',
-            'endoscope_sn',
-            'examiner_first_name',
-            'examiner_last_name',
-            'dob_verified',
-            'names_verified',
+            "patient_first_name",
+            "patient_last_name",
+            "patient_dob",
+            "examination_date",
+            "center_name",
+            "patient_gender_name",
+            "endoscope_type",
+            "endoscope_sn",
+            "examiner_first_name",
+            "examiner_last_name",
+            "dob_verified",
+            "names_verified",
         ]
 
     def validate_center_name(self, value):
@@ -177,17 +180,17 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         """Custom validation for the entire data set."""
         # Guard against None values before calling strip()
-        first_name = data.get('patient_first_name')
+        first_name = data.get("patient_first_name")
         if first_name is not None and not first_name.strip():
-            raise serializers.ValidationError({
-                'patient_first_name': 'First name cannot be empty.'
-            })
-        
-        last_name = data.get('patient_last_name')
+            raise serializers.ValidationError(
+                {"patient_first_name": "First name cannot be empty."}
+            )
+
+        last_name = data.get("patient_last_name")
         if last_name is not None and not last_name.strip():
-            raise serializers.ValidationError({
-                'patient_last_name': 'Last name cannot be empty.'
-            })
+            raise serializers.ValidationError(
+                {"patient_last_name": "Last name cannot be empty."}
+            )
 
         return data
 
@@ -198,32 +201,36 @@ class SensitiveMetaUpdateSerializer(serializers.ModelSerializer):
         Handles both model fields and verification state.
         """
         # Extract verification state data
-        dob_verified = validated_data.pop('dob_verified', None)
-        names_verified = validated_data.pop('names_verified', None)
-        
+        dob_verified = validated_data.pop("dob_verified", None)
+        names_verified = validated_data.pop("names_verified", None)
+
         # -- center -------------------------------------------------
-        center = validated_data.pop('center_name', None)
-        if isinstance(center, Center):          # returned by validate_center_name
+        center = validated_data.pop("center_name", None)
+        if isinstance(center, Center):  # returned by validate_center_name
             instance.center = center
 
         # -- gender -------------------------------------------------
-        gender = validated_data.pop('patient_gender_name', None)
-        if isinstance(gender, Gender):          # returned by validate_patient_gender_name
+        gender = validated_data.pop("patient_gender_name", None)
+        if isinstance(gender, Gender):  # returned by validate_patient_gender_name
             instance.patient_gender = gender
 
         # -- ordinary fields ---------------------------------------
         if validated_data:
-            instance.update_from_dict(validated_data)   # should NOT call save()
+            instance.update_from_dict(validated_data)  # should NOT call save()
 
         # -- verification state ------------------------------------
         if dob_verified is not None or names_verified is not None:
             state = instance.get_or_create_state()
             if dob_verified is not None:
                 state.dob_verified = dob_verified
-                logger.info(f"Updated DOB verification for SensitiveMeta {instance.pk}: {dob_verified}")
+                logger.info(
+                    f"Updated DOB verification for SensitiveMeta {instance.pk}: {dob_verified}"
+                )
             if names_verified is not None:
                 state.names_verified = names_verified
-                logger.info(f"Updated names verification for SensitiveMeta {instance.pk}: {names_verified}")
+                logger.info(
+                    f"Updated names verification for SensitiveMeta {instance.pk}: {names_verified}"
+                )
             state.save()
 
         # -- finally persist the model itself ----------------------
@@ -236,47 +243,59 @@ class SensitiveMetaVerificationSerializer(serializers.Serializer):
     Simple serializer for bulk verification state updates.
     Used when only updating verification flags.
     """
-    
+
     sensitive_meta_id = serializers.IntegerField()
     dob_verified = serializers.BooleanField(required=False)
     names_verified = serializers.BooleanField(required=False)
-    
+
     def validate_sensitive_meta_id(self, value):
         """Ensure SensitiveMeta exists."""
         try:
             SensitiveMeta.objects.get(id=value)
             return value
         except SensitiveMeta.DoesNotExist:
-            raise serializers.ValidationError(f"SensitiveMeta with ID {value} does not exist.")
+            raise serializers.ValidationError(
+                f"SensitiveMeta with ID {value} does not exist."
+            )
 
     @transaction.atomic
     def save(self):
         """Update verification state for the specified SensitiveMeta with proper locking."""
-        sensitive_meta_id = self.validated_data['sensitive_meta_id']
-        dob_verified = self.validated_data.get('dob_verified')
-        names_verified = self.validated_data.get('names_verified')
-        
+        sensitive_meta_id = self.validated_data["sensitive_meta_id"]
+        dob_verified = self.validated_data.get("dob_verified")
+        names_verified = self.validated_data.get("names_verified")
+
         try:
             # Use select_for_update for strong consistency in concurrent environments
-            sensitive_meta = SensitiveMeta.objects.select_for_update().get(id=sensitive_meta_id)
+            sensitive_meta = SensitiveMeta.objects.select_for_update().get(
+                id=sensitive_meta_id
+            )
             state = sensitive_meta.get_or_create_state()
-            
+
             if dob_verified is not None:
                 state.dob_verified = dob_verified
-            
+
             if names_verified is not None:
                 state.names_verified = names_verified
-            
+
             state.save()
-            
+
             # Only log the ID to avoid potential PII leakage
-            logger.info(f"Updated verification state for SensitiveMeta ID {sensitive_meta_id}")
+            logger.info(
+                f"Updated verification state for SensitiveMeta ID {sensitive_meta_id}"
+            )
             return state
-            
+
         except SensitiveMeta.DoesNotExist:
-            logger.error(f"SensitiveMeta ID {sensitive_meta_id} not found during verification update")
-            raise serializers.ValidationError(f"SensitiveMeta with ID {sensitive_meta_id} does not exist.")
+            logger.error(
+                f"SensitiveMeta ID {sensitive_meta_id} not found during verification update"
+            )
+            raise serializers.ValidationError(
+                f"SensitiveMeta with ID {sensitive_meta_id} does not exist."
+            )
         except Exception as e:
             # Log the exception class but not the full details to avoid PII leakage
-            logger.error(f"Error updating verification state for ID {sensitive_meta_id}: {type(e).__name__}")
+            logger.error(
+                f"Error updating verification state for ID {sensitive_meta_id}: {type(e).__name__}"
+            )
             raise serializers.ValidationError("Failed to update verification state.")

@@ -1,7 +1,3 @@
-import os
-
-import yaml
-from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from ...data import REPORT_TYPE_DATA_DIR
@@ -29,15 +25,15 @@ IMPORT_METADATA = {
             "endoscope_info_line",
             "examiner_info_line",
             "cut_off_below_lines",
-            "cut_off_above_lines"
-        ], # e.g. ["intervention_types"]
+            "cut_off_above_lines",
+        ],  # e.g. ["intervention_types"]
         "foreign_key_models": [
             ReportReaderFlag,
             ReportReaderFlag,
             ReportReaderFlag,
             ReportReaderFlag,
-            ReportReaderFlag
-        ] # e.g. [InterventionType]
+            ReportReaderFlag,
+        ],  # e.g. [InterventionType]
     }
 }
 

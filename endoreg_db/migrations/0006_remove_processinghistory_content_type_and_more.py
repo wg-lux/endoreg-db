@@ -4,23 +4,28 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0005_alter_processinghistory_file_name_hash'),
+        ("endoreg_db", "0005_alter_processinghistory_file_name_hash"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='processinghistory',
-            name='content_type',
+            model_name="processinghistory",
+            name="content_type",
         ),
         migrations.RemoveField(
-            model_name='processinghistory',
-            name='file_name_hash',
+            model_name="processinghistory",
+            name="file_name_hash",
         ),
         migrations.AddField(
-            model_name='processinghistory',
-            name='file_hash',
-            field=models.CharField(blank=True, help_text='Content hash of the original file (e.g. video_hash/pdf_hash).', max_length=64, primary_key=True, serialize=False),
+            model_name="processinghistory",
+            name="file_hash",
+            field=models.CharField(
+                blank=True,
+                help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
+                max_length=64,
+                primary_key=True,
+                serialize=False,
+            ),
         ),
     ]

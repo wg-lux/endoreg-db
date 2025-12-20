@@ -53,4 +53,5 @@ def validate_directories(dirs: Iterable[Path] = dirs) -> bool:
 
     return ok
 
+
 validate_directories(dirs)

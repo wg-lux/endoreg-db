@@ -1,12 +1,7 @@
 from django.test import TestCase
 from logging import getLogger
 
-from endoreg_db.models import (
-    Product,
-    Unit,
-    ProductWeight,
-    ReferenceProduct
-)
+from endoreg_db.models import Product, Unit, ProductWeight
 
 logger = getLogger(__name__)
 logger.debug("Starting test for Patient model")
@@ -16,9 +11,8 @@ from ...helpers.data_loader import (
     load_distribution_data,
     load_center_data,
     load_examination_data,
-    load_green_endoscopy_wuerzburg_data
+    load_green_endoscopy_wuerzburg_data,
 )
-
 
 
 class ProductWeightModelTest(TestCase):
@@ -37,8 +31,7 @@ class ProductWeightModelTest(TestCase):
         for product_weight in product_weights:
             self.assertIsInstance(product_weight, ProductWeight)
             self.assertIsInstance(product_weight.product, Product)
-            
-            
+
     def test_product_weight_has_unit(self):
         """
         Test if all product weights have a unit.

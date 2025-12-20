@@ -1,35 +1,35 @@
 from django.urls import path
 
 from endoreg_db.views import VideoStreamView
-from endoreg_db.views.ai import label_list
 from endoreg_db.views.media import (
-    PdfMediaView,  # Alias to avoid conflict with legacy pdf.PDFMediaView
-    VideoMediaView,
-    get_sensitive_metadata_pk,
-    pdf_sensitive_metadata,
-    pdf_sensitive_metadata_list,
-    pdf_sensitive_metadata_verify,
-    sensitive_metadata_list,
-    video_sensitive_metadata,
-    video_sensitive_metadata_verify,
+                                    PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
+                                    VideoMediaView,
+                                    get_sensitive_metadata_pk,
+                                    pdf_sensitive_metadata,
+                                    pdf_sensitive_metadata_list,
+                                    pdf_sensitive_metadata_verify,
+                                    sensitive_metadata_list,
+                                    video_sensitive_metadata,
+                                    video_sensitive_metadata_verify,
 )
 from endoreg_db.views.report.reimport import ReportReimportView
 from endoreg_db.views.report.report_stream import ReportStreamView
 from endoreg_db.views.video import (
-    VideoReimportView,
-    video_segment_detail,
-    video_segment_validate,
-    video_segments_by_video,
-    video_segments_collection,
-    video_segments_stats,
-    video_segments_validate_bulk,
-    video_segments_validation_status,
+                                    VideoReimportView,
+                                    video_segment_detail,
+                                    video_segment_validate,
+                                    video_segments_by_video,
+                                    video_segments_collection,
+                                    video_segments_stats,
+                                    video_segments_validate_bulk,
+                                    video_segments_validation_status,
 )
+from endoreg_db.views.video.ai import label_list
 from endoreg_db.views.video.correction import (
-    VideoApplyMaskView,
-    VideoCorrectionView,
-    VideoMetadataStatsView,
-    VideoRemoveFramesView,
+                                    VideoApplyMaskView,
+                                    VideoCorrectionView,
+                                    VideoMetadataStatsView,
+                                    VideoRemoveFramesView,
 )
 
 # ---------------------------------------------------------------------------------------
@@ -225,7 +225,7 @@ urlpatterns = [
     ),
     # List Endpoints (Collection-Level)
     # GET /api/media/sensitive-metadata/
-    # List all sensitive metadata (combined PDFs and Videos)
+    # List all sensitive metadata (combined reports and Videos)
     # Supports filtering: ?content_type=pdf|video&verified=true&search=name
     path(
         "media/sensitive-metadata/",
@@ -233,7 +233,7 @@ urlpatterns = [
         name="sensitive-metadata-list",
     ),
     # GET /api/media/pdfs/sensitive-metadata/
-    # List sensitive metadata for PDFs only
+    # List sensitive metadata for reports only
     # Replaces legacy /api/pdf/sensitivemeta/list/
     path(
         "media/pdfs/sensitive-metadata/",
@@ -250,7 +250,9 @@ urlpatterns = [
     # POST /api/media/pdfs/<int:pk>/reimport/
     # Re-imports a report file to regenerate metadata when OCR failed or data is incomplete
     path(
-        "media/pdfs/<int:pk>/reimport/", ReportReimportView.as_view(), name="report-reimport"
+        "media/pdfs/<int:pk>/reimport/",
+        ReportReimportView.as_view(),
+        name="report-reimport",
     ),
 ]
 # ---------------------------------------------------------------------------------------

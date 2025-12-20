@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,20 +21,21 @@ class PatientExaminationListView(generics.ListAPIView):
     - limit: Number of results (default 20)
     - offset: Pagination offset (default 0)
     """
+
     serializer_class = PatientExaminationSerializer
     permission_classes = DEBUG_PERMISSIONS
 
     def get_queryset(self):
         queryset = PatientExamination.objects.select_related(
-            'patient', 'examination'
-        ).order_by('-date_start', '-id')
+            "patient", "examination"
+        ).order_by("-date_start", "-id")
 
         # Apply filters
-        patient_id = self.request.query_params.get('patient_id')
+        patient_id = self.request.query_params.get("patient_id")
         if patient_id:
             queryset = queryset.filter(patient_id=patient_id)
 
-        examination_name = self.request.query_params.get('examination_name')
+        examination_name = self.request.query_params.get("examination_name")
         if examination_name:
             queryset = queryset.filter(examination__name__icontains=examination_name)
 
@@ -44,25 +46,27 @@ class PatientExaminationListView(generics.ListAPIView):
             queryset = self.get_queryset()
 
             # Pagination
-            limit = int(request.query_params.get('limit', 20))
-            offset = int(request.query_params.get('offset', 0))
+            limit = int(request.query_params.get("limit", 20))
+            offset = int(request.query_params.get("offset", 0))
 
             total_count = queryset.count()
-            paginated_queryset = queryset[offset:offset + limit]
+            paginated_queryset = queryset[offset : offset + limit]
 
             serializer = self.get_serializer(paginated_queryset, many=True)
 
-            return Response({
-                'results': serializer.data,
-                'total_count': total_count,
-                'limit': limit,
-                'offset': offset,
-                'has_more': (offset + limit) < total_count
-            })
+            return Response(
+                {
+                    "results": serializer.data,
+                    "total_count": total_count,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": (offset + limit) < total_count,
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error listing examinations: {str(e)}")
             return Response(
-                {'error': 'Failed to list examinations'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Failed to list examinations"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

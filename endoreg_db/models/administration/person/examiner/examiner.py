@@ -12,7 +12,9 @@ if TYPE_CHECKING:
 
 
 class Examiner(Person):
-    center = models.ForeignKey("Center", on_delete=models.CASCADE, blank=True, null=True)
+    center = models.ForeignKey(
+        "Center", on_delete=models.CASCADE, blank=True, null=True
+    )
     hash = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
@@ -23,7 +25,13 @@ class Examiner(Person):
         return self.first_name + " " + self.last_name
 
     @classmethod
-    def custom_get_or_create(cls, first_name: str, last_name: str, center: "administration.Center", substitute_names: bool = True):
+    def custom_get_or_create(
+        cls,
+        first_name: str,
+        last_name: str,
+        center: "administration.Center",
+        substitute_names: bool = True,
+    ):
         from endoreg_db.models import (
             FirstName,
             LastName,

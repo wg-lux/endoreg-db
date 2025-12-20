@@ -3,7 +3,6 @@ Defines state tracking models related to report processing, including extraction
 """
 
 import logging
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from django.db import models, transaction

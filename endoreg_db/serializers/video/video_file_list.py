@@ -1,5 +1,5 @@
 # endoreg_db/serializers/video/video_file_list.py
-from typing import Literal, Optional
+from typing import Literal
 import logging
 
 from rest_framework import serializers
@@ -38,7 +38,9 @@ class VideoFileListSerializer(serializers.ModelSerializer):
         """
         try:
             return getattr(obj, "state", None)
-        except Exception as exc:  # pragma: no cover - type of error is DB/backend-specific
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - type of error is DB/backend-specific
             logger.warning(
                 "VideoFileListSerializer: unable to access state for VideoFile(id=%s): %s",
                 getattr(obj, "id", "unknown"),

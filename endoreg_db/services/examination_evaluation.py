@@ -1,12 +1,16 @@
 # app/services/evaluation.py
 from __future__ import annotations
-from typing import Dict, List, Set, Tuple
-from django.db.models import Prefetch
+from typing import List, Set, Tuple
 
-from endoreg_db.schemas.examination_evaluation import ExaminationEvalReport, RequirementSetEval, RequirementEval
+from endoreg_db.schemas.examination_evaluation import (
+    ExaminationEvalReport,
+    RequirementSetEval,
+    RequirementEval,
+)
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.requirement.requirement_set import RequirementSet
 import endoreg_db.services.lookup_service
+
 
 def _get_requirement_sets_for_exam(exam: PatientExamination) -> List[RequirementSet]:
     """
@@ -25,7 +29,10 @@ def _get_requirement_sets_for_exam(exam: PatientExamination) -> List[Requirement
                 sets.append(link.requirement_set)
     return sets
 
-def _eval_requirement(requirement, input_object, mode="loose") -> Tuple[bool, str | None]:
+
+def _eval_requirement(
+    requirement, input_object, mode="loose"
+) -> Tuple[bool, str | None]:
     """
     Evaluate a single Requirement and return (bool, message).
     The `message` can be None or contain a short explanation.
@@ -36,12 +43,19 @@ def _eval_requirement(requirement, input_object, mode="loose") -> Tuple[bool, st
     # Example: msg = requirement.last_reason if hasattr(requirement, "last_reason") else None
     return ok, msg
 
+
 def _reduce_bools(bools: List[bool], set_type_name: str | None) -> bool:
-    from endoreg_db.models.requirement.requirement_set import REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP
+    from endoreg_db.models.requirement.requirement_set import (
+        REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP,
+    )
+
     func = REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP.get(set_type_name or "all", all)
     return bool(func(bools))
 
-def _eval_set_tree(root: RequirementSet, input_object, visited: Set[int]) -> RequirementSetEval:
+
+def _eval_set_tree(
+    root: RequirementSet, input_object, visited: Set[int]
+) -> RequirementSetEval:
     """
     Recursively evaluate a RequirementSet node and linked children.
     Protect against cycles with visited set.
@@ -52,10 +66,12 @@ def _eval_set_tree(root: RequirementSet, input_object, visited: Set[int]) -> Req
         return RequirementSetEval(
             id=root.pk,
             name=root.name,
-            type=(root.requirement_set_type.name if root.requirement_set_type else None),
+            type=(
+                root.requirement_set_type.name if root.requirement_set_type else None
+            ),
             is_satisfied=True,
             requirements=[],
-            linked_sets=[]
+            linked_sets=[],
         )
 
     visited.add(root.pk)
@@ -81,7 +97,9 @@ def _eval_set_tree(root: RequirementSet, input_object, visited: Set[int]) -> Req
 
     # Combine booleans
     bools = [re.satisfied for re in req_evals] + [ce.is_satisfied for ce in child_evals]
-    set_type_name = root.requirement_set_type.name if root.requirement_set_type else "all"
+    set_type_name = (
+        root.requirement_set_type.name if root.requirement_set_type else "all"
+    )
     satisfied = _reduce_bools(bools, set_type_name)
 
     return RequirementSetEval(
@@ -92,20 +110,19 @@ def _eval_set_tree(root: RequirementSet, input_object, visited: Set[int]) -> Req
         requirements=req_evals,
         linked_sets=child_evals,
     )
-    
 
 
 def evaluate_examination(request: dict) -> ExaminationEvalReport:
     """
     Communicates with: components/RequirementGenerator
     Evaluates a PatientExamination by its Lookup. The frontend sends this structure:
-    
-    
+
+
         requirement_set_ids: plainRequirementSetIds,
         lookup_token: lookupToken,
         patient_examination_id: patientExaminationId
     };
-    
+
     And expects a response to be processed like this:
 
             const response = await axiosInstance.post('/api/evaluate-requirements/', payload);
@@ -125,9 +142,9 @@ def evaluate_examination(request: dict) -> ExaminationEvalReport:
             examination_id=None,
             summary={"is_satisfied": True, "failed_count": 0, "total_sets": 0},
             sets=[],
-            errors=["No patient_examination_id provided in request."]
+            errors=["No patient_examination_id provided in request."],
         )
-    
+
     # Use the dedicated loader function from the lookup service.
     exam = endoreg_db.services.lookup_service.load_patient_exam_for_eval(pk=exam_id)
 
@@ -135,7 +152,9 @@ def evaluate_examination(request: dict) -> ExaminationEvalReport:
     sets = _get_requirement_sets_for_exam(exam)
 
     visited: Set[int] = set()
-    set_evals: List[RequirementSetEval] = [_eval_set_tree(s, exam, visited) for s in sets]
+    set_evals: List[RequirementSetEval] = [
+        _eval_set_tree(s, exam, visited) for s in sets
+    ]
 
     # Aggregate summary
     overall = all(se.is_satisfied for se in set_evals) if set_evals else True
@@ -143,7 +162,11 @@ def evaluate_examination(request: dict) -> ExaminationEvalReport:
 
     return ExaminationEvalReport(
         examination_id=exam.pk,
-        summary={"is_satisfied": overall, "failed_count": failed, "total_sets": len(set_evals)},
+        summary={
+            "is_satisfied": overall,
+            "failed_count": failed,
+            "total_sets": len(set_evals),
+        },
         sets=set_evals,
         errors=[],  # fill with any global issues you detect
     )

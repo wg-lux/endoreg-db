@@ -14,7 +14,6 @@ from ..helpers.data_loader import (
 )
 
 
-
 class LabelModelTest(TestCase):
     def setUp(self):
         load_ai_model_label_data()
@@ -42,6 +41,7 @@ class LabelModelTest(TestCase):
             self.assertIsInstance(label, Label)
             self.assertIsInstance(label.label_type, LabelType)
 
+
 class LabelSetModelTest(TestCase):
     def setUp(self):
         load_ai_model_label_data()
@@ -53,4 +53,6 @@ class LabelSetModelTest(TestCase):
         label_sets = LabelSet.objects.all()
         for label_set in label_sets:
             self.assertIsInstance(label_set, LabelSet)
-            self.assertTrue(label_set.labels.exists(), f"Label set {label_set} has no labels.")
+            self.assertTrue(
+                label_set.labels.exists(), f"Label set {label_set} has no labels."
+            )

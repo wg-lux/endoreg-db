@@ -1,9 +1,14 @@
-from typing import TYPE_CHECKING, List, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Examination, FindingIntervention, InformationSource, Requirement
+    from endoreg_db.models import (
+        Examination,
+        FindingIntervention,
+        InformationSource,
+        Requirement,
+    )
     from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 
@@ -60,12 +65,21 @@ class ExaminationIndication(models.Model):
     objects = ExaminationIndicationManager()
 
     if TYPE_CHECKING:
-        classifications = cast(models.manager.RelatedManager["ExaminationIndicationClassification"], classifications)
-        expected_interventions = cast(models.manager.RelatedManager["FindingIntervention"], expected_interventions)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        classifications = cast(
+            models.manager.RelatedManager["ExaminationIndicationClassification"],
+            classifications,
+        )
+        expected_interventions = cast(
+            models.manager.RelatedManager["FindingIntervention"], expected_interventions
+        )
+        information_sources = cast(
+            models.manager.RelatedManager["InformationSource"], information_sources
+        )
 
         @property
-        def related_requirements(self) -> "models.manager.RelatedManager[Requirement]": ...
+        def related_requirements(
+            self,
+        ) -> "models.manager.RelatedManager[Requirement]": ...
 
         @property
         def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
@@ -164,7 +178,9 @@ class ExaminationIndicationClassificationChoiceManager(models.Manager):
     Manager for ExaminationIndicationClassificationChoice with custom query methods.
     """
 
-    def get_by_natural_key(self, name: str) -> "ExaminationIndicationClassificationChoice":
+    def get_by_natural_key(
+        self, name: str
+    ) -> "ExaminationIndicationClassificationChoice":
         """
         Retrieves an ExaminationIndicationClassificationChoice instance by its natural key.
 

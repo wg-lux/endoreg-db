@@ -5,9 +5,9 @@ from .center_waste import CenterWaste
 from .center_shift import CenterShift
 
 __all__ = [
-    'Center',
-    'CenterProduct',
-    'CenterResource',
-    'CenterWaste',
-    'CenterShift',
+    "Center",
+    "CenterProduct",
+    "CenterResource",
+    "CenterWaste",
+    "CenterShift",
 ]

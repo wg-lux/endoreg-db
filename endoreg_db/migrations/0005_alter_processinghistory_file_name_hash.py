@@ -4,15 +4,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0004_remove_processinghistory_id_and_more'),
+        ("endoreg_db", "0004_remove_processinghistory_id_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='processinghistory',
-            name='file_name_hash',
-            field=models.CharField(blank=True, help_text='SHA-256 hash of the processed file name.', max_length=64, primary_key=True, serialize=False),
+            model_name="processinghistory",
+            name="file_name_hash",
+            field=models.CharField(
+                blank=True,
+                help_text="SHA-256 hash of the processed file name.",
+                max_length=64,
+                primary_key=True,
+                serialize=False,
+            ),
         ),
     ]

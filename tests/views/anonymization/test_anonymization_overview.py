@@ -1,7 +1,7 @@
 """
 Unit tests for anonymization overview API endpoints.
 Tests the /api/anonymization/items/overview/ endpoint that returns
-FileItem interface data for videos and PDFs.
+FileItem interface data for videos and reports.
 """
 
 import logging
@@ -13,9 +13,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from endoreg_db.models import SensitiveMeta, SensitiveMetaState, VideoState
-
-from ...helpers.default_objects import get_default_center, get_default_egd_pdf
-from ...helpers.optimized_video_fixtures import get_cached_or_create
+from endoreg_db.tests.helpers.default_objects import get_default_center, get_default_egd_pdf
+from endoreg_db.tests.helpers.optimized_video_fixtures import get_cached_or_create
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +292,7 @@ class AnonymizationOverviewAPITest(TestCase):
 #     self.assertEqual(items_by_filename['pdf_done.pdf']['anonymizationStatus'], 'done_processing_anonymization')
 
 # def test_annotation_statuses(self):
-#     """Test annotation status logic for videos and PDFs."""
+#     """Test annotation status logic for videos and reports."""
 #     # Video with verified sensitive meta
 #     verified_meta = SensitiveMeta.objects.create(
 #         patient_first_name="Verified",
@@ -332,7 +331,7 @@ class AnonymizationOverviewAPITest(TestCase):
 #         center=self.center
 #     )
 
-#     # Create PDFs
+#     # Create reports
 #     _pdf_verified = RawPdfFile.objects.create(
 #         file="reports/pdf_verified.pdf",
 #         created_at=timezone.now(),
@@ -350,7 +349,7 @@ class AnonymizationOverviewAPITest(TestCase):
 
 #     items_by_filename = {item['filename']: item for item in response.data}
 
-#     # Videos and PDFs with verified meta should have annotation status 'done_processing_anonymization'
+#     # Videos and reports with verified meta should have annotation status 'done_processing_anonymization'
 #     self.assertEqual(items_by_filename['video_verified.mp4']['annotationStatus'], 'done_processing_anonymization')
 #     self.assertEqual(items_by_filename['pdf_verified.pdf']['annotationStatus'], 'done_processing_anonymization')
 

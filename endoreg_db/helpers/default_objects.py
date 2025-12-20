@@ -408,7 +408,7 @@ def get_default_video_file():
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         delete_source=False,  # Keep the original asset for other tests
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
-        video_hash=sha256_file(video_path)
+        video_hash=sha256_file(video_path),
     )
 
     return video_file

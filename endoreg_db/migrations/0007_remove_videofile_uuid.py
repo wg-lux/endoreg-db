@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0006_remove_processinghistory_content_type_and_more'),
+        ("endoreg_db", "0006_remove_processinghistory_content_type_and_more"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='videofile',
-            name='uuid',
+            model_name="videofile",
+            name="uuid",
         ),
     ]

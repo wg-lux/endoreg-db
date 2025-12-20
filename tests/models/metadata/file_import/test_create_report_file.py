@@ -3,18 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.models import Center, EndoscopyProcessor
-from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
-from endoreg_db.import_files.context.import_context import ImportContext
-
-# PDF equivalents
+# report equivalents
 import endoreg_db.import_files.file_storage.create_report_file as create_from_file_module  # <-- pdf create_from_file
-from endoreg_db.models.media import RawPdfFile  # <-- analogous to VideoFile (could be PdfFile/RawPdfFile)
+import endoreg_db.utils as utils
+from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.models import Center, EndoscopyProcessor
+from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import sha256_file
-import endoreg_db.utils as utils
-from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.utils.hashs import get_pdf_hash
 
 
 def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path]:
@@ -39,17 +35,11 @@ def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path]:
     return storage_root, sensitive_dir
 
 
-
 def _write_minimal_pdf(path: Path) -> None:
     """
-    Write a tiny valid-ish PDF (enough to be treated as a PDF file on disk).
+    Write a tiny valid-ish report (enough to be treated as a report file on disk).
     """
-    path.write_bytes(
-        b"%PDF-1.4\n"
-        b"1 0 obj\n<<>>\nendobj\n"
-        b"trailer\n<<>>\n"
-        b"%%EOF\n"
-    )
+    path.write_bytes(b"%report-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
 
 
 @pytest.mark.django_db
@@ -59,7 +49,6 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
     sensitive_report directory, and get_raw_file_path() returns a regular file.
     """
     storage_root, sensitive_dir = _configure_storage_layout("happy")
-
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +66,9 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
         original_path=Path(src_file),
     )
 
-    report, processed, needs_processing = create_from_file_module.create_or_retrieve_report_file(ctx)
+    report, processed, needs_processing = (
+        create_from_file_module.create_or_retrieve_report_file(ctx)
+    )
 
     assert needs_processing is True
     assert processed is False
@@ -89,18 +80,21 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
     assert raw_path.is_file()
 
     # Stored hash should match content hash of stored file (adjust attribute name if needed)
-    assert report.pdf_hash == sha256_file(Path(raw_path))  # <-- maybe report.report_hash/pdf_hash
+    assert report.pdf_hash == sha256_file(
+        Path(raw_path)
+    )  # <-- maybe report.report_hash/pdf_hash
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_duplicate_with_existing_file(
+    tmp_path, monkeypatch, base_db_data
+):
     """
     When a RawPdfFile with the same hash already exists *and* its raw file exists,
     create_or_retrieve_report_file should return the existing instance and not
     create a new one.
     """
     storage_root, sensitive_dir = _configure_storage_layout("dup_existing")
-
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +111,9 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
         delete_source=False,
     )
 
-    r1, processed1, needs_processing1 = create_from_file_module.create_or_retrieve_report_file(ctx)
+    r1, processed1, needs_processing1 = (
+        create_from_file_module.create_or_retrieve_report_file(ctx)
+    )
     assert processed1 is False
     assert needs_processing1 is True
 
@@ -135,7 +131,9 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
         processor_name=processor_name,
         delete_source=False,
     )
-    r2, processed2, needs_processing2 = create_from_file_module.create_or_retrieve_report_file(ctx2)
+    r2, processed2, needs_processing2 = (
+        create_from_file_module.create_or_retrieve_report_file(ctx2)
+    )
 
     assert processed2 is True
     assert needs_processing2 is False
@@ -143,13 +141,14 @@ def test_create_from_file_duplicate_with_existing_file(tmp_path, monkeypatch, ba
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkeypatch, base_db_data):
+def test_create_from_file_duplicate_with_missing_file_recreates(
+    tmp_path, monkeypatch, base_db_data
+):
     """
     When a RawPdfFile with the same hash exists but its raw file is missing,
     the orphaned record should be deleted and a new RawPdfFile created.
     """
     storage_root, sensitive_dir = _configure_storage_layout("dup_orphan")
-
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -167,7 +166,9 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
         original_path=Path(src_file),
     )
 
-    orphan, processed1, needs_processing1 = create_from_file_module.create_or_retrieve_report_file(ctx)
+    orphan, processed1, needs_processing1 = (
+        create_from_file_module.create_or_retrieve_report_file(ctx)
+    )
     assert processed1 is False
     assert needs_processing1 is True
     orphan_pk = orphan.pk
@@ -190,7 +191,9 @@ def test_create_from_file_duplicate_with_missing_file_recreates(tmp_path, monkey
         processor_name=processor_name,
         delete_source=False,
     )
-    new_report, processed2, needs_processing2 = create_from_file_module.create_or_retrieve_report_file(ctx2)
+    new_report, processed2, needs_processing2 = (
+        create_from_file_module.create_or_retrieve_report_file(ctx2)
+    )
 
     # NOTE:
     # If you keep the short-circuit-on-success logic, you will *not* recreate the file here,

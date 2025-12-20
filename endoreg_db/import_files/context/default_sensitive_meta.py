@@ -3,7 +3,7 @@
 import os
 import logging
 from datetime import date
-from typing import Optional, Union
+from typing import Union
 
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta  # adjust path
@@ -17,18 +17,17 @@ DEFAULT_CENTER_NAME = "endoreg_db_demo"
 DEFAULT_PATIENT_DOB = date(1970, 1, 1)
 
 
-def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> SensitiveMeta | None:
+def default_sensitive_meta(
+    instance: Union[RawPdfFile, VideoFile],
+) -> SensitiveMeta | None:
     """
     Ensure the given instance has a minimal SensitiveMeta attached.
 
     Called after text extraction + merging; only creates meta if none exists.
     """
     if instance is None:
-        logger.warning(
-            "No instance available for ensuring default patient data"
-        )
+        logger.warning("No instance available for ensuring default patient data")
         return
-    
 
     if instance.sensitive_meta:
         # Already has meta; nothing to do
@@ -44,7 +43,9 @@ def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> SensitiveM
             assert center_name is not None
             instance.center.name = center_name
         except AssertionError as e:
-            logger.debug(f"{e}Center name is not set! You can set it in .env under DEFAULT_CENTER_NAME using default from default_sensitive_meta")
+            logger.debug(
+                f"{e}Center name is not set! You can set it in .env under DEFAULT_CENTER_NAME using default from default_sensitive_meta"
+            )
             instance.center.name = DEFAULT_CENTER_NAME
             instance.center.get_by_name(DEFAULT_CENTER_NAME)
 
@@ -59,7 +60,9 @@ def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> SensitiveM
             else DEFAULT_CENTER_NAME
         ),
         # optional: link file_path for debugging/tracing
-        "file_path": str(instance.file_path) if getattr(instance, "file_path", None) else None,
+        "file_path": str(instance.file_path)
+        if getattr(instance, "file_path", None)
+        else None,
     }
 
     try:
@@ -78,4 +81,3 @@ def default_sensitive_meta(instance: Union[RawPdfFile, VideoFile]) -> SensitiveM
             e,
         )
         return None
-

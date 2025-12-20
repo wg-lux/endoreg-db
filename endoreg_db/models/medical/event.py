@@ -93,7 +93,9 @@ class EventClassification(models.Model):
         event: models.ForeignKey["Event"]
 
         @property
-        def event_classification_choices(self) -> models.QuerySet["EventClassificationChoice"]: ...
+        def event_classification_choices(
+            self,
+        ) -> models.QuerySet["EventClassificationChoice"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
@@ -105,7 +107,9 @@ class EventClassification(models.Model):
 
     def get_choices(self) -> List["EventClassificationChoice"]:
         """Retrieves all choices associated with this classification."""
-        choices: List[EventClassificationChoice] = [_ for _ in self.event_classification_choices.all()]
+        choices: List[EventClassificationChoice] = [
+            _ for _ in self.event_classification_choices.all()
+        ]
         return choices
 
 

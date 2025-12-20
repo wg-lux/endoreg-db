@@ -1,7 +1,6 @@
 import requests
 from django.test import LiveServerTestCase
 
-from endoreg_db.models import VideoFile
 from tests.media.video.helper import get_random_video_path_by_examination_alias
 
 from ..helpers.data_loader import load_base_db_data

@@ -61,7 +61,9 @@ class CenterShift(models.Model):
     if TYPE_CHECKING:
         center: models.ForeignKey["Center"]
         shift: models.ForeignKey["Shift"]
-        scheduled_days = cast(models.manager.RelatedManager["ScheduledDays"], scheduled_days)
+        scheduled_days = cast(
+            models.manager.RelatedManager["ScheduledDays"], scheduled_days
+        )
 
     def __str__(self):
         """

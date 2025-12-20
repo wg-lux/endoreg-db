@@ -121,7 +121,7 @@ def main():
         print("\n3. Checking database records...")
         try:
             video_5 = VideoFile.objects.get(pk=5)
-            print(f"📋 Video ID 5 found in database:")
+            print("📋 Video ID 5 found in database:")
             print(f"   UUID: {video_5.video_hash}")
 
             # Check different file path attributes
@@ -151,22 +151,22 @@ def main():
                     accessible, message = check_video_file_accessibility(match)
                     print(f"   ✅ {match} ({message})")
 
-                print(f"\n🔧 SOLUTION: Update VideoFile record to use:")
+                print("\n🔧 SOLUTION: Update VideoFile record to use:")
                 print(f"   {matching_files[0]}")
-                print(f"\n🐍 Django command to fix:")
-                print(f"   video = VideoFile.objects.get(pk=5)")
+                print("\n🐍 Django command to fix:")
+                print("   video = VideoFile.objects.get(pk=5)")
                 print(
                     f"   video.raw_file.name = '{matching_files[0].relative_to(Path(args.storage_dir))}'"
                 )
-                print(f"   video.save()")
+                print("   video.save()")
             else:
                 print(f"\n❌ No files found matching UUID {uuid_str}")
 
         except Exception as e:
             print(f"❌ Error checking database: {e}")
 
-    print(f"\n4. 🎯 QUICK TEST RECOMMENDATION:")
-    print(f"   Use this accessible file for testing:")
+    print("\n4. 🎯 QUICK TEST RECOMMENDATION:")
+    print("   Use this accessible file for testing:")
     print(f"   {accessible_files[0]}")
     print(f"   Size: {accessible_files[0].stat().st_size / (1024 * 1024):.1f} MB")
 

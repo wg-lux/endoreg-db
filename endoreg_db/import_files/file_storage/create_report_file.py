@@ -1,10 +1,9 @@
 # endoreg_db/import_files/storage/create_report_file.py
 import logging
-from pathlib import Path
 from typing import Tuple
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.import_files.context.import_context import ImportContext#
+from endoreg_db.import_files.context.import_context import ImportContext  #
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.state.processing_history.processing_history import (
@@ -36,8 +35,8 @@ def create_or_retrieve_report_file(
     needs_processing = True
 
     if not isinstance(ctx.file_hash, str):
-        ctx.file_hash=sha256_file(ctx.file_path)
-        
+        ctx.file_hash = sha256_file(ctx.file_path)
+
     # Check if we already have a successful history entry for this object
     has_success_history = ProcessingHistory.has_history_for_hash(
         file_hash=ctx.file_hash,
@@ -59,11 +58,11 @@ def create_or_retrieve_report_file(
         return ctx.current_report, processed, needs_processing
     elif has_failure_history:
         if not isinstance(ctx.current_report, RawPdfFile):
-            ctx.current_report = RawPdfFile.get_report_by_hash(ctx.file_hash)    
+            ctx.current_report = RawPdfFile.get_report_by_hash(ctx.file_hash)
         finalize_failure(ctx)
         processed = True
         needs_processing = True
-    
+
     # Determine the RawPdfFile instance to work with
     if ctx.current_report is not None:
         pdf = ctx.current_report
@@ -83,9 +82,6 @@ def create_or_retrieve_report_file(
 
         center = ensure_center(pdf, ctx.center_name)
         logger.info("Successfully set up report file from %s", center.name)
-
-
-
 
     # No successful history yet → ensure there is a history entry marking it as "in progress"/failed
     ProcessingHistory.get_or_create_for_hash(

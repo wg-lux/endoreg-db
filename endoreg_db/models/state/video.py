@@ -3,8 +3,7 @@ Defines state tracking models related to video processing.
 """
 
 import logging
-from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from django.db import models, transaction
 
@@ -97,7 +96,6 @@ class VideoState(models.Model):
 
     objects = models.Manager()
 
-
     @property
     def anonymization_status(self) -> AnonymizationState:
         """
@@ -117,7 +115,7 @@ class VideoState(models.Model):
             return AnonymizationState.STARTED
         if self.anonymized:
             return AnonymizationState.ANONYMIZED
-        
+
         return AnonymizationState.NOT_STARTED
 
     def mark_processing_not_started(self) -> None:

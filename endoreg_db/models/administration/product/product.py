@@ -23,7 +23,9 @@ class Product(models.Model):
 
     name = models.CharField(max_length=255)
 
-    transport_route = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
+    transport_route = models.ForeignKey(
+        "TransportRoute", on_delete=models.SET_NULL, null=True
+    )
     product_group = models.ForeignKey(
         "ProductGroup",
         on_delete=models.SET_NULL,
@@ -56,7 +58,9 @@ class Product(models.Model):
 
     def _calculate_material_metric(self, component: str, calculation_func):
         """Helper method to calculate weight or emission for materials of a specific component."""
-        from .product_material import ProductMaterial  # Import locally to avoid circular dependency issues at module level
+        from .product_material import (
+            ProductMaterial,
+        )  # Import locally to avoid circular dependency issues at module level
 
         materials = ProductMaterial.objects.filter(product=self, component=component)
         return calculation_func(materials)

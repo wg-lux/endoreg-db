@@ -1,7 +1,6 @@
 # endoreg_db/utils/ai/model_training/metrics.py
 from __future__ import annotations
 import torch
-import numpy as np
 
 
 def compute_metrics(logits, targets, masks, threshold=0.5):
@@ -41,7 +40,9 @@ def compute_metrics(logits, targets, masks, threshold=0.5):
         # consider only known labels
         valid_idx = m == 1
         if valid_idx.sum() == 0:
-            per_label.append({"precision": None, "recall": None, "f1": None, "support": 0})
+            per_label.append(
+                {"precision": None, "recall": None, "f1": None, "support": 0}
+            )
             continue
 
         t = t[valid_idx]
@@ -55,12 +56,14 @@ def compute_metrics(logits, targets, masks, threshold=0.5):
         recall_j = tp_j / (tp_j + fn_j + 1e-6)
         f1_j = 2 * precision_j * recall_j / (precision_j + recall_j + 1e-6)
 
-        per_label.append({
-            "precision": precision_j,
-            "recall": recall_j,
-            "f1": f1_j,
-            "support": t.sum().item()
-        })
+        per_label.append(
+            {
+                "precision": precision_j,
+                "recall": recall_j,
+                "f1": f1_j,
+                "support": t.sum().item(),
+            }
+        )
 
     return {
         "precision": precision,
@@ -71,5 +74,5 @@ def compute_metrics(logits, targets, masks, threshold=0.5):
         "fp": fp,
         "tn": tn,
         "fn": fn,
-        "per_label": per_label
+        "per_label": per_label,
     }

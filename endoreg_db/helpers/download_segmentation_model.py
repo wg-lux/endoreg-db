@@ -1,10 +1,11 @@
 import huggingface_hub
 from typing import Optional
 
+
 def download_segmentation_model(
     repo_id: str = "wg-lux/colo_segmentation_RegNetX800MF_base",
     filename: str = "model.safetensors",
-    cache_dir: Optional[str] = None
+    cache_dir: Optional[str] = None,
 ) -> str:
     """
     Downloads a segmentation model from Hugging Face and caches it locally.
@@ -16,7 +17,7 @@ def download_segmentation_model(
 
     Returns:
         str: The local path to the downloaded model.
-        
+
     Example:
         >>> model_path = download_segmentation_model()
         >>> # Downloads from wg-lux/colo_segmentation_RegNetX800MF_base

@@ -85,11 +85,11 @@ class Classifier:
         with torch.inference_mode():
             if self.verbose:
                 ic("Starting inference")
-                
+
             # Ensure model exists
             if self.model is None:
                 raise ValueError("Model is not loaded")
-            
+
             # Use the device the model is currently on, with fallback to CPU
             try:
                 # Check what device the model parameters are on
@@ -107,10 +107,10 @@ class Classifier:
                 device = torch.device("cpu")
                 if verbose:
                     print(f"Device detection failed, using CPU: {e}")
-                    
+
             # Ensure model is in eval mode
             self.model.eval()
-            
+
             for batch in tqdm(dl):
                 batch = batch.to(device, non_blocking=True)
                 prediction = self.model(batch)

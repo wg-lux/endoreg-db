@@ -4,90 +4,89 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('endoreg_db', '0002_alter_rawpdfstate_options_and_more'),
+        ("endoreg_db", "0002_alter_rawpdfstate_options_and_more"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='examination',
-            name='description_de',
+            model_name="examination",
+            name="description_de",
         ),
         migrations.RemoveField(
-            model_name='examination',
-            name='description_en',
+            model_name="examination",
+            name="description_en",
         ),
         migrations.RemoveField(
-            model_name='examination',
-            name='name_de',
+            model_name="examination",
+            name="name_de",
         ),
         migrations.RemoveField(
-            model_name='examination',
-            name='name_en',
+            model_name="examination",
+            name="name_en",
         ),
         migrations.RemoveField(
-            model_name='finding',
-            name='description_de',
+            model_name="finding",
+            name="description_de",
         ),
         migrations.RemoveField(
-            model_name='finding',
-            name='description_en',
+            model_name="finding",
+            name="description_en",
         ),
         migrations.RemoveField(
-            model_name='finding',
-            name='name_de',
+            model_name="finding",
+            name="name_de",
         ),
         migrations.RemoveField(
-            model_name='finding',
-            name='name_en',
+            model_name="finding",
+            name="name_en",
         ),
         migrations.RemoveField(
-            model_name='findingclassification',
-            name='description_de',
+            model_name="findingclassification",
+            name="description_de",
         ),
         migrations.RemoveField(
-            model_name='findingclassification',
-            name='description_en',
+            model_name="findingclassification",
+            name="description_en",
         ),
         migrations.RemoveField(
-            model_name='findingclassification',
-            name='name_de',
+            model_name="findingclassification",
+            name="name_de",
         ),
         migrations.RemoveField(
-            model_name='findingclassification',
-            name='name_en',
+            model_name="findingclassification",
+            name="name_en",
         ),
         migrations.RemoveField(
-            model_name='findingclassificationchoice',
-            name='description_de',
+            model_name="findingclassificationchoice",
+            name="description_de",
         ),
         migrations.RemoveField(
-            model_name='findingclassificationchoice',
-            name='description_en',
+            model_name="findingclassificationchoice",
+            name="description_en",
         ),
         migrations.RemoveField(
-            model_name='findingclassificationchoice',
-            name='name_de',
+            model_name="findingclassificationchoice",
+            name="name_de",
         ),
         migrations.RemoveField(
-            model_name='findingclassificationchoice',
-            name='name_en',
+            model_name="findingclassificationchoice",
+            name="name_en",
         ),
         migrations.RemoveField(
-            model_name='findingintervention',
-            name='description_de',
+            model_name="findingintervention",
+            name="description_de",
         ),
         migrations.RemoveField(
-            model_name='findingintervention',
-            name='description_en',
+            model_name="findingintervention",
+            name="description_en",
         ),
         migrations.RemoveField(
-            model_name='findingintervention',
-            name='name_de',
+            model_name="findingintervention",
+            name="name_de",
         ),
         migrations.RemoveField(
-            model_name='findingintervention',
-            name='name_en',
+            model_name="findingintervention",
+            name="name_en",
         ),
     ]

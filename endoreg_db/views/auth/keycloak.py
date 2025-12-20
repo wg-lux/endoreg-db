@@ -18,8 +18,12 @@ from django.http import HttpResponse
     Middleware now sees token, verifies it, injects user
     DRF view (KeycloakVideoView) is allowed to execute and returns data
 """
+
+
 class KeycloakVideoView(APIView):
-    permission_classes = [IsAuthenticated] #This uses DRF permissions to ensure request.user.is_authenticated == True.
+    permission_classes = [
+        IsAuthenticated
+    ]  # This uses DRF permissions to ensure request.user.is_authenticated == True.
     print("1")
 
     def get(self, request):
@@ -27,8 +31,10 @@ class KeycloakVideoView(APIView):
         We already inject a mock user in the middleware, so this will pass if the middleware succeeded.
         Returns a message including the Keycloak username.
         """
-        username = getattr(request.user, 'preferred_username', 'Unknown')
-        return Response({"message": f"🎥 Hello, {username}. You are viewing protected videos!"})
+        username = getattr(request.user, "preferred_username", "Unknown")
+        return Response(
+            {"message": f"🎥 Hello, {username}. You are viewing protected videos!"}
+        )
 
 
 def keycloak_login(request):
@@ -37,11 +43,11 @@ def keycloak_login(request):
     """
     - This gets triggered when middleware redirects to /login/.
     """
-    redirect_uri = request.build_absolute_uri('/login/callback/')
+    redirect_uri = request.build_absolute_uri("/login/callback/")
     print("Redirect URI:", redirect_uri)
     auth_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/auth"
 
-    #OAuth2 Authorization Code Flow
+    # OAuth2 Authorization Code Flow
     params = {
         "client_id": settings.KEYCLOAK_CLIENT_ID,
         "response_type": "code",
@@ -54,13 +60,11 @@ def keycloak_login(request):
     return redirect(f"{auth_url}?{urlencode(params)}")
 
 
-
 def keycloak_callback(request):
-
-    #User lands here after login (Keycloak redirects here with code).
+    # User lands here after login (Keycloak redirects here with code).
     """
     Handles the OAuth2 callback from Keycloak, exchanging the authorization code for tokens.
-    
+
     Receives the authorization code from Keycloak, exchanges it for access and refresh tokens, stores them in the user's session, and redirects to the protected videos page. Returns an error response if the code is missing, the token exchange fails, or an exception occurs.
     """
     code = request.GET.get("code")
@@ -69,7 +73,7 @@ def keycloak_callback(request):
 
     # Exchanges the code for an access_token.
     token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
-    redirect_uri = request.build_absolute_uri('/login/callback/')
+    redirect_uri = request.build_absolute_uri("/login/callback/")
 
     data = {
         "grant_type": "authorization_code",
@@ -87,8 +91,7 @@ def keycloak_callback(request):
 
         if response.status_code != 200:
             return HttpResponse(
-                f"<h2> Token exchange failed</h2><pre>{response.text}</pre>",
-                status=500
+                f"<h2> Token exchange failed</h2><pre>{response.text}</pre>", status=500
             )
 
         token_data = response.json()
@@ -108,6 +111,5 @@ def keycloak_callback(request):
 
 
 def public_home(request):
-    print("Reached the public home page!")  
+    print("Reached the public home page!")
     return HttpResponse("This is a public home page — no login required.")
-

@@ -16,14 +16,14 @@ if (themeFlyoutDisplay === "attached") {
       <dl>
         <dt>Languages</dt>
         ${languages
-          .map(
-            (translation) => `
+        .map(
+          (translation) => `
         <dd ${translation.slug == config.projects.current.slug ? 'class="rtd-current-item"' : ""}>
           <a href="${translation.urls.documentation}">${translation.language.code}</a>
         </dd>
         `,
-          )
-          .join("\n")}
+        )
+        .join("\n")}
       </dl>
     `;
     return languagesHTML;
@@ -37,14 +37,14 @@ if (themeFlyoutDisplay === "attached") {
       <dl>
         <dt>Versions</dt>
         ${config.versions.active
-          .map(
-            (version) => `
+        .map(
+          (version) => `
         <dd ${version.slug === config.versions.current.slug ? 'class="rtd-current-item"' : ""}>
           <a href="${version.urls.documentation}">${version.slug}</a>
         </dd>
         `,
-          )
-          .join("\n")}
+        )
+        .join("\n")}
       </dl>
     `;
     return versionsHTML;
@@ -55,7 +55,7 @@ if (themeFlyoutDisplay === "attached") {
       return "";
     }
     const downloadsNameDisplay = {
-      pdf: "PDF",
+      pdf: "report",
       epub: "Epub",
       htmlzip: "HTML",
     };
@@ -64,14 +64,14 @@ if (themeFlyoutDisplay === "attached") {
       <dl>
         <dt>Downloads</dt>
         ${Object.entries(config.versions.current.downloads)
-          .map(
-            ([name, url]) => `
+        .map(
+          ([name, url]) => `
           <dd>
             <a href="${url}">${downloadsNameDisplay[name]}</a>
           </dd>
         `,
-          )
-          .join("\n")}
+        )
+        .join("\n")}
       </dl>
     `;
     return downloadsHTML;
@@ -160,16 +160,16 @@ if (themeLanguageSelector || themeVersionSelector) {
       const versionSelect = `
     <select>
       ${versions
-        .map(
-          (version) => `
+          .map(
+            (version) => `
         <option
   value="${version.slug}"
   ${config.versions.current.slug === version.slug ? 'selected="selected"' : ""}
               data-url="${version.urls.documentation}">
               ${version.slug}
           </option>`,
-        )
-        .join("\n")}
+          )
+          .join("\n")}
     </select>
   `;
 
@@ -194,16 +194,16 @@ if (themeLanguageSelector || themeVersionSelector) {
         const languageSelect = `
       <select>
         ${languages
-          .map(
-            (language) => `
+            .map(
+              (language) => `
               <option
                   value="${language.language.code}"
                   ${config.projects.current.slug === language.slug ? 'selected="selected"' : ""}
                   data-url="${language.urls.documentation}">
                   ${language.language.name}
               </option>`,
-          )
-          .join("\n")}
+            )
+            .join("\n")}
        </select>
     `;
 

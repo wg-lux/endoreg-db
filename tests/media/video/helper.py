@@ -4,19 +4,16 @@ import re
 from typing import Optional
 
 from logging import getLogger
+
 logger = getLogger(__name__)
 
 
-from endoreg_db.utils.video.names import (
-    identify_video_key,
-    get_video_key,
-    get_video_key_regex_by_examination_alias
-)
+from endoreg_db.utils.video.names import get_video_key_regex_by_examination_alias
 
 from django.conf import settings
 
 
-ASSET_DIR:Path = settings.ASSET_DIR
+ASSET_DIR: Path = settings.ASSET_DIR
 assert ASSET_DIR.exists(), f"ASSET_DIR does not exist: {ASSET_DIR}"
 
 TEST_VIDEOS = {
@@ -27,7 +24,8 @@ TEST_VIDEOS = {
     "egd-small_intestine-non_anonymous": ASSET_DIR / "test_small_intestine.mp4",
 }
 
-def get_video_path(video_key:str) -> Path:
+
+def get_video_path(video_key: str) -> Path:
     """
     Retrieves the video path based on the provided video key.
     """
@@ -40,8 +38,11 @@ def get_video_path(video_key:str) -> Path:
     else:
         raise ValueError(f"Video key '{video_key}' not found in TEST_VIDEOS.")
 
+
 def get_video_keys(
-    examination_alias:Optional[str]=None, content:Optional[str]=None, is_anonymous:Optional[bool]=None
+    examination_alias: Optional[str] = None,
+    content: Optional[str] = None,
+    is_anonymous: Optional[bool] = None,
 ):
     """
     Retrieves video keys that match the provided regex pattern based on examination alias, content, and anonymity status.
@@ -51,47 +52,56 @@ def get_video_keys(
         pattern_parts = ["^"]
         if examination_alias:
             pattern_parts.append(re.escape(examination_alias))
-            pattern_parts.append("-.*-") # Match any content
+            pattern_parts.append("-.*-")  # Match any content
         else:
-            pattern_parts.append(".*-") # Match any examination alias and content
+            pattern_parts.append(".*-")  # Match any examination alias and content
 
         if is_anonymous is True:
             pattern_parts.append("anonymous$")
         elif is_anonymous is False:
             pattern_parts.append("non_anonymous$")
-        else: # is_anonymous is None
-            pattern_parts.append("(non_)?anonymous$") # Match either
+        else:  # is_anonymous is None
+            pattern_parts.append("(non_)?anonymous$")  # Match either
 
         pattern = "".join(pattern_parts)
     else:
         # Use the imported function if content is specified
-        pattern = get_video_key_regex_by_examination_alias(examination_alias, content, is_anonymous)
+        pattern = get_video_key_regex_by_examination_alias(
+            examination_alias, content, is_anonymous
+        )
         logger.warning(f"Generated pattern (from imported function): {pattern}")
-
 
     keys_to_check = list(TEST_VIDEOS.keys())
     matched_keys = [key for key in keys_to_check if re.match(pattern, key)]
 
     # Fallback logic remains as a safety net, but ideally shouldn't be needed now for this case
     if not matched_keys and is_anonymous is False:
-        logger.warning(f"Pattern '{pattern}' yielded no results for is_anonymous=False. Falling back to suffix check '-non_anonymous'.")
+        logger.warning(
+            f"Pattern '{pattern}' yielded no results for is_anonymous=False. Falling back to suffix check '-non_anonymous'."
+        )
         matched_keys = [key for key in keys_to_check if key.endswith("-non_anonymous")]
         # Optional: Add further filtering based on examination_alias and content if they were provided
         # This part depends on how the pattern usually incorporates these elements.
         # For now, this addresses the immediate error.
     elif not matched_keys and is_anonymous is True:
-         logger.warning(f"Pattern '{pattern}' yielded no results for is_anonymous=True. Falling back to suffix check '-anonymous'.")
-         matched_keys = [key for key in keys_to_check if key.endswith("-anonymous")]
-         # Optional: Add further filtering based on examination_alias and content
+        logger.warning(
+            f"Pattern '{pattern}' yielded no results for is_anonymous=True. Falling back to suffix check '-anonymous'."
+        )
+        matched_keys = [key for key in keys_to_check if key.endswith("-anonymous")]
+        # Optional: Add further filtering based on examination_alias and content
 
     if not matched_keys:
-        logger.error(f"No keys found matching pattern '{pattern}' or fallback logic for keys: {keys_to_check}")
-
+        logger.error(
+            f"No keys found matching pattern '{pattern}' or fallback logic for keys: {keys_to_check}"
+        )
 
     return matched_keys
 
+
 def get_random_video_path_by_examination_alias(
-    examination_alias:Optional[str]=None, content:Optional[str]=None, is_anonymous:Optional[bool]=None
+    examination_alias: Optional[str] = None,
+    content: Optional[str] = None,
+    is_anonymous: Optional[bool] = None,
 ):
     """
     Retrieves a random video key that matches the provided regex pattern based on examination alias, content, and anonymity status.
@@ -99,14 +109,17 @@ def get_random_video_path_by_examination_alias(
     keys = get_video_keys(examination_alias, content, is_anonymous)
     # Filter out keys that have None values (non-existent files)
     valid_keys = [key for key in keys if TEST_VIDEOS.get(key) is not None]
-    
+
     if valid_keys:
         random_video_key = random.choice(valid_keys)
         video_path = get_video_path(random_video_key)
         return video_path  # Return the first match for simplicity
     else:
-        raise ValueError(f"No valid video files found for the given criteria. Available keys: {list(TEST_VIDEOS.keys())}")
+        raise ValueError(
+            f"No valid video files found for the given criteria. Available keys: {list(TEST_VIDEOS.keys())}"
+        )
 
 
-
-TEST_VIDEOS = {key: value if value.exists() else None for key, value in TEST_VIDEOS.items()}
+TEST_VIDEOS = {
+    key: value if value.exists() else None for key, value in TEST_VIDEOS.items()
+}

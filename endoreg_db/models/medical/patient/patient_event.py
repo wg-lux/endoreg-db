@@ -15,12 +15,18 @@ class PatientEvent(models.Model):
     subcategories, and numerical descriptors.
     """
 
-    patient: models.ForeignKey["Patient"] = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="events")
-    event: models.ForeignKey["Event"] = models.ForeignKey("Event", on_delete=models.CASCADE, related_name="patient_events")
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE, related_name="events"
+    )
+    event: models.ForeignKey["Event"] = models.ForeignKey(
+        "Event", on_delete=models.CASCADE, related_name="patient_events"
+    )
     date_start = models.DateField()
     date_end = models.DateField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    classification_choice = models.ForeignKey("EventClassificationChoice", on_delete=models.CASCADE, blank=True, null=True)
+    classification_choice = models.ForeignKey(
+        "EventClassificationChoice", on_delete=models.CASCADE, blank=True, null=True
+    )
 
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
@@ -66,7 +72,9 @@ class PatientEvent(models.Model):
     def set_numerical_descriptors_from_classification_choice(self):
         """Copies numerical descriptor definitions from the linked classification choice."""
         if self.classification_choice:
-            self.numerical_descriptors = self.classification_choice.numerical_descriptors
+            self.numerical_descriptors = (
+                self.classification_choice.numerical_descriptors
+            )
             self.save()
 
         return self.numerical_descriptors

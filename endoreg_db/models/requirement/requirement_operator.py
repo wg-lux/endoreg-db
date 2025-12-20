@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Union
 from django.db import models
 from pydantic import BaseModel
 
-from endoreg_db.utils.requirement_operator_logic.new_operator_logic import REQUIREMENT_OPERATORS, model_attribute_set_any
+from endoreg_db.utils.requirement_operator_logic.new_operator_logic import (
+    REQUIREMENT_OPERATORS,
+)
 
 # see how operator evaluation function is fetched, add to docs #TODO
 # endoreg_db/utils/requirement_operator_logic/model_evaluators.py
@@ -55,12 +57,16 @@ def _parse_operator_instructions(raw: str):
                     key, value = _attribute.split(":", 1)
                     kwargs[key.strip()] = value.strip()
                 else:
-                    raise ValueError(f"Invalid keyword argument format in target_attributes: '{entry}'. Expected format is '$key:value'.")
+                    raise ValueError(
+                        f"Invalid keyword argument format in target_attributes: '{entry}'. Expected format is '$key:value'."
+                    )
             elif _prefix == "@":
                 # Positional argument
                 args.append(_attribute)
         else:
-            raise ValueError(f"Invalid prefix '{_prefix}' in target_attributes entry: '{entry}'. Valid prefixes are {valid_prefixes}.")
+            raise ValueError(
+                f"Invalid prefix '{_prefix}' in target_attributes entry: '{entry}'. Valid prefixes are {valid_prefixes}."
+            )
     return OperatorInstructions(
         input_targets=input_targets,
         requirement_targets=input_targets,
@@ -72,7 +78,9 @@ def _parse_operator_instructions(raw: str):
 def _validate_operator_instructions(instance: "Requirement") -> bool:
     """Ensures requirement fixtures declare at least one target attribute."""
     if not instance.operator_instructions_parsed:
-        raise ValueError(f"Requirement '{instance.name}' must declare at least one target attribute.")
+        raise ValueError(
+            f"Requirement '{instance.name}' must declare at least one target attribute."
+        )
     return True
 
 
@@ -101,7 +109,9 @@ class RequirementOperator(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    evaluation_function_name = models.CharField(max_length=255, blank=True, null=True)  # Added field
+    evaluation_function_name = models.CharField(
+        max_length=255, blank=True, null=True
+    )  # Added field
 
     objects = RequirementOperatorManager()
 
@@ -151,10 +161,18 @@ class RequirementOperator(models.Model):
     def get_operator_function(self) -> Callable[..., bool]:
         _operator_function = REQUIREMENT_OPERATORS.get(self.name)
         if not _operator_function:
-            raise ValueError(f"Operator function for '{self.name}' not found in REQUIREMENT_OPERATORS.")
+            raise ValueError(
+                f"Operator function for '{self.name}' not found in REQUIREMENT_OPERATORS."
+            )
         return _operator_function
 
-    def evaluate(self, operator_instructions: "OperatorInstructions", requirement: "Requirement", input_obj: Any, **kwargs) -> bool:
+    def evaluate(
+        self,
+        operator_instructions: "OperatorInstructions",
+        requirement: "Requirement",
+        input_obj: Any,
+        **kwargs,
+    ) -> bool:
         """ """
         eval_result: bool = False
         requirement_links: "RequirementLinks" = requirement.links
@@ -162,6 +180,8 @@ class RequirementOperator(models.Model):
         operator_function = self.get_operator_function()
 
         input_model = type(input_obj)
-        assert input_model in expected_input_models, f"Input model {input_model} not in expected models {expected_input_models}"
+        assert input_model in expected_input_models, (
+            f"Input model {input_model} not in expected models {expected_input_models}"
+        )
 
         return eval_result

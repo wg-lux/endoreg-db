@@ -127,7 +127,12 @@ class AuditLedger(models.Model):
         Returns:
             The count of unique object primary keys matching the specified type and action.
         """
-        return AuditLedger.objects.filter(object_type=object_type, action=action).values("object_pk").distinct().count()
+        return (
+            AuditLedger.objects.filter(object_type=object_type, action=action)
+            .values("object_pk")
+            .distinct()
+            .count()
+        )
 
     def collect_counters(self):
         """
@@ -140,7 +145,9 @@ class AuditLedger(models.Model):
         return {
             "totalCases": AuditLedger._distinct("VideoFile", "created"),
             "totalVideos": AuditLedger._distinct("VideoFile", "created"),
-            "totalAnnotations": AuditLedger.objects.filter(action="annotation_added").count(),
+            "totalAnnotations": AuditLedger.objects.filter(
+                action="annotation_added"
+            ).count(),
             "totalAnonymizations": AuditLedger._distinct("VideoFile", "anonymized"),
             "totalImages": AuditLedger._distinct("Image", "created"),
             "videosCompleted": AuditLedger._distinct("VideoFile", "validated"),

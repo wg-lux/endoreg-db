@@ -55,7 +55,9 @@ def _add_months(base_date: datetime.date, months: int) -> datetime.date:
     return base_date.replace(year=year, month=month, day=day)
 
 
-def _shift_date_by_unit(base_date: datetime.date, value: int, unit: str) -> datetime.date:
+def _shift_date_by_unit(
+    base_date: datetime.date, value: int, unit: str
+) -> datetime.date:
     """Returns ``base_date`` shifted by ``value`` units using the supported unit set.
 
     Hour-level offsets are not supported because ``base_date`` is a ``date``
@@ -65,7 +67,9 @@ def _shift_date_by_unit(base_date: datetime.date, value: int, unit: str) -> date
     if unit == "days":
         return base_date + timedelta(days=value)
     if unit == "hours":
-        raise NotImplementedError("Hour-level timeframe comparisons require datetime-aware inputs; _shift_date_by_unit only operates on date objects.")
+        raise NotImplementedError(
+            "Hour-level timeframe comparisons require datetime-aware inputs; _shift_date_by_unit only operates on date objects."
+        )
     if unit == "weeks":
         return base_date + timedelta(weeks=value)
     if unit == "months":
@@ -75,7 +79,9 @@ def _shift_date_by_unit(base_date: datetime.date, value: int, unit: str) -> date
     raise NotImplementedError(f"Timeframe unit '{unit}' is not supported.")
 
 
-def _is_date_in_timeframe(date_to_check: datetime.date | None, requirement: "Requirement") -> bool:
+def _is_date_in_timeframe(
+    date_to_check: datetime.date | None, requirement: "Requirement"
+) -> bool:
     """
     Checks if a given date falls within the timeframe specified by a Requirement.
 
@@ -107,7 +113,9 @@ def _is_date_in_timeframe(date_to_check: datetime.date | None, requirement: "Req
 
     unit = _normalize_timeframe_unit(requirement)
     if not unit:
-        raise NotImplementedError("Timeframe unit could not be resolved from requirement's Unit name/abbreviation.")
+        raise NotImplementedError(
+            "Timeframe unit could not be resolved from requirement's Unit name/abbreviation."
+        )
 
     today = datetime.date.today()
     timeframe_start_delta = int(requirement.numeric_value_min)
@@ -122,7 +130,9 @@ def _is_date_in_timeframe(date_to_check: datetime.date | None, requirement: "Req
     return start_date_bound <= date_to_check <= end_date_bound
 
 
-def _evaluate_models_match_any(requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool:
+def _evaluate_models_match_any(
+    requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs
+) -> bool:
     """
     Checks if the requirement_links matches any of the input_links.
 
@@ -161,7 +171,9 @@ def _evaluate_models_match_any_in_timeframe(
     # --- Handle PatientEvents ---
     # Check if the requirement is concerned with events
     if requirement_links.events:  # This list contains Event model instances
-        required_event_models = set(requirement_links.events)  # Target Event models from the Requirement
+        required_event_models = set(
+            requirement_links.events
+        )  # Target Event models from the Requirement
 
         # input_links.patient_events contains PatientEvent instances provided as input
         for patient_event_instance in input_links.patient_events:
@@ -191,7 +203,10 @@ def _evaluate_models_match_any_in_timeframe(
 
 
 def _evaluate_models_match_all_in_timeframe(
-    requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
 ) -> bool:
     if not _evaluate_models_match_all(requirement_links, input_links, **kwargs):
         return False
@@ -211,7 +226,9 @@ def _evaluate_models_match_all_in_timeframe(
         found_in_timeframe = False
         for patient_event in patient_events:
             if getattr(patient_event, "event", None) == event:
-                if _is_date_in_timeframe(getattr(patient_event, "date", None), requirement):
+                if _is_date_in_timeframe(
+                    getattr(patient_event, "date", None), requirement
+                ):
                     found_in_timeframe = True
                     break
         if not found_in_timeframe:
@@ -223,7 +240,10 @@ def _evaluate_models_match_all_in_timeframe(
 
 
 def _evaluate_models_match_none_in_timeframe(
-    requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
 ) -> bool:
     if not requirement_links.events:
         return True
@@ -239,7 +259,9 @@ def _evaluate_models_match_none_in_timeframe(
     return True
 
 
-def _evaluate_models_match_all(requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool:
+def _evaluate_models_match_all(
+    requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs
+) -> bool:
     """
     Evaluates if all active links in requirement_links are present in input_links.
 
@@ -256,7 +278,9 @@ def _evaluate_models_match_all(requirement_links: "RequirementLinks", input_link
         True if all specified items in requirement_links are found in input_links,
         False otherwise.
     """
-    active_req_links = requirement_links.active()  # Get dict of non-empty lists from requirement
+    active_req_links = (
+        requirement_links.active()
+    )  # Get dict of non-empty lists from requirement
 
     if not active_req_links:  # If the requirement specifies no actual items to link
         return True  # Vacuously true, as there are no conditions to fail
@@ -279,7 +303,9 @@ def _evaluate_models_match_all(requirement_links: "RequirementLinks", input_link
     return True
 
 
-def _evaluate_models_match_none(requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool:
+def _evaluate_models_match_none(
+    requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs
+) -> bool:
     """Returns True when no required models are present in the input links."""
     active_req_links = requirement_links.active()
     if not active_req_links:
@@ -366,28 +392,48 @@ def _count_matching_events_in_timeframe(
     return matched_events
 
 
-def _evaluate_models_match_n(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_models_match_n(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     expected = _resolve_expected_count(requirement)
     if expected is None:
         return False
     return _count_matching_models(requirement_links, input_links) == expected
 
 
-def _evaluate_models_match_n_or_more(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_models_match_n_or_more(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     threshold = _resolve_expected_count(requirement)
     if threshold is None:
         return False
     return _count_matching_models(requirement_links, input_links) >= max(threshold, 0)
 
 
-def _evaluate_models_match_n_or_less(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_models_match_n_or_less(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     limit = _resolve_expected_count(requirement)
     if limit is None:
         return False
     return _count_matching_models(requirement_links, input_links) <= limit
 
 
-def _evaluate_models_match_count_in_range(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_models_match_count_in_range(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     if requirement.numeric_value_min is None or requirement.numeric_value_max is None:
         return False
 
@@ -400,7 +446,12 @@ def _evaluate_models_match_count_in_range(requirement_links: "RequirementLinks",
     return lower <= match_count <= upper
 
 
-def _evaluate_models_match_n_in_timeframe(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_models_match_n_in_timeframe(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     if not _has_timeframe_configuration(requirement):
         return False
 
@@ -408,11 +459,17 @@ def _evaluate_models_match_n_in_timeframe(requirement_links: "RequirementLinks",
     if expected is None:
         return False
 
-    return _count_matching_events_in_timeframe(requirement_links, input_links, requirement) == expected
+    return (
+        _count_matching_events_in_timeframe(requirement_links, input_links, requirement)
+        == expected
+    )
 
 
 def _evaluate_models_match_n_or_more_in_timeframe(
-    requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
 ) -> bool:
     if not _has_timeframe_configuration(requirement):
         return False
@@ -421,11 +478,16 @@ def _evaluate_models_match_n_or_more_in_timeframe(
     if threshold is None:
         return False
 
-    return _count_matching_events_in_timeframe(requirement_links, input_links, requirement) >= max(threshold, 0)
+    return _count_matching_events_in_timeframe(
+        requirement_links, input_links, requirement
+    ) >= max(threshold, 0)
 
 
 def _evaluate_models_match_n_or_less_in_timeframe(
-    requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
 ) -> bool:
     if not _has_timeframe_configuration(requirement):
         return False
@@ -434,10 +496,18 @@ def _evaluate_models_match_n_or_less_in_timeframe(
     if limit is None:
         return False
 
-    return _count_matching_events_in_timeframe(requirement_links, input_links, requirement) <= limit
+    return (
+        _count_matching_events_in_timeframe(requirement_links, input_links, requirement)
+        <= limit
+    )
 
 
-def _evaluate_age_gte(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_age_gte(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     """
     Checks if any patient in the input has an age greater than or equal to the requirement's numeric_value.
 
@@ -465,35 +535,54 @@ def _evaluate_age_gte(requirement_links: "RequirementLinks", input_links: "Requi
 
     # Check if we have Patient instances in the original_input_args
     original_args = kwargs.get("original_input_args", [])
-    logger.debug(f"age_gte: Found {len(original_args)} original input arguments: {[type(arg).__name__ for arg in original_args]}")
+    logger.debug(
+        f"age_gte: Found {len(original_args)} original input arguments: {[type(arg).__name__ for arg in original_args]}"
+    )
 
     for i, arg in enumerate(original_args):
         logger.debug(f"age_gte: Checking argument {i}: {type(arg).__name__}")
         if isinstance(arg, Patient):
             patient_age = arg.age()
-            logger.debug(f"age_gte: Patient {arg} has age {patient_age}, comparing with min_age {min_age}")
+            logger.debug(
+                f"age_gte: Patient {arg} has age {patient_age}, comparing with min_age {min_age}"
+            )
             if patient_age is not None and patient_age >= min_age:
-                logger.debug(f"age_gte: Patient age {patient_age} >= {min_age}, returning True")
+                logger.debug(
+                    f"age_gte: Patient age {patient_age} >= {min_age}, returning True"
+                )
                 return True
             else:
-                logger.debug(f"age_gte: Patient age {patient_age} < {min_age} or is None")
+                logger.debug(
+                    f"age_gte: Patient age {patient_age} < {min_age} or is None"
+                )
         # Handle QuerySets of patients
         elif hasattr(arg, "model") and issubclass(arg.model, Patient):
             logger.debug(f"age_gte: Found Patient QuerySet with {arg.count()} patients")
             for patient in arg:
                 patient_age = patient.age()
-                logger.debug(f"age_gte: Patient {patient} has age {patient_age}, comparing with min_age {min_age}")
+                logger.debug(
+                    f"age_gte: Patient {patient} has age {patient_age}, comparing with min_age {min_age}"
+                )
                 if patient_age is not None and patient_age >= min_age:
-                    logger.debug(f"age_gte: Patient age {patient_age} >= {min_age}, returning True")
+                    logger.debug(
+                        f"age_gte: Patient age {patient_age} >= {min_age}, returning True"
+                    )
                     return True
         else:
-            logger.debug(f"age_gte: Argument {i} is not a Patient or Patient QuerySet: {type(arg)}")
+            logger.debug(
+                f"age_gte: Argument {i} is not a Patient or Patient QuerySet: {type(arg)}"
+            )
 
     logger.debug(f"age_gte: No patient found with age >= {min_age}, returning False")
     return False
 
 
-def _evaluate_age_lte(requirement_links: "RequirementLinks", input_links: "RequirementLinks", requirement: "Requirement", **kwargs) -> bool:
+def _evaluate_age_lte(
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    requirement: "Requirement",
+    **kwargs,
+) -> bool:
     """
     Checks if any patient in the input has an age less than or equal to the requirement's numeric_value.
 
@@ -530,7 +619,12 @@ def _evaluate_age_lte(requirement_links: "RequirementLinks", input_links: "Requi
     return False
 
 
-def dispatch_operator_evaluation(operator_name: str, requirement_links: "RequirementLinks", input_links: "RequirementLinks", **kwargs) -> bool:
+def dispatch_operator_evaluation(
+    operator_name: str,
+    requirement_links: "RequirementLinks",
+    input_links: "RequirementLinks",
+    **kwargs,
+) -> bool:
     """
     Dispatches the evaluation to the appropriate function based on the operator name.
 
@@ -547,29 +641,43 @@ def dispatch_operator_evaluation(operator_name: str, requirement_links: "Require
     Raises:
         NotImplementedError: If the evaluation logic for the operator's name is not implemented.
     """
-    from endoreg_db.models.requirement.requirement import Requirement  # Runtime import for isinstance
+    from endoreg_db.models.requirement.requirement import (
+        Requirement,
+    )  # Runtime import for isinstance
 
     from .lab_value_operators import LAB_VALUE_OPERATOR_FUNCTIONS
 
     eval_func = None
-    requirement = kwargs.get("requirement")  # Get requirement for operators that need it
+    requirement = kwargs.get(
+        "requirement"
+    )  # Get requirement for operators that need it
 
     def _kwargs_without_requirement() -> dict:
         return {k: v for k, v in kwargs.items() if k != "requirement"}
 
     if operator_name == "models_match_any":
         eval_func = _evaluate_models_match_any
-        return eval_func(requirement_links=requirement_links, input_links=input_links, **kwargs)
+        return eval_func(
+            requirement_links=requirement_links, input_links=input_links, **kwargs
+        )
     elif operator_name == "models_match_all":
         eval_func = _evaluate_models_match_all
-        return eval_func(requirement_links=requirement_links, input_links=input_links, **kwargs)
+        return eval_func(
+            requirement_links=requirement_links, input_links=input_links, **kwargs
+        )
     elif operator_name == "models_match_none":
         eval_func = _evaluate_models_match_none
-        return eval_func(requirement_links=requirement_links, input_links=input_links, **kwargs)
+        return eval_func(
+            requirement_links=requirement_links, input_links=input_links, **kwargs
+        )
     elif operator_name == "models_match_any_in_timeframe":
         # 'requirement' is already extracted from kwargs via requirement = kwargs.get("requirement")
-        if not isinstance(requirement, Requirement):  # Ensure requirement is present and correct type
-            raise ValueError("models_match_any_in_timeframe operator requires a valid 'requirement' instance in kwargs.")
+        if not isinstance(
+            requirement, Requirement
+        ):  # Ensure requirement is present and correct type
+            raise ValueError(
+                "models_match_any_in_timeframe operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
         eval_func = _evaluate_models_match_any_in_timeframe
         return eval_func(
@@ -580,76 +688,155 @@ def dispatch_operator_evaluation(operator_name: str, requirement_links: "Require
         )
     elif operator_name == "models_match_all_in_timeframe":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_all_in_timeframe operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_all_in_timeframe operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
-        return _evaluate_models_match_all_in_timeframe(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_models_match_all_in_timeframe(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "models_match_none_in_timeframe":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_none_in_timeframe operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_none_in_timeframe operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
         return _evaluate_models_match_none_in_timeframe(
-            requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
         )
     elif operator_name == "models_match_n":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_n operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_n operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
-        return _evaluate_models_match_n(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_models_match_n(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "models_match_n_or_more":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_n_or_more operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_n_or_more operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
-        return _evaluate_models_match_n_or_more(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_models_match_n_or_more(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "models_match_n_or_less":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_n_or_less operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_n_or_less operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
-        return _evaluate_models_match_n_or_less(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_models_match_n_or_less(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "models_match_count_in_range":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_count_in_range operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_count_in_range operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
-        return _evaluate_models_match_count_in_range(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_models_match_count_in_range(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "models_match_n_in_timeframe":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_n_in_timeframe operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_n_in_timeframe operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
-        return _evaluate_models_match_n_in_timeframe(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_models_match_n_in_timeframe(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "models_match_n_or_more_in_timeframe":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_n_or_more_in_timeframe operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_n_or_more_in_timeframe operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
         return _evaluate_models_match_n_or_more_in_timeframe(
-            requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
         )
     elif operator_name == "models_match_n_or_less_in_timeframe":
         if not isinstance(requirement, Requirement):
-            raise ValueError("models_match_n_or_less_in_timeframe operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "models_match_n_or_less_in_timeframe operator requires a valid 'requirement' instance in kwargs."
+            )
         kwargs_for_eval = _kwargs_without_requirement()
         return _evaluate_models_match_n_or_less_in_timeframe(
-            requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
         )
     elif operator_name in LAB_VALUE_OPERATOR_FUNCTIONS:
-        if not isinstance(requirement, Requirement):  # Ensure requirement is present and correct type
-            raise ValueError(f"Lab value operator '{operator_name}' requires a valid 'requirement' instance in kwargs.")
+        if not isinstance(
+            requirement, Requirement
+        ):  # Ensure requirement is present and correct type
+            raise ValueError(
+                f"Lab value operator '{operator_name}' requires a valid 'requirement' instance in kwargs."
+            )
 
         eval_func = LAB_VALUE_OPERATOR_FUNCTIONS[operator_name]
-        return eval_func(input_links=input_links, requirement=requirement, operator_kwargs=kwargs)
+        return eval_func(
+            input_links=input_links, requirement=requirement, operator_kwargs=kwargs
+        )
     elif operator_name == "age_gte":
         if not isinstance(requirement, Requirement):
-            raise ValueError("age_gte operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "age_gte operator requires a valid 'requirement' instance in kwargs."
+            )
 
         # Create a new kwargs dict for the call, excluding 'requirement' to avoid passing it twice
         kwargs_for_eval = {k: v for k, v in kwargs.items() if k != "requirement"}
 
-        return _evaluate_age_gte(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_age_gte(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     elif operator_name == "age_lte":
         if not isinstance(requirement, Requirement):
-            raise ValueError("age_lte operator requires a valid 'requirement' instance in kwargs.")
+            raise ValueError(
+                "age_lte operator requires a valid 'requirement' instance in kwargs."
+            )
 
         # Create a new kwargs dict for the call, excluding 'requirement' to avoid passing it twice
         kwargs_for_eval = {k: v for k, v in kwargs.items() if k != "requirement"}
 
-        return _evaluate_age_lte(requirement_links=requirement_links, input_links=input_links, requirement=requirement, **kwargs_for_eval)
+        return _evaluate_age_lte(
+            requirement_links=requirement_links,
+            input_links=input_links,
+            requirement=requirement,
+            **kwargs_for_eval,
+        )
     else:
-        raise NotImplementedError(f"Evaluation logic for operator '{operator_name}' is not implemented.")
+        raise NotImplementedError(
+            f"Evaluation logic for operator '{operator_name}' is not implemented."
+        )

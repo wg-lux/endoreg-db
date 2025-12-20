@@ -39,7 +39,7 @@ class ProcessingHistory(models.Model):
     @staticmethod
     def get_content_hash(path: Path):
         return get_content_hash_filename(path)
-        
+
     @classmethod
     def get_or_create_for_hash(
         cls,

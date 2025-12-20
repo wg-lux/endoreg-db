@@ -38,7 +38,9 @@ class Disease(models.Model):
     if TYPE_CHECKING:
 
         @property
-        def disease_classifications(self) -> models.QuerySet["DiseaseClassification"]: ...
+        def disease_classifications(
+            self,
+        ) -> models.QuerySet["DiseaseClassification"]: ...
 
         @property
         def patient_diseases(self) -> models.QuerySet["PatientDisease"]: ...
@@ -58,7 +60,9 @@ class Disease(models.Model):
         Returns:
             List[DiseaseClassification]: A list of related disease classification objects.
         """
-        classifications: List[DiseaseClassification] = [_ for _ in self.disease_classifications.all()]
+        classifications: List[DiseaseClassification] = [
+            _ for _ in self.disease_classifications.all()
+        ]
         return classifications
 
 
@@ -85,7 +89,9 @@ class DiseaseClassification(models.Model):
 
     name = models.CharField(max_length=255, unique=True)
 
-    disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="disease_classifications")
+    disease = models.ForeignKey(
+        Disease, on_delete=models.CASCADE, related_name="disease_classifications"
+    )
 
     objects = DiseaseClassificationManager()
 
@@ -93,7 +99,9 @@ class DiseaseClassification(models.Model):
         disease: models.ForeignKey["Disease"]
 
         @property
-        def disease_classification_choices(self) -> models.manager.RelatedManager["DiseaseClassificationChoice"]: ...
+        def disease_classification_choices(
+            self,
+        ) -> models.manager.RelatedManager["DiseaseClassificationChoice"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
@@ -110,7 +118,9 @@ class DiseaseClassification(models.Model):
         Returns:
             List[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
-        choices: List[DiseaseClassificationChoice] = [_ for _ in self.disease_classification_choices.all()]
+        choices: List[DiseaseClassificationChoice] = [
+            _ for _ in self.disease_classification_choices.all()
+        ]
         return choices
 
 
@@ -151,7 +161,9 @@ class DiseaseClassificationChoice(models.Model):
         disease_classification: models.ForeignKey["DiseaseClassification"]
 
         @property
-        def patient_diseases(self) -> models.manager.RelatedManager["PatientDisease"]: ...
+        def patient_diseases(
+            self,
+        ) -> models.manager.RelatedManager["PatientDisease"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""

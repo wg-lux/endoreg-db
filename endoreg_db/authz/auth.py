@@ -8,6 +8,7 @@ from rest_framework import authentication, exceptions
 
 User = get_user_model()
 
+
 class KeycloakJWTAuthentication(authentication.BaseAuthentication):
     """
     Verifies Bearer JWTs against Keycloak JWKS.

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .ai_model import AiModel
 
+
 class ModelTypeManager(models.Manager):
     """
     Custom manager for ModelType with additional query methods.

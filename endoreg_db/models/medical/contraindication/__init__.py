@@ -18,7 +18,9 @@ class Contraindication(models.Model):
         from endoreg_db.models import FindingIntervention
 
         @property
-        def contraindicating_finding_interventions(self) -> "models.manager.RelatedManager[FindingIntervention]": ...
+        def contraindicating_finding_interventions(
+            self,
+        ) -> "models.manager.RelatedManager[FindingIntervention]": ...
 
     def natural_key(self):
         return (self.name,)

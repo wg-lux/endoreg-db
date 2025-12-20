@@ -27,7 +27,9 @@ class MedicationIndication(models.Model):
     )
     diseases = models.ManyToManyField("Disease")
     events = models.ManyToManyField("Event")
-    disease_classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
+    disease_classification_choices = models.ManyToManyField(
+        "DiseaseClassificationChoice"
+    )
     sources = models.ManyToManyField("InformationSource")
 
     if TYPE_CHECKING:

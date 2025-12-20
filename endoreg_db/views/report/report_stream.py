@@ -5,7 +5,6 @@ import re
 from django.http import FileResponse, Http404, StreamingHttpResponse
 from django.views.decorators.clickjacking import (
     xframe_options_exempt,
-    xframe_options_sameorigin,
 )
 from rest_framework.views import APIView
 
@@ -176,9 +175,7 @@ class ReportStreamView(APIView):
                 response = FileResponse(file_handle, content_type="application/pdf")
                 response["Content-Length"] = str(file_size)
                 response["Accept-Ranges"] = "bytes"
-                response["Content-Disposition"] = (
-                    f'inline; filename="{safe_filename}"'
-                )
+                response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
 
                 # FileResponse will take ownership of file_handle and close it after response
                 return response

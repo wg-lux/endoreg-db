@@ -14,9 +14,8 @@ from ...helpers.data_loader import (
     load_distribution_data,
     load_center_data,
     load_examination_data,
-    load_green_endoscopy_wuerzburg_data
+    load_green_endoscopy_wuerzburg_data,
 )
-
 
 
 class ProductMaterialModelTest(TestCase):
@@ -32,6 +31,7 @@ class ProductMaterialModelTest(TestCase):
         Test if all product materials have a material.
         """
         from endoreg_db.models import ProductMaterial
+
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
             self.assertIsInstance(product_material, ProductMaterial)
@@ -42,6 +42,7 @@ class ProductMaterialModelTest(TestCase):
         Test if all product materials have a unit.
         """
         from endoreg_db.models import ProductMaterial
+
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
             self.assertIsNotNone(product_material.unit)
@@ -71,4 +72,3 @@ class ProductMaterialModelTest(TestCase):
         product_materials = ProductMaterial.objects.all()
         for product_material in product_materials:
             self.assertIsInstance(product_material.quantity, float)
-        

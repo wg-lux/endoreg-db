@@ -58,19 +58,27 @@ class InformationSource(models.Model):
         def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
 
         @property
-        def examination_indications(self) -> "models.manager.RelatedManager[ExaminationIndication]": ...
+        def examination_indications(
+            self,
+        ) -> "models.manager.RelatedManager[ExaminationIndication]": ...
 
         @property
-        def examination_times(self) -> "models.manager.RelatedManager[ExaminationTime]": ...
+        def examination_times(
+            self,
+        ) -> "models.manager.RelatedManager[ExaminationTime]": ...
 
         @property
         def findings(self) -> "models.manager.RelatedManager[Finding]": ...
 
         @property
-        def finding_interventions(self) -> "models.manager.RelatedManager[FindingIntervention]": ...
+        def finding_interventions(
+            self,
+        ) -> "models.manager.RelatedManager[FindingIntervention]": ...
 
         @property
-        def finding_classifications(self) -> "models.manager.RelatedManager[FindingClassification]": ...
+        def finding_classifications(
+            self,
+        ) -> "models.manager.RelatedManager[FindingClassification]": ...
 
     class Meta:
         verbose_name = "Information Source"
@@ -145,7 +153,9 @@ class InformationSourceType(models.Model):
         try:
             return cls.objects.get(name="prediction")
         except cls.DoesNotExist as e:
-            raise cls.DoesNotExist("The 'prediction' InformationSourceType was not found. Please check your data fixtures or initial data migrations.") from e
+            raise cls.DoesNotExist(
+                "The 'prediction' InformationSourceType was not found. Please check your data fixtures or initial data migrations."
+            ) from e
 
     @classmethod
     def get_manual_annotation_type(cls) -> "InformationSourceType":

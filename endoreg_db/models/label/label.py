@@ -27,7 +27,13 @@ class Label(models.Model):
     """
 
     name = models.CharField(max_length=255)
-    label_type = models.ForeignKey("LabelType", on_delete=models.CASCADE, related_name="labels", blank=True, null=True)
+    label_type = models.ForeignKey(
+        "LabelType",
+        on_delete=models.CASCADE,
+        related_name="labels",
+        blank=True,
+        null=True,
+    )
     description = models.TextField(blank=True, null=True)
 
     objects = LabelManager()
@@ -66,7 +72,9 @@ class Label(models.Model):
         try:
             return cls.objects.get(name="low_quality")
         except Exception as exc:
-            raise ValueError("'low_quality' label does not exist in the database") from exc
+            raise ValueError(
+                "'low_quality' label does not exist in the database"
+            ) from exc
 
     @classmethod
     def get_or_create_from_name(cls, name: str):

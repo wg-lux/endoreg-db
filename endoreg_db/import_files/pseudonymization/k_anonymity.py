@@ -1,4 +1,4 @@
-from endoreg_db.models import Patient, SensitiveMeta, Center, Gender
+from endoreg_db.models import SensitiveMeta
 import logging
 from datetime import timedelta
 from typing import Tuple
@@ -6,7 +6,7 @@ from typing import Tuple
 from django.db.models import QuerySet
 
 from itertools import combinations
-from typing import Dict, Tuple, List
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def get_k_anonymity(pk, k=3):
         pk (_type_): _description_
         k (int, optional): _description_. Defaults to 3.
     """
-    return get_k_anonymity_for_sensitive_meta(pk=pk, k=k, dob_year_tolerance=1) 
+    return get_k_anonymity_for_sensitive_meta(pk=pk, k=k, dob_year_tolerance=1)
 
 
 def _build_sensitive_meta_qi_queryset(
@@ -99,10 +99,10 @@ def _build_sensitive_meta_qi_queryset(
         A Django QuerySet for further aggregation.
     """
     qs = SensitiveMeta.objects.all()
-    
+
     if use_first_name and instance.patient_first_name is not None:
         qs = qs.filter(patient_first_name=instance.patient_first_name)
-            
+
     if use_last_name and instance.patient_last_name is not None:
         qs = qs.filter(patient_last_name=instance.patient_last_name)
     # --- Center ---

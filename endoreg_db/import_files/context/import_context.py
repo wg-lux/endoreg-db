@@ -6,6 +6,7 @@ from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.utils.file_operations import sha256_file
 
+
 @dataclass
 class ImportContext:
     file_path: Path

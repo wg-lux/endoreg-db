@@ -4,7 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .policy import REQUIRED_ROLES, DEFAULT_ROLE_BY_METHOD, satisfies, get_needed_role
+from .policy import satisfies, get_needed_role
 
 # Map frontend page keys → (DRF route name, HTTP method)
 #
@@ -40,7 +40,7 @@ def auth_bootstrap(request):
         method = method.upper()
 
         # Look up which role is needed for this route/method
-        #needed = REQUIRED_ROLES.get(route_name) or DEFAULT_ROLE_BY_METHOD.get(method)
+        # needed = REQUIRED_ROLES.get(route_name) or DEFAULT_ROLE_BY_METHOD.get(method)
         needed = get_needed_role(route_name, method)
 
         if not needed:
@@ -48,7 +48,9 @@ def auth_bootstrap(request):
             capabilities[cap_key] = {"read": False, "write": False}
             continue
 
-        allowed = satisfies(roles, needed)  # uses your existing rule: write ⇒ read, etc.
+        allowed = satisfies(
+            roles, needed
+        )  # uses your existing rule: write ⇒ read, etc.
 
         # For UI pages we usually only care about "read"
         capabilities[cap_key] = {
@@ -56,11 +58,13 @@ def auth_bootstrap(request):
             "write": False,  # or bool(allowed) if this page allows writes in UI
         }
 
-    return Response({
-        "user": {
-            "username": user.username,
+    return Response(
+        {
+            "user": {
+                "username": user.username,
+                "roles": sorted(roles),
+            },
             "roles": sorted(roles),
-        },
-        "roles": sorted(roles),
-        "capabilities": capabilities,
-    })
+            "capabilities": capabilities,
+        }
+    )

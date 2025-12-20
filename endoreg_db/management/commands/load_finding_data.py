@@ -41,8 +41,18 @@ IMPORT_METADATA = {
     Finding.__name__: {
         "dir": FINDING_DATA_DIR,
         "model": Finding,
-        "foreign_keys": ["finding_types", "finding_interventions", "finding_classifications", "caused_by_interventions"],
-        "foreign_key_models": [FindingType, FindingIntervention, FindingClassification, FindingIntervention],
+        "foreign_keys": [
+            "finding_types",
+            "finding_interventions",
+            "finding_classifications",
+            "caused_by_interventions",
+        ],
+        "foreign_key_models": [
+            FindingType,
+            FindingIntervention,
+            FindingClassification,
+            FindingIntervention,
+        ],
     },
     FindingInterventionType.__name__: {
         "dir": FINIDNG_INTERVENTION_TYPE_DATA_DIR,
@@ -65,7 +75,12 @@ IMPORT_METADATA = {
     FindingClassification.__name__: {
         "dir": FINDING_CLASSIFICATION_DATA_DIR,
         "model": FindingClassification,
-        "foreign_keys": ["classification_types", "findings", "finding_types", "choices"],
+        "foreign_keys": [
+            "classification_types",
+            "findings",
+            "finding_types",
+            "choices",
+        ],
         "foreign_key_models": [
             FindingClassificationType,
             Finding,

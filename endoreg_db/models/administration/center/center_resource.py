@@ -19,9 +19,17 @@ class CenterResource(models.Model):
     quantity = models.FloatField()
     resource = models.ForeignKey("Resource", on_delete=models.CASCADE)
     transport_emission_factor = models.ForeignKey(
-        "EmissionFactor", on_delete=models.SET_NULL, null=True, related_name="center_resource_transport_emission_factor"
+        "EmissionFactor",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="center_resource_transport_emission_factor",
     )
-    use_emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True, related_name="center_resource_use_emission_factor")
+    use_emission_factor = models.ForeignKey(
+        "EmissionFactor",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="center_resource_use_emission_factor",
+    )
     year = models.IntegerField()
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
 
@@ -46,9 +54,15 @@ class CenterResource(models.Model):
         result_string += "\tUnit\t-\t" + str(self.unit) + "\n"
 
         if self.transport_emission_factor is not None:
-            result_string += "\tTransport Emission Factor\t-\t" + str(self.transport_emission_factor) + "\n"
+            result_string += (
+                "\tTransport Emission Factor\t-\t"
+                + str(self.transport_emission_factor)
+                + "\n"
+            )
 
-        result_string += "\tUse Emission Factor\t-\t" + str(self.use_emission_factor) + "\n"
+        result_string += (
+            "\tUse Emission Factor\t-\t" + str(self.use_emission_factor) + "\n"
+        )
 
         result_string += "\n"
 

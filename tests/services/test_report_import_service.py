@@ -5,6 +5,7 @@ Tests the import_and_anonymize service function that combines RawPdfFile creatio
 with text/anonymization pipeline.
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -12,11 +13,9 @@ from pathlib import Path
 import pytest
 from django.test import TestCase
 
-from endoreg_db.models import RawPdfFile, Center
+from endoreg_db.models import Center, RawPdfFile
 from endoreg_db.services.report_import import ReportImportService
 from tests.helpers.default_objects import get_default_center, get_default_processor
-
-import logging
 
 # Environment-based test control (mirror video tests)
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 ris = ReportImportService()
 import_and_anonymize = ris.import_and_anonymize
 
-MINIMAL_PDF_BYTES = b"""%PDF-1.4
+MINIMAL_report_BYTES = b"""%report-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
 endobj
@@ -62,13 +61,14 @@ startxref
 
 
 class TestReportImportService(TestCase):
-    """Test cases for report (PDF) import service."""
+    """Test cases for report (report) import service."""
 
     @classmethod
     def setUpClass(cls):
         """Set up session-scoped fixtures."""
         super().setUpClass()
         from endoreg_db.helpers.data_loader import load_base_db_data
+
         load_base_db_data()
 
     def setUp(self):
@@ -82,16 +82,18 @@ class TestReportImportService(TestCase):
         """
         Test successful import and anonymization of a report file.
 
-        Creates a temporary PDF file, calls import_and_anonymize,
+        Creates a temporary report file, calls import_and_anonymize,
         and verifies a RawPdfFile was created and linked to the center/processor.
         """
         if SKIP_EXPENSIVE_TESTS:
-            self.skipTest("Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)")
+            self.skipTest(
+                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
+            )
 
-        # Create a temporary PDF file
+        # Create a temporary report file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             pdf_path = Path(tmp.name)
-        pdf_path.write_bytes(MINIMAL_PDF_BYTES)
+        pdf_path.write_bytes(MINIMAL_report_BYTES)
 
         try:
             service = ReportImportService()
@@ -109,7 +111,6 @@ class TestReportImportService(TestCase):
             self.assertIsNotNone(pdf_file)
             self.assertIsInstance(pdf_file.center, Center)
             self.assertEqual(pdf_file.center, self.center)
-
 
             # State exists and is attached
             if hasattr(pdf_file, "state") and pdf_file.state:
@@ -130,12 +131,14 @@ class TestReportImportService(TestCase):
         - Ensure we still get a RawPdfFile and no crash
         """
         if SKIP_EXPENSIVE_TESTS:
-            self.skipTest("Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)")
+            self.skipTest(
+                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
+            )
 
-        # Create a temporary PDF file
+        # Create a temporary report file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             temp_path = Path(tmp.name)
-        temp_path.write_bytes(MINIMAL_PDF_BYTES)
+        temp_path.write_bytes(MINIMAL_report_BYTES)
 
         try:
             pdf_file = import_and_anonymize(

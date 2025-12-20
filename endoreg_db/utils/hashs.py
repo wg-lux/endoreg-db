@@ -13,7 +13,7 @@ def get_video_hash(video_path):
     Get the hash of a video file.
     """
     video_hash = sha256_file(video_path)
-    
+
     return video_hash
 
 

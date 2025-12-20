@@ -12,7 +12,9 @@ def sum_weights(product_materials: List["ProductMaterial"]):
         if not reference_unit:
             reference_unit = product_material.unit
         else:
-            assert reference_unit == product_material.unit, "ProductMaterial units do not match"
+            assert reference_unit == product_material.unit, (
+                "ProductMaterial units do not match"
+            )
         weight += product_material.quantity
 
     return weight, reference_unit

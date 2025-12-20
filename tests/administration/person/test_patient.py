@@ -1,5 +1,4 @@
 import random
-from datetime import date
 from logging import getLogger
 from pathlib import Path
 
@@ -7,11 +6,8 @@ from django.test import TestCase
 
 from endoreg_db.models import (
     Center,  # Import Center
-    Examination,
-    ExaminationIndication,
     Patient,
     PatientExamination,
-    PatientExaminationIndication,
     PatientLabSample,
 )
 
@@ -84,7 +80,9 @@ class PatientModelWithExaminationTest(TestCase):
     def test_examination_creation(self):
         """Test if the examination is created correctly."""
         self.assertIsInstance(self.patient_examination, PatientExamination)
-        self.assertEqual(self.patient_examination.examination, self.sample_examination_object)
+        self.assertEqual(
+            self.patient_examination.examination, self.sample_examination_object
+        )
         self.assertEqual(self.patient_examination.patient, self.patient)
 
     def test_get_patient_examinations(self):
@@ -166,7 +164,9 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertEqual(patient.is_real_person, False)
 
         # make sure the patient is not created a second time
-        patient_2, created_2 = Patient.get_or_create_pseudo_patient_by_hash(patient_hash)
+        patient_2, created_2 = Patient.get_or_create_pseudo_patient_by_hash(
+            patient_hash
+        )
         self.assertIsInstance(patient_2, Patient)
         self.assertEqual(patient_2, patient)
         self.assertEqual(created_2, False)

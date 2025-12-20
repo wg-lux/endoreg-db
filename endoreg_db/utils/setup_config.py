@@ -68,7 +68,12 @@ class SetupConfig:
                 "image_multilabel_classification_colonoscopy_default_*.safetensors",
                 "*_colonoscopy_*.safetensors",
             ],
-            "weights_search_dirs": ["tests/assets", "assets", "data/storage/model_weights", "${STORAGE_DIR}/model_weights"],
+            "weights_search_dirs": [
+                "tests/assets",
+                "assets",
+                "data/storage/model_weights",
+                "${STORAGE_DIR}/model_weights",
+            ],
             "auto_generation_defaults": {
                 "activation": "sigmoid",
                 "mean": "0.485,0.456,0.406",
@@ -83,11 +88,16 @@ class SetupConfig:
 
     def get_primary_model_name(self) -> str:
         """Get the primary classification model name."""
-        return self._config.get("default_models", {}).get("primary_classification_model", "image_multilabel_classification_colonoscopy_default")
+        return self._config.get("default_models", {}).get(
+            "primary_classification_model",
+            "image_multilabel_classification_colonoscopy_default",
+        )
 
     def get_primary_labelset_name(self) -> str:
         """Get the primary labelset name."""
-        return self._config.get("default_models", {}).get("primary_labelset", "multilabel_classification_colonoscopy_default")
+        return self._config.get("default_models", {}).get(
+            "primary_labelset", "multilabel_classification_colonoscopy_default"
+        )
 
     def get_huggingface_config(self) -> Dict[str, Any]:
         """Get HuggingFace fallback configuration."""
@@ -97,7 +107,10 @@ class SetupConfig:
         """Get weight file search patterns."""
         return self._config.get(
             "weights_search_patterns",
-            ["colo_segmentation_RegNetX800MF_*.safetensors", "*_colonoscopy_*.safetensors"],
+            [
+                "colo_segmentation_RegNetX800MF_*.safetensors",
+                "*_colonoscopy_*.safetensors",
+            ],
         )
 
     def get_weights_search_dirs(self) -> List[Path]:
@@ -168,7 +181,10 @@ class SetupConfig:
 
                 if isinstance(data, list):
                     for item in data:
-                        if item.get("fields", {}).get("name") == model_name or item.get("fields", {}).get("model") == model_name:
+                        if (
+                            item.get("fields", {}).get("name") == model_name
+                            or item.get("fields", {}).get("model") == model_name
+                        ):
                             return item.get("setup_config", {})
         except Exception as e:
             logger.warning(f"Error loading model-specific config for {model_name}: {e}")

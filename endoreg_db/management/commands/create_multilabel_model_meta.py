@@ -172,7 +172,9 @@ class Command(BaseCommand):
             raise CommandError(str(exc)) from exc
 
         self.stdout.write(
-            self.style.SUCCESS(f"ModelMeta ready: {model_meta.name} (v{model_meta.version}) for {model_meta.model.name}")
+            self.style.SUCCESS(
+                f"ModelMeta ready: {model_meta.name} (v{model_meta.version}) for {model_meta.model.name}"
+            )
         )
 
     def _create_from_local_file(self, options: Dict[str, Any]) -> ModelMeta:
@@ -213,15 +215,21 @@ class Command(BaseCommand):
 
         meta_name = fields.get("name") or options["model_name"]
         model_name = fields.get("model") or options["model_name"]
-        labelset_name = fields.get("labelset") or options["image_classification_labelset_name"]
-        labelset_version = fields.get("labelset_version", options.get("image_classification_labelset_version"))
+        labelset_name = (
+            fields.get("labelset") or options["image_classification_labelset_name"]
+        )
+        labelset_version = fields.get(
+            "labelset_version", options.get("image_classification_labelset_version")
+        )
 
         self._ensure_ai_model_exists(model_name)
         labelset = self._resolve_labelset(labelset_name, labelset_version)
 
         requested_version = options.get("model_meta_version") or fields.get("version")
         if not requested_version:
-            raise CommandError("Provide --model_meta_version or include a 'version' in the template entry.")
+            raise CommandError(
+                "Provide --model_meta_version or include a 'version' in the template entry."
+            )
 
         hf_config = entry.get("setup_config", {}).get("huggingface_fallback", {})
         repo_id = hf_config.get("repo_id")
@@ -233,7 +241,9 @@ class Command(BaseCommand):
             )
 
         if not filename.endswith(".safetensors"):
-            raise CommandError("Only .safetensors files are supported when downloading from Hugging Face.")
+            raise CommandError(
+                "Only .safetensors files are supported when downloading from Hugging Face."
+            )
 
         token = options.get("huggingface_token")
 
@@ -273,7 +283,9 @@ class Command(BaseCommand):
         elif template_name:
             resolved = (AI_MODEL_META_DATA_DIR / f"{template_name}.yaml").resolve()
         else:  # pragma: no cover - guarded by caller
-            raise CommandError("Template mode requires --template_path or --template_name.")
+            raise CommandError(
+                "Template mode requires --template_path or --template_name."
+            )
 
         if not resolved.exists():
             raise CommandError(f"Template file not found: {resolved}")
@@ -290,16 +302,22 @@ class Command(BaseCommand):
         if isinstance(data, list):
             return [entry for entry in data if isinstance(entry, dict)]
 
-        raise CommandError(f"Template {template_path} must define a mapping or list of mappings.")
+        raise CommandError(
+            f"Template {template_path} must define a mapping or list of mappings."
+        )
 
-    def _select_template_entry(self, entries: Iterable[Dict[str, Any]], options: Dict[str, Any]) -> Dict[str, Any]:
+    def _select_template_entry(
+        self, entries: Iterable[Dict[str, Any]], options: Dict[str, Any]
+    ) -> Dict[str, Any]:
         target = options.get("template_entry_name") or options.get("model_name")
 
         for entry in entries:
             fields = entry.get("fields", {})
             if not fields:
                 continue
-            if target and (fields.get("name") == target or fields.get("model") == target):
+            if target and (
+                fields.get("name") == target or fields.get("model") == target
+            ):
                 return entry
 
         entries = list(entries)
@@ -325,20 +343,33 @@ class Command(BaseCommand):
             }
         )
 
-    def _collect_template_kwargs(self, fields: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    def _collect_template_kwargs(
+        self, fields: Dict[str, Any], options: Dict[str, Any]
+    ) -> Dict[str, Any]:
         def numeric(value):
             return int(value) if value is not None else value
 
         return self._filter_none(
             {
-                "activation": fields.get("activation") or options.get("activation_function_name"),
-                "mean": self._normalise_sequence(fields.get("mean")) or options.get("mean"),
-                "std": self._normalise_sequence(fields.get("std")) or options.get("std"),
-                "size_x": numeric(fields.get("size_x")) if fields.get("size_x") is not None else options.get("size_x"),
-                "size_y": numeric(fields.get("size_y")) if fields.get("size_y") is not None else options.get("size_y"),
+                "activation": fields.get("activation")
+                or options.get("activation_function_name"),
+                "mean": self._normalise_sequence(fields.get("mean"))
+                or options.get("mean"),
+                "std": self._normalise_sequence(fields.get("std"))
+                or options.get("std"),
+                "size_x": numeric(fields.get("size_x"))
+                if fields.get("size_x") is not None
+                else options.get("size_x"),
+                "size_y": numeric(fields.get("size_y"))
+                if fields.get("size_y") is not None
+                else options.get("size_y"),
                 "axes": fields.get("axes") or options.get("axes"),
-                "batchsize": numeric(fields.get("batchsize")) if fields.get("batchsize") is not None else options.get("batchsize"),
-                "num_workers": numeric(fields.get("num_workers")) if fields.get("num_workers") is not None else options.get("num_workers"),
+                "batchsize": numeric(fields.get("batchsize"))
+                if fields.get("batchsize") is not None
+                else options.get("batchsize"),
+                "num_workers": numeric(fields.get("num_workers"))
+                if fields.get("num_workers") is not None
+                else options.get("num_workers"),
                 "description": fields.get("description") or options.get("description"),
             }
         )
@@ -367,7 +398,9 @@ class Command(BaseCommand):
     @staticmethod
     def _ensure_ai_model_exists(model_name: str) -> None:
         if not AiModel.objects.filter(name=model_name).exists():
-            raise CommandError(f"AiModel not found: {model_name}. Load ai model data before running this command.")
+            raise CommandError(
+                f"AiModel not found: {model_name}. Load ai model data before running this command."
+            )
 
     @staticmethod
     def _resolve_labelset(name: str, version: Any) -> LabelSet:
@@ -379,6 +412,8 @@ class Command(BaseCommand):
             labelset = queryset.filter(version=version).first()
 
         if not labelset:
-            raise CommandError(f"LabelSet not found for name='{name}' and version='{version}'.")
+            raise CommandError(
+                f"LabelSet not found for name='{name}' and version='{version}'."
+            )
 
         return labelset

@@ -11,15 +11,14 @@ required_gender_names = [
     "unknown",
 ]
 
+
 class GenderModelTest(TestCase):
     def setUp(self):
         # Create a Unit instance for testing
         self.gender = Gender.objects.create(
-            name = "test",  
-            abbreviation = "T",
-            description = "This is a Test Gender"
+            name="test", abbreviation="T", description="This is a Test Gender"
         )
-        
+
     def test_load_gender_data_command(self):
         """Test if the load_gender_data command runs without errors."""
         try:

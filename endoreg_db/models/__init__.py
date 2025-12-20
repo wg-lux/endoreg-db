@@ -153,8 +153,7 @@ from .state import (
 
 # AI dataset model
 from .aidataset import (
-    
-     AIDataSet,
+    AIDataSet,
 )
 
 

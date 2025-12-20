@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, SENSITIVE_VIDEO_DIR, data_paths
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, data_paths
 
 from ....utils import delete_field_file, ensure_local_file, storage_file_exists
 

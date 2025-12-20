@@ -412,7 +412,7 @@ class Command(BaseCommand):
                 f"Found {old_videos.count()} processed videos older than {max_age_days} days"
             )
 
-        except Exception as e:
+        except Exception:
             # Fallback: try different date field names
             try:
                 old_videos = VideoFile.objects.filter(

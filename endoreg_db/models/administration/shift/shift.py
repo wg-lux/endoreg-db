@@ -41,7 +41,9 @@ class Shift(models.Model):
 
     if TYPE_CHECKING:
         shift_types = cast(models.QuerySet["ShiftType"], shift_types)
-        required_qualifications = cast(models.QuerySet["Qualification"], required_qualifications)
+        required_qualifications = cast(
+            models.QuerySet["Qualification"], required_qualifications
+        )
 
         @property
         def center_shifts(self) -> models.QuerySet["CenterShift"]: ...

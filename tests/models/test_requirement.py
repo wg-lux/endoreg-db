@@ -53,10 +53,10 @@
 #             dob=date(1980, 1, 1),
 #             gender=cls.gender_male
 #         )
-        
+
 #         # Common Unit
 #         cls.unit_mg_dl, _ = Unit.objects.get_or_create(name="mg/dL", symbol="mg/dL")
-        
+
 #         # Common Diseases
 #         cls.disease_diabetes, _ = Disease.objects.get_or_create(name="Diabetes Mellitus", defaults={"icd_code": "E11"})
 #         cls.disease_hypertension, _ = Disease.objects.get_or_create(name="Hypertension", defaults={"icd_code": "I10"})
@@ -69,7 +69,7 @@
 #         cls.lab_glucose, _ = LabValue.objects.get_or_create(
 #             name="Glucose", defaults={"default_unit": cls.unit_mg_dl, "numeric_precision": 0}
 #         )
-        
+
 #         # Common PatientLabSampleType
 #         cls.sample_type_blood, _ = PatientLabSampleType.objects.get_or_create(name="Blood")
 #         cls.sample_type_urine, _ = PatientLabSampleType.objects.get_or_create(name="Urine")
@@ -112,10 +112,10 @@
 #         requirement = Requirement.objects.create(
 #             name="GlucoseGreaterThan100",
 #             description="Glucose level must be greater than 100 mg/dL.",
-#             numeric_value=100.0 
+#             numeric_value=100.0
 #         )
 #         requirement.requirement_types.add(self.rt_lab_value)
-#         requirement.lab_values.add(self.lab_glucose) 
+#         requirement.lab_values.add(self.lab_glucose)
 #         requirement.operators.add(self.op_lab_greater_than)
 
 #         patient_lab_value = PatientLabValue.objects.create(
@@ -127,7 +127,7 @@
 #         )
 
 #         result = requirement.evaluate(
-#             patient_lab_value, 
+#             patient_lab_value,
 #             mode="strict",
 #             requirement_model=requirement, # Kwarg for lab operator
 #             patient_lab_values=[patient_lab_value] # Kwarg for lab operator
@@ -148,13 +148,13 @@
 #         patient_lab_value = PatientLabValue.objects.create(
 #             patient=self.patient,
 #             lab_value=self.lab_glucose,
-#             value=90.0, 
+#             value=90.0,
 #             unit=self.unit_mg_dl,
 #             datetime=timezone.now()
 #         )
 
 #         result = requirement.evaluate(
-#             patient_lab_value, 
+#             patient_lab_value,
 #             mode="strict",
 #             requirement_model=requirement,
 #             patient_lab_values=[patient_lab_value]
@@ -168,14 +168,14 @@
 #             description="The examination must be a Colonoscopy."
 #         )
 #         requirement.requirement_types.add(self.rt_examination)
-#         requirement.examinations.add(self.exam_colonoscopy) 
+#         requirement.examinations.add(self.exam_colonoscopy)
 #         requirement.operators.add(self.op_match_all)
 
 #         patient_exam = PatientExamination.objects.create(
 #             patient=self.patient,
 #             examination=self.exam_colonoscopy,
 #             date_start=date(2023, 1, 15),
-#             hash="test_exam_colo_success_req_eval" 
+#             hash="test_exam_colo_success_req_eval"
 #         )
 
 #         result = requirement.evaluate(patient_exam, mode="strict")
@@ -195,7 +195,7 @@
 #             patient=self.patient,
 #             examination=self.exam_gastroscopy, # This is a Gastroscopy
 #             date_start=date(2023, 2, 20),
-#             hash="test_exam_gastro_fail_req_eval" 
+#             hash="test_exam_gastro_fail_req_eval"
 #         )
 
 #         result = requirement.evaluate(patient_exam, mode="strict")
@@ -213,7 +213,7 @@
 
 #         diabetic_patient = generate_patient(first_name="DiabeticPat", last_name="Sample", gender=self.gender_male, dob=date(1980,1,1))
 #         PatientDisease.objects.create(patient=diabetic_patient, disease=self.disease_diabetes)
-        
+
 #         patient_lab_sample = PatientLabSample.objects.create(
 #             patient=diabetic_patient,
 #             sample_type=self.sample_type_blood,
@@ -238,7 +238,7 @@
 
 #         non_diabetic_patient = generate_patient(first_name="NonDiabeticPat", last_name="Sample", gender=self.gender_female, dob=date(1985,1,1))
 #         # This patient does not have diabetes
-        
+
 #         patient_lab_sample = PatientLabSample.objects.create(
 #             patient=non_diabetic_patient,
 #             sample_type=self.sample_type_urine, # Sample type doesn't matter for this test logic

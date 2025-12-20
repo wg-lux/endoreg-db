@@ -11,7 +11,6 @@ Tests cover:
 from datetime import date
 
 import pytest
-from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models.metadata.sensitive_meta_logic import (
     format_date_german,

@@ -6,16 +6,29 @@ if TYPE_CHECKING:
     from endoreg_db.utils.links.requirement_link import RequirementLinks
 
     from ...administration.person.patient import Patient
-    from ...media import AnonymExaminationReport, AnonymHistologyReport, RawPdfFile, VideoFile
-    from ..examination import Examination, ExaminationIndication, ExaminationIndicationClassificationChoice
+    from ...media import (
+        AnonymExaminationReport,
+        AnonymHistologyReport,
+        RawPdfFile,
+        VideoFile,
+    )
+    from ..examination import (
+        Examination,
+        ExaminationIndication,
+        ExaminationIndicationClassificationChoice,
+    )
     from ..finding import Finding
     from .patient_examination_indication import PatientExaminationIndication
     from .patient_finding import PatientFinding
 
 
 class PatientExamination(models.Model):
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="patient_examinations")
-    examination = models.ForeignKey("Examination", on_delete=models.CASCADE, null=True, blank=True)
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE, related_name="patient_examinations"
+    )
+    examination = models.ForeignKey(
+        "Examination", on_delete=models.CASCADE, null=True, blank=True
+    )
     video = models.OneToOneField(
         "VideoFile",
         on_delete=models.CASCADE,
@@ -64,8 +77,12 @@ class PatientExamination(models.Model):
 
         created = False
 
-        if PatientExamination.objects.filter(patient__patient_hash=patient_hash, hash=examination_hash).exists():
-            return PatientExamination.objects.get(patient__patient_hash=patient_hash, hash=examination_hash), created
+        if PatientExamination.objects.filter(
+            patient__patient_hash=patient_hash, hash=examination_hash
+        ).exists():
+            return PatientExamination.objects.get(
+                patient__patient_hash=patient_hash, hash=examination_hash
+            ), created
 
         patient, created = Patient.get_or_create_pseudo_patient_by_hash(patient_hash)
         if examination_name is not None:
@@ -73,7 +90,9 @@ class PatientExamination(models.Model):
         else:
             examination = None
 
-        patient_examination = cls.objects.create(patient=patient, examination=examination, hash=examination_hash)
+        patient_examination = cls.objects.create(
+            patient=patient, examination=examination, hash=examination_hash
+        )
 
         patient_examination.save()
 
@@ -91,7 +110,9 @@ class PatientExamination(models.Model):
         import random
         import string
 
-        _hash = "DEFAULT_HASH_" + "".join(random.choices(string.ascii_uppercase + string.digits, k=10))
+        _hash = "DEFAULT_HASH_" + "".join(
+            random.choices(string.ascii_uppercase + string.digits, k=10)
+        )
 
         return _hash
 
@@ -134,17 +155,25 @@ class PatientExamination(models.Model):
         """
         return self.indications.all()
 
-    def get_indication_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
+    def get_indication_choices(
+        self,
+    ) -> List["ExaminationIndicationClassificationChoice"]:
         """
         Returns a list of indication choices associated with this patient examination.
 
         Only includes indication choices that are not None.
         """
 
-        choices = [_.indication_choice for _ in self.get_indications() if _.indication_choice is not None]
+        choices = [
+            _.indication_choice
+            for _ in self.get_indications()
+            if _.indication_choice is not None
+        ]
         return choices
 
-    def get_or_create_patient_examination_by_id(self, pk: int) -> Optional["PatientExamination"]:
+    def get_or_create_patient_examination_by_id(
+        self, pk: int
+    ) -> Optional["PatientExamination"]:
         """Hilfsmethode zum Abrufen oder Erstellen einer PatientExamination nach ID"""
         if not self.objects.filter(pk=pk).exists():
             return None
@@ -182,7 +211,9 @@ class PatientExamination(models.Model):
         # Fetch all patient lab values associated with this patient examination's patient
         patient_lab_values = []
         if self.patient:
-            patient_lab_values = list(PatientLabValue.objects.filter(patient=self.patient))
+            patient_lab_values = list(
+                PatientLabValue.objects.filter(patient=self.patient)
+            )
 
         current_examination = [self.examination] if self.examination else []
 
@@ -204,9 +235,13 @@ class PatientExamination(models.Model):
             # Add all active classifications and their choices from this PatientFinding
             for pf_classification in patient_finding.active_classifications:
                 if pf_classification.classification:
-                    finding_classifications_list.append(pf_classification.classification)
+                    finding_classifications_list.append(
+                        pf_classification.classification
+                    )
                 if pf_classification.classification_choice:
-                    finding_classification_choices_list.append(pf_classification.classification_choice)
+                    finding_classification_choices_list.append(
+                        pf_classification.classification_choice
+                    )
 
             # Add all active interventions from this PatientFinding
             for pf_intervention in patient_finding.active_interventions:
@@ -236,7 +271,9 @@ class PatientExamination(models.Model):
         examination = self.examination
         assert examination is not None
 
-        patient_finding = PatientFinding.objects.create(patient_examination=self, finding=finding)
+        patient_finding = PatientFinding.objects.create(
+            patient_examination=self, finding=finding
+        )
 
         patient_finding.save()
 

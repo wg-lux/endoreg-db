@@ -4,7 +4,7 @@ report Media Management View (Phase 1.2)
 Provides standardized REST API for report files including listing, detail retrieval,
 and streaming for the media management system.
 
-This is separate from the existing pdf.PDFMediaView which handles legacy workflows.
+This is separate from the existing pdf.reportMediaView which handles legacy workflows.
 """
 
 import logging
@@ -30,9 +30,9 @@ class PdfMediaView(APIView):
     report Media Management API for CRUD operations on report files.
 
     Endpoints:
-    - GET /api/media/pdfs/ - List all PDFs with filtering
+    - GET /api/media/pdfs/ - List all reports with filtering
     - GET /api/media/pdfs/{id}/ - Get report details
-    - GET /api/media/pdfs/{id}/stream/ - Stream report file (same as detail for PDFs)
+    - GET /api/media/pdfs/{id}/stream/ - Stream report file (same as detail for reports)
     - PATCH /api/media/pdfs/{id}/ - Update report metadata (future)
     - DELETE /api/media/pdfs/{id}/ - Delete report (future)
 
@@ -216,7 +216,7 @@ class PdfMediaView(APIView):
 
     def _list_pdfs(self, request):
         """
-        List PDFs with filtering, search, and pagination.
+        List reports with filtering, search, and pagination.
 
         Args:
             request: HTTP request with query parameters
@@ -225,7 +225,7 @@ class PdfMediaView(APIView):
             Response: JSON response with paginated report list
         """
         try:
-            # Start with all PDFs
+            # Start with all reports
             queryset = RawPdfFile.objects.select_related("sensitive_meta").all()
 
             # Apply filters
@@ -249,7 +249,7 @@ class PdfMediaView(APIView):
             total_count = queryset.count()
             pdfs = queryset[offset : offset + limit]
 
-            # Serialize PDFs manually (no dedicated serializer yet)
+            # Serialize reports manually (no dedicated serializer yet)
             results = []
             for pdf in pdfs:
                 pdf_item = {
@@ -334,12 +334,12 @@ class PdfMediaView(APIView):
 
         if status_filter:
             if status_filter == "not_started":
-                # PDFs without anonymized text
+                # reports without anonymized text
                 queryset = queryset.filter(
                     Q(anonymized_text__isnull=True) | Q(anonymized_text__exact="")
                 )
             elif status_filter == "done":
-                # PDFs with anonymized text but not validated
+                # reports with anonymized text but not validated
                 queryset = queryset.filter(
                     ~Q(anonymized_text__isnull=True),
                     ~Q(anonymized_text__exact=""),
@@ -347,7 +347,7 @@ class PdfMediaView(APIView):
                     | Q(sensitive_meta__isnull=True),
                 )
             elif status_filter == "validated":
-                # PDFs with anonymized text and validated
+                # reports with anonymized text and validated
                 queryset = queryset.filter(
                     ~Q(anonymized_text__isnull=True),
                     ~Q(anonymized_text__exact=""),

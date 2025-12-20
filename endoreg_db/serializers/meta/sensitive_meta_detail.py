@@ -4,6 +4,7 @@ from ...models import SensitiveMeta
 
 logger = logging.getLogger(__name__)
 
+
 class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
     """
     Serializer for displaying SensitiveMeta details with verification state.
@@ -17,7 +18,9 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
 
     # Related fields
     center_name = serializers.CharField(source="center.name", read_only=True)
-    patient_gender_name = serializers.CharField(source="patient_gender.name", read_only=True)
+    patient_gender_name = serializers.CharField(
+        source="patient_gender.name", read_only=True
+    )
     examiners_display = serializers.SerializerMethodField()
 
     # Formatted display fields
@@ -57,7 +60,7 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
             "text",
             "anonymized_text",
             "external_id",
-            "external_id_origin"
+            "external_id_origin",
         ]
         read_only_fields = [
             "id",
@@ -66,14 +69,23 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
         ]
 
     # --- Verification getters ---
-    def get_is_verified(self, obj): return getattr(obj, "is_verified", False)
-    def get_dob_verified(self, obj): return getattr(getattr(obj, "state", None), "dob_verified", False)
-    def get_names_verified(self, obj): return getattr(getattr(obj, "state", None), "names_verified", False)
+    def get_is_verified(self, obj):
+        return getattr(obj, "is_verified", False)
+
+    def get_dob_verified(self, obj):
+        return getattr(getattr(obj, "state", None), "dob_verified", False)
+
+    def get_names_verified(self, obj):
+        return getattr(getattr(obj, "state", None), "names_verified", False)
 
     # --- Examiner display ---
     def get_examiners_display(self, obj):
         try:
-            return [f"{e.first_name} {e.last_name}" for e in obj.examiners.all()] if obj.pk else []
+            return (
+                [f"{e.first_name} {e.last_name}" for e in obj.examiners.all()]
+                if obj.pk
+                else []
+            )
         except Exception as e:
             logger.warning(f"Error fetching examiners for SensitiveMeta {obj.pk}: {e}")
             return []
@@ -83,7 +95,9 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
         return obj.patient_dob.strftime("%Y-%m-%d") if obj.patient_dob else None
 
     def get_examination_date_display(self, obj):
-        return obj.examination_date.strftime("%Y-%m-%d") if obj.examination_date else None
+        return (
+            obj.examination_date.strftime("%Y-%m-%d") if obj.examination_date else None
+        )
 
     # --- Hash short forms ---
     def get_patient_hash_display(self, obj):
@@ -98,10 +112,11 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
 
     def get_anonymized_text(self, obj):
         return obj.anonymized_text if isinstance(obj.anonymized_text, str) else None
-    
-    def get_external_id(self, obj) -> str | None:  
-        return obj.external_id if isinstance(obj.external_id, str) else None  
-    
-    def get_external_id_origin(self, obj) -> str | None:  
-        return obj.external_id_origin if isinstance(obj.external_id_origin, str) else None 
 
+    def get_external_id(self, obj) -> str | None:
+        return obj.external_id if isinstance(obj.external_id, str) else None
+
+    def get_external_id_origin(self, obj) -> str | None:
+        return (
+            obj.external_id_origin if isinstance(obj.external_id_origin, str) else None
+        )

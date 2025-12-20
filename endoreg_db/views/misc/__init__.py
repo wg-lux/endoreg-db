@@ -15,19 +15,15 @@ from .upload_views import (
 
 __all__ = [
     "CenterViewSet",
-    'csrf_token_view',
-
+    "csrf_token_view",
     # Gender view
     "GenderViewSet",
-
     # Stats views
-    'ExaminationStatsView',
-    'VideoSegmentStatsView',
-    'SensitiveMetaStatsView',
+    "ExaminationStatsView",
+    "VideoSegmentStatsView",
+    "SensitiveMetaStatsView",
     "GeneralStatsView",
-
     # Upload views
-    'UploadFileView',
-    'UploadStatusView',
-
+    "UploadFileView",
+    "UploadStatusView",
 ]

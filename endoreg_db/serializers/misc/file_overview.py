@@ -3,8 +3,12 @@ from typing import TYPE_CHECKING
 from rest_framework import serializers
 
 from endoreg_db.models.media import RawPdfFile, VideoFile
-from endoreg_db.models.state.anonymization import AnonymizationState as PdfAnonymizationState
-from endoreg_db.models.state.anonymization import AnonymizationState as VideoAnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState as PdfAnonymizationState,
+)
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState as VideoAnonymizationState,
+)
 
 if TYPE_CHECKING:
     pass
@@ -41,8 +45,6 @@ class FileOverviewSerializer(serializers.Serializer):
         Raises:
             TypeError: If the instance is not a VideoFile or RawPdfFile.
         """
-        text = ""
-        anonym_text = ""
 
         if isinstance(instance, VideoFile):
             media_type = "video"
@@ -76,10 +78,12 @@ class FileOverviewSerializer(serializers.Serializer):
                 rps.anonymization_status if rps else PdfAnonymizationState.NOT_STARTED
             )
 
-            # ------- annotation status (not applicable for PDFs)
+            # ------- annotation status (not applicable for reports)
             annot_status = (
-                            PdfAnonymizationState.VALIDATED if rps.anonymization_validated else PdfAnonymizationState.NOT_STARTED 
-                            )
+                PdfAnonymizationState.VALIDATED
+                if rps.anonymization_validated
+                else PdfAnonymizationState.NOT_STARTED
+            )
 
         else:  # shouldn't happen
             raise TypeError(f"Unsupported instance for overview: {type(instance)}")

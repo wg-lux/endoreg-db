@@ -52,7 +52,7 @@ RESOURCE_ROLES = {
         "read": "video:read",
         "write": "video:write",
     },
-    #anonymization resource
+    # anonymization resource
     "anonymization": {
         "read": "anonymization:read",
         "write": "anonymization:write",
@@ -75,20 +75,15 @@ RESOURCE_ROLES = {
 #       exactly that "name"
 ROUTE_RESOURCE = {
     # Patients
-    "patient-list":   "patient",   # /api/patients/
-    "patient-detail": "patient",   # /api/patients/{id}/
-
+    "patient-list": "patient",  # /api/patients/
+    "patient-detail": "patient",  # /api/patients/{id}/
     # Custom patient helper
     "check_pe_exist": "patient",
-
     # Example for videos (if you have these ViewSets registered)
-    "videos-list":   "video",
+    "videos-list": "video",
     "videos-detail": "video",
-
     "anonymization_items_overview": "anonymization",
     # Add more mappings as your API grows
-
-    
 }
 
 # ------------------------------------------------------------
@@ -108,7 +103,6 @@ REQUIRED_ROLES: RouteRoles = {
     # "patient-detail": {
     #     "DELETE": "admin",  # admin role in Keycloak
     # },
-
     # Example: a special helper route that you always want read-only patients role:
     # "check_pe_exist": "patient:read",
 }
@@ -125,20 +119,20 @@ REQUIRED_ROLES: RouteRoles = {
 # If you move fully to resource-based roles, you can leave this as None
 # or a generic "data:read"/"data:write" depending on your preference.
 DEFAULT_ROLE_BY_METHOD = {
-    "GET":     "data:read",
-    "HEAD":    "data:read",
+    "GET": "data:read",
+    "HEAD": "data:read",
     "OPTIONS": "data:read",
-    "POST":    "data:write",
-    "PUT":     "data:write",
-    "PATCH":   "data:write",
-    "DELETE":  "data:write",
+    "POST": "data:write",
+    "PUT": "data:write",
+    "PATCH": "data:write",
+    "DELETE": "data:write",
 }
-
 
 
 # ------------------------------------------------------------
 # Role satisfaction rule
 # ------------------------------------------------------------
+
 
 def satisfies(user_roles: set[str], needed: str) -> bool:
     """
@@ -160,8 +154,8 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
     """
     if not needed:
         return False
-    
-     #  Global override: any user with role "endoregdb_user" passes all checks
+
+    #  Global override: any user with role "endoregdb_user" passes all checks
     if "endoregdb_user" in user_roles:
         return True
 
@@ -181,6 +175,7 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
 # ------------------------------------------------------------
 # Helper: compute which role is needed for a given route + method
 # ------------------------------------------------------------
+
 
 def get_needed_role(route_name: str, method: str) -> str | None:
     """

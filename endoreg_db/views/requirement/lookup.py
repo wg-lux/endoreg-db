@@ -54,7 +54,7 @@ class LookupViewSet(viewsets.ViewSet):
         "selectedRequirementSetIds",
         "selectedChoices",
     }
-    
+
     user_tags = Tag
 
     @action(detail=False, methods=["post"])
@@ -134,7 +134,7 @@ class LookupViewSet(viewsets.ViewSet):
 
                 except Exception:
                     pass
-        
+
         user_tags = request.data.get("user_tags", None)
         if user_tags and not isinstance(user_tags, list):
             user_tags = [user_tags]
@@ -268,7 +268,6 @@ class LookupViewSet(viewsets.ViewSet):
                     store.set_many(new_data)
                     cache.set(f"{ORIGIN_MAP_PREFIX}{pk}", pe_id, DEFAULT_TTL_SECONDS)
                     return Response(store.get_all(), status=status.HTTP_200_OK)
-
 
                 except Exception:
                     pass

@@ -3,7 +3,6 @@ from subprocess import run
 from typing import TYPE_CHECKING, Dict, List, Tuple, Union, cast
 
 from django.db import models
-from pydantic import BaseModel
 
 from endoreg_db.utils.links.requirement_link import RequirementLinks
 
@@ -124,9 +123,13 @@ class Requirement(models.Model):
 
     @property
     def operator_instructions_parsed(self):
-        from endoreg_db.models.requirement.requirement_operator import RequirementOperator
+        from endoreg_db.models.requirement.requirement_operator import (
+            RequirementOperator,
+        )
 
-        instructions = RequirementOperator.parse_instructions(self.operator_instructions)
+        instructions = RequirementOperator.parse_instructions(
+            self.operator_instructions
+        )
         return instructions
 
     numeric_value = models.FloatField(
@@ -268,7 +271,9 @@ class Requirement(models.Model):
     )
 
     if TYPE_CHECKING:
-        requirement_types = cast(models.manager.RelatedManager["RequirementType"], requirement_types)
+        requirement_types = cast(
+            models.manager.RelatedManager["RequirementType"], requirement_types
+        )
         operator = models.ForeignKey["RequirementOperator"]
         # requirement_sets = cast(models.manager.RelatedManager["RequirementSet"], requirement_sets)
         examinations = cast(models.manager.RelatedManager["Examination"], examinations)
@@ -292,7 +297,9 @@ class Requirement(models.Model):
             models.manager.RelatedManager["FindingClassificationChoice"],
             finding_classification_choices,
         )
-        finding_interventions = cast(models.manager.RelatedManager["FindingIntervention"], finding_interventions)
+        finding_interventions = cast(
+            models.manager.RelatedManager["FindingIntervention"], finding_interventions
+        )
         medications = cast(models.manager.RelatedManager["Medication"], medications)
         medication_indications = cast(
             models.manager.RelatedManager["MedicationIndication"],
@@ -302,7 +309,9 @@ class Requirement(models.Model):
             models.manager.RelatedManager["MedicationIntakeTime"],
             medication_intake_times,
         )
-        medication_schedules = cast(models.manager.RelatedManager["MedicationSchedule"], medication_schedules)
+        medication_schedules = cast(
+            models.manager.RelatedManager["MedicationSchedule"], medication_schedules
+        )
         genders = cast(models.manager.RelatedManager["Gender"], genders)
 
     def natural_key(self):
@@ -370,18 +379,32 @@ class Requirement(models.Model):
         # requirement_sets is not part of RequirementLinks (avoids circular import); collect other related models
         models_dict = RequirementLinks(
             examinations=[_ for _ in self.examinations.all() if _ is not None],
-            examination_indications=[_ for _ in self.examination_indications.all() if _ is not None],
+            examination_indications=[
+                _ for _ in self.examination_indications.all() if _ is not None
+            ],
             lab_values=[_ for _ in self.lab_values.all() if _ is not None],
             diseases=[_ for _ in self.diseases.all() if _ is not None],
-            disease_classification_choices=[_ for _ in self.disease_classification_choices.all() if _ is not None],
+            disease_classification_choices=[
+                _ for _ in self.disease_classification_choices.all() if _ is not None
+            ],
             events=[_ for _ in self.events.all() if _ is not None],
             findings=[_ for _ in self.findings.all() if _ is not None],
-            finding_classifications=[_ for _ in self.finding_classifications.all() if _ is not None],
-            finding_classification_choices=[_ for _ in self.finding_classification_choices.all() if _ is not None],
-            finding_interventions=[_ for _ in self.finding_interventions.all() if _ is not None],
+            finding_classifications=[
+                _ for _ in self.finding_classifications.all() if _ is not None
+            ],
+            finding_classification_choices=[
+                _ for _ in self.finding_classification_choices.all() if _ is not None
+            ],
+            finding_interventions=[
+                _ for _ in self.finding_interventions.all() if _ is not None
+            ],
             medications=[_ for _ in self.medications.all() if _ is not None],
-            medication_indications=[_ for _ in self.medication_indications.all() if _ is not None],
-            medication_intake_times=[_ for _ in self.medication_intake_times.all() if _ is not None],
+            medication_indications=[
+                _ for _ in self.medication_indications.all() if _ is not None
+            ],
+            medication_intake_times=[
+                _ for _ in self.medication_intake_times.all() if _ is not None
+            ],
         )
         return models_dict
 
@@ -457,7 +480,9 @@ class Requirement(models.Model):
                 - bei ungültigem Modus
                 - bei komplett falschen Input-Typen / fehlender .links-Struktur
         """
-        from endoreg_db.models.requirement.requirement_error import RequirementEvaluationError
+        from endoreg_db.models.requirement.requirement_error import (
+            RequirementEvaluationError,
+        )
 
         # --- Mode validieren -------------------------------------------------
         if mode not in ["strict", "loose"]:
@@ -520,7 +545,11 @@ class Requirement(models.Model):
                                 "Für diese Voraussetzung müssen alle passenden Einträge vorliegen, aber es wurden keine entsprechenden Datensätze gefunden.",
                             )
                         if queryset_mode == "min_count":
-                            required = queryset_min_count if queryset_min_count is not None else 1
+                            required = (
+                                queryset_min_count
+                                if queryset_min_count is not None
+                                else 1
+                            )
                             if required > 0:
                                 return (
                                     False,
@@ -534,7 +563,9 @@ class Requirement(models.Model):
                     queryset_item_count = 0
 
                     for item in _input:
-                        if not hasattr(item, "links") or not isinstance(item.links, RequirementLinks):
+                        if not hasattr(item, "links") or not isinstance(
+                            item.links, RequirementLinks
+                        ):
                             raise RequirementEvaluationError(
                                 requirement=self,
                                 code="MISSING_LINKS_ATTR",
@@ -557,7 +588,9 @@ class Requirement(models.Model):
                                 aggregated_input_links_data[link_key] = []
                             aggregated_input_links_data[link_key].extend(link_list)
 
-                        per_item_args = tuple(item if arg is _input else arg for arg in args)
+                        per_item_args = tuple(
+                            item if arg is _input else arg for arg in args
+                        )
                         op_kwargs = kwargs.copy()
                         op_kwargs["requirement"] = self
                         op_kwargs["original_input_args"] = per_item_args
@@ -580,7 +613,11 @@ class Requirement(models.Model):
                                         exc,
                                     )
                                     item_operator_results.append(False)
-                            item_result = evaluate_result_list_func(item_operator_results) if item_operator_results else True
+                            item_result = (
+                                evaluate_result_list_func(item_operator_results)
+                                if item_operator_results
+                                else True
+                            )
                         else:
                             # keine Operatoren -> Bedingung erfüllt, wenn Requirement selbst keine Bedingungen hat
                             item_result = not requirement_has_conditions
@@ -599,7 +636,9 @@ class Requirement(models.Model):
                                 "Für diese Voraussetzung müssen alle relevanten Einträge die Bedingung erfüllen.",
                             )
                     elif queryset_mode == "min_count":
-                        required = queryset_min_count if queryset_min_count is not None else 1
+                        required = (
+                            queryset_min_count if queryset_min_count is not None else 1
+                        )
                         if queryset_true_count < max(required, 0):
                             return (
                                 False,
@@ -612,18 +651,28 @@ class Requirement(models.Model):
                 raise RequirementEvaluationError(
                     requirement=self,
                     code="INVALID_INPUT_TYPE",
-                    technical_message=(f"Input type {type(_input)} is not among expected models: {self.expected_models} nor a QuerySet of expected models."),
-                    user_message=("Diese Voraussetzung wurde mit einem nicht passenden Datentyp aufgerufen und kann aktuell nicht korrekt geprüft werden."),
+                    technical_message=(
+                        f"Input type {type(_input)} is not among expected models: {self.expected_models} nor a QuerySet of expected models."
+                    ),
+                    user_message=(
+                        "Diese Voraussetzung wurde mit einem nicht passenden Datentyp aufgerufen und kann aktuell nicht korrekt geprüft werden."
+                    ),
                     meta={"input_type": str(type(_input))},
                 )
 
             # Einzelinstanz erwarteten Typs
-            if not hasattr(_input, "links") or not isinstance(_input.links, RequirementLinks):
+            if not hasattr(_input, "links") or not isinstance(
+                _input.links, RequirementLinks
+            ):
                 raise RequirementEvaluationError(
                     requirement=self,
                     code="MISSING_LINKS_ATTR",
-                    technical_message=(f"Input {_input} of type {type(_input)} does not have a valid .links attribute of type RequirementLinks."),
-                    user_message=("Für die Auswertung dieser Voraussetzung fehlen die intern benötigten Verknüpfungsinformationen."),
+                    technical_message=(
+                        f"Input {_input} of type {type(_input)} does not have a valid .links attribute of type RequirementLinks."
+                    ),
+                    user_message=(
+                        "Für die Auswertung dieser Voraussetzung fehlen die intern benötigten Verknüpfungsinformationen."
+                    ),
                     meta={"input_type": str(type(_input))},
                 )
 
@@ -640,7 +689,9 @@ class Requirement(models.Model):
         # Deduplizieren der aggregierten Links
         for key in aggregated_input_links_data:
             try:
-                aggregated_input_links_data[key] = list(dict.fromkeys(aggregated_input_links_data[key]))
+                aggregated_input_links_data[key] = list(
+                    dict.fromkeys(aggregated_input_links_data[key])
+                )
             except TypeError:
                 # Fallback für nicht-hashbare Items
                 tmp: list = []
@@ -699,7 +750,9 @@ class Requirement(models.Model):
                     **op_kwargs,
                 )
                 operator_results.append(operator_result)
-                operator_details.append(f"{operator.name}: {'erfüllt' if operator_result else 'nicht erfüllt'}")
+                operator_details.append(
+                    f"{operator.name}: {'erfüllt' if operator_result else 'nicht erfüllt'}"
+                )
             except Exception as e:
                 operator_results.append(False)
                 operator_details.append(f"{operator.name}: technischer Fehler ({e})")
@@ -718,7 +771,11 @@ class Requirement(models.Model):
         elif len(operator_results) == 1:
             details = operator_details[0]
         else:
-            failed_details = [detail for detail, result in zip(operator_details, operator_results) if not result]
+            failed_details = [
+                detail
+                for detail, result in zip(operator_details, operator_results)
+                if not result
+            ]
             if failed_details:
                 details = "; ".join(failed_details)
             else:

@@ -1,17 +1,20 @@
 # endoreg_db/import_files/storage/sensitive_meta_storage.py
-from typing import Union, Dict, Any
+from typing import Union
 
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.import_files.processing.sensitive_meta_adapter import (
     normalize_lx_sensitive_meta,
 )
-from endoreg_db.import_files.context.default_sensitive_meta import default_sensitive_meta
+from endoreg_db.import_files.context.default_sensitive_meta import (
+    default_sensitive_meta,
+)
 from logging import getLogger
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
 #
 
 logger = getLogger(__name__)
+
 
 def sensitive_meta_storage(
     sensitive_meta: LxSM,

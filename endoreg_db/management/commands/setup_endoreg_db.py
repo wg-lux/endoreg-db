@@ -42,16 +42,24 @@ class Command(BaseCommand):
         force_recreate = options.get("force_recreate", False)
         yaml_only = options.get("yaml_only", False)
 
-        self.stdout.write(self.style.SUCCESS("🚀 Starting EndoReg DB embedded app setup..."))
+        self.stdout.write(
+            self.style.SUCCESS("🚀 Starting EndoReg DB embedded app setup...")
+        )
 
         if yaml_only:
-            self.stdout.write(self.style.WARNING("📋 YAML-only mode: Will not auto-generate missing metadata"))
+            self.stdout.write(
+                self.style.WARNING(
+                    "📋 YAML-only mode: Will not auto-generate missing metadata"
+                )
+            )
 
         # Step 1: Load base database data
         self.stdout.write("\n📊 Step 1: Loading base database data...")
         try:
             call_command("load_base_db_data")
-            self.stdout.write(self.style.SUCCESS("✅ Base database data loaded successfully"))
+            self.stdout.write(
+                self.style.SUCCESS("✅ Base database data loaded successfully")
+            )
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"❌ Failed to load base data: {e}"))
             return
@@ -65,9 +73,13 @@ class Command(BaseCommand):
             self.stdout.write("Using database caching - creating cache table...")
             try:
                 call_command("createcachetable")
-                self.stdout.write(self.style.SUCCESS("✅ Cache table created successfully"))
+                self.stdout.write(
+                    self.style.SUCCESS("✅ Cache table created successfully")
+                )
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Failed to create cache table: {e}"))
+                self.stdout.write(
+                    self.style.ERROR(f"❌ Failed to create cache table: {e}")
+                )
                 return
         else:
             self.stdout.write("Using in-memory caching - skipping cache table creation")
@@ -79,18 +91,26 @@ class Command(BaseCommand):
             self.stdout.write("\n🤖 Step 3: Loading AI model data...")
             try:
                 call_command("load_ai_model_data")
-                self.stdout.write(self.style.SUCCESS("✅ AI model data loaded successfully"))
+                self.stdout.write(
+                    self.style.SUCCESS("✅ AI model data loaded successfully")
+                )
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Failed to load AI model data: {e}"))
+                self.stdout.write(
+                    self.style.ERROR(f"❌ Failed to load AI model data: {e}")
+                )
                 return
 
             # Step 4: Load AI model label data
             self.stdout.write("\n🏷️  Step 4: Loading AI model label data...")
             try:
                 call_command("load_ai_model_label_data")
-                self.stdout.write(self.style.SUCCESS("✅ AI model label data loaded successfully"))
+                self.stdout.write(
+                    self.style.SUCCESS("✅ AI model label data loaded successfully")
+                )
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Failed to load AI model label data: {e}"))
+                self.stdout.write(
+                    self.style.ERROR(f"❌ Failed to load AI model label data: {e}")
+                )
                 return
 
             # Step 5: Create model metadata
@@ -109,12 +129,20 @@ class Command(BaseCommand):
                 ai_model = AiModel.objects.filter(name=default_model_name).first()
 
                 if not ai_model:
-                    self.stdout.write(self.style.ERROR(f"❌ AI model '{default_model_name}' not found"))
+                    self.stdout.write(
+                        self.style.ERROR(
+                            f"❌ AI model '{default_model_name}' not found"
+                        )
+                    )
                     return
 
                 existing_meta = ai_model.metadata_versions.first()
                 if existing_meta and not force_recreate:
-                    self.stdout.write(self.style.SUCCESS("✅ Model metadata already exists (use --force-recreate to recreate)"))
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            "✅ Model metadata already exists (use --force-recreate to recreate)"
+                        )
+                    )
                 else:
                     # Try to create model metadata using configurable approach
                     model_path = self._find_model_weights_file()
@@ -129,34 +157,56 @@ class Command(BaseCommand):
                         if force_recreate:
                             call_command_kwargs["bump_version"] = True
 
-                        call_command("create_multilabel_model_meta", **call_command_kwargs)
-                        self.stdout.write(self.style.SUCCESS("✅ AI model metadata created successfully"))
+                        call_command(
+                            "create_multilabel_model_meta", **call_command_kwargs
+                        )
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                "✅ AI model metadata created successfully"
+                            )
+                        )
                     else:
-                        self.stdout.write(self.style.WARNING("⚠️  Model weights file not found. AI features may not work properly."))
+                        self.stdout.write(
+                            self.style.WARNING(
+                                "⚠️  Model weights file not found. AI features may not work properly."
+                            )
+                        )
 
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Failed to create AI model metadata: {e}"))
+                self.stdout.write(
+                    self.style.ERROR(f"❌ Failed to create AI model metadata: {e}")
+                )
                 return
 
             # Step 5.5: Validate and fix AI model active metadata
             self.stdout.write("\n🔧 Step 5.5: Validating AI model active metadata...")
             try:
                 self._validate_and_fix_ai_model_metadata(yaml_only)
-                self.stdout.write(self.style.SUCCESS("✅ AI model metadata validation completed"))
+                self.stdout.write(
+                    self.style.SUCCESS("✅ AI model metadata validation completed")
+                )
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Failed to validate AI model metadata: {e}"))
+                self.stdout.write(
+                    self.style.ERROR(f"❌ Failed to validate AI model metadata: {e}")
+                )
                 return
 
         # Step 6: Verification
         self.stdout.write("\n🔍 Step 6: Verifying setup...")
         try:
             self._verify_setup()
-            self.stdout.write(self.style.SUCCESS("✅ Setup verification completed successfully"))
+            self.stdout.write(
+                self.style.SUCCESS("✅ Setup verification completed successfully")
+            )
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"❌ Setup verification failed: {e}"))
             return
 
-        self.stdout.write(self.style.SUCCESS("\n🎉 EndoReg DB embedded app setup completed successfully!"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                "\n🎉 EndoReg DB embedded app setup completed successfully!"
+            )
+        )
         self.stdout.write("\nNext steps:")
         # self.stdout.write("1. Run migrations: python manage.py migrate")
         self.stdout.write("1. Create superuser: python manage.py createsuperuser")
@@ -176,12 +226,19 @@ class Command(BaseCommand):
         # If no local weights found and HuggingFace fallback is enabled
         hf_config = setup_config.get_huggingface_config()
         if hf_config.get("enabled", True):
-            self.stdout.write("📦 No local model weights found — attempting HuggingFace download...")
+            self.stdout.write(
+                "📦 No local model weights found — attempting HuggingFace download..."
+            )
             try:
                 if not ModelMeta.objects.exists():
                     ModelMeta.setup_default_from_huggingface(
-                        hf_config.get("repo_id", "wg-lux/colo_segmentation_RegNetX800MF_base"),
-                        labelset_name=hf_config.get("labelset_name", "multilabel_classification_colonoscopy_default"),
+                        hf_config.get(
+                            "repo_id", "wg-lux/colo_segmentation_RegNetX800MF_base"
+                        ),
+                        labelset_name=hf_config.get(
+                            "labelset_name",
+                            "multilabel_classification_colonoscopy_default",
+                        ),
                     )
                     self.stdout.write("✅ Default ModelMeta created from HuggingFace.")
 
@@ -216,7 +273,9 @@ class Command(BaseCommand):
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         existing_tables = [row[0] for row in cursor.fetchall()]
 
-        missing_tables = [table for table in required_tables if table not in existing_tables]
+        missing_tables = [
+            table for table in required_tables if table not in existing_tables
+        ]
         if missing_tables:
             raise Exception(f"Missing required tables: {missing_tables}")
 
@@ -262,7 +321,9 @@ class Command(BaseCommand):
 
             if metadata_count == 0:
                 if yaml_only:
-                    self.stdout.write(f"  ⚠️  YAML-only mode: Skipping auto-generation for {model.name}")
+                    self.stdout.write(
+                        f"  ⚠️  YAML-only mode: Skipping auto-generation for {model.name}"
+                    )
                     continue
 
                 # Create metadata for models that don't have any
@@ -275,7 +336,10 @@ class Command(BaseCommand):
                 except LabelSet.DoesNotExist:
                     labelset = LabelSet.objects.first()
                     if not labelset:
-                        labelset = LabelSet.objects.create(name="default_colonoscopy_labels", description="Default colonoscopy classification labels")
+                        labelset = LabelSet.objects.create(
+                            name="default_colonoscopy_labels",
+                            description="Default colonoscopy classification labels",
+                        )
 
                 # Create basic metadata WITH weights if available
                 weights_file = self._find_model_weights_file()
@@ -330,7 +394,9 @@ class Command(BaseCommand):
 
                     # Check if the metadata has weights - if not, try to assign them
                     if not first_meta.weights:
-                        self.stdout.write("    Metadata exists but no weights assigned, attempting to add weights...")
+                        self.stdout.write(
+                            "    Metadata exists but no weights assigned, attempting to add weights..."
+                        )
                         weights_file = self._find_model_weights_file()
                         if weights_file:
                             from pathlib import Path
@@ -338,7 +404,9 @@ class Command(BaseCommand):
                             from endoreg_db.utils.paths import STORAGE_DIR
 
                             try:
-                                weights_path = str(Path(weights_file).relative_to(STORAGE_DIR))
+                                weights_path = str(
+                                    Path(weights_file).relative_to(STORAGE_DIR)
+                                )
                             except ValueError:
                                 # Copy weights to storage if not already there
                                 import shutil
@@ -348,22 +416,32 @@ class Command(BaseCommand):
                                 dest_path = weights_dir / Path(weights_file).name
                                 shutil.copy2(weights_file, dest_path)
                                 weights_path = str(dest_path.relative_to(STORAGE_DIR))
-                                self.stdout.write(f"      Copied weights to: {dest_path}")
+                                self.stdout.write(
+                                    f"      Copied weights to: {dest_path}"
+                                )
 
                             # Assign the relative path to the FileField
                             first_meta.weights.name = weights_path
                             first_meta.save(update_fields=["weights"])
-                            self.stdout.write(f"      Added weights to existing metadata: {weights_path}")
+                            self.stdout.write(
+                                f"      Added weights to existing metadata: {weights_path}"
+                            )
 
                     model.active_meta = first_meta
                     model.save()
                     fixed_count += 1
-                    self.stdout.write(f"  ✅ Set active metadata: {first_meta.name} v{first_meta.version}")
+                    self.stdout.write(
+                        f"  ✅ Set active metadata: {first_meta.name} v{first_meta.version}"
+                    )
                 else:
-                    self.stdout.write(f"  ⚠️  No metadata versions available for {model.name}")
+                    self.stdout.write(
+                        f"  ⚠️  No metadata versions available for {model.name}"
+                    )
 
             else:
-                self.stdout.write(f"  ✅ Model {model.name} has active metadata: {model.active_meta}")
+                self.stdout.write(
+                    f"  ✅ Model {model.name} has active metadata: {model.active_meta}"
+                )
 
         # Verify all models can get latest version
         self.stdout.write("\nTesting model metadata access...")

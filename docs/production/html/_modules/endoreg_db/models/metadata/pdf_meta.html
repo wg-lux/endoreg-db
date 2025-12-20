@@ -101,9 +101,9 @@
 <a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.PdfType">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PdfType</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Defines a specific type or format of PDF report, linking to flags used for parsing.</span>
+<span class="sd">    Defines a specific type or format of report report, linking to flags used for parsing.</span>
 
-<span class="sd">    Used to configure how different PDF report layouts are processed.</span>
+<span class="sd">    Used to configure how different report report layouts are processed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">)</span>
 
@@ -139,7 +139,7 @@
         <span class="n">cut_off_below_lines</span><span class="p">:</span> <span class="n">models</span><span class="o">.</span><span class="n">QuerySet</span><span class="p">[</span><span class="s2">&quot;ReportReaderFlag&quot;</span><span class="p">]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a string summary of the PDF type and its associated flags.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a string summary of the report type and its associated flags.&quot;&quot;&quot;</span>
         <span class="n">summary</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="c1"># add lines to summary</span>
         <span class="n">summary</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Patient Info Line: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">patient_info_line</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -163,7 +163,7 @@
 <a class="viewcode-back" href="../../../../models.html#endoreg_db.models.metadata.PdfMeta">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PdfMeta</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Stores metadata associated with a specific PDF document file.</span>
+<span class="sd">    Stores metadata associated with a specific report document file.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">pdf_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="n">PdfType</span><span class="p">,</span> <span class="n">on_delete</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">CASCADE</span><span class="p">)</span>
     <span class="n">date</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateField</span><span class="p">()</span>
@@ -174,7 +174,7 @@
         <span class="n">pdf_type</span><span class="p">:</span> <span class="s2">&quot;PdfType&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the PDF hash as its string representation.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the report hash as its string representation.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pdf_hash</span><span class="p">)</span>
 
 <div class="viewcode-block" id="PdfMeta.create_from_file">
@@ -182,7 +182,7 @@
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">create_from_file</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">pdf_file</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Creates a PdfMeta instance from a PDF file object.</span>
+<span class="sd">        Creates a PdfMeta instance from a report file object.</span>
 <span class="sd">        Note: This implementation seems incomplete; it doesn&#39;t extract hash, date, time, or type.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">pdf_file</span> <span class="o">=</span> <span class="n">File</span><span class="p">(</span><span class="n">pdf_file</span><span class="p">)</span>

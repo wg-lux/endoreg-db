@@ -13,6 +13,7 @@ class VideoCorrectionView(APIView):
     """
     GET /api/video/media/video-correction/{id}/ - Get video details for correction
     """
+
     permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, pk):

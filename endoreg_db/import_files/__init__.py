@@ -23,5 +23,5 @@ __all__ = [
     "VideoImportService",
     "ImportContext",
     "validate_directories",
-    "default_sensitive_meta"
+    "default_sensitive_meta",
 ]

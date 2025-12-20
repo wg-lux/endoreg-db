@@ -1,6 +1,3 @@
-from django.test import TestCase
-from endoreg_db.models import Material
-
 # class MaterialModelTest(TestCase):
 #     def setUp(self):
 #         # Create a Material instance for testing
@@ -11,7 +8,7 @@ from endoreg_db.models import Material
 #             abbreviation="TM",
 #             description="This is a Test Material"
 #         )
-        
+
 #     def test_material_creation(self):
 #         """Test if the material is created correctly."""
 #         self.assertEqual(self.material.name, "test_material")

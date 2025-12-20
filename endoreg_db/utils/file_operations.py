@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 
 
-
 def get_content_hash_filename(file: Path) -> tuple[str, str]:
     """
     Returns a new filename with a uuid - This is the content hash -
@@ -41,7 +40,6 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
             h.update(chunk)
 
     return h.hexdigest()
-
 
 
 def copy_with_progress(src: str, dst: str, buffer_size=1024 * 1024):

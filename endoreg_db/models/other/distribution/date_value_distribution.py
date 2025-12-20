@@ -43,7 +43,9 @@ class DateValueDistribution(BaseValueDistribution):
     date_min = models.DateField(blank=True, null=True)
     date_max = models.DateField(blank=True, null=True)
     date_mean = models.DateField(blank=True, null=True)
-    date_std_dev = models.IntegerField(blank=True, null=True)  # Standard deviation in days
+    date_std_dev = models.IntegerField(
+        blank=True, null=True
+    )  # Standard deviation in days
 
     # Timedelta-related fields
     timedelta_days_min = models.IntegerField(blank=True, null=True)
@@ -127,18 +129,30 @@ class DateValueDistribution(BaseValueDistribution):
             mean_ordinal = self.date_mean_safe.toordinal()
             std_dev_days = self.date_std_dev_safe
             random_ordinal = int(np.random.normal(mean_ordinal, std_dev_days))
-            random_ordinal = np.clip(random_ordinal, self.date_min_safe.toordinal(), self.date_max_safe.toordinal())
+            random_ordinal = np.clip(
+                random_ordinal,
+                self.date_min_safe.toordinal(),
+                self.date_max_safe.toordinal(),
+            )
             return date.fromordinal(random_ordinal)
         else:
             raise ValueError("Unsupported distribution type")
 
     def _generate_timedelta_value(self):
         if self.distribution_type == "uniform":
-            random_days = np.random.randint(self.timedelta_days_min_safe, self.timedelta_days_max_safe + 1)
+            random_days = np.random.randint(
+                self.timedelta_days_min_safe, self.timedelta_days_max_safe + 1
+            )
 
         elif self.distribution_type == "normal":
-            random_days = int(np.random.normal(self.timedelta_days_mean_safe, self.timedelta_days_std_dev_safe))
-            random_days = np.clip(random_days, self.timedelta_days_min_safe, self.timedelta_days_max_safe)
+            random_days = int(
+                np.random.normal(
+                    self.timedelta_days_mean_safe, self.timedelta_days_std_dev_safe
+                )
+            )
+            random_days = np.clip(
+                random_days, self.timedelta_days_min_safe, self.timedelta_days_max_safe
+            )
 
         else:
             raise ValueError("Unsupported distribution type")

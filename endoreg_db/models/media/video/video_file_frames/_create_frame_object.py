@@ -9,7 +9,9 @@ logger = logging.getLogger(__name__)
 __all__ = ["_create_frame_object"]
 
 
-def _create_frame_object(video: "VideoFile", frame_number: int, relative_path: str, extracted: bool = False) -> "Frame":
+def _create_frame_object(
+    video: "VideoFile", frame_number: int, relative_path: str, extracted: bool = False
+) -> "Frame":
     """Instantiates a Frame object (does not save it)."""
     from endoreg_db.models import Frame
 

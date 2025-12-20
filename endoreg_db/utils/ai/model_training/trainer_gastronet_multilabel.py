@@ -7,8 +7,6 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import numpy as np
-from PIL import Image  # (kept in case you later need visual debug)
 
 import torch
 from torch.utils.data import DataLoader
@@ -27,9 +25,6 @@ from endoreg_db.utils.ai.model_training.losses import (
     compute_class_weights,
     focal_loss_with_mask,
 )
-from endoreg_db.utils.ai.model_training.model_gastronet_resnet import (
-    GastroNetResNet50MultiLabel,
-)
 from endoreg_db.utils.ai.model_training.metrics import compute_metrics
 
 from endoreg_db.utils.ai.model_training.model_backbones import (
@@ -39,6 +34,7 @@ from endoreg_db.utils.ai.model_training.model_backbones import (
 # ---------------------------------------------------------------------
 # HELPER: FILTER LABELS BY LABELSET VERSION
 # ---------------------------------------------------------------------
+
 
 def filter_labels_by_labelset_version(
     labels: Sequence[models.Model],
@@ -99,6 +95,7 @@ def filter_labels_by_labelset_version(
 # GROUP-WISE SPLIT BY old_examination_id
 # ---------------------------------------------------------------------
 
+
 def groupwise_split_indices_by_examination(
     frame_ids: Sequence[int],
     old_examination_ids: Sequence[Optional[int]],
@@ -133,8 +130,8 @@ def groupwise_split_indices_by_examination(
     n_train = n_groups - n_val - n_test
 
     train_group_ids = group_ids[:n_train]
-    val_group_ids = group_ids[n_train: n_train + n_val]
-    test_group_ids = group_ids[n_train + n_val:]
+    val_group_ids = group_ids[n_train : n_train + n_val]
+    test_group_ids = group_ids[n_train + n_val :]
 
     train_indices: List[int] = []
     val_indices: List[int] = []
@@ -164,6 +161,7 @@ def groupwise_split_indices_by_examination(
 # ---------------------------------------------------------------------
 # MAIN TRAINING FUNCTION
 # ---------------------------------------------------------------------
+
 
 def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     """
@@ -199,7 +197,9 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     num_labels_raw = len(labels)
 
     print(f"[TRAIN] AIDataSet id={dataset_obj.id}")
-    print(f"[TRAIN] #samples (raw) = {num_samples_raw}, #labels (raw) = {num_labels_raw}")
+    print(
+        f"[TRAIN] #samples (raw) = {num_samples_raw}, #labels (raw) = {num_labels_raw}"
+    )
     print(
         f"[TRAIN] LabelSet id={labelset.id}, "
         f"name={labelset.name}, version={labelset.version}"
@@ -279,10 +279,10 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             m = []
             for x, ms in zip(vec, mask):
                 if x is None:
-                    v.append(0)      # value won't be used
-                    m.append(0)      # unknown -> ignore in loss/metrics
+                    v.append(0)  # value won't be used
+                    m.append(0)  # unknown -> ignore in loss/metrics
                 else:
-                    v.append(int(x)) # 0 or 1
+                    v.append(int(x))  # 0 or 1
                     m.append(int(ms))
             cleaned_vectors.append(v)
             cleaned_masks.append(m)
@@ -296,7 +296,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     labels_arr = []
     masks_arr = []
     for vec, mask in zip(label_vectors, label_masks):
-        v = [int(x) for x in vec]   # now guaranteed 0/1
+        v = [int(x) for x in vec]  # now guaranteed 0/1
         m = [int(x) for x in mask]  # typically 1
         labels_arr.append(v)
         masks_arr.append(m)
@@ -349,7 +349,9 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         image_size=224,
     )
 
-    def subset_dataset(ds: EndoMultiLabelDataset, indices: List[int]) -> EndoMultiLabelDataset:
+    def subset_dataset(
+        ds: EndoMultiLabelDataset, indices: List[int]
+    ) -> EndoMultiLabelDataset:
         sub_image_paths = [ds.image_paths[i] for i in indices]
         sub_labels = ds.labels[indices]
         sub_masks = ds.masks[indices]
@@ -397,7 +399,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     else:
         device = torch.device(config.device)
 
-    '''backbone_ckpt = (
+    """backbone_ckpt = (
         Path(config.backbone_checkpoint)
         if config.backbone_checkpoint is not None
         else None
@@ -408,7 +410,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         backbone_checkpoint=backbone_ckpt,
         freeze_backbone=True,  # start with head-only training
     )
-    model.to(device)'''
+    model.to(device)"""
 
     backbone_ckpt = (
         Path(config.backbone_checkpoint)
@@ -423,7 +425,6 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         freeze_backbone=config.freeze_backbone,
     )
     model.to(device)
-
 
     # ------------------------------------------------------------------
     # 7. Class weights from full (filtered) dataset
@@ -605,9 +606,8 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}"
         )
 
-
         # Print table of per-label metrics
-        print("\n[VAL PER-LABEL METRICS]") 
+        print("\n[VAL PER-LABEL METRICS]")
         print(f"{'Label':20s} {'Prec':>8s} {'Rec':>8s} {'F1':>8s} {'Support':>8s}")
         print("-" * 60)
 
@@ -624,8 +624,6 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
                 print(f"{name:20s} {p:8.4f} {r:8.4f} {f:8.4f} {sup:8d}")
 
         print("-" * 60)
-
-        
 
     # ------------------------------------------------------------------
     # 10. Final test loss + metrics
@@ -684,7 +682,6 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         f"TP={test_metrics['tp']} FP={test_metrics['fp']} "
         f"TN={test_metrics['tn']} FN={test_metrics['fn']}"
     )
-    
 
     # Print table of per-label metrics
     print("\n[VAL PER-LABEL METRICS]")
@@ -704,30 +701,30 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
         print(f"{name:20s} {p:8.4f} {r:8.4f} {f:8.4f} {sup:8d}")
 
     print("-" * 60)
-    
+
     # ------------------------------------------------------------------
     # 11. Save model + metadata
     # ------------------------------------------------------------------
     backbone_tag = config.backbone_name.replace(" ", "_")
-   
-    ''''run_name = (
+
+    """'run_name = (
         f"aidataset_{config.dataset_id}_"
         f"RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
-    )'''
-   
+    )"""
+
     # Keep the old name for the GastroNet RN50 backbone
     if getattr(config, "backbone_name", "gastro_rn50") == "gastro_rn50":
         run_name = (
-        f"aidataset_{config.dataset_id}_"
-        f"RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
-    )
+            f"aidataset_{config.dataset_id}_"
+            f"RN50_GastroNet1M_DINO_v{config.labelset_version_to_train}_multilabel"
+        )
     else:
-      # For all other backbones, use a generic name that includes backbone_name
+        # For all other backbones, use a generic name that includes backbone_name
         backbone_tag = config.backbone_name.replace(" ", "_")
         run_name = (
-        f"aidataset_{config.dataset_id}_"
-        f"{backbone_tag}_v{config.labelset_version_to_train}_multilabel")
-
+            f"aidataset_{config.dataset_id}_"
+            f"{backbone_tag}_v{config.labelset_version_to_train}_multilabel"
+        )
 
     model_path = RUNS_DIR / f"{run_name}.pth"
     meta_path = RUNS_DIR / f"{run_name}_meta.json"

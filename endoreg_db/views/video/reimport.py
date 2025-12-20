@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 
-from celery.events import state
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
@@ -132,7 +131,6 @@ class VideoReimportView(APIView):
                     )
 
                 logger.info(f"Pipe 1 processing completed for {video.video_hash}")
-
 
                 # Use VideoImportService for anonymization
                 try:

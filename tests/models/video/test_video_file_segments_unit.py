@@ -17,7 +17,9 @@ from endoreg_db.models import (
 
 @pytest.mark.django_db
 def test_convert_sequences_creates_segments():
-    center = Center.objects.create(name="segments-center", display_name="Segments Center")
+    center = Center.objects.create(
+        name="segments-center", display_name="Segments Center"
+    )
     video = VideoFile.objects.create(center=center, video_hash="segments-hash")
 
     label_type = LabelType.objects.create(name="video")
@@ -27,8 +29,12 @@ def test_convert_sequences_creates_segments():
     labelset.labels.add(label)
 
     ai_model = AiModel.objects.create(name="model-a")
-    model_meta = ModelMeta.objects.create(name="meta-a", version="1", model=ai_model, labelset=labelset)
-    prediction_meta = VideoPredictionMeta.objects.create(model_meta=model_meta, video_file=video)
+    model_meta = ModelMeta.objects.create(
+        name="meta-a", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
 
     sequences = {
         "lesion": [(0, 4), (10, 12)],
@@ -37,7 +43,9 @@ def test_convert_sequences_creates_segments():
 
     segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
 
-    created = LabelVideoSegment.objects.filter(video_file=video, label=label, prediction_meta=prediction_meta)
+    created = LabelVideoSegment.objects.filter(
+        video_file=video, label=label, prediction_meta=prediction_meta
+    )
     assert created.count() == 2
     assert all(segment.state is not None for segment in created)
 
@@ -53,8 +61,12 @@ def test_get_outside_helpers_return_expected_frames(tmp_path):
     label_type = LabelType.objects.create(name="video")
     outside_label = Label.objects.create(name="outside", label_type=label_type)
 
-    LabelVideoSegment.objects.create(video_file=video, label=outside_label, start_frame_number=1, end_frame_number=3)
-    LabelVideoSegment.objects.create(video_file=video, label=outside_label, start_frame_number=5, end_frame_number=6)
+    LabelVideoSegment.objects.create(
+        video_file=video, label=outside_label, start_frame_number=1, end_frame_number=3
+    )
+    LabelVideoSegment.objects.create(
+        video_file=video, label=outside_label, start_frame_number=5, end_frame_number=6
+    )
 
     Frame.objects.create(video=video, frame_number=0, relative_path="frame_0.jpg")
     Frame.objects.create(video=video, frame_number=1, relative_path="frame_1.jpg")

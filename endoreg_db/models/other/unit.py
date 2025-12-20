@@ -15,8 +15,12 @@ class Unit(models.Model):
     objects = UnitManager()
 
     name = models.CharField(max_length=100)  # e.g. "Centimeter"
-    description = models.CharField(max_length=100, blank=True, null=True)  # e.g. "centimeters", "milimeters", "inches"
-    abbreviation = models.CharField(max_length=25, blank=True, null=True)  # e.g. "cm", "mm", "in"
+    description = models.CharField(
+        max_length=100, blank=True, null=True
+    )  # e.g. "centimeters", "milimeters", "inches"
+    abbreviation = models.CharField(
+        max_length=25, blank=True, null=True
+    )  # e.g. "cm", "mm", "in"
 
     if TYPE_CHECKING:
         unit_product_materials: models.QuerySet["ProductMaterial"]

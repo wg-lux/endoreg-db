@@ -9,5 +9,7 @@ router.register(r"lookup", LookupViewSet, basename="lookup/")
 
 urlpatterns = [
     path("", include(router.urls)),
-    path("evaluate-requirements/", evaluate_requirements, name="evaluate-requirements/"),
+    path(
+        "evaluate-requirements/", evaluate_requirements, name="evaluate-requirements/"
+    ),
 ]

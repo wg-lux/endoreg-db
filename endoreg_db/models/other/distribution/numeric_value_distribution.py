@@ -35,11 +35,27 @@ class NumericValueDistribution(BaseValueDistribution):
     distribution_type = models.CharField(max_length=20, choices=DISTRIBUTION_CHOICES)
     min_descriptor = models.CharField(max_length=20)
     max_descriptor = models.CharField(max_length=20)
-    min_value = models.FloatField(blank=True, null=True, help_text="Lower hard limit for generated values")
-    max_value = models.FloatField(blank=True, null=True, help_text="Upper hard limit for generated values")
-    mean = models.FloatField(blank=True, null=True, help_text="Mean used for normal or skewed normal distributions")
-    std_dev = models.FloatField(blank=True, null=True, help_text="Standard deviation for bell-shaped distributions")
-    skewness = models.FloatField(blank=True, null=True, help_text="Shape parameter for skewed normal distributions")
+    min_value = models.FloatField(
+        blank=True, null=True, help_text="Lower hard limit for generated values"
+    )
+    max_value = models.FloatField(
+        blank=True, null=True, help_text="Upper hard limit for generated values"
+    )
+    mean = models.FloatField(
+        blank=True,
+        null=True,
+        help_text="Mean used for normal or skewed normal distributions",
+    )
+    std_dev = models.FloatField(
+        blank=True,
+        null=True,
+        help_text="Standard deviation for bell-shaped distributions",
+    )
+    skewness = models.FloatField(
+        blank=True,
+        null=True,
+        help_text="Shape parameter for skewed normal distributions",
+    )
 
     @property
     def min_value_safe(self):
@@ -74,7 +90,9 @@ class NumericValueDistribution(BaseValueDistribution):
     def generate_value(self, lab_value: "LabValue", patient: "Patient"):
         """Generate a value based on the distribution rules."""
 
-        default_normal_range_dict = lab_value.get_normal_range(patient.age_safe, patient.gender)
+        default_normal_range_dict = lab_value.get_normal_range(
+            patient.age_safe, patient.gender
+        )
         assert isinstance(default_normal_range_dict, dict)
 
         if self.distribution_type == "uniform":
@@ -150,7 +168,10 @@ class NumericValueDistribution(BaseValueDistribution):
         value_function_dict = self.parse_value_descriptor(self.min_descriptor)
         value_function_dict.update(self.parse_value_descriptor(self.max_descriptor))
 
-        result_dict = {key: value_function(default_normal_range_dict[key]) for key, value_function in value_function_dict.items()}
+        result_dict = {
+            key: value_function(default_normal_range_dict[key])
+            for key, value_function in value_function_dict.items()
+        }
 
         # generate value
         return float(np.random.uniform(result_dict["min"], result_dict["max"]))
@@ -179,8 +200,12 @@ class NumericValueDistribution(BaseValueDistribution):
 
     def _validate_normal_parameters(self) -> None:
         if self.mean is None or self.std_dev is None:
-            raise ValueError(f"Normal distribution '{getattr(self, 'name', self.pk)}' requires both mean and std_dev.")
+            raise ValueError(
+                f"Normal distribution '{getattr(self, 'name', self.pk)}' requires both mean and std_dev."
+            )
 
     def _validate_skewed_normal_parameters(self) -> None:
         if self.mean is None or self.std_dev is None or self.skewness is None:
-            raise ValueError(f"Skewed normal distribution '{getattr(self, 'name', self.pk)}' requires mean, std_dev, and skewness.")
+            raise ValueError(
+                f"Skewed normal distribution '{getattr(self, 'name', self.pk)}' requires mean, std_dev, and skewness."
+            )

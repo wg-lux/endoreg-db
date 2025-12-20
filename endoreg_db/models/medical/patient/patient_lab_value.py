@@ -23,11 +23,23 @@ class PatientLabValue(models.Model):
         date (datetime): The date of the lab value.
     """
 
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="lab_values", blank=True, null=True)
+    patient = models.ForeignKey(
+        "Patient",
+        on_delete=models.CASCADE,
+        related_name="lab_values",
+        blank=True,
+        null=True,
+    )
     lab_value = models.ForeignKey("LabValue", on_delete=models.CASCADE)
     value = models.FloatField(blank=True, null=True)
     value_str = models.CharField(max_length=255, blank=True, null=True)
-    sample = models.ForeignKey("PatientLabSample", on_delete=models.CASCADE, blank=True, null=True, related_name="values")
+    sample = models.ForeignKey(
+        "PatientLabSample",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="values",
+    )
     datetime = models.DateTimeField(  # if not set, use now
         auto_now_add=True
     )
@@ -57,7 +69,12 @@ class PatientLabValue(models.Model):
 
     @classmethod
     def create_lab_value_by_sample(
-        cls, sample: "PatientLabSample", lab_value_name: str, value: Optional[float] = None, value_str: Optional[str] = None, unit: Optional["Unit"] = None
+        cls,
+        sample: "PatientLabSample",
+        lab_value_name: str,
+        value: Optional[float] = None,
+        value_str: Optional[str] = None,
+        unit: Optional["Unit"] = None,
     ):
         from ..laboratory import LabValue
 
@@ -80,7 +97,9 @@ class PatientLabValue(models.Model):
     def __str__(self):
         formatted_datetime = self.datetime.strftime("%Y-%m-%d %H:%M")
         # normal_range = self.get_normal_range()
-        norm_range_string = f"[{self.normal_range.get('min', '')} - {self.normal_range.get('max', '')}]"
+        norm_range_string = (
+            f"[{self.normal_range.get('min', '')} - {self.normal_range.get('max', '')}]"
+        )
         _str = f"{self.lab_value} - {self.value} {self.unit} - {norm_range_string} ({formatted_datetime})"
         return _str
 
@@ -157,16 +176,29 @@ class PatientLabValue(models.Model):
             distribution = lab_value.get_default_default_distribution()
 
             if not distribution:
-                warnings.warn(f"No distribution set for lab value {lab_value}, assuming uniform numeric distribution based on normal values")
+                warnings.warn(
+                    f"No distribution set for lab value {lab_value}, assuming uniform numeric distribution based on normal values"
+                )
 
-                if not self.normal_range.get("min", None) or not self.normal_range.get("max", None):
+                if not self.normal_range.get("min", None) or not self.normal_range.get(
+                    "max", None
+                ):
                     self.set_norm_values_from_default()
                 _min = self.normal_range.get("min", 0.0001)
                 _max = self.normal_range.get("max", 100)
-                _name = "auto-" + self.lab_value_safe.name + "-distribution-default-uniform"
-                distribution = NumericValueDistribution(name=_name, min_descriptor=_min, max_max_desciptor=_max, distribution_type="uniform")
+                _name = (
+                    "auto-" + self.lab_value_safe.name + "-distribution-default-uniform"
+                )
+                distribution = NumericValueDistribution(
+                    name=_name,
+                    min_descriptor=_min,
+                    max_max_desciptor=_max,
+                    distribution_type="uniform",
+                )
 
-                value = distribution.generate_value(lab_value=lab_value, patient=patient)
+                value = distribution.generate_value(
+                    lab_value=lab_value, patient=patient
+                )
                 self.value = value
                 if save:
                     self.save()

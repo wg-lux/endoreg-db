@@ -3,7 +3,7 @@
 import os
 from django.core.management.base import BaseCommand
 from endoreg_db.utils import collect_center_names  # Import your function here
-from pathlib import Path
+
 
 class Command(BaseCommand):
     help = "Generate first_names.yaml and last_names.yaml from center data"
@@ -26,7 +26,6 @@ class Command(BaseCommand):
         pass
 
     def handle(self, *args, **options):
-
         # Run the function with the provided arguments
         try:
             collect_center_names()

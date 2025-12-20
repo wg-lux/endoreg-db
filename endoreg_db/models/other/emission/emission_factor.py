@@ -86,9 +86,15 @@ class EmissionFactor(models.Model):
         from ...administration.product import ReferenceProduct
 
         reference_products = []
-        reference_products += ReferenceProduct.objects.filter(emission_factor_total=self)
-        reference_products += ReferenceProduct.objects.filter(emission_factor_package=self)
-        reference_products += ReferenceProduct.objects.filter(emission_factor_product=self)
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_total=self
+        )
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_package=self
+        )
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_product=self
+        )
 
         return reference_products
 

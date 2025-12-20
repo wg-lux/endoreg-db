@@ -91,7 +91,9 @@ class MultiLabelClassificationNet(LightningModule):
         if track_hparams:
             self.save_hyperparameters()
         if labels is None:
-            raise ValueError("labels must be provided to initialize MultiLabelClassificationNet")
+            raise ValueError(
+                "labels must be provided to initialize MultiLabelClassificationNet"
+            )
 
         self.model_type = model_type
         self.labels = list(labels)
@@ -135,13 +137,23 @@ class MultiLabelClassificationNet(LightningModule):
             strict = kwargs.pop("strict", True)
             labels = kwargs.pop("labels", None)
             if not labels:
-                raise ValueError("labels must be provided when loading .safetensors checkpoints")
+                raise ValueError(
+                    "labels must be provided when loading .safetensors checkpoints"
+                )
             model_type = kwargs.pop("model_type", None) or "EfficientNetB4"
             load_imagenet = kwargs.pop("load_imagenet_weights", False)
 
-            device = torch.device(map_location) if map_location is not None else torch.device("cpu")
+            device = (
+                torch.device(map_location)
+                if map_location is not None
+                else torch.device("cpu")
+            )
             if isinstance(device, torch.device):
-                device_hint = f"{device.type}:{device.index}" if device.index is not None else device.type
+                device_hint = (
+                    f"{device.type}:{device.index}"
+                    if device.index is not None
+                    else device.type
+                )
             else:
                 device_hint = device
 
@@ -160,7 +172,9 @@ class MultiLabelClassificationNet(LightningModule):
             if missing:
                 logger.warning("Missing parameters when loading %s: %s", path, missing)
             if unexpected:
-                logger.warning("Unexpected parameters when loading %s: %s", path, unexpected)
+                logger.warning(
+                    "Unexpected parameters when loading %s: %s", path, unexpected
+                )
 
             instance.to(device)
             return instance
@@ -245,7 +259,8 @@ class MultiLabelClassificationNet(LightningModule):
             self.parameters(), self.lr, momentum=0.5, weight_decay=self.weight_decay
         )
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=20,
+            optimizer,
+            T_0=20,
         )
 
         return {

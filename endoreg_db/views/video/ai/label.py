@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from endoreg_db.models import Label
-from endoreg_db.serializers.label.label import LabelSerializer
+from endoreg_db.serializers.label_video_segment.label import LabelSerializer
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 # from rest_framework.permissions import IsAuthenticated
 # from endoreg_db.authz.permissions import PolicyPermission
@@ -38,6 +38,7 @@ def label_list(request) -> Response:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission])
 def add_label(request) -> Response:
@@ -53,7 +54,9 @@ def add_label(request) -> Response:
 
         return Response(
             {
-                "success": "label added to database" if created else "label already existed",
+                "success": "label added to database"
+                if created
+                else "label already existed",
                 "id": label.id,
                 "name": label.name,
             },
@@ -80,12 +83,11 @@ def delete_label(request) -> Response:
         if isinstance(Label.get_or_create_from_name(name), Label):
             return Response(
                 {"error": "Field not deleted"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR     
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         else:
             return Response(
-                {"success": f"label {name} deleted"},
-                status=status.HTTP_200_OK
+                {"success": f"label {name} deleted"}, status=status.HTTP_200_OK
             )
     except Exception as e:
         logger.error(f"Error creating label: {e}")
@@ -111,16 +113,16 @@ def update_label(request) -> Response:
     new_name = request.data.get("name")
 
     if not name_old:
-      return Response(
-          {"error": "Field 'name_old' is required"},
-          status=status.HTTP_400_BAD_REQUEST,
-      )
+        return Response(
+            {"error": "Field 'name_old' is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if not new_name:
-      return Response(
-          {"error": "Field 'name' is required"},
-          status=status.HTTP_400_BAD_REQUEST,
-      )
+        return Response(
+            {"error": "Field 'name' is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
         try:
@@ -142,9 +144,11 @@ def update_label(request) -> Response:
         label.save()
 
         return Response(
-            {"success": f"Label '{name_old}' renamed to '{new_name}'",
-             "id": label.id,
-             "name": label.name},
+            {
+                "success": f"Label '{name_old}' renamed to '{new_name}'",
+                "id": label.id,
+                "name": label.name,
+            },
             status=status.HTTP_200_OK,
         )
     except Exception as e:

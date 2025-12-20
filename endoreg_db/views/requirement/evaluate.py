@@ -2,8 +2,7 @@ from endoreg_db.models.requirement.requirement import Requirement
 from endoreg_db.views.requirement.requirement_utils import safe_evaluate_requirement
 from endoreg_db.models.requirement.requirement_set import RequirementSet
 from endoreg_db.models.requirement.requirement_evaluation.evaluate_with_dependencies import (
-    evaluate_requirement_sets_with_dependencies,
-    RequirementStatus,   # if you export it there, otherwise re-declare in view
+    evaluate_requirement_sets_with_dependencies,  # if you export it there, otherwise re-declare in view
 )
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from rest_framework import status
@@ -51,10 +50,7 @@ def evaluate_requirements(request):
 
     # ---- fetch PatientExamination
     try:
-        pe = (
-            PatientExamination.objects.select_related("patient")
-            .get(id=pe_id)
-        )
+        pe = PatientExamination.objects.select_related("patient").get(id=pe_id)
     except PatientExamination.DoesNotExist:
         msg = f"PatientExamination with id {pe_id} does not exist"
         errors.append(msg)
@@ -153,9 +149,11 @@ def evaluate_requirements(request):
 
         for set_id, req_dict in set_results.items():
             req_set = sets_by_id.get(set_id)
-            set_name = getattr(
-                req_set, "name", str(set_id)
-            ) if req_set is not None else str(set_id)
+            set_name = (
+                getattr(req_set, "name", str(set_id))
+                if req_set is not None
+                else str(set_id)
+            )
 
             for req_id, (status_value, details) in req_dict.items():
                 try:

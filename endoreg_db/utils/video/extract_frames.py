@@ -1,8 +1,6 @@
 import os
-import shutil
-import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional
 
 from django.db import transaction
 from icecream import ic

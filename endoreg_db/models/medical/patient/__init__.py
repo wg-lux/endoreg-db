@@ -2,9 +2,7 @@ from .patient_disease import (
     PatientDisease,
 )
 
-from .patient_event import (
-    PatientEvent
-)
+from .patient_event import PatientEvent
 
 # Examination
 from .patient_examination_indication import (
@@ -31,26 +29,20 @@ from .patient_medication_schedule import PatientMedicationSchedule
 __all__ = [
     # Disease
     "PatientDisease",
-    
     # Event
     "PatientEvent",
-
     # Examination
     "PatientExaminationIndication",
     "PatientExamination",
-
     # Finding
     "PatientFinding",
     "PatientFindingClassification",
     "PatientFindingIntervention",
-
     # Laboratory
     "PatientLabSample",
     "PatientLabSampleType",
     "PatientLabValue",
-
     # Medication
     "PatientMedication",
     "PatientMedicationSchedule",
-
 ]

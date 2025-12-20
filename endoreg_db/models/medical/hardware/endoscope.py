@@ -13,8 +13,20 @@ class Endoscope(models.Model):
 
     name = models.CharField(max_length=255)
     sn = models.CharField(max_length=255)
-    center = models.ForeignKey("Center", blank=True, null=True, on_delete=models.CASCADE, related_name="endoscopes")
-    endoscope_type = models.ForeignKey("EndoscopeType", blank=True, null=True, on_delete=models.CASCADE, related_name="endoscopes")
+    center = models.ForeignKey(
+        "Center",
+        blank=True,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="endoscopes",
+    )
+    endoscope_type = models.ForeignKey(
+        "EndoscopeType",
+        blank=True,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="endoscopes",
+    )
 
     if TYPE_CHECKING:
         from endoreg_db.models import Center

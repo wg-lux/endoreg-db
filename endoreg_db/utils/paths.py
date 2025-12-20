@@ -40,8 +40,8 @@ if not STORAGE_DIR.exists():
 IMPORT_DIR_NAME = "import"
 EXPORT_DIR_NAME = "export"
 
-IMPORT_DIR = IO_DIR / IMPORT_DIR_NAME      # data/import
-EXPORT_DIR = IO_DIR / EXPORT_DIR_NAME      # data/export
+IMPORT_DIR = IO_DIR / IMPORT_DIR_NAME  # data/import
+EXPORT_DIR = IO_DIR / EXPORT_DIR_NAME  # data/export
 
 
 IMPORT_VIDEO_DIR_NAME = "video_import"
@@ -64,7 +64,7 @@ DOCUMENT_DIR = STORAGE_DIR / "documents"
 
 # After initial import, files will remain here.
 
-TRANSCODING_DIR = STORAGE_DIR /"temp"
+TRANSCODING_DIR = STORAGE_DIR / "temp"
 
 SENSITIVE_VIDEO_DIR_NAME = "sensitive_videos"
 SENSITIVE_REPORT_DIR_NAME = "sensitive_reports"
@@ -116,7 +116,7 @@ data_paths: Dict[str, Path] = {
     "weights_export": EXPORT_DIR / WEIGHTS_DIR_NAME,
     "transcoding": TRANSCODING_DIR,
     "frame": FRAME_DIR,
-    "documents": DOCUMENT_DIR
+    "documents": DOCUMENT_DIR,
 }
 
 logger.info(f"Storage directory: {STORAGE_DIR.resolve()}")
@@ -126,7 +126,7 @@ for key, path in data_paths.items():
     path.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"{key.capitalize()} directory: {path.resolve()}")
-    
+
 
 def to_storage_relative(path: Union[str, Path]) -> str:
     """

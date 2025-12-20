@@ -2,9 +2,8 @@
 
 import logging
 import os
-import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Self, Union, cast
+from typing import TYPE_CHECKING, Optional, Union, cast
 
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
@@ -493,8 +492,6 @@ class VideoFile(models.Model):
         # Ensure file_path is a Path object
         if isinstance(file_path, str):
             file_path = Path(file_path)
-            
-
 
         # Call the helper function to create the VideoFile instance
         video_file = _create_from_file(
@@ -773,7 +770,8 @@ class VideoFile(models.Model):
 
         if not video:
             logger.warning(
-                "No processed video file available for VideoFile %s.", instance.video_hash
+                "No processed video file available for VideoFile %s.",
+                instance.video_hash,
             )
             return False
         try:
@@ -810,7 +808,9 @@ class VideoFile(models.Model):
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
             output_video_path = Path(f"/path/to/output/{video.video_hash}_filtered.mp4")
-            fps = video.fps if video.fps else 30.0  # Default to 30 FPS if fps is not set
+            fps = (
+                video.fps if video.fps else 30.0
+            )  # Default to 30 FPS if fps is not set
             new_video_file = assemble_video_from_frames(
                 frames, output_video_path, fps, width=video.width, height=video.height
             )
@@ -889,7 +889,7 @@ class VideoFile(models.Model):
             VideoFile.DoesNotExist: If no VideoFile with the given ID exists.
         """
         return VideoFile.objects.get(pk=pk)
-    
+
     @staticmethod
     def get_video_by_content_hash(hash: str) -> "VideoFile":
         try:
@@ -897,4 +897,3 @@ class VideoFile(models.Model):
         except Exception as e:
             logger.error(f"Video cant be returned for known hash. {e}")
             raise
-        

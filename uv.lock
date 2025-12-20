@@ -721,6 +721,34 @@ wheels = [
 ]
 
 [[package]]
+name = "django-stubs"
+version = "5.2.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "django-stubs-ext" },
+    { name = "types-pyyaml" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/75/97626224fd8f1787bb6f7f06944efcfddd5da7764bf741cf7f59d102f4a0/django_stubs-5.2.8.tar.gz", hash = "sha256:9bba597c9a8ed8c025cae4696803d5c8be1cf55bfc7648a084cbf864187e2f8b", size = 257709, upload-time = "2025-12-01T08:13:09.569Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/3f/7c9543ad5ade5ce1d33d187a3abd82164570314ebee72c6206ab5c044ebf/django_stubs-5.2.8-py3-none-any.whl", hash = "sha256:a3c63119fd7062ac63d58869698d07c9e5ec0561295c4e700317c54e8d26716c", size = 508136, upload-time = "2025-12-01T08:13:07.963Z" },
+]
+
+[[package]]
+name = "django-stubs-ext"
+version = "5.2.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/14/a2/d67f4a5200ff7626b104eddceaf529761cba4ed318a73ffdb0677551be73/django_stubs_ext-5.2.8.tar.gz", hash = "sha256:b39938c46d7a547cd84e4a6378dbe51a3dd64d70300459087229e5fee27e5c6b", size = 6487, upload-time = "2025-12-01T08:12:37.486Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/2d/cb0151b780c3730cf0f2c0fcb1b065a5e88f877cf7a9217483c375353af1/django_stubs_ext-5.2.8-py3-none-any.whl", hash = "sha256:1dd5470c9675591362c78a157a3cf8aec45d0e7a7f0cf32f227a1363e54e0652", size = 9949, upload-time = "2025-12-01T08:12:36.397Z" },
+]
+
+[[package]]
 name = "djangorestframework"
 version = "3.16.1"
 source = { registry = "https://pypi.org/simple" }
@@ -730,6 +758,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/95/5376fe618646fde6899b3cdc85fd959716bb67542e273a76a80d9f326f27/djangorestframework-3.16.1.tar.gz", hash = "sha256:166809528b1aced0a17dc66c24492af18049f2c9420dbd0be29422029cfc3ff7", size = 1089735, upload-time = "2025-08-06T17:50:53.251Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/ce/bf8b9d3f415be4ac5588545b5fcdbbb841977db1c1d923f7568eeabe1689/djangorestframework-3.16.1-py3-none-any.whl", hash = "sha256:33a59f47fb9c85ede792cbf88bde71893bcda0667bc573f784649521f1102cec", size = 1080442, upload-time = "2025-08-06T17:50:50.667Z" },
+]
+
+[[package]]
+name = "djangorestframework-stubs"
+version = "3.16.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django-stubs" },
+    { name = "requests" },
+    { name = "types-pyyaml" },
+    { name = "types-requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/ed/6e16dbe8e79af9d2cdbcbd89553e59d18ecab7e9820ebb751085fc29fc0e/djangorestframework_stubs-3.16.6.tar.gz", hash = "sha256:b8d3e73604280f69c628ff7900f0e84703d9ff47cd050fccb5f751438e4c5813", size = 32274, upload-time = "2025-12-03T22:26:23.238Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/e3/d75f9e06d13d7fe8ed25473627c277992b7fad80747a4eaa1c7faa97e09e/djangorestframework_stubs-3.16.6-py3-none-any.whl", hash = "sha256:9bf2e5c83478edca3b8eb5ffd673737243ade16ce4b47b633a4ea62fe6924331", size = 56506, upload-time = "2025-12-03T22:26:21.88Z" },
 ]
 
 [[package]]
@@ -807,7 +851,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "0.8.9.6"
+version = "0.8.9.7"
 source = { editable = "." }
 dependencies = [
     { name = "agl-report-reader" },
@@ -820,7 +864,9 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "django-extensions" },
     { name = "django-filter" },
+    { name = "django-stubs" },
     { name = "djangorestframework" },
+    { name = "djangorestframework-stubs" },
     { name = "dotenv" },
     { name = "faker" },
     { name = "flake8" },
@@ -870,6 +916,10 @@ dependencies = [
     { name = "tqdm" },
     { name = "transformers" },
     { name = "twine" },
+    { name = "types-django-filter" },
+    { name = "types-pyyaml" },
+    { name = "types-requests" },
+    { name = "types-tqdm" },
     { name = "urllib3" },
     { name = "vector-quantize-pytorch" },
     { name = "vocos" },
@@ -888,7 +938,9 @@ requires-dist = [
     { name = "django-cors-headers", specifier = ">=4.8.0" },
     { name = "django-extensions", specifier = ">=3.2.3" },
     { name = "django-filter", specifier = ">=25.1" },
+    { name = "django-stubs", specifier = ">=5.2.8" },
     { name = "djangorestframework", specifier = ">=3.16.1" },
+    { name = "djangorestframework-stubs", specifier = ">=3.16.6" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "faker", specifier = ">=37.6.0" },
     { name = "flake8", specifier = ">=7.3.0" },
@@ -897,7 +949,7 @@ requires-dist = [
     { name = "icecream", specifier = ">=2.1.4" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.7" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.8" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", specifier = ">=1.16.0" },
@@ -938,6 +990,10 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.0" },
     { name = "transformers", specifier = "==4.44.2" },
     { name = "twine", specifier = ">=6.2.0" },
+    { name = "types-django-filter", specifier = ">=25.2.0.20251010" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
+    { name = "types-requests", specifier = ">=2.32.4.20250913" },
+    { name = "types-tqdm", specifier = ">=4.67.0.20250809" },
     { name = "urllib3", specifier = ">=2.2.3" },
     { name = "vector-quantize-pytorch", specifier = "==1.18.5" },
     { name = "vocos", specifier = "==0.1.0" },
@@ -1651,7 +1707,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.8.9.7"
+version = "0.8.9.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1663,10 +1719,12 @@ dependencies = [
     { name = "imutils" },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "opencv-stubs" },
     { name = "pandas" },
     { name = "pdfplumber" },
     { name = "pillow" },
     { name = "pip" },
+    { name = "pre-commit" },
     { name = "protobuf" },
     { name = "pydantic" },
     { name = "pymupdf" },
@@ -1680,9 +1738,9 @@ dependencies = [
     { name = "torchaudio" },
     { name = "torchvision" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0a/9d/bee146fab679f3db3d9097e74d6bdadefffbd99c61d31403f6dd044fd918/lx_anonymizer-0.8.9.7.tar.gz", hash = "sha256:bd078ea768c7b039e5d4b8b5520f86bc125ac556dfa6dc14d7213d78ad8dd2e7", size = 554165, upload-time = "2025-12-08T10:41:13.068Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/49/a556aab6393daf4ec3924cfba0affcc43154d15aeb65c271c5c6c4c1467a/lx_anonymizer-0.8.9.8.tar.gz", hash = "sha256:3ab69f1b4d8de471b5d314bda17d9363440e5395f7464887f3aab3c181ff1bc2", size = 536046, upload-time = "2025-12-18T17:26:48.991Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/24/d61a0b88e3256ebd573f03a94d6f21bbd7b4d3a3eef86d1bfcb90999cc7e/lx_anonymizer-0.8.9.7-py3-none-any.whl", hash = "sha256:a42a40b585e7297ec930bbeab0afe4f6fe23393ecdb82356da1df0f126b1f078", size = 713655, upload-time = "2025-12-08T10:41:10.62Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/44/c7a4e4c9b33a7d3c5cf59381f6abcf9e5c77b00f0067e97b4a8dcf1cc07c/lx_anonymizer-0.8.9.8-py3-none-any.whl", hash = "sha256:5eb7acbbf97ae87ace75f7e1e861d6c97f25c1adb75d528c8ff0f03a578ffe5b", size = 690654, upload-time = "2025-12-18T17:26:45.839Z" },
 ]
 
 [package.optional-dependencies]
@@ -2202,6 +2260,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/8b/90eb44a40476fa0e71e05a0283947cfd74a5d36121a11d926ad6f3193cc4/opencv_python-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6b02611523803495003bd87362db3e1d2a0454a6a63025dc6658a9830570aa0d", size = 62986597, upload-time = "2025-01-16T13:52:08.836Z" },
     { url = "https://files.pythonhosted.org/packages/fb/d7/1d5941a9dde095468b288d989ff6539dd69cd429dbf1b9e839013d21b6f0/opencv_python-4.11.0.86-cp37-abi3-win32.whl", hash = "sha256:810549cb2a4aedaa84ad9a1c92fbfdfc14090e2749cedf2c1589ad8359aa169b", size = 29384337, upload-time = "2025-01-16T13:52:13.549Z" },
     { url = "https://files.pythonhosted.org/packages/a4/7d/f1c30a92854540bf789e9cd5dde7ef49bbe63f855b85a2e6b3db8135c591/opencv_python-4.11.0.86-cp37-abi3-win_amd64.whl", hash = "sha256:085ad9b77c18853ea66283e98affefe2de8cc4c1f43eda4c100cf9b2721142ec", size = 39488044, upload-time = "2025-01-16T13:52:21.928Z" },
+]
+
+[[package]]
+name = "opencv-stubs"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/41/92b964d8391689fd142f940c1d9f4ecf8eeac3290a26481e4c43bf175255/opencv_stubs-0.1.1.tar.gz", hash = "sha256:abc55ef2d694bcf7045eca56c82a380e488e7ce540cee35f905e630ba103266f", size = 373849, upload-time = "2025-11-04T03:11:35.839Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/03/552f70192c14297eb6074b67912bb1dfcb4cdbe2ad7c9a4fdbd6e6fca70b/opencv_stubs-0.1.1-py3-none-any.whl", hash = "sha256:092280564456ea49e925a421a7f4584f936f0a443a67c21fbe09666d8d580dfb", size = 363098, upload-time = "2025-11-04T03:11:34.654Z" },
 ]
 
 [[package]]
@@ -3754,6 +3821,51 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8e/45/81b94a52caed434b94da65729c03ad0fb7665fab0f7db9ee54c94e541403/typer_slim-0.20.0.tar.gz", hash = "sha256:9fc6607b3c6c20f5c33ea9590cbeb17848667c51feee27d9e314a579ab07d1a3", size = 106561, upload-time = "2025-10-20T17:03:46.642Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/dd/5cbf31f402f1cc0ab087c94d4669cfa55bd1e818688b910631e131d74e75/typer_slim-0.20.0-py3-none-any.whl", hash = "sha256:f42a9b7571a12b97dddf364745d29f12221865acef7a2680065f9bb29c7dc89d", size = 47087, upload-time = "2025-10-20T17:03:44.546Z" },
+]
+
+[[package]]
+name = "types-django-filter"
+version = "25.2.0.20251010"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django-stubs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/62/7d5b38a4421d6abe025f3a8e336f84916ebaa66f50badfa93c6fed04462b/types_django_filter-25.2.0.20251010.tar.gz", hash = "sha256:f250784a9e3aa1b260881317e6d5505c05bb43a1caa1b3039efd5f93aaff6389", size = 15629, upload-time = "2025-10-10T02:54:47.838Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/df/870dff7e5fde095d1662b04575412b113cafcc38d4c16f6ecbd051a62d64/types_django_filter-25.2.0.20251010-py3-none-any.whl", hash = "sha256:58bc2c663ee9bf65db34346c2554a5b0d64f0033e090bfe651d398368bc9fab4", size = 19331, upload-time = "2025-10-10T02:54:46.992Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20250915"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/69/3c51b36d04da19b92f9e815be12753125bd8bc247ba0470a982e6979e71c/types_pyyaml-6.0.12.20250915.tar.gz", hash = "sha256:0f8b54a528c303f0e6f7165687dd33fafa81c807fcac23f632b63aa624ced1d3", size = 17522, upload-time = "2025-09-15T03:01:00.728Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/e0/1eed384f02555dde685fff1a1ac805c1c7dcb6dd019c916fe659b1c1f9ec/types_pyyaml-6.0.12.20250915-py3-none-any.whl", hash = "sha256:e7d4d9e064e89a3b3cae120b4990cd370874d2bf12fa5f46c97018dd5d3c9ab6", size = 20338, upload-time = "2025-09-15T03:00:59.218Z" },
+]
+
+[[package]]
+name = "types-requests"
+version = "2.32.4.20250913"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/27/489922f4505975b11de2b5ad07b4fe1dca0bca9be81a703f26c5f3acfce5/types_requests-2.32.4.20250913.tar.gz", hash = "sha256:abd6d4f9ce3a9383f269775a9835a4c24e5cd6b9f647d64f88aa4613c33def5d", size = 23113, upload-time = "2025-09-13T02:40:02.309Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/20/9a227ea57c1285986c4cf78400d0a91615d25b24e257fd9e2969606bdfae/types_requests-2.32.4.20250913-py3-none-any.whl", hash = "sha256:78c9c1fffebbe0fa487a418e0fa5252017e9c60d1a2da394077f1780f655d7e1", size = 20658, upload-time = "2025-09-13T02:40:01.115Z" },
+]
+
+[[package]]
+name = "types-tqdm"
+version = "4.67.0.20250809"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/d0/cf498fc630d9fdaf2428b93e60b0e67b08008fec22b78716b8323cf644dc/types_tqdm-4.67.0.20250809.tar.gz", hash = "sha256:02bf7ab91256080b9c4c63f9f11b519c27baaf52718e5fdab9e9606da168d500", size = 17200, upload-time = "2025-08-09T03:17:43.489Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/13/3ff0781445d7c12730befce0fddbbc7a76e56eb0e7029446f2853238360a/types_tqdm-4.67.0.20250809-py3-none-any.whl", hash = "sha256:1a73053b31fcabf3c1f3e2a9d5ecdba0f301bde47a418cd0e0bdf774827c5c57", size = 24020, upload-time = "2025-08-09T03:17:42.453Z" },
 ]
 
 [[package]]

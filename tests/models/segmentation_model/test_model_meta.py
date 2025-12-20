@@ -136,7 +136,9 @@ def test_setup_default_from_huggingface_delegates_to_logic(monkeypatch):
     assert result == "SENTINEL_HF_META"
     assert called["cls"] is ModelMeta
     assert called["model_id"] == "wg-lux/colo_segmentation_RegNetX800MF_base"
-    assert called["labelset_name"] == "image_multilabel_classification_colonoscopy_default"
+    assert (
+        called["labelset_name"] == "image_multilabel_classification_colonoscopy_default"
+    )
     assert called["labelset_version"] == 1
 
 

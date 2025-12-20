@@ -10,5 +10,5 @@ __all__ = [
     "StatsSerializer",
     "UploadJobStatusSerializer",
     "UploadCreateResponseSerializer",
-    "TranslatableFieldMixin"
+    "TranslatableFieldMixin",
 ]

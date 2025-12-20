@@ -28,8 +28,12 @@ class FindingClassificationManager(models.Manager):
 class FindingClassification(models.Model):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
-    finding_types = models.ManyToManyField("FindingType", blank=True, related_name="finding_classifications")
-    choices = models.ManyToManyField("FindingClassificationChoice", related_name="classifications", blank=True)
+    finding_types = models.ManyToManyField(
+        "FindingType", blank=True, related_name="finding_classifications"
+    )
+    choices = models.ManyToManyField(
+        "FindingClassificationChoice", related_name="classifications", blank=True
+    )
 
     classification_types = models.ManyToManyField(
         to=FindingClassificationType,
@@ -50,12 +54,27 @@ class FindingClassification(models.Model):
     objects = FindingClassificationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import Examination, Finding, FindingType, InformationSource, PatientFindingClassification
+        from endoreg_db.models import (
+            Examination,
+            Finding,
+            FindingType,
+            InformationSource,
+            PatientFindingClassification,
+        )
 
-        classification_types = cast(models.manager.RelatedManager["FindingClassificationType"], classification_types)
-        choices = cast(models.manager.RelatedManager["FindingClassificationChoice"], choices)
-        finding_types = cast(models.manager.RelatedManager["FindingType"], finding_types)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        classification_types = cast(
+            models.manager.RelatedManager["FindingClassificationType"],
+            classification_types,
+        )
+        choices = cast(
+            models.manager.RelatedManager["FindingClassificationChoice"], choices
+        )
+        finding_types = cast(
+            models.manager.RelatedManager["FindingType"], finding_types
+        )
+        information_sources = cast(
+            models.manager.RelatedManager["InformationSource"], information_sources
+        )
 
         @property
         def findings(self) -> "models.manager.RelatedManager[Finding]": ...

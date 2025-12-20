@@ -60,7 +60,9 @@ def ensure_local_file(
                 shutil.copyfileobj(source, tmp_file, length=chunk_size)
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
-            raise IOError(f"Could not download {field_file.name} from storage to a local file") from exc
+            raise IOError(
+                f"Could not download {field_file.name} from storage to a local file"
+            ) from exc
 
     try:
         yield temp_path

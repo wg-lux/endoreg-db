@@ -1,6 +1,7 @@
 from endoreg_db.models import FindingClassificationChoice
 from rest_framework import serializers
 
+
 class FindingClassificationChoiceSerializer(serializers.ModelSerializer):
     """
     Serializer for the FindingClassificationChoice model.
@@ -12,8 +13,7 @@ class FindingClassificationChoiceSerializer(serializers.ModelSerializer):
         - subcategories: Related subcategories for further classification.
         - numerical_descriptors: Associated numerical descriptors for the classification choice.
     """
+
     class Meta:
         model = FindingClassificationChoice
-        fields = [
-            'id', 'name', 'description', 'subcategories', 'numerical_descriptors'
-        ]
+        fields = ["id", "name", "description", "subcategories", "numerical_descriptors"]

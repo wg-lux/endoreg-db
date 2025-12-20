@@ -19,7 +19,9 @@ class MultipleCategoricalValueDistribution(BaseValueDistribution):
     categories = models.JSONField()  # { "category": "probability", ... }
     min_count = models.IntegerField()
     max_count = models.IntegerField()
-    count_distribution_type = models.CharField(max_length=20, choices=[("uniform", "Uniform"), ("normal", "Normal")])
+    count_distribution_type = models.CharField(
+        max_length=20, choices=[("uniform", "Uniform"), ("normal", "Normal")]
+    )
     count_mean = models.FloatField(null=True, blank=True)
     count_std_dev = models.FloatField(null=True, blank=True)
 

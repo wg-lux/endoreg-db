@@ -37,6 +37,7 @@ class ImageMultilabelDataset(TypedDict):
             1 -> this entry participates in the loss (0 or 1 is known)
             0 -> IGNORE in the loss (value was None)
     """
+
     # type description of the returned dict.
 
     image_paths: List[str]
@@ -45,9 +46,9 @@ class ImageMultilabelDataset(TypedDict):
     labels: List[Label]
     labelset: LabelSet
 
-     # New: keep track of which DB rows were used, and their legacy exam ids
-    frame_ids: List[int]                     # Frame.pk for each sample
-    old_examination_ids: List[Optional[int]] # may be None if not set
+    # New: keep track of which DB rows were used, and their legacy exam ids
+    frame_ids: List[int]  # Frame.pk for each sample
+    old_examination_ids: List[Optional[int]]  # may be None if not set
 
 
 def _infer_labelset_from_annotations(
@@ -63,13 +64,9 @@ def _infer_labelset_from_annotations(
         4. If there is exactly ONE common LabelSet, return it.
            Otherwise, raise NotImplementedError for now.
     """
-    label_ids = list(
-        annotations_qs.values_list("label_id", flat=True).distinct()
-    )
+    label_ids = list(annotations_qs.values_list("label_id", flat=True).distinct())
     if not label_ids:
-        raise ValueError(
-            "Cannot infer LabelSet: annotations queryset has no labels."
-        )
+        raise ValueError("Cannot infer LabelSet: annotations queryset has no labels.")
 
     labels_qs = Label.objects.filter(id__in=label_ids).prefetch_related("label_sets")
     labelsets_for_each_label = []
@@ -169,10 +166,9 @@ def build_image_multilabel_dataset_from_db(
     label_vectors: List[List[Optional[int]]] = []
     label_masks: List[List[int]] = []
 
-     # New: id tracking for splitting / logging
+    # New: id tracking for splitting / logging
     frame_ids: List[int] = []
     old_examination_ids: List[Optional[int]] = []
-
 
     # Cache frames to avoid repeated DB hits
     frame_obj_by_id: Dict[int, Frame] = {}
@@ -189,7 +185,6 @@ def build_image_multilabel_dataset_from_db(
             # New: remember DB ids for this sample
         frame_ids.append(frame_id)
         old_examination_ids.append(getattr(frame, "old_examination_id", None))
-
 
         # Start with unknown for all labels
         vec: List[Optional[int]] = [None] * num_labels

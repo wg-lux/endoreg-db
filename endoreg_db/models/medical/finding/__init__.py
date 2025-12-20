@@ -2,7 +2,9 @@ from .finding import Finding
 from .finding_type import FindingType
 
 from .finding_classification import (
-    FindingClassificationType, FindingClassification, FindingClassificationChoice,
+    FindingClassificationType,
+    FindingClassification,
+    FindingClassificationChoice,
 )
 
 from .finding_intervention import FindingIntervention, FindingInterventionType

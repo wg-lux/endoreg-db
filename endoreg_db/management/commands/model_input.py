@@ -10,7 +10,6 @@ from endoreg_db.utils.ai.data_loader_for_model_input import (
 )
 from endoreg_db.utils.ai.model_training.config import (
     TrainingConfig,
-    TRAINING_ROOT,
 )
 from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
     train_gastronet_multilabel,
@@ -52,9 +51,9 @@ class Command(BaseCommand):
             default="gastro_rn50",
             help=(
                 "Backbone name, e.g. 'gastro_rn50' (default), "
-               "'resnet50_imagenet', 'resnet50_random', 'efficientnet_b0_imagenet', etc."
-        ),
-    )
+                "'resnet50_imagenet', 'resnet50_random', 'efficientnet_b0_imagenet', etc."
+            ),
+        )
         parser.add_argument(
             "--epochs",
             type=int,
@@ -101,8 +100,6 @@ class Command(BaseCommand):
         for idx, lbl in enumerate(labels):
             self.stdout.write(f"    [{idx}] id={lbl.id}, name={lbl.name!r}")
 
-        
-
         self.stdout.write(
             self.style.SUCCESS(
                 f"\nBuilt training dataset from AIDataSet id={dataset.id}:\n"
@@ -134,24 +131,25 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"\n Input for model training built successfully from AIDataSet id={dataset.id}."
-
             )
-        )    
+        )
 
-                # ------------------------------------------------------------------
+        # ------------------------------------------------------------------
         # Ask user if we should really start training
         # ------------------------------------------------------------------
         self.stdout.write("")
-        confirm = input(
-            "Proceed with model training? "
-            "Type 'yes' and press Enter to continue, anything else to abort: "
-        ).strip().lower()
+        confirm = (
+            input(
+                "Proceed with model training? "
+                "Type 'yes' and press Enter to continue, anything else to abort: "
+            )
+            .strip()
+            .lower()
+        )
 
         if confirm != "yes":
             self.stdout.write(
-                self.style.WARNING(
-                    "Training aborted by user. No model was trained."
-                )
+                self.style.WARNING("Training aborted by user. No model was trained.")
             )
             return
 

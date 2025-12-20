@@ -18,7 +18,13 @@ class MultiLabelBackboneHead(nn.Module):
     - classifier: nn.Linear(F, num_labels)
     """
 
-    def __init__(self, backbone: nn.Module, in_features: int, num_labels: int, freeze_backbone: bool = True):
+    def __init__(
+        self,
+        backbone: nn.Module,
+        in_features: int,
+        num_labels: int,
+        freeze_backbone: bool = True,
+    ):
         super().__init__()
         self.backbone = backbone
         self.classifier = nn.Linear(in_features, num_labels)
@@ -63,7 +69,7 @@ def _build_resnet50_backbone(
             new_k = k
             for prefix in ("module.", "backbone.", "encoder.", "model."):
                 if new_k.startswith(prefix):
-                    new_k = new_k[len(prefix):]
+                    new_k = new_k[len(prefix) :]
             if new_k.startswith("fc."):
                 continue
             cleaned_state[new_k] = v
@@ -79,6 +85,7 @@ def _build_resnet50_backbone(
     backbone = nn.Sequential(*list(base.children())[:-1])  # [B, 2048, 1, 1]
     in_features = base.fc.in_features
     return backbone, in_features
+
 
 def _build_efficientnet_b0_backbone() -> Tuple[nn.Module, int]:
     """

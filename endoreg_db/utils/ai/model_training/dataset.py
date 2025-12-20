@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional, Sequence, Tuple, List
 
 import numpy as np
@@ -28,8 +27,9 @@ class EndoMultiLabelDataset(Dataset):
         label_masks: Sequence[Sequence[int]],
         image_size: int = 224,
     ) -> None:
-        assert len(image_paths) == len(label_vectors) == len(label_masks), \
+        assert len(image_paths) == len(label_vectors) == len(label_masks), (
             "image_paths, label_vectors, label_masks must have same length"
+        )
 
         self.image_paths: List[str] = list(image_paths)
 
@@ -43,7 +43,7 @@ class EndoMultiLabelDataset(Dataset):
             mask_list.append(m)
 
         self.labels = torch.tensor(label_vec_list, dtype=torch.float32)  # [N, C]
-        self.masks = torch.tensor(mask_list, dtype=torch.float32)        # [N, C]
+        self.masks = torch.tensor(mask_list, dtype=torch.float32)  # [N, C]
 
         self.num_labels = self.labels.shape[1]
         self.image_size = image_size

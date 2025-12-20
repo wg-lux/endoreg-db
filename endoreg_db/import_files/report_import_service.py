@@ -7,33 +7,28 @@ from typing import Optional, Union
 
 from endoreg_db.import_files.context.file_lock import file_lock
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.import_files.processing.report_processing.report_anonymization import (
-    ReportAnonymizer,
-)
-
+from endoreg_db.import_files.context.validate_directories import validate_directories
 from endoreg_db.import_files.file_storage.create_report_file import (
     create_or_retrieve_report_file,
 )
 from endoreg_db.import_files.file_storage.state_management import (
-    finalize_report_success,
     finalize_failure,
+    finalize_report_success,
     mark_instance_processing_started,
 )
-from endoreg_db.import_files.context.validate_directories import validate_directories
-
 from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
-from endoreg_db.models.media import RawPdfFile
-from endoreg_db.utils.paths import (
-    SENSITIVE_REPORT_DIR,
+from endoreg_db.import_files.processing.report_processing.report_anonymization import (
+    ReportAnonymizer,
 )
-
+from endoreg_db.models.media import RawPdfFile
+from endoreg_db.utils.paths import SENSITIVE_REPORT_DIR
 
 logger = logging.getLogger(__name__)
 
 
 class ReportImportService:
     """
-    Service for importing and anonymizing report (PDF) files.
+    Service for importing and anonymizing report (report) files.
 
     Responsibilities:
       - Acquire file lock
@@ -49,9 +44,8 @@ class ReportImportService:
         self.anonymizer = ReportAnonymizer()
         self.processing_context: Optional[ImportContext] = None
         self.current_report: Optional[RawPdfFile] = None
-        
-        validate_directories()
 
+        validate_directories()
 
     def import_and_anonymize(
         self,
@@ -69,41 +63,48 @@ class ReportImportService:
             center_name=center_name,
             delete_source=delete_source,
             file_type="report",
-            original_path=Path(file_path)
+            original_path=Path(file_path),
         )
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
 
-        ctx.sensitive_path = create_sensitive_copy(
-            ctx.file_path, 
-            SENSITIVE_REPORT_DIR
-        )
+        ctx.sensitive_path = create_sensitive_copy(ctx.file_path, SENSITIVE_REPORT_DIR)
 
         with file_lock(ctx.file_path):
             logger.info("Acquired file lock for %s", ctx.file_path)
 
             # create or retrieve RawPdfFile + update history
-            ctx.current_report, processed, needs_processing = create_or_retrieve_report_file(ctx)
+            ctx.current_report, processed, needs_processing = (
+                create_or_retrieve_report_file(ctx)
+            )
             ctx.current_report.get_or_create_state()
-            assert(ctx.current_report.state is not None)
+            assert ctx.current_report.state is not None
             ctx.current_report = ctx.current_report
-            
+
             if processed == True or retry == True:
                 ctx.retry = True
-            
+
             # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
-            if ctx.retry and needs_processing and not ctx.current_report.state.anonymization_validated:
+            if (
+                ctx.retry
+                and needs_processing
+                and not ctx.current_report.state.anonymization_validated
+            ):
                 # ensure clean slate for forced reprocessing
                 finalize_failure(ctx)
-                ctx.current_report, processed, needs_processing = create_or_retrieve_report_file(ctx)
-                assert(needs_processing is True)
+                ctx.current_report, processed, needs_processing = (
+                    create_or_retrieve_report_file(ctx)
+                )
+                assert needs_processing is True
             elif not needs_processing and not ctx.retry:
                 return ctx.current_report
             else:
                 finalize_failure(ctx)
-                ctx.current_report, processed, needs_processing = create_or_retrieve_report_file(ctx)
-                assert(needs_processing is True)
+                ctx.current_report, processed, needs_processing = (
+                    create_or_retrieve_report_file(ctx)
+                )
+                assert needs_processing is True
 
             mark_instance_processing_started(ctx.current_report, ctx)
             try:
@@ -124,7 +125,7 @@ class ReportImportService:
                     try:
                         ctx = self.anonymizer.anonymize_report(ctx)
                     except Exception as e:
-                        logger.error(f"PDF Extraction failed for the second time. {e}")
+                        logger.error(f"report Extraction failed for the second time. {e}")
                         raise
 
                     logger.info(
@@ -144,5 +145,3 @@ class ReportImportService:
                 # mark failure in history
                 finalize_failure(ctx)
                 raise
-                
-                

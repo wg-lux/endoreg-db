@@ -31,7 +31,7 @@ def safe_evaluate_requirement(
         if hasattr(requirement, "evaluate_with_details"):
             met, details = requirement.evaluate_with_details(*args, mode=mode, **kwargs)
         else:
-            met = requirement.evaluate(*args, mode=mode, **kwargs)
+            met = requirement.evaluate(*args, **kwargs)
             details = "Voraussetzung erfüllt" if met else "Voraussetzung nicht erfüllt"
         error = None
 
@@ -70,9 +70,7 @@ def safe_evaluate_requirement(
         display_name = getattr(requirement, "description", None) or getattr(
             requirement, "name", "unbekannte Voraussetzung"
         )
-        details = (
-            f"Bei der Auswertung der Voraussetzung „{display_name}“ ist ein interner Fehler aufgetreten."
-        )
+        details = f"Bei der Auswertung der Voraussetzung „{display_name}“ ist ein interner Fehler aufgetreten."
         error = f"{e.__class__.__name__}: {e}"
         logger.exception(
             "Requirement '%s' unexpected error",

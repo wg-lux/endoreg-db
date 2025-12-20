@@ -26,7 +26,9 @@ class MedicationIntakeTime(models.Model):
         from endoreg_db.models import MedicationSchedule
 
         @property
-        def medication_schedules(self) -> "models.manager.RelatedManager[MedicationSchedule]": ...
+        def medication_schedules(
+            self,
+        ) -> "models.manager.RelatedManager[MedicationSchedule]": ...
 
     @classmethod
     def dm(cls):

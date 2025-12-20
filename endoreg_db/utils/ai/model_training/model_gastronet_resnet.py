@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Tuple, Dict
+from typing import Optional
 
 import torch
 from torch import nn
@@ -45,6 +45,7 @@ class GastroNetResNet50MultiLabel(nn.Module):
         if feats.ndim == 4:
             feats = feats.flatten(1)
         return self.classifier(feats)
+
 
 '''class GastroNetResNet50MultiLabel(nn.Module):
     """

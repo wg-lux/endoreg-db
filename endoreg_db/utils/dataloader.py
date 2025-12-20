@@ -122,7 +122,9 @@ def load_data_with_foreign_keys(
             requirement_types = fields.get("requirement_types", [])
 
             if not requirement_types:
-                raise ValueError(f"Requirement '{name}' must define at least one requirement_types entry.")
+                raise ValueError(
+                    f"Requirement '{name}' must define at least one requirement_types entry."
+                )
 
         ####################
         # TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED
@@ -265,7 +267,9 @@ def load_data_with_foreign_keys(
             obj, created = _save_instance()
 
         if created and verbose:
-            command.stdout.write(command.style.SUCCESS(f"Created {model.__name__} {name}"))
+            command.stdout.write(
+                command.style.SUCCESS(f"Created {model.__name__} {name}")
+            )
         elif verbose:
             pass
 
@@ -274,4 +278,8 @@ def load_data_with_foreign_keys(
             if related_objs:  # Only set if there are objects to set
                 getattr(obj, field_name).set(related_objs)
                 if verbose:
-                    command.stdout.write(command.style.SUCCESS(f"Set {len(related_objs)} {field_name} for {model.__name__} {name}"))
+                    command.stdout.write(
+                        command.style.SUCCESS(
+                            f"Set {len(related_objs)} {field_name} for {model.__name__} {name}"
+                        )
+                    )

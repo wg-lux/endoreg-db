@@ -1,20 +1,10 @@
-from typing import List
 from django.test import TestCase
-from django.db import models
 from endoreg_db.models import (
     Product,
     ProductGroup,
     TransportRoute,
-    Examination, PatientExamination,
-    ExaminationIndication,
-    PatientExaminationIndication,
-    Center, # Import Center
-    PatientLabSample,
 )
-from datetime import date
 from logging import getLogger
-from pathlib import Path
-import random
 
 from endoreg_db.models.administration.product.product_material import ProductMaterial
 from endoreg_db.models.administration.product.reference_product import ReferenceProduct
@@ -29,19 +19,9 @@ from ...helpers.data_loader import (
     load_distribution_data,
     load_center_data,
     load_examination_data,
-    load_examination_indication_data,
-    load_gender_data,
-    load_lab_value_data,
-    load_green_endoscopy_wuerzburg_data
+    load_green_endoscopy_wuerzburg_data,
 )
 
-from ...helpers.default_objects import (
-    generate_patient,
-    get_random_default_examination,
-    get_random_default_examination_indication,
-    get_default_egd_pdf,
-    get_random_gender,
-)
 
 class ProductModelTest(TestCase):
     def setUp(self):
@@ -67,8 +47,9 @@ class ProductModelTest(TestCase):
             self.assertIsInstance(product.product_group, ProductGroup)
             self.assertIsInstance(product.transport_route, TransportRoute)
             self.assertIsInstance(product.reference_products.first(), ReferenceProduct)
-            self.assertIsNotNone(product.product_product_materials.first(), ProductMaterial)
-    
+            self.assertIsNotNone(
+                product.product_product_materials.first(), ProductMaterial
+            )
 
     def test_product_material_weight(self):
         """

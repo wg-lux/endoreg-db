@@ -6,76 +6,131 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('contenttypes', '0002_remove_content_type_name'),
-        ('endoreg_db', '0001_initial'),
+        ("contenttypes", "0002_remove_content_type_name"),
+        ("endoreg_db", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='rawpdfstate',
-            options={'verbose_name': 'Raw report Processing State', 'verbose_name_plural': 'Raw report Processing States'},
+            name="rawpdfstate",
+            options={
+                "verbose_name": "Raw report Processing State",
+                "verbose_name_plural": "Raw report Processing States",
+            },
         ),
         migrations.RemoveField(
-            model_name='rawpdffile',
-            name='anonymized',
+            model_name="rawpdffile",
+            name="anonymized",
         ),
         migrations.RemoveField(
-            model_name='rawpdffile',
-            name='anonymized_file',
+            model_name="rawpdffile",
+            name="anonymized_file",
         ),
         migrations.AddField(
-            model_name='rawpdffile',
-            name='processed_file',
-            field=models.FileField(blank=True, null=True, upload_to='processed_reports_final', validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['pdf'])]),
+            model_name="rawpdffile",
+            name="processed_file",
+            field=models.FileField(
+                blank=True,
+                null=True,
+                upload_to="processed_reports_final",
+                validators=[
+                    django.core.validators.FileExtensionValidator(
+                        allowed_extensions=["pdf"]
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='anonymexaminationreport',
-            name='file',
-            field=models.FileField(blank=True, null=True, upload_to='documents'),
+            model_name="anonymexaminationreport",
+            name="file",
+            field=models.FileField(blank=True, null=True, upload_to="documents"),
         ),
         migrations.AlterField(
-            model_name='anonymhistologyreport',
-            name='file',
-            field=models.FileField(blank=True, null=True, upload_to='documents'),
+            model_name="anonymhistologyreport",
+            name="file",
+            field=models.FileField(blank=True, null=True, upload_to="documents"),
         ),
         migrations.AlterField(
-            model_name='rawpdffile',
-            name='file',
-            field=models.FileField(upload_to='sensitive_reports', validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['pdf'])]),
+            model_name="rawpdffile",
+            name="file",
+            field=models.FileField(
+                upload_to="sensitive_reports",
+                validators=[
+                    django.core.validators.FileExtensionValidator(
+                        allowed_extensions=["pdf"]
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='rawpdfstate',
-            name='pdf_meta_extracted',
-            field=models.BooleanField(default=False, help_text='True if report metadata has been extracted.'),
+            model_name="rawpdfstate",
+            name="pdf_meta_extracted",
+            field=models.BooleanField(
+                default=False, help_text="True if report metadata has been extracted."
+            ),
         ),
         migrations.AlterField(
-            model_name='uploadjob',
-            name='file',
-            field=models.FileField(help_text='Uploaded file (report or video)', upload_to='uploads/%Y/%m/%d/'),
+            model_name="uploadjob",
+            name="file",
+            field=models.FileField(
+                help_text="Uploaded file (report or video)",
+                upload_to="uploads/%Y/%m/%d/",
+            ),
         ),
         migrations.AlterField(
-            model_name='videofile',
-            name='processed_file',
-            field=models.FileField(blank=True, null=True, upload_to='processed_videos_final', validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['mp4'])]),
+            model_name="videofile",
+            name="processed_file",
+            field=models.FileField(
+                blank=True,
+                null=True,
+                upload_to="processed_videos_final",
+                validators=[
+                    django.core.validators.FileExtensionValidator(
+                        allowed_extensions=["mp4"]
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='videofile',
-            name='raw_file',
-            field=models.FileField(blank=True, null=True, upload_to='sensitive_videos', validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['mp4'])]),
+            model_name="videofile",
+            name="raw_file",
+            field=models.FileField(
+                blank=True,
+                null=True,
+                upload_to="sensitive_videos",
+                validators=[
+                    django.core.validators.FileExtensionValidator(
+                        allowed_extensions=["mp4"]
+                    )
+                ],
+            ),
         ),
         migrations.CreateModel(
-            name='ProcessingHistory',
+            name="ProcessingHistory",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('success', models.BooleanField(blank=True, default=False)),
-                ('object_id', models.PositiveBigIntegerField()),
-                ('content_type', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='contenttypes.contenttype')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("success", models.BooleanField(blank=True, default=False)),
+                ("object_id", models.PositiveBigIntegerField()),
+                (
+                    "content_type",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="contenttypes.contenttype",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
     ]

@@ -10,8 +10,7 @@ Tests cover:
 """
 
 import logging
-import uuid
-from typing import Any, Dict, cast
+from typing import Dict, cast
 from unittest.mock import patch
 
 import pytest
@@ -20,8 +19,7 @@ from rest_framework import status
 from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import Center, EndoscopyProcessor, RawPdfFile, VideoFile
-from endoreg_db.models.administration.person.patient import Patient
+from endoreg_db.models import Center, RawPdfFile, VideoFile
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
@@ -358,7 +356,7 @@ class TestAnonymizationValidateView:
             assert response.status_code == status.HTTP_200_OK
 
     def test_validate_video_type_missing_video_returns_not_found(self, factory, user):
-        """Explicit video requests should not fall back to PDFs when video is missing."""
+        """Explicit video requests should not fall back to reports when video is missing."""
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
@@ -418,37 +416,6 @@ class TestAnonymizationValidateView:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "report 8888 not found" in error_text
-
-    def test_validate_falls_back_to_pdf_when_video_missing(
-        self, factory, user, pdf_file
-    ):
-        """Requests without file_type should attempt video first, then report."""
-        data = {
-            "patient_first_name": "Anna",
-            "patient_last_name": "Schmidt",
-            "patient_dob": "21.03.1994",
-            "examination_date": "15.02.2024",
-            "casenumber": "98765",
-            "anonymized_text": "Payload for report",
-        }
-
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
-        ):
-            request = factory.post(
-                f"/api/anonymization/{pdf_file.id}/validate/",
-                data=data,
-                format="json",
-            )
-            force_authenticate(request, user=user)
-
-            view = AnonymizationValidateView.as_view()
-            response = self._call_view(view, request, file_id=pdf_file.id)
-            payload = self._response_data(response)
-            message = self._payload_text(payload, "message")
-
-            assert response.status_code == status.HTTP_200_OK
-            assert "report validated" in message
 
     def test_validate_video_exception_returns_server_error(
         self, factory, user, video_file

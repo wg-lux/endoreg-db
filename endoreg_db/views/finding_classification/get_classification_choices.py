@@ -5,6 +5,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 import warnings
 
+
 @require_GET
 def get_classification_choices(request, classification_id):
     """
@@ -30,7 +31,7 @@ def get_location_choices(request, location_id):
         "The get_location_choices function is deprecated and will be removed in future versions. "
         "Use the 'get_classification_choices' function instead.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
 
     # Fetch location choices using the new method
@@ -46,10 +47,8 @@ def get_morphology_choices(request, morphology_id):
         "The get_morphology_choices function is deprecated and will be removed in future versions. "
         "Use the 'get_classification_choices' function instead.",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
 
     # Fetch morphology choices using the new method
     return get_classification_choices(request, morphology_id)
-
-

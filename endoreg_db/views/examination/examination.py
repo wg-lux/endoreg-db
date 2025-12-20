@@ -3,15 +3,15 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
-from endoreg_db.models import (
-    Examination
-)
+from endoreg_db.models import Examination
 from endoreg_db.serializers import ExaminationSerializer, FindingSerializer
+
 
 class ExaminationViewSet(ReadOnlyModelViewSet):
     """
     ViewSet for handling Examination related operations.
     """
+
     queryset = Examination.objects.all()
     serializer_class = ExaminationSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
@@ -25,7 +25,7 @@ class ExaminationViewSet(ReadOnlyModelViewSet):
     #         return OptimizedExaminationSerializer
     #     return ExaminationSerializer
 
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=["get"])
     def findings(self, request, pk=None):
         """
         Get findings associated with a specific examination.

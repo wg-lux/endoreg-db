@@ -1,5 +1,5 @@
-from .disease import (Disease, DiseaseClassification, DiseaseClassificationChoice)
-from .event import (Event, EventClassification, EventClassificationChoice)
+from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
+from .event import Event, EventClassification, EventClassificationChoice
 
 from .contraindication import Contraindication
 from .examination import (
@@ -72,15 +72,12 @@ __all__ = [
     "Disease",
     "DiseaseClassification",
     "DiseaseClassificationChoice",
-
     # Event
     "Event",
     "EventClassification",
     "EventClassificationChoice",
-
     # Contraindication
     "Contraindication",
-
     # Examination
     "Examination",
     "ExaminationRequirementSet",
@@ -90,7 +87,6 @@ __all__ = [
     "ExaminationIndicationClassification",
     "ExaminationTime",
     "ExaminationTimeType",
-    
     # Finding
     "Finding",
     "FindingClassificationType",
@@ -100,7 +96,6 @@ __all__ = [
     "FindingMorphologyClassification",
     "FindingIntervention",
     "FindingInterventionType",
-
     # Patient
     ## Disease
     "PatientDisease",
@@ -120,14 +115,11 @@ __all__ = [
     ## Medication
     "PatientMedication",
     "PatientMedicationSchedule",
-
     # Organ
     "Organ",
-
     # Risk
     "Risk",
     "RiskType",
-
     # Medication
     "Medication",
     "MedicationManager",
@@ -135,12 +127,10 @@ __all__ = [
     "MedicationIntakeTime",
     "MedicationIndicationType",
     "MedicationIndication",
-
     # Hardware
     "Endoscope",
     "EndoscopeType",
     "EndoscopyProcessor",
-
     # Laboratory
     "LabValue",
 ]

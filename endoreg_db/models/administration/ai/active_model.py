@@ -8,7 +8,8 @@ if TYPE_CHECKING:
 class ActiveModelManager(models.Manager):
     def get_by_natural_key(self, name):
         return self.get(name=name)
-    
+
+
 class ActiveModel(models.Model):
     """
     ActiveModel represents an active instance of a model within the application.
@@ -26,10 +27,9 @@ class ActiveModel(models.Model):
     """
 
     name = models.CharField(max_length=255, unique=True)
-    
-    model_meta:models.ForeignKey["ModelMeta|None"] = models.ForeignKey(
-        'ModelMeta', on_delete=models.SET_NULL, 
-        blank=True, null=True
+
+    model_meta: models.ForeignKey["ModelMeta|None"] = models.ForeignKey(
+        "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
     )
 
     objects = ActiveModelManager()

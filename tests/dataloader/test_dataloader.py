@@ -24,12 +24,14 @@ from ..helpers.data_loader import (
     load_base_db_data,
 )
 
+
 class TestDataLoader(TestCase):
     """
     Test the data loading commands.
     Each test method runs in its own transaction, ensuring isolation.
     The database state is automatically reset after each test by Django's TestCase.
     """
+
     def test_load_base_db_data(self):
         """
         Test if the load_base_db_data command runs without errors.
@@ -244,5 +246,3 @@ class TestDataLoader(TestCase):
             load_ai_model_data()
         except Exception as e:
             self.fail(f"load_ai_model_data command failed: {e}")
-
-

@@ -40,8 +40,14 @@ class CacheManager:
     """Central cache manager with support for namespaced storage."""
 
     def __init__(self) -> None:
-        self._stores: Dict[str, _NamespaceStore] = defaultdict(lambda: _NamespaceStore({}, RLock()))
-        self._debug = os.environ.get("PYTEST_CACHE_DEBUG", "0") not in ("0", "false", "False")
+        self._stores: Dict[str, _NamespaceStore] = defaultdict(
+            lambda: _NamespaceStore({}, RLock())
+        )
+        self._debug = os.environ.get("PYTEST_CACHE_DEBUG", "0") not in (
+            "0",
+            "false",
+            "False",
+        )
 
     # ------------------------------------------------------------------
     # Core operations
@@ -140,7 +146,9 @@ class CacheNamespace:
     def invalidate(self, key: Optional[Hashable] = None) -> None:
         self._manager.invalidate(self._name, key)
 
-    def memoize(self, key_builder: Optional[Callable[..., Hashable]] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def memoize(
+        self, key_builder: Optional[Callable[..., Hashable]] = None
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         return self._manager.memoize(self._name, key_builder=key_builder)
 
 

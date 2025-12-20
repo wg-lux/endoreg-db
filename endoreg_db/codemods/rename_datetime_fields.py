@@ -1,13 +1,16 @@
 # endoreg_db/codemods/rename_datetime_fields.py
 from bowler import Query
 from pathlib import Path
-import argparse, yaml, sys
+import argparse
+import yaml
+import sys
 
 # Paths
 BASE = Path(__file__).resolve().parents[1]  # .../endoreg_db
 RENAMES_YML = BASE / "renames.yml"
 DEFAULT_TARGETS = ["endoreg_db/models"]  # safer default
 EXCLUDE_DIR_NAMES = {"migrations", "__pycache__"}
+
 
 def load_renames():
     if not RENAMES_YML.exists():
@@ -18,6 +21,7 @@ def load_renames():
         print("ERROR: renames.yml is empty or not a mapping.", file=sys.stderr)
         sys.exit(2)
     return data
+
 
 def iter_python_targets(paths):
     """Yield *.py files under given paths, excluding migrations and caches."""
@@ -31,9 +35,11 @@ def iter_python_targets(paths):
                     continue
                 yield str(f)
 
+
 def build_query(files):
     # Bowler can take a list of files; we’ve already filtered them
     return Query(list(files))
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -87,6 +93,7 @@ def main(argv=None):
             file=sys.stderr,
         )
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

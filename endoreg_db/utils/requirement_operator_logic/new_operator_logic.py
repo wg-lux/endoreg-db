@@ -1,11 +1,14 @@
-from typing import TYPE_CHECKING, Any, Dict, Tuple, Union
+from typing import TYPE_CHECKING, Any, Tuple, Union
 
 if TYPE_CHECKING:
     from endoreg_db.models import Patient, PatientExamination, Requirement
-    from endoreg_db.models.requirement.requirement_operator import OperatorInstructions, RequirementOperator
+    from endoreg_db.models.requirement.requirement_operator import OperatorInstructions
 
 
-def fetch_input_target(input_object: Union["Patient", "PatientExamination"], operator_instructions: "OperatorInstructions") -> Tuple[str, Any]:
+def fetch_input_target(
+    input_object: Union["Patient", "PatientExamination"],
+    operator_instructions: "OperatorInstructions",
+) -> Tuple[str, Any]:
     input_target_names = operator_instructions.input_targets
 
     # Iterate over targets and stop with first successful fetch
@@ -20,7 +23,9 @@ def fetch_input_target(input_object: Union["Patient", "PatientExamination"], ope
         except AttributeError:
             continue  # Try next input target
 
-    raise AttributeError(f"None of the input targets {input_target_names} could be resolved on the input object.")
+    raise AttributeError(
+        f"None of the input targets {input_target_names} could be resolved on the input object."
+    )
 
 
 def fetch_requirement_targets(
@@ -35,7 +40,9 @@ def fetch_requirement_targets(
             target_value = getattr(requirement, target_name)
             target_values[target_name] = target_value
         except AttributeError:
-            raise AttributeError(f"Requirement does not have attribute '{target_name}'.")
+            raise AttributeError(
+                f"Requirement does not have attribute '{target_name}'."
+            )
         target_values[target_name] = target_value
 
     return target_values
@@ -46,7 +53,9 @@ def model_attribute_set_any(
     operator_instructions: "OperatorInstructions",
     requirement: "Requirement",
 ) -> bool:
-    input_target_name, input_value = fetch_input_target(input_object, operator_instructions)
+    input_target_name, input_value = fetch_input_target(
+        input_object, operator_instructions
+    )
 
     if not input_value:
         return False
@@ -59,18 +68,24 @@ def model_attribute_numeric_in_range(
     operator_instructions: "OperatorInstructions",
     requirement: "Requirement",
 ) -> bool:
-    input_target_name, input_value = fetch_input_target(input_object, operator_instructions)
+    input_target_name, input_value = fetch_input_target(
+        input_object, operator_instructions
+    )
 
     # make sure, input_value is numeric
     try:
         numeric_value = float(input_value)
     except (TypeError, ValueError):
-        raise ValueError(f"Input value for target '{input_target_name}' is not numeric: {input_value}")
+        raise ValueError(
+            f"Input value for target '{input_target_name}' is not numeric: {input_value}"
+        )
 
     _min = requirement.numeric_value_min
     _max = requirement.numeric_value_max
 
-    assert _min is not None and _max is not None, "Numeric range requires both min and max values to be set."
+    assert _min is not None and _max is not None, (
+        "Numeric range requires both min and max values to be set."
+    )
 
     return_value = _min <= numeric_value <= _max
     return return_value
@@ -81,7 +96,9 @@ def model_attribute_is_among_values(
     operator_instructions: "OperatorInstructions",
     requirement: "Requirement",
 ) -> bool:
-    input_target_name, input_value = fetch_input_target(input_object, operator_instructions)
+    input_target_name, input_value = fetch_input_target(
+        input_object, operator_instructions
+    )
     target_values = fetch_requirement_targets(requirement, operator_instructions)
 
     for target_name, target_values in target_values.items():

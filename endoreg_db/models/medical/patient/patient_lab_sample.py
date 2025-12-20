@@ -60,7 +60,9 @@ class PatientLabSample(models.Model):
         values (PatientLabValue; One2Many): The value of the lab sample.
     """
 
-    patient = models.ForeignKey("Patient", on_delete=models.CASCADE, related_name="lab_samples")
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.CASCADE, related_name="lab_samples"
+    )
     sample_type = models.ForeignKey("PatientLabSampleType", on_delete=models.CASCADE)
     date = models.DateTimeField()
 
@@ -125,7 +127,9 @@ class PatientLabSample(models.Model):
         if not date:
             date = dt.now(timezone.utc)
 
-        patient_lab_sample = cls.objects.create(patient=patient, sample_type=sample_type, date=date)
+        patient_lab_sample = cls.objects.create(
+            patient=patient, sample_type=sample_type, date=date
+        )
 
         if save:
             patient_lab_sample.save()

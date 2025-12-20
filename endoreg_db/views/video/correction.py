@@ -31,7 +31,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.serializers import VideoMetaSerializer, VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, IMPORT_VIDEO_DIR
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
         # Delete segment if all frames were removed
         if new_start >= new_end:
             logger.info(
-                f"Deleting segment {segment.id} (original: {original_start}-{original_end}) "
+                f"Deleting segment {segment.pk} (original: {original_start}-{original_end}) "
                 f"- all {frames_within} frames removed"
             )
             segment.delete()
@@ -131,7 +131,7 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
         elif new_start != original_start or new_end != original_end:
             # Update segment boundaries
             logger.info(
-                f"Updating segment {segment.id}: "
+                f"Updating segment {segment.pk}: "
                 f"{original_start}-{original_end} → {new_start}-{new_end} "
                 f"(before: {frames_before}, within: {frames_within})"
             )
@@ -144,7 +144,7 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
             segments_unchanged += 1
 
     logger.info(
-        f"Segment update complete for video {video.id}: "
+        f"Segment update complete for video {video.pk}: "
         f"{segments_updated} updated, {segments_deleted} deleted, {segments_unchanged} unchanged"
     )
 
@@ -336,7 +336,6 @@ class VideoApplyMaskView(APIView):
 
             if success:
                 # Update video record with anonymized file
-                from django.core.files import File
 
                 processed_file_path = output_path
                 update_processed_file(video, processed_file_path)

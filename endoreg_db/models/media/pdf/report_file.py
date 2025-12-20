@@ -87,7 +87,9 @@ class AbstractExaminationReport(AbstractDocument):
     Abstract base class for examination reports.
     """
 
-    patient = models.ForeignKey("Patient", on_delete=models.DO_NOTHING, blank=True, null=True)
+    patient = models.ForeignKey(
+        "Patient", on_delete=models.DO_NOTHING, blank=True, null=True
+    )
 
     patient_examination = models.ForeignKey(
         "PatientExamination",
@@ -101,7 +103,9 @@ class AbstractExaminationReport(AbstractDocument):
         blank=True,
     )
 
-    sensitive_meta = models.ForeignKey("SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True)
+    sensitive_meta = models.ForeignKey(
+        "SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     if TYPE_CHECKING:
         center: models.ForeignKey["Center|None"]

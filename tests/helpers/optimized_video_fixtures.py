@@ -25,7 +25,6 @@ from endoreg_db.models import (
     VideoFile,
     VideoMeta,
 )
-from endoreg_db.models.state.video import VideoState
 
 from .default_objects import (
     DEFAULT_CENTER_NAME,

@@ -16,10 +16,21 @@ IMPORT_METADATA = {
     MODEL_0.__name__: {
         "dir": SOURCE_DIR,  # e.g. "interventions"
         "model": MODEL_0,
-        "foreign_keys": ["default_unit", "default_numerical_value_distribution"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [Unit, NumericValueDistribution],  # e.g. [InterventionType]
+        "foreign_keys": [
+            "default_unit",
+            "default_numerical_value_distribution",
+        ],  # e.g. ["intervention_types"]
+        "foreign_key_models": [
+            Unit,
+            NumericValueDistribution,
+        ],  # e.g. [InterventionType]
     },
-    PatientLabSampleType.__name__: {"dir": PATIENT_LAB_SAMPLE_TYPE_DATA_DIR, "model": PatientLabSampleType, "foreign_keys": [], "foreign_key_models": []},
+    PatientLabSampleType.__name__: {
+        "dir": PATIENT_LAB_SAMPLE_TYPE_DATA_DIR,
+        "model": PatientLabSampleType,
+        "foreign_keys": [],
+        "foreign_key_models": [],
+    },
 }
 
 

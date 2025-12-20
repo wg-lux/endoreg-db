@@ -33,7 +33,9 @@ class Medication(models.Model):
         default_unit: models.ForeignKey["Unit"]
 
         @property
-        def medication_schedules(self) -> "models.manager.RelatedManager[MedicationSchedule]": ...
+        def medication_schedules(
+            self,
+        ) -> "models.manager.RelatedManager[MedicationSchedule]": ...
 
     def natural_key(self):
         """Return the natural key for the medication."""

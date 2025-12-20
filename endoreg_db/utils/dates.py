@@ -2,7 +2,6 @@ from datetime import datetime, date, timedelta
 from random import randint
 from calendar import monthrange
 from django.utils import timezone
-import datetime
 
 # TODO replace used random_day_by_year function implementation when
 # creating pseudo patients with new function "random date by age_at_date and examination_date"
@@ -45,16 +44,16 @@ def ensure_aware_datetime(dt):
     """
     Ensures a datetime object is timezone-aware.
     If the datetime is naive (has no timezone info), the current timezone is applied.
-    
+
     Args:
         dt: A datetime object that may be naive
-        
+
     Returns:
         A timezone-aware datetime object
     """
     if dt is None:
         return None
-        
+
     if isinstance(dt, datetime.datetime) and timezone.is_naive(dt):
         return timezone.make_aware(dt)
     return dt

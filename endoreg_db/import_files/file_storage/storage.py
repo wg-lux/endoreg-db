@@ -1,6 +1,10 @@
 import logging
 from pathlib import Path
-from endoreg_db.models.media.video.create_from_file import atomic_copy_with_fallback, atomic_move_with_fallback
+from endoreg_db.models.media.video.create_from_file import (
+    atomic_copy_with_fallback,
+    atomic_move_with_fallback,
+)
+
 logger = logging.getLogger(__name__)
 
 

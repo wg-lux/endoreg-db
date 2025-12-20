@@ -16,7 +16,9 @@ from endoreg_db.models import (
     VideoFile,
 )
 
-DEFAULT_LABELSET_NAME = "multilabel_classification_colonoscopy_default" # must be present in the DB
+DEFAULT_LABELSET_NAME = (
+    "multilabel_classification_colonoscopy_default"  # must be present in the DB
+)
 DEFAULT_LABELSET_VERSION = 1
 
 
@@ -44,12 +46,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--images-root",
             type=str,
-            default=str(
-                Path(settings.BASE_DIR) / "data" / "legacy_data" / "images"
-            ),
+            default=str(Path(settings.BASE_DIR) / "data" / "legacy_data" / "images"),
             help="Root directory containing legacy images.",
         )
-        #All imported frames need to belong to some VideoFile.
+        # All imported frames need to belong to some VideoFile.
         parser.add_argument(
             "--video-id",
             type=int,
@@ -59,7 +59,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--dataset-name",
             type=str,
-            default="legacy_multilabel_dataset_v1", # later change this if needed
+            default="legacy_multilabel_dataset_v1",  # later change this if needed
             help="Name for the created/reused AIDataSet.",
         )
         parser.add_argument(
@@ -112,7 +112,7 @@ class Command(BaseCommand):
             self.style.NOTICE(f"Using VideoFile id={video.id} for all Frames.")
         )
 
-                # Ensure this VideoFile uses the legacy images folder as its frame_dir
+        # Ensure this VideoFile uses the legacy images folder as its frame_dir
         # IMPORTANT: we only set this if frame_dir is empty, so we don't break other videos.
         if not video.frame_dir:
             video.frame_dir = str(images_root)  # images_root is Path(...)
@@ -130,7 +130,6 @@ class Command(BaseCommand):
                     "Legacy Frames will be resolved relative to this directory."
                 )
             )
-
 
         # --- Use existing LabelSet (v1) ---
         labelset = self._get_existing_labelset(

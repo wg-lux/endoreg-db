@@ -31,7 +31,9 @@ class ModelMetaManager(models.Manager):
     Provides methods for retrieving ModelMeta instances using natural keys.
     """
 
-    def get_by_natural_key(self, name: str, version: str, model_name: str) -> "ModelMeta":
+    def get_by_natural_key(
+        self, name: str, version: str, model_name: str
+    ) -> "ModelMeta":
         """
         Retrieves a ModelMeta instance using its natural key.
 
@@ -80,10 +82,16 @@ class ModelMeta(models.Model):
         related_name="model_metadata",
         help_text="The set of labels this model version predicts.",
     )
-    activation = models.CharField(max_length=50, default="sigmoid", help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none').")
+    activation = models.CharField(
+        max_length=50,
+        default="sigmoid",
+        help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none').",
+    )
     weights = models.FileField(
         upload_to=WEIGHTS_DIR.name,  # Use .name for relative path
-        validators=[FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])],
+        validators=[
+            FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])
+        ],
         null=True,
         blank=True,
         help_text="Path to the model weights file (.safetensors), relative to MEDIA_ROOT.",
@@ -102,14 +110,24 @@ class ModelMeta(models.Model):
     )
     size_x = models.IntegerField(default=716, help_text="Expected input image width.")
     size_y = models.IntegerField(default=716, help_text="Expected input image height.")
-    axes = models.CharField(max_length=10, default="2,0,1", help_text="Comma-separated target axis order (e.g., '2,0,1' for CHW).")
+    axes = models.CharField(
+        max_length=10,
+        default="2,0,1",
+        help_text="Comma-separated target axis order (e.g., '2,0,1' for CHW).",
+    )
 
     # --- Inference Parameters ---
-    batchsize = models.IntegerField(default=16, help_text="Default batch size for inference.")
-    num_workers = models.IntegerField(default=0, help_text="Default number of workers for data loading.")
+    batchsize = models.IntegerField(
+        default=16, help_text="Default batch size for inference."
+    )
+    num_workers = models.IntegerField(
+        default=0, help_text="Default number of workers for data loading."
+    )
 
     # --- Metadata ---
-    description = models.TextField(blank=True, null=True, help_text="Optional description.")
+    description = models.TextField(
+        blank=True, null=True, help_text="Optional description."
+    )
     date_created = models.DateTimeField(auto_now_add=True)
 
     objects = ModelMetaManager()
@@ -117,7 +135,9 @@ class ModelMeta(models.Model):
     # --- Type Hinting for Related Fields ---
     if TYPE_CHECKING:
         labelset: models.ForeignKey["LabelSet"]
-        model: models.ForeignKey["AiModel"]  # Corrected from ai_model to match field name
+        model: models.ForeignKey[
+            "AiModel"
+        ]  # Corrected from ai_model to match field name
         weights = cast(FieldFile, weights)
 
     class Meta:
@@ -175,7 +195,9 @@ class ModelMeta(models.Model):
         )
 
     @classmethod
-    def get_latest_version_number(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> int:
+    def get_latest_version_number(
+        cls: Type["ModelMeta"], meta_name: str, model_name: str
+    ) -> int:
         """
         Gets the latest version *number* using external logic.
         """
@@ -228,10 +250,16 @@ class ModelMeta(models.Model):
         Retrieves a ModelMeta instance by name, model name, and optionally version using external logic.
         """
         # Delegate to logic function
-        return logic.get_model_meta_by_name_version_logic(cls, meta_name, model_name, version)
+        return logic.get_model_meta_by_name_version_logic(
+            cls, meta_name, model_name, version
+        )
 
     @classmethod
-    def get_latest(cls: Type["ModelMeta"], meta_name: str, model_name: str) -> "ModelMeta":
+    def get_latest(
+        cls: Type["ModelMeta"], meta_name: str, model_name: str
+    ) -> "ModelMeta":
         """Alias for get_by_name_version(meta_name, model_name, version=None) using external logic."""
         # Delegate directly to the specific logic function
-        return logic.get_model_meta_by_name_version_logic(cls, meta_name, model_name, version=None)
+        return logic.get_model_meta_by_name_version_logic(
+            cls, meta_name, model_name, version=None
+        )

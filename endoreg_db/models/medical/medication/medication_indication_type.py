@@ -26,7 +26,9 @@ class MedicationIndicationType(models.Model):
     if TYPE_CHECKING:
 
         @property
-        def medication_indications(self) -> "models.manager.RelatedManager[MedicationIndication]": ...
+        def medication_indications(
+            self,
+        ) -> "models.manager.RelatedManager[MedicationIndication]": ...
 
     def natural_key(self):
         """Return the natural key for the medication indication type."""
@@ -38,7 +40,9 @@ class MedicationIndicationType(models.Model):
     @classmethod
     def get_random_indication_by_type(cls, name) -> "MedicationIndication":
         """Return a random medication indication of the given type."""
-        med_indication = cls.objects.get(name=name).medication_indications.order_by("?").first()
+        med_indication = (
+            cls.objects.get(name=name).medication_indications.order_by("?").first()
+        )
         if not med_indication:
             raise cls.DoesNotExist(f"No medication indication found for type: {name}")
         return med_indication
@@ -47,4 +51,8 @@ class MedicationIndicationType(models.Model):
         """Return a random medication indication of this type."""
         from endoreg_db.models import MedicationIndication
 
-        return MedicationIndication.objects.filter(indication_type=self).order_by("?").first()
+        return (
+            MedicationIndication.objects.filter(indication_type=self)
+            .order_by("?")
+            .first()
+        )

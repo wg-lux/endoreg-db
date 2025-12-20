@@ -21,7 +21,9 @@ class LabelSetManager(models.Manager):
 
         labelset = queryset.order_by("-version").first()
         if not labelset:
-            raise self.model.DoesNotExist(f"LabelSet with name='{name}' and version='{version}' not found")
+            raise self.model.DoesNotExist(
+                f"LabelSet with name='{name}' and version='{version}' not found"
+            )
         return labelset
 
 

@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from django.http import HttpRequest
 
-from endoreg_db.models import OperationLog
+from endoreg_db.models.operation_log import OperationLog
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,9 @@ def record_operation(
             actor_username=getattr(user, "username", "") if user else "",
             actor_email=getattr(user, "email", "") if user else "",
             actor_keycloak_id="",  # fill later if you add it to your user model
-
             action=action,
             http_method=getattr(request, "method", ""),
             path=getattr(request, "path", ""),
-
             resource_type=resource_type,
             resource_id=resource_id,
             status_before=status_before or "",

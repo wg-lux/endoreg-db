@@ -20,13 +20,11 @@
 #     though using a relative path from request.get_full_path() is already safe.
 
 from django.shortcuts import redirect
-from django.conf import settings
-from urllib.parse import urlencode
 
 # Any URL path that starts with one of these prefixes is considered "protected" for browser UX.
 # You can add more prefixes if you want the same login-redirect behavior elsewhere
 # (e.g., PROTECTED_PREFIXES = ("/api/", "/reports/", "/dashboard/")).
-#PROTECTED_PREFIXES = ("/api/",)
+# PROTECTED_PREFIXES = ("/api/",)
 
 # Protect the SPA shell too (everything except static/assets/oidc)
 PROTECTED_PREFIXES = ("/",)  # catch-all; we'll skip known public paths below
@@ -36,9 +34,10 @@ PUBLIC_PREFIXES = (
     "/assets/",
     "/media/",
     "/favicon.ico",
-    "/oidc/",          # OIDC endpoints must stay public
-    "/__vite",         # if Vite dev assets ever used
+    "/oidc/",  # OIDC endpoints must stay public
+    "/__vite",  # if Vite dev assets ever used
 )
+
 
 class LoginRequiredForAPIsMiddleware:
     """
@@ -51,7 +50,8 @@ class LoginRequiredForAPIsMiddleware:
 
     """
 
-    def __init__(self, get_response): self.get_response = get_response
+    def __init__(self, get_response):
+        self.get_response = get_response
 
     def __call__(self, request):
         # request.path is the URL path without scheme/host/query (e.g., "/api/patients/").
@@ -76,6 +76,7 @@ class LoginRequiredForAPIsMiddleware:
         if not request.user.is_authenticated:
             from django.conf import settings
             from urllib.parse import urlencode
+
             params = urlencode({"next": request.get_full_path()})
             return redirect(f"{settings.LOGIN_URL}?{params}")
 

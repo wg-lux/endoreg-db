@@ -1,10 +1,12 @@
-from typing import TYPE_CHECKING, List, Optional, cast  # Added List
+from typing import TYPE_CHECKING, List, cast  # Added List
 
 from django.db import models
 
 # Added imports for type hints
 if TYPE_CHECKING:
-    from ....utils.links.requirement_link import RequirementLinks  # Added RequirementLinks
+    from ....utils.links.requirement_link import (
+        RequirementLinks,
+    )  # Added RequirementLinks
     from ...administration.person.patient import Patient
     from ...other.unit import Unit
     from ..medication import Medication, MedicationIndication, MedicationIntakeTime
@@ -18,9 +20,19 @@ class PatientMedication(models.Model):
     """
 
     patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
-    medication_indication = models.ForeignKey("MedicationIndication", on_delete=models.CASCADE, related_name="indication_patient_medications", null=True)
+    medication_indication = models.ForeignKey(
+        "MedicationIndication",
+        on_delete=models.CASCADE,
+        related_name="indication_patient_medications",
+        null=True,
+    )
 
-    medication = models.ForeignKey("Medication", on_delete=models.CASCADE, blank=True, related_name="medication_patient_medications")
+    medication = models.ForeignKey(
+        "Medication",
+        on_delete=models.CASCADE,
+        blank=True,
+        related_name="medication_patient_medications",
+    )
 
     intake_times = models.ManyToManyField(
         "MedicationIntakeTime",
@@ -39,7 +51,9 @@ class PatientMedication(models.Model):
         medication_indication: models.ForeignKey["MedicationIndication|None"]
         medication: models.ForeignKey["Medication|None"]
 
-        intake_times = cast(models.manager.RelatedManager["MedicationIntakeTime"], intake_times)
+        intake_times = cast(
+            models.manager.RelatedManager["MedicationIntakeTime"], intake_times
+        )
         unit: models.ForeignKey["Unit|None"]
         dosage = cast(models.JSONField, dosage)
 
@@ -73,10 +87,14 @@ class PatientMedication(models.Model):
         verbose_name_plural = "Patient Medications"
 
     @classmethod
-    def create_by_patient_and_indication(cls, patient, medication_indication: "MedicationIndication"):
+    def create_by_patient_and_indication(
+        cls, patient, medication_indication: "MedicationIndication"
+    ):
         """Creates a PatientMedication instance linking a patient and an indication."""
 
-        patient_medication = cls.objects.create(patient=patient, medication_indication=medication_indication)
+        patient_medication = cls.objects.create(
+            patient=patient, medication_indication=medication_indication
+        )
         patient_medication.save()
 
         return patient_medication

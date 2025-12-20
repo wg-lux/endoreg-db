@@ -7,7 +7,10 @@ from ..helpers.data_loader import load_base_db_data, load_default_ai_model
 
 logger = getLogger(__name__)
 
-SKIP_EXPENSIVE_PIPELINE = os.environ.get("SKIP_EXPENSIVE_PIPELINE", "true").lower() == "true"
+SKIP_EXPENSIVE_PIPELINE = (
+    os.environ.get("SKIP_EXPENSIVE_PIPELINE", "true").lower() == "true"
+)
+
 
 class ProcessVideoDirTest(TestCase):
     def setUp(self):
@@ -16,7 +19,6 @@ class ProcessVideoDirTest(TestCase):
         self.video_dir = video_file_path.parent
         load_base_db_data()
         load_default_ai_model()
-        
 
     def test_process_video_dir(self):
         """

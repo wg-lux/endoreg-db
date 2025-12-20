@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 # Define __all__ if you want to control what `from .video_file_meta import *` imports
 __all__ = [
-    '_update_text_metadata',
-    '_update_video_meta',
-    '_initialize_video_specs',
-    '_get_fps',
-    '_get_endo_roi',
-    '_get_crop_template',
+    "_update_text_metadata",
+    "_update_video_meta",
+    "_initialize_video_specs",
+    "_get_fps",
+    "_get_endo_roi",
+    "_get_crop_template",
 ]

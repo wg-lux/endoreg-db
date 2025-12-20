@@ -65,11 +65,7 @@ class Command(BaseCommand):
         # ------------------------------------------------------------------
         # Debug: show which LabelSet was picked and its labels
         # ------------------------------------------------------------------
-        self.stdout.write(
-            self.style.NOTICE(
-                "Inferred LabelSet for this AIDataSet:"
-            )
-        )
+        self.stdout.write(self.style.NOTICE("Inferred LabelSet for this AIDataSet:"))
         self.stdout.write(
             f"  LabelSet id={labelset.id}, "
             f"name={labelset.name!r}, "
@@ -101,18 +97,16 @@ class Command(BaseCommand):
             zip(image_paths, label_vectors, label_masks)
         ):
             if i >= MAX_PRINT:
-               self.stdout.write(
-                   self.style.WARNING(
-                       f"... ({len(image_paths) - MAX_PRINT} more samples not shown)"
-                      )
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"... ({len(image_paths) - MAX_PRINT} more samples not shown)"
+                    )
                 )
-               break
+                break
 
             frame_id = frame_ids[i] if i < len(frame_ids) else None
-            old_exam = (
-                old_examination_ids[i] if i < len(old_examination_ids) else None
-            )
-            
+            old_exam = old_examination_ids[i] if i < len(old_examination_ids) else None
+
             self.stdout.write(
                 f"  Sample {i}:"
                 f"\n    path = {path!r}"

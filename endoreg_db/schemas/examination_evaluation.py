@@ -3,12 +3,14 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 
+
 class RequirementEval(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
     satisfied: bool
     message: Optional[str] = None  # optional explanation
+
 
 class RequirementSetEval(BaseModel):
     id: int
@@ -17,6 +19,7 @@ class RequirementSetEval(BaseModel):
     is_satisfied: bool
     requirements: List[RequirementEval] = Field(default_factory=list)
     linked_sets: List["RequirementSetEval"] = Field(default_factory=list)
+
 
 class ExaminationEvalReport(BaseModel):
     examination_id: int | None = None

@@ -1017,7 +1017,7 @@ def update_sensitive_meta_from_dict(
                             logger.debug(
                                 "Parsed string patient_dob '%s' during update to aware datetime: %s",
                                 v,
-                            aware_dob,
+                                aware_dob,
                             )
                         else:
                             logger.warning(
@@ -1025,35 +1025,37 @@ def update_sensitive_meta_from_dict(
                                 v,
                             )
                             continue
-                    elif k == "examination_date":
-                        if isinstance(v, str):
-                            parsed = parse_any_date(v)
-                            if parsed:
-                                value_to_set = parsed  # field is DateField, so keep it as date
-                                logger.debug(
-                                    "Parsed string examination_date '%s' during update to date: %s",
-                                    v,
-                                    value_to_set,
-                                )
-                            else:
-                                logger.warning(
-                                    "Could not parse examination_date string '%s' during update, skipping",
-                                    v,
-                                )
-                                continue
-                        elif isinstance(v, date):
-                            value_to_set = v
+                elif k == "examination_date":
+                    if isinstance(v, str):
+                        parsed = parse_any_date(v)
+                        if parsed:
+                            value_to_set = (
+                                parsed  # field is DateField, so keep it as date
+                            )
+                            logger.debug(
+                                "Parsed string examination_date '%s' during update to date: %s",
+                                v,
+                                value_to_set,
+                            )
+                        else:
+                            logger.warning(
+                                "Could not parse examination_date string '%s' during update, skipping",
+                                v,
+                            )
+                            continue
+                    elif isinstance(v, date):
+                        value_to_set = v
 
                         # --- End Conversion ---
 
-                        # Check if patient name is changing
-                        if (
-                            k in ["patient_first_name", "patient_last_name"]
-                            and getattr(instance, k) != value_to_set
-                        ):
-                            patient_name_changed = True
+                # Check if patient name is changing
+                if (
+                    k in ["patient_first_name", "patient_last_name"]
+                    and getattr(instance, k) != value_to_set
+                ):
+                    patient_name_changed = True
 
-                        setattr(instance, k, value_to_set)  # Use value_to_set
+                setattr(instance, k, value_to_set)  # Use value_to_set
 
             except Exception as e:
                 logger.error(

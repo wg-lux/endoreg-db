@@ -2,8 +2,6 @@
 Django management command to create ModelMeta from Hugging Face model.
 """
 
-from pathlib import Path
-
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
 from huggingface_hub import hf_hub_download
@@ -126,7 +124,7 @@ class Command(BaseCommand):
             raise CommandError("ModelMeta creation failed") from e
 
 
-#TODO Review slimmed down version using service endoreg_db/services/model_meta_from_hf.py
+# TODO Review slimmed down version using service endoreg_db/services/model_meta_from_hf.py
 # your management command file
 # from django.core.management.base import BaseCommand, CommandError
 

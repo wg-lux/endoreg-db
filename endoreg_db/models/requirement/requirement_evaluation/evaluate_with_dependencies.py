@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 RequirementStatus = Literal["PASSED", "FAILED", "BLOCKED", "ERROR"]
 
+
 def topologically_sort_requirement_sets(
     sets: Iterable[RequirementSet],
 ) -> List[RequirementSet]:
@@ -42,8 +43,6 @@ def topologically_sort_requirement_sets(
         raise ValueError("RequirementSet dependency cycle detected.")
 
     return [id_map[sid] for sid in ordered_ids]
-
-
 
 
 def evaluate_requirement_sets_with_dependencies(
@@ -145,9 +144,7 @@ def evaluate_requirement_sets_with_dependencies(
                     req_set.id,
                     req.id,
                 )
-                msg = (
-                    f"Technischer Fehler bei der Auswertung von '{req.name}': {exc}"
-                )
+                msg = f"Technischer Fehler bei der Auswertung von '{req.name}': {exc}"
                 set_results[set_id][req.id] = ("ERROR", msg)
 
         # derive set status
@@ -161,7 +158,9 @@ def evaluate_requirement_sets_with_dependencies(
 
     return set_results
 
-#TODO Remove when sure that no per requirement evaluation will happen. Needs the depends on attribute for the reatuirements.
+
+# TODO Remove when sure that no per requirement evaluation will happen. Needs the depends on attribute for the reatuirements.
+
 
 def topologically_sort_requirements(
     requirements: Iterable[Requirement],
@@ -199,6 +198,7 @@ def topologically_sort_requirements(
         raise ValueError("Requirement dependency cycle detected.")
 
     return [id_map[rid] for rid in ordered_ids]
+
 
 def evaluate_requirements_with_dependencies(
     requirements: Iterable[Requirement],
@@ -252,7 +252,7 @@ def evaluate_requirements_with_dependencies(
             met = False
             results[req.id] = (
                 "FAILED",
-                f"Nachtragebedarf bei der Auswertung von '{req.name}': {exc}"
+                f"Nachtragebedarf bei der Auswertung von '{req.name}': {exc}",
             )
         except Exception as exc:
             met = False

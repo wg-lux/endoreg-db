@@ -1,13 +1,14 @@
 from pathlib import Path
 import shutil
 
+
 def extract_selected_frames(
     video_path: Path,
     frame_numbers: list,
     output_dir: Path,
     fps: int = 50,
     quality: int = 2,
-    ext: str = "png"
+    ext: str = "png",
 ):
     """
     Extract specific frames from a video using the same quality logic as the original extractor.
@@ -43,12 +44,21 @@ def extract_selected_frames(
             timestamp=timestamp_sec,
             output_path=str(output_file),
             quality=quality,
-            ext=ext
+            ext=ext,
         )
+
+
 import subprocess
 from pathlib import Path
 
-def extract_single_frame(input_path: str, timestamp: float, output_path: str, quality: int = 2, ext: str = "png"):
+
+def extract_single_frame(
+    input_path: str,
+    timestamp: float,
+    output_path: str,
+    quality: int = 2,
+    ext: str = "png",
+):
     """
     Extract a single frame from a video using ffmpeg.
 
@@ -61,12 +71,17 @@ def extract_single_frame(input_path: str, timestamp: float, output_path: str, qu
     """
     cmd = [
         "ffmpeg",
-        "-loglevel", "error",
-        "-ss", f"{timestamp:.3f}",
-        "-i", str(input_path),
-        "-frames:v", "1",
-        "-q:v", str(quality),
-        str(output_path)
+        "-loglevel",
+        "error",
+        "-ss",
+        f"{timestamp:.3f}",
+        "-i",
+        str(input_path),
+        "-frames:v",
+        "1",
+        "-q:v",
+        str(quality),
+        str(output_path),
     ]
 
     subprocess.run(cmd, check=True)

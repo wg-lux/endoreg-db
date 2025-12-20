@@ -10,7 +10,11 @@ from .overview import (
 
 from .validate import AnonymizationValidateView
 
-from .media_management import MediaManagementView, force_remove_media, reset_processing_status
+from .media_management import (
+    MediaManagementView,
+    force_remove_media,
+    reset_processing_status,
+)
 
 __all__ = [
     "AnonymizationOverviewView",

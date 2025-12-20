@@ -50,8 +50,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings.test"
 
 # Performance optimization settings
-SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
-RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "false").lower() == "false" and False or os.environ.get("RUN_VIDEO_TESTS", "false").lower() == "true"
+SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "false").lower() == "false"
+RUN_VIDEO_TESTS = (
+    os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
+)
 USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
 # Set up storage directory for tests
@@ -64,7 +66,9 @@ def video_asset_path():
     """Return a representative test video asset bundled with the test suite."""
     from django.conf import settings
 
-    asset_dir = Path(getattr(settings, "ASSET_DIR", settings.BASE_DIR / "tests" / "assets"))
+    asset_dir = Path(
+        getattr(settings, "ASSET_DIR", settings.BASE_DIR / "tests" / "assets")
+    )
     if not asset_dir.exists():
         pytest.skip("Video assets directory is not available")
 
@@ -99,12 +103,29 @@ def client():
     from django.test import Client as DjangoClient
 
     class SafeClient(DjangoClient):
-        def post(self, path, data=None, content_type=None, follow=False, secure=False, **extra):
+        def post(
+            self,
+            path,
+            data=None,
+            content_type=None,
+            follow=False,
+            secure=False,
+            **extra,
+        ):
             if isinstance(data, dict) and any(v is None for v in data.values()):
-                return super().post(path, data=json.dumps(data), content_type="application/json", follow=follow, secure=secure, **extra)
+                return super().post(
+                    path,
+                    data=json.dumps(data),
+                    content_type="application/json",
+                    follow=follow,
+                    secure=secure,
+                    **extra,
+                )
             # Ensure content_type is a string to satisfy type checkers
             ct = content_type or "application/x-www-form-urlencoded"
-            return super().post(path, data=data, content_type=ct, follow=follow, secure=secure, **extra)
+            return super().post(
+                path, data=data, content_type=ct, follow=follow, secure=secure, **extra
+            )
 
     return SafeClient()
 
@@ -133,7 +154,10 @@ def base_db_data(django_db_setup, cache):
     This reduces repeated database loading in individual tests.
     """
     from endoreg_db.models import Center
-    from tests.helpers.default_objects import DEFAULT_CENTER_NAME, DEFAULT_SEGMENTATION_MODEL_NAME
+    from tests.helpers.default_objects import (
+        DEFAULT_CENTER_NAME,
+        DEFAULT_SEGMENTATION_MODEL_NAME,
+    )
 
     db_cache = cache.namespace("db")
     loaded_flag = db_cache.get("base_data_loaded")
@@ -341,7 +365,9 @@ def processed_video_file(sample_video_file, base_db_data, cache):
         return cached
 
     from tests.helpers.default_objects import get_latest_segmentation_model
-    from tests.media.video.mock_video_anonym_annotation import mock_video_anonym_annotation
+    from tests.media.video.mock_video_anonym_annotation import (
+        mock_video_anonym_annotation,
+    )
 
     video_file = sample_video_file
 
@@ -376,7 +402,10 @@ def mock_video_file(base_db_data):
 
     from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
     from endoreg_db.models.state.video import VideoState
-    from tests.helpers.default_objects import DEFAULT_CENTER_NAME, DEFAULT_ENDOSCOPY_PROCESSOR_NAME
+    from tests.helpers.default_objects import (
+        DEFAULT_CENTER_NAME,
+        DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
+    )
 
     # Get required objects from base data
     center = Center.objects.get(name=DEFAULT_CENTER_NAME)
@@ -533,7 +562,9 @@ def _apply_global_video_mocks(cache):
         Smart caching system that tries real operations first, falls back to mocks.
         Caches successful real results for reuse.
         """
-        print(f"MOCK CALLED: cached_get_stream_info_with_fallback for {file_path}")  # Debug
+        print(
+            f"MOCK CALLED: cached_get_stream_info_with_fallback for {file_path}"
+        )  # Debug
         file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
         cache_key = f"stream_info_{file_path}"
         cached = ffmpeg_cache.get(cache_key)
@@ -557,7 +588,9 @@ def _apply_global_video_mocks(cache):
                     "-show_streams",
                     str(file_path),
                 ]
-                result = subprocess.run(command, capture_output=True, text=True, check=True)
+                result = subprocess.run(
+                    command, capture_output=True, text=True, check=True
+                )
                 stream_info = json.loads(result.stdout)
 
                 # Cache successful real result
@@ -589,8 +622,12 @@ def _apply_global_video_mocks(cache):
 
     def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
         """Smart transcoding that tries real operations with intelligent fallbacks."""
-        input_path = Path(input_path) if not isinstance(input_path, Path) else input_path
-        output_path = Path(output_path) if not isinstance(output_path, Path) else output_path
+        input_path = (
+            Path(input_path) if not isinstance(input_path, Path) else input_path
+        )
+        output_path = (
+            Path(output_path) if not isinstance(output_path, Path) else output_path
+        )
 
         cache_key = f"transcode_{input_path}_{output_path}"
         cached = ffmpeg_cache.get(cache_key)
@@ -602,7 +639,14 @@ def _apply_global_video_mocks(cache):
             # Use our cached stream info to check compliance
             stream_info = cached_get_stream_info_with_fallback(input_path)
             if stream_info and "streams" in stream_info:
-                video_stream = next((s for s in stream_info["streams"] if s.get("codec_type") == "video"), None)
+                video_stream = next(
+                    (
+                        s
+                        for s in stream_info["streams"]
+                        if s.get("codec_type") == "video"
+                    ),
+                    None,
+                )
                 if video_stream:
                     codec = video_stream.get("codec_name")
                     pix_fmt = video_stream.get("pix_fmt")
@@ -621,8 +665,14 @@ def _apply_global_video_mocks(cache):
         return input_path
 
     # Apply smart mocks that preserve real functionality where possible
-    mock.patch("endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info", side_effect=cached_get_stream_info_with_fallback).start()
-    mock.patch("endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required", side_effect=safe_transcode_videofile_if_required).start()
+    mock.patch(
+        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        side_effect=cached_get_stream_info_with_fallback,
+    ).start()
+    mock.patch(
+        "endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required",
+        side_effect=safe_transcode_videofile_if_required,
+    ).start()
 
 
 # ==========================================
@@ -634,12 +684,22 @@ def pytest_configure(config):
     """
     Configure pytest with custom markers for performance optimization.
     """
-    config.addinivalue_line("markers", "expensive: marks tests as expensive/resource-intensive")
-    config.addinivalue_line("markers", "video: marks tests that require video processing")
+    config.addinivalue_line(
+        "markers", "expensive: marks tests as expensive/resource-intensive"
+    )
+    config.addinivalue_line(
+        "markers", "video: marks tests that require video processing"
+    )
     config.addinivalue_line("markers", "slow: marks tests as slow running")
-    config.addinivalue_line("markers", "pipeline: marks tests that run full processing pipelines")
-    config.addinivalue_line("markers", "ai: marks tests that require AI model inference")
-    config.addinivalue_line("markers", "ffmpeg: marks tests that require FFmpeg operations")
+    config.addinivalue_line(
+        "markers", "pipeline: marks tests that run full processing pipelines"
+    )
+    config.addinivalue_line(
+        "markers", "ai: marks tests that require AI model inference"
+    )
+    config.addinivalue_line(
+        "markers", "ffmpeg: marks tests that require FFmpeg operations"
+    )
 
     # Ensure dev cache does not leak into tests
     try:
@@ -661,7 +721,11 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.video)
 
         # Auto-mark pipeline tests
-        if "pipeline" in item.nodeid or "Pipeline" in str(item.cls) if item.cls else False:
+        if (
+            "pipeline" in item.nodeid or "Pipeline" in str(item.cls)
+            if item.cls
+            else False
+        ):
             item.add_marker(pytest.mark.pipeline)
             item.add_marker(pytest.mark.expensive)
 
@@ -672,13 +736,24 @@ def pytest_collection_modifyitems(config, items):
 
         # Skip expensive tests if configured
         if SKIP_EXPENSIVE_TESTS:
-            if any(mark.name in ["expensive", "pipeline", "slow"] for mark in item.iter_markers()):
-                item.add_marker(pytest.mark.skip(reason="Skipping expensive test (SKIP_EXPENSIVE_TESTS=true)"))
+            if any(
+                mark.name in ["expensive", "pipeline", "slow"]
+                for mark in item.iter_markers()
+            ):
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason="Skipping expensive test (SKIP_EXPENSIVE_TESTS=true)"
+                    )
+                )
 
         # Skip video tests if disabled
         if not RUN_VIDEO_TESTS:
             if any(mark.name == "video" for mark in item.iter_markers()):
-                item.add_marker(pytest.mark.skip(reason="Video tests disabled (RUN_VIDEO_TESTS=false)"))
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason="Video tests disabled (RUN_VIDEO_TESTS=false)"
+                    )
+                )
 
 
 # ==========================================
@@ -756,11 +831,21 @@ def mock_ffmpeg(monkeypatch):
                 pass  # Fall back to mock
 
         # Return mock data
-        return {"width": 1920, "height": 1080, "fps": 25.0, "duration": 10.0, "frame_count": 250}
+        return {
+            "width": 1920,
+            "height": 1080,
+            "fps": 25.0,
+            "duration": 10.0,
+            "frame_count": 250,
+        }
 
     # Apply mocks - use the actual function names from the module
-    monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.extract_frames", mock_extract_frames)
-    monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info", mock_get_stream_info)
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.extract_frames", mock_extract_frames
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info", mock_get_stream_info
+    )
 
     return {
         "extract_frames": mock_extract_frames,
@@ -778,10 +863,15 @@ def mock_ai_model(base_db_data):
     from endoreg_db.models import AiModel, ModelMeta, ModelType
 
     # Ensure model type exists
-    model_type, _ = ModelType.objects.get_or_create(name="image_multilabel_classification", defaults={"description": "Test model type"})
+    model_type, _ = ModelType.objects.get_or_create(
+        name="image_multilabel_classification",
+        defaults={"description": "Test model type"},
+    )
 
     # Create or get AI model
-    ai_model, created = AiModel.objects.get_or_create(name="test_segmentation_model", defaults={"model_type": model_type})
+    ai_model, created = AiModel.objects.get_or_create(
+        name="test_segmentation_model", defaults={"model_type": model_type}
+    )
 
     # Create model metadata with proper defaults
     model_meta, created = ModelMeta.objects.get_or_create(
@@ -825,8 +915,12 @@ def mock_ai_inference(monkeypatch):
         return {label: pred for label, pred in zip(labels, prediction)}
 
     # Mock the classifier methods used in video_file_ai.py
-    monkeypatch.setattr("endoreg_db.utils.ai.predict.Classifier.pipe", mock_classifier_pipe)
-    monkeypatch.setattr("endoreg_db.utils.ai.predict.Classifier.readable", mock_classifier_readable)
+    monkeypatch.setattr(
+        "endoreg_db.utils.ai.predict.Classifier.pipe", mock_classifier_pipe
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.ai.predict.Classifier.readable", mock_classifier_readable
+    )
 
     return {"pipe": mock_classifier_pipe, "readable": mock_classifier_readable}
 
@@ -882,14 +976,24 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
             """Safe transcoding that always returns the input path (no transcoding needed)"""
             from pathlib import Path
 
-            input_path = Path(input_path) if not isinstance(input_path, Path) else input_path
+            input_path = (
+                Path(input_path) if not isinstance(input_path, Path) else input_path
+            )
             # Always return input path (assume video is already compliant)
             return input_path
 
         # Apply safe mocks for video tests
-        monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.extract_frames", safe_extract_frames)
-        monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info", safe_get_stream_info)
-        monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required", safe_transcode_videofile_if_required)
+        monkeypatch.setattr(
+            "endoreg_db.utils.video.ffmpeg_wrapper.extract_frames", safe_extract_frames
+        )
+        monkeypatch.setattr(
+            "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+            safe_get_stream_info,
+        )
+        monkeypatch.setattr(
+            "endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required",
+            safe_transcode_videofile_if_required,
+        )
 
 
 @pytest.fixture
@@ -907,7 +1011,9 @@ def smart_video_mocks(monkeypatch, cache):
         Smart caching system that tries real operations first, falls back to mocks.
         Caches successful real results for reuse.
         """
-        print(f"SMART MOCK CALLED: cached_get_stream_info_with_fallback for {file_path}")  # Debug
+        print(
+            f"SMART MOCK CALLED: cached_get_stream_info_with_fallback for {file_path}"
+        )  # Debug
         file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
         cache_key = f"stream_info_{file_path}"
         cached = ffmpeg_cache.get(cache_key)
@@ -937,9 +1043,15 @@ def smart_video_mocks(monkeypatch, cache):
 
     def safe_transcode_videofile_if_required(input_path, output_path, **kwargs):
         """Smart transcoding that provides mock functionality for tests."""
-        print(f"SMART MOCK CALLED: safe_transcode_videofile_if_required for {input_path} -> {output_path}")  # Debug
-        input_path = Path(input_path) if not isinstance(input_path, Path) else input_path
-        output_path = Path(output_path) if not isinstance(output_path, Path) else output_path
+        print(
+            f"SMART MOCK CALLED: safe_transcode_videofile_if_required for {input_path} -> {output_path}"
+        )  # Debug
+        input_path = (
+            Path(input_path) if not isinstance(input_path, Path) else input_path
+        )
+        output_path = (
+            Path(output_path) if not isinstance(output_path, Path) else output_path
+        )
 
         cache_key = f"transcode_{input_path}_{output_path}"
         cached = ffmpeg_cache.get(cache_key)
@@ -951,16 +1063,23 @@ def smart_video_mocks(monkeypatch, cache):
         stream_info = cached_get_stream_info_with_fallback(input_path)
 
         if stream_info and "streams" in stream_info:
-            video_stream = next((s for s in stream_info["streams"] if s.get("codec_type") == "video"), None)
+            video_stream = next(
+                (s for s in stream_info["streams"] if s.get("codec_type") == "video"),
+                None,
+            )
             if video_stream:
                 codec = video_stream.get("codec_name")
                 pix_fmt = video_stream.get("pix_fmt")
-                color_range = video_stream.get("color_range", "pc")  # Default to "pc" for our mock
+                color_range = video_stream.get(
+                    "color_range", "pc"
+                )  # Default to "pc" for our mock
 
                 # Check if transcoding is needed based on standard requirements
                 if codec == "h264" and pix_fmt == "yuv420p" and color_range == "pc":
                     # Already compliant, return input
-                    print(f"Video is compliant, returning input path: {input_path}")  # Debug
+                    print(
+                        f"Video is compliant, returning input path: {input_path}"
+                    )  # Debug
                     ffmpeg_cache.set(cache_key, input_path)
                     return input_path
 
@@ -975,7 +1094,9 @@ def smart_video_mocks(monkeypatch, cache):
                 ffmpeg_cache.set(cache_key, output_path)
                 return output_path
             else:
-                print(f"Input file {input_path} does not exist, returning input path anyway")
+                print(
+                    f"Input file {input_path} does not exist, returning input path anyway"
+                )
                 ffmpeg_cache.set(cache_key, input_path)
                 return input_path
         except Exception as e:
@@ -987,17 +1108,28 @@ def smart_video_mocks(monkeypatch, cache):
     print("APPLYING SMART VIDEO MOCKS...")  # Debug
 
     # 1. Patch the original functions in the ffmpeg_wrapper module
-    monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info", cached_get_stream_info_with_fallback)
-    monkeypatch.setattr("endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required", safe_transcode_videofile_if_required)
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.get_stream_info",
+        cached_get_stream_info_with_fallback,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.ffmpeg_wrapper.transcode_videofile_if_required",
+        safe_transcode_videofile_if_required,
+    )
     print("✓ Patched ffmpeg_wrapper module")
 
     # 2. Patch the imported functions in the create_from_file module
     # This is critical because the import brings the function into the local namespace
     try:
-        monkeypatch.setattr("endoreg_db.models.media.video.create_from_file.transcode_videofile_if_required", safe_transcode_videofile_if_required)
+        monkeypatch.setattr(
+            "endoreg_db.models.media.video.create_from_file.transcode_videofile_if_required",
+            safe_transcode_videofile_if_required,
+        )
         print("✓ Patched create_from_file.transcode_videofile_if_required")
     except Exception as e:
-        print(f"❌ Could not patch create_from_file.transcode_videofile_if_required: {e}")
+        print(
+            f"❌ Could not patch create_from_file.transcode_videofile_if_required: {e}"
+        )
 
     # 3. Also patch any other modules that might import these functions
     try:
@@ -1005,15 +1137,23 @@ def smart_video_mocks(monkeypatch, cache):
 
         patched_modules = []
         for module_name, module in sys.modules.items():
-            if "endoreg_db" in module_name and hasattr(module, "transcode_videofile_if_required"):
+            if "endoreg_db" in module_name and hasattr(
+                module, "transcode_videofile_if_required"
+            ):
                 try:
-                    monkeypatch.setattr(module, "transcode_videofile_if_required", safe_transcode_videofile_if_required)
+                    monkeypatch.setattr(
+                        module,
+                        "transcode_videofile_if_required",
+                        safe_transcode_videofile_if_required,
+                    )
                     patched_modules.append(module_name)
                 except Exception:
                     pass
             if "endoreg_db" in module_name and hasattr(module, "get_stream_info"):
                 try:
-                    monkeypatch.setattr(module, "get_stream_info", cached_get_stream_info_with_fallback)
+                    monkeypatch.setattr(
+                        module, "get_stream_info", cached_get_stream_info_with_fallback
+                    )
                     patched_modules.append(module_name + ".get_stream_info")
                 except Exception:
                     pass

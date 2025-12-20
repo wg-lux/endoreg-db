@@ -38,7 +38,7 @@ local_version_available = ensure_local_lx_anonymizer()
 
 # Now import from lx_anonymizer
 try:
-    from lx_anonymizer.ollama_service import ollama_service
+    from lx_anonymizer.ollama.ollama_service import ollama_service
 except ImportError:
     print("Could not import init_ollama_service from local or installed lx_anonymizer")
     raise
@@ -344,8 +344,6 @@ class Command(BaseCommand):
         finally:
             # Clean up Ollama process if we started it
             if ollama_proc is not None:
-                import signal
-
                 self.stdout.write(
                     self.style.SUCCESS("Cleaning up Ollama server process...")
                 )

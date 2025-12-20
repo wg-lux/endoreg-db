@@ -11,7 +11,9 @@ class FindingInterventionManager(models.Manager):
 class FindingIntervention(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    intervention_types = models.ManyToManyField("FindingInterventionType", blank=True, related_name="interventions")
+    intervention_types = models.ManyToManyField(
+        "FindingInterventionType", blank=True, related_name="interventions"
+    )
     information_sources = models.ManyToManyField(
         "InformationSource",
         related_name="finding_interventions",
@@ -20,10 +22,19 @@ class FindingIntervention(models.Model):
     objects = FindingInterventionManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import Contraindication, FindingInterventionType, InformationSource, LabValue
+        from endoreg_db.models import (
+            Contraindication,
+            FindingInterventionType,
+            InformationSource,
+            LabValue,
+        )
 
-        intervention_types = cast(models.manager.RelatedManager["FindingInterventionType"], intervention_types)
-        information_sources = cast(models.manager.RelatedManager["InformationSource"], information_sources)
+        intervention_types = cast(
+            models.manager.RelatedManager["FindingInterventionType"], intervention_types
+        )
+        information_sources = cast(
+            models.manager.RelatedManager["InformationSource"], information_sources
+        )
 
     def natural_key(self):
         return (self.name,)
@@ -46,7 +57,9 @@ class FindingInterventionType(models.Model):
     if TYPE_CHECKING:
 
         @property
-        def interventions(self) -> "models.manager.RelatedManager[FindingIntervention]": ...
+        def interventions(
+            self,
+        ) -> "models.manager.RelatedManager[FindingIntervention]": ...
 
     def natural_key(self):
         return (self.name,)

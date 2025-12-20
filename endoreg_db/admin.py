@@ -11,6 +11,7 @@ from endoreg_db.models import (
     FindingIntervention,  #  Import Finding Interventions
     PatientFindingIntervention,
 )
+
 # from endoreg_db.forms.patient_finding_intervention_form import (
 #     PatientFindingInterventionForm,
 # )
@@ -29,7 +30,7 @@ class PatientAdmin(admin.ModelAdmin):
 @admin.register(Examination)
 class ExaminationAdmin(admin.ModelAdmin):
     list_display = ("id", "name")
-    search_fields = ("name", )
+    search_fields = ("name",)
     list_filter = ("name",)
     ordering = ("name",)
 
@@ -45,9 +46,13 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
             "patients": Patient.objects.all(),
             "examinations": Examination.objects.all(),
             "findings": Finding.objects.all(),
-            "locations": FindingClassification.objects.filter(classification_types__name__iexact="location"),
+            "locations": FindingClassification.objects.filter(
+                classification_types__name__iexact="location"
+            ),
             "location_choices": FindingClassificationChoice.objects.none(),
-            "morphologies": FindingClassification.objects.filter(classification_types__name__iexact="morphology"),
+            "morphologies": FindingClassification.objects.filter(
+                classification_types__name__iexact="morphology"
+            ),
             "morphology_choices": FindingClassificationChoice.objects.none(),
             "finding_interventions": FindingIntervention.objects.all(),
         }
@@ -56,7 +61,7 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
     def get_location_choices_json(self, request):
         """
         Handles AJAX requests to retrieve location classification choices as JSON.
-        
+
         Expects a "location" parameter in the GET request and returns a list of matching FindingClassificationChoice objects with their IDs and names. Returns an error message with appropriate HTTP status if the parameter is missing or an exception occurs.
         """
         location_id = request.GET.get("location")
@@ -67,7 +72,7 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin):
             choices = list(
                 FindingClassificationChoice.objects.filter(
                     classifications__id=location_id,
-                    classifications__classification_types__name__iexact="location"
+                    classifications__classification_types__name__iexact="location",
                 ).values("id", "name")
             )
             if not choices:
