@@ -65,6 +65,8 @@ class TestSensitiveMetadataView:
             patient_gender=gender,
             center=center,
             external_id=None,
+            examiner_first_name="Dr.",
+            examiner_last_name="Examiner",
         )
 
         # M2M relations must be set after save

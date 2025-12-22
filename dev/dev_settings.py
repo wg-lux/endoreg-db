@@ -1,8 +1,9 @@
-from config.settings.dev import *  # noqa
-
-from pathlib import Path
-from icecream import ic
 import os
+from pathlib import Path
+
+from icecream import ic
+
+from endoreg_db.config.settings.dev import *  # noqa
 from endoreg_db.utils.paths import STORAGE_DIR
 
 # Define BASE_DIR first

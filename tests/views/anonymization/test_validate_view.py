@@ -260,7 +260,7 @@ class TestAnonymizationValidateView:
             "patient_dob": "21.03.1994",
             "examination_date": "15.02.2024",
             "casenumber": "12345",
-            "patient_gender": "unknown",
+            "patient_gender": "male",
         }
 
         def check_is_verified(payload):

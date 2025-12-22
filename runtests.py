@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+import argparse
 import os
 import sys
-import argparse
 from pathlib import Path
 
 import django
@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     tests_dir = Path(__file__).parent / "tests"
 
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.test")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
     django.setup()
     TestRunner = get_runner(settings)
     test_runner = TestRunner()

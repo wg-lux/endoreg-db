@@ -84,7 +84,7 @@ class ExampleClass2(models.Model):
 - **Platform baseline**: Most development happens on NixOS; run `devenv up` (or allow via `direnv`) before any command so the pinned toolchain and `uv` environment from `devenv.nix` activate.
 - **Dev shell**: Once inside the shell, use `devenv task run env:build` to refresh `.env` via `env_setup.py`; the task relies on `.devenv-vars.json` generated during shell entry.
 - **Python entry**: Always call `uv run ...` (e.g. `uv run python manage.py migrate`) so dependencies resolve inside `.devenv/state/venv`.
-- **Settings switch**: `DJANGO_SETTINGS_MODULE` defaults to `config.settings.dev`; tests use `config.settings.test` which persists an SQLite DB at `data/tests/db/test_db.sqlite3`.
+- **Settings switch**: `DJANGO_SETTINGS_MODULE` defaults to `endoreg_db.config.settings.dev`; tests use `endoreg_db.config.settings.test` which persists an SQLite DB at `data/tests/db/test_db.sqlite3`.
 - **External repos**: LX anonymizer support is expected (`lx-anonymizer>=0.8.2.1`); the Nix enter hook can clone it—check this before debugging anonymization failures.
 
 ## Testing

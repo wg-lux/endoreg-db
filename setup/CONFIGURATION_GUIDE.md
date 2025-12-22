@@ -15,7 +15,7 @@ Legacy settings (prod_settings.py, dev/dev_settings.py, tests/test_settings.py) 
 
 - Use helpers in `endoreg_db/config/env.py` (env_str, env_bool, env_int, env_path).
 - .env is not loaded during pytest to prevent test runs from picking up dev settings.
-- Under pytest, `DJANGO_SETTINGS_MODULE` is forced to `config.settings.test`.
+- Under pytest, `DJANGO_SETTINGS_MODULE` is forced to `endoreg_db.config.settings.test`.
 
 ## Key environment variables
 
@@ -26,18 +26,18 @@ General
 - IO_DIR: Input Output dir, here data dropoff and export is handled.
 - TIME_ZONE: defaults to Europe/Berlin.
 
-Development (config.settings.dev)
+Development (endoreg_db.config.settings.dev)
 - DEV_DB_ENGINE: default django.db.backends.sqlite3
 - DEV_DB_NAME: default BASE_DIR/dev_db.sqlite3
 - DEV_DB_USER, DEV_DB_PASSWORD, DEV_DB_HOST, DEV_DB_PORT: used for non-SQLite engines.
 
-Testing (config.settings.test)
+Testing (endoreg_db.config.settings.test)
 - TEST_DB_ENGINE: default django.db.backends.sqlite3
 - TEST_DB_NAME: default data/tests/db/test_db.sqlite3
 - TEST_DB_FILE: alternative way to set SQLite DB path
 - TEST_DISABLE_MIGRATIONS: true|false (default false)
 
-Production (config.settings.prod)
+Production (endoreg_db.config.settings.prod)
 - DJANGO_SECRET_KEY: required (must be a strong random value; never commit real secrets)
 - DJANGO_DEBUG: true|false (use false in production)
 - DJANGO_ALLOWED_HOSTS: comma-separated
@@ -67,12 +67,12 @@ The command automatically detects your cache configuration:
 Use `--skip-ai-setup` if AI video processing features are not needed, or `--force-recreate` to recreate AI metadata.
 
 This repo standalone (local):
-- Development server: DJANGO_SETTINGS_MODULE=config.settings.dev python manage.py runserver
+- Development server: DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.dev python manage.py runserver
 - Tests (persistent test DB): pytest --reuse-db --create-db
 - Clean test DB: rm -f data/tests/db/test_db.sqlite3
 
 CI tips
-- Use DJANGO_SETTINGS_MODULE=config.settings.test
+- Use DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test
 - First run use --create-db to run migrations once; subsequent runs can cache the database file.
 - Override TEST_DB_NAME to a workspace cache path if needed.
 
@@ -80,8 +80,8 @@ CI tips
 - Ensure devenv.nix and direnv don’t mutate repo files. Editor should inherit direnv env if used.
 
 ## Removing legacy settings
-- Replace imports of prod_settings, dev/dev_settings.py, tests/test_settings.py with config.settings.prod/dev/test.
-- Update scripts: scripts/django_setup.py, check_video_files.py, etc., to default to config.settings.dev/test.
+- Replace imports of prod_settings, dev/dev_settings.py, tests/test_settings.py with endoreg_db.config.settings.prod/dev/test.
+- Update scripts: scripts/django_setup.py, check_video_files.py, etc., to default to endoreg_db.config.settings.dev/test.
 
 ## AI Model Setup (for video processing features)
 

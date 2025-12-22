@@ -32,7 +32,6 @@ If these fail → the API part of RBAC is broken and the frontend will not work 
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-
 from endoreg_db.models import Patient
 
 User = get_user_model()
@@ -62,6 +61,7 @@ class PatientApiRBACTests(TestCase):
 
         This should return HTTP 200 OK.
         """
+
         user = User.objects.create_user(username="editor", password="pw")
         user.groups.add(self.data_read)
 
