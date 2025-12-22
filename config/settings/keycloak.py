@@ -59,7 +59,7 @@ EXTRA_MIDDLEWARE = [
 
 # -----------------------------
 # DRF AUTHENTICATION CHAIN
-# -----------------------------
+# ----------------------------
 
 # DRF authentication classes the API will try in order:
 # 1) SessionAuthentication – for browsers (Django session cookie)
