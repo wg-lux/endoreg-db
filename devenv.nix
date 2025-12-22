@@ -24,7 +24,6 @@ let
   buildInputs = with pkgs; [
     python312
     stdenv.cc.cc
-    tesseract
     glib
     openssh
     cmake
@@ -42,6 +41,7 @@ let
     glib
     zlib
     ollama.out
+    tesseract
   ];
   
   SYNC_CMD = "uv sync --extra dev --extra docs";

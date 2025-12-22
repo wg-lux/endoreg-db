@@ -5,7 +5,7 @@ import logging
 from django.http import JsonResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.generics import ListAPIView
+from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
@@ -31,52 +31,68 @@ class NoPagination(PageNumberPagination):
     page_size = None
 
 
-class AnonymizationOverviewView(ListAPIView):
+class AnonymizationOverviewView(APIView):
     """
     GET /api/anonymization/items/overview/
-    --------------------------------------
-    Returns a flat list (Video + report) ordered by newest upload first.
+    
+    Fetches both VideoFiles and RawPdfFiles, combines them into a single 
+    chronological list, and serializes them for the Anonymization Dashboard.
     """
-
-    serializer_class = FileOverviewSerializer
-    # permission_classes = DEBUG_PERMISSIONS
     permission_classes = [PolicyPermission]
-    pagination_class = NoPagination
 
-    def get_queryset(self):
-        """
-        Returns a combined queryset of VideoFile and RawPdfFile instances.
-        """
-        # 1) VideoFile queryset - only fields that exist on VideoFile
-        qs_video = (
-            VideoFile.objects.select_related("state", "sensitive_meta")
-            .prefetch_related("label_video_segments__state")
-            .only(
-                "id",
-                "original_file_name",
-                "raw_file",
-                "uploaded_at",
-                "state",
-                "sensitive_meta",
-            )
-        )
-        # 2) RawPdfFile queryset - only fields that exist on RawPdfFile
-        qs_pdf = RawPdfFile.objects.select_related("sensitive_meta").only(
-            "id", "file", "date_created", "text", "anonymized_text", "sensitive_meta"
+    def get(self, request) -> Response:
+        # 1. Fetch Videos
+        # select_related 'state' and 'sensitive_meta' to allow the serializer 
+        # to access them without triggering extra DB queries.
+        videos = VideoFile.objects.select_related(
+            "state", 
+            "sensitive_meta"
+        ).only(
+            "id", 
+            "original_file_name", 
+            "raw_file",       # Needed for filename and size
+            "uploaded_at",    # Needed for createdAt
+            "state",          # Needed for anonymizationStatus
+            "sensitive_meta"  # Needed for sensitiveMetaId
         )
 
-        return list(qs_video) + list(qs_pdf)
+        # 2. PDFs: REMOVED 'text', 'anonymized_text'. ADDED 'state'.
+        pdfs = RawPdfFile.objects.select_related(
+            "state",          # <--- CRITICAL: Prevents N+1 queries
+            "sensitive_meta"
+        ).only(
+            "id", 
+            "file",           # Needed for filename and size
+            "date_created",   # Needed for createdAt
+            "state",          # Needed for anonymizationStatus
+            "sensitive_meta"  # Needed for sensitiveMetaId
+        )
 
+        # 3. Combine in Python
+        combined_list = list(videos) + list(pdfs)
+
+        # 4. Sort by Date (Newest first)
+        # We use a lambda to handle the different date field names
+        combined_list.sort(
+            key=lambda obj: obj.uploaded_at if isinstance(obj, VideoFile) else obj.date_created,
+            reverse=True
+        )
+
+        # 5. Serialize and Return
+        # 'many=True' tells DRF to iterate over the list and call to_representation for each item
+        serializer = FileOverviewSerializer(combined_list, many=True)
+        
+        return Response(serializer.data)
 
 # ---------- status with polling protection ------------------------------
 @api_view(["GET"])
 @permission_classes(PERMS)
-def anonymization_status(request, file_id: int):
+def anonymization_status(request, file_id: int, kind: str) -> Response:
     """
     Get anonymization status with polling rate limiting.
     """
     # Ermittele erst den echten Typ und Status
-    info = AnonymizationService.get_status(file_id)
+    info = AnonymizationService.get_status(file_id, kind=kind)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 

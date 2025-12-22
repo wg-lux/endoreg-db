@@ -29,7 +29,7 @@ url_patterns = [
         name="start_anonymization",
     ),
     path(
-        "anonymization/<int:file_id>/status/",
+        "anonymization/<int:file_id>/status/<str:kind>/",
         anonymization_status,
         name="get_anonymization_status",
     ),

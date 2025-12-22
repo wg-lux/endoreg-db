@@ -14,7 +14,8 @@ maintainers = [
 ]
 name = "endoreg-db"
 readme = "README.md"
-version = "0.8.9.11"
+dynamic = ["version"] 
+
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -94,6 +95,9 @@ dependencies = [
     "types-tqdm>=4.67.0.20250809",
     "types-django-filter>=25.2.0.20251010",
 ]
+
+
+
 requires-python = ">=3.12,<3.13"
 
 [project.urls]
@@ -102,15 +106,32 @@ Repository = "https://github.com/wg-lux/endoreg-db"
 
 [project.optional-dependencies]
 dev = [
-  # Add development tools here, e.g.:
-  # "pytest",
-  # "ruff",
-  # "black",
+  "pytest",
+  "ruff",
+  "black",
+  "mypy"
+]
+
+docs = [
+  "linkify-it-py>=2.0.3",
+  "myst-parser>=4.0.1",
+  "sphinx-autodoc-typehints>=3.5.2",
+  "sphinx-copybutton>=0.5.2",
+  "sphinx>=8.2.3,<9.0",
+  "furo>=2025.9.25",
 ]
 
 [build-system]
 build-backend = "hatchling.build"
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"] 
+
+
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "endoreg_db/_version.py" # Optional: Writes version to a file you can import
 
 [tool.setuptools]
 packages = ["endoreg_db"]

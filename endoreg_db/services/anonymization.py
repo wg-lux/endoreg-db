@@ -1,7 +1,7 @@
 # endoreg_db/services/anonymization.py
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
 from django.db import transaction
 
@@ -33,47 +33,48 @@ class AnonymizationService:
 
     # ---------- READ ----------------------------------------------------
     @staticmethod
-    def get_status(file_id: int):
+    def get_status(file_id: int, kind: Optional[str] = None) -> Optional[dict]:
         """
         Retrieve the anonymization status and media type for a file by its ID.
 
         Returns:
             dict or None: A dictionary containing the file's media type and anonymization status if found, or None if no matching file exists.
         """
-        vf = (
-            VideoFile.objects.select_related("state", "sensitive_meta")
-            .filter(pk=file_id)
-            .first()
-        )
-        if vf:
-            return {
-                "mediaType": "video",
-                "anonymizationStatus": vf.state.anonymization_status
-                if vf.state
-                else "not_started",
-                "fileExists": file_exists(vf.raw_file),
-                "uuid": str(vf.video_hash) if vf.video_hash else None,
-            }
-
-        pdf = (
-            RawPdfFile.objects.select_related("state", "sensitive_meta")
-            .filter(pk=file_id)
-            .first()
-        )
-        if pdf:
-            return {
-                "mediaType": "pdf",
-                "anonymizationStatus": pdf.state.anonymization_status
-                if pdf.state
-                else "not_started",
-                "fileExists": file_exists(pdf.file),
-                "hash": pdf.pdf_hash,
-            }
-        return None
+        if kind == "video" or kind is None:
+            vf = (
+                VideoFile.objects.select_related("state", "sensitive_meta")
+                .filter(pk=file_id)
+                .first()
+            )
+            if vf:
+                return {
+                    "mediaType": "video",
+                    "anonymizationStatus": vf.state.anonymization_status
+                    if vf.state
+                    else "not_started",
+                    "fileExists": file_exists(vf.raw_file),
+                    "uuid": str(vf.video_hash) if vf.video_hash else None,
+                }
+        if kind == "report" or kind is None:
+            pdf = (
+                RawPdfFile.objects.select_related("state", "sensitive_meta")
+                .filter(pk=file_id)
+                .first()
+            )
+            if pdf:
+                return {
+                    "mediaType": "pdf",
+                    "anonymizationStatus": pdf.state.anonymization_status
+                    if pdf.state
+                    else "not_started",
+                    "fileExists": file_exists(pdf.file),
+                    "hash": pdf.pdf_hash,
+                }
+            return None
 
     # ---------- COMMANDS ------------------------------------------------
     @transaction.atomic
-    def start(self, file_id: int):
+    def start(self, file_id: int, kind: Optional[str] = None) -> Optional[str]:
         """
         Start anonymization process for a file by its ID.
 
@@ -84,130 +85,131 @@ class AnonymizationService:
             str or None: Media type if successful, None if file not found
         """
         # Try VideoFile first
-        vf = (
-            VideoFile.objects.select_related(
-                "state", "sensitive_meta", "center", "video_meta__processor"
+        if kind == "video" or kind is None:
+            vf = (
+                VideoFile.objects.select_related(
+                    "state", "sensitive_meta", "center", "video_meta__processor"
+                )
+                .filter(pk=file_id)
+                .first()
             )
-            .filter(pk=file_id)
-            .first()
-        )
-        if vf:
-            try:
-                logger.info(f"Starting video anonymization for VideoFile ID: {file_id}")
+            if vf:
+                try:
+                    logger.info(f"Starting video anonymization for VideoFile ID: {file_id}")
 
-                # Check if already processed
-                if vf.state and vf.state.anonymized:
-                    logger.info(f"VideoFile {file_id} already anonymized, skipping")
+                    # Check if already processed
+                    if vf.state and vf.state.anonymized:
+                        logger.info(f"VideoFile {file_id} already anonymized, skipping")
+                        return "video"
+
+                    # Get file path
+                    file_path = vf.get_raw_file_path()
+                    if not file_path or not Path(file_path).exists():
+                        logger.error(
+                            f"Raw file not found for VideoFile {file_id}: {file_path}"
+                        )
+                        return None
+
+                    # Get processor name
+                    processor_name = None
+                    if vf.video_meta and vf.video_meta.processor:
+                        processor_name = vf.video_meta.processor.name
+                    elif hasattr(vf, "processor") and vf.processor:
+                        processor_name = vf.processor.name
+
+                    # Get center name
+                    center_name = vf.center.name if vf.center else "unknown_center"
+
+                    # Mark as started
+                    if vf.state:
+                        vf.state.processing_started = True
+                        vf.state.save(update_fields=["processing_started"])
+
+                    # Use VideoImportService for anonymization
+                    safe_processor_name = processor_name or "unknown_processor"
+                    self.video_service.import_and_anonymize(
+                        file_path=file_path,
+                        center_name=center_name,
+                        processor_name=safe_processor_name,
+                    )
+
+                    logger.info(
+                        f"Video anonymization completed for VideoFile ID: {file_id}"
+                    )
                     return "video"
 
-                # Get file path
-                file_path = vf.get_raw_file_path()
-                if not file_path or not Path(file_path).exists():
-                    logger.error(
-                        f"Raw file not found for VideoFile {file_id}: {file_path}"
-                    )
-                    return None
+                except Exception as e:
+                    logger.error(f"Failed to anonymize VideoFile {file_id}: {e}")
+                    # Mark as failed if state exists
+                    if vf.state:
+                        vf.state.processing_started = (
+                            False  # Mark processing as not started due to failure
+                        )
+                        vf.state.save(update_fields=["processing_started"])
+                    raise
+        elif kind == "report" or kind is None:
+            # Try RawPdfFile
+            pdf = (
+                RawPdfFile.objects.select_related("state", "sensitive_meta", "center")
+                .filter(pk=file_id)
+                .first()
+            )
+            if pdf:
+                try:
+                    logger.info(f"Starting report processing for RawPdfFile ID: {file_id}")
 
-                # Get processor name
-                processor_name = None
-                if vf.video_meta and vf.video_meta.processor:
-                    processor_name = vf.video_meta.processor.name
-                elif hasattr(vf, "processor") and vf.processor:
-                    processor_name = vf.processor.name
+                    # Check if already processed
+                    if pdf.state and getattr(pdf.state, "anonymized", False):
+                        logger.info(f"RawPdfFile {file_id} already processed, skipping")
+                        return "pdf"
 
-                # Get center name
-                center_name = vf.center.name if vf.center else "unknown_center"
+                    file_field = pdf.file
+                    if not file_field or not file_field.name:
+                        logger.error(f"report file not found for RawPdfFile {file_id}")
+                        return None
 
-                # Mark as started
-                if vf.state:
-                    vf.state.processing_started = True
-                    vf.state.save(update_fields=["processing_started"])
+                    if not file_exists(file_field):
+                        logger.error(
+                            "report file missing from storage for RawPdfFile %s", file_id
+                        )
+                        return None
 
-                # Use VideoImportService for anonymization
-                safe_processor_name = processor_name or "unknown_processor"
-                self.video_service.import_and_anonymize(
-                    file_path=file_path,
-                    center_name=center_name,
-                    processor_name=safe_processor_name,
-                    save_video=True,
-                    delete_source=False,
-                )
+                    # Get center name
+                    center_name = pdf.center.name if pdf.center else "unknown_center"
 
-                logger.info(
-                    f"Video anonymization completed for VideoFile ID: {file_id}"
-                )
-                return "video"
+                    # Mark as started
+                    if pdf.state:
+                        pdf.state.processing_started = True
+                        pdf.state.save(update_fields=["processing_started"])
 
-            except Exception as e:
-                logger.error(f"Failed to anonymize VideoFile {file_id}: {e}")
-                # Mark as failed if state exists
-                if vf.state:
-                    vf.state.processing_started = (
-                        False  # Mark processing as not started due to failure
-                    )
-                    vf.state.save(update_fields=["processing_started"])
-                raise
+                    with ensure_local_file(file_field) as local_path:
+                        self.pdf_service.import_and_anonymize(
+                            file_path=local_path,
+                            center_name=center_name,
+                        )
 
-        # Try RawPdfFile
-        pdf = (
-            RawPdfFile.objects.select_related("state", "sensitive_meta", "center")
-            .filter(pk=file_id)
-            .first()
-        )
-        if pdf:
-            try:
-                logger.info(f"Starting report processing for RawPdfFile ID: {file_id}")
-
-                # Check if already processed
-                if pdf.state and getattr(pdf.state, "anonymized", False):
-                    logger.info(f"RawPdfFile {file_id} already processed, skipping")
+                    logger.info(f"report processing completed for RawPdfFile ID: {file_id}")
                     return "pdf"
 
-                file_field = pdf.file
-                if not file_field or not file_field.name:
-                    logger.error(f"report file not found for RawPdfFile {file_id}")
-                    return None
+                except Exception as e:
+                    logger.error(f"Failed to process RawPdfFile {file_id}: {e}")
+                    # Mark as failed if state exists
+                    if pdf.state and hasattr(pdf.state, "processing_failed"):
+                        pdf.state.save(update_fields=["processing_failed"])
+                    elif pdf.sensitive_meta and hasattr(
+                        pdf.sensitive_meta, "processing_failed"
+                    ):
+                        pdf.sensitive_meta.save(update_fields=["processing_failed"])
+                    raise
 
-                if not file_exists(file_field):
-                    logger.error(
-                        "report file missing from storage for RawPdfFile %s", file_id
-                    )
-                    return None
-
-                # Get center name
-                center_name = pdf.center.name if pdf.center else "unknown_center"
-
-                # Mark as started
-                if pdf.state:
-                    pdf.state.processing_started = True
-                    pdf.state.save(update_fields=["processing_started"])
-
-                with ensure_local_file(file_field) as local_path:
-                    self.pdf_service.import_and_anonymize(
-                        file_path=local_path,
-                        center_name=center_name,
-                    )
-
-                logger.info(f"report processing completed for RawPdfFile ID: {file_id}")
-                return "pdf"
-
-            except Exception as e:
-                logger.error(f"Failed to process RawPdfFile {file_id}: {e}")
-                # Mark as failed if state exists
-                if pdf.state and hasattr(pdf.state, "processing_failed"):
-                    pdf.state.save(update_fields=["processing_failed"])
-                elif pdf.sensitive_meta and hasattr(
-                    pdf.sensitive_meta, "processing_failed"
-                ):
-                    pdf.sensitive_meta.save(update_fields=["processing_failed"])
-                raise
-
-        logger.warning(f"No file found with ID: {file_id}")
-        return None
+            logger.warning(f"No file found with ID: {file_id}")
+            return None
 
     @staticmethod
     @transaction.atomic
-    def validate(file_id: int):
+    def validate(file_id: int) -> None | Literal['video'] | Literal['pdf']:
+        from endoreg_db.views.anonymization.validate import AnonymizationValidateView
+        
         vf = VideoFile.objects.select_related("state").filter(pk=file_id).first()
         if vf:
             state = vf.state or vf.get_or_create_state()
@@ -257,6 +259,4 @@ class AnonymizationService:
                     "updatedAt": pdf.date_modified,
                 }
             )
-        return data
-
         return data
