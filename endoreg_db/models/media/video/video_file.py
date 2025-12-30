@@ -629,8 +629,16 @@ class VideoFile(models.Model):
         """
 
         self.update_video_meta()
-        # Initialize video specs
-        self.initialize_video_specs(use_raw=True)
+        try:
+            # We explicitly check this because initialize_video_specs raises RuntimeError
+            # if the file is missing, which kills the import pipeline.
+            if self.get_raw_file_path():
+                self.initialize_video_specs(use_raw=True)
+            else:
+                logger.error(f"Skipping video specs init for {self.video_hash}: Raw file path not found.")
+        except Exception as e:
+            # Log the specific error but allow the function to continue to state creation
+            logger.error(f"Failed to initialize video specs for {self.video_hash}: {e}")
 
         # Set the frame directory
         self.set_frame_dir()

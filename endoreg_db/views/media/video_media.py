@@ -55,9 +55,7 @@ class VideoMediaView(APIView):
     """
 
     # permission_classes = [EnvironmentAwarePermission]
-    # permission_classes = [EnvironmentAwarePermission]
     permission_classes = [IsAuthenticated, PolicyPermission]
-
     def get(self, request, pk=None):
         """
         Handle GET requests for video listing or detail retrieval.

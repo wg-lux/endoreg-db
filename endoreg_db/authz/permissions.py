@@ -9,7 +9,7 @@
 #
 # How it plugs in
 # ---------------
-# Add this class to DRF's global permission chain in settings (you already did):
+# Add this class to DRF's global permission chain in settings:
 #   REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] = (
 #       "endoreg_db.utils.permissions.EnvironmentAwarePermission",
 #       "endoreg_db.authz.permissions.PolicyPermission",
@@ -29,7 +29,7 @@ from rest_framework.permissions import BasePermission
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import cached_property
 from endoreg_db.utils.permissions import is_debug_mode
-from .policy import REQUIRED_ROLES, satisfies, get_needed_role
+from endoreg_db.authz.policy import REQUIRED_ROLES, satisfies, get_needed_role
 import logging
 
 logger = logging.getLogger(__name__)

@@ -1001,7 +1001,7 @@ requires-dist = [
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.10" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.11" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", specifier = ">=1.16.0" },
@@ -1794,7 +1794,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.8.9.10"
+version = "0.8.9.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1825,9 +1825,9 @@ dependencies = [
     { name = "torchaudio" },
     { name = "torchvision" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/12/80/faa4710d6f2fe7b3813c93b0f3c869972bb96491f1f2a78ececace1ecf3f/lx_anonymizer-0.8.9.10.tar.gz", hash = "sha256:466a0574e70e6f2561dc8bde21cfb3c4669ed00e8372e87467c7e97074307d10", size = 532752, upload-time = "2025-12-20T14:47:19.209Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cf/56/c310ce40777cfd68e12e9ae3d8bc539fdd8a95fee3ad718a3d726ee09dfb/lx_anonymizer-0.8.9.11.tar.gz", hash = "sha256:4165c8cc1ebbaa1b2a3a1141cbca9ee72ffa2038d26c99327da699f6816fff63", size = 532761, upload-time = "2025-12-29T17:15:56.649Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/7e/7bcfb0827f6df5faf2c737d04596ec5c72dad70a3f50aee6ba56e8810d3a/lx_anonymizer-0.8.9.10-py3-none-any.whl", hash = "sha256:d2e46285ef4b21488ee8f89a62c2b512eeef77eac393daaaa042a8dc743b4b71", size = 692020, upload-time = "2025-12-20T14:47:17.351Z" },
+    { url = "https://files.pythonhosted.org/packages/20/0f/62410889f057b9dc1c7524298359387847ee7b38d6780d9dc50683de46df/lx_anonymizer-0.8.9.11-py3-none-any.whl", hash = "sha256:7bbed7ba50c9669109198ed01711bc8549ae7b42e964a779e67ad0fc5598f24c", size = 692030, upload-time = "2025-12-29T17:15:54.167Z" },
 ]
 
 [package.optional-dependencies]
