@@ -36,7 +36,7 @@ class Command(BaseCommand):
             "--jsonl-path",
             type=str,
             default=str(
-                Path(settings.BASE_DIR)
+                Path(settings.BASE_DIR).parent
                 / "data"
                 / "legacy_data"
                 / "legacy_img_dicts.jsonl"
@@ -46,7 +46,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--images-root",
             type=str,
-            default=str(Path(settings.BASE_DIR) / "data" / "legacy_data" / "images"),
+            default=str(Path(settings.BASE_DIR).parent / "data" / "legacy_data" / "images"),
             help="Root directory containing legacy images.",
         )
         # All imported frames need to belong to some VideoFile.

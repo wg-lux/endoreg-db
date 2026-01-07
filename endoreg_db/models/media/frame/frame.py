@@ -24,13 +24,16 @@ class Frame(models.Model):
     frame_number = models.PositiveIntegerField()
     relative_path = models.CharField(max_length=512)
     timestamp = models.FloatField(null=True, blank=True)
-
+    # to keep the track of old examination id, later we can remove that
+    old_examination_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Legacy old_examination_id from JSONL import, used for group-wise splitting.",
+    )
     is_extracted = models.BooleanField(default=False)
 
     if TYPE_CHECKING:
-        image_classification_annotations: models.QuerySet[
-            "ImageClassificationAnnotation"
-        ]
+        image_classification_annotations: models.QuerySet["ImageClassificationAnnotation"]
         video: models.ForeignKey["VideoFile"]
 
     class Meta:
@@ -57,9 +60,7 @@ class Frame(models.Model):
         Returns:
             QuerySet: A queryset of related ImageClassificationAnnotation objects filtered to those whose information source type is "prediction".
         """
-        return self.image_classification_annotations.filter(
-            information_source__information_source_types__name="prediction"
-        )
+        return self.image_classification_annotations.filter(information_source__information_source_types__name="prediction")
 
     @property
     def manual_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
@@ -69,9 +70,7 @@ class Frame(models.Model):
         Returns:
             QuerySet: A queryset of related ImageClassificationAnnotation objects whose information source type is "manual_annotation".
         """
-        return self.image_classification_annotations.filter(
-            information_source__information_source_types__name="manual_annotation"
-        )
+        return self.image_classification_annotations.filter(information_source__information_source_types__name="manual_annotation")
 
     @property
     def has_predictions(self) -> bool:
@@ -100,38 +99,19 @@ class Frame(models.Model):
         """
         frame_path = self.file_path
         if not frame_path.exists():
-            logger.warning(
-                "Frame file not found at %s for Frame %s (Video %s)",
-                frame_path,
-                self.pk,
-                self.video.video_hash,
-            )
+            logger.warning("Frame file not found at %s for Frame %s (Video %s)", frame_path, self.pk, self.video.uuid)
             return None
         try:
             image = cv2.imread(str(frame_path))
             if image is None:
-                logger.warning(
-                    "cv2.imread returned None for frame file %s (Frame %s, Video %s)",
-                    frame_path,
-                    self.pk,
-                    self.video.video_hash,
-                )
+                logger.warning("cv2.imread returned None for frame file %s (Frame %s, Video %s)", frame_path, self.pk, self.video.uuid)
             return image
         except Exception as e:
-            logger.error(
-                "Error reading frame file %s (Frame %s, Video %s): %s",
-                frame_path,
-                self.pk,
-                self.video.video_hash,
-                e,
-                exc_info=True,
-            )
+            logger.error("Error reading frame file %s (Frame %s, Video %s): %s", frame_path, self.pk, self.video.uuid, e, exc_info=True)
             return None
 
     def __str__(self):
-        return f"Frame {self.frame_number} of Video {self.video.video_hash}"
+        return f"Frame {self.frame_number} of Video {self.video.uuid}"
 
-    def get_classification_annotations(
-        self,
-    ) -> models.QuerySet["ImageClassificationAnnotation"]:
+    def get_classification_annotations(self) -> models.QuerySet["ImageClassificationAnnotation"]:
         return self.image_classification_annotations.all()
