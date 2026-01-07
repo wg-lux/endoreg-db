@@ -9,6 +9,14 @@ DB_ENGINE = env_str("DEV_DB_ENGINE", "django.db.backends.sqlite3")
 DB_NAME = env_str("DEV_DB_NAME", str(BASE_DIR / "dev_db.sqlite3"))
 DB_USER = env_str("DEV_DB_USER", "")
 DB_PASSWORD = env_str("DEV_DB_PASSWORD", "")
+
+from pathlib import Path
+
+DB_PASSWORD_FILE = env_str("DEV_DB_PASSWORD_FILE", "")
+if not DB_PASSWORD and DB_PASSWORD_FILE:
+    DB_PASSWORD = Path(DB_PASSWORD_FILE).read_text(encoding="utf-8").strip()
+
+
 DB_HOST = env_str("DEV_DB_HOST", "")
 DB_PORT = env_str("DEV_DB_PORT", "")
 
