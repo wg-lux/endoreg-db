@@ -415,8 +415,24 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
             gender_obj = Gender.objects.get(name=gender_str)
             instance.patient_gender = gender_obj
         except Gender.DoesNotExist:
-            raise ValueError(f"Gender '{gender_str}' not found in database.")
-
+            # If the gender is 'unknown' (likely because name was DEFAULT_UNKNOWN),
+            # we should auto-create it rather than crashing.
+            if gender_str == "unknown" or instance.patient_first_name == DEFAULT_UNKNOWN:
+                logger.warning(
+                    f"Gender '{gender_str}' not found in DB. Auto-creating default entry."
+                )
+                gender_obj, _ = Gender.objects.get_or_create(
+                    name="unknown",
+                    defaults={
+                        "abbreviation": "?", 
+                        "description": "Auto-created default gender"
+                    }
+                )
+                instance.patient_gender = gender_obj
+            else:
+                # If it's a specific gender (e.g., 'male') that is missing, 
+                # that is a configuration error we should raise.
+                raise ValueError(f"Gender '{gender_str}' not found in database.")
     # 4. Calculate Hashes (depends on DOB, Exam Date, Center, Names)
     #
     # **IMPORTANT: Hashes are RECALCULATED on every save!**

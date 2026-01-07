@@ -1,51 +1,41 @@
-# endoreg_db/tests/models/test_model_meta.py
-
 import pytest
-
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 import endoreg_db.models.metadata.model_meta as model_meta_module
 
-
 @pytest.mark.django_db
-def test_model_meta_natural_key_and_manager_get_by_natural_key():
-    # Arrange: create minimal related objects
-    ai_model = AiModel.objects.create(
-        name="image_multilabel_classification_colonoscopy_default"
-    )
-    labelset = LabelSet.objects.create(name="test_labelset")
-
-    meta = ModelMeta.objects.create(
+def test_model_meta_natural_key_and_manager_get_by_natural_key(unique_ai_model, base_labelset):
+    # Use unique_ai_model to ensure we have a clean slate
+    meta, created = ModelMeta.objects.get_or_create(
         name="default_meta",
         version="1",
-        model=ai_model,
-        labelset=labelset,
+        model=unique_ai_model,
+        labelset=base_labelset,
     )
 
-    # Act: natural_key and manager.get_by_natural_key
+    # Act
     natural_key = meta.natural_key()
     fetched = ModelMeta.objects.get_by_natural_key(*natural_key)
 
     # Assert
-    assert natural_key == ("default_meta", "1", ai_model.name)
+    assert natural_key == ("default_meta", "1", unique_ai_model.name)
     assert fetched.pk == meta.pk
 
 
 @pytest.mark.django_db
-def test_model_meta_str_representation():
-    ai_model = AiModel.objects.create(name="my_model")
-    labelset = LabelSet.objects.create(name="labelset")
-
+def test_model_meta_str_representation(unique_ai_model, base_labelset):
+    # Arrange: Use unique_ai_model to ensure no conflicts, and base_labelset for valid defaults
     meta = ModelMeta.objects.create(
         name="meta_name",
         version="2a",
-        model=ai_model,
-        labelset=labelset,
+        model=unique_ai_model,
+        labelset=base_labelset,
         description="Some description",
     )
 
     s = str(meta)
-    assert "ModelMeta: meta_name (v2a) for my_model" == s
+    assert f"ModelMeta: meta_name (v2a) for {unique_ai_model.name}" == s
 
+# ... (Rest of the file remains exactly the same as your previous version) ...
 
 def test_get_latest_version_number_delegates_to_logic(monkeypatch):
     called = {}

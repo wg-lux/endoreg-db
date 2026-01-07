@@ -10,6 +10,7 @@ from django.core.validators import FileExtensionValidator
 
 # Removed shutil import, now in logic
 from django.db import models
+from scipy.odr import Model
 
 # Removed torch import, now in logic
 # from torch import nn
@@ -130,7 +131,7 @@ class ModelMeta(models.Model):
     )
     date_created = models.DateTimeField(auto_now_add=True)
 
-    objects = ModelMetaManager()
+    objects: ModelMetaManager = ModelMetaManager()
 
     # --- Type Hinting for Related Fields ---
     if TYPE_CHECKING:

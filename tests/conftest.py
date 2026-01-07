@@ -10,7 +10,8 @@ import os
 import shutil
 import sys
 from pathlib import Path
-
+from endoreg_db.models import AiModel, ModelMeta, ModelType
+from endoreg_db.models.label import LabelSet
 import pytest
 from django.core.files.base import ContentFile
 from django.test import override_settings
@@ -59,7 +60,35 @@ USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "
 # Set up storage directory for tests
 TEST_STORAGE_DIR = Path(__file__).parent.parent / "storage" / "tests"
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+@pytest.fixture
+def unique_ai_model(db):
+    """
+    Returns a guaranteed unique AiModel for isolated unit testing.
+    Use this instead of the default model to avoid unique constraint collisions
+    with base_db_data or migrations.
+    """
+    # Create a minimal ModelType as it is often required by internal logic
+    from endoreg_db.models import ModelType
+    model_type, _ = ModelType.objects.get_or_create(
+        name="unit_test_type",
+        defaults={"description": "Type for isolated unit tests"}
+    )
+    
+    return AiModel.objects.create(
+        name="test_unique_model_v1", 
+        model_type=model_type
+    )
 
+@pytest.fixture
+def base_labelset(db):
+    """
+    Returns a valid LabelSet with all required fields (including version).
+    """
+    labelset, _ = LabelSet.objects.get_or_create(
+        name="test_labelset_default",
+        defaults={"version": 1, "description": "Unit test labelset"}
+    )
+    return labelset
 
 @pytest.fixture
 def video_asset_path():
@@ -171,8 +200,7 @@ def base_db_data(django_db_setup, cache):
 
     from django.core.files.storage import default_storage
 
-    from endoreg_db.models import AiModel, ModelMeta, ModelType
-    from endoreg_db.models.label import LabelSet
+
     from tests.helpers.data_loader import (
         load_ai_model_data,
         load_ai_model_label_data,

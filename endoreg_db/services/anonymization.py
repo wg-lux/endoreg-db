@@ -31,16 +31,24 @@ class AnonymizationService:
         self.video_service = VideoImportService()
         self.pdf_service = ReportImportService()
 
-    # ---------- READ ----------------------------------------------------
     @staticmethod
     def get_status(file_id: int, kind: Optional[str] = None) -> Optional[dict]:
         """
-        Retrieve the anonymization status and media type for a file by its ID.
-
-        Returns:
-            dict or None: A dictionary containing the file's media type and anonymization status if found, or None if no matching file exists.
+        Retrieve status. 
+        Handles 'pdf' vs 'report' alias.
+        If kind is None, checks both tables (Video priority).
         """
-        if kind == "video" or kind is None:
+        
+        # 1. Normalize the input kind if legacy name pdf is used
+        if kind == 'pdf':
+            kind = 'report'
+            
+        # 2. Define lookup logic
+        check_video = kind == "video" or kind is None
+        check_report = kind == "report" or kind is None
+
+        # 3. Check VideoFile
+        if check_video:
             vf = (
                 VideoFile.objects.select_related("state", "sensitive_meta")
                 .filter(pk=file_id)
@@ -55,7 +63,9 @@ class AnonymizationService:
                     "fileExists": file_exists(vf.raw_file),
                     "uuid": str(vf.video_hash) if vf.video_hash else None,
                 }
-        if kind == "report" or kind is None:
+
+        # 4. Check RawPdfFile
+        if check_report:
             pdf = (
                 RawPdfFile.objects.select_related("state", "sensitive_meta")
                 .filter(pk=file_id)
@@ -70,7 +80,9 @@ class AnonymizationService:
                     "fileExists": file_exists(pdf.file),
                     "hash": pdf.pdf_hash,
                 }
-            return None
+                
+        # 5. Not found in either (or the specific requested type wasn't found)
+        return None
 
     # ---------- COMMANDS ------------------------------------------------
     @transaction.atomic

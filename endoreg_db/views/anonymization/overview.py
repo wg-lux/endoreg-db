@@ -1,6 +1,7 @@
 # endoreg_db/api/views/anonymization_overview.py
 
 import logging
+import re
 
 from django.http import JsonResponse
 from rest_framework import status
@@ -92,6 +93,8 @@ def anonymization_status(request, file_id: int, kind: str) -> Response:
     Get anonymization status with polling rate limiting.
     """
     # Ermittele erst den echten Typ und Status
+    kind = request.query_params.get("kind", kind)
+    
     info = AnonymizationService.get_status(file_id, kind=kind)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)

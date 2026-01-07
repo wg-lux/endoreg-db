@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
+# ... [Keep _convert_sequences_to_db_segments and _sequences_to_label_video_segments unchanged] ...
 def _convert_sequences_to_db_segments(
     video: "VideoFile",
     sequences: Dict[str, List[Tuple[int, int]]],
@@ -162,14 +162,11 @@ def _get_outside_segments(
 
     try:
         outside_label = Label.objects.get(name__iexact=outside_label_name)
-        return video.label_video_segments.filter(label=outside_label)
+        # FIX: Use direct filter instead of relying on 'label_video_segments' related name
+        # which might not exist or might be named differently (e.g. labelvideosegment_set)
+        return LabelVideoSegment.objects.filter(video_file=video, label=outside_label)
     except Label.DoesNotExist:
         logger.warning("Label '%s' not found in the database.", outside_label_name)
-        return LabelVideoSegment.objects.none()
-    except AttributeError:
-        logger.error(
-            "VideoFile instance does not have 'label_video_segments' related manager."
-        )
         return LabelVideoSegment.objects.none()
     except Exception as e:
         logger.error(
@@ -225,9 +222,10 @@ def _get_outside_frames(
 
     q_objects: Q | None = None
     for segment in outside_segments:
+        # FIX: Use __lte for end_frame_number to include the last frame of the segment
         clause = Q(
             frame_number__gte=segment.start_frame_number,
-            frame_number__lt=segment.end_frame_number,
+            frame_number__lte=segment.end_frame_number,
         )
         q_objects = clause if q_objects is None else q_objects | clause
 
@@ -282,26 +280,38 @@ def _label_segments_to_frame_annotations(video: "VideoFile"):
     )
     processed_count = 0
     try:
-        for lvs in video.label_video_segments.all():
-            lvs_duration = lvs.get_segment_len_in_s()
-            if lvs_duration >= 3:
-                try:
-                    lvs.generate_annotations()
-                    processed_count += 1
-                except Exception as e:
-                    logger.error(
-                        "Error generating annotations for segment %s (Video %s): %s",
-                        lvs.pk,
-                        video.video_hash,
-                        e,
-                    )
+        # Use getattr to safely access the related manager, or fall back to the default name set
+        segments = getattr(video, 'label_video_segments', getattr(video, 'labelvideosegment_set', None))
+        
+        if segments:
+            for lvs in segments.all():
+                lvs_duration = lvs.get_segment_len_in_s()
+                if lvs_duration >= 3:
+                    try:
+                        lvs.generate_annotations()
+                        processed_count += 1
+                    except Exception as e:
+                        logger.error(
+                            "Error generating annotations for segment %s (Video %s): %s",
+                            lvs.pk,
+                            video.video_hash,
+                            e,
+                        )
+        else:
+             logger.error(
+                "Could not generate frame annotations for video %s. Neither 'label_video_segments' nor 'labelvideosegment_set' related manager found.",
+                video.video_hash,
+            )
+
         logger.info(
             "Processed %d segments for frame annotations for video %s",
             processed_count,
             video.video_hash,
         )
-    except AttributeError:
+    except Exception as e:
         logger.error(
-            "Could not generate frame annotations for video %s. 'label_video_segments' related manager not found.",
+            "Unexpected error generating frame annotations for video %s: %s",
             video.video_hash,
+            e,
+            exc_info=True
         )
