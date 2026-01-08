@@ -291,22 +291,28 @@ class Command(BaseCommand):
         ai_dataset: AIDataSet | None,
     ):
         # Insert frames
-        Frame.objects.bulk_create(frames)
+        Frame.objects.bulk_create(frames, returning=True)
+        frame_map = {f.frame_number: f for f in frames}
 
         # Reload frames to obtain PKs
-        saved_frames = Frame.objects.filter(
+        """saved_frames = Frame.objects.filter(
             video=video,
             frame_number__in=[f.frame_number for f in frames],
-        )
+        )"""
 
-        frame_map = {f.frame_number: f for f in saved_frames}
+        #frame_map = {f.frame_number: f for f in saved_frames}
 
         # Fix annotation FK references
         for ann in annotations:
             ann.frame = frame_map[ann.frame.frame_number]
 
         # Insert annotations
-        ImageClassificationAnnotation.objects.bulk_create(annotations)
+        # ImageClassificationAnnotation.objects.bulk_create(annotations)
+        ImageClassificationAnnotation.objects.bulk_create(
+           annotations,
+           returning=True,
+)
+
 
         # Bulk M2M insert
         if ai_dataset is not None:
