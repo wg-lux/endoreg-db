@@ -54,49 +54,42 @@ class ImageMultilabelDataset(TypedDict):
 def _infer_labelset_from_annotations(
     annotations_qs: models.QuerySet[ImageClassificationAnnotation],
 ) -> LabelSet:
-    """
-    Try to infer a unique LabelSet from the labels used in the annotations.
-
-    Strategy:
-        1. Collect all distinct label_ids from the annotations.
-        2. Fetch all Label objects + their label_sets.
-        3. Compute the intersection of all label_sets across all labels.
-        4. If there is exactly ONE common LabelSet, return it.
-           Otherwise, raise NotImplementedError for now.
-    """
-    label_ids = list(annotations_qs.values_list("label_id", flat=True).distinct())
+    label_ids = list(
+        annotations_qs.values_list("label_id", flat=True).distinct()
+    )
     if not label_ids:
         raise ValueError("Cannot infer LabelSet: annotations queryset has no labels.")
 
-    labels_qs = Label.objects.filter(id__in=label_ids).prefetch_related("label_sets")
+    labels_qs = (
+        Label.objects
+        .filter(id__in=label_ids)
+        .prefetch_related("label_sets")
+    )
+
     labelsets_for_each_label = []
 
     for lbl in labels_qs:
-        # lbl.label_sets is the reverse of LabelSet.labels M2M
-        ls_ids = list(lbl.label_sets.values_list("id", flat=True))
+        ls_ids = set(lbl.label_sets.values_list("id", flat=True))
         if not ls_ids:
-            # This label is not part of any LabelSet -> ambiguous
             raise NotImplementedError(
-                f"Label id={lbl.id}, name='{lbl.name}' is not part of any LabelSet. "
-                "Explicit LabelSet selection is required."
+                f"Label id={lbl.id}, name='{lbl.name}' is not part of any LabelSet."
             )
-        labelsets_for_each_label.append(set(ls_ids))
+        labelsets_for_each_label.append(ls_ids)
 
-    # Intersection of all labelset id sets
     common_ids = set.intersection(*labelsets_for_each_label)
+
     if not common_ids:
         raise NotImplementedError(
-            "No common LabelSet across all labels in this AIDataSet. "
-            "Please specify a LabelSet explicitly."
-        )
-    if len(common_ids) > 1:
-        raise NotImplementedError(
-            "More than one common LabelSet found for the labels in this AIDataSet. "
-            "Please specify a LabelSet explicitly to disambiguate."
+            "No common LabelSet across all labels in this AIDataSet."
         )
 
-    ls_id = next(iter(common_ids))
-    return LabelSet.objects.get(id=ls_id)
+    if len(common_ids) > 1:
+        raise NotImplementedError(
+            "More than one common LabelSet found; please specify explicitly."
+        )
+
+    return LabelSet.objects.get(id=next(iter(common_ids)))
+
 
 
 def build_image_multilabel_dataset_from_db(
@@ -127,17 +120,26 @@ def build_image_multilabel_dataset_from_db(
         )
 
     # Get the annotation relation dynamically (for future video/text types)
-    annotations_qs = dataset.get_annotations_queryset().select_related("frame", "label")
+    #annotations_qs = dataset.get_annotations_queryset().select_related("frame", "label")
+    base_qs = (
+        dataset.get_annotations_queryset()
+        .select_related("frame", "label", "frame__video")
+)
 
-    if annotations_qs.count() == 0:
+    if not base_qs.exists():
         raise ValueError(
-            f"AIDataSet id={dataset.id} has no annotations attached. "
-            "Make sure your import script populated image_annotations."
-        )
+            f"AIDataSet id={dataset.id} has no annotations attached."
+    )
+
+    annotations_qs = base_qs.iterator(chunk_size=2000)
 
     # Decide which LabelSet to use
     if labelset is None:
-        labelset = _infer_labelset_from_annotations(annotations_qs)
+        if hasattr(dataset, "labelset") and dataset.labelset is not None:
+            labelset = dataset.labelset
+        else:
+            labelset = _infer_labelset_from_annotations(base_qs)
+
 
     # Fixed label order (= fixed column order for the label vectors)
     labels_in_order: List[Label] = labelset.get_labels_in_order()
@@ -172,6 +174,8 @@ def build_image_multilabel_dataset_from_db(
 
     # Cache frames to avoid repeated DB hits
     frame_obj_by_id: Dict[int, Frame] = {}
+    video_frame_dir: Optional[Path] = None
+
 
     for frame_id in frames_order:
         frame_annotations = anns_by_frame[frame_id]
@@ -189,6 +193,7 @@ def build_image_multilabel_dataset_from_db(
         # Start with unknown for all labels
         vec: List[Optional[int]] = [None] * num_labels
 
+
         # Fill with 1/0 where we have annotations
         for ann in frame_annotations:
             idx = label_index.get(ann.label_id)
@@ -201,7 +206,10 @@ def build_image_multilabel_dataset_from_db(
         mask: List[int] = [0 if v is None else 1 for v in vec]
 
         # Resolve absolute image path from the Frame model
-        file_path: Path = frame.file_path
+        #file_path: Path = frame.file_path
+        if video_frame_dir is None:
+            video_frame_dir = frame.video.get_frame_dir_path()
+        file_path: Path = video_frame_dir / frame.relative_path
         image_paths.append(str(file_path))
         label_vectors.append(vec)
         label_masks.append(mask)
