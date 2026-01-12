@@ -1001,7 +1001,7 @@ requires-dist = [
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.12" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.13" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", specifier = ">=1.16.0" },
@@ -1794,7 +1794,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.8.9.12"
+version = "0.8.9.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1825,9 +1825,9 @@ dependencies = [
     { name = "torchaudio" },
     { name = "torchvision" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/9a/b9ba3c5ead1ed7d8ba0ec3f816fa654c7175f5467bf7671cccbcb0a1991b/lx_anonymizer-0.8.9.12.tar.gz", hash = "sha256:5e0ccacebd30549dd6c04e4fac87f4b1c71ed00d8d25773fb00f0a751995fec4", size = 532524, upload-time = "2026-01-07T11:26:30.92Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/6f/72fe84f0611ee5fd5fba0556984a3256231a364e8c138835d3723faae395/lx_anonymizer-0.8.9.13.tar.gz", hash = "sha256:58bcb0cb234b05ce0444c8c567453ef3fc8de8a6cab2b2be5af091ee3d91ebe1", size = 532526, upload-time = "2026-01-12T09:36:26.296Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/4f/500cf203b8249a0d0d3f32b67a3c74c59fd1b7fc9d9268c46584af2f7373/lx_anonymizer-0.8.9.12-py3-none-any.whl", hash = "sha256:bcd6ea06ac4aed1b84081eb42d36490c8b89a7a5639df6996e59c884aa893a02", size = 691453, upload-time = "2026-01-07T11:26:29.101Z" },
+    { url = "https://files.pythonhosted.org/packages/20/59/7eca1b12f2944dc538db5a6c08902e034cb777bd6a04acb04ac27ce1d000/lx_anonymizer-0.8.9.13-py3-none-any.whl", hash = "sha256:30e351244160ab9c4a4f7ff407502eb9445f8c4a605a9cfb92468367ed1f6f14", size = 691453, upload-time = "2026-01-12T09:36:23.819Z" },
 ]
 
 [package.optional-dependencies]

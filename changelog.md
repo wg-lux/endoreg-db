@@ -1,3 +1,8 @@
+# Cleaning up API views, moving towards local production use.
+
+In the recent months, tests were cleaned out from most old versions, while ci/cd was reworked by enforcing mypy, ruff and pytest to run locally.
+
+
 # Reorganizing model Relationships
 
 ## Examination
