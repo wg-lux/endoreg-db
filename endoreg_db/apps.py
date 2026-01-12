@@ -1,5 +1,7 @@
 from django.apps import AppConfig
 
+from endoreg_db.authz.settings import ensure_keycloak_settings
+
 
 class EndoregDbConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
@@ -12,4 +14,4 @@ class EndoregDbConfig(AppConfig):
         This method imports media-related model modules to ensure they are registered
         and ready for use when the application starts.
         """
-        pass
+        ensure_keycloak_settings()

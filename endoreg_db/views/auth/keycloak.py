@@ -45,11 +45,24 @@ def keycloak_login(request):
     """
     redirect_uri = request.build_absolute_uri("/login/callback/")
     print("Redirect URI:", redirect_uri)
-    auth_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/auth"
+    auth_url = getattr(settings, "OIDC_OP_AUTHORIZATION_ENDPOINT", None)
+    if not auth_url:
+        keycloak_base_url = getattr(settings, "KEYCLOAK_BASE_URL", None)
+        keycloak_realm = getattr(settings, "KEYCLOAK_REALM", None)
+        if not keycloak_base_url or not keycloak_realm:
+            return HttpResponse("Keycloak settings missing.", status=500)
+        auth_url = (
+            f"{keycloak_base_url}/realms/{keycloak_realm}/protocol/openid-connect/auth"
+        )
 
     # OAuth2 Authorization Code Flow
+    client_id = getattr(settings, "OIDC_RP_CLIENT_ID", None) or getattr(
+        settings, "KEYCLOAK_CLIENT_ID", None
+    )
+    if not client_id:
+        return HttpResponse("Keycloak client id missing.", status=500)
     params = {
-        "client_id": settings.KEYCLOAK_CLIENT_ID,
+        "client_id": client_id,
         "response_type": "code",
         "scope": "openid",
         "redirect_uri": redirect_uri,
@@ -72,14 +85,32 @@ def keycloak_callback(request):
         return HttpResponse(" No authorization code provided.", status=400)
 
     # Exchanges the code for an access_token.
-    token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
+    token_url = getattr(settings, "OIDC_OP_TOKEN_ENDPOINT", None)
+    if not token_url:
+        keycloak_base_url = getattr(settings, "KEYCLOAK_BASE_URL", None)
+        keycloak_realm = getattr(settings, "KEYCLOAK_REALM", None)
+        if not keycloak_base_url or not keycloak_realm:
+            return HttpResponse("Keycloak settings missing.", status=500)
+        token_url = (
+            f"{keycloak_base_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
+        )
     redirect_uri = request.build_absolute_uri("/login/callback/")
+    client_id = getattr(settings, "OIDC_RP_CLIENT_ID", None) or getattr(
+        settings, "KEYCLOAK_CLIENT_ID", None
+    )
+    client_secret = getattr(settings, "OIDC_RP_CLIENT_SECRET", None) or getattr(
+        settings, "KEYCLOAK_CLIENT_SECRET", None
+    )
+    if not client_id:
+        return HttpResponse("Keycloak client id missing.", status=500)
+    if not client_secret:
+        return HttpResponse("Keycloak client secret missing.", status=500)
 
     data = {
         "grant_type": "authorization_code",
         "code": code,
-        "client_id": settings.KEYCLOAK_CLIENT_ID,
-        "client_secret": settings.KEYCLOAK_CLIENT_SECRET,
+        "client_id": client_id,
+        "client_secret": client_secret,
         "redirect_uri": redirect_uri,
     }
 

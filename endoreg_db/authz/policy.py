@@ -82,6 +82,17 @@ ROUTE_RESOURCE = {
     # Example for videos (if you have these ViewSets registered)
     "videos-list": "video",
     "videos-detail": "video",
+    # Media video endpoints
+    "video-list": "video",
+    "video-detail": "video",
+    "video-detail-stream": "video",
+    "video-stream": "video",
+    "video-reimport": "video",
+    "video-correction": "video",
+    "video-metadata": "video",
+    "video-apply-mask": "video",
+    "video-remove-frames": "video",
+    "get_lvs_list": "video",
     "anonymization_items_overview": "anonymization",
     # Add more mappings as your API grows
 }

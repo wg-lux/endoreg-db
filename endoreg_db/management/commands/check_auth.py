@@ -62,9 +62,9 @@ class Command(BaseCommand):
             self.stdout.write("   - Suitable for production deployment")
 
         # Check if Keycloak is configured
-        keycloak_server = getattr(settings, "KEYCLOAK_SERVER_URL", None)
-        if keycloak_server:
-            self.stdout.write(f"Keycloak Server: {keycloak_server}")
+        keycloak_base_url = getattr(settings, "KEYCLOAK_BASE_URL", None)
+        if keycloak_base_url:
+            self.stdout.write(f"Keycloak Base URL: {keycloak_base_url}")
         else:
             self.stdout.write(self.style.WARNING("⚠️  Keycloak not configured"))
 
@@ -97,7 +97,7 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("2. Set required environment variables:")
         self.stdout.write("   export DJANGO_SECRET_KEY='your-secure-secret-key'")
-        self.stdout.write("   export KEYCLOAK_CLIENT_SECRET='your-keycloak-secret'")
+        self.stdout.write("   export OIDC_RP_CLIENT_SECRET='your-keycloak-secret'")
         self.stdout.write("")
         self.stdout.write(
             "This will set DEBUG=False and enable authentication requirements."

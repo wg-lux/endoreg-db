@@ -6,6 +6,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from rest_framework import authentication, exceptions
 
+from endoreg_db.authz.settings import ensure_keycloak_settings
+
 User = get_user_model()
 
 
@@ -21,6 +23,7 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
 
     @classmethod
     def _init(cls):
+        ensure_keycloak_settings()
         if cls._jwks_client is None:
             disc = requests.get(settings.OIDC_OP_DISCOVERY_ENDPOINT, timeout=5).json()
             cls._jwks_client = PyJWKClient(disc["jwks_uri"])
