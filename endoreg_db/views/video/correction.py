@@ -155,35 +155,6 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
     }
 
 
-class VideoMetadataStatsView(APIView):
-    """
-    GET /api/media/videos/{pk}/metadata/
-
-    Retrieve analysis results for a video.
-
-    Returns:
-        {
-            "id": 1,
-            "video": 123,
-            "sensitive_frame_count": 42,
-            "sensitive_ratio": 0.05,
-            "sensitive_frame_ids": "[10, 15, 20, ...]",
-            "sensitive_frame_ids_list": [10, 15, 20, ...],
-            "sensitive_percentage": 5.0,
-            "has_analysis": true,
-            "analyzed_at": "2025-10-09T10:00:00Z"
-        }
-    """
-
-    def get(self, request, pk):
-        """Get video metadata by video ID."""
-        video = get_object_or_404(VideoFile, pk=pk)
-
-        # Get or create metadata record
-        metadata, created = VideoMetadata.objects.get_or_create(video=video)
-
-        serializer = VideoMetaSerializer(metadata, context={"request": request})
-        return Response(serializer.data)
 
 
 class VideoProcessingHistoryView(APIView):

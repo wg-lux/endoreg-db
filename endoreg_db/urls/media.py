@@ -28,17 +28,10 @@ from endoreg_db.views.video.ai import label_list
 from endoreg_db.views.video.correction import (
                                     VideoApplyMaskView,
                                     VideoCorrectionView,
-                                    VideoMetadataStatsView,
                                     VideoRemoveFramesView,
 )
+from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
 
-# ---------------------------------------------------------------------------------------
-# ANNOTATION API ENDPOINTS
-#
-# New endpoints for segment annotation management that create user-source segments
-# POST /api/annotations/ - Create new annotation (creates user segment if type=segment)
-# PATCH /api/annotations/<id>/ - Update annotation (creates user segment if timing/label changed)
-# ---------------------------------------------------------------------------------------
 
 # Simplified Meta and Validation Endpoints
 

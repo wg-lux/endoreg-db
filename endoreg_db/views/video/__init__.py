@@ -10,7 +10,7 @@ from ..media.video_media import VideoMediaView
 from .reimport import VideoReimportView
 from .video_stream import VideoStreamView
 from .video_examination_viewset import VideoExaminationViewSet
-from .video_meta_stats import VideoMetadataStatsView
+from .video_metadata import VideoMetadataStatsView
 
 
 from .segments_crud import (
