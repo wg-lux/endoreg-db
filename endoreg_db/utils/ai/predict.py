@@ -69,13 +69,15 @@ class Classifier:
         dataset = InferenceDataset(paths, crops, self.config)
         if verbose:
             ic("Dataset created")
-
+            
+        use_cuda = torch.cuda.is_available()
+        
         dl = DataLoader(
             dataset=dataset,
             batch_size=self.config["batchsize"],
             num_workers=self.config["num_workers"],
             shuffle=False,
-            pin_memory=True,
+            pin_memory=use_cuda,
         )
         if verbose:
             ic("Dataloader created")
