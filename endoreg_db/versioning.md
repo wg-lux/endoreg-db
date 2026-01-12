@@ -40,6 +40,7 @@ git tag -a v0.8.9.16 -m "Release v0.8.9.16"
 4. **Build:**
 Generate the distribution packages.
 ```bash
+rm -rf /dist #ensure empty dist
 python -m build
 
 ```
