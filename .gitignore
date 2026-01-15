@@ -10,7 +10,8 @@ erc_data/
 test_reports/*
 staticfiles/
 .ansible/
-
+.lx-data-models/
+/lx-data-models/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -151,7 +151,7 @@ def _stream_video_file(
             path = Path(file_name)
         else:
             # Relative path - make absolute by prepending STORAGE_DIR
-            path = STORAGE_DIR / file_name
+            path = STORAGE_DIR / str(file_name)
             logger.debug("Resolved relative path '%s' to absolute: %s", file_name, path)
 
         # Validate file exists on disk
