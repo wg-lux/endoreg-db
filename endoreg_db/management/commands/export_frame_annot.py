@@ -133,6 +133,14 @@ class Command(BaseCommand):
             help="Use stored relative_path values for frame_relative_path.",
         )
 
+        parser.add_argument(
+        "--format",
+        choices=["csv", "json"],
+        default=None,
+        help="Export format (csv or json). Default: csv",
+)    
+    
+
     def handle(self, *args, **options):
         config = self._build_config(options)
         client = annotation_exporter_client()
@@ -161,6 +169,7 @@ class Command(BaseCommand):
         updates = {}
         for key in (
             "output_path",
+            "output_format"
             "video_id",
             "label_id",
             "information_source_name",

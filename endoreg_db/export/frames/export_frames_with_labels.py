@@ -5,9 +5,10 @@ import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict, cast, Literal
 
 import yaml
+import json
 from django.db.models import QuerySet
 
 from endoreg_db.helpers.data_loader import load_base_db_data
@@ -66,8 +67,9 @@ DEFAULT_TRANSCODE_EXT = "jpg"
 @dataclass(frozen=True, slots=True)
 class export_config:
     output_path: Path | str
+    output_format: Literal["csv", "json"] = "csv"
     video_id: int | None = None
-    label_id: int | None = None
+    label_id: int | None = Noneexported_path
     information_source_name: str | None = None
     only_true: bool | None = None
     limit: int | None = None
@@ -87,6 +89,7 @@ class export_config:
             raise ValueError("export config must include output_path")
         return cls(
             output_path=output_path,
+            output_format=config_data.get("output_format", "csv"),
             video_id=config_data.get("video_id"),
             label_id=config_data.get("label_id"),
             information_source_name=config_data.get("information_source_name"),
@@ -143,21 +146,39 @@ class annotation_exporter_client:
             else:
                 self._logger.info("Exporting %s rows to %s", row_count, output_path)
 
-            exported_path = export_frames_with_labels_to_csv(
-                output_path=output_path,
-                video_id=config.video_id,
-                label_id=config.label_id,
-                information_source_name=config.information_source_name,
-                only_true=config.only_true,
-                limit=config.limit,
-                load_base_data=load_base_data,
-                transcode_frames=config.transcode_frames,
-                transcode_fps=config.transcode_fps,
-                transcode_quality=config.transcode_quality,
-                transcode_ext=config.transcode_ext,
-                transcode_overwrite=config.transcode_overwrite,
-                use_frame_pk_paths=config.use_frame_pk_paths,
-            )
+            if config.output_format == "json":
+                exported_path = export_frames_with_labels_to_json(
+                    output_path=output_path,
+                    video_id=config.video_id,
+                    label_id=config.label_id,
+                    information_source_name=config.information_source_name,
+                    only_true=config.only_true,
+                    limit=config.limit,
+                    load_base_data=load_base_data,
+                    transcode_frames=config.transcode_frames,
+                    transcode_fps=config.transcode_fps,
+                    transcode_quality=config.transcode_quality,
+                    transcode_ext=config.transcode_ext,
+                    transcode_overwrite=config.transcode_overwrite,
+                    use_frame_pk_paths=config.use_frame_pk_paths,
+                )
+            else:
+                exported_path = export_frames_with_labels_to_csv(
+                    output_path=output_path,
+                    video_id=config.video_id,
+                    label_id=config.label_id,
+                    information_source_name=config.information_source_name,
+                    only_true=config.only_true,
+                    limit=config.limit,
+                    load_base_data=load_base_data,
+                    transcode_frames=config.transcode_frames,
+                    transcode_fps=config.transcode_fps,
+                    transcode_quality=config.transcode_quality,
+                    transcode_ext=config.transcode_ext,
+                    transcode_overwrite=config.transcode_overwrite,
+                    use_frame_pk_paths=config.use_frame_pk_paths,
+                )
+
 
             self._logger.info(
                 "Annotation export completed successfully: %s", exported_path
@@ -284,6 +305,73 @@ def export_frames_with_labels_to_csv(
             )
 
     return output_file
+
+def export_frames_with_labels_to_json(
+    output_path: Path | str,
+    *,
+    annotations: QuerySet[ImageClassificationAnnotation] | None = None,
+    video_id: int | None = None,
+    label_id: int | None = None,
+    information_source_name: str | None = None,
+    only_true: bool | None = None,
+    limit: int | None = None,
+    load_base_data: bool = False,
+    transcode_frames: bool = False,
+    transcode_fps: float = DEFAULT_TRANSCODE_FPS,
+    transcode_quality: int = DEFAULT_TRANSCODE_QUALITY,
+    transcode_ext: str = DEFAULT_TRANSCODE_EXT,
+    transcode_overwrite: bool = False,
+    use_frame_pk_paths: bool | None = None,
+) -> Path:
+    if load_base_data:
+        load_base_db_data()
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if annotations is None:
+        annotations = _build_annotations_queryset()
+
+    annotations = _apply_filters(
+        annotations,
+        video_id=video_id,
+        label_id=label_id,
+        information_source_name=information_source_name,
+        only_true=only_true,
+    )
+
+    if limit is not None:
+        annotations = annotations[:limit]
+
+    if use_frame_pk_paths is None:
+        use_frame_pk_paths = transcode_frames
+
+    if transcode_frames:
+        transcode_videos_for_annotations(
+            annotations,
+            fps=transcode_fps,
+            quality=transcode_quality,
+            ext=transcode_ext,
+            overwrite=transcode_overwrite,
+        )
+
+    rows = []
+    for annotation in annotations.iterator():
+        rows.append(
+            _annotation_to_row(
+                annotation,
+                use_frame_pk_paths=use_frame_pk_paths,
+                frame_ext=transcode_ext,
+            )
+        )
+
+    output_file.write_text(
+        json.dumps(rows, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    return output_file
+
 
 
 def transcode_videos_for_annotations(
@@ -512,3 +600,17 @@ def _annotation_to_row(
             annotation.date_modified.isoformat() if annotation.date_modified else None
         ),
     })
+
+'''
+csv:
+python manage.py export_frame_annot \
+  --output-path data/export/frames.csv
+
+  
+  json:
+  python manage.py export_frame_annot \
+  --output-path data/export/frames.json \
+  --format json
+
+
+'''
