@@ -12,6 +12,7 @@ import logging
 from django.db.models import Q
 from django.http import Http404
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -20,7 +21,6 @@ from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class VideoMediaView(APIView):
     - Integration with existing serializers
     """
 
-    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
+    permission_classes = [IsAuthenticated, PolicyPermission]
     def get(self, request, pk=None):
         """
         Handle GET requests for video listing or detail retrieval.

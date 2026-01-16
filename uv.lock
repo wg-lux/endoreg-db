@@ -1001,7 +1001,7 @@ requires-dist = [
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.8.9.13" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"] },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", specifier = ">=1.16.0" },
