@@ -30,7 +30,6 @@ ANONYM_VIDEO_DIR = data_paths["anonym_video"]
 TEST_RUN = os.environ.get("TEST_RUN", "False")
 TEST_RUN = TEST_RUN.lower() == "true"
 
-TEST_RUN_FRAME_NUMBER = int(os.environ.get("TEST_RUN_FRAME_NUMBER", "500"))
 
 
 def prepare_bulk_frames(frame_paths: List[Path]):
@@ -136,5 +135,4 @@ __all__ = [
     "anonymize_frame",
     "find_segments_in_prediction_array",
     "TEST_RUN",
-    "TEST_RUN_FRAME_NUMBER",
 ]

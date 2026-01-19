@@ -180,7 +180,6 @@ try:
         # Add other defaults if missing
         default_values = {
             "TEST_RUN": "False",
-            "TEST_RUN_FRAME_NUMBER": "1000",
             "RUST_BACKTRACE": "1",
             "DJANGO_DEBUG": "True",
             "DJANGO_FFMPEG_EXTRACT_FRAME_BATCHSIZE": "500",
