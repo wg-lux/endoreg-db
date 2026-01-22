@@ -8,7 +8,6 @@ from safetensors import safe_open
 
 from ...metadata import ModelMeta, VideoPredictionMeta
 from ...utils import TEST_RUN as GLOBAL_TEST_RUN
-from ...utils import TEST_RUN_FRAME_NUMBER as GLOBAL_N_TEST_FRAMES
 
 if TYPE_CHECKING:
     from ...medical.hardware import EndoscopyProcessor
