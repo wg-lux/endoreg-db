@@ -10,6 +10,28 @@ from endoreg_db.models.operation_log import OperationLog
 logger = logging.getLogger(__name__)
 
 
+# -----------------------------
+# Operation actions
+# -----------------------------
+
+ACTION_ANONYMIZATION_START = "anonymization.start"
+ACTION_ANONYMIZATION_VALIDATED = "anonymization.validated"
+
+ACTION_SEGMENT_ANNOTATED = "segment.annotated"
+ACTION_SEGMENT_CREATED = "segment.created"
+
+# -----------------------------
+# Operation statuses
+# -----------------------------
+
+STATUS_VALIDATED = "validated"
+STATUS_UNVALIDATED = "unvalidated"
+
+STATUS_NOT_STARTED = "not_started"
+STATUS_PROCESSING = "processing"
+STATUS_ANONYMIZED = "anonymized"
+
+
 def record_operation(
     request: HttpRequest,
     *,
@@ -51,7 +73,7 @@ def record_operation(
         )
 
 
-# TODO: will make the name more generic later base don the requirement,after merge
+# TODO: will make the name more generic later based on the requirement,after merge
 def get_resource_type_from_instance(obj):
     name = obj.__class__.__name__
     '''if name == "VideoFile":
@@ -59,3 +81,7 @@ def get_resource_type_from_instance(obj):
     if name == "RawPdfFile":
         return "pdf"'''
     return name.lower()
+
+
+
+

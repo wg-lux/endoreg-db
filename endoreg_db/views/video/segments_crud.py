@@ -23,7 +23,13 @@ from endoreg_db.serializers.label_video_segment.label_video_segment import (
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
-from endoreg_db.utils.operation_log import record_operation
+from endoreg_db.utils.operation_log import (
+    record_operation,
+    ACTION_SEGMENT_ANNOTATED,
+    STATUS_VALIDATED,
+    STATUS_UNVALIDATED,
+)
+
 
 
 logger = logging.getLogger(__name__)
@@ -342,7 +348,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
 
 
     #for operation log table
-    status_before = "validated" if (segment.state and segment.state.is_validated) else "unvalidated"
+    status_before = STATUS_VALIDATED if (segment.state and segment.state.is_validated) else STATUS_UNVALIDATED
 
 
     try:
@@ -376,11 +382,11 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 information_source_name=information_source_name,
             )
 
-            status_after = "validated" if is_validated else "unvalidated"
+            status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
             record_operation(
                 request,
-                action="segment.annotated",
+                action=ACTION_SEGMENT_ANNOTATED,
                 resource_type="video_segment",
                 resource_id=segment.id,
                 status_before=status_before,
@@ -495,11 +501,13 @@ def video_segments_validate_bulk(request, pk: int):
                                     ]
                                 )
 
-                    status_before = "validated" if (
-                        segment.state and segment.state.is_validated
-                    ) else "unvalidated"
+                    status_before = (
+                        STATUS_VALIDATED
+                        if (segment.state and segment.state.is_validated)
+                        else STATUS_UNVALIDATED
+                    )
 
-                    
+
                     # 2) mark as validated + update information source + notes
                     segment.mark_validated(
                         is_validated=is_validated,
@@ -511,11 +519,12 @@ def video_segments_validate_bulk(request, pk: int):
 
                     
                     
-                    status_after = "validated" if is_validated else "unvalidated"
+                    status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
+
                     
                     record_operation(
                         request,
-                        action="segment.annotated",
+                        action=ACTION_SEGMENT_ANNOTATED,
                         resource_type="video_segment",
                         resource_id=segment.id,
                         status_before=status_before,

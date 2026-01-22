@@ -10,8 +10,12 @@ from endoreg_db.models import RawPdfFile, VideoFile
 from endoreg_db.models.metadata import SensitiveMeta
 from endoreg_db.serializers.anonymization import SensitiveMetaValidateSerializer
 from endoreg_db.utils.operation_log import (
-    record_operation,  # only touched the parts where validation succeeds
+    record_operation,
+    ACTION_ANONYMIZATION_VALIDATED,
+    STATUS_PROCESSING,
+    STATUS_ANONYMIZED,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +143,11 @@ class AnonymizationValidateView(APIView):
                     # TODO: update the function call bases on the status , once merged
                     record_operation(
                         request,
-                        action="anonymization.validated",
+                        action=ACTION_ANONYMIZATION_VALIDATED,
                         resource_type="video",
                         resource_id=file_id,
-                        status_before=status_before,
-                        status_after=status_after,
+                        status_before=STATUS_PROCESSING,
+                        status_after=STATUS_ANONYMIZED,
                     )
 
                     return Response(
@@ -234,11 +238,11 @@ class AnonymizationValidateView(APIView):
                     # --- NEW: write operation log ---
                     record_operation(
                         request,
-                        action="anonymization.validated",
+                        action=ACTION_ANONYMIZATION_VALIDATED,
                         resource_type="pdf",
                         resource_id=file_id,
-                        status_before=status_before,
-                        status_after=status_after,
+                        status_before=STATUS_PROCESSING,
+                        status_after=STATUS_ANONYMIZED,
                     )
 
                     return Response(
