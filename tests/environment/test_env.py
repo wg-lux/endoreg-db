@@ -3,7 +3,10 @@ import os
 from pathlib import Path
 from endoreg_db.utils.paths import STORAGE_DIR
 import logging
-
+import importlib
+import pkgutil
+import endoreg_db
+from pytest import ExitCode
 logger = logging.getLogger(__name__)
 
 
@@ -34,3 +37,16 @@ class TestEnvironment(TestCase):
             util_storage_dir_path,
             "STORAGE_DIR path does not match the expected path.",
         )
+    def test_all_imports(self):
+        errors = []
+        for module in pkgutil.walk_packages(endoreg_db.__path__, endoreg_db.__name__ + "."):
+            name = module.name
+            try:
+                importlib.import_module(name)
+            except Exception as exc:
+                errors.append((name, exc))
+
+        for name, exc in errors:
+            print(f"{name}: {exc}")
+
+        assert(len(errors)==0)

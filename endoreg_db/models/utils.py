@@ -25,7 +25,7 @@ WEIGHTS_DIR = data_paths["weights"]
 REPORT_DIR = data_paths["import_report"]
 DOCUMENT_DIR = data_paths[
     "documents"
-]  # TODO Verify if this is still used and assign correct dir
+]  
 ANONYM_VIDEO_DIR = data_paths["anonym_video"]
 TEST_RUN = os.environ.get("TEST_RUN", "False")
 TEST_RUN = TEST_RUN.lower() == "true"

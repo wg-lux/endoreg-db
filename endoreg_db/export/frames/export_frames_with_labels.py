@@ -69,7 +69,7 @@ class export_config:
     output_path: Path | str
     output_format: Literal["csv", "json"] = "csv"
     video_id: int | None = None
-    label_id: int | None = Noneexported_path
+    label_id: int | None = None
     information_source_name: str | None = None
     only_true: bool | None = None
     limit: int | None = None

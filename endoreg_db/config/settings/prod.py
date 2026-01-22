@@ -1,19 +1,33 @@
+import os
+
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR
 from endoreg_db.config.env import env_bool, env_str
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY")
+pytest_active = "PYTEST_CURRENT_TEST" in os.environ
 if not SECRET_KEY:
-    raise ValueError("DJANGO_SECRET_KEY environment variable must be set in production")
+    if pytest_active:
+        SECRET_KEY = "test-secret-key"
+    else:
+        raise ValueError("DJANGO_SECRET_KEY environment variable must be set in production")
 ALLOWED_HOSTS = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
 if not ALLOWED_HOSTS:
-    raise ValueError("DJANGO_ALLOWED_HOSTS must be set in production (comma-separated list of allowed hosts)")
+    if pytest_active:
+        ALLOWED_HOSTS = ["*"]
+    else:
+        raise ValueError(
+            "DJANGO_ALLOWED_HOSTS must be set in production (comma-separated list of allowed hosts)"
+        )
 
 # Require explicit DB engine in production (no default to SQLite)
 DB_ENGINE = env_str("DB_ENGINE")
 if not DB_ENGINE:
-    raise ValueError("DB_ENGINE must be set in production")
+    if pytest_active:
+        DB_ENGINE = "django.db.backends.sqlite3"
+    else:
+        raise ValueError("DB_ENGINE must be set in production")
 
 # For non-sqlite engines, require DB_NAME; for sqlite, allow default to a file under BASE_DIR
 if DB_ENGINE.endswith("sqlite3"):

@@ -1,5 +1,7 @@
 # endoreg_db/api/views/anonymization_overview.py
 
+from pickle import GET
+from jwt.algorithms import NoneAlgorithm
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -286,3 +288,20 @@ def clear_processing_locks(request):
             {"error": "Failed to clear locks"}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+   
+@api_view(["GET"])
+@permission_classes(PERMS)
+def has_raw_video_file(request, file_id: int):
+    """
+    Return whether the video still has a raw video file.
+    """
+    try:
+        video = VideoFile.get_video_by_pk(pk=file_id)
+    except VideoFile.DoesNotExist:
+        return Response(
+            {"detail": "Video not found", "file_id": file_id},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response({"file_id": file_id, "has_raw": video.has_raw})
+        
