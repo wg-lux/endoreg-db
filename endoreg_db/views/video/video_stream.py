@@ -204,15 +204,15 @@ def _stream_video_file(
         else:
             # No Range header - stream entire file (HTTP 200)
             try:
-                # Open file in binary mode - FileResponse will handle closing
-                with open(path, "rb") as file_handle:
-                    response = FileResponse(file_handle, content_type=content_type)
-                    # Set HTTP headers for video streaming
-                    response["Content-Length"] = str(file_size)
-                    response["Accept-Ranges"] = (
-                        "bytes"  # Enable HTTP range requests for seeking
-                    )
-                    response["Content-Disposition"] = f'inline; filename="{path.name}"'
+                # FileResponse will handle closing; do not close the handle early.
+                file_handle = open(path, "rb")
+                response = FileResponse(file_handle, content_type=content_type)
+                # Set HTTP headers for video streaming
+                response["Content-Length"] = str(file_size)
+                response["Accept-Ranges"] = (
+                    "bytes"  # Enable HTTP range requests for seeking
+                )
+                response["Content-Disposition"] = f'inline; filename="{path.name}"'
 
             except IOError as e:
                 raise Http404(f"Cannot open video file: {str(e)}")
@@ -220,6 +220,7 @@ def _stream_video_file(
         # CORS headers for frontend access (both HTTP 200 and 206)
         response["Access-Control-Allow-Origin"] = frontend_origin
         response["Access-Control-Allow-Credentials"] = "true"
+        response["X-Accel-Buffering"] = "no"
 
         return response
 
