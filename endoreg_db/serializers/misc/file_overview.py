@@ -29,7 +29,10 @@ class FileOverviewSerializer(serializers.Serializer):
             # Use the state relation optimized in the View
             state_obj = instance.state
             sensitive_meta = instance.sensitive_meta
-            file_size = instance.raw_file.size if instance.raw_file else 0
+            try:
+                file_size = instance.raw_file.size if instance.raw_file else 0
+            except:
+                file_size = 0
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
@@ -37,7 +40,10 @@ class FileOverviewSerializer(serializers.Serializer):
             created_at = instance.date_created
             state_obj = instance.state
             sensitive_meta = instance.sensitive_meta
-            file_size = instance.file.size if instance.file else 0
+            try:
+                file_size = instance.file.size if instance.file else 0
+            except:
+                file_size = 0
 
         else:
             raise TypeError(f"Unexpected object type: {type(instance)}")
