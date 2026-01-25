@@ -543,6 +543,18 @@ def video_segments_validate_bulk(request, pk: int):
 
         logger.info(f"Bulk validated {updated_count} segments in video {pk}")
 
+        if is_validated and not failed_ids and updated_count == len(segment_ids):
+            state = video.get_or_create_state()
+            state.segment_annotations_created = True
+            state.segment_annotations_validated = True
+            state.save(
+                update_fields=[
+                    "segment_annotations_created",
+                    "segment_annotations_validated",
+                    "date_modified",
+                ]
+            )
+
         response_data = {
             "message": f"Bulk validation completed. {updated_count} segments updated.",
             "updated_count": updated_count,

@@ -26,6 +26,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     assignedUser = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
+    segment_annotations_validated = serializers.SerializerMethodField()
     segments = LabelVideoSegmentTimelineSerializer(
         many=True, read_only=True, source="label_video_segments"
     )
@@ -38,6 +39,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             "status",
             "assignedUser",
             "anonymized",
+            "segment_annotations_validated",
             "segments",
         ]
 
@@ -111,3 +113,17 @@ class VideoFileListSerializer(serializers.ModelSerializer):
 
         # getattr to be robust against partially/populated state
         return bool(getattr(state, "anonymized", False))
+
+    def get_segment_annotations_validated(self, obj: VideoFile) -> bool:
+        """
+        Determine whether segment annotations are validated.
+
+        Contract:
+            - Never raises.
+            - Returns False if state does not exist or cannot be loaded.
+        """
+        state = self._get_video_state(obj)
+        if not state:
+            return False
+
+        return bool(getattr(state, "segment_annotations_validated", False))
