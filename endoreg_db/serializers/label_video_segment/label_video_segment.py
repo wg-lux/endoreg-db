@@ -53,6 +53,50 @@ def _media_url_from_file_path(file_path, request=None) -> str:
     return url
 
 
+class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for timeline rendering."""
+
+    label_id = serializers.SerializerMethodField()
+    label_name = serializers.SerializerMethodField()
+    start_time = serializers.SerializerMethodField()
+    end_time = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LabelVideoSegment
+        fields = [
+            "id",
+            "label_id",
+            "label_name",
+            "start_frame_number",
+            "end_frame_number",
+            "start_time",
+            "end_time",
+        ]
+
+    def _frame_to_seconds(self, obj: LabelVideoSegment, frame_number: int):
+        video = getattr(obj, "video_file", None)
+        if not video:
+            return None
+        try:
+            return video.frame_number_to_s(frame_number)
+        except Exception:
+            return None
+
+    def get_label_id(self, obj: LabelVideoSegment):
+        label = getattr(obj, "label", None)
+        return getattr(label, "id", None)
+
+    def get_label_name(self, obj: LabelVideoSegment):
+        label = getattr(obj, "label", None)
+        return getattr(label, "name", None)
+
+    def get_start_time(self, obj: LabelVideoSegment):
+        return self._frame_to_seconds(obj, obj.start_frame_number)
+
+    def get_end_time(self, obj: LabelVideoSegment):
+        return self._frame_to_seconds(obj, obj.end_frame_number)
+
+
 class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     """Serializer for creating, retrieving, and updating LabelVideoSegment instances."""
 

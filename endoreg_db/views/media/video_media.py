@@ -9,14 +9,14 @@ This complements VideoStreamView which handles the actual video streaming.
 
 import logging
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.http import Http404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models import LabelVideoSegment, VideoFile
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 
@@ -127,7 +127,17 @@ class VideoMediaView(APIView):
         """
         try:
             # Start with all videos
-            queryset = VideoFile.objects.select_related("state", "sensitive_meta").all()
+            segments_prefetch = Prefetch(
+                "label_video_segments",
+                queryset=LabelVideoSegment.objects.select_related(
+                    "label", "video_file"
+                ).order_by("start_frame_number"),
+            )
+            queryset = (
+                VideoFile.objects.select_related("state", "sensitive_meta")
+                .prefetch_related(segments_prefetch)
+                .all()
+            )
 
             # Apply filters
             queryset = self._apply_filters(queryset, request.query_params)

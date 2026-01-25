@@ -5,6 +5,9 @@ import logging
 from rest_framework import serializers
 
 from endoreg_db.models import VideoFile
+from endoreg_db.serializers.label_video_segment.label_video_segment import (
+    LabelVideoSegmentTimelineSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +26,20 @@ class VideoFileListSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     assignedUser = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
+    segments = LabelVideoSegmentTimelineSerializer(
+        many=True, read_only=True, source="label_video_segments"
+    )
 
     class Meta:
         model = VideoFile
-        fields = ["id", "original_file_name", "status", "assignedUser", "anonymized"]
+        fields = [
+            "id",
+            "original_file_name",
+            "status",
+            "assignedUser",
+            "anonymized",
+            "segments",
+        ]
 
     # --- internal helper -------------------------------------------------
     def _get_video_state(self, obj: VideoFile):
