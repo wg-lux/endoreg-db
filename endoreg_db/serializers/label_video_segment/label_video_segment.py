@@ -187,7 +187,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         return int(round(float(time_val) * fps))
 
     def _get_information_source(self) -> InformationSource:
-        source_name = "Manual Annotation"
+        source_name = "manual_annotation"
         sources = list(
             InformationSource.objects.filter(name=source_name).order_by("id")[:2]
         )
