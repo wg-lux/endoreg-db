@@ -187,13 +187,22 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         return int(round(float(time_val) * fps))
 
     def _get_information_source(self) -> InformationSource:
-        source, _ = InformationSource.objects.get_or_create(
-            name="Manual Annotation",
-            defaults={
-                "description": "Manually created label segments via web interface"
-            },
+        source_name = "Manual Annotation"
+        sources = list(
+            InformationSource.objects.filter(name=source_name).order_by("id")[:2]
         )
-        return source
+        if sources:
+            if len(sources) > 1:
+                logger.warning(
+                    "Multiple InformationSource rows found for name '%s'; using first.",
+                    source_name,
+                )
+            return sources[0]
+
+        return InformationSource.objects.create(
+            name=source_name,
+            description="Manually created label segments via web interface",
+        )
 
     # --- DRF Overrides ---
 
@@ -288,7 +297,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             # Resolve Objects
             video_file = self._get_video_file(video_id)
             label = self._get_label(label_id, label_name)
-            source = self._get_information_source()
+            try:
+                source = self._get_information_source()
 
             # Calculate Frames if time is provided
             if start_time is not None and end_time is not None:
