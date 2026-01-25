@@ -299,6 +299,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             label = self._get_label(label_id, label_name)
             try:
                 source = self._get_information_source()
+            except:
+                source = None
 
             # Calculate Frames if time is provided
             if start_time is not None and end_time is not None:
