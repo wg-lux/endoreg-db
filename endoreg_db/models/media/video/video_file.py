@@ -112,6 +112,9 @@ class VideoQuerySet(models.QuerySet):
 
 class VideoFile(models.Model):
     objects = VideoQuerySet.as_manager()
+    default_fps = 50.0
+    use_default_fps = True
+    _default_fps_persisted_ids = set()
 
     raw_file = models.FileField(
         upload_to=SENSITIVE_VIDEO_DIR.name,  # Use .name for relative path
@@ -296,6 +299,20 @@ class VideoFile(models.Model):
     get_duration = _calc_duration_vf
     create_frame_object = _create_frame_object
     bulk_create_frames = _bulk_create_frames
+
+    def ensure_default_fps(self) -> float:
+        """
+        Persist a default FPS when missing, avoiding repeated updates per process.
+        """
+        if self.fps is not None:
+            return float(self.fps)
+
+        default_fps = float(self.default_fps)
+        self.fps = default_fps
+        if self.pk and self.pk not in self.__class__._default_fps_persisted_ids:
+            self.save(update_fields=["fps"])
+            self.__class__._default_fps_persisted_ids.add(self.pk)
+        return default_fps
 
     # Define new methods that call the helper functions
     def extract_specific_frame_range(
@@ -877,7 +894,9 @@ class VideoFile(models.Model):
         Raises:
             ValueError: If the video's FPS is not set or is less than or equal to zero.
         """
-        fps = self.get_fps()
+        fps = self.fps
+        if fps is None or fps <= 0:
+            fps = self.get_fps()
         if fps is None or fps <= 0:
             raise ValueError("FPS must be set and greater than zero.")
         return frame_number / fps

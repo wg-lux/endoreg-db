@@ -361,13 +361,15 @@ def video_segment_validate(request, pk: int, segment_id: int):
         # Optional: update times (seconds) before validation
         start_time = request.data.get("start_time")
         end_time = request.data.get("end_time")
+        fps_value = 0
+        if start_time is not None and end_time is not None:
+            fps_value = segment.video_file.get_fps() or 0
 
         with transaction.atomic():
             if start_time is not None and end_time is not None:
-                fps = segment.video_file.get_fps() or 0
-                if fps > 0:
-                    new_start = int(round(float(start_time) * fps))
-                    new_end = int(round(float(end_time) * fps))
+                if fps_value > 0:
+                    new_start = int(round(float(start_time) * fps_value))
+                    new_end = int(round(float(end_time) * fps_value))
                     LabelVideoSegment.validate_frame_range(
                         new_start, new_end, video_file=segment.video_file
                     )
@@ -388,11 +390,11 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 request,
                 action=ACTION_SEGMENT_ANNOTATED,
                 resource_type="video_segment",
-                resource_id=segment.id,
+                resource_id=segment.pk,
                 status_before=status_before,
                 status_after=status_after,
                 meta={
-                    "video_id": video.id,
+                    "video_id": video.pk,
                     "label": segment.label.name if segment.label else None,
                     "information_source": information_source_name,
                 },
@@ -407,7 +409,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 "segment_id": segment_id,
                 "is_validated": is_validated,
                 "label": segment.label.name if segment.label else None,
-                "video_id": video.id,
+                "video_id": video.pk,
                 "start_frame": segment.start_frame_number,
                 "end_frame": segment.end_frame_number,
             },
@@ -463,15 +465,26 @@ def video_segments_validate_bulk(request, pk: int):
     segments_data = {int(s["id"]): s for s in segments_data_list if "id" in s}
 
     try:
-        segments = LabelVideoSegment.objects.filter(
-            pk__in=segment_ids, video_file=video
-        ).select_related("state", "video_file")
+        segments = list(
+            LabelVideoSegment.objects.filter(pk__in=segment_ids, video_file=video)
+            .select_related("state", "video_file")
+        )
 
-        if not segments.exists():
+        if not segments:
             return Response(
                 {"error": "No segments found with provided IDs for this video"},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        fps_by_segment_id = {}
+        for segment in segments:
+            data = segments_data.get(segment.pk)
+            if data is None:
+                continue
+            start_time = data.get("start_time")
+            end_time = data.get("end_time")
+            if start_time is not None and end_time is not None:
+                fps_by_segment_id[segment.pk] = segment.video_file.get_fps() or 0
 
         updated_count = 0
         failed_ids = []
@@ -480,15 +493,15 @@ def video_segments_validate_bulk(request, pk: int):
             for segment in segments:
                 try:
                     # 1) optionally update times from payload
-                    data = segments_data.get(segment.id)
+                    data = segments_data.get(segment.pk)
                     if data is not None:
                         start_time = data.get("start_time")
                         end_time = data.get("end_time")
                         if start_time is not None and end_time is not None:
-                            fps = segment.video_file.get_fps() or 0
-                            if fps > 0:
-                                new_start = int(round(float(start_time) * fps))
-                                new_end = int(round(float(end_time) * fps))
+                            fps_value = fps_by_segment_id.get(segment.pk, 0)
+                            if fps_value > 0:
+                                new_start = int(round(float(start_time) * fps_value))
+                                new_end = int(round(float(end_time) * fps_value))
                                 LabelVideoSegment.validate_frame_range(
                                     new_start, new_end, video_file=segment.video_file
                                 )
@@ -526,7 +539,7 @@ def video_segments_validate_bulk(request, pk: int):
                         request,
                         action=ACTION_SEGMENT_ANNOTATED,
                         resource_type="video_segment",
-                        resource_id=segment.id,
+                        resource_id=segment.pk,
                         status_before=status_before,
                         status_after=status_after,
                         meta={
@@ -538,8 +551,8 @@ def video_segments_validate_bulk(request, pk: int):
 
 
                 except Exception as e:
-                    logger.error(f"Error validating segment {segment.id}: {e}")
-                    failed_ids.append(segment.id)
+                    logger.error(f"Error validating segment {segment.pk}: {e}")
+                    failed_ids.append(segment.pk)
 
         logger.info(f"Bulk validated {updated_count} segments in video {pk}")
 
@@ -700,7 +713,7 @@ def video_segments_validation_status(request, pk: int):
                     else:
                         failed_count += 1
                 except Exception as e:
-                    logger.error(f"Error validating segment {segment.id}: {e}")
+                    logger.error(f"Error validating segment {segment.pk}: {e}")
                     failed_count += 1
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")

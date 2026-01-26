@@ -157,40 +157,46 @@ class Command(BaseCommand):
         )
 
     def _build_config(self, options) -> export_config:
-        config_path = options.get("config")
-        if config_path:
-            config = export_config.from_yaml(Path(config_path))
-        else:
-            output_path = options.get("output_path")
-            if not output_path:
-                output_path = "data/export/frames.csv"
-            config = export_config(output_path=Path(output_path))
+            config_path = options.get("config")
+            if config_path:
+                config = export_config.from_yaml(Path(config_path))
+            else:
+                output_path = options.get("output_path")
+                if not output_path:
+                    output_path = "data/export/frames.csv"
+                config = export_config(output_path=Path(output_path))
 
-        updates = {}
-        for key in (
-            "output_path",
-            "output_format"
-            "video_id",
-            "label_id",
-            "information_source_name",
-            "only_true",
-            "limit",
-            "load_base_data",
-            "transcode_frames",
-            "transcode_fps",
-            "transcode_quality",
-            "transcode_ext",
-            "transcode_overwrite",
-            "use_frame_pk_paths",
-        ):
-            value = options.get(key)
-            if value is not None:
-                updates[key] = value
+            # 1. Handle the format name mismatch manually
+            if options.get("format"):
+                # assuming the config object field is named 'output_format'
+                config = replace(config, output_format=options["format"])
 
-        if updates:
-            config = replace(config, **updates)
+            updates = {}
+            # 2. Corrected tuple with commas
+            for key in (
+                "output_path",
+                # "output_format",  <-- Removed, handled manually above due to name mismatch
+                "video_id",
+                "label_id",
+                "information_source_name",
+                "only_true",
+                "limit",
+                "load_base_data",
+                "transcode_frames",
+                "transcode_fps",
+                "transcode_quality",
+                "transcode_ext",
+                "transcode_overwrite",
+                "use_frame_pk_paths",
+            ):
+                value = options.get(key)
+                if value is not None:
+                    updates[key] = value
 
-        if not config.output_path:
-            raise CommandError("output_path is required.")
+            if updates:
+                config = replace(config, **updates)
 
-        return config
+            if not config.output_path:
+                raise CommandError("output_path is required.")
+
+            return config

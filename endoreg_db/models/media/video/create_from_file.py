@@ -353,6 +353,7 @@ def _create_from_file(
         # Store FileField path relative to storage root including the videos prefix
 
         relative_name = path_utils.to_storage_relative(final_storage_path)
+        default_fps = float(getattr(cls_model, "default_fps", 50.0))
         video = cls_model(
             raw_file=relative_name,
             processed_file=None,
@@ -362,6 +363,7 @@ def _create_from_file(
             video_hash=video_hash,
             processed_video_hash=None,
             suffix=original_suffix,
+            fps=default_fps,
         )
 
         # 9. Save the instance if requested

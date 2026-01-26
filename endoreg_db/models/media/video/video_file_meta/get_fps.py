@@ -45,6 +45,9 @@ def _get_fps(video: "VideoFile") -> float:
     if video.fps is not None:
         return video.fps
 
+    if getattr(video, "use_default_fps", False):
+        return video.ensure_default_fps()
+
     logger.debug("FPS not set on instance %s, checking VideoMeta.", video.video_hash)
 
     if not video.video_meta:
