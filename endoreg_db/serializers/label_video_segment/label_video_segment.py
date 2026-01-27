@@ -71,6 +71,7 @@ class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
             "end_frame_number",
             "start_time",
             "end_time",
+            "export_segment",
         ]
 
     def _frame_to_seconds(self, obj: LabelVideoSegment, frame_number: int):
@@ -135,6 +136,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             "end_frame_number",
             "start_time",
             "end_time",
+            "export_segment",
             "frame_predictions",
             "manual_frame_annotations",
             "time_segments",
@@ -145,6 +147,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             "end_frame_number": {"required": False},
             "video_file": {"required": False},
             "label": {"required": False},
+            "export_segment": {"required": False},
         }
 
     # --- Internal Helpers ---
@@ -289,6 +292,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             video_id = validated_data.pop("video_id")
             label_id = validated_data.pop("label_id", None)
             label_name = validated_data.pop("label_name", None)
+            export_segment = validated_data.pop("export_segment", None)
 
             # Extract time data (might be None if frames were passed directly)
             start_time = validated_data.pop("start_time", None)
@@ -329,6 +333,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 start_frame_number=validated_data["start_frame_number"],
                 end_frame_number=validated_data["end_frame_number"],
                 prediction_meta=None,
+                export_segment=export_segment if export_segment is not None else False,
             )
             segment.save()
 
@@ -355,6 +360,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             label_name = validated_data.pop("label_name", None)
             start_time = validated_data.pop("start_time", None)
             end_time = validated_data.pop("end_time", None)
+            export_segment = validated_data.pop("export_segment", None)
 
             # 1. Update Video?
             current_video = instance.video_file
@@ -386,6 +392,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 instance.end_frame_number = self._convert_time_to_frame(end_time, fps)
             elif "end_frame_number" in validated_data:
                 instance.end_frame_number = validated_data["end_frame_number"]
+
+            if export_segment is not None:
+                instance.export_segment = bool(export_segment)
 
             # Final Frame Safety Check
             if instance.start_frame_number >= instance.end_frame_number:

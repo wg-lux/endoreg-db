@@ -11,6 +11,7 @@ from .reimport import VideoReimportView
 from .video_stream import VideoStreamView
 from .video_examination_viewset import VideoExaminationViewSet
 from .video_metadata import VideoMetadataStatsView
+from .export_annotated import export_annotated_data
 
 
 from .segments_crud import (
@@ -46,4 +47,5 @@ __all__ = [
     "video_segments_validate_bulk",
     "video_segments_validation_status",
     "label_list",
+    "export_annotated_data",
 ]

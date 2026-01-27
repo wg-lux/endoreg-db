@@ -64,6 +64,11 @@ class LabelVideoSegment(models.Model):
         blank=True,
     )
 
+    export_segment = models.BooleanField(
+        default=False,
+        help_text="If true, include this segment in export selection.",
+    )
+
     if TYPE_CHECKING:
         video_file: models.ForeignKey["VideoFile"]
         label: models.ForeignKey["Label|None"]

@@ -204,6 +204,10 @@ class VideoFile(models.Model):
         blank=True,
         help_text="AI prediction sequences based on raw frames.",
     )
+    export_segments_by_video = models.BooleanField(
+        default=False,
+        help_text="If true, include all segments for this video in exports.",
+    )
     date = models.DateField(blank=True, null=True)
     meta = models.JSONField(blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True)

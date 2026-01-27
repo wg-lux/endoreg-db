@@ -16,6 +16,7 @@ from endoreg_db.views.report.reimport import ReportReimportView
 from endoreg_db.views.report.report_stream import ReportStreamView
 from endoreg_db.views.video import (
                                     VideoReimportView,
+                                    export_annotated_data,
                                     video_segment_detail,
                                     video_segment_validate,
                                     video_segments_by_video,
@@ -59,6 +60,11 @@ urlpatterns = [
         "media/videos/<int:pk>/reimport/",
         VideoReimportView.as_view(),
         name="video-reimport",
+    ),
+    path(
+        "media/videos/export-annotated/",
+        export_annotated_data,
+        name="video-annotated-export",
     ),
     # ---------------------------------------------------------------------------------------
     # VIDEO CORRECTION API ENDPOINTS (Modern Media Framework - October 14, 2025)

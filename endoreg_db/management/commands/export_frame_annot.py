@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from black import output
 from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.export.frames.export_frames_with_labels import (
@@ -39,6 +38,11 @@ class Command(BaseCommand):
             "--output-path",
             type=str,
             help="CSV output path (required if --config is not provided).",
+        )
+        parser.add_argument(
+            "--output-dir",
+            type=str,
+            help="Base output directory for exported assets.",
         )
         parser.add_argument("--video-id", type=int, help="Filter by video id.")
         parser.add_argument("--label-id", type=int, help="Filter by label id.")
@@ -76,6 +80,57 @@ class Command(BaseCommand):
             dest="load_base_data",
             default=None,
             help="Do not load base data before export.",
+        )
+
+        export_videos_group = parser.add_mutually_exclusive_group()
+        export_videos_group.add_argument(
+            "--export-videos",
+            action="store_true",
+            default=None,
+            help="Export videos for annotated data.",
+        )
+        export_videos_group.add_argument(
+            "--no-export-videos",
+            action="store_false",
+            dest="export_videos",
+            default=None,
+            help="Do not export videos.",
+        )
+
+        export_frames_group = parser.add_mutually_exclusive_group()
+        export_frames_group.add_argument(
+            "--export-frames",
+            action="store_true",
+            default=None,
+            help="Export frames for annotated data.",
+        )
+        export_frames_group.add_argument(
+            "--no-export-frames",
+            action="store_false",
+            dest="export_frames",
+            default=None,
+            help="Do not export frames.",
+        )
+
+        export_flag_group = parser.add_mutually_exclusive_group()
+        export_flag_group.add_argument(
+            "--use-export-flags",
+            action="store_true",
+            default=None,
+            help="Filter annotations by export flags on video/segments.",
+        )
+        export_flag_group.add_argument(
+            "--no-use-export-flags",
+            action="store_false",
+            dest="use_export_flags",
+            default=None,
+            help="Do not filter by export flags.",
+        )
+        parser.add_argument(
+            "--segment-ids",
+            nargs="+",
+            type=int,
+            help="Export only annotations from these segment IDs.",
         )
 
         transcode_group = parser.add_mutually_exclusive_group()
@@ -134,12 +189,11 @@ class Command(BaseCommand):
         )
 
         parser.add_argument(
-        "--format",
-        choices=["csv", "json"],
-        default=None,
-        help="Export format (csv or json). Default: csv",
-)    
-    
+            "--format",
+            choices=["csv", "json"],
+            default=None,
+            help="Export format (csv or json). Default: csv",
+        )
 
     def handle(self, *args, **options):
         config = self._build_config(options)
@@ -157,46 +211,52 @@ class Command(BaseCommand):
         )
 
     def _build_config(self, options) -> export_config:
-            config_path = options.get("config")
-            if config_path:
-                config = export_config.from_yaml(Path(config_path))
-            else:
-                output_path = options.get("output_path")
-                if not output_path:
-                    output_path = "data/export/frames.csv"
-                config = export_config(output_path=Path(output_path))
+        config_path = options.get("config")
+        if config_path:
+            config = export_config.from_yaml(Path(config_path))
+        else:
+            output_path = options.get("output_path")
+            output_dir = options.get("output_dir")
+            if not output_path:
+                output_path = "frames.csv" if output_dir else "data/export/frames.csv"
+            config = export_config(output_path=Path(output_path))
 
-            # 1. Handle the format name mismatch manually
-            if options.get("format"):
-                # assuming the config object field is named 'output_format'
-                config = replace(config, output_format=options["format"])
+        # 1. Handle the format name mismatch manually
+        if options.get("format"):
+            # assuming the config object field is named 'output_format'
+            config = replace(config, output_format=options["format"])
 
-            updates = {}
-            # 2. Corrected tuple with commas
-            for key in (
-                "output_path",
-                # "output_format",  <-- Removed, handled manually above due to name mismatch
-                "video_id",
-                "label_id",
-                "information_source_name",
-                "only_true",
-                "limit",
-                "load_base_data",
-                "transcode_frames",
-                "transcode_fps",
-                "transcode_quality",
-                "transcode_ext",
-                "transcode_overwrite",
-                "use_frame_pk_paths",
-            ):
-                value = options.get(key)
-                if value is not None:
-                    updates[key] = value
+        updates = {}
+        # 2. Corrected tuple with commas
+        for key in (
+            "output_path",
+            "output_dir",
+            # "output_format",  <-- Removed, handled manually above due to name mismatch
+            "video_id",
+            "label_id",
+            "information_source_name",
+            "only_true",
+            "limit",
+            "load_base_data",
+            "export_videos",
+            "export_frames",
+            "use_export_flags",
+            "segment_ids",
+            "transcode_frames",
+            "transcode_fps",
+            "transcode_quality",
+            "transcode_ext",
+            "transcode_overwrite",
+            "use_frame_pk_paths",
+        ):
+            value = options.get(key)
+            if value is not None:
+                updates[key] = value
 
-            if updates:
-                config = replace(config, **updates)
+        if updates:
+            config = replace(config, **updates)
 
-            if not config.output_path:
-                raise CommandError("output_path is required.")
+        if not config.output_path:
+            raise CommandError("output_path is required.")
 
-            return config
+        return config

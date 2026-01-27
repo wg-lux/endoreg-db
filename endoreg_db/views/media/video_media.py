@@ -75,6 +75,36 @@ class VideoMediaView(APIView):
             # List view
             return self._list_videos(request)
 
+    def patch(self, request, pk=None):
+        if pk is None:
+            return Response(
+                {"error": "Video ID is required for update."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            video_id_int = int(pk)
+        except (ValueError, TypeError):
+            raise Http404("Invalid video ID format")
+
+        try:
+            video = VideoFile.objects.get(pk=video_id_int)
+        except VideoFile.DoesNotExist:
+            raise Http404(f"Video with ID {pk} not found")
+
+        export_flag = request.data.get("export_segments_by_video")
+        if export_flag is None:
+            return Response(
+                {"error": "No supported fields provided for update."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        video.export_segments_by_video = bool(export_flag)
+        video.save(update_fields=["export_segments_by_video"])
+
+        serializer = VideoDetailSerializer(video, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def _get_video_detail(self, pk):
         """
         Get detailed information for a specific video.

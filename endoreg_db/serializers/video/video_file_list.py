@@ -41,6 +41,7 @@ class VideoFileListSerializer(serializers.ModelSerializer):
             "anonymized",
             "segment_annotations_validated",
             "segments",
+            "export_segments_by_video",
         ]
 
     # --- internal helper -------------------------------------------------

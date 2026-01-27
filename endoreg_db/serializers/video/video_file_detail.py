@@ -33,6 +33,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
             "patient_dob",
             "examination_date",
             "duration",
+            "export_segments_by_video",
         ]
 
     # ---------- helpers ---------- #

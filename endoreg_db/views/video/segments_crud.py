@@ -10,14 +10,19 @@ Provides RESTful endpoints for video segment management:
 
 import logging
 
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from endoreg_db.models import Label, LabelVideoSegment, VideoFile
+from endoreg_db.models import (
+    ImageClassificationAnnotation,
+    Label,
+    LabelVideoSegment,
+    VideoFile,
+)
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentSerializer,
 )
@@ -33,6 +38,114 @@ from endoreg_db.utils.operation_log import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _segment_annotation_filters(
+    *,
+    video: VideoFile,
+    start_frame_number: int,
+    end_frame_number: int,
+    label: Label | None,
+    information_source_id: int | None,
+    model_meta_id: int | None,
+) -> dict:
+    if label is None:
+        return {}
+
+    filters: dict[str, object] = {
+        "frame__video": video,
+        "frame__frame_number__gte": start_frame_number,
+        "frame__frame_number__lt": end_frame_number,
+        "label": label,
+    }
+
+    if information_source_id is None:
+        filters["information_source__isnull"] = True
+    else:
+        filters["information_source_id"] = information_source_id
+
+    if model_meta_id is None:
+        filters["model_meta__isnull"] = True
+    else:
+        filters["model_meta_id"] = model_meta_id
+
+    return filters
+
+
+def _delete_frame_annotations_for_segment(
+    *,
+    video: VideoFile,
+    start_frame_number: int,
+    end_frame_number: int,
+    label: Label | None,
+    information_source_id: int | None,
+    model_meta_id: int | None,
+) -> int:
+    filters = _segment_annotation_filters(
+        video=video,
+        start_frame_number=start_frame_number,
+        end_frame_number=end_frame_number,
+        label=label,
+        information_source_id=information_source_id,
+        model_meta_id=model_meta_id,
+    )
+    if not filters:
+        return 0
+    deleted, _ = ImageClassificationAnnotation.objects.filter(**filters).delete()
+    return deleted
+
+
+def _sync_frame_annotations(
+    *,
+    segment: LabelVideoSegment,
+    old_snapshot: dict | None = None,
+) -> None:
+    if old_snapshot:
+        _delete_frame_annotations_for_segment(
+            video=old_snapshot["video"],
+            start_frame_number=old_snapshot["start_frame_number"],
+            end_frame_number=old_snapshot["end_frame_number"],
+            label=old_snapshot["label"],
+            information_source_id=old_snapshot["information_source_id"],
+            model_meta_id=old_snapshot["model_meta_id"],
+        )
+
+    if segment.label is None:
+        return
+
+    info_source_id = segment.source_id
+    model_meta = segment.get_model_meta()
+    model_meta_id = model_meta.pk if model_meta else None
+
+    frames_queryset = segment.get_frames().only("id")
+    if not isinstance(frames_queryset, models.QuerySet):
+        return
+
+    existing_frame_ids = set(
+        ImageClassificationAnnotation.objects.filter(
+            frame_id__in=frames_queryset.values("id"),
+            label=segment.label,
+            information_source_id=info_source_id,
+            model_meta_id=model_meta_id,
+        ).values_list("frame_id", flat=True)
+    )
+
+    annotations_to_create = []
+    for frame in frames_queryset.exclude(id__in=existing_frame_ids).iterator():
+        annotations_to_create.append(
+            ImageClassificationAnnotation(
+                frame=frame,
+                label=segment.label,
+                value=True,
+                information_source_id=info_source_id,
+                model_meta_id=model_meta_id,
+            )
+        )
+
+    if annotations_to_create:
+        ImageClassificationAnnotation.objects.bulk_create(
+            annotations_to_create, ignore_conflicts=True
+        )
 
 
 @api_view(["GET"])
@@ -101,6 +214,7 @@ def video_segments_collection(request):
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
+                    _sync_frame_annotations(segment=segment)
                     logger.info(f"Successfully created video segment {segment.pk}")
                     return Response(
                         LabelVideoSegmentSerializer(segment).data,
@@ -208,6 +322,7 @@ def video_segments_by_video(request, pk):
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
+                    _sync_frame_annotations(segment=segment)
                     logger.info(
                         f"Successfully created segment {segment.pk} for video {pk}"
                     )
@@ -264,12 +379,25 @@ def video_segment_detail(request, pk, segment_id):
         )
 
         with transaction.atomic():
+            old_model_meta = segment.get_model_meta()
+            old_snapshot = {
+                "video": segment.video_file,
+                "start_frame_number": segment.start_frame_number,
+                "end_frame_number": segment.end_frame_number,
+                "label": segment.label,
+                "information_source_id": segment.source_id,
+                "model_meta_id": old_model_meta.pk if old_model_meta else None,
+            }
             serializer = LabelVideoSegmentSerializer(
                 segment, data=request.data, partial=True
             )
             if serializer.is_valid():
                 try:
                     segment = serializer.save()
+                    _sync_frame_annotations(
+                        segment=segment,
+                        old_snapshot=old_snapshot,
+                    )
                     logger.info(f"Successfully updated segment {segment_id}")
                     return Response(LabelVideoSegmentSerializer(segment).data)
                 except Exception as e:
@@ -289,6 +417,18 @@ def video_segment_detail(request, pk, segment_id):
         logger.info(f"Deleting segment {segment_id} from video {pk}")
         try:
             with transaction.atomic():
+                if segment.label is not None:
+                    delete_model_meta = segment.get_model_meta()
+                    _delete_frame_annotations_for_segment(
+                        video=segment.video_file,
+                        start_frame_number=segment.start_frame_number,
+                        end_frame_number=segment.end_frame_number,
+                        label=segment.label,
+                        information_source_id=segment.source_id,
+                        model_meta_id=(
+                            delete_model_meta.pk if delete_model_meta else None
+                        ),
+                    )
                 segment.delete()
                 logger.info(f"Successfully deleted segment {segment_id}")
                 return Response(
