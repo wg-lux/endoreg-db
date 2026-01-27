@@ -22,6 +22,8 @@ from .segments_crud import (
     video_segment_validate,
     video_segments_validate_bulk,
     video_segments_validation_status,
+    ensure_segment_annotations_bulk,
+    ensure_segment_annotations_for_video,
 )
 from .ai.label import label_list
 
@@ -46,6 +48,8 @@ __all__ = [
     "video_segment_validate",
     "video_segments_validate_bulk",
     "video_segments_validation_status",
+    "ensure_segment_annotations_bulk",
+    "ensure_segment_annotations_for_video",
     "label_list",
     "export_annotated_data",
 ]

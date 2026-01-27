@@ -9,6 +9,7 @@ Provides RESTful endpoints for video segment management:
 """
 
 import logging
+import uuid
 
 from django.db import models, transaction
 from django.db.models import Count
@@ -23,6 +24,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
+from endoreg_db.services.segment_annotations import ensure_segment_annotations
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentSerializer,
 )
@@ -146,6 +148,14 @@ def _sync_frame_annotations(
         ImageClassificationAnnotation.objects.bulk_create(
             annotations_to_create, ignore_conflicts=True
         )
+
+
+def _normalize_int_list(value):
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [int(item) for item in value if item is not None]
+    return [int(value)]
 
 
 @api_view(["GET"])
@@ -523,6 +533,14 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 is_validated=is_validated,
                 information_source_name=information_source_name,
             )
+            try:
+                segment.generate_annotations()
+            except Exception as exc:
+                logger.warning(
+                    "Failed to generate annotations while validating segment %s: %s",
+                    segment.pk,
+                    exc,
+                )
 
             status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
@@ -668,6 +686,14 @@ def video_segments_validate_bulk(request, pk: int):
                         if is_validated
                         else str(None),
                     )
+                    try:
+                        segment.generate_annotations()
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to generate annotations while bulk validating segment %s: %s",
+                            segment.pk,
+                            exc,
+                        )
                     updated_count += 1
 
                     
@@ -872,3 +898,81 @@ def video_segments_validation_status(request, pk: int):
             },
             status=status.HTTP_200_OK,
         )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def ensure_segment_annotations_for_video(request, pk: int):
+    """
+    Trigger idempotent annotation regeneration for segments attached to a single video.
+
+    Body (optional):
+    {
+      "segment_ids": [1,2,3],
+      "information_source_name": "manual_annotation"
+    }
+    """
+    segment_ids = _normalize_int_list(request.data.get("segment_ids"))
+    info_source = request.data.get("information_source_name", "manual_annotation")
+
+    try:
+        stats = ensure_segment_annotations(
+            video_ids=None if segment_ids else [pk],
+            segment_ids=segment_ids,
+            information_source_name=info_source,
+            commit=True,
+        )
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {
+            "task_id": str(uuid.uuid4()),
+            "status": "accepted",
+            "video_id": pk,
+            "stats": stats,
+        },
+        status=status.HTTP_202_ACCEPTED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def ensure_segment_annotations_bulk(request):
+    """
+    Trigger annotation regeneration for multiple videos/segments.
+
+    Body:
+    {
+      "video_ids": [1,2],
+      "segment_ids": [10,11],
+      "information_source_name": "manual_annotation"
+    }
+    """
+    video_ids = _normalize_int_list(request.data.get("video_ids"))
+    segment_ids = _normalize_int_list(request.data.get("segment_ids"))
+    info_source = request.data.get("information_source_name", "manual_annotation")
+
+    if not video_ids and not segment_ids:
+        return Response(
+            {"detail": "Provide video_ids or segment_ids"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stats = ensure_segment_annotations(
+        video_ids=video_ids,
+        segment_ids=segment_ids,
+        information_source_name=info_source,
+        commit=True,
+    )
+
+    return Response(
+        {
+            "task_id": str(uuid.uuid4()),
+            "status": "accepted",
+            "stats": stats,
+            "video_ids": video_ids,
+            "segment_ids": segment_ids,
+        },
+        status=status.HTTP_202_ACCEPTED,
+    )

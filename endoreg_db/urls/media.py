@@ -24,6 +24,8 @@ from endoreg_db.views.video import (
                                     video_segments_stats,
                                     video_segments_validate_bulk,
                                     video_segments_validation_status,
+                                    ensure_segment_annotations_bulk,
+                                    ensure_segment_annotations_for_video,
 )
 from endoreg_db.views.video.ai import label_list
 from endoreg_db.views.video.correction import (
@@ -188,6 +190,16 @@ urlpatterns = [
         "media/videos/<int:pk>/segments/validation-status/",
         video_segments_validation_status,
         name="video-segments-validation-status",
+    ),
+    path(
+        "media/videos/<int:pk>/ensure-segment-annotations/",
+        ensure_segment_annotations_for_video,
+        name="video-segment-ensure-annotations",
+    ),
+    path(
+        "media/videos/ensure-segment-annotations/",
+        ensure_segment_annotations_bulk,
+        name="video-segments-ensure-annotations",
     ),
     # ---------------------------------------------------------------------------------------
     # SENSITIVE METADATA ENDPOINTS (Modern Media Framework)

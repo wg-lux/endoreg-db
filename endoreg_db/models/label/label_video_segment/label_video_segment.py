@@ -495,12 +495,14 @@ class LabelVideoSegment(models.Model):
 
         Annotations are generated only if the segment has associated prediction metadata, model metadata, and label. Existing annotations for the same frame, label, model, and information source are not duplicated. Uses bulk creation for efficiency.
         """
-        if not self.prediction_meta:
-            logger.info(
-                "Skipping annotation generation for segment %s: Requires linked VideoPredictionMeta.",
-                self.pk,
-            )
-            return
+        
+        #TODO For annotations from the frontend this should not be an exit criterion
+        # if not self.prediction_meta:
+        #     logger.info(
+        #         "Skipping annotation generation for segment %s: Requires linked VideoPredictionMeta.",
+        #         self.pk,
+        #     )
+        #     return
 
         from endoreg_db.models import ImageClassificationAnnotation, InformationSource
 
@@ -509,8 +511,11 @@ class LabelVideoSegment(models.Model):
             information_source, _ = InformationSource.objects.get_or_create(
                 name="prediction"
             )
-
-        model_meta = self.get_model_meta()
+        try:
+            model_meta = self.get_model_meta()
+        except Exception as e:
+            model_meta = None
+            return logger.warning(f"No exception found for {self.label.name} {e}")
         label = self.label
 
         if not model_meta or not label:
@@ -518,7 +523,6 @@ class LabelVideoSegment(models.Model):
                 "Missing model_meta or label for segment %s. Skipping annotation generation.",
                 self.pk,
             )
-            return
 
         frames_queryset = self.get_frames().only("id")
         if not isinstance(frames_queryset, models.QuerySet):
