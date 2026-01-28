@@ -718,14 +718,14 @@ def _transcode_video_to_frame_dir(
                     ext=ext,
                     fps=fps,
                 )
-    _move_extracted_frames_to_pk_names(
-        video,
-        extracted_paths,
-        frame_dir,
-        frame_pks=frame_pks,
-        ext=ext,
-        overwrite=overwrite,
-    )
+                _move_extracted_frames_to_pk_names(
+                    video,
+                    extracted_paths,
+                    frame_dir,
+                    frame_pks=frame_pks,
+                    ext=ext,
+                    overwrite=overwrite,
+                )
     except (ValueError, FileNotFoundError, IOError) as exc:
         raise ValueError(f"active video path missing for {video.pk}: {exc}") from exc
 
