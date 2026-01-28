@@ -14,6 +14,7 @@ from django.db.models import Q, QuerySet
 
 from endoreg_db.helpers.data_loader import load_base_db_data
 from endoreg_db.models import ImageClassificationAnnotation, LabelVideoSegment, VideoFile
+from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
 )
@@ -538,23 +539,23 @@ def _export_videos_from_annotations(
 
     for video in videos:
         try:
-            source_path = video.active_file_path
-        except ValueError as exc:
-            logger.warning("Skipping video %s: %s", video.pk, exc)
-            continue
-
-        suffix = source_path.suffix or ".mp4"
-        video_hash = video.video_hash or "unknown"
-        target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
-        try:
-            shutil.copy2(source_path, target_path)
-            exported_count += 1
-        except (OSError, shutil.Error) as exc:
+            with ensure_local_file(video.active_file) as source_path:
+                suffix = source_path.suffix or ".mp4"
+                video_hash = video.video_hash or "unknown"
+                target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
+                try:
+                    shutil.copy2(source_path, target_path)
+                    exported_count += 1
+                except (OSError, shutil.Error) as exc:
+                    logger.warning(
+                        "Failed to export video %s from %s: %s",
+                        video.pk,
+                        source_path,
+                        exc,
+                    )
+        except (ValueError, FileNotFoundError, IOError) as exc:
             logger.warning(
-                "Failed to export video %s from %s: %s",
-                video.pk,
-                source_path,
-                exc,
+                "Skipping video %s: %s", video.pk, exc
             )
 
     return exported_count
@@ -707,27 +708,26 @@ def _transcode_video_to_frame_dir(
             return
 
     try:
-        source_path = video.active_file_path
-    except ValueError as exc:
-        raise ValueError(f"active video path missing for {video.pk}") from exc
-
-    with tempfile.TemporaryDirectory(prefix="transcode_tmp_", dir=frame_dir) as tmp:
-        tmp_dir = Path(tmp)
-        extracted_paths = ffmpeg_extract_frames(
-            source_path,
-            tmp_dir,
-            quality=quality,
-            ext=ext,
-            fps=fps,
-        )
-        _move_extracted_frames_to_pk_names(
-            video,
-            extracted_paths,
-            frame_dir,
-            frame_pks=frame_pks,
-            ext=ext,
-            overwrite=overwrite,
-        )
+        with ensure_local_file(video.active_file) as source_path:
+            with tempfile.TemporaryDirectory(prefix="transcode_tmp_", dir=frame_dir) as tmp:
+                tmp_dir = Path(tmp)
+                extracted_paths = ffmpeg_extract_frames(
+                    source_path,
+                    tmp_dir,
+                    quality=quality,
+                    ext=ext,
+                    fps=fps,
+                )
+    _move_extracted_frames_to_pk_names(
+        video,
+        extracted_paths,
+        frame_dir,
+        frame_pks=frame_pks,
+        ext=ext,
+        overwrite=overwrite,
+    )
+    except (ValueError, FileNotFoundError, IOError) as exc:
+        raise ValueError(f"active video path missing for {video.pk}: {exc}") from exc
 
 
 def _move_extracted_frames_to_pk_names(
