@@ -25,11 +25,7 @@ urlpatterns = [  # URL patterns for ExaminationForm.vue API calls
         get_classification_choices,
         name="get_choices_for_classification",
     ),
-    # NEW: Examination CRUD endpoints for SimpleExaminationForm
-    # POST /api/examinations/create/ - Create new examination
-    # GET /api/examinations/{id}/ - Get examination details
-    # PATCH /api/examinations/{id}/ - Update examination
-    # GET /api/examinations/list/ - List examinations with filtering
+
     # TODO: Clearly Distinguish between Examination (the template) and PatientExamination (the instance).
     # The views below handle PatientExamination instances, which represent a specific examination performed on a patient.
     # The URL names are updated to reflect this, using the 'patient_examination_*' prefix for clarity.
