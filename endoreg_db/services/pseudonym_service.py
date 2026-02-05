@@ -65,9 +65,18 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
 
         return patient_hash, True
 
-    except Exception as e:
-        logger.error(f"Error generating pseudonym for patient {patient.id}: {str(e)}")
-        raise ValueError(f"Failed to generate pseudonym: {str(e)}")
+    except ValueError:
+        # Known / expected error → client error (400)
+        logger.exception(
+            f"Validation error while generating pseudonym for patient {patient.id}"
+        )
+        raise
+
+    except Exception:
+    # Unexpected error → server error (500)
+        logger.exception(
+            f"Unexpected error while generating pseudonym for patient {patient.id}"
+        )
 
 
 def validate_patient_for_pseudonym(patient: Patient) -> list[str]:
