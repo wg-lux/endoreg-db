@@ -557,8 +557,9 @@ def video_segment_validate(request, pk: int, segment_id: int):
                     "information_source": information_source_name,
                 },
             )
-
-
+        # Blackening the outside frames
+        video.create_video_without_outside_frames(video)
+        
         logger.info(f"Validated segment {segment_id} in video {pk}: {is_validated}")
 
         return Response(
@@ -885,10 +886,10 @@ def video_segments_validation_status(request, pk: int):
                     failed_count += 1
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
-        #logger.info("Removing Outside Segments")
-        # video.label_video_segments.filter(
-        #     video_file=video, label__name="outside", state__is_validated=False
-        # ).delete()
+        logger.info("Removing Outside Segments")
+        video.label_video_segments.filter(
+        video_file=video, label__name="outside", state__is_validated=False
+        ).censor_
         return Response(
             {
                 "message": f"Video segment validation completed for video {pk}",
