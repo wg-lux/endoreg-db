@@ -77,6 +77,7 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
         logger.exception(
             f"Unexpected error while generating pseudonym for patient {patient.id}"
         )
+        raise
 
 
 def validate_patient_for_pseudonym(patient: Patient) -> list[str]:
