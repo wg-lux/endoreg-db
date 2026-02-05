@@ -602,6 +602,8 @@ def video_segments_validate_bulk(request, pk: int):
       "notes": "...",
       "information_source_name": "manual_annotation"
     }
+    
+    THIS IS WHERE SEGMENTS ARE STORED IN THE DATABASE
     """
     video = get_object_or_404(VideoFile, pk=pk)
 
