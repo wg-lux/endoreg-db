@@ -535,6 +535,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
             )
             try:
                 segment.generate_annotations()
+                segment_id = segment.pk
             except Exception as exc:
                 logger.warning(
                     "Failed to generate annotations while validating segment %s: %s",
@@ -542,7 +543,34 @@ def video_segment_validate(request, pk: int, segment_id: int):
                     exc,
                 )
 
-            status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
+            def _log_after_commit():
+                # re-read from DB to get the REAL final state
+                segment.refresh_from_db()
+                state = segment.state
+        
+                status_after = (
+                    STATUS_VALIDATED
+                    if (state and state.is_validated)
+                    else STATUS_UNVALIDATED
+                )
+        
+                record_operation(
+                    request,
+                    action=ACTION_SEGMENT_ANNOTATED,
+                    resource_type="video_segment",
+                    resource_id=segment.pk,
+                    status_before=status_before,
+                    status_after=status_after,
+                    meta={
+                        "video_id": video.pk,
+                        "label": segment.label.name if segment.label else None,
+                        "information_source": information_source_name,
+                    },
+                )
+
+            transaction.on_commit(_log_after_commit)
+
+            '''status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
             record_operation(
                 request,
@@ -556,7 +584,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                     "label": segment.label.name if segment.label else None,
                     "information_source": information_source_name,
                 },
-            )
+            )'''
         # Blackening the outside frames
         video.create_video_without_outside_frames(video)
         
@@ -691,6 +719,7 @@ def video_segments_validate_bulk(request, pk: int):
                     )
                     try:
                         segment.generate_annotations()
+                        segment_id = segment.pk
                     except Exception as exc:
                         logger.warning(
                             "Failed to generate annotations while bulk validating segment %s: %s",
@@ -700,8 +729,32 @@ def video_segments_validate_bulk(request, pk: int):
                     updated_count += 1
 
                     
+                    #
+                    def _log_after_commit(segment_id=segment_id):
+                        s = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
                     
-                    status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
+                        status_after = (
+                            STATUS_VALIDATED
+                            if (s.state and s.state.is_validated)
+                            else STATUS_UNVALIDATED
+                        )
+                    
+                        record_operation(
+                            request,
+                            action=ACTION_SEGMENT_ANNOTATED,
+                            resource_type="video_segment",
+                            resource_id=s.pk,
+                            status_before=status_before,
+                            status_after=status_after,
+                            meta={
+                                "video_id": pk,
+                                "bulk": True,
+                                "information_source": information_source_name,
+                            },
+                        )
+
+                    transaction.on_commit(_log_after_commit)
+                    '''status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
                     
                     record_operation(
@@ -716,7 +769,7 @@ def video_segments_validate_bulk(request, pk: int):
                             "bulk": True,
                             "information_source": information_source_name,
                         },
-                    )
+                    )'''
 
 
                 except Exception as e:
