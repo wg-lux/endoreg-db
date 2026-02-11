@@ -20,6 +20,16 @@ from endoreg_db.utils.operation_log import (
 logger = logging.getLogger(__name__)
 
 
+def _state_status_value(state_obj: Any) -> str | None:
+    """Return anonymization status as string if present, else None."""
+    if state_obj is None:
+        return None
+    st = getattr(state_obj, "anonymization_status", None)
+    if st is None:
+        return None
+    return str(getattr(st, "value", st))
+
+
 class AnonymizationValidateView(APIView):
     """
     POST /api/anonymization/<int:file_id>/validate/
@@ -111,29 +121,20 @@ class AnonymizationValidateView(APIView):
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         )
 
+                    # Capture status prior to final state mutation for accurate logging.
+                    status_before = _state_status_value(video.state)
+
                     if video.state is not None:
                         video.state.anonymized = True
+                        video.state.save(update_fields=["anonymized"])
                         video.sensitive_meta.state.save()
-                    try:
-                        if video.state is not None:
-                            st = getattr(video.state, "anonymization_status", None)
-                            if st is not None:
-                                status_before = str(getattr(st, "value", st))
-                    except Exception:
-                        logger.exception(
-                            "Failed to read video anonymization_status before validation"
-                        )
 
                         # --- NEW: status AFTER validation ---
                     status_after = status_before
                     try:
                         if video.state is not None:
                             video.state.refresh_from_db()
-                            st_after = getattr(
-                                video.state, "anonymization_status", None
-                            )
-                            if st_after is not None:
-                                status_after = str(getattr(st_after, "value", st_after))
+                            status_after = _state_status_value(video.state) or status_after
                     except Exception:
                         logger.exception(
                             "Failed to read video anonymization_status after validation"
@@ -146,8 +147,8 @@ class AnonymizationValidateView(APIView):
                         action=ACTION_ANONYMIZATION_VALIDATED,
                         resource_type="video",
                         resource_id=file_id,
-                        status_before=STATUS_PROCESSING,
-                        status_after=STATUS_ANONYMIZED,
+                        status_before=status_before or STATUS_PROCESSING,
+                        status_after=status_after or STATUS_ANONYMIZED,
                     )
 
                     return Response(
@@ -171,6 +172,7 @@ class AnonymizationValidateView(APIView):
                     .first()
                 )
                 if pdf is not None:
+                    status_before = _state_status_value(pdf.state)
                     prepared_payload = self._prepare_payload(payload, pdf)
                     try:
                         ok = pdf.validate_metadata_annotation(prepared_payload)
@@ -227,9 +229,7 @@ class AnonymizationValidateView(APIView):
                     try:
                         if pdf.state is not None:
                             pdf.state.refresh_from_db()
-                            st_after = getattr(pdf.state, "anonymization_status", None)
-                            if st_after is not None:
-                                status_after = str(getattr(st_after, "value", st_after))
+                            status_after = _state_status_value(pdf.state) or status_after
                     except Exception:
                         logger.exception(
                             "Failed to read pdf anonymization_status after validation"
@@ -241,8 +241,8 @@ class AnonymizationValidateView(APIView):
                         action=ACTION_ANONYMIZATION_VALIDATED,
                         resource_type="pdf",
                         resource_id=file_id,
-                        status_before=STATUS_PROCESSING,
-                        status_after=STATUS_ANONYMIZED,
+                        status_before=status_before or STATUS_PROCESSING,
+                        status_after=status_after or STATUS_ANONYMIZED,
                     )
 
                     return Response(
@@ -301,10 +301,11 @@ class AnonymizationValidateView(APIView):
         elif gender in female_values:
             prepared["patient_gender"] = "female"
         else:
-            # keep existing semantics: unknown values default to "male"
+            # Unsupported values are ignored to prevent incorrect metadata coercion.
             logger.warning(
-                "Unsupported patient_gender value %r; defaulting to 'male'", raw_gender
+                "Unsupported patient_gender value %r; leaving value unchanged",
+                raw_gender,
             )
-            prepared["patient_gender"] = "male"
+            prepared.pop("patient_gender", None)
 
         return prepared

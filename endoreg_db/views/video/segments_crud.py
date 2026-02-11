@@ -940,9 +940,7 @@ def video_segments_validation_status(request, pk: int):
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
         logger.info("Removing Outside Segments")
-        video.label_video_segments.filter(
-        video_file=video, label__name="outside", state__is_validated=False
-        ).censor_
+        video.create_video_without_outside_frames(video)
         return Response(
             {
                 "message": f"Video segment validation completed for video {pk}",
