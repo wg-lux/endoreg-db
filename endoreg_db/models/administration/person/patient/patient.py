@@ -1,7 +1,8 @@
 import logging
+from math import e
 import random
-from datetime import date, datetime
-from typing import TYPE_CHECKING, List, Optional  # Added List
+from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING, List, Literal, Optional, Self  # Added List
 
 from django.db import models
 from django.utils import timezone  # Add this import
@@ -105,8 +106,8 @@ class Patient(Person):
         gender: Optional["Gender | str"] = None,  # Allow string type hint
         birth_month: Optional[int] = None,
         birth_year: Optional[int] = None,
-    ):
-        from endoreg_db.utils import create_mock_patient_name, random_day_by_year
+    ) -> tuple[Self, Literal[False]] | tuple[Self, Literal[True]]:
+        from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
 
         from ....other import Gender  # Import Gender model
 
@@ -134,7 +135,11 @@ class Patient(Person):
         else:
             raise ValueError("Gender must be a string name or a Gender object.")
 
-        pseudo_dob = random_day_by_year(birth_year)
+        assert birth_month is not None
+        if not 1 <= birth_month <= 12:
+            raise ValueError("Birth month must be between 1 and 12.")
+        assert birth_year is not None
+        pseudo_dob = random_day_by_month_year(month=birth_month, year=birth_year)
         gender_name = gender_obj.name
         first_name, last_name = create_mock_patient_name(gender_name)
 
@@ -146,6 +151,7 @@ class Patient(Person):
             last_name=last_name,
             dob=pseudo_dob,
             gender=gender_obj,  # Use the fetched/validated Gender object
+            center=center,
             patient_hash=patient_hash,
             is_real_person=False,
         )
@@ -275,10 +281,15 @@ class Patient(Person):
         :param distribution: Distribution of the age.
         :return: Random age based on the given distribution.
         """
+        min_age = int(min_age)
+        max_age = int(max_age)
+        if min_age > max_age:
+            raise ValueError("min_age must be less than or equal to max_age.")
         if distribution == "normal":
-            age = int(random.normalvariate(mean_age, std_age))
+            age = int(round(random.normalvariate(mean_age, std_age)))
+            age = max(min_age, min(age, max_age))
         else:
-            age = int(random.uniform(min_age, max_age))
+            age = random.randint(min_age, max_age)
 
         return age
 
@@ -291,14 +302,30 @@ class Patient(Person):
         :param current_date: Current date.
         :return: Date of birth based on the given age and current date.
         """
+        age = int(age)
+        if age < 0:
+            raise ValueError("Age must be non-negative.")
+
         if current_date is None:
-            current_date = datetime.now()
-        dob = current_date.replace(year=current_date.year - age).date()
+            current_date = timezone.now().date()
+        elif isinstance(current_date, datetime):
+            current_date = current_date.date()
 
-        # TODO
-        # randomize the day and month by adding a random number of days (0-364) to the date
+        def _replace_year_safe(input_date: date, year: int) -> date:
+            try:
+                return input_date.replace(year=year)
+            except ValueError:
+                # Handle Feb 29 for non-leap target years.
+                return input_date.replace(year=year, month=2, day=28)
 
-        return dob
+        latest_dob = _replace_year_safe(current_date, current_date.year - age)
+        earliest_dob = (
+            _replace_year_safe(current_date, current_date.year - age - 1)
+            + timedelta(days=1)
+        )
+        offset_days = random.randint(0, (latest_dob - earliest_dob).days)
+
+        return earliest_dob + timedelta(days=offset_days)
 
     @classmethod
     def get_random_name_for_gender(cls, gender_obj, locale="de_DE"):
@@ -324,18 +351,24 @@ class Patient(Person):
         :return: The created patient.
         """
         from ....administration import Center
-
-        gender = Patient.get_random_gender()
+        patient = cls()
+        if patient.gender is None:
+            gender = Patient.get_random_gender()
+        else:
+            gender = patient.gender
         last_name, first_name = Patient.get_random_name_for_gender(gender)
-
-        age = Patient.get_random_age()
+        
+        if patient.dob is None:
+            age = Patient.get_random_age()
+        else:            
+            age = patient.age()
         dob = Patient.get_dob_from_age(age)
 
         # Fetch the center object if a name is provided
         if isinstance(center, str):
             center_obj = Center.objects.get(name=center)
         elif isinstance(center, Center):
-            center_obj = center
+            center_obj = center.objects.get(name=center.name)
         else:
             raise ValueError("Center must be a string name or a Center object.")
 

@@ -1147,14 +1147,55 @@ def _create_anonymized_record(
     """
 
     instance.refresh_from_db()
-    instance.get_patient_hash()
+    patient_hash = instance.get_patient_hash()
     instance.get_patient_examination_hash()
+
+    pseudo_patient = None
+    dob_value = instance.patient_dob
+    if isinstance(dob_value, datetime):
+        dob_date = dob_value.date()
+    else:
+        dob_date = dob_value
+
+    try:
+        if (
+            patient_hash
+            and instance.center is not None
+            and instance.patient_gender is not None
+            and dob_date is not None
+        ):
+            pseudo_patient, _created = Patient.get_or_create_pseudo_patient_by_hash(
+                patient_hash=patient_hash,
+                center=instance.center,
+                gender=instance.patient_gender,
+                birth_month=dob_date.month,
+                birth_year=dob_date.year,
+            )
+        elif patient_hash:
+            pseudo_patient, _created = Patient.get_or_create_pseudo_patient_by_hash(
+                patient_hash=patient_hash
+            )
+    except Exception as e:
+        logger.warning(
+            "Failed to resolve pseudo patient for SensitiveMeta %s during anonymization: %s",
+            instance.pk,
+            e,
+        )
+
+    if pseudo_patient and pseudo_patient.dob:
+        preserved_dob = timezone.make_aware(
+            datetime.combine(pseudo_patient.dob, datetime.min.time())
+        )
+    else:
+        preserved_dob = DEFAULT_ANONYMIZED_DATE
 
     anonymized_data = {
         "patient_first_name": DEFAULT_ANONYMIZED,
         "patient_last_name": DEFAULT_ANONYMIZED,
-        "patient_dob": DEFAULT_ANONYMIZED_DATE,
+        "patient_dob": preserved_dob,
         "examination_date": DEFAULT_ANONYMIZED_DATE,
+        "patient_gender": pseudo_patient.gender if pseudo_patient else instance.patient_gender,
+        "center": pseudo_patient.center if pseudo_patient else instance.center,
     }
     sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)
 

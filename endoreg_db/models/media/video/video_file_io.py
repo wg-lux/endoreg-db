@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, data_paths
+from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, data_paths
 
 from ....utils import delete_field_file, ensure_local_file, storage_file_exists
 
@@ -74,6 +74,8 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
     processed_field = getattr(video, "processed_file", None)
     if not (video.is_processed and processed_field and processed_field.name):
         return None
+
+    processed_name = str(processed_field.name)
     try:
         direct_path = Path(processed_field.path)
         if direct_path.exists():
@@ -84,7 +86,16 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
             video.video_hash,
             exc,
         )
-        direct_path = None
+    # Fallback aligned with streaming path resolution:
+    # - absolute stored name -> use directly
+    # - relative stored name -> resolve under STORAGE_DIR
+    if processed_name:
+        if processed_name.startswith("/"):
+            candidate = Path(processed_name)
+        else:
+            candidate = STORAGE_DIR / processed_name
+        if candidate.exists():
+            return candidate.resolve()
 
     if processed_field and storage_file_exists(processed_field):
         logger.debug(
