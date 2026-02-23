@@ -1,7 +1,9 @@
 import logging
+from datetime import date as dt_date, datetime, time as dt_time
 from typing import Any, Dict, cast
 
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -28,6 +30,43 @@ def _state_status_value(state_obj: Any) -> str | None:
     if st is None:
         return None
     return str(getattr(st, "value", st))
+
+
+def _preferred_validation_timestamp(payload: Dict[str, Any]) -> tuple[str, str]:
+    """
+    Prefer a manually supplied examination_date as the validation timestamp.
+
+    Returns:
+        (iso_timestamp, source)
+    """
+    exam_date = payload.get("examination_date")
+    if isinstance(exam_date, datetime):
+        if timezone.is_naive(exam_date):
+            exam_date = timezone.make_aware(exam_date, timezone.get_current_timezone())
+        return exam_date.isoformat(), "manual_examination_date"
+    if isinstance(exam_date, dt_date):
+        preferred_dt = timezone.make_aware(
+            datetime.combine(exam_date, dt_time.min), timezone.get_current_timezone()
+        )
+        return preferred_dt.isoformat(), "manual_examination_date"
+
+    now_iso = timezone.now().isoformat()
+    return now_iso, "request_time"
+
+
+def _validation_operation_meta(payload: Dict[str, Any]) -> Dict[str, Any]:
+    timestamp, source = _preferred_validation_timestamp(payload)
+    meta: Dict[str, Any] = {
+        "timestamp": timestamp,
+        "timestamp_source": source,
+    }
+    exam_date = payload.get("examination_date")
+    if isinstance(exam_date, (dt_date, datetime)):
+        if isinstance(exam_date, datetime):
+            meta["examination_date"] = exam_date.date().isoformat()
+        else:
+            meta["examination_date"] = exam_date.isoformat()
+    return meta
 
 
 class AnonymizationValidateView(APIView):
@@ -72,6 +111,8 @@ class AnonymizationValidateView(APIView):
 
         file_type = payload.get("file_type")
         status_before = None
+        operation_meta = _validation_operation_meta(payload)
+        response_timestamp = operation_meta["timestamp"]
 
         with transaction.atomic():
             # Try Video first (unless explicitly requesting report)
@@ -149,10 +190,11 @@ class AnonymizationValidateView(APIView):
                         resource_id=file_id,
                         status_before=status_before or STATUS_PROCESSING,
                         status_after=status_after or STATUS_ANONYMIZED,
+                        meta=operation_meta,
                     )
 
                     return Response(
-                        {"message": "Video validated."},
+                        {"message": "Video validated.", "timestamp": response_timestamp},
                         status=status.HTTP_200_OK,
                     )
 
@@ -243,10 +285,11 @@ class AnonymizationValidateView(APIView):
                         resource_id=file_id,
                         status_before=status_before or STATUS_PROCESSING,
                         status_after=status_after or STATUS_ANONYMIZED,
+                        meta=operation_meta,
                     )
 
                     return Response(
-                        {"message": "report validated."},
+                        {"message": "report validated.", "timestamp": response_timestamp},
                         status=status.HTTP_200_OK,
                     )
 

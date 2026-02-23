@@ -150,6 +150,9 @@ from .state import (
     SensitiveMetaState,
     VideoState,
 )
+from .report import (
+    PatientExaminationReport,
+)
 
 # AI dataset model
 from .aidataset import (
@@ -216,6 +219,7 @@ __all__ = [
     "ReportReaderFlag",
     "VideoMetadata",
     "VideoProcessingHistory",
+    "PatientExaminationReport",
     ######## Medical ########
     # Disease
     "Disease",

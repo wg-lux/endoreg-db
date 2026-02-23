@@ -11,6 +11,15 @@ from rest_framework.response import Response
 
 # Use module import so tests can monkeypatch functions on the module
 from endoreg_db.services import lookup_service as ls
+from endoreg_db.schemas.lookup_state import (
+    LookupInitRequest,
+    LookupPartsPatchRequest,
+    build_lookup_recompute_response,
+    validate_lookup_parts_response,
+    validate_lookup_state,
+    ValidationError,
+    normalize_lookup_keys,
+)
 from endoreg_db.services.lookup_store import DEFAULT_TTL_SECONDS, LookupStore
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.models.other.tag import Tag
@@ -51,8 +60,8 @@ class LookupViewSet(viewsets.ViewSet):
     parser_classes = (JSONParser, FormParser, MultiPartParser)
     INPUT_KEYS = {
         "patient_examination_id",
-        "selectedRequirementSetIds",
-        "selectedChoices",
+        "selected_requirement_set_ids",
+        "selected_choices",
     }
 
     user_tags = Tag
@@ -95,18 +104,16 @@ class LookupViewSet(viewsets.ViewSet):
 
         except Exception:
             pass
-        # Prefer DRF data
-        raw_pe = (
-            request.data.get("patient_examination_id")
-            if hasattr(request, "data")
-            else None
+        payload = normalize_lookup_keys(
+            request.data if hasattr(request, "data") else {}
         )
+        raw_pe = payload.get("patient_examination_id")
         # Fallback: parse malformed form payload where the entire dict was sent as a single key string
 
         if raw_pe is None:
             for candidate in (
                 getattr(getattr(request, "_request", None), "POST", None),
-                request.data if hasattr(request, "data") else None,
+                payload,
             ):
                 try:
                     if isinstance(candidate, Mapping) and len(candidate.keys()) == 1:
@@ -118,11 +125,13 @@ class LookupViewSet(viewsets.ViewSet):
                         ):
                             try:
                                 parsed = literal_eval(only_key)
-                                if (
-                                    isinstance(parsed, dict)
-                                    and "patient_examination_id" in parsed
-                                ):
-                                    raw_pe = parsed.get("patient_examination_id")
+                                if isinstance(parsed, dict):
+                                    normalized = normalize_lookup_keys(parsed)
+                                    if "patient_examination_id" in normalized:
+                                        raw_pe = normalized.get(
+                                            "patient_examination_id"
+                                        )
+                                        payload.update(normalized)
                                     logger.debug(
                                         "lookup.init recovered pe_id from malformed payload: %r",
                                         raw_pe,
@@ -135,49 +144,30 @@ class LookupViewSet(viewsets.ViewSet):
                 except Exception:
                     pass
 
-        user_tags = request.data.get("user_tags", None)
-        if user_tags and not isinstance(user_tags, list):
-            user_tags = [user_tags]
         # Fallback to query params
         if raw_pe is None:
             raw_pe = request.query_params.get("patient_examination_id")
+        payload["patient_examination_id"] = raw_pe
 
         logger.debug("lookup.init raw_pe=%r type=%s", raw_pe, type(raw_pe))
 
-        # Normalize potential list/tuple inputs (e.g., from form submissions)
-        if isinstance(raw_pe, (list, tuple)):
-            raw_pe = raw_pe[0] if raw_pe else None
-
-        if raw_pe in (None, ""):
-            return Response(
-                {"detail": "patient_examination_id must be an integer"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Coerce to int robustly
         try:
-            pe_id = int(str(raw_pe))
-
-        except (TypeError, ValueError):
-            logger.warning("lookup.init failed to int() raw_pe=%r", raw_pe)
+            init_payload = LookupInitRequest.model_validate(payload)
+        except ValidationError:
             return Response(
-                {"detail": "patient_examination_id must be an integer"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if pe_id <= 0:
-            return Response(
-                {"detail": "patient_examination_id must be positive"},
+                {"detail": "patient_examination_id must be a positive integer"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
             # Create internal session via service (may seed its own token/cache)
             service_kwargs = {}
-            if user_tags:
-                service_kwargs["user_tags"] = user_tags
+            if init_payload.user_tags:
+                service_kwargs["user_tags"] = init_payload.user_tags
 
-            internal_token = ls.create_lookup_token_for_pe(pe_id, **service_kwargs)
+            internal_token = ls.create_lookup_token_for_pe(
+                init_payload.patient_examination_id, **service_kwargs
+            )
             internal_data = LookupStore(token=internal_token).get_all()
 
             issued_key = f"{ISSUED_MAP_PREFIX}{internal_token}"
@@ -205,7 +195,9 @@ class LookupViewSet(viewsets.ViewSet):
             # Persist origin mapping so we can restart expired sessions
 
             cache.set(
-                f"{ORIGIN_MAP_PREFIX}{token_to_return}", pe_id, DEFAULT_TTL_SECONDS
+                f"{ORIGIN_MAP_PREFIX}{token_to_return}",
+                init_payload.patient_examination_id,
+                DEFAULT_TTL_SECONDS,
             )
 
         except Exception as e:
@@ -267,7 +259,8 @@ class LookupViewSet(viewsets.ViewSet):
                     # Hydrate the original token with recovered data and refresh origin TTL
                     store.set_many(new_data)
                     cache.set(f"{ORIGIN_MAP_PREFIX}{pk}", pe_id, DEFAULT_TTL_SECONDS)
-                    return Response(store.get_all(), status=status.HTTP_200_OK)
+                    typed_data = validate_lookup_state(store.get_all())
+                    return Response(typed_data, status=status.HTTP_200_OK)
 
                 except Exception:
                     pass
@@ -277,7 +270,8 @@ class LookupViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        return Response(store.get_all())
+        typed_data = validate_lookup_state(store.get_all())
+        return Response(typed_data)
 
     @action(detail=True, methods=["get", "patch"], url_path="parts")
     def parts(self, request, pk=None):
@@ -324,7 +318,8 @@ class LookupViewSet(viewsets.ViewSet):
                 )
 
             try:
-                return Response(store.get_many(keys))
+                payload = validate_lookup_parts_response(store.get_many(keys), keys)
+                return Response(payload)
 
             except Exception:
                 return Response(
@@ -334,13 +329,14 @@ class LookupViewSet(viewsets.ViewSet):
 
         # PATCH
 
-        updates = request.data.get("updates", {})
-
-        if not isinstance(updates, dict) or not updates:
+        try:
+            patch_payload = LookupPartsPatchRequest.model_validate(request.data or {})
+        except ValidationError:
             return Response(
                 {"detail": "updates must be a non-empty object"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        updates = patch_payload.updates
 
         store.set_many(updates)
 
@@ -368,10 +364,8 @@ class LookupViewSet(viewsets.ViewSet):
 
         try:
             updates = ls.recompute_lookup(pk)
-
-            return Response(
-                {"ok": True, "token": pk, "updates": updates}, status=status.HTTP_200_OK
-            )
+            payload = build_lookup_recompute_response(pk, updates)
+            return Response(payload, status=status.HTTP_200_OK)
 
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_404_NOT_FOUND)

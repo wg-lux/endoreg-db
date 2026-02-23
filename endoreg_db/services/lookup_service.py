@@ -32,8 +32,149 @@ from django.db.models import Prefetch, QuerySet
 from endoreg_db.models.medical.examination import ExaminationRequirementSet
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.requirement.requirement_set import RequirementSet
+from endoreg_db.schemas.lookup_state import (
+    LookupState,
+    validate_lookup_state,
+    validate_lookup_updates,
+)
 
 from .lookup_store import LookupStore
+from .markov_prior_service import (
+    DEFAULT_MARKOV_CONFIDENCE_THRESHOLD,
+    propose_candidate_requirement_sets,
+)
+from .report_history import get_patient_examination_history_context
+
+
+def evaluate_patient_exam_requirement_guidance(
+    pe: PatientExamination,
+    *,
+    selected_requirement_set_ids: Optional[List[int]] = None,
+    user_tags: Optional[List[str]] = None,
+    use_history_priors: bool = True,
+) -> Dict[str, Any]:
+    """
+    Evaluate requirement guidance for a persisted PatientExamination state.
+
+    Advisory only: returns statuses, defaults, and suggestions. It does not mutate
+    the database or cache. Intended for report persistence/finalization UX.
+    """
+    all_rs_for_exam = list(requirement_sets_for_patient_exam(pe, user_tags=user_tags))
+
+    patient_finding_names: List[str] = []
+    try:
+        for patient_finding in pe.patient_findings.all():
+            finding_name = getattr(getattr(patient_finding, "finding", None), "name", None)
+            if isinstance(finding_name, str) and finding_name:
+                patient_finding_names.append(finding_name)
+    except Exception:
+        patient_finding_names = []
+
+    history_context: Dict[str, Any] | None = None
+    history_tokens: List[str] = []
+    if use_history_priors:
+        try:
+            history_context = get_patient_examination_history_context(pe, limit=5)
+            for previous_exam in history_context.get("previous_examinations", []) or []:
+                if not isinstance(previous_exam, dict):
+                    continue
+                exam_name = previous_exam.get("examination_name")
+                if isinstance(exam_name, str) and exam_name:
+                    history_tokens.append(exam_name)
+                for finding_item in previous_exam.get("findings", []) or []:
+                    if not isinstance(finding_item, dict):
+                        continue
+                    finding_name = finding_item.get("finding_name")
+                    if isinstance(finding_name, str) and finding_name:
+                        history_tokens.append(finding_name)
+        except Exception as exc:
+            logger.debug(
+                "Failed to build history context for requirement guidance (pe=%s): %s",
+                pe.id,
+                exc,
+            )
+            history_context = None
+            history_tokens = []
+
+    prior_result = propose_candidate_requirement_sets(
+        patient_finding_names=patient_finding_names,
+        examination_name=getattr(pe.examination, "name", None),
+        requirement_sets=all_rs_for_exam,
+        history_context=history_context,
+        history_tokens=history_tokens,
+    )
+
+    selected_rs_ids = selected_requirement_set_ids or []
+    if selected_rs_ids:
+        eval_rs_ids = set(selected_rs_ids)
+    elif (
+        prior_result.confidence >= DEFAULT_MARKOV_CONFIDENCE_THRESHOLD
+        and prior_result.candidate_requirement_set_ids
+    ):
+        eval_rs_ids = set(prior_result.candidate_requirement_set_ids)
+    else:
+        eval_rs_ids = {rs.id for rs in all_rs_for_exam}
+
+    rs_objs = [rs for rs in all_rs_for_exam if rs.id in eval_rs_ids]
+
+    requirements_by_set = {
+        rs.id: [{"id": r.id, "name": r.name} for r in rs.requirements.all()]
+        for rs in rs_objs
+    }
+
+    requirement_status: Dict[str, bool] = {}
+    set_status: Dict[str, bool] = {}
+    suggested_actions: Dict[str, List[Dict[str, Any]]] = {}
+    req_defaults: Dict[str, Any] = {}
+    cls_choices: Dict[str, Any] = {}
+
+    for rs in rs_objs:
+        req_results = []
+        for r in rs.requirements.all():
+            ok = bool(r.evaluate(pe, mode="strict"))
+            requirement_status[str(r.id)] = ok
+            req_results.append(ok)
+
+            defaults = getattr(r, "default_findings", lambda pe: [])(pe)
+            choices = getattr(r, "classification_choices", lambda pe: [])(pe)
+            if defaults:
+                req_defaults[str(r.id)] = defaults
+            if choices:
+                cls_choices[str(r.id)] = choices
+
+            if not ok:
+                acts: List[Dict[str, Any]] = []
+                for d in defaults or []:
+                    acts.append(
+                        {
+                            "type": "add_finding",
+                            "finding_id": d.get("finding_id"),
+                            "classification_ids": d.get("classification_ids") or [],
+                            "note": "default",
+                        }
+                    )
+                if "PatientExamination" in [m.__name__ for m in r.expected_models]:
+                    acts.append({"type": "edit_patient", "fields": ["gender", "dob"]})
+                if acts:
+                    suggested_actions[str(r.id)] = acts
+
+        set_status[str(rs.id)] = (
+            rs.eval_function(req_results) if rs.eval_function else all(req_results)
+        )
+
+    return {
+        "requirements_by_set": requirements_by_set,
+        "requirement_status": requirement_status,
+        "requirement_set_status": set_status,
+        "requirement_defaults": req_defaults,
+        "classification_choices": cls_choices,
+        "suggested_actions": suggested_actions,
+        "candidate_requirement_set_ids": prior_result.candidate_requirement_set_ids,
+        "candidate_requirement_set_confidence": prior_result.confidence,
+        "selected_requirement_set_ids": list(selected_rs_ids),
+        "history_context": history_context or {},
+        "advisory_only": True,
+    }
 
 
 def load_patient_exam_for_eval(pk: int) -> PatientExamination:
@@ -211,7 +352,10 @@ def build_initial_lookup(
         "requirement_status": {},  # Status of each requirement (satisfied/unsatisfied)
         "requirement_set_status": {},  # Status of each requirement set
         "suggested_actions": {},  # Suggested actions to satisfy requirements
-        # You can add "selectedRequirementSetIds" as the user makes choices
+        "candidate_requirement_set_ids": [],
+        "candidate_requirement_set_confidence": 0.0,
+        "selected_requirement_set_ids": [],
+        "selected_choices": {},
     }
 
 
@@ -289,7 +433,9 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
             logger.error(f"No lookup data found for token {token}")
             raise ValueError(f"No lookup data found for token {token}")
 
-        data = validated_data
+        data = validate_lookup_state(validated_data)
+        if data is None:
+            raise ValueError(f"No lookup data found for token {token}")
         logger.debug(
             f"Recomputing lookup for token {token}, data keys: {list(data.keys())}"
         )
@@ -322,17 +468,71 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
             )
             raise ValueError(f"Failed to load patient examination {pe_id}: {e}")
 
-        selected_rs_ids: List[int] = data.get("selectedRequirementSetIds", [])
+        state = LookupState.model_validate(data)
+        selected_rs_ids: List[int] = state.selected_requirement_set_ids
         logger.debug(
             f"Selected requirement set IDs for token {token}: {selected_rs_ids}"
         )
 
-        rs_objs = [
-            rs
-            for rs in requirement_sets_for_patient_exam(pe)
-            if rs.id in selected_rs_ids
-        ]
-        logger.debug(f"Found {len(rs_objs)} requirement set objects for token {token}")
+        all_rs_for_exam = list(requirement_sets_for_patient_exam(pe))
+        patient_finding_names = []
+        try:
+            for patient_finding in pe.patient_findings.all():
+                finding_name = getattr(getattr(patient_finding, "finding", None), "name", None)
+                if isinstance(finding_name, str) and finding_name:
+                    patient_finding_names.append(finding_name)
+        except Exception:
+            patient_finding_names = []
+
+        history_context: Dict[str, Any] | None = None
+        history_tokens: List[str] = []
+        try:
+            history_context = get_patient_examination_history_context(pe, limit=5)
+            for previous_exam in history_context.get("previous_examinations", []) or []:
+                if not isinstance(previous_exam, dict):
+                    continue
+                exam_name = previous_exam.get("examination_name")
+                if isinstance(exam_name, str) and exam_name:
+                    history_tokens.append(exam_name)
+                for finding_item in previous_exam.get("findings", []) or []:
+                    if not isinstance(finding_item, dict):
+                        continue
+                    finding_name = finding_item.get("finding_name")
+                    if isinstance(finding_name, str) and finding_name:
+                        history_tokens.append(finding_name)
+        except Exception as exc:
+            logger.debug("Failed to build history context for priors (pe=%s): %s", pe_id, exc)
+            history_context = None
+            history_tokens = []
+
+        prior_result = propose_candidate_requirement_sets(
+            patient_finding_names=patient_finding_names,
+            examination_name=getattr(pe.examination, "name", None),
+            requirement_sets=all_rs_for_exam,
+            history_context=history_context,
+            history_tokens=history_tokens,
+        )
+
+        if selected_rs_ids:
+            eval_rs_ids = set(selected_rs_ids)
+        elif (
+            prior_result.confidence >= DEFAULT_MARKOV_CONFIDENCE_THRESHOLD
+            and prior_result.candidate_requirement_set_ids
+        ):
+            # High-confidence prior: reduce search space to candidates only.
+            eval_rs_ids = set(prior_result.candidate_requirement_set_ids)
+        else:
+            # Strict fallback: evaluate all requirement sets for this exam.
+            eval_rs_ids = {rs.id for rs in all_rs_for_exam}
+
+        rs_objs = [rs for rs in all_rs_for_exam if rs.id in eval_rs_ids]
+        logger.debug(
+            "Found %s requirement set objects for token %s (confidence=%.3f, candidates=%s)",
+            len(rs_objs),
+            token,
+            prior_result.confidence,
+            prior_result.candidate_requirement_set_ids,
+        )
 
         # 1) requirements grouped by set (already prefetched in load func)
         requirements_by_set = {
@@ -395,14 +595,17 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
         # staged = data.get("staged", {})
         # if you implement server-side simulation later, adjust requirement_status with staged result here
 
-        updates = {
+        updates_raw = {
             "requirements_by_set": requirements_by_set,
             "requirement_status": requirement_status,
             "requirement_set_status": set_status,
             "requirement_defaults": req_defaults,  # keep your existing key
             "classification_choices": cls_choices,  # keep your existing key
             "suggested_actions": suggested_actions,  # new
+            "candidate_requirement_set_ids": prior_result.candidate_requirement_set_ids,
+            "candidate_requirement_set_confidence": prior_result.confidence,
         }
+        updates = validate_lookup_updates(updates_raw)
 
         logger.debug(
             f"Updating store for token {token} with {len(updates)} update keys"

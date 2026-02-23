@@ -225,12 +225,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         2. Ensure we have EITHER (start_time, end_time) OR (start_frame, end_frame).
         3. Ensure Start < End.
         """
-        # 1. Video Check
-        video_id = attrs.get("video_id") or self.initial_data.get("video_id")
-        if not video_id and not self.instance:
-            raise serializers.ValidationError("video_id is required.")
-
-        # 2. Time vs Frame Check
+        # 1. Time vs Frame Check
         start_time = attrs.get("start_time")
         end_time = attrs.get("end_time")
         start_frame = attrs.get("start_frame_number")
@@ -256,7 +251,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                     "Either (start_time, end_time) OR (start_frame_number, end_frame_number) must be provided."
                 )
 
-        # 3. Logical Constraints
+        # 2. Logical Constraints
         if has_time:
             if start_time < 0:
                 raise serializers.ValidationError(
@@ -276,6 +271,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"end_frame_number": "Must be greater than start_frame_number."}
                 )
+
+        # 3. Video Check (after payload-shape/frame consistency checks for better errors)
+        video_id = attrs.get("video_id") or self.initial_data.get("video_id")
+        if not video_id and not self.instance:
+            raise serializers.ValidationError("video_id is required.")
 
         return attrs
 

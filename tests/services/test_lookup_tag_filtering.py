@@ -5,8 +5,10 @@ These tests verify that the lookup system correctly filters requirement sets
 based on user role tags like "Gastroenterologist", "Student", etc.
 """
 
+from __future__ import annotations
 import pytest
 from django.test import TestCase
+
 
 from endoreg_db.models import Center, ExaminationRequirementSet, Tag
 from endoreg_db.models.administration.person import Patient

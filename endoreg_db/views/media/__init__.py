@@ -2,6 +2,7 @@
 
 from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
+from .patient_media_timeline import PatientMediaTimelineView
 from ..video.reimport import VideoReimportView
 from ..report.reimport import ReportReimportView
 from endoreg_db.views.video.ai.label import label_list
@@ -19,6 +20,7 @@ from .sensitive_metadata import (
 __all__ = [
     "VideoMediaView",
     "PdfMediaView",
+    "PatientMediaTimelineView",
     "VideoReimportView",
     "ReportReimportView",
     "get_sensitive_metadata_pk",

@@ -31,6 +31,8 @@ let
     pkg-config
     protobuf
     libglvnd
+    xorg.libxcb
+    xorg.libX11
   ];
   runtimePackages = with pkgs; [
     stdenv.cc.cc
@@ -42,6 +44,13 @@ let
     zlib
     ollama.out
     tesseract
+    # --- ADDED THESE FOR OPENCV 4.13+ SUPPORT ---
+    xorg.libxcb      # Provides libxcb.so.1
+    xorg.libX11      # Common dependency for XCB
+    xorg.libXext     # Common dependency for OpenCV
+    xorg.libXrender  # Common dependency for OpenCV
+    libxkbcommon     # Often required by newer Qt/OpenCV builds
+    # ------------------------------------------
   ];
   
   SYNC_CMD = "uv sync --extra dev --extra docs";

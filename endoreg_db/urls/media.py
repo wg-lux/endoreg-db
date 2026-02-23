@@ -3,6 +3,7 @@ from django.urls import path
 from endoreg_db.views import VideoStreamView
 from endoreg_db.views.media import (
                                     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
+                                    PatientMediaTimelineView,
                                     VideoMediaView,
                                     get_sensitive_metadata_pk,
                                     pdf_sensitive_metadata,
@@ -39,6 +40,11 @@ from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
 # Simplified Meta and Validation Endpoints
 
 urlpatterns = [
+    path(
+        "media/patients/<int:patient_id>/timeline/",
+        PatientMediaTimelineView.as_view(),
+        name="patient-media-timeline",
+    ),
     path(
         "media/sensitive-media-id/<int:pk>/<str:mediaType>/",
         get_sensitive_metadata_pk,
@@ -118,7 +124,6 @@ urlpatterns = [
         name="video-remove-frames",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
-    # ---------------------------------------------------------------------------------------
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
     # Video Segments Collection API
     # GET/POST /api/media/videos/segments/

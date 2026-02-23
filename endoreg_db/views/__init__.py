@@ -62,7 +62,11 @@ from .patient_examination import (
 )
 from .patient_finding import OptimizedPatientFindingViewSet, PatientFindingViewSet
 from .patient_finding_classification import create_patient_finding_classification
-from .report import ReportReimportView, ReportStreamView
+from .report import (
+    PatientExaminationReportViewSet,
+    ReportReimportView,
+    ReportStreamView,
+)
 from .requirement import LookupViewSet, evaluate_requirements
 from .video import (  # Video Correction (Phase 1.1) - Implemented; Existing views
     VideoApplyMaskView,
@@ -135,6 +139,7 @@ __all__ = [
     # report
     "ReportReimportView",
     "ReportStreamView",
+    "PatientExaminationReportViewSet",
     # Requirement Views
     "evaluate_requirements",
     "LookupViewSet",

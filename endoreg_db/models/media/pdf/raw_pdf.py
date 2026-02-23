@@ -4,6 +4,7 @@
 # Class contains classmethod to create object from pdf file
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
+import uuid
 from typing import TYPE_CHECKING, Optional, cast
 
 from django.core.exceptions import ValidationError
@@ -41,6 +42,7 @@ logger = logging.getLogger("raw_pdf")
 class RawPdfFile(models.Model):
     objects = models.Manager()
     # Fields from AbstractPdfFile
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     pdf_hash = models.CharField(max_length=255, unique=True)
     pdf_type = models.ForeignKey(
         "PdfType",
@@ -138,16 +140,6 @@ class RawPdfFile(models.Model):
         ]
         file = cast(FieldFile, file)
         processed_file = cast(FieldFile, processed_file)
-
-    @property
-    def uuid(self):
-        """
-        Compatibility property - returns pdf_hash as UUID-like identifier.
-
-        Note: RawPdfFile uses pdf_hash instead of UUID for identification.
-        This property exists for API backward compatibility.
-        """
-        return self.pdf_hash
 
     @property
     def file_path(self) -> Path | None:

@@ -43,6 +43,10 @@ from .patient_finding import (
     PatientFindingSerializer,
     PatientFindingWriteSerializer,
 )
+from .report import (
+    PatientExaminationReportSerializer,
+    PatientExaminationReportSubmissionSerializer,
+)
 from .pdf import RawPdfAnonyTextSerializer
 from .video.video_processing_history import VideoProcessingHistorySerializer
 from .video_examination import (
@@ -93,6 +97,8 @@ __all__ = [
     "PatientFindingInterventionSerializer",
     "PatientFindingListSerializer",
     "PatientFindingWriteSerializer",
+    "PatientExaminationReportSerializer",
+    "PatientExaminationReportSubmissionSerializer",
     # report
     "RawPdfAnonyTextSerializer",
     # Video Correction (Phase 1.1)

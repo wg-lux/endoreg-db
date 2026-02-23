@@ -1,7 +1,23 @@
+import sys
+from pathlib import Path
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
+# Make lx-data-models submodule importable during Django startup (before views import).
+# settings.BASE_DIR is /.../endoreg_db in this project, so the repo root is BASE_DIR.parent.
+candidate_roots = [
+    Path(settings.BASE_DIR) / "lx-data-models",
+    Path(settings.BASE_DIR).parent / "lx-data-models",
+]
+for submodule_root in candidate_roots:
+    if submodule_root.exists():
+        submodule_path = str(submodule_root)
+        if submodule_path not in sys.path:
+            sys.path.insert(0, submodule_path)
+        break
 
 from endoreg_db.authz.views_auth import auth_bootstrap
 
@@ -10,6 +26,7 @@ from endoreg_db.views import (
     FindingClassificationViewSet,
     FindingViewSet,
     PatientExaminationViewSet,
+    PatientExaminationReportViewSet,
     PatientFindingViewSet,
 )
 
@@ -40,6 +57,7 @@ router.register(r"findings", FindingViewSet)
 router.register(r"classifications", FindingClassificationViewSet)
 router.register(r"patient-findings", PatientFindingViewSet)
 router.register(r"patient-examinations", PatientExaminationViewSet)
+router.register(r"patient-examination-reports", PatientExaminationReportViewSet)
 
 # Additional custom video examination routes
 # Frontend expects: GET /api/video/{id}/examinations/

@@ -89,7 +89,7 @@ def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
     """Capture immutable info so stub videos can be rebuilt after DB flush."""
 
     return {
-        "uuid": str(video.video_hash),
+        "pk": video.pk,
         "video_hash": video.video_hash,
         "original_file_name": video.original_file_name or "segment_stub.mp4",
         "raw_file_name": os.path.basename(video.raw_file.name)
@@ -134,12 +134,12 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
             load_endoscope_data()
             processor = get_default_processor()
 
-    existing = VideoFile.objects.filter(uuid=payload["uuid"]).first()
+    existing = VideoFile.objects.filter(video_hash=payload["video_hash"]).first()
     if existing is not None:
         if not existing.has_raw:
             raw_name = (
                 payload.get("raw_file_name")
-                or f"segment_stub_{existing.video_hash.hex}.mp4"
+                or f"segment_stub_{str(existing.video_hash).replace('/', '_')}.mp4"
             )
             existing.raw_file.save(raw_name, ContentFile(b""), save=True)
         return existing
@@ -149,7 +149,6 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
     )
 
     return VideoFile.objects.create(
-        uuid=payload["uuid"],
         video_hash=payload["video_hash"],
         center=center,
         processor=processor,
@@ -187,7 +186,6 @@ def _create_segment_stub_video() -> VideoFile:
     raw_file_name = f"segment_stub_{suffix}.mp4"
 
     return VideoFile.objects.create(
-        uuid=uuid.uuid4(),
         video_hash=f"segment-stub-{suffix}",
         center=center,
         processor=processor,
@@ -257,7 +255,7 @@ class MockVideoState:
 
     def mark_anonymized(self, save=True):
         """Mark video as anonymized."""
-        self.state.anonymization_status.mark_anonymized()
+        self.anonymized = True
 
     def mark_initial_prediction_completed(self, save=True):
         """Mark initial prediction as completed."""
@@ -397,7 +395,7 @@ class MockVideoFile:
     def pipe_2(self):
         """Mock pipe 2 processing."""
         # Update state to match successful anonymization
-        self.state.state.anonymization_status.mark_anonymized()
+        self.state.mark_anonymized()
         self.state.sensitive_meta_processed = True
         return True
 

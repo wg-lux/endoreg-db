@@ -63,6 +63,7 @@ dependencies = [
     "requests>=2.32.3",
     "gunicorn>=23.0.0",
     "django-filter>=25.1",
+    "django-ninja>=1.3.0",
     "optimum==1.26.1",
     "torch==2.5.1",
     "torchaudio==2.5.1",
@@ -82,6 +83,7 @@ dependencies = [
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
     "lx-anonymizer[llm,ocr]",
+    "lx-dtypes",
     "ruff>=0.14.0",
     "build>=1.3.0",
     "flake8>=7.3.0",
@@ -138,14 +140,29 @@ packages = ["endoreg_db"]
 
 [tool.hatch.build]
 exclude = [
+  ".git",
+  ".git/**",
+  ".gitmodules",
+  ".direnv",
+  ".direnv/**",
+  ".devenv",
+  ".devenv/**",
+  ".devenv.flake.nix",
+  "devenv.*",
+  "Makefile",
   "tests",
   "tests/**",
   "docs/production",
   "docs/production/**",
+  "docs/handoff_report_pdf_renderer.md",
   "htmlcov",
   "htmlcov/**",
+  "lx-data-models",
+  "lx-data-models/**",
   "storage",
   "storage/**",
+  "tools",
+  "tools/**",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -153,14 +170,29 @@ packages = ["endoreg_db"]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
+  ".git",
+  ".git/**",
+  ".gitmodules",
+  ".direnv",
+  ".direnv/**",
+  ".devenv",
+  ".devenv/**",
+  ".devenv.flake.nix",
+  "devenv.*",
+  "Makefile",
   "tests",
   "tests/**",
   "docs/production",
   "docs/production/**",
+  "docs/handoff_report_pdf_renderer.md",
   "htmlcov",
   "htmlcov/**",
+  "lx-data-models",
+  "lx-data-models/**",
   "storage",
   "storage/**",
+  "tools",
+  "tools/**",
 ]
 
 # [tool.uv.sources]

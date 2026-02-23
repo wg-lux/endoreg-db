@@ -63,7 +63,6 @@ class TestVideoMetadataModel:
         return VideoFile.objects.create(
             center=center,
             processor=processor,
-            uuid=uuid.uuid4(),
             raw_file=raw_file,
             video_hash=f"hash-{uuid.uuid4()}",
         )
@@ -247,7 +246,6 @@ class TestVideoMetadataModel:
         video_file = VideoFile.objects.create(
             center=metadata_zero.video.center,
             processor=metadata_zero.video.processor,
-            uuid=uuid.uuid4(),
             raw_file=new_raw_file,
             video_hash=f"hash-{uuid.uuid4()}",
         )

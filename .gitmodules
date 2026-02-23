@@ -2,3 +2,12 @@
 # 	path = lx-anonymizer
 # 	url = https://github.com/wg-lux/lx-anonymizer.git
 # 	branch = prototype
+[submodule "lx-data-models"]
+	path = lx-data-models
+	url = https://github.com/wg-lux/lx-data-models
+	branch = report_template
+
+
+[submodule "tools/report_pdf_renderer_rust"]
+	path = tools/report_pdf_renderer_rust
+	url = https://github.com/wg-lux/lx-report-generator

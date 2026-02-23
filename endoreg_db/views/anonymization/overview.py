@@ -65,7 +65,17 @@ class AnonymizationOverviewView(ListAPIView):
 
         )
 
-        return list(qs_video) + list(qs_pdf)
+        combined = list(qs_video) + list(qs_pdf)
+
+        def _created_at(item):
+            if isinstance(item, VideoFile):
+                return getattr(item, "uploaded_at", None)
+            if isinstance(item, RawPdfFile):
+                return getattr(item, "date_created", None)
+            return None
+
+        combined.sort(key=lambda item: (_created_at(item) is not None, _created_at(item)), reverse=True)
+        return combined
     
 class AnonymizationValidateView(APIView):
     """

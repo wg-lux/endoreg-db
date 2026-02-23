@@ -1,19 +1,24 @@
 import logging
+import mimetypes
 import os
 import re
+from pathlib import Path
+from typing import Optional
 
-from django.http import FileResponse, Http404, StreamingHttpResponse
+from django.http import FileResponse, Http404, StreamingHttpResponse, HttpResponse
 from django.views.decorators.clickjacking import (
     xframe_options_exempt,
 )
 from rest_framework.views import APIView
 
 from endoreg_db.models import RawPdfFile
+from endoreg_db.utils.paths import STORAGE_DIR
 
 from ...utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
 _RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)")
+NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
 
 
 class ClosingFileWrapper:
@@ -38,6 +43,54 @@ class ClosingFileWrapper:
             self.file_handle.close()
 
 
+def _get_report_path(pdf_obj: RawPdfFile, file_type: str) -> Path:
+    if file_type == "raw":
+        file_field = pdf_obj.file
+        if not file_field:
+            raise Http404("Raw report file not available")
+    elif file_type == "processed":
+        file_field = pdf_obj.processed_file
+        if not file_field:
+            raise Http404("Processed report file not available")
+    else:
+        raise Http404("Invalid file type")
+
+    file_name = getattr(file_field, "name", None)
+    if not file_name:
+        raise Http404("Report file reference is missing")
+
+    if str(file_name).startswith("/"):
+        path = Path(file_name)
+    else:
+        path = STORAGE_DIR / str(file_name)
+
+    if not path.exists():
+        raise Http404(f"Report file not found on disk: {path}")
+    return path
+
+
+def _serve_with_nginx(path: Path, content_type: str, *, as_download: bool, filename: str) -> Optional[HttpResponse]:
+    try:
+        relative_path = path.relative_to(STORAGE_DIR)
+    except ValueError:
+        logger.warning(
+            "Report file %s is outside STORAGE_DIR %s; falling back to Python streaming",
+            path,
+            STORAGE_DIR,
+        )
+        return None
+
+    redirect_url = os.path.join(NGINX_PROTECTED_URL, str(relative_path))
+    response = HttpResponse()
+    response["Content-Type"] = content_type
+    response["X-Accel-Redirect"] = redirect_url
+    response["X-Accel-Buffering"] = "no"
+    disposition = "attachment" if as_download else "inline"
+    response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+    logger.info("Offloading report to Nginx: %s", redirect_url)
+    return response
+
+
 class ReportStreamView(APIView):
     """
     Streams a report file with correct HTTP range support and proper file handle management.
@@ -46,6 +99,7 @@ class ReportStreamView(APIView):
 
     Query Parameters:
         type: 'raw' (default) or 'processed' - Selects which report file to stream
+        download: '1'|'true' to force attachment download (default is inline)
 
     Examples:
         GET /api/media/pdf/1/?type=raw - Stream original raw report
@@ -64,37 +118,28 @@ class ReportStreamView(APIView):
                 raise Http404("report not found")
 
             # Parse query parameters to determine which file to stream
-            file_type = request.query_params.get("type", "raw").lower()
+            file_type = (
+                request.query_params.get("type")
+                or request.query_params.get("file_type")
+                or "raw"
+            ).lower()
             if file_type not in ["raw", "processed"]:
                 logger.warning(f"Invalid file_type '{file_type}', defaulting to 'raw'")
                 file_type = "raw"
 
-            # Determine which file field to use
+            # Resolve filesystem path and derive field for metadata/filename
             if file_type == "raw":
                 file_field = pdf_obj.file
-                if not file_field:
-                    logger.warning(f"No raw report file available for report ID {pk}")
-                    raise Http404("Raw report file not available")
-            else:  # anonymized
+            else:
                 file_field = pdf_obj.processed_file
-                if not file_field:
-                    logger.warning(
-                        f"No processed report file available for report ID {pk}"
-                    )
-                    raise Http404("Processed report file not available")
+            if not file_field:
+                raise Http404(f"{file_type.capitalize()} report file not available")
 
-            # Check if file exists on filesystem
             try:
-                file_path = file_field.path
-                if not os.path.exists(file_path):
-                    logger.error(
-                        f"report file does not exist on filesystem: {file_path}"
-                    )
-                    raise Http404(
-                        f"{file_type.capitalize()} report file not found on filesystem"
-                    )
-
-                file_size = os.path.getsize(file_path)
+                path = _get_report_path(pdf_obj, file_type)
+                file_size = path.stat().st_size
+                if file_size <= 0:
+                    raise Http404("Report file is empty")
             except (OSError, IOError, AttributeError) as e:
                 logger.error(f"Error accessing {file_type} report file {pk}: {e}")
                 raise Http404(f"{file_type.capitalize()} report file not accessible")
@@ -115,8 +160,31 @@ class ReportStreamView(APIView):
             else:
                 safe_filename = base_filename
 
+            download_raw = str(request.query_params.get("download", "")).lower()
+            as_download = download_raw in {"1", "true", "yes", "on"}
+            content_disposition = "attachment" if as_download else "inline"
+            frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
+
+            mime, _ = mimetypes.guess_type(str(path))
+            content_type = mime or "application/pdf"
+
+            # Production path: nginx offload (full response only, no Python range handling)
+            serve_with_nginx = os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
+            range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+            if serve_with_nginx and not range_header:
+                nginx_response = _serve_with_nginx(
+                    path,
+                    content_type,
+                    as_download=as_download,
+                    filename=safe_filename,
+                )
+                if nginx_response is not None:
+                    nginx_response["Access-Control-Allow-Origin"] = frontend_origin
+                    nginx_response["Access-Control-Allow-Credentials"] = "true"
+                    nginx_response["Accept-Ranges"] = "bytes"
+                    return nginx_response
+
             # Handle Range requests
-            range_header = request.headers.get("Range")
             if range_header:
                 logger.debug(
                     f"Range request for {file_type} report {pk}: {range_header}"
@@ -149,14 +217,16 @@ class ReportStreamView(APIView):
                         response = StreamingHttpResponse(
                             ClosingFileWrapper(file_handle, blksize=8192),
                             status=206,
-                            content_type="application/pdf",
+                            content_type=content_type,
                         )
                         response["Content-Length"] = str(chunk_size)
                         response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
                         response["Accept-Ranges"] = "bytes"
                         response["Content-Disposition"] = (
-                            f'inline; filename="{safe_filename}"'
+                            f'{content_disposition}; filename="{safe_filename}"'
                         )
+                        response["Access-Control-Allow-Origin"] = frontend_origin
+                        response["Access-Control-Allow-Credentials"] = "true"
 
                         return response
                     except (OSError, IOError) as e:
@@ -171,11 +241,15 @@ class ReportStreamView(APIView):
             logger.debug(f"Serving full {file_type} report {pk} ({file_size} bytes)")
 
             try:
-                file_handle = open(file_path, "rb")
-                response = FileResponse(file_handle, content_type="application/pdf")
+                file_handle = open(path, "rb")
+                response = FileResponse(file_handle, content_type=content_type)
                 response["Content-Length"] = str(file_size)
                 response["Accept-Ranges"] = "bytes"
-                response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
+                response["Content-Disposition"] = (
+                    f'{content_disposition}; filename="{safe_filename}"'
+                )
+                response["Access-Control-Allow-Origin"] = frontend_origin
+                response["Access-Control-Allow-Credentials"] = "true"
 
                 # FileResponse will take ownership of file_handle and close it after response
                 return response

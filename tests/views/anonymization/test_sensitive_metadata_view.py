@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory, force_authenticate

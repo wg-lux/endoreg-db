@@ -7,6 +7,8 @@ from typing import Any, Dict, Iterable, Optional
 from django.conf import settings
 from django.core.cache import cache
 
+from endoreg_db.schemas.lookup_state import normalize_lookup_keys, validate_lookup_state
+
 # Align TTL with Django cache TIMEOUT for consistency in tests and runtime
 try:
     DEFAULT_TTL_SECONDS = int(
@@ -70,6 +72,11 @@ class LookupStore:
         Returns:
             The session token for this lookup store
         """
+        if initial:
+            try:
+                initial = validate_lookup_state(initial)
+            except Exception:
+                initial = normalize_lookup_keys(initial)
         cache.set(self.cache_key, initial or {}, ttl)
         return self.token
 
@@ -104,8 +111,12 @@ class LookupStore:
             ttl: Time-to-live in seconds for the updated cache entry
         """
         data = self.get_all()
-        data.update(updates)
-        cache.set(self.cache_key, data, ttl)
+        data.update(normalize_lookup_keys(updates))
+        try:
+            validated = validate_lookup_state(data)
+            cache.set(self.cache_key, validated if validated is not None else data, ttl)
+        except Exception:
+            cache.set(self.cache_key, data, ttl)
 
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -130,7 +141,8 @@ class LookupStore:
             ttl: Time-to-live in seconds for the updated cache entry
         """
         data = self.get_all()
-        data[key] = value
+        normalized_key = normalize_lookup_keys({key: value})
+        data.update(normalized_key)
         cache.set(self.cache_key, data, ttl)
 
     def delete(self) -> None:
@@ -148,8 +160,12 @@ class LookupStore:
             ttl: Time-to-live in seconds for the updated cache entry
         """
         data = self.get_all()
-        data.update(updates)
-        cache.set(self.cache_key, data, ttl)
+        data.update(normalize_lookup_keys(updates))
+        try:
+            validated = validate_lookup_state(data)
+            cache.set(self.cache_key, validated if validated is not None else data, ttl)
+        except Exception:
+            cache.set(self.cache_key, data, ttl)
 
     def validate_and_recover_data(self, token):
         """
@@ -200,7 +216,11 @@ class LookupStore:
             # Recompute is only triggered by PATCH or explicit POST /recompute/
             # For now, just return the data as is
 
-        return data
+        try:
+            validated = validate_lookup_state(data)
+        except Exception:
+            return None
+        return validated
 
     def _recover_patient_examination_id(self, token: str) -> Optional[str]:
         """

@@ -237,11 +237,12 @@ def video_segments_collection(request):
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
             else:
+                details = serializer.errors
                 logger.warning(
-                    f"Invalid data for video segment creation: {serializer.errors}"
+                    f"Invalid data for video segment creation: {details}"
                 )
                 return Response(
-                    {"error": "Invalid data", "details": serializer.errors},
+                    {"error": "Invalid data", "details": details},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -451,7 +452,6 @@ def video_segment_detail(request, pk, segment_id):
                 {"error": f"Failed to delete segment: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
 
 # ============================================================================
 # VIDEO SEGMENT VALIDATION ENDPOINTS (Modern Framework)
