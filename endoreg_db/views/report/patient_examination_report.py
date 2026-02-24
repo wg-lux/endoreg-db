@@ -315,12 +315,17 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         )
         frame_preview = None
         if selected_frame is not None:
+            frame_stream_path = (
+                f"/api/media/videos/{segment.video_file_id}/frames/"
+                f"{selected_frame.frame_number}/stream/"
+            )
             frame_preview = {
                 "frame_id": selected_frame.pk,
                 "frame_number": selected_frame.frame_number,
                 "timestamp": selected_frame.timestamp,
                 "relative_path": selected_frame.relative_path,
                 "file_exists": bool(selected_frame.is_extracted),
+                "stream_url": self.request.build_absolute_uri(frame_stream_path),
             }
         midpoint = self._segment_midpoint_frame(segment)
         random_candidate = (

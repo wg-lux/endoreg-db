@@ -1,10 +1,13 @@
 import sys
+import logging
 from pathlib import Path
 
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
+logger = logging.getLogger(__name__)
 
 # Make lx-data-models submodule importable during Django startup (before views import).
 # settings.BASE_DIR is /.../endoreg_db in this project, so the repo root is BASE_DIR.parent.
@@ -36,7 +39,15 @@ from .classification import url_patterns as classification_url_patterns
 from .examination import urlpatterns as examination_url_patterns
 from .media import urlpatterns as media_url_patterns
 from .patient import urlpatterns as patient_url_patterns
-from .requirements import urlpatterns as requirements_url_patterns
+try:
+    from .requirements import urlpatterns as requirements_url_patterns
+except Exception as exc:
+    logger.warning(
+        "Requirement URLs disabled during startup due to import error: %s",
+        exc,
+        exc_info=True,
+    )
+    requirements_url_patterns = []
 from .stats import url_patterns as stats_url_patterns
 from .upload import urlpatterns as upload_url_patterns
 

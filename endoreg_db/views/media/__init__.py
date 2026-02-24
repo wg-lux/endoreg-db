@@ -2,6 +2,7 @@
 
 from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
+from .frame_media import FrameStreamView
 from .patient_media_timeline import PatientMediaTimelineView
 from ..video.reimport import VideoReimportView
 from ..report.reimport import ReportReimportView
@@ -20,6 +21,7 @@ from .sensitive_metadata import (
 __all__ = [
     "VideoMediaView",
     "PdfMediaView",
+    "FrameStreamView",
     "PatientMediaTimelineView",
     "VideoReimportView",
     "ReportReimportView",

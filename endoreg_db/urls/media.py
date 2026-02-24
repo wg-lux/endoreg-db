@@ -1,20 +1,23 @@
 from django.urls import path
 
-from endoreg_db.views import VideoStreamView
-from endoreg_db.views.media import (
-                                    PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
-                                    PatientMediaTimelineView,
-                                    VideoMediaView,
-                                    get_sensitive_metadata_pk,
-                                    pdf_sensitive_metadata,
-                                    pdf_sensitive_metadata_list,
-                                    pdf_sensitive_metadata_verify,
-                                    sensitive_metadata_list,
-                                    video_sensitive_metadata,
-                                    video_sensitive_metadata_verify,
+from endoreg_db.views.media.frame_media import FrameStreamView
+from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
+from endoreg_db.views.media.pdf_media import (
+    PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
+from endoreg_db.views.media.sensitive_metadata import (
+    get_sensitive_metadata_pk,
+    pdf_sensitive_metadata,
+    pdf_sensitive_metadata_list,
+    pdf_sensitive_metadata_verify,
+    sensitive_metadata_list,
+    video_sensitive_metadata,
+    video_sensitive_metadata_verify,
+)
+from endoreg_db.views.media.video_media import VideoMediaView
 from endoreg_db.views.report.reimport import ReportReimportView
 from endoreg_db.views.report.report_stream import ReportStreamView
+from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
                                     VideoReimportView,
                                     export_annotated_data,
@@ -61,6 +64,11 @@ urlpatterns = [
     path(
         "media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"
     ),  # Legacy support
+    path(
+        "media/videos/<int:video_id>/frames/<int:frame_number>/stream/",
+        FrameStreamView.as_view(),
+        name="video-frame-stream",
+    ),
     # Video Re-import API endpoint (modern media framework)
     # POST /api/media/videos/<int:pk>/reimport/
     # Re-imports a video file to regenerate metadata when OCR failed or data is incomplete

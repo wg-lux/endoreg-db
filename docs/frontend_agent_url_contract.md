@@ -70,8 +70,7 @@ export const endpoints = {
 
   upload: {
     upload: 'upload/',
-    // Intentionally no trailing slash: backend route is upload/<uuid:id>/status
-    uploadStatus: (id: UUID) => `upload/${id}/status`
+    uploadStatus: (id: UUID) => `upload/${id}/status/`
   },
 
   requirements: {

@@ -34,17 +34,17 @@ If no valid graph prior is available, low-confidence/no-prior behavior is expect
 ## Endpoints
 Base viewset: `endoreg_db/views/requirement/lookup.py`
 
-1. `POST /lookup/init`
+1. `POST /lookup/init/`
 - Request: `patient_examination_id`, optional `user_tags`
-- Response: `{ "token": "<token>" }`
+- Response: `{ "token": "<token>" }` (HTTP `201 Created`)
 
-2. `GET /lookup/{token}/all`
+2. `GET /lookup/{token}/all/`
 - Response: full typed lookup state.
 
-3. `GET /lookup/{token}/parts?keys=...`
+3. `GET /lookup/{token}/parts/?keys=...`
 - Response: typed subset of requested keys.
 
-4. `PATCH /lookup/{token}/parts`
+4. `PATCH /lookup/{token}/parts/`
 - Request:
 ```json
 {
@@ -56,8 +56,9 @@ Base viewset: `endoreg_db/views/requirement/lookup.py`
   }
 }
 ```
+- Response: `{ "ok": true, "token": "<token>" }`
 
-5. `POST /lookup/{token}/recompute`
+5. `POST /lookup/{token}/recompute/`
 - Response:
 ```json
 {
@@ -155,6 +156,8 @@ Example response (abridged):
 - Builds the report frame-selection page state from `LabelVideoSegment` + `Frame`.
 - Persists one optional selected frame per segment in `PatientExaminationReport.editor_payload`.
 - Also supports attaching a `Finding` (stored/reused through `PatientFinding` + `LabelVideoSegment.patient_findings`).
+- `GET` reads `patient_examination_id` / optional `report_id` from query params.
+- `PATCH` requires `patient_examination_id` in the JSON body (and accepts optional `report_id` / `template_name`).
 
 GET response highlights:
 - `report_id` (auto-created draft report if none existed)
@@ -252,7 +255,6 @@ Patient timeline endpoint (media integration):
 ## Key Naming Rules
 - Always send snake_case keys.
 - Do not send camelCase from frontend agents.
-- Backend currently normalizes legacy camelCase keys for compatibility, but this is fallback behavior only.
 
 Use:
 - `selected_requirement_set_ids`

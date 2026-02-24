@@ -15,6 +15,11 @@ repos:
         entry: mypy endoreg_db
         language: system
         pass_filenames: false
+      - id: django-startup-smoke
+        name: django startup smoke
+        entry: python scripts/check_django_startup_imports.py
+        language: system
+        pass_filenames: false
       - id: pytest
         name: pytest suite
         entry: pytest
