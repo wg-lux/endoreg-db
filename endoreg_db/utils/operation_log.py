@@ -81,7 +81,3 @@ def get_resource_type_from_instance(obj):
     if name == "RawPdfFile":
         return "pdf"'''
     return name.lower()
-
-
-
-

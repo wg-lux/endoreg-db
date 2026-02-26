@@ -28,7 +28,7 @@ class MedicationIntakeTime(models.Model):
         @property
         def medication_schedules(
             self,
-        ) -> "models.manager.RelatedManager[MedicationSchedule]": ...
+        ) -> "models.Manager[MedicationSchedule]": ...
 
     @classmethod
     def dm(cls):

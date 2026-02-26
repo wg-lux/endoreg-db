@@ -42,7 +42,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView):
             serializer = self.get_serializer(instance, data=request.data, partial=True)
 
             if serializer.is_valid():
-                updated_instance = serializer.save()
+                serializer.save()
 
                 response_data = serializer.data
                 response_data["message"] = "Examination updated successfully"

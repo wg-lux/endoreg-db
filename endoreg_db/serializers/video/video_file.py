@@ -1,15 +1,17 @@
+import importlib
 from pathlib import Path
+from typing import Any, TYPE_CHECKING, cast
 
 from rest_framework import serializers
 
 from ...models import VideoFile
 
+cv2_mod: Any
 try:
-    import cv2
+    cv2_mod = importlib.import_module("cv2")
 except ImportError:
-    cv2 = None
+    cv2_mod = None
 # from django.conf import settings
-from typing import TYPE_CHECKING
 
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
@@ -107,14 +109,16 @@ class VideoFileSerializer(serializers.ModelSerializer):
 
         # Dynamically extract duration if not stored
         video_path = obj.active_file.path
+        if cv2_mod is None:
+            return None
 
-        cap = cv2.VideoCapture(video_path)
+        cap = cv2_mod.VideoCapture(str(video_path))
         try:
             if not cap.isOpened():
                 return None  # Error handling if video can't be opened
 
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            fps = cap.get(cv2_mod.CAP_PROP_FPS)
+            total_frames = cap.get(cv2_mod.CAP_PROP_FRAME_COUNT)
 
             return (
                 round(total_frames / fps, 2) if fps > 0 else None
@@ -135,12 +139,11 @@ class VideoFileSerializer(serializers.ModelSerializer):
         if not obj.active_file:
             return {"error": "No file  associated with this entry"}
         # obj.active_file.name is an attribute of FieldFile that returns the file path as a string and name is not the database attribute, it is an attribute of Django’s FieldFile object that holds the file path as a string.
-        if not hasattr(obj.active_file, "name") or not obj.active_file.name.strip():
+        file_name = getattr(obj.active_file, "name", None)
+        if not isinstance(file_name, str) or not file_name.strip():
             return {"error": "Invalid file name"}
 
-        return str(
-            obj.active_file.name
-        ).strip()  #  Only return the file path, no URL,#obj.active_file returning a FieldFile object instead of a string
+        return file_name.strip()  #  Only return the file path, no URL
 
     def get_full_video_path(self, obj: "VideoFile"):
         """
@@ -162,16 +165,19 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 )
             else:
                 # Fallback: construct path manually
-                video_relative_path = str(obj.active_file.name).strip()
+                file_name = getattr(obj.active_file, "name", None)
+                if not isinstance(file_name, str):
+                    return {"error": "Video file path is empty or invalid"}
+                video_relative_path = file_name.strip()
                 if not video_relative_path:
                     return {"error": "Video file path is empty or invalid"}
 
                 # Construct the path using the file's actual path
-                full_path = obj.active_file.path
+                full_path_str = str(obj.active_file.path)
                 return (
-                    str(full_path)
-                    if Path(full_path).exists()
-                    else {"error": f"file not found at: {full_path}"}
+                    full_path_str
+                    if Path(full_path_str).exists()
+                    else {"error": f"file not found at: {full_path_str}"}
                 )
 
         except Exception as e:
@@ -218,10 +224,10 @@ class VideoFileSerializer(serializers.ModelSerializer):
         if not fps or fps <= 0:
             # Strict by default — only use fallback if explicitly enabled and > 0
             if (
-                getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False)
-                and getattr(settings, "VIDEO_DEFAULT_FPS", 0) > 0
+                bool(getattr(settings, "VIDEO_ALLOW_FPS_FALLBACK", False))
+                and float(cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", 0))) > 0
             ):
-                fps = settings.VIDEO_DEFAULT_FPS
+                fps = float(cast(Any, getattr(settings, "VIDEO_DEFAULT_FPS", 0)))
             else:
                 raise ValidationError(
                     {
@@ -231,12 +237,14 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 )
 
         sequences = self.get_sequences(obj)  # Fetch sequence data
-        frame_dir = Path(obj.frame_dir)  # Get the correct directory from the model
-        time_segments = {}  # Dictionary to store converted times and frame predictions
+        frame_dir = Path(
+            str(obj.frame_dir or "")
+        )  # Get the correct directory from the model
+        time_segments: dict[str, dict[str, Any]] = {}
 
         for label, frame_ranges in sequences.items():
-            label_times = []  # Stores time segments
-            frame_predictions = {}  # Ensure frame_predictions is properly initialized for each label #TODO Currently always emty?
+            label_times: list[dict[str, Any]] = []
+            frame_predictions: dict[int, Any] = {}  # TODO currently empty
 
             for frame_range in frame_ranges:
                 if len(frame_range) != 2:
@@ -246,7 +254,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
                 start_time = start_frame / fps  # Convert frame index to seconds
                 end_time = end_frame / fps  # Convert frame index to seconds
 
-                frame_data = {}  # Store frame-wise info
+                frame_data: dict[int, dict[str, Any]] = {}
 
                 # Fetch predictions for frames within this range
                 for frame_num in range(start_frame, end_frame + 1):

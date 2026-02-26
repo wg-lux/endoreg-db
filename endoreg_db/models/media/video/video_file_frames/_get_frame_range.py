@@ -28,7 +28,7 @@ def _get_frame_range(
         )
         # Fallback query
         return Frame.objects.filter(
-            video_file=video,
+            video=video,
             frame_number__gte=start_frame_number,
             frame_number__lte=end_frame_number,
         ).order_by("frame_number")

@@ -82,13 +82,14 @@ class ReportImportService:
             assert ctx.current_report.state is not None
             ctx.current_report = ctx.current_report
 
-            if processed == True or retry == True:
+            if processed or retry:
                 ctx.retry = True
 
             # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
             if (
                 ctx.retry
                 and needs_processing
+                and ctx.current_report.state
                 and not ctx.current_report.state.anonymization_validated
             ):
                 # ensure clean slate for forced reprocessing
@@ -125,7 +126,9 @@ class ReportImportService:
                     try:
                         ctx = self.anonymizer.anonymize_report(ctx)
                     except Exception as e:
-                        logger.error(f"report Extraction failed for the second time. {e}")
+                        logger.error(
+                            f"report Extraction failed for the second time. {e}"
+                        )
                         raise
 
                     logger.info(

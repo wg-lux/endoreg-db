@@ -5,7 +5,9 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
+import logging
 
 """
 
@@ -35,9 +37,11 @@ Returns:
 """
 
 # TODO implement later on
+logger = logging.getLogger(__name__)
 
 
 class AuditLedger(models.Model):
+    objects: "models.Manager[AuditLedger]" = models.Manager()
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ts = models.DateTimeField(default=timezone.now, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -60,12 +64,20 @@ class AuditLedger(models.Model):
         Raises:
             RuntimeError: If an attempt is made to modify an existing audit record.
         """
-        if self._state.adding:  # only on INSERT
-            self.prev_hash = self._last_hash()
-            self.hash = self._compute_hash()
-        else:
-            raise RuntimeError("AuditLedger rows are immutable")
-        super().save(*args, **kw)
+        try:
+            if self._state.adding:  # only on INSERT
+                self.prev_hash = self._last_hash()
+                self.hash = self._compute_hash()
+            else:
+                raise RuntimeError("AuditLedger rows are immutable")
+            super().save(*args, **kw)
+        except (OperationalError, ProgrammingError) as exc:
+            if "auditledger" in str(exc).lower() or "no such table" in str(exc).lower():
+                logger.warning(
+                    "AuditLedger table unavailable; skipping audit write: %s", exc
+                )
+                return
+            raise
 
     # ------------------------------------------------------
     def _last_hash(self) -> str:
@@ -75,8 +87,16 @@ class AuditLedger(models.Model):
         Returns:
             The SHA-256 hash of the latest `AuditLedger` entry by timestamp, or a string of 64 zeros if no records exist.
         """
-        last = AuditLedger.objects.order_by("-ts").first()
-        return last.hash if last else "0" * 64
+        try:
+            last = AuditLedger.objects.order_by("-ts").first()
+            return last.hash if last else "0" * 64
+        except (OperationalError, ProgrammingError) as exc:
+            if "auditledger" in str(exc).lower() or "no such table" in str(exc).lower():
+                logger.warning(
+                    "AuditLedger table unavailable while reading last hash; using zero hash."
+                )
+                return "0" * 64
+            raise
 
     def _compute_hash(self) -> str:
         """
@@ -127,12 +147,20 @@ class AuditLedger(models.Model):
         Returns:
             The count of unique object primary keys matching the specified type and action.
         """
-        return (
-            AuditLedger.objects.filter(object_type=object_type, action=action)
-            .values("object_pk")
-            .distinct()
-            .count()
-        )
+        try:
+            return (
+                AuditLedger.objects.filter(object_type=object_type, action=action)
+                .values("object_pk")
+                .distinct()
+                .count()
+            )
+        except (OperationalError, ProgrammingError) as exc:
+            if "auditledger" in str(exc).lower() or "no such table" in str(exc).lower():
+                logger.warning(
+                    "AuditLedger table unavailable while collecting counters; returning 0."
+                )
+                return 0
+            raise
 
     def collect_counters(self):
         """

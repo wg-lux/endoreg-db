@@ -4,6 +4,7 @@ from .ai import (
     AiModel,
     ModelType,
 )
+from .app_settings import ApplicationSettings
 
 # Case
 from .case import (
@@ -59,6 +60,7 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ModelType",
+    "ApplicationSettings",
     # Case
     "Case",
     # Center

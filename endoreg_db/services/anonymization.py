@@ -34,15 +34,15 @@ class AnonymizationService:
     @staticmethod
     def get_status(file_id: int, kind: Optional[str] = None) -> Optional[dict]:
         """
-        Retrieve status. 
+        Retrieve status.
         Handles 'pdf' vs 'report' alias.
         If kind is None, checks both tables (Video priority).
         """
-        
+
         # 1. Normalize the input kind if legacy name pdf is used
-        if kind == 'pdf':
-            kind = 'report'
-            
+        if kind == "pdf":
+            kind = "report"
+
         # 2. Define lookup logic
         check_video = kind == "video" or kind is None
         check_report = kind == "report" or kind is None
@@ -80,7 +80,7 @@ class AnonymizationService:
                     "fileExists": file_exists(pdf.file),
                     "hash": pdf.pdf_hash,
                 }
-                
+
         # 5. Not found in either (or the specific requested type wasn't found)
         return None
 
@@ -107,7 +107,9 @@ class AnonymizationService:
             )
             if vf:
                 try:
-                    logger.info(f"Starting video anonymization for VideoFile ID: {file_id}")
+                    logger.info(
+                        f"Starting video anonymization for VideoFile ID: {file_id}"
+                    )
 
                     # Check if already processed
                     if vf.state and vf.state.anonymized:
@@ -159,7 +161,7 @@ class AnonymizationService:
                         )
                         vf.state.save(update_fields=["processing_started"])
                     raise
-        elif kind == "report" or kind is None:
+        if kind == "report" or kind is None:
             # Try RawPdfFile
             pdf = (
                 RawPdfFile.objects.select_related("state", "sensitive_meta", "center")
@@ -168,7 +170,9 @@ class AnonymizationService:
             )
             if pdf:
                 try:
-                    logger.info(f"Starting report processing for RawPdfFile ID: {file_id}")
+                    logger.info(
+                        f"Starting report processing for RawPdfFile ID: {file_id}"
+                    )
 
                     # Check if already processed
                     if pdf.state and getattr(pdf.state, "anonymized", False):
@@ -182,7 +186,8 @@ class AnonymizationService:
 
                     if not file_exists(file_field):
                         logger.error(
-                            "report file missing from storage for RawPdfFile %s", file_id
+                            "report file missing from storage for RawPdfFile %s",
+                            file_id,
                         )
                         return None
 
@@ -200,7 +205,9 @@ class AnonymizationService:
                             center_name=center_name,
                         )
 
-                    logger.info(f"report processing completed for RawPdfFile ID: {file_id}")
+                    logger.info(
+                        f"report processing completed for RawPdfFile ID: {file_id}"
+                    )
                     return "pdf"
 
                 except Exception as e:
@@ -217,11 +224,11 @@ class AnonymizationService:
             logger.warning(f"No file found with ID: {file_id}")
             return None
 
+        return None
+
     @staticmethod
     @transaction.atomic
-    def validate(file_id: int) -> None | Literal['video'] | Literal['pdf']:
-        from endoreg_db.views.anonymization.validate import AnonymizationValidateView
-        
+    def validate(file_id: int) -> None | Literal["video"] | Literal["pdf"]:
         vf = VideoFile.objects.select_related("state").filter(pk=file_id).first()
         if vf:
             state = vf.state or vf.get_or_create_state()

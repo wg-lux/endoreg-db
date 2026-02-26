@@ -1,10 +1,9 @@
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...administration import ReferenceProduct
-    from ..unit import Unit
 
 
 class EmissionFactorManager(models.Manager):
@@ -13,7 +12,7 @@ class EmissionFactorManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "EmissionFactor":
-        return self.get(name=name)
+        return cast("EmissionFactor", self.get(name=name))
 
 
 # get debug from settings
@@ -38,7 +37,7 @@ class EmissionFactor(models.Model):
     value = models.FloatField()
 
     if TYPE_CHECKING:
-        unit: models.ForeignKey["Unit|None"]
+        pass
 
         @property
         def reference_products(self) -> models.QuerySet["ReferenceProduct"]: ...
@@ -85,7 +84,7 @@ class EmissionFactor(models.Model):
         """
         from ...administration.product import ReferenceProduct
 
-        reference_products = []
+        reference_products: list["ReferenceProduct"] = []
         reference_products += ReferenceProduct.objects.filter(
             emission_factor_total=self
         )

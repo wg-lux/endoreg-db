@@ -23,8 +23,9 @@ def _get_requirement_sets_for_exam(exam: PatientExamination) -> List[Requirement
     # The new loader prefetches via `examination.exam_reqset_links`.
     # We extract the RequirementSet from each link.
     sets = []
-    if hasattr(exam, "examination") and hasattr(exam.examination, "exam_reqset_links"):
-        for link in exam.examination.exam_reqset_links.all():
+    examination = getattr(exam, "examination", None)
+    if examination is not None and hasattr(examination, "exam_reqset_links"):
+        for link in examination.exam_reqset_links.all():
             if hasattr(link, "requirement_set"):
                 sets.append(link.requirement_set)
     return sets

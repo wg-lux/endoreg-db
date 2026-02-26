@@ -198,7 +198,6 @@ class Command(BaseCommand):
                     labels_list = item.get("labels", [])
                     filename = item.get("filename")
                     # old_examination_id and old_id are available if you want them later:
-                    old_id = item.get("old_id")
                     old_exam_id = item.get("old_examination_id")
 
                     if not filename:

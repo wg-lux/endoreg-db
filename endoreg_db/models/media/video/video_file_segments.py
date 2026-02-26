@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 # ... [Keep _convert_sequences_to_db_segments and _sequences_to_label_video_segments unchanged] ...
 def _convert_sequences_to_db_segments(
     video: "VideoFile",
@@ -186,7 +187,7 @@ def _get_outside_frame_numbers(
     Gets a set of frame numbers corresponding to segments labeled as 'outside'.
     """
     outside_segments = _get_outside_segments(video, outside_label_name)
-    frame_numbers = set()
+    frame_numbers: set[int] = set()
     for segment in outside_segments:
         frame_numbers.update(
             range(segment.start_frame_number, segment.end_frame_number + 1)
@@ -281,8 +282,10 @@ def _label_segments_to_frame_annotations(video: "VideoFile"):
     processed_count = 0
     try:
         # Use getattr to safely access the related manager, or fall back to the default name set
-        segments = getattr(video, 'label_video_segments', getattr(video, 'labelvideosegment_set', None))
-        
+        segments = getattr(
+            video, "label_video_segments", getattr(video, "labelvideosegment_set", None)
+        )
+
         if segments:
             for lvs in segments.all():
                 lvs_duration = lvs.get_segment_len_in_s()
@@ -298,7 +301,7 @@ def _label_segments_to_frame_annotations(video: "VideoFile"):
                             e,
                         )
         else:
-             logger.error(
+            logger.error(
                 "Could not generate frame annotations for video %s. Neither 'label_video_segments' nor 'labelvideosegment_set' related manager found.",
                 video.video_hash,
             )
@@ -313,5 +316,5 @@ def _label_segments_to_frame_annotations(video: "VideoFile"):
             "Unexpected error generating frame annotations for video %s: %s",
             video.video_hash,
             e,
-            exc_info=True
+            exc_info=True,
         )

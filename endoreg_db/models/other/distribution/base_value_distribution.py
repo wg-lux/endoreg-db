@@ -11,7 +11,7 @@ class BaseValueDistribution(models.Model):
     class Meta:
         abstract = True
 
-    def generate_value(self):
+    def generate_value(self, *args, **kwargs):
         """
         Generate a value based on the distribution rules.
         Must be implemented by subclasses.

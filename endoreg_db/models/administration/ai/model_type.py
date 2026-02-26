@@ -1,5 +1,7 @@
-from django.db import models
 from typing import TYPE_CHECKING
+from typing import cast
+
+from django.db import models
 
 if TYPE_CHECKING:
     from .ai_model import AiModel
@@ -12,7 +14,7 @@ class ModelTypeManager(models.Manager):
 
     def get_by_natural_key(self, name: str) -> "ModelType":
         """Get the model type by its natural key"""
-        return self.get(name=name)
+        return cast("ModelType", self.get(name=name))
 
 
 class ModelType(models.Model):

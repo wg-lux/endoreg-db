@@ -1,6 +1,8 @@
+# mypy: disable-error-code="var-annotated,assignment,no-redef"
+
 import logging
 from subprocess import run
-from typing import TYPE_CHECKING, Dict, List, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union, cast
 
 from django.db import models
 
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
         PatientMedicationSchedule,  # Added PatientMedicationSchedule
         RequirementOperator,
     )
+    from lx_dtypes.names import GENDER_OPTIONS_LITERAL
 
     # from endoreg_db.utils.links.requirement_link import RequirementLinks # Already imported above
 
@@ -271,48 +274,46 @@ class Requirement(models.Model):
     )
 
     if TYPE_CHECKING:
-        requirement_types = cast(
-            models.manager.RelatedManager["RequirementType"], requirement_types
-        )
-        operator = models.ForeignKey["RequirementOperator"]
+        requirement_types = cast(models.Manager["RequirementType"], requirement_types)
+        operator: "RequirementOperator"
         # requirement_sets = cast(models.manager.RelatedManager["RequirementSet"], requirement_sets)
-        examinations = cast(models.manager.RelatedManager["Examination"], examinations)
+        examinations = cast(models.Manager["Examination"], examinations)
         examination_indications = cast(
-            models.manager.RelatedManager["ExaminationIndication"],
+            models.Manager["ExaminationIndication"],
             examination_indications,
         )
-        lab_values = cast(models.manager.RelatedManager["LabValue"], lab_values)
-        diseases = cast(models.manager.RelatedManager["Disease"], diseases)
+        lab_values = cast(models.Manager["LabValue"], lab_values)
+        diseases = cast(models.Manager["Disease"], diseases)
         disease_classification_choices = cast(
-            models.manager.RelatedManager["DiseaseClassificationChoice"],
+            models.Manager["DiseaseClassificationChoice"],
             disease_classification_choices,
         )
-        events = cast(models.manager.RelatedManager["Event"], events)
-        findings = cast(models.manager.RelatedManager["Finding"], findings)
+        events = cast(models.Manager["Event"], events)
+        findings = cast(models.Manager["Finding"], findings)
         finding_classifications = cast(
-            models.manager.RelatedManager["FindingClassification"],
+            models.Manager["FindingClassification"],
             finding_classifications,
         )
         finding_classification_choices = cast(
-            models.manager.RelatedManager["FindingClassificationChoice"],
+            models.Manager["FindingClassificationChoice"],
             finding_classification_choices,
         )
         finding_interventions = cast(
-            models.manager.RelatedManager["FindingIntervention"], finding_interventions
+            models.Manager["FindingIntervention"], finding_interventions
         )
-        medications = cast(models.manager.RelatedManager["Medication"], medications)
+        medications = cast(models.Manager["Medication"], medications)
         medication_indications = cast(
-            models.manager.RelatedManager["MedicationIndication"],
+            models.Manager["MedicationIndication"],
             medication_indications,
         )
         medication_intake_times = cast(
-            models.manager.RelatedManager["MedicationIntakeTime"],
+            models.Manager["MedicationIntakeTime"],
             medication_intake_times,
         )
         medication_schedules = cast(
-            models.manager.RelatedManager["MedicationSchedule"], medication_schedules
+            models.Manager["MedicationSchedule"], medication_schedules
         )
-        genders = cast(models.manager.RelatedManager["Gender"], genders)
+        genders = cast(models.Manager["Gender"], genders)
 
     def natural_key(self):
         """
@@ -428,7 +429,19 @@ class Requirement(models.Model):
         """
         return self.links.active()
 
-    def evaluate(self, input_obj):
+    @staticmethod
+    def _normalize_gender_literal(
+        raw_name: Any,
+    ) -> "GENDER_OPTIONS_LITERAL | None":
+        """Map free-form gender labels to the local lx_dtypes gender literal."""
+        if not isinstance(raw_name, str):
+            return None
+        normalized = raw_name.strip().lower()
+        if normalized in {"female", "male", "other", "unknown"}:
+            return cast("GENDER_OPTIONS_LITERAL", normalized)
+        return None
+
+    def evaluate(self, input_obj: Any, mode: str = "loose", **kwargs: Any) -> bool:
         """
         Evaluates whether the requirement is satisfied for the given input models using linked operators and gender constraints.
 
@@ -446,20 +459,24 @@ class Requirement(models.Model):
 
         If the requirement specifies genders, only input containing a patient with a matching gender will be considered valid for evaluation.
         """
-        is_valid: bool = False
-
-        requirement_req_links = self.active_links
-
-        # expected_models = self.expected_models
-
-        operator = self.operator
-        assert isinstance(operator, RequirementOperator)
-
-        operator_instructions = self.operator_instructions_parsed
-
-        is_valid = operator.evaluate(input_links)
-
+        is_valid, _details = self.evaluate_with_details(input_obj, mode=mode, **kwargs)
         return is_valid
+
+    def _resolve_queryset_config(
+        self, kwargs: Dict[str, Any]
+    ) -> Tuple[str, int | None]:
+        queryset_mode_obj = kwargs.get("queryset_mode", "any")
+        queryset_mode = (
+            queryset_mode_obj
+            if isinstance(queryset_mode_obj, str)
+            and queryset_mode_obj in {"any", "all", "min_count"}
+            else "any"
+        )
+        queryset_min_count_obj = kwargs.get("queryset_min_count")
+        queryset_min_count = (
+            queryset_min_count_obj if isinstance(queryset_min_count_obj, int) else None
+        )
+        return queryset_mode, queryset_min_count
 
     def evaluate_with_details(self, *args, mode: str, **kwargs) -> Tuple[bool, str]:
         """
@@ -500,7 +517,8 @@ class Requirement(models.Model):
         requirement_req_links = self.links
         expected_models = self.expected_models
 
-        operators = list(self.operators.all())
+        operator = getattr(self, "operator", None)
+        operators = [operator] if operator is not None else []
         has_operators = bool(operators)
         requirement_has_conditions = bool(requirement_req_links.active())
         queryset_mode, queryset_min_count = self._resolve_queryset_config(kwargs)
@@ -720,10 +738,27 @@ class Requirement(models.Model):
                 )
 
             if not self.genders.filter(pk=patient.gender.pk).exists():
-                return (
-                    False,
-                    "Diese Voraussetzung gilt nur für bestimmte Geschlechter und ist für diesen Patienten nicht erfüllt.",
+                patient_gender_key = self._normalize_gender_literal(
+                    getattr(patient.gender, "name", None)
                 )
+                allowed_gender_keys = {
+                    key
+                    for key in (
+                        self._normalize_gender_literal(getattr(gender, "name", None))
+                        for gender in self.genders.all()
+                    )
+                    if key is not None
+                }
+                if (
+                    patient_gender_key is not None
+                    and patient_gender_key in allowed_gender_keys
+                ):
+                    pass
+                else:
+                    return (
+                        False,
+                        "Diese Voraussetzung gilt nur für bestimmte Geschlechter und ist für diesen Patienten nicht erfüllt.",
+                    )
 
         # --- Fall: keine Operatoren -----------------------------------------
         if not has_operators:

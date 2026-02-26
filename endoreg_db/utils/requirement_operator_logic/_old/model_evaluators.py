@@ -647,7 +647,6 @@ def dispatch_operator_evaluation(
 
     from .lab_value_operators import LAB_VALUE_OPERATOR_FUNCTIONS
 
-    eval_func = None
     requirement = kwargs.get(
         "requirement"
     )  # Get requirement for operators that need it
@@ -656,18 +655,15 @@ def dispatch_operator_evaluation(
         return {k: v for k, v in kwargs.items() if k != "requirement"}
 
     if operator_name == "models_match_any":
-        eval_func = _evaluate_models_match_any
-        return eval_func(
+        return _evaluate_models_match_any(
             requirement_links=requirement_links, input_links=input_links, **kwargs
         )
     elif operator_name == "models_match_all":
-        eval_func = _evaluate_models_match_all
-        return eval_func(
+        return _evaluate_models_match_all(
             requirement_links=requirement_links, input_links=input_links, **kwargs
         )
     elif operator_name == "models_match_none":
-        eval_func = _evaluate_models_match_none
-        return eval_func(
+        return _evaluate_models_match_none(
             requirement_links=requirement_links, input_links=input_links, **kwargs
         )
     elif operator_name == "models_match_any_in_timeframe":
@@ -679,8 +675,7 @@ def dispatch_operator_evaluation(
                 "models_match_any_in_timeframe operator requires a valid 'requirement' instance in kwargs."
             )
         kwargs_for_eval = _kwargs_without_requirement()
-        eval_func = _evaluate_models_match_any_in_timeframe
-        return eval_func(
+        return _evaluate_models_match_any_in_timeframe(
             requirement_links=requirement_links,
             input_links=input_links,
             requirement=requirement,  # Pass the requirement instance explicitly

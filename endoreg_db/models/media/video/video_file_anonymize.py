@@ -466,7 +466,7 @@ def _cleanup_raw_assets(
     State Transitions:
         - Sets state.frames_extracted=False.
     """
-    from endoreg_db.models import VideoFile, VideoState
+    from endoreg_db.models import VideoFile
 
     logger.info(
         "Performing post-commit cleanup of raw assets for video %s.", video_hash
@@ -487,7 +487,7 @@ def _cleanup_raw_assets(
                 "VideoState not found for VideoFile %s during post-commit cleanup.",
                 video_hash,
             )
-            video_file.state = VideoState.objects.create(video_file=video_file)
+            video_file.get_or_create_state()
 
         if raw_file_path and raw_file_path.exists():
             logger.info("Deleting original raw video file: %s", raw_file_path)

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import ImageClassificationAnnotation
+    pass
     # later:
     # from endoreg_db.models import VideoSegmentationAnnotation
     # from endoreg_db.models import TextAnnotation  # example name
@@ -155,10 +155,7 @@ class AIDataSet(models.Model):
     )
 
     if TYPE_CHECKING:
-        # for static type checkers only
-        image_annotations: models.ManyToManyField["ImageClassificationAnnotation"]
-        # video_annotations: models.ManyToManyField["VideoSegmentationAnnotation"]
-        # text_annotations: models.ManyToManyField["TextAnnotation"]
+        pass
 
     # ------------------------------------------------------------------
     # UNIFIED ACCESS HELPERS (USE THESE IN YOUR TRAINING CODE)

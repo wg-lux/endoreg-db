@@ -1,8 +1,7 @@
 import logging
-from math import e
 import random
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, List, Literal, Optional, Self  # Added List
+from typing import TYPE_CHECKING, List, Optional, Self  # Added List
 
 from django.db import models
 from django.utils import timezone  # Add this import
@@ -59,41 +58,34 @@ class Patient(Person):
     objects = models.Manager()  # Default manager
 
     if TYPE_CHECKING:
-        from django.db.models.manager import RelatedManager
-
-        first_name: models.CharField[str]
-        last_name: models.CharField[str]
-        dob: models.DateField[date | None]
-        gender: models.ForeignKey["Gender | None"]
-        center: models.ForeignKey["Center | None"]
 
         @property
-        def events(self) -> RelatedManager[PatientEvent]: ...
+        def events(self) -> models.Manager[PatientEvent]: ...
 
         @property
-        def diseases(self) -> RelatedManager[PatientDisease]: ...
+        def diseases(self) -> models.Manager[PatientDisease]: ...
 
         @property
-        def patient_examinations(self) -> RelatedManager[PatientExamination]: ...
+        def patient_examinations(self) -> models.Manager[PatientExamination]: ...
 
         @property
         def anonymexaminationreport_set(
             self,
-        ) -> RelatedManager[AnonymExaminationReport]: ...
+        ) -> models.Manager[AnonymExaminationReport]: ...
 
         @property
         def anonymhistologyreport_set(
             self,
-        ) -> RelatedManager[AnonymHistologyReport]: ...
+        ) -> models.Manager[AnonymHistologyReport]: ...
 
         @property
-        def external_ids(self) -> RelatedManager[PatientExternalID]: ...
+        def external_ids(self) -> models.Manager[PatientExternalID]: ...
 
         @property
-        def patientmedication_set(self) -> RelatedManager[PatientMedication]: ...
+        def patientmedication_set(self) -> models.Manager[PatientMedication]: ...
 
         @property
-        def lab_values(self) -> RelatedManager[PatientLabValue]: ...
+        def lab_values(self) -> models.Manager[PatientLabValue]: ...
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.dob})"
@@ -106,12 +98,12 @@ class Patient(Person):
         gender: Optional["Gender | str"] = None,  # Allow string type hint
         birth_month: Optional[int] = None,
         birth_year: Optional[int] = None,
-    ) -> tuple[Self, Literal[False]] | tuple[Self, Literal[True]]:
+    ) -> tuple[Self, bool]:
         from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
 
         from ....other import Gender  # Import Gender model
 
-        created = False
+        created: bool = False
 
         existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
         if existing_patient:
@@ -319,10 +311,9 @@ class Patient(Person):
                 return input_date.replace(year=year, month=2, day=28)
 
         latest_dob = _replace_year_safe(current_date, current_date.year - age)
-        earliest_dob = (
-            _replace_year_safe(current_date, current_date.year - age - 1)
-            + timedelta(days=1)
-        )
+        earliest_dob = _replace_year_safe(
+            current_date, current_date.year - age - 1
+        ) + timedelta(days=1)
         offset_days = random.randint(0, (latest_dob - earliest_dob).days)
 
         return earliest_dob + timedelta(days=offset_days)
@@ -351,16 +342,17 @@ class Patient(Person):
         :return: The created patient.
         """
         from ....administration import Center
+
         patient = cls()
         if patient.gender is None:
             gender = Patient.get_random_gender()
         else:
             gender = patient.gender
         last_name, first_name = Patient.get_random_name_for_gender(gender)
-        
+
         if patient.dob is None:
             age = Patient.get_random_age()
-        else:            
+        else:
             age = patient.age()
         dob = Patient.get_dob_from_age(age)
 

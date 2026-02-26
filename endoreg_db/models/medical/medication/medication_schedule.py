@@ -1,11 +1,11 @@
 """Model for the medication schedule."""
 
-from typing import TYPE_CHECKING, List, cast
+from typing import TYPE_CHECKING, List
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Medication, MedicationIntakeTime, Unit
+    from endoreg_db.models import MedicationIntakeTime
 
 
 class MedicationScheduleManager(models.Manager):
@@ -33,18 +33,14 @@ class MedicationSchedule(models.Model):
     unit = models.ForeignKey("Unit", on_delete=models.CASCADE)
     therapy_duration_d = models.FloatField(blank=True, null=True)
     dose = models.FloatField()
-    intake_times = models.ManyToManyField(
+    intake_times: "models.ManyToManyField[MedicationIntakeTime, MedicationIntakeTime]" = models.ManyToManyField(
         "MedicationIntakeTime",
     )
 
     objects = MedicationScheduleManager()
 
     if TYPE_CHECKING:
-        unit: models.ForeignKey["Unit"]
-        medication: models.ForeignKey["Medication"]
-        intake_times = cast(
-            "models.manager.RelatedManager[MedicationIntakeTime]", intake_times
-        )
+        pass
 
     def natural_key(self):
         """Return the natural key for the medication schedule."""

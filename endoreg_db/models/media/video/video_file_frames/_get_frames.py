@@ -22,7 +22,7 @@ def _get_frames(video: "VideoFile") -> "QuerySet[Frame]":
             video.video_hash,
         )
         # Fallback query
-        return Frame.objects.filter(video_file=video).order_by("frame_number")
+        return Frame.objects.filter(video=video).order_by("frame_number")
     except Exception as e:
         logger.error(
             "Error getting frames for video %s: %s", video.video_hash, e, exc_info=True

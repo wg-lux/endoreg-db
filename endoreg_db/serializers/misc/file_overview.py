@@ -8,6 +8,7 @@ from endoreg_db.models.state.anonymization import AnonymizationState
 if TYPE_CHECKING:
     pass
 
+
 class FileOverviewSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     filename = serializers.CharField(read_only=True)
@@ -17,13 +18,15 @@ class FileOverviewSerializer(serializers.Serializer):
     createdAt = serializers.DateTimeField(read_only=True)
     sensitiveMetaId = serializers.IntegerField(read_only=True, allow_null=True)
     fileSize = serializers.IntegerField(read_only=True, required=False)
-    
+
     def to_representation(self, instance):
         # 1. Extract Type-Specific Data
         if isinstance(instance, VideoFile):
             media_type = "video"
             filename = instance.original_file_name or (
-                instance.raw_file.name.split("/")[-1] if instance.raw_file else "unknown_video"
+                instance.raw_file.name.split("/")[-1]
+                if instance.raw_file
+                else "unknown_video"
             )
             created_at = instance.uploaded_at
             # Use the state relation optimized in the View
@@ -31,18 +34,20 @@ class FileOverviewSerializer(serializers.Serializer):
             sensitive_meta = instance.sensitive_meta
             try:
                 file_size = instance.raw_file.size if instance.raw_file else 0
-            except:
+            except Exception:
                 file_size = 0
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
-            filename = instance.file.name.split("/")[-1] if instance.file else "unknown_report"
+            filename = (
+                instance.file.name.split("/")[-1] if instance.file else "unknown_report"
+            )
             created_at = instance.date_created
             state_obj = instance.state
             sensitive_meta = instance.sensitive_meta
             try:
                 file_size = instance.file.size if instance.file else 0
-            except:
+            except Exception:
                 file_size = 0
 
         else:
@@ -50,15 +55,19 @@ class FileOverviewSerializer(serializers.Serializer):
 
         # 2. Determine Status (Single Source of Truth: The State Model)
         # This uses the @property .anonymization_status from VideoState/RawPdfState
-        raw_status = state_obj.anonymization_status if state_obj else AnonymizationState.NOT_STARTED
+        raw_status = (
+            state_obj.anonymization_status
+            if state_obj
+            else AnonymizationState.NOT_STARTED
+        )
 
         # 3. Map to Frontend 'annotationStatus'
         annot_status = "not_started"
-        
+
         # FIX: Explicitly check against the Enum value
         if raw_status == AnonymizationState.VALIDATED:
             annot_status = "validated"
-        
+
         # 4. Return Payload
         return {
             "id": instance.pk,

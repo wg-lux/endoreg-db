@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 class CenterManager(models.Manager):
     def get_by_natural_key(self, name) -> "Center":
-        return self.get(name=name)
+        return cast("Center", self.get(name=name))
 
 
 class Center(models.Model):

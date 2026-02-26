@@ -10,18 +10,25 @@ repos:
         pass_filenames: false
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy type check
-        entry: mypy endoreg_db
+      - id: route-matrix-contract
+        name: route matrix contract (backend vs frontend)
+        entry: python scripts/check_route_matrix.py --warn-on-missing-backend
         language: system
         pass_filenames: false
+        files: ^(endoreg_db/(urls|views)/.*\.py|endoreg_db/authz/policy\.py|docs/frontend_agent_url_contract\.md)$
+      - id: mypy
+        name: mypy type check
+        entry: .devenv/state/venv/bin/mypy --config-file pyproject.toml
+        language: system
+        types: [python]
       - id: django-startup-smoke
         name: django startup smoke
         entry: python scripts/check_django_startup_imports.py
         language: system
         pass_filenames: false
-      - id: pytest
-        name: pytest suite
-        entry: pytest
+      - id: pytest-expensive
+        name: pytest expensive suite
+        entry: pytest -m "expensive or pipeline or slow"
         language: system
         pass_filenames: false
+        stages: [manual]

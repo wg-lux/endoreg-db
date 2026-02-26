@@ -31,8 +31,7 @@ class Endoscope(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import Center
 
-        center: models.ForeignKey["Center|None"]
-        endoscope_type: models.ForeignKey["EndoscopeType|None"]
+        pass
 
     def natural_key(self):
         return (self.name, self.sn)

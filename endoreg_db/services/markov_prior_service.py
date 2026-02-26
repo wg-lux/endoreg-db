@@ -46,7 +46,9 @@ def _tokenize(text: str | None) -> set[str]:
     return {part.strip().lower() for part in normalized.split() if part}
 
 
-def _flatten_history_signal_tokens(history_context: Mapping[str, Any] | None) -> set[str]:
+def _flatten_history_signal_tokens(
+    history_context: Mapping[str, Any] | None,
+) -> set[str]:
     """
     Extract lightweight lexical signals from report_history context.
 
@@ -81,7 +83,9 @@ def _flatten_history_signal_tokens(history_context: Mapping[str, Any] | None) ->
             for classification in classifications:
                 if not isinstance(classification, Mapping):
                     continue
-                tokens |= _tokenize(str(classification.get("classification_name") or ""))
+                tokens |= _tokenize(
+                    str(classification.get("classification_name") or "")
+                )
                 tokens |= _tokenize(
                     str(classification.get("classification_choice_name") or "")
                 )
@@ -102,18 +106,22 @@ def _load_report_templates() -> ReportTemplateIndex:
     data_root = _dtypes_data_root()
     if not data_root.exists():
         logger.debug("lx_dtypes data root not found: %s", data_root)
-        return ReportTemplateIndex(templates=[], sections_by_name={}, findings_by_name={})
+        return ReportTemplateIndex(
+            templates=[], sections_by_name={}, findings_by_name={}
+        )
 
     try:
         from lx_dtypes.models.interface.DataLoader import DataLoader
     except Exception as exc:
         logger.debug("Failed importing lx_dtypes DataLoader: %s", exc)
-        return ReportTemplateIndex(templates=[], sections_by_name={}, findings_by_name={})
+        return ReportTemplateIndex(
+            templates=[], sections_by_name={}, findings_by_name={}
+        )
 
     try:
         loader = DataLoader(input_dirs=[data_root])
         loader.load_module_configs()
-        kb = loader.load_knowledge_base(DEFAULT_REPORT_TEMPLATE_MODULE)
+        kb: Any = loader.load_knowledge_base(DEFAULT_REPORT_TEMPLATE_MODULE)
         return ReportTemplateIndex(
             templates=list(kb.report_template.values()),
             sections_by_name=dict(kb.report_template_section),
@@ -121,10 +129,14 @@ def _load_report_templates() -> ReportTemplateIndex:
         )
     except Exception as exc:
         logger.debug("Failed loading report templates from lx_dtypes: %s", exc)
-        return ReportTemplateIndex(templates=[], sections_by_name={}, findings_by_name={})
+        return ReportTemplateIndex(
+            templates=[], sections_by_name={}, findings_by_name={}
+        )
 
 
-def _as_template_prior_from_graph(*, graph: Any, signal_tokens: set[str]) -> ReportTemplatePrior:
+def _as_template_prior_from_graph(
+    *, graph: Any, signal_tokens: set[str]
+) -> ReportTemplatePrior:
     nodes = list(getattr(graph, "nodes", []) or [])
     edges = list(getattr(graph, "edges", []) or [])
 
@@ -134,7 +146,9 @@ def _as_template_prior_from_graph(*, graph: Any, signal_tokens: set[str]) -> Rep
         raw_tokens = getattr(node, "tokens", [])
         if not isinstance(node_id, str):
             continue
-        node_tokens[node_id] = {str(t).lower() for t in raw_tokens if isinstance(t, str)}
+        node_tokens[node_id] = {
+            str(t).lower() for t in raw_tokens if isinstance(t, str)
+        }
 
     outgoing: dict[str, list[tuple[str, float]]] = {}
     for edge in edges:
@@ -258,7 +272,9 @@ def _propose_from_template_priors(
 
     strongest = max(priors, key=lambda p: p.match_score)
     favored_states = strongest.tokens
-    scored = [(rs.id, _score_requirement_set(rs, favored_states)) for rs in requirement_sets]
+    scored = [
+        (rs.id, _score_requirement_set(rs, favored_states)) for rs in requirement_sets
+    ]
     positive = [(rs_id, score) for rs_id, score in scored if score > 0]
     if not positive:
         return MarkovPriorResult(candidate_requirement_set_ids=[], confidence=0.2)
@@ -267,7 +283,9 @@ def _propose_from_template_priors(
     candidate_ids = [rs_id for rs_id, _ in positive]
     max_score = positive[0][1]
     confidence = min(0.9, 0.3 + 0.08 * float(max_score) + 0.06 * strongest.match_score)
-    return MarkovPriorResult(candidate_requirement_set_ids=candidate_ids, confidence=confidence)
+    return MarkovPriorResult(
+        candidate_requirement_set_ids=candidate_ids, confidence=confidence
+    )
 
 
 def propose_candidate_requirement_sets(

@@ -29,6 +29,8 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
 def file_exists(field_file: Optional[FieldFile]) -> bool:
     if not _has_field_file(field_file):
         return False
+    assert field_file is not None
+    assert isinstance(field_file.name, str)
     try:
         return field_file.storage.exists(field_file.name)
     except Exception as exc:  # pragma: no cover - storage backend failure
@@ -45,6 +47,7 @@ def ensure_local_file(
 ) -> Iterator[Path]:
     if not _has_field_file(field_file):
         raise FileNotFoundError("FieldFile is empty or has no associated storage name.")
+    assert isinstance(field_file.name, str)
 
     local_path = _resolve_local_path(field_file)
     if local_path is not None and local_path.exists():
@@ -52,7 +55,6 @@ def ensure_local_file(
         return
 
     suffix = suffix or Path(field_file.name).suffix
-    tmp_file: NamedTemporaryFile
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
         temp_path = Path(tmp_file.name)
         try:
@@ -78,6 +80,7 @@ def delete_field_file(
 ) -> bool:
     if not _has_field_file(field_file):
         return False
+    assert field_file is not None
     try:
         field_file.delete(save=save)
         return True
@@ -106,7 +109,8 @@ def save_local_file(
     filename = name or source_path.name
     with source_path.open("rb") as source:
         django_file = File(source, name=filename)
-        return field_file.save(filename, django_file, save=save)
+        field_file.save(filename, django_file, save=save)
+    return str(field_file.name)
 
 
 __all__ = [

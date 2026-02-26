@@ -51,15 +51,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 
 # Performance optimization settings
-SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "false").lower() == "false"
-RUN_VIDEO_TESTS = (
-    os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
+SKIP_EXPENSIVE_TESTS = (
+    os.environ.get("SKIP_EXPENSIVE_TESTS", "false").lower() == "false"
 )
+RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
 # Set up storage directory for tests
 TEST_STORAGE_DIR = Path(__file__).parent.parent / "storage" / "tests"
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+
 @pytest.fixture
 def unique_ai_model(db):
     """
@@ -69,15 +71,13 @@ def unique_ai_model(db):
     """
     # Create a minimal ModelType as it is often required by internal logic
     from endoreg_db.models import ModelType
+
     model_type, _ = ModelType.objects.get_or_create(
-        name="unit_test_type",
-        defaults={"description": "Type for isolated unit tests"}
+        name="unit_test_type", defaults={"description": "Type for isolated unit tests"}
     )
-    
-    return AiModel.objects.create(
-        name="test_unique_model_v1", 
-        model_type=model_type
-    )
+
+    return AiModel.objects.create(name="test_unique_model_v1", model_type=model_type)
+
 
 @pytest.fixture
 def base_labelset(db):
@@ -86,9 +86,10 @@ def base_labelset(db):
     """
     labelset, _ = LabelSet.objects.get_or_create(
         name="test_labelset_default",
-        defaults={"version": 1, "description": "Unit test labelset"}
+        defaults={"version": 1, "description": "Unit test labelset"},
     )
     return labelset
+
 
 @pytest.fixture
 def video_asset_path():
@@ -199,7 +200,6 @@ def base_db_data(django_db_setup, cache):
         db_cache.invalidate("base_data_loaded")
 
     from django.core.files.storage import default_storage
-
 
     from tests.helpers.data_loader import (
         load_ai_model_data,

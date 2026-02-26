@@ -290,7 +290,7 @@ def _create_from_file(
 
         filename = f"{video_hash}{transcoded_file_path.suffix}"
         final_storage_path = video_dir / filename
-        
+
         # Ensure the DIRECTORY exists (video_dir), not the parent of a nested file
         final_storage_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -10,7 +10,6 @@ from django.core.validators import FileExtensionValidator
 
 # Removed shutil import, now in logic
 from django.db import models
-from scipy.odr import Model
 
 # Removed torch import, now in logic
 # from torch import nn
@@ -20,12 +19,10 @@ from ..utils import WEIGHTS_DIR
 from . import model_meta_logic as logic
 
 if TYPE_CHECKING:
-    from django.db.models.fields.files import FieldFile
-
-    from endoreg_db.models import AiModel, LabelSet  # pylint: disable=import-outside-toplevel
+    pass  # pylint: disable=import-outside-toplevel
 
 
-class ModelMetaManager(models.Manager):
+class ModelMetaManager(models.Manager["ModelMeta"]):
     """
     Custom manager for the ModelMeta model.
 
@@ -50,7 +47,9 @@ class ModelMetaManager(models.Manager):
         Returns:
             The ModelMeta object corresponding to the given natural key.
         """
-        return self.get(name=name, version=version, model__name=model_name)
+        return cast(
+            "ModelMeta", self.get(name=name, version=version, model__name=model_name)
+        )
 
 
 class ModelMeta(models.Model):
@@ -135,11 +134,7 @@ class ModelMeta(models.Model):
 
     # --- Type Hinting for Related Fields ---
     if TYPE_CHECKING:
-        labelset: models.ForeignKey["LabelSet"]
-        model: models.ForeignKey[
-            "AiModel"
-        ]  # Corrected from ai_model to match field name
-        weights = cast(FieldFile, weights)
+        pass
 
     class Meta:
         """Metadata options for the ModelMeta model."""

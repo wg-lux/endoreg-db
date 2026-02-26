@@ -1,6 +1,12 @@
-from typing import TYPE_CHECKING, List
+# mypy: disable-error-code="var-annotated,assignment,no-redef"
+
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
+
+if TYPE_CHECKING:
+    from endoreg_db.models import ExaminationRequirementSet, InformationSource, Tag
+    from endoreg_db.models.requirement import RequirementType
 
 REQUIREMENT_SET_TYPE_FUNCTION_LOOKUP = {
     "all": all,
@@ -27,7 +33,7 @@ class RequirementSetTypeManager(models.Manager):
         Returns:
             RequirementSetType: The matching RequirementSetType instance.
         """
-        return self.get(name=name)
+        return cast("RequirementSetType", self.get(name=name))
 
 
 class RequirementSetType(models.Model):
@@ -44,9 +50,7 @@ class RequirementSetType(models.Model):
     objects = RequirementSetTypeManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models.requirement import RequirementType
-
-        requirement_types: models.QuerySet[RequirementType]
+        requirement_types: models.QuerySet["RequirementType"]
 
     def natural_key(self):
         """
@@ -133,33 +137,24 @@ class RequirementSet(models.Model):
     objects = RequirementSetManager()
 
     if TYPE_CHECKING:
-        from typing import Optional, cast
+        from endoreg_db.models.requirement import Requirement
 
-        from endoreg_db.models import (
-            ExaminationRequirementSet,
-            InformationSource,
-            Requirement,
-            Tag,
-        )
-
-        tags = cast(models.manager.RelatedManager["Tag"], tags)
-        requirements = cast(models.manager.RelatedManager["Requirement"], requirements)
-        links_to_sets = cast(
-            models.manager.RelatedManager["RequirementSet"], links_to_sets
-        )
+        tags = cast(models.Manager["Tag"], tags)
+        requirements = cast(models.Manager["Requirement"], requirements)
+        links_to_sets = cast(models.Manager["RequirementSet"], links_to_sets)
         reqset_exam_links = cast(
-            models.manager.RelatedManager["ExaminationRequirementSet"],
+            models.Manager["ExaminationRequirementSet"],
             reqset_exam_links,
         )
         information_sources = cast(
-            models.manager.RelatedManager["InformationSource"], information_sources
+            models.Manager["InformationSource"], information_sources
         )
-        requirement_set_type: models.ForeignKey["RequirementSetType | None"]
+        requirement_set_type = cast("RequirementSetType | None", requirement_set_type)
 
         @property
         def links_from_sets(
             self,
-        ) -> "models.manager.RelatedManager[RequirementSet]": ...
+        ) -> "models.Manager[RequirementSet]": ...
 
     def natural_key(self):
         """Return the natural key as a tuple containing the instance's name."""
@@ -186,7 +181,7 @@ class RequirementSet(models.Model):
         Returns:
             A list of boolean values indicating whether each requirement is satisfied.
         """
-        results = []
+        results: List[bool] = []
         for requirement in self.requirements.all():
             # Get the appropriate input for this specific requirement
             evaluation_input = self._get_evaluation_input_for_requirement(
@@ -241,7 +236,7 @@ class RequirementSet(models.Model):
         Returns:
             A list of boolean values indicating whether each linked requirement set is satisfied.
         """
-        results = []
+        results: List[bool] = []
         linked_sets = self.all_linked_sets
         if not linked_sets:
             return results

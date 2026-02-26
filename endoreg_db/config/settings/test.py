@@ -60,7 +60,7 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
         def __getitem__(self, item):
             return None
 
-    #MIGRATION_MODULES = DisableMigrations()
+    # MIGRATION_MODULES = DisableMigrations()
 
 INSTALLED_APPS = [
     "django.contrib.admin",

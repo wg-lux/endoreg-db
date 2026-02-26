@@ -2,10 +2,10 @@
 
 import logging
 import threading
-from typing import Dict, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 from django.core.cache import cache
 from django.utils import timezone
-from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,7 @@ class PollingCoordinator:
             return True
 
         # Check if cooldown period has passed
-        last_check_time = timezone.datetime.fromisoformat(
-            last_check.replace("Z", "+00:00")
-        )
+        last_check_time = datetime.fromisoformat(last_check.replace("Z", "+00:00"))
         cooldown_end = last_check_time + timedelta(seconds=cls.CHECK_COOLDOWN)
 
         if timezone.now() > cooldown_end:
@@ -172,9 +170,7 @@ class PollingCoordinator:
             return 0
 
         # Check if cooldown period has passed
-        last_check_time = timezone.datetime.fromisoformat(
-            last_check.replace("Z", "+00:00")
-        )
+        last_check_time = datetime.fromisoformat(last_check.replace("Z", "+00:00"))
         cooldown_end = last_check_time + timedelta(seconds=cls.CHECK_COOLDOWN)
 
         if timezone.now() > cooldown_end:
@@ -191,7 +187,7 @@ class PollingCoordinator:
         cache.set(cache_key, timezone.now().isoformat(), cls.CHECK_COOLDOWN + 5)
 
     @classmethod
-    def get_processing_locks_info(cls) -> Dict[str, any]:
+    def get_processing_locks_info(cls) -> Dict[str, Any]:
         """
         Get information about all currently active processing locks.
         Useful for debugging and monitoring.

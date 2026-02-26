@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
@@ -25,7 +25,7 @@ class EventManager(models.Manager):
         Returns:
             The Event object corresponding to the given name.
         """
-        return self.get(name=name)
+        return cast("Event", self.get(name=name))
 
 
 class Event(models.Model):
@@ -90,7 +90,7 @@ class EventClassification(models.Model):
     )
 
     if TYPE_CHECKING:
-        event: models.ForeignKey["Event"]
+        pass
 
         @property
         def event_classification_choices(

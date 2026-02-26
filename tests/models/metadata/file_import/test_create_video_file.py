@@ -91,7 +91,6 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
         raising=True,
     )
 
-
     # --- Arrange: dummy input video -----------------------------------------
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +164,6 @@ def test_create_from_file_duplicate_with_existing_file(
         fake_transcode,
         raising=True,
     )
-
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)
@@ -248,7 +246,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         fake_transcode,
         raising=True,
     )
-
 
     import_dir = tmp_path / "import"
     import_dir.mkdir(parents=True, exist_ok=True)

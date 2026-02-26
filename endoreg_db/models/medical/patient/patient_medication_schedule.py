@@ -1,9 +1,8 @@
 from django.db import models
-from typing import TYPE_CHECKING, List, cast  # Added List
+from typing import TYPE_CHECKING, List  # Added List
 from datetime import datetime as dt
 
 if TYPE_CHECKING:
-    from ...administration.person.patient import Patient
     from .patient_medication import PatientMedication
     from ..medication import MedicationSchedule
     from ....utils.links.requirement_link import RequirementLinks  # Added
@@ -20,19 +19,17 @@ class PatientMedicationSchedule(models.Model):
     """
 
     patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
-    medication = models.ManyToManyField(
-        "PatientMedication", related_name="patient_medication_schedules", blank=True
+    medication: "models.ManyToManyField[PatientMedication, PatientMedication]" = (
+        models.ManyToManyField(
+            "PatientMedication", related_name="patient_medication_schedules", blank=True
+        )
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        patient: models.ForeignKey["Patient"]
-
-        medication = cast(
-            models.manager.RelatedManager["PatientMedication"], medication
-        )
+        pass
 
     @property
     def links(self) -> "RequirementLinks":

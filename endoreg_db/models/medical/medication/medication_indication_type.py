@@ -28,7 +28,7 @@ class MedicationIndicationType(models.Model):
         @property
         def medication_indications(
             self,
-        ) -> "models.manager.RelatedManager[MedicationIndication]": ...
+        ) -> "models.Manager[MedicationIndication]": ...
 
     def natural_key(self):
         """Return the natural key for the medication indication type."""

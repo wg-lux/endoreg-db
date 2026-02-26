@@ -69,9 +69,9 @@ class Classifier:
         dataset = InferenceDataset(paths, crops, self.config)
         if verbose:
             ic("Dataset created")
-            
+
         use_cuda = torch.cuda.is_available()
-        
+
         dl = DataLoader(
             dataset=dataset,
             batch_size=self.config["batchsize"],
@@ -170,7 +170,9 @@ class Classifier:
 
         return json_dict
 
-    def get_prediction_json(self, predictions, paths, json_target_path: str = None):
+    def get_prediction_json(
+        self, predictions, paths, json_target_path: str | None = None
+    ):
         """
         Saves predictions to a JSON file.
 

@@ -1,7 +1,7 @@
 # --- Add Imports ---
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import cv2
 
@@ -56,7 +56,7 @@ def _initialize_video_specs(video: "VideoFile", use_raw: bool = True) -> bool:
                 f"Video file not found at {video_path} for spec initialization (Video: {video.video_hash})."
             )
 
-        video_cap = cv2.VideoCapture(video_path.as_posix())
+        video_cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
         if not video_cap.isOpened():
             # Raise exception
             video_cap.release()  # Ensure release

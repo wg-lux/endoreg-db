@@ -30,12 +30,12 @@ class Medication(models.Model):
     if TYPE_CHECKING:
         from endoreg_db.models import MedicationSchedule, Unit
 
-        default_unit: models.ForeignKey["Unit"]
+        pass
 
         @property
         def medication_schedules(
             self,
-        ) -> "models.manager.RelatedManager[MedicationSchedule]": ...
+        ) -> "models.Manager[MedicationSchedule]": ...
 
     def natural_key(self):
         """Return the natural key for the medication."""

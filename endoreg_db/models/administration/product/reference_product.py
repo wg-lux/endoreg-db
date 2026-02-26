@@ -3,9 +3,7 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 if TYPE_CHECKING:
-    from ...other.emission import EmissionFactor
-    from .product import Product
-    from .product_group import ProductGroup
+    pass
 
 
 class ReferenceProductManager(models.Manager):
@@ -48,11 +46,7 @@ class ReferenceProduct(models.Model):
     )
 
     if TYPE_CHECKING:
-        product: models.ForeignKey["Product"]
-        product_group: models.ForeignKey["ProductGroup"]
-        emission_factor_total: models.ForeignKey["EmissionFactor|None"]
-        emission_factor_package: models.ForeignKey["EmissionFactor|None"]
-        emission_factor_product: models.ForeignKey["EmissionFactor|None"]
+        pass
 
     objects = ReferenceProductManager()
 

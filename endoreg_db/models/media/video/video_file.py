@@ -77,16 +77,8 @@ if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
 
     from endoreg_db.models import (
-        Center,
-        EndoscopyProcessor,
         FFMpegMeta,
         Frame,
-        ModelMeta,
-        Patient,
-        PatientExamination,
-        SensitiveMeta,
-        VideoImportMeta,
-        VideoMeta,
         VideoState,
     )
 
@@ -216,25 +208,12 @@ class VideoFile(models.Model):
     date_modified = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        from django.db.models.manager import RelatedManager
 
         @property
-        def label_video_segments(self) -> RelatedManager[LabelVideoSegment]: ...
+        def label_video_segments(self) -> models.Manager[LabelVideoSegment]: ...
 
         @property
-        def frames(self) -> RelatedManager[Frame]: ...
-
-        center: models.ForeignKey["Center"]
-        processor: models.ForeignKey["EndoscopyProcessor | None"]
-        video_meta: models.OneToOneField["VideoMeta | None"]
-        examination: models.ForeignKey["PatientExamination | None"]
-        patient: models.ForeignKey["Patient | None"]
-        sensitive_meta: models.OneToOneField["SensitiveMeta | None"]
-        state: models.OneToOneField["VideoState | None"]
-        ai_model_meta: models.ForeignKey["ModelMeta | None"]
-        import_meta: models.OneToOneField["VideoImportMeta | None"]
-        raw_file = cast(FieldFile, raw_file)
-        processed_file = cast(FieldFile, processed_file)
+        def frames(self) -> models.Manager[Frame]: ...
 
     @property
     def ffmpeg_meta(self) -> "FFMpegMeta":
@@ -627,7 +606,9 @@ class VideoFile(models.Model):
                 extracted_data_dict,
                 overwrite=True,
             )
-            metadata_updated = updated_meta is not None or extracted_data_dict is not None
+            metadata_updated = (
+                updated_meta is not None or extracted_data_dict is not None
+            )
         except Exception as exc:
             logger.warning(
                 "Falling back to direct SensitiveMeta update for %s after text metadata update failed: %s",
@@ -673,7 +654,9 @@ class VideoFile(models.Model):
         self.get_or_create_state().mark_anonymization_validated(save=True)
         # Save the VideoFile instance to persist changes
         self.save()
-        logger.info(f"Metadata annotation validated and saved for video {self.video_hash}.")
+        logger.info(
+            f"Metadata annotation validated and saved for video {self.video_hash}."
+        )
         return True
 
     def initialize(self):
@@ -691,7 +674,9 @@ class VideoFile(models.Model):
             if self.get_raw_file_path():
                 self.initialize_video_specs(use_raw=True)
             else:
-                logger.error(f"Skipping video specs init for {self.video_hash}: Raw file path not found.")
+                logger.error(
+                    f"Skipping video specs init for {self.video_hash}: Raw file path not found."
+                )
         except Exception as e:
             # Log the specific error but allow the function to continue to state creation
             logger.error(f"Failed to initialize video specs for {self.video_hash}: {e}")
@@ -859,8 +844,10 @@ class VideoFile(models.Model):
         try:
             # Step 1: Get the "outside" labeled frames
             censored = _censor_outside_frames(video)
-            frames = [instance.get_frame_dir_path()]
-            assert len(frames) != 0
+            frame_dir_path = instance.get_frame_dir_path()
+            if frame_dir_path is None:
+                raise AssertionError("Frame directory path is not available.")
+            frames: list[Path] = [frame_dir_path]
             fps = (
                 video.fps if video.fps else 120.0
             )  # Default to 30 FPS if fps is not set

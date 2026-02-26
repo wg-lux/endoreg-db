@@ -13,7 +13,7 @@ def get_video_key(
         return f"{examination_alias}-{content}-non_anonymous"
 
 
-def identify_video_key(video_key: str) -> str:
+def identify_video_key(video_key: str) -> tuple[str, str, bool]:
     """
     Identifies the video key based on the provided string.
     """

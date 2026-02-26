@@ -6,7 +6,6 @@ from django.shortcuts import get_object_or_404
 import json
 import logging
 
-from numpy import number
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -17,13 +16,14 @@ from endoreg_db.serializers.meta import (
     SensitiveMetaUpdateSerializer,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-logger = logging.getLogger(__name__)    
+
+logger = logging.getLogger(__name__)
 # === VIDEO SENSITIVE METADATA ===
 
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
-def get_sensitive_metadata_pk(request, pk: number, mediaType: str) -> Response | None:
+def get_sensitive_metadata_pk(request, pk: int, mediaType: str) -> Response:
     """
     A route to get the sensitive meta pk for a media type quickly.
 
@@ -55,6 +55,10 @@ def get_sensitive_metadata_pk(request, pk: number, mediaType: str) -> Response |
             )
         sm_id = pdf.sensitive_meta.pk
         return Response({"sm": sm_id})
+    return Response(
+        {"error": f"Unsupported mediaType '{mediaType}'"},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 @api_view(["GET", "PATCH"])
@@ -193,7 +197,9 @@ def pdf_sensitive_metadata(request, pk):
             updated_instance = serializer.save()
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
             sensitive_meta.update_from_dict(response_serializer.data)
-            logger.info("Updated sensitive metadata: %s", json.dumps(response_serializer.data))
+            logger.info(
+                "Updated sensitive metadata: %s", json.dumps(response_serializer.data)
+            )
             return Response(
                 {
                     "message": "Sensitive metadata updated successfully",

@@ -16,7 +16,7 @@ class VideoApplyMaskView(APIView):
     permission_classes = [EnvironmentAwarePermission]
 
     def post(self, request, pk):
-        video = get_object_or_404(VideoFile, pk=pk)
+        get_object_or_404(VideoFile, pk=pk)
 
         mask_type = request.data.get("mask_type", "device_default")
         device_name = request.data.get("device_name", "olympus_cv_1500")
@@ -25,7 +25,9 @@ class VideoApplyMaskView(APIView):
 
         try:
             # Start async task for video masking
-            from endoreg_db.tasks.video_processing_tasks import apply_video_mask_task
+            from endoreg_db.tasks.video_processing_tasks import (  # type: ignore[import-untyped]
+                apply_video_mask_task,
+            )
 
             task_data = {
                 "video_id": pk,

@@ -2,5 +2,5 @@
 import os
 
 # If running under pytest, force test settings early to avoid .env leakage
-if os.environ.get('PYTEST_CURRENT_TEST'):
-    os.environ['DJANGO_SETTINGS_MODULE'] = 'endoreg_db.config.settings.test'
+if os.environ.get("PYTEST_CURRENT_TEST"):
+    os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"

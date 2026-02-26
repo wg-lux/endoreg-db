@@ -85,6 +85,8 @@ class PatientExaminationReportViewSetTests(TestCase):
                 warnings=["nag"],
                 history_context={"previous_examinations": []},
                 requirement_guidance={"advisory_only": True, "requirement_status": {}},
+                persisted_report_artifact_id=None,
+                persisted_pdf_artifact_id=None,
             ),
         )
         monkeypatches.setattr(
@@ -193,8 +195,14 @@ class PatientExaminationReportSegmentFrameSelectorTests(TestCase):
 
         item = self._get_segment_item(data)
         assert item["segment_id"] == self.segment.id
-        assert item["controls"]["step_backward_5_frame_number"] >= self.segment.start_frame_number
-        assert item["controls"]["step_forward_5_frame_number"] <= self.segment.end_frame_number
+        assert (
+            item["controls"]["step_backward_5_frame_number"]
+            >= self.segment.start_frame_number
+        )
+        assert (
+            item["controls"]["step_forward_5_frame_number"]
+            <= self.segment.end_frame_number
+        )
 
     def test_segment_frame_selector_patch_random_step_set(self):
         first = self.client.get(self._selector_url())
@@ -217,7 +225,11 @@ class PatientExaminationReportSegmentFrameSelectorTests(TestCase):
         assert resp_random.status_code == 200, resp_random.content
         random_item = self._get_segment_item(resp_random.json())
         random_selected = random_item["selected_frame_number"]
-        assert self.segment.start_frame_number <= random_selected <= self.segment.end_frame_number
+        assert (
+            self.segment.start_frame_number
+            <= random_selected
+            <= self.segment.end_frame_number
+        )
 
         # step +5
         resp_step = self.client.patch(
@@ -258,13 +270,92 @@ class PatientExaminationReportSegmentFrameSelectorTests(TestCase):
         assert set_item["selected_frame"]["frame_number"] == 17
 
         report = PatientExaminationReport.objects.get(pk=report_id)
-        stored = (report.editor_payload or {}).get("report_segment_frame_selections", {})
+        stored = (report.editor_payload or {}).get(
+            "report_segment_frame_selections", {}
+        )
         assert str(self.segment.id) in stored
         assert stored[str(self.segment.id)]["frame_number"] == 17
 
 
+class PatientExaminationReportCreateTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="report-create-staff",
+            password="pw",
+            is_staff=True,
+        )
+        self.client.force_login(self.user)
+
+        self.center = Center.objects.create(name="Create Report Center")
+        self.patient = Patient.objects.create(
+            first_name="Create",
+            last_name="Patient",
+            center=self.center,
+            is_real_person=False,
+            patient_hash="create-report-patient-hash",
+        )
+        self.examination = Examination.objects.create(name="create_report_exam")
+        self.patient_examination = PatientExamination.objects.create(
+            patient=self.patient,
+            examination=self.examination,
+            date_start="2026-02-24",
+            hash="create-report-pe-hash",
+        )
+
+    def test_create_report_minimal_payload(self):
+        resp = self.client.post(
+            "/api/patient-examination-reports/",
+            data=json.dumps(
+                {
+                    "patient_examination": self.patient_examination.id,
+                    "template_name": "star_upper_gi_main",
+                }
+            ),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201, resp.content
+        data = resp.json()
+
+        report = PatientExaminationReport.objects.get(pk=data["id"])
+        assert report.patient_examination_id == self.patient_examination.id
+        assert report.template_name == "star_upper_gi_main"
+        assert report.status == PatientExaminationReport.Status.DRAFT
+        assert report.version == 1
+        assert report.is_active is True
+
+    def test_create_report_with_payload_and_final_status(self):
+        resp = self.client.post(
+            "/api/patient-examination-reports/",
+            data=json.dumps(
+                {
+                    "patient_examination": self.patient_examination.id,
+                    "template_name": "star_upper_gi_main",
+                    "title": "Initial Finalized Draft",
+                    "status": "final",
+                    "editor_payload": {"sections": [{"id": "findings"}]},
+                    "rendered_text": "Rendered report text",
+                    "patient_context_snapshot": {"patient_gender": "male"},
+                    "history_context_snapshot": {"previous_examinations": []},
+                }
+            ),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201, resp.content
+        data = resp.json()
+
+        report = PatientExaminationReport.objects.get(pk=data["id"])
+        assert report.status == PatientExaminationReport.Status.FINAL
+        assert report.title == "Initial Finalized Draft"
+        assert report.editor_payload == {"sections": [{"id": "findings"}]}
+        assert report.rendered_text == "Rendered report text"
+        assert report.patient_context_snapshot == {"patient_gender": "male"}
+        assert report.history_context_snapshot == {"previous_examinations": []}
+
+
 @pytest.mark.django_db
-@pytest.mark.xfail(reason="Requires stable center-scoped user fixtures and report objects")
+@pytest.mark.xfail(
+    reason="Requires stable center-scoped user fixtures and report objects"
+)
 def test_report_list_scoping_for_non_privileged_user_scaffold():
     """
     Scaffold:

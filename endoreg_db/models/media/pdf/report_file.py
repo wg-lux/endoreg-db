@@ -7,12 +7,7 @@ from ...utils import DOCUMENT_DIR, STORAGE_DIR
 if TYPE_CHECKING:
     from ...administration import (
         Center,
-        Patient,
     )
-    from ...medical import (
-        PatientExamination,
-    )
-    from ...metadata import SensitiveMeta
 
 
 class DocumentTypeManager(models.Manager):
@@ -61,7 +56,7 @@ class AbstractDocument(models.Model):
     )
 
     center = models.ForeignKey(
-        "Center",
+        "endoreg_db.Center",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
@@ -88,31 +83,28 @@ class AbstractExaminationReport(AbstractDocument):
     """
 
     patient = models.ForeignKey(
-        "Patient", on_delete=models.DO_NOTHING, blank=True, null=True
+        "endoreg_db.Patient", on_delete=models.DO_NOTHING, blank=True, null=True
     )
 
     patient_examination = models.ForeignKey(
-        "PatientExamination",
+        "endoreg_db.PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
 
     examiners = models.ManyToManyField(
-        "Examiner",
+        "endoreg_db.Examiner",
         blank=True,
     )
 
     sensitive_meta = models.ForeignKey(
-        "SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True
+        "endoreg_db.SensitiveMeta", on_delete=models.SET_NULL, null=True, blank=True
     )
 
     if TYPE_CHECKING:
         center: models.ForeignKey["Center|None"]
         type: models.ForeignKey["DocumentType|None"]
-        patient: models.ForeignKey["Patient|None"]
-        patient_examination: models.ForeignKey["PatientExamination|None"]
-        sensitive_meta: models.ForeignKey["SensitiveMeta|None"]
 
     class Meta:
         abstract = True

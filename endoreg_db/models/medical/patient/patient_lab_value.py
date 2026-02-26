@@ -61,11 +61,7 @@ class PatientLabValue(models.Model):
         return self.patient
 
     if TYPE_CHECKING:
-        patient: models.ForeignKey["Patient|None"]
-        lab_value: models.ForeignKey["LabValue"]
-        unit: models.ForeignKey["Unit|None"]
-        sample: models.ForeignKey["PatientLabSample|None"]
-        normal_range: models.JSONField[dict]
+        pass
 
     @classmethod
     def create_lab_value_by_sample(

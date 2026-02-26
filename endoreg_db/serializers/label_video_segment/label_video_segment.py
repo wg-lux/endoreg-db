@@ -303,7 +303,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             label = self._get_label(label_id, label_name)
             try:
                 source = self._get_information_source()
-            except:
+            except Exception:
                 source = None
 
             # Calculate Frames if time is provided
@@ -431,7 +431,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
         return data
 
-    def get_time_segments(self, obj: LabelVideoSegment) -> dict[str, dict]:
+    def get_time_segments(self, obj: LabelVideoSegment) -> dict[str, Any]:
         annotations_prefetch = Prefetch(
             "image_classification_annotations",
             queryset=ImageClassificationAnnotation.objects.select_related("label"),
@@ -439,13 +439,14 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         assert isinstance(obj, LabelVideoSegment)
         assert isinstance(obj.frames, models.QuerySet)
         frames = obj.frames.prefetch_related(annotations_prefetch)
-        time_segments = {
+        frames_payload: list[dict[str, Any]] = []
+        time_segments: dict[str, Any] = {
             "segment_id": obj.pk,
             "segment_start": obj.start_frame_number,
             "segment_end": obj.end_frame_number,
             "start_time": obj.start_time,
             "end_time": obj.end_time,
-            "frames": [],
+            "frames": frames_payload,
         }
 
         request = self.context.get("request") if hasattr(self, "context") else None
@@ -467,7 +468,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 "all_classifications": all_classifications,
                 "frame_id": frame.pk,
             }
-            time_segments["frames"].append(frame_data)
+            frames_payload.append(frame_data)
 
         return time_segments
 

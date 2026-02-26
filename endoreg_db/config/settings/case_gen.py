@@ -29,4 +29,3 @@ CACHES = {
         "TIMEOUT": int(env_str("TEST_CACHE_TIMEOUT", str(60 * 30))),
     }
 }
-

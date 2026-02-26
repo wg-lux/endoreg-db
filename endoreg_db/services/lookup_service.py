@@ -45,6 +45,8 @@ from .markov_prior_service import (
 )
 from .report_history import get_patient_examination_history_context
 
+logger = logging.getLogger(__name__)
+
 
 def evaluate_patient_exam_requirement_guidance(
     pe: PatientExamination,
@@ -64,7 +66,9 @@ def evaluate_patient_exam_requirement_guidance(
     patient_finding_names: List[str] = []
     try:
         for patient_finding in pe.patient_findings.all():
-            finding_name = getattr(getattr(patient_finding, "finding", None), "name", None)
+            finding_name = getattr(
+                getattr(patient_finding, "finding", None), "name", None
+            )
             if isinstance(finding_name, str) and finding_name:
                 patient_finding_names.append(finding_name)
     except Exception:
@@ -135,8 +139,8 @@ def evaluate_patient_exam_requirement_guidance(
             requirement_status[str(r.id)] = ok
             req_results.append(ok)
 
-            defaults = getattr(r, "default_findings", lambda pe: [])(pe)
-            choices = getattr(r, "classification_choices", lambda pe: [])(pe)
+            defaults: list[Any] = getattr(r, "default_findings", lambda pe: [])(pe)
+            choices: list[Any] = getattr(r, "classification_choices", lambda pe: [])(pe)
             if defaults:
                 req_defaults[str(r.id)] = defaults
             if choices:
@@ -249,9 +253,9 @@ def requirement_sets_for_patient_exam(
         return RequirementSet.objects.none()
 
     # Start with examination-linked requirement sets
-    req_sets = pe.examination.exam_reqset_links.select_related(
-        "requirement_set"
-    ).values_list("requirement_set", flat=True)
+    req_sets = pe.examination.exam_reqset_links.values_list(
+        "requirement_set", flat=True
+    )
 
     from endoreg_db.models import RequirementSet
 
@@ -325,8 +329,10 @@ def build_initial_lookup(
     for rs in rs_objs:
         for req in rs.requirements.all():
             # You’ll implement these helpers on Requirement
-            defaults = getattr(req, "default_findings", lambda pe: [])(pe)
-            choices = getattr(req, "classification_choices", lambda pe: [])(pe)
+            defaults: list[Any] = getattr(req, "default_findings", lambda pe: [])(pe)
+            choices: list[Any] = getattr(req, "classification_choices", lambda pe: [])(
+                pe
+            )
             if defaults:
                 req_defaults[str(req.id)] = defaults  # list of {finding_id, payload...}
                 required_findings.extend(
@@ -478,7 +484,9 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
         patient_finding_names = []
         try:
             for patient_finding in pe.patient_findings.all():
-                finding_name = getattr(getattr(patient_finding, "finding", None), "name", None)
+                finding_name = getattr(
+                    getattr(patient_finding, "finding", None), "name", None
+                )
                 if isinstance(finding_name, str) and finding_name:
                     patient_finding_names.append(finding_name)
         except Exception:
@@ -501,7 +509,9 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
                     if isinstance(finding_name, str) and finding_name:
                         history_tokens.append(finding_name)
         except Exception as exc:
-            logger.debug("Failed to build history context for priors (pe=%s): %s", pe_id, exc)
+            logger.debug(
+                "Failed to build history context for priors (pe=%s): %s", pe_id, exc
+            )
             history_context = None
             history_tokens = []
 
@@ -560,12 +570,12 @@ def recompute_lookup(token: str) -> Dict[str, Any]:
 
         for rs in rs_objs:
             for r in rs.requirements.all():
-                defaults = getattr(r, "default_findings", lambda pe: [])(
+                defaults: list[Any] = getattr(r, "default_findings", lambda pe: [])(
                     pe
                 )  # [{finding_id, payload...}]
-                choices = getattr(r, "classification_choices", lambda pe: [])(
-                    pe
-                )  # [{classification_id, label,...}]
+                choices: list[Any] = getattr(
+                    r, "classification_choices", lambda pe: []
+                )(pe)  # [{classification_id, label,...}]
                 if defaults:
                     req_defaults[str(r.id)] = defaults
                 if choices:

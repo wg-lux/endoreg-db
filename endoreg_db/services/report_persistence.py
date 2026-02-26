@@ -171,7 +171,9 @@ def _render_minimal_pdf_bytes(*, title: str, body_text: str) -> bytes:
     )
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     objects.append(
-        b"<< /Length " + str(len(content_stream)).encode("ascii") + b" >>\nstream\n"
+        b"<< /Length "
+        + str(len(content_stream)).encode("ascii")
+        + b" >>\nstream\n"
         + content_stream
         + b"\nendstream"
     )
@@ -299,16 +301,22 @@ def persist_report_pdf_artifact(
         if raw_pdf.pdf_hash != pdf_hash:
             # Avoid unique collision if a different row already owns the same content hash.
             collision = (
-                RawPdfFile.objects.exclude(pk=raw_pdf.pk).filter(pdf_hash=pdf_hash).exists()
+                RawPdfFile.objects.exclude(pk=raw_pdf.pk)
+                .filter(pdf_hash=pdf_hash)
+                .exists()
             )
             if collision:
                 pdf_hash = hashlib.sha256(
-                    pdf_bytes + f"|report:{report.id}|v:{report.version}".encode("utf-8")
+                    pdf_bytes
+                    + f"|report:{report.id}|v:{report.version}".encode("utf-8")
                 ).hexdigest()
             raw_pdf.pdf_hash = pdf_hash
 
     # New object may also collide with an existing row hash.
-    if raw_pdf.pk is None and RawPdfFile.objects.filter(pdf_hash=raw_pdf.pdf_hash).exists():
+    if (
+        raw_pdf.pk is None
+        and RawPdfFile.objects.filter(pdf_hash=raw_pdf.pdf_hash).exists()
+    ):
         raw_pdf.pdf_hash = hashlib.sha256(
             pdf_bytes + f"|report:{report.id}|v:{report.version}".encode("utf-8")
         ).hexdigest()
@@ -319,7 +327,9 @@ def persist_report_pdf_artifact(
     return full_report.pk, raw_pdf.pk
 
 
-def _update_patient_context(patient_examination: PatientExamination, patient_data: dict[str, Any]) -> None:
+def _update_patient_context(
+    patient_examination: PatientExamination, patient_data: dict[str, Any]
+) -> None:
     patient = patient_examination.patient
     changed_fields: list[str] = []
 
@@ -371,8 +381,12 @@ def _sync_indications(
     patient_examination.indications.all().delete()
 
     for item in indications_payload:
-        examination_indication_id = item.get("examination_indication_id", item.get("examination_indication"))
-        indication_choice_id = item.get("indication_choice_id", item.get("indication_choice"))
+        examination_indication_id = item.get(
+            "examination_indication_id", item.get("examination_indication")
+        )
+        indication_choice_id = item.get(
+            "indication_choice_id", item.get("indication_choice")
+        )
         if not examination_indication_id:
             continue
         PatientExaminationIndication.objects.create(
@@ -420,7 +434,9 @@ def _sync_patient_finding_classifications(
             )
         else:
             changed = False
-            if "subcategories" in item and match.subcategories != item.get("subcategories"):
+            if "subcategories" in item and match.subcategories != item.get(
+                "subcategories"
+            ):
                 match.subcategories = item.get("subcategories")
                 changed = True
             if (
@@ -458,7 +474,9 @@ def _sync_patient_finding_interventions(
 
         state = item.get("state")
         item_date = _parse_date(item.get("date")) if "date" in item else None
-        time_start = _parse_datetime(item.get("time_start")) if "time_start" in item else None
+        time_start = (
+            _parse_datetime(item.get("time_start")) if "time_start" in item else None
+        )
         time_end = _parse_datetime(item.get("time_end")) if "time_end" in item else None
 
         match = next(
@@ -507,10 +525,12 @@ def _sync_findings(
     patient_examination: PatientExamination,
     findings_payload: list[dict[str, Any]],
     *,
-    user: User | None,
+    user: Any | None,
 ) -> None:
     existing_active = list(
-        patient_examination.patient_findings.filter(is_active=True).select_related("finding")
+        patient_examination.patient_findings.filter(is_active=True).select_related(
+            "finding"
+        )
     )
     matched_ids: set[int] = set()
 
@@ -519,7 +539,9 @@ def _sync_findings(
         if finding is None:
             raise ValidationError({"findings": "Unknown finding."})
 
-        match = next((pf for pf in existing_active if pf.finding_id == finding.id), None)
+        match = next(
+            (pf for pf in existing_active if pf.finding_id == finding.id), None
+        )
         if match is None:
             match = PatientFinding(
                 patient_examination=patient_examination,
@@ -552,7 +574,12 @@ def _sync_findings(
         row.deactivated_by = user
         row.updated_by = user
         row.save(
-            update_fields=["is_active", "deactivated_at", "deactivated_by", "updated_by"]
+            update_fields=[
+                "is_active",
+                "deactivated_at",
+                "deactivated_by",
+                "updated_by",
+            ]
         )
 
 
@@ -564,7 +591,7 @@ def save_report_submission(
     editor_payload: dict[str, Any] | None = None,
     rendered_text: str = "",
     status: str = PatientExaminationReport.Status.DRAFT,
-    user: User | None = None,
+    user: Any | None = None,
     report_id: int | None = None,
     expected_version: int | None = None,
     patient_data: dict[str, Any] | None = None,
@@ -593,7 +620,9 @@ def save_report_submission(
         .first()
     )
     if patient_examination is None:
-        raise ValidationError({"patient_examination_id": "PatientExamination not found."})
+        raise ValidationError(
+            {"patient_examination_id": "PatientExamination not found."}
+        )
 
     if not template_name:
         raise ValidationError({"template_name": "template_name is required."})
@@ -605,13 +634,19 @@ def save_report_submission(
             .first()
         )
         if report is None:
-            raise ValidationError({"report_id": "Report not found for patient examination."})
+            raise ValidationError(
+                {"report_id": "Report not found for patient examination."}
+            )
         created = False
     else:
         report = PatientExaminationReport(patient_examination=patient_examination)
         created = True
 
-    if expected_version is not None and not created and report.version != expected_version:
+    if (
+        expected_version is not None
+        and not created
+        and report.version != expected_version
+    ):
         raise ValidationError(
             {
                 "expected_version": (
@@ -630,7 +665,9 @@ def save_report_submission(
     if findings is not None:
         _sync_findings(patient_examination, findings, user=user)
     else:
-        warnings.append("No findings payload provided; normalized findings were not synced.")
+        warnings.append(
+            "No findings payload provided; normalized findings were not synced."
+        )
 
     history_context = get_patient_examination_history_context(
         patient_examination, limit=history_limit
@@ -670,7 +707,10 @@ def save_report_submission(
                 warnings.append(
                     f"Requirement guidance: {len(failed_req_ids)} requirement(s) are currently unmet."
                 )
-            if requested_status == PatientExaminationReport.Status.FINAL and failed_set_ids:
+            if (
+                requested_status == PatientExaminationReport.Status.FINAL
+                and failed_set_ids
+            ):
                 warnings.append(
                     "Final report saved with guideline deviations. "
                     "This is advisory-only and does not block clinician workflow."

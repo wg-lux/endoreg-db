@@ -18,8 +18,6 @@ IMPORT_METADATA = {
     MODEL_0.__name__: {
         "dir": SOURCE_DIR,  # e.g. "interventions"
         "model": MODEL_0,  # e.g. Intervention
-        "dir": SOURCE_DIR,  # e.g. "interventions"
-        "model": MODEL_0,
         "foreign_keys": [
             "patient_info_line",
             "endoscope_info_line",
@@ -50,9 +48,6 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         verbose = options["verbose"]
-        verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
             _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, _metadata, verbose)
-
             load_model_data_from_yaml(self, model_name, _metadata, verbose)

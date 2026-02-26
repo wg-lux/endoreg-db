@@ -175,7 +175,9 @@ class AnonymizationValidateView(APIView):
                     try:
                         if video.state is not None:
                             video.state.refresh_from_db()
-                            status_after = _state_status_value(video.state) or status_after
+                            status_after = (
+                                _state_status_value(video.state) or status_after
+                            )
                     except Exception:
                         logger.exception(
                             "Failed to read video anonymization_status after validation"
@@ -194,7 +196,10 @@ class AnonymizationValidateView(APIView):
                     )
 
                     return Response(
-                        {"message": "Video validated.", "timestamp": response_timestamp},
+                        {
+                            "message": "Video validated.",
+                            "timestamp": response_timestamp,
+                        },
                         status=status.HTTP_200_OK,
                     )
 
@@ -247,23 +252,23 @@ class AnonymizationValidateView(APIView):
 
                         pdf.save(update_fields=["sensitive_meta"])
                         pdf.sensitive_meta.get_or_create_state()
-                        if (
-                                pdf.sensitive_meta
-                                and pdf.sensitive_meta.state
-                            ):
-                                pdf.sensitive_meta.state.refresh_from_db()
-                                pdf.sensitive_meta.state.mark_dob_verified()
-                                pdf.sensitive_meta.state.mark_names_verified()
-                                pdf.sensitive_meta.create_anonymized_record()
-                                
-                                if pdf.state:
-                                    pdf.state.mark_anonymized()
-                                    pdf.state.save(update_fields=["anonymized"])
-                                    
-                                pdf.sensitive_meta.state.save()
+                        if pdf.sensitive_meta and pdf.sensitive_meta.state:
+                            state_obj = cast(Any, pdf.sensitive_meta.state)
+                            state_obj.refresh_from_db()
+                            state_obj.mark_dob_verified()
+                            state_obj.mark_names_verified()
+                            pdf.sensitive_meta.create_anonymized_record()
+
+                            if pdf.state:
+                                pdf.state.mark_anonymized()
+                                pdf.state.save(update_fields=["anonymized"])
+
+                            state_obj.save()
                         else:
                             return Response(
-                                {"message": "report not validated, failed to create State."},
+                                {
+                                    "message": "report not validated, failed to create State."
+                                },
                                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             )
 
@@ -271,7 +276,9 @@ class AnonymizationValidateView(APIView):
                     try:
                         if pdf.state is not None:
                             pdf.state.refresh_from_db()
-                            status_after = _state_status_value(pdf.state) or status_after
+                            status_after = (
+                                _state_status_value(pdf.state) or status_after
+                            )
                     except Exception:
                         logger.exception(
                             "Failed to read pdf anonymization_status after validation"
@@ -289,7 +296,10 @@ class AnonymizationValidateView(APIView):
                     )
 
                     return Response(
-                        {"message": "report validated.", "timestamp": response_timestamp},
+                        {
+                            "message": "report validated.",
+                            "timestamp": response_timestamp,
+                        },
                         status=status.HTTP_200_OK,
                     )
 

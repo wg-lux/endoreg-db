@@ -98,11 +98,15 @@ class VideoImportService:
 
             ctx.retry = retry
             # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
+            current_state = ctx.current_video.state if ctx.current_video else None
 
             if (
                 retry
                 and needs_processing
-                and not ctx.current_video.state.anonymization_validated
+                and ctx
+                and ctx.current_video
+                and current_state is not None
+                and not current_state.anonymization_validated
             ):
                 finalize_failure(ctx)
                 ctx.current_video, processed, needs_processing = (

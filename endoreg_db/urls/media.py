@@ -19,23 +19,25 @@ from endoreg_db.views.report.reimport import ReportReimportView
 from endoreg_db.views.report.report_stream import ReportStreamView
 from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
-                                    VideoReimportView,
-                                    export_annotated_data,
-                                    video_segment_detail,
-                                    video_segment_validate,
-                                    video_segments_by_video,
-                                    video_segments_collection,
-                                    video_segments_stats,
-                                    video_segments_validate_bulk,
-                                    video_segments_validation_status,
-                                    ensure_segment_annotations_bulk,
-                                    ensure_segment_annotations_for_video,
+    VideoReimportView,
+    export_annotated_data,
+    video_segment_detail,
+    video_segment_validate,
+    video_segments_by_video,
+    video_segments_collection,
+    video_segments_stats,
+    video_segments_validate_bulk,
+    video_segments_validation_status,
+    ensure_segment_annotations_bulk,
+    ensure_segment_annotations_for_video,
+    ensure_prediction_segment_annotations_bulk,
+    ensure_prediction_segment_annotations_for_video,
 )
 from endoreg_db.views.video.ai import label_list
 from endoreg_db.views.video.correction import (
-                                    VideoApplyMaskView,
-                                    VideoCorrectionView,
-                                    VideoRemoveFramesView,
+    VideoApplyMaskView,
+    VideoCorrectionView,
+    VideoRemoveFramesView,
 )
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
 
@@ -213,6 +215,16 @@ urlpatterns = [
         "media/videos/ensure-segment-annotations/",
         ensure_segment_annotations_bulk,
         name="video-segments-ensure-annotations",
+    ),
+    path(
+        "media/videos/<int:pk>/ensure-prediction-segment-annotations/",
+        ensure_prediction_segment_annotations_for_video,
+        name="video-segment-ensure-prediction-annotations",
+    ),
+    path(
+        "media/videos/ensure-prediction-segment-annotations/",
+        ensure_prediction_segment_annotations_bulk,
+        name="video-segments-ensure-prediction-annotations",
     ),
     # ---------------------------------------------------------------------------------------
     # SENSITIVE METADATA ENDPOINTS (Modern Media Framework)

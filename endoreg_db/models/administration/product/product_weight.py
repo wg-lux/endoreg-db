@@ -4,8 +4,7 @@ import pandas as pd
 from django.db import models
 
 if TYPE_CHECKING:
-    from ...other.unit import Unit
-    from .product import Product
+    pass
 
 
 class ProductWeightManager(models.Manager):
@@ -24,8 +23,7 @@ class ProductWeight(models.Model):
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
 
     if TYPE_CHECKING:
-        product: models.ForeignKey["Product"]
-        unit: models.ForeignKey["Unit|None"]
+        pass
 
     def get_weight(self):
         if not pd.isnull(self.verified):

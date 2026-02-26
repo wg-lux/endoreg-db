@@ -2,7 +2,7 @@ import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save logic)
-from typing import TYPE_CHECKING, Any, Dict, Type, cast
+from typing import TYPE_CHECKING, Any, Dict, Type
 
 from django.db import models
 
@@ -15,12 +15,8 @@ from . import sensitive_meta_logic as logic
 
 if TYPE_CHECKING:
     from ..administration import (
-        Center,
-        Examiner,
-        Patient,  # Keep for type hinting if needed
+        Examiner,  # Keep for type hinting if needed
     )
-    from ..medical import PatientExamination
-    from ..other import Gender
     # from ..state import SensitiveMetaState # Already imported above
 
 logger = logging.getLogger(__name__)  # Add logger instance
@@ -58,7 +54,7 @@ class SensitiveMeta(models.Model):
     patient_gender = models.ForeignKey(
         "Gender", on_delete=models.CASCADE, blank=True, null=True
     )
-    examiners = models.ManyToManyField(
+    examiners: "models.ManyToManyField[Examiner, Examiner]" = models.ManyToManyField(
         "Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)"
     )
     center = models.ForeignKey(
@@ -97,15 +93,7 @@ class SensitiveMeta(models.Model):
     )
 
     if TYPE_CHECKING:
-        pseudo_patient: models.ForeignKey["Patient|None"]
-
-        patient_gender: models.ForeignKey["Gender|None"]
-        pseudo_examination: models.ForeignKey["PatientExamination|None"]
-        state: models.ForeignKey[
-            "SensitiveMetaState|None"
-        ]  # Assuming related_name='state' is defined on SensitiveMetaState.origin
-        center: models.ForeignKey["Center|None"]
-
+        state: SensitiveMetaState | None
 
     @property
     def external_id_origin(self) -> str | None:

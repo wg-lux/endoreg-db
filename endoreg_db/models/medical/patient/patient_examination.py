@@ -5,15 +5,12 @@ from django.db import models
 if TYPE_CHECKING:
     from endoreg_db.utils.links.requirement_link import RequirementLinks
 
-    from ...administration.person.patient import Patient
     from ...media import (
         AnonymExaminationReport,
         AnonymHistologyReport,
         RawPdfFile,
-        VideoFile,
     )
     from ..examination import (
-        Examination,
         ExaminationIndication,
         ExaminationIndicationClassificationChoice,
     )
@@ -44,9 +41,6 @@ class PatientExamination(models.Model):
     hash = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        patient: "models.ForeignKey[Patient]"
-        examination: "models.ForeignKey[Examination|None]"
-        video: "models.OneToOneField[VideoFile|None]"
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]

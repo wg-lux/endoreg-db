@@ -6,8 +6,6 @@ from endoreg_db.utils.product.sum_emissions import sum_emissions
 from endoreg_db.utils.product.sum_weights import sum_weights
 
 if TYPE_CHECKING:
-    from ...other.transport_route import TransportRoute
-    from .product_group import ProductGroup
     from .product_material import ProductMaterial
     from .reference_product import ReferenceProduct
     # from .product_weight import ProductWeight
@@ -34,8 +32,6 @@ class Product(models.Model):
     )
 
     if TYPE_CHECKING:
-        transport_route: models.ForeignKey["TransportRoute|None"]
-        product_group: models.ForeignKey["ProductGroup|None"]
         reference_products: models.QuerySet["ReferenceProduct"]
         product_product_materials: models.QuerySet["ProductMaterial"]
 

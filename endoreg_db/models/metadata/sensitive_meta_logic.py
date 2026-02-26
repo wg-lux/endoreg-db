@@ -220,12 +220,12 @@ def create_pseudo_examiner_logic(instance: "SensitiveMeta") -> "Examiner":
         )
         # Ensure default center exists or handle appropriately
         try:
-            default_center = Center.objects.get(name="endoreg_db_demo")
-        except Center.DoesNotExist:
-            logger.error(
-                "Default center 'endoreg_db_demo' not found. Cannot create default examiner."
+            default_center, _ = Center.objects.get_or_create(name="endoreg_db_demo")
+        except Exception:
+            logger.exception(
+                "Failed to resolve or create default center 'endoreg_db_demo' for pseudo examiner."
             )
-            raise ValueError("Default center 'endoreg_db_demo' not found.")
+            raise ValueError("Default center 'endoreg_db_demo' not available.")
 
         examiner, _created = Examiner.custom_get_or_create(
             first_name="Unknown", last_name="Unknown", center=default_center
@@ -417,20 +417,23 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
         except Gender.DoesNotExist:
             # If the gender is 'unknown' (likely because name was DEFAULT_UNKNOWN),
             # we should auto-create it rather than crashing.
-            if gender_str == "unknown" or instance.patient_first_name == DEFAULT_UNKNOWN:
+            if (
+                gender_str == "unknown"
+                or instance.patient_first_name == DEFAULT_UNKNOWN
+            ):
                 logger.warning(
                     f"Gender '{gender_str}' not found in DB. Auto-creating default entry."
                 )
                 gender_obj, _ = Gender.objects.get_or_create(
                     name="unknown",
                     defaults={
-                        "abbreviation": "?", 
-                        "description": "Auto-created default gender"
-                    }
+                        "abbreviation": "?",
+                        "description": "Auto-created default gender",
+                    },
                 )
                 instance.patient_gender = gender_obj
             else:
-                # If it's a specific gender (e.g., 'male') that is missing, 
+                # If it's a specific gender (e.g., 'male') that is missing,
                 # that is a configuration error we should raise.
                 raise ValueError(f"Gender '{gender_str}' not found in database.")
     # 4. Calculate Hashes (depends on DOB, Exam Date, Center, Names)
@@ -1152,6 +1155,7 @@ def _create_anonymized_record(
 
     pseudo_patient = None
     dob_value = instance.patient_dob
+    dob_date: date | None
     if isinstance(dob_value, datetime):
         dob_date = dob_value.date()
     else:
@@ -1194,7 +1198,9 @@ def _create_anonymized_record(
         "patient_last_name": DEFAULT_ANONYMIZED,
         "patient_dob": preserved_dob,
         "examination_date": DEFAULT_ANONYMIZED_DATE,
-        "patient_gender": pseudo_patient.gender if pseudo_patient else instance.patient_gender,
+        "patient_gender": pseudo_patient.gender
+        if pseudo_patient
+        else instance.patient_gender,
         "center": pseudo_patient.center if pseudo_patient else instance.center,
     }
     sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)

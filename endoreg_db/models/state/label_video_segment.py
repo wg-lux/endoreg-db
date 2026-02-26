@@ -8,12 +8,14 @@ from .abstract import AbstractState
 class LabelVideoSegmentState(AbstractState):
     """State for label video segment data."""
 
-    prediction = models.BooleanField(default=False)
-    annotation = models.BooleanField(default=False)
-    frames_extracted = models.BooleanField(default=False)
-    is_validated = models.BooleanField(default=False)
+    prediction: "models.BooleanField[bool, bool]" = models.BooleanField(default=False)
+    annotation: "models.BooleanField[bool, bool]" = models.BooleanField(default=False)
+    frames_extracted: "models.BooleanField[bool, bool]" = models.BooleanField(
+        default=False
+    )
+    is_validated: "models.BooleanField[bool, bool]" = models.BooleanField(default=False)
 
-    origin = models.OneToOneField(
+    origin: "models.OneToOneField[LabelVideoSegment | None]" = models.OneToOneField(
         "LabelVideoSegment",
         on_delete=models.CASCADE,
         related_name="state",
@@ -28,4 +30,4 @@ class LabelVideoSegmentState(AbstractState):
     if TYPE_CHECKING:
         from endoreg_db.models import LabelVideoSegment
 
-        origin: models.OneToOneField["LabelVideoSegment|None"]
+        pass

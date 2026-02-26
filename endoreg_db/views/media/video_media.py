@@ -54,6 +54,7 @@ class VideoMediaView(APIView):
     """
 
     permission_classes = [IsAuthenticated, PolicyPermission]
+
     def get(self, request, pk=None):
         """
         Handle GET requests for video listing or detail retrieval.
@@ -288,7 +289,7 @@ class VideoMediaView(APIView):
         return base_url
 
     # Future implementation placeholders
-    def patch(self, request, pk):
+    def _patch_not_implemented_placeholder(self, request, pk):
         """
         Update video metadata (Phase 1.2+ future enhancement).
 

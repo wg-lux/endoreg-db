@@ -1,7 +1,14 @@
 from PIL import Image
 
 
-def crop_and_insert(image: Image, x, y, h, w, bg_color=(255, 255, 255)):
+def crop_and_insert(
+    image: Image.Image,
+    x: int,
+    y: int,
+    h: int,
+    w: int,
+    bg_color: tuple[int, int, int] = (255, 255, 255),
+) -> Image.Image:
     """
     Crops a region from an inverted grayscale image and inserts it into a white image of the same size as the original.
 

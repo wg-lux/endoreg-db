@@ -96,7 +96,7 @@ def analyse_requirement(requirement: Requirement) -> RequirementPlan:
     if not inferred_models:
         notes.append("Requirement has no direct links; may rely on operators only.")
 
-    operator_names = list(requirement.operators.values_list("name", flat=True))
+    operator_names = [requirement.operator.name] if getattr(requirement, "operator", None) else []
 
     return RequirementPlan(
         requirement=requirement,

@@ -20,7 +20,7 @@ class Contraindication(models.Model):
         @property
         def contraindicating_finding_interventions(
             self,
-        ) -> "models.manager.RelatedManager[FindingIntervention]": ...
+        ) -> "models.Manager[FindingIntervention]": ...
 
     def natural_key(self):
         return (self.name,)

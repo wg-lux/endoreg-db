@@ -4,7 +4,9 @@ import pytest
 
 
 @pytest.mark.django_db
-@pytest.mark.xfail(reason="Needs compact fixtures for patient/patient_examination/patient_findings")
+@pytest.mark.xfail(
+    reason="Needs compact fixtures for patient/patient_examination/patient_findings"
+)
 def test_get_patient_examination_history_context_excludes_current_exam_scaffold():
     """
     Scaffold for report history service.
@@ -16,4 +18,3 @@ def test_get_patient_examination_history_context_excludes_current_exam_scaffold(
     - nested classifications/interventions are serialized
     """
     raise NotImplementedError
-

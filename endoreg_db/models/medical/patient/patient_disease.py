@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, cast  # Added List
+from typing import TYPE_CHECKING
 
 from django.db import models
 
@@ -7,7 +7,6 @@ if TYPE_CHECKING:
         RequirementLinks,
     )  # Added RequirementLinks
 
-    from ...administration.person.patient.patient import Patient
     from ..disease import Disease, DiseaseClassificationChoice
 
 
@@ -25,7 +24,9 @@ class PatientDisease(models.Model):
     disease = models.ForeignKey(
         "Disease", on_delete=models.CASCADE, related_name="patient_diseases"
     )
-    classification_choices = models.ManyToManyField("DiseaseClassificationChoice")
+    classification_choices: "models.ManyToManyField[DiseaseClassificationChoice, DiseaseClassificationChoice]" = models.ManyToManyField(
+        "DiseaseClassificationChoice"
+    )
     start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
     numerical_descriptors = models.JSONField(default=dict)
@@ -34,13 +35,7 @@ class PatientDisease(models.Model):
     last_update = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        patient: models.ForeignKey["Patient"]
-        disease: models.ForeignKey["Disease"]
-
-        classification_choices = cast(
-            "models.manager.RelatedManager[DiseaseClassificationChoice]",
-            classification_choices,
-        )
+        pass
 
     def __str__(self):
         """Returns a string representation including the patient and disease name."""
@@ -56,15 +51,16 @@ class PatientDisease(models.Model):
         Aggregates and returns related model instances relevant for requirement evaluation
         as a RequirementLinks object.
         """
-        links_data = {
-            "patient_diseases": [self],
-            "diseases": [],
-            "disease_classification_choices": list(self.classification_choices.all()),
-        }
+        diseases: list["Disease"] = []
+        disease_classification_choices = list(self.classification_choices.all())
         if self.disease:
-            links_data["diseases"].append(self.disease)
+            diseases.append(self.disease)
 
-        return RequirementLinks(**links_data)
+        return RequirementLinks(
+            patient_diseases=[self],
+            diseases=diseases,
+            disease_classification_choices=disease_classification_choices,
+        )
 
     class Meta:
         # unique_together = ('patient', 'disease', 'start_date')

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, cast
 
 from django.conf import settings
 from django.core.cache import cache
@@ -13,9 +13,8 @@ from django.core.cache import cache
 
 
 try:
-    DEFAULT_TTL_SECONDS = int(
-        settings.CACHES.get("default", {}).get("TIMEOUT", 60 * 30)
-    )
+    _cache_timeout_raw = settings.CACHES.get("default", {}).get("TIMEOUT", 60 * 30)
+    DEFAULT_TTL_SECONDS = int(cast(int | str, _cache_timeout_raw))
 
 
 except Exception:

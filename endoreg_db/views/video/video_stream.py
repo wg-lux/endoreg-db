@@ -100,6 +100,8 @@ def _get_video_path(vf: VideoFile, file_type: str) -> Path:
         raise ValueError(f"Invalid file_type: {file_type}")
 
     file_name = file_ref.name
+    if not file_name:
+        raise Http404("Video file has no storage path")
 
     if str(file_name).startswith("/"):
         path = Path(file_name)
@@ -114,32 +116,34 @@ def _get_video_path(vf: VideoFile, file_type: str) -> Path:
     return path
 
 
-def _serve_with_nginx(path: Path, content_type: str) -> HttpResponse:
+def _serve_with_nginx(path: Path, content_type: str) -> HttpResponse | None:
     """
     Constructs an empty response with X-Accel-Redirect headers.
     Nginx intercepts this and serves the file directly from disk.
     """
     try:
         # Calculate path relative to the STORAGE_DIR to append to the Nginx internal alias
-        # Example: 
+        # Example:
         #   Abs Path: /var/lib/lx-annotate/data/videos/1.mp4
         #   Storage : /var/lib/lx-annotate/data
         #   Relative: videos/1.mp4
         #   Nginx   : /protected_media/videos/1.mp4
         relative_path = path.relative_to(STORAGE_DIR)
         redirect_url = os.path.join(NGINX_PROTECTED_URL, str(relative_path))
-        
+
         response = HttpResponse()
         response["Content-Type"] = content_type
         response["X-Accel-Redirect"] = redirect_url
         response["X-Accel-Buffering"] = "no"  # Crucial for video streaming
-        
+
         logger.info(f"Offloading video to Nginx: {redirect_url}")
         return response
-        
+
     except ValueError:
         # Fallback if path is not inside STORAGE_DIR (e.g. temp files)
-        logger.warning(f"File {path} is not inside STORAGE_DIR {STORAGE_DIR}. Falling back to Python streaming.")
+        logger.warning(
+            f"File {path} is not inside STORAGE_DIR {STORAGE_DIR}. Falling back to Python streaming."
+        )
         return None
 
 
@@ -151,7 +155,7 @@ def _stream_video_file(
 ) -> Union[FileResponse, StreamingHttpResponse, HttpResponse]:
     """
     Helper function to stream a video file.
-    
+
     Logic:
     1. Checks environment variable `SERVE_WITH_NGINX`.
     2. If True: Returns headers for Nginx X-Accel-Redirect.
@@ -160,7 +164,7 @@ def _stream_video_file(
     try:
         # 1. Resolve Path
         path = _get_video_path(vf, file_type)
-        
+
         # 2. Determine MIME type
         mime, _ = mimetypes.guess_type(str(path))
         content_type = mime or "video/mp4"
@@ -180,7 +184,7 @@ def _stream_video_file(
         # =========================================================
         # FALLBACK / DEV MODE: Python Streaming (Slow, High CPU)
         # =========================================================
-        
+
         # Validate file size
         try:
             file_size = path.stat().st_size
@@ -193,7 +197,7 @@ def _stream_video_file(
         if range_header:
             try:
                 start, end = parse_range_header(range_header, file_size)
-                
+
                 response = StreamingHttpResponse(
                     stream_file_chunk(path, start, end),
                     status=206,
@@ -226,7 +230,7 @@ def _stream_video_file(
         # CORS headers
         response["Access-Control-Allow-Origin"] = frontend_origin
         response["Access-Control-Allow-Credentials"] = "true"
-        
+
         return response
 
     except Http404:
@@ -239,7 +243,7 @@ def _stream_video_file(
 class VideoStreamView(APIView):
     """
     Separate view for video streaming.
-    
+
     Features:
     - Nginx X-Accel-Redirect support (Production)
     - Python Byte-Range Streaming (Development)
@@ -262,7 +266,9 @@ class VideoStreamView(APIView):
             # Determine file type (raw/processed)
             file_type = "raw"
             try:
-                file_type_param = request.query_params.get("type") or request.query_params.get("file_type")
+                file_type_param = request.query_params.get(
+                    "type"
+                ) or request.query_params.get("file_type")
                 if file_type_param:
                     file_type = file_type_param.lower()
                     if file_type not in ["raw", "processed"]:

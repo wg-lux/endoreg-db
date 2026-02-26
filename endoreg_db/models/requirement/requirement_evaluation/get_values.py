@@ -23,7 +23,9 @@ def get_values_from_kwargs(
     Returns:
         A dictionary with keys for 'patient', 'patient_examination', and any extra keyword arguments.
     """
-    requirement_types = [_.name for _ in requirement.requirement_types]
+    requirement_types = [
+        req_type.name for req_type in requirement.requirement_types.all()
+    ]
     # operators = [_.name for _ in requirement.operators]  # Uncomment when needed
 
     if "patient_examination" in requirement_types:

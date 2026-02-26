@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 from django.db import transaction
 from icecream import ic
@@ -67,9 +67,8 @@ def initialize_frame_objects(video: "VideoFile", extracted_paths: List[Path]):
     if not frame_dir:
         raise ValueError(f"Frame directory not set for video {video.video_hash}")
 
-    storage_base_path = Path(
-        video._meta.get_field("raw_file").storage.location
-    )  # Get storage root
+    storage = video._meta.get_field("raw_file").storage
+    storage_base_path = Path(cast(Any, storage).location)  # Get storage root
 
     for i, path in tqdm(enumerate(extracted_paths, start=1)):
         frame_number = (
@@ -81,7 +80,7 @@ def initialize_frame_objects(video: "VideoFile", extracted_paths: List[Path]):
 
         # Create Frame instance (without saving yet)
         frame_obj_instance = video.create_frame_object(
-            frame_number, image_file=relative_path, extracted=True
+            frame_number, relative_path=relative_path, extracted=True
         )
         frames_to_create.append(frame_obj_instance)
 

@@ -1,7 +1,15 @@
 # Class to represent findings of examinations
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional
 
 from django.db import models
+
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        FindingClassification,
+        FindingIntervention,
+        FindingType,
+        InformationSource,
+    )
 
 
 class FindingManager(models.Manager):
@@ -12,19 +20,19 @@ class FindingManager(models.Manager):
 class Finding(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    finding_types = models.ManyToManyField(
-        "FindingType", blank=True, related_name="findings"
+    finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
+        models.ManyToManyField("FindingType", blank=True, related_name="findings")
     )
-    finding_interventions = models.ManyToManyField(
+    finding_interventions: "models.ManyToManyField[FindingIntervention, FindingIntervention]" = models.ManyToManyField(
         "FindingIntervention", blank=True, related_name="findings"
     )
-    caused_by_interventions = models.ManyToManyField(
+    caused_by_interventions: "models.ManyToManyField[FindingIntervention, FindingIntervention]" = models.ManyToManyField(
         "FindingIntervention", blank=True, related_name="causes_findings"
     )
-    finding_classifications = models.ManyToManyField(
+    finding_classifications: "models.ManyToManyField[FindingClassification, FindingClassification]" = models.ManyToManyField(
         "FindingClassification", blank=True, related_name="findings"
     )
-    information_sources = models.ManyToManyField(
+    information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource", blank=True, related_name="findings"
     )
     objects = FindingManager()
@@ -40,16 +48,7 @@ class Finding(models.Model):
             PatientFindingClassification,
         )
 
-        finding_types = cast(
-            models.manager.RelatedManager["FindingType"], finding_types
-        )
-        finding_interventions = cast(
-            models.manager.RelatedManager["FindingIntervention"], finding_interventions
-        )
-        finding_classifications = cast(
-            models.manager.RelatedManager["FindingClassification"],
-            finding_classifications,
-        )
+        pass
 
     def natural_key(self):
         """

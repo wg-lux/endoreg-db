@@ -6,7 +6,7 @@ when segment annotations are created or updated.
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast
 from django.contrib.auth.models import User
 from django.db import transaction
 
@@ -41,14 +41,24 @@ def create_user_segment_from_annotation(
         return None
 
     # Get required data from annotation
-    video_id = annotation.get("videoId")
-    start_time = annotation.get("startTime")
-    end_time = annotation.get("endTime")
+    video_id_raw = annotation.get("videoId")
+    start_time_raw = annotation.get("startTime")
+    end_time_raw = annotation.get("endTime")
     label_text = annotation.get("text", "").strip()
     metadata = annotation.get("metadata", {})
     original_segment_id = metadata.get("segmentId")
 
-    if not all([video_id, start_time is not None, end_time is not None]):
+    if not isinstance(video_id_raw, int):
+        return None
+    try:
+        start_time = float(cast(float | int | str, start_time_raw))
+        end_time = float(cast(float | int | str, end_time_raw))
+    except (TypeError, ValueError):
+        start_time = None
+        end_time = None
+
+    video_id = video_id_raw
+    if start_time is None or end_time is None:
         logger.warning(
             "Missing required segment data in annotation, skipping user segment creation"
         )
@@ -148,8 +158,8 @@ def create_user_segment_from_annotation(
         with transaction.atomic():
             new_segment = LabelVideoSegment.create_from_video(
                 source=video_file,
-                prediction_meta=segment_data.get("prediction_meta"),
-                label=segment_data["label"],
+                prediction_meta=cast(Any, segment_data.get("prediction_meta")),
+                label=cast(Any, segment_data["label"]),
                 start_frame_number=start_frame_number,
                 end_frame_number=end_frame_number,
             )

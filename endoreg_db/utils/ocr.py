@@ -78,8 +78,6 @@ def extract_text_from_rois(image_path, processor):
     """
     # Read the image using Pillow
     image = Image.open(image_path)
-    image_dimensions = image.size  # (width, height)
-
     ####### Adjust Image #######
     # Convert to grayscale
     gray = image.convert("L")
@@ -140,10 +138,13 @@ def get_most_frequent_values(rois_texts: Dict[str, List[str]]) -> Dict[str, str]
     Returns:
         A dictionary where the keys are the names of the ROIs and the values are the most frequent text for each ROI.
     """
-    most_frequent = {}
+    most_frequent: Dict[str, str] = {}
     for key in rois_texts.keys():
         counter = Counter([text for text in rois_texts[key] if text])
-        most_frequent[key], _ = counter.most_common(1)[0] if counter else (None, None)
+        if counter:
+            most_frequent[key] = counter.most_common(1)[0][0]
+        else:
+            most_frequent[key] = ""
     return most_frequent
 
 

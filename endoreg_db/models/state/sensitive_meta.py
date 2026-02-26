@@ -8,10 +8,12 @@ from .abstract import AbstractState
 class SensitiveMetaState(AbstractState):
     """State for sensitive meta data."""
 
-    dob_verified = models.BooleanField(default=False)
-    names_verified = models.BooleanField(default=False)
+    dob_verified: "models.BooleanField[bool, bool]" = models.BooleanField(default=False)
+    names_verified: "models.BooleanField[bool, bool]" = models.BooleanField(
+        default=False
+    )
 
-    origin = models.OneToOneField(
+    origin: "models.OneToOneField[SensitiveMeta | None]" = models.OneToOneField(
         "SensitiveMeta",
         on_delete=models.CASCADE,
         related_name="state",
@@ -22,7 +24,7 @@ class SensitiveMetaState(AbstractState):
     if TYPE_CHECKING:
         from endoreg_db.models import SensitiveMeta
 
-        origin: models.OneToOneField["SensitiveMeta|None"]
+        pass
 
     @property
     def is_verified(self) -> bool:

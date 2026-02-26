@@ -214,10 +214,11 @@ class RawPdfFile(models.Model):
                 pass
 
         # Define potential raw directories
+        base_dir = Path(str(getattr(settings, "BASE_DIR", Path.cwd())))
         raw_dirs = [
             SENSITIVE_REPORT_DIR,  # Files might be in sensitive dir
-            Path(settings.BASE_DIR) / "data" / "temporary_reports",
-            Path(settings.BASE_DIR) / "data" / "pdfs" / "raw",
+            base_dir / "data" / "temporary_reports",
+            base_dir / "data" / "pdfs" / "raw",
             IMPORT_REPORT_DIR,  # General report directory
         ]
 
@@ -349,13 +350,18 @@ class RawPdfFile(models.Model):
             logger.error("No extracted data provided for validation.")
             return False
 
+        sensitive_meta = self.sensitive_meta
+        if sensitive_meta is None:
+            logger.error("No sensitive meta attached to report %s.", self.pk)
+            return False
+
         if extracted_data_dict:
-            self.sensitive_meta.update_from_dict(extracted_data_dict)
+            sensitive_meta.update_from_dict(extracted_data_dict)
         else:
             return False
 
         # Save the sensitive meta to ensure changes are persisted
-        self.sensitive_meta.save()
+        sensitive_meta.save()
 
         # Save the RawPdfFile instance to ensure all changes are saved
         self.save()

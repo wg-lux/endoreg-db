@@ -1,19 +1,22 @@
 import sys
 import logging
 from pathlib import Path
-
-from django.conf import settings
+from typing import cast
+from django.conf import settings as django_settings
 from django.conf.urls.static import static
-from django.urls import include, path
+from django.urls import URLResolver, URLPattern, include, path
 from rest_framework.routers import DefaultRouter
 
 logger = logging.getLogger(__name__)
 
 # Make lx-data-models submodule importable during Django startup (before views import).
 # settings.BASE_DIR is /.../endoreg_db in this project, so the repo root is BASE_DIR.parent.
+base_dir = Path(
+    str(getattr(django_settings, "BASE_DIR", Path(__file__).resolve().parents[2]))
+)
 candidate_roots = [
-    Path(settings.BASE_DIR) / "lx-data-models",
-    Path(settings.BASE_DIR).parent / "lx-data-models",
+    base_dir / "lx-data-models",
+    base_dir.parent / "lx-data-models",
 ]
 for submodule_root in candidate_roots:
     if submodule_root.exists():
@@ -39,6 +42,8 @@ from .classification import url_patterns as classification_url_patterns
 from .examination import urlpatterns as examination_url_patterns
 from .media import urlpatterns as media_url_patterns
 from .patient import urlpatterns as patient_url_patterns
+from .settings import urlpatterns as settings_url_patterns
+
 try:
     from .requirements import urlpatterns as requirements_url_patterns
 except Exception as exc:
@@ -60,6 +65,7 @@ api_urls += media_url_patterns
 api_urls += upload_url_patterns
 api_urls += requirements_url_patterns
 api_urls += patient_url_patterns
+api_urls += settings_url_patterns
 api_urls += stats_url_patterns
 
 router = DefaultRouter()
@@ -74,12 +80,16 @@ router.register(r"patient-examination-reports", PatientExaminationReportViewSet)
 # Frontend expects: GET /api/video/{id}/examinations/
 
 # Export raw API urlpatterns (no prefix). The project-level endoreg_db/urls.py mounts these under /api/.
-urlpatterns = [
+urlpatterns: list[URLPattern | URLResolver] = [
     path("auth/bootstrap", auth_bootstrap, name="auth-bootstrap"),
     path("", include(router.urls)),
     path("", include(api_urls)),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+if django_settings.DEBUG:
+    media_url = cast(str | None, getattr(django_settings, "MEDIA_URL", None))
+    static_url = cast(str | None, getattr(django_settings, "STATIC_URL", None))
+    if media_url:
+        urlpatterns += static(media_url, document_root=django_settings.MEDIA_ROOT)
+    if static_url:
+        urlpatterns += static(static_url, document_root=django_settings.STATIC_ROOT)

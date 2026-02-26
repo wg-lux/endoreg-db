@@ -13,7 +13,12 @@ import json
 from django.db.models import Q, QuerySet
 
 from endoreg_db.helpers.data_loader import load_base_db_data
-from endoreg_db.models import ImageClassificationAnnotation, LabelVideoSegment, VideoFile
+from endoreg_db.models import (
+    ImageClassificationAnnotation,
+    LabelVideoSegment,
+    VideoFile,
+    Frame,
+)
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.video.ffmpeg_wrapper import (
@@ -42,6 +47,7 @@ DEFAULT_FIELDNAMES = (
     "date_modified",
 )
 
+
 class AnnotationRow(TypedDict):
     annotation_id: int
     video_id: int | None
@@ -62,9 +68,11 @@ class AnnotationRow(TypedDict):
     date_created: str | None
     date_modified: str | None
 
+
 DEFAULT_TRANSCODE_FPS = 50.0
 DEFAULT_TRANSCODE_QUALITY = 2
 DEFAULT_TRANSCODE_EXT = "jpg"
+
 
 def _resolve_video_source_path(video: VideoFile) -> Path | None:
     """
@@ -255,7 +263,6 @@ class annotation_exporter_client:
                 video_output_dir = export_result_data["video_output_dir"]
                 frame_output_dir = export_result_data["frame_output_dir"]
 
-
             self._logger.info(
                 "Annotation export completed successfully: %s", exported_path
             )
@@ -385,7 +392,6 @@ def export_frames_with_labels_to_csv(
         writer = csv.DictWriter(handle, fieldnames=DEFAULT_FIELDNAMES)
         writer.writeheader()
         for annotation in annotations.iterator():
-            
             writer.writerow(
                 _annotation_to_row(
                     annotation,
@@ -395,6 +401,7 @@ def export_frames_with_labels_to_csv(
             )
 
     return output_file
+
 
 def export_frames_with_labels_to_json(
     output_path: Path | str,
@@ -593,9 +600,7 @@ def _export_videos_from_annotations(
                         exc,
                     )
         except (ValueError, FileNotFoundError, IOError) as exc:
-            logger.warning(
-                "Skipping video %s: %s", video.pk, exc
-            )
+            logger.warning("Skipping video %s: %s", video.pk, exc)
 
     return exported_count
 
@@ -736,9 +741,7 @@ def _transcode_video_to_frame_dir(
 
     if frame_pks and not overwrite:
         expected_names = {_frame_pk_filename(pk, ext) for pk in frame_pks}
-        existing_names = {
-            path.name for path in frame_dir.glob(f"frame_*.{ext}")
-        }
+        existing_names = {path.name for path in frame_dir.glob(f"frame_*.{ext}")}
         if expected_names.issubset(existing_names):
             logger.info(
                 "Skipping transcode for video %s: frames already present.",
@@ -751,7 +754,9 @@ def _transcode_video_to_frame_dir(
         if source_path is None:
             with ensure_local_file(video.active_file) as source_path_fallback:
                 source_path = source_path_fallback
-                with tempfile.TemporaryDirectory(prefix="transcode_tmp_", dir=frame_dir) as tmp:
+                with tempfile.TemporaryDirectory(
+                    prefix="transcode_tmp_", dir=frame_dir
+                ) as tmp:
                     tmp_dir = Path(tmp)
                     extracted_paths = ffmpeg_extract_frames(
                         source_path,
@@ -801,8 +806,7 @@ def _move_extracted_frames_to_pk_names(
     overwrite: bool,
 ) -> None:
     frames_by_number = {
-        frame.frame_number: frame
-        for frame in video.frames.only("pk", "frame_number")
+        frame.frame_number: frame for frame in video.frames.only("pk", "frame_number")
     }
     if not frames_by_number:
         logger.warning("No frames available for video %s", video.pk)
@@ -971,6 +975,8 @@ def _annotation_to_row(
     video = frame.video if frame else None
     information_source = annotation.information_source
 
+    assert information_source is not None
+
     frame_relative_path = None
     if frame:
         if use_frame_pk_paths:
@@ -978,33 +984,43 @@ def _annotation_to_row(
         else:
             frame_relative_path = frame.relative_path
 
-    return cast(AnnotationRow, {
-        "annotation_id": annotation.pk,
-        "video_id": video.pk if video else None,
-        "video_hash": video.video_hash if video else None,
-        "frame_id": frame.pk if frame else None,
-        "frame_number": frame.frame_number if frame else None,
-        "frame_relative_path": frame_relative_path,
-        "frame_timestamp": frame.timestamp if frame else None,
-        "label_id": annotation.label.pk,
-        "label_name": annotation.label.name if annotation.label else None,
-        "value": annotation.value,
-        "float_value": annotation.float_value,
-        "annotator": annotation.annotator,
-        "information_source_id": annotation.information_source.pk if information_source else None,
-        "information_source_name": (
-            information_source.name if information_source else None
-        ),
-        "model_meta_id": annotation.model_meta.pk if annotation.model_meta else None,
-        "date_created": (
-            annotation.date_created.isoformat() if annotation.date_created else None
-        ),
-        "date_modified": (
-            annotation.date_modified.isoformat() if annotation.date_modified else None
-        ),
-    })
+    return cast(
+        AnnotationRow,
+        {
+            "annotation_id": annotation.pk,
+            "video_id": video.pk if video else None,
+            "video_hash": video.video_hash if video else None,
+            "frame_id": frame.pk if frame else None,
+            "frame_number": frame.frame_number if frame else None,
+            "frame_relative_path": frame_relative_path,
+            "frame_timestamp": frame.timestamp if frame else None,
+            "label_id": annotation.label.pk,
+            "label_name": annotation.label.name if annotation.label else None,
+            "value": annotation.value,
+            "float_value": annotation.float_value,
+            "annotator": annotation.annotator,
+            "information_source_id": information_source.pk
+            if information_source
+            else None,
+            "information_source_name": (
+                information_source.name if information_source else None
+            ),
+            "model_meta_id": annotation.model_meta.pk
+            if annotation.model_meta
+            else None,
+            "date_created": (
+                annotation.date_created.isoformat() if annotation.date_created else None
+            ),
+            "date_modified": (
+                annotation.date_modified.isoformat()
+                if annotation.date_modified
+                else None
+            ),
+        },
+    )
 
-'''
+
+"""
 csv:
 python manage.py export_frame_annot \
   --output-path data/export/frames.csv
@@ -1016,4 +1032,4 @@ python manage.py export_frame_annot \
   --format json
 
 
-'''
+"""

@@ -5,13 +5,8 @@ from django.db import models
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
-        DateValueDistribution,
         Gender,
-        MultipleCategoricalValueDistribution,
-        NumericValueDistribution,
         Patient,
-        SingleCategoricalValueDistribution,
-        Unit,
     )
 
 LANG = "de"
@@ -99,17 +94,7 @@ class LabValue(models.Model):
     objects = LabValueManager()
 
     if TYPE_CHECKING:
-        default_unit: models.ForeignKey["Unit|None"]
-        default_single_categorical_value_distribution: models.ForeignKey[
-            "SingleCategoricalValueDistribution|None"
-        ]
-        default_numerical_value_distribution: models.ForeignKey[
-            "NumericValueDistribution|None"
-        ]
-        default_multiple_categorical_value_distribution: models.ForeignKey[
-            "MultipleCategoricalValueDistribution|None"
-        ]
-        default_date_value_distribution: models.ForeignKey["DateValueDistribution|None"]
+        pass
 
     @classmethod
     def get_common_lab_values(cls):

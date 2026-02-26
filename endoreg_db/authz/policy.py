@@ -87,6 +87,7 @@ ROUTE_RESOURCE = {
     "video-detail": "video",
     "video-detail-stream": "video",
     "video-stream": "video",
+    "video-frame-stream": "video",
     "video-reimport": "video",
     "video-correction": "video",
     "video-metadata": "video",
@@ -172,6 +173,15 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
 
     # 1) exact role match
     if needed in user_roles:
+        return True
+
+    # 1b) backward-compatible global data roles
+    # Keep legacy data:* roles valid while resource-specific roles roll out.
+    if needed.endswith(":read") and (
+        "data:read" in user_roles or "data:write" in user_roles
+    ):
+        return True
+    if needed.endswith(":write") and "data:write" in user_roles:
         return True
 
     # 2) write⇒read shortcut

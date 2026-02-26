@@ -24,7 +24,13 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services.segment_annotations import ensure_segment_annotations
+from endoreg_db.services.segment_annotations import (
+    ensure_prediction_segment_annotations,
+    ensure_segment_annotations,
+)
+from endoreg_db.services.video_post_validation_jobs import (
+    dispatch_video_post_validation_rebuild,
+)
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentSerializer,
 )
@@ -36,7 +42,6 @@ from endoreg_db.utils.operation_log import (
     STATUS_VALIDATED,
     STATUS_UNVALIDATED,
 )
-
 
 
 logger = logging.getLogger(__name__)
@@ -238,9 +243,7 @@ def video_segments_collection(request):
                     )
             else:
                 details = serializer.errors
-                logger.warning(
-                    f"Invalid data for video segment creation: {details}"
-                )
+                logger.warning(f"Invalid data for video segment creation: {details}")
                 return Response(
                     {"error": "Invalid data", "details": details},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -453,6 +456,7 @@ def video_segment_detail(request, pk, segment_id):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+
 # ============================================================================
 # VIDEO SEGMENT VALIDATION ENDPOINTS (Modern Framework)
 # Migrated from /api/label-video-segment/*/validate/ (October 14, 2025)
@@ -496,14 +500,15 @@ def video_segment_validate(request, pk: int, segment_id: int):
         video_file=video,
     )
 
-
-    #for operation log table
-    status_before = STATUS_VALIDATED if (segment.state and segment.state.is_validated) else STATUS_UNVALIDATED
-
+    # for operation log table
+    status_before = (
+        STATUS_VALIDATED
+        if (segment.state and segment.state.is_validated)
+        else STATUS_UNVALIDATED
+    )
 
     try:
         is_validated = request.data.get("is_validated", True)
-        notes = request.data.get("notes", "")
         information_source_name = request.data.get(
             "information_source_name", "manual_annotation"
         )
@@ -511,7 +516,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
         # Optional: update times (seconds) before validation
         start_time = request.data.get("start_time")
         end_time = request.data.get("end_time")
-        fps_value = 0
+        fps_value = 0.0
         if start_time is not None and end_time is not None:
             fps_value = segment.video_file.get_fps() or 0
 
@@ -547,13 +552,13 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 # re-read from DB to get the REAL final state
                 segment.refresh_from_db()
                 state = segment.state
-        
+
                 status_after = (
                     STATUS_VALIDATED
                     if (state and state.is_validated)
                     else STATUS_UNVALIDATED
                 )
-        
+
                 record_operation(
                     request,
                     action=ACTION_SEGMENT_ANNOTATED,
@@ -570,7 +575,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
 
             transaction.on_commit(_log_after_commit)
 
-            '''status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
+            """status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
             record_operation(
                 request,
@@ -584,10 +589,9 @@ def video_segment_validate(request, pk: int, segment_id: int):
                     "label": segment.label.name if segment.label else None,
                     "information_source": information_source_name,
                 },
-            )'''
-        # Blackening the outside frames
-        video.create_video_without_outside_frames(video)
-        
+            )"""
+        post_processing_job = dispatch_video_post_validation_rebuild(video_id=video.pk)
+
         logger.info(f"Validated segment {segment_id} in video {pk}: {is_validated}")
 
         return Response(
@@ -599,6 +603,7 @@ def video_segment_validate(request, pk: int, segment_id: int):
                 "video_id": video.pk,
                 "start_frame": segment.start_frame_number,
                 "end_frame": segment.end_frame_number,
+                "post_processing_job": post_processing_job.to_dict(),
             },
             status=status.HTTP_200_OK,
         )
@@ -631,7 +636,7 @@ def video_segments_validate_bulk(request, pk: int):
       "notes": "...",
       "information_source_name": "manual_annotation"
     }
-    
+
     THIS IS WHERE SEGMENTS ARE STORED IN THE DATABASE
     """
     video = get_object_or_404(VideoFile, pk=pk)
@@ -655,8 +660,9 @@ def video_segments_validate_bulk(request, pk: int):
 
     try:
         segments = list(
-            LabelVideoSegment.objects.filter(pk__in=segment_ids, video_file=video)
-            .select_related("state", "video_file")
+            LabelVideoSegment.objects.filter(
+                pk__in=segment_ids, video_file=video
+            ).select_related("state", "video_file")
         )
 
         if not segments:
@@ -709,7 +715,6 @@ def video_segments_validate_bulk(request, pk: int):
                         else STATUS_UNVALIDATED
                     )
 
-
                     # 2) mark as validated + update information source + notes
                     segment.mark_validated(
                         is_validated=is_validated,
@@ -728,17 +733,18 @@ def video_segments_validate_bulk(request, pk: int):
                         )
                     updated_count += 1
 
-                    
                     #
                     def _log_after_commit(segment_id=segment_id):
-                        s = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
-                    
+                        s = LabelVideoSegment.objects.select_related("state").get(
+                            pk=segment_id
+                        )
+
                         status_after = (
                             STATUS_VALIDATED
                             if (s.state and s.state.is_validated)
                             else STATUS_UNVALIDATED
                         )
-                    
+
                         record_operation(
                             request,
                             action=ACTION_SEGMENT_ANNOTATED,
@@ -754,7 +760,7 @@ def video_segments_validate_bulk(request, pk: int):
                         )
 
                     transaction.on_commit(_log_after_commit)
-                    '''status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
+                    """status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
 
                     
                     record_operation(
@@ -769,14 +775,14 @@ def video_segments_validate_bulk(request, pk: int):
                             "bulk": True,
                             "information_source": information_source_name,
                         },
-                    )'''
-
+                    )"""
 
                 except Exception as e:
                     logger.error(f"Error validating segment {segment.pk}: {e}")
                     failed_ids.append(segment.pk)
 
         logger.info(f"Bulk validated {updated_count} segments in video {pk}")
+        post_processing_job = None
 
         if is_validated and not failed_ids and updated_count == len(segment_ids):
             state = video.get_or_create_state()
@@ -789,6 +795,9 @@ def video_segments_validate_bulk(request, pk: int):
                     "date_modified",
                 ]
             )
+            post_processing_job = dispatch_video_post_validation_rebuild(
+                video_id=video.pk
+            )
 
         response_data = {
             "message": f"Bulk validation completed. {updated_count} segments updated.",
@@ -797,6 +806,8 @@ def video_segments_validate_bulk(request, pk: int):
             "is_validated": is_validated,
             "video_id": pk,
         }
+        if post_processing_job is not None:
+            response_data["post_processing_job"] = post_processing_job.to_dict()
 
         if failed_ids:
             response_data["failed_ids"] = failed_ids
@@ -872,7 +883,7 @@ def video_segments_validation_status(request, pk: int):
         total_count = segments.count()
 
         # Count validated segments
-        validated_count = sum(1 for s in segments if s.state and s.state.is_validated)
+        validated_count = sum(bool(s.state and s.state.is_validated) for s in segments)
 
         # By label breakdown
         by_label = {}
@@ -901,8 +912,6 @@ def video_segments_validation_status(request, pk: int):
     elif request.method == "POST":
         # Mark all segments as validated
         label_name = request.data.get("label_name")
-        notes = request.data.get("notes", "")
-
         segments_query = LabelVideoSegment.objects.filter(
             video_file=video
         ).select_related("state", "label")
@@ -939,8 +948,8 @@ def video_segments_validation_status(request, pk: int):
                     failed_count += 1
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
-        logger.info("Removing Outside Segments")
-        video.create_video_without_outside_frames(video)
+        logger.info("Queueing outside-frame rebuild job")
+        post_processing_job = dispatch_video_post_validation_rebuild(video_id=video.pk)
         return Response(
             {
                 "message": f"Video segment validation completed for video {pk}",
@@ -949,6 +958,7 @@ def video_segments_validation_status(request, pk: int):
                 "updated_count": updated_count,
                 "failed_count": failed_count,
                 "label_filter": label_name,
+                "post_processing_job": post_processing_job.to_dict(),
             },
             status=status.HTTP_200_OK,
         )
@@ -1014,6 +1024,86 @@ def ensure_segment_annotations_bulk(request):
         )
 
     stats = ensure_segment_annotations(
+        video_ids=video_ids,
+        segment_ids=segment_ids,
+        information_source_name=info_source,
+        commit=True,
+    )
+
+    return Response(
+        {
+            "task_id": str(uuid.uuid4()),
+            "status": "accepted",
+            "stats": stats,
+            "video_ids": video_ids,
+            "segment_ids": segment_ids,
+        },
+        status=status.HTTP_202_ACCEPTED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def ensure_prediction_segment_annotations_for_video(request, pk: int):
+    """
+    Trigger idempotent annotation generation for AI/prediction-based segments
+    attached to a single video, writing to a dedicated information source.
+
+    Body (optional):
+    {
+      "segment_ids": [1,2,3],
+      "information_source_name": "prediction_annotation"
+    }
+    """
+    segment_ids = _normalize_int_list(request.data.get("segment_ids"))
+    info_source = request.data.get("information_source_name", "prediction_annotation")
+
+    try:
+        stats = ensure_prediction_segment_annotations(
+            video_ids=None if segment_ids else [pk],
+            segment_ids=segment_ids,
+            information_source_name=info_source,
+            commit=True,
+        )
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        {
+            "task_id": str(uuid.uuid4()),
+            "status": "accepted",
+            "video_id": pk,
+            "stats": stats,
+        },
+        status=status.HTTP_202_ACCEPTED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([EnvironmentAwarePermission])
+def ensure_prediction_segment_annotations_bulk(request):
+    """
+    Trigger annotation generation for AI/prediction-based segments for multiple
+    videos/segments, using a dedicated information source.
+
+    Body:
+    {
+      "video_ids": [1,2],
+      "segment_ids": [10,11],
+      "information_source_name": "prediction_annotation"
+    }
+    """
+    video_ids = _normalize_int_list(request.data.get("video_ids"))
+    segment_ids = _normalize_int_list(request.data.get("segment_ids"))
+    info_source = request.data.get("information_source_name", "prediction_annotation")
+
+    if not video_ids and not segment_ids:
+        return Response(
+            {"detail": "Provide video_ids or segment_ids"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stats = ensure_prediction_segment_annotations(
         video_ids=video_ids,
         segment_ids=segment_ids,
         information_source_name=info_source,

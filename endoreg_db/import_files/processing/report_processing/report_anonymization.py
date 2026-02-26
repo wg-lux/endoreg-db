@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import importlib
 from pathlib import Path
 
 from lx_anonymizer import ReportReader
@@ -30,7 +31,7 @@ class ReportAnonymizer:
         # Generate output path for anonymized report
         pdf_hash = ctx.current_report.pdf_hash
         anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
-        self._report_reader_class = ReportReader()
+        self._report_reader_class = self._instantiate_report_reader()
 
         assert isinstance(self._report_reader_class, ReportReader)
 
@@ -58,6 +59,28 @@ class ReportAnonymizer:
 
         self.storage = sensitive_meta_storage(sm, ctx.current_report)
         return ctx
+
+    def _instantiate_report_reader(self) -> ReportReader:
+        """
+        Instantiate ReportReader with a compatibility workaround for broken
+        lx_anonymizer builds that reference a missing module global
+        `lx_anonymizer` in `report_reader.py`.
+        """
+        rr_mod = importlib.import_module("lx_anonymizer.report_reader")
+        default_settings = getattr(rr_mod, "DEFAULT_SETTINGS", {}) or {}
+        default_flags = default_settings.get("flags")
+
+        # Work around broken upstream builds that crash in ReportReader.__init__
+        # while resolving default flags from a malformed module expression.
+        if default_flags is not None:
+            try:
+                return ReportReader(flags=default_flags)
+            except Exception:
+                logger.exception(
+                    "ReportReader(flags=DEFAULT_SETTINGS['flags']) failed; falling back to plain init."
+                )
+
+        return ReportReader()
 
     def _ensure_report_reading_available(self) -> None:
         """
@@ -94,6 +117,8 @@ class ReportAnonymizer:
                     logger.warning(
                         "Failed importing lx_anonymizer via LX_ANONYMIZER_PATH: %s", e
                     )
+
+                    return
 
         self._report_reader_available = False
         self._report_reader_class = None

@@ -5,6 +5,7 @@ from endoreg_db.models.media.video.create_from_file import (
     atomic_move_with_fallback,
 )
 from endoreg_db.utils import transcode_videofile_if_required
+
 logger = logging.getLogger(__name__)
 
 

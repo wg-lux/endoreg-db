@@ -1,7 +1,9 @@
+from typing import Any
+
 from endoreg_db.models import Unit
 
 
-def validate_subcategory_dict(self, subcategory_dict: dict = None):
+def validate_subcategory_dict(self, subcategory_dict: dict[str, Any] | None = None):
     if subcategory_dict is None:
         return False
 
@@ -36,7 +38,9 @@ def validate_subcategory_dict(self, subcategory_dict: dict = None):
     return True
 
 
-def validate_numerical_descriptor(self, numerical_descriptor_dict: dict = None):
+def validate_numerical_descriptor(
+    self, numerical_descriptor_dict: dict[str, Any] | None = None
+):
     # Check if numerical_descriptor_dict is None
     error_message = ""
     if numerical_descriptor_dict is None:

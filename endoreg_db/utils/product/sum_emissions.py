@@ -6,7 +6,7 @@ from typing import List
 
 def sum_emissions(product_materials: List["ProductMaterial"]):
     # sum up the emissions
-    emission = 0
+    emission = 0.0
     reference_unit = None
     for product_material in product_materials:
         if not reference_unit:

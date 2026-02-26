@@ -58,6 +58,7 @@ export const endpoints = {
     patientExaminationReportsByPatientExamination: (patientExaminationId: Id) =>
       `patient-examination-reports/?patient_examination_id=${patientExaminationId}`,
     saveReportSubmission: 'patient-examination-reports/save-submission/',
+    segmentFrameSelectorBase: 'patient-examination-reports/segment-frame-selector/',
     segmentFrameSelector: (patientExaminationId: Id, reportId?: Id) =>
       reportId == null
         ? `patient-examination-reports/segment-frame-selector/?patient_examination_id=${patientExaminationId}`
@@ -75,6 +76,13 @@ export const endpoints = {
 
   requirements: {
     lookup: 'lookup/',
+    lookupInit: 'lookup/init/',
+    lookupAll: (token: Id) => `lookup/${token}/all/`,
+    lookupParts: (token: Id, keys?: string[]) => {
+      if (!keys?.length) return `lookup/${token}/parts/`
+      return `lookup/${token}/parts/?keys=${encodeURIComponent(keys.join(','))}`
+    },
+    lookupRecompute: (token: Id) => `lookup/${token}/recompute/`,
     evaluateRequirements: 'evaluate-requirements/'
   },
 
@@ -112,6 +120,7 @@ export const endpoints = {
     videoDetailStream: (pk: Id) => `media/videos/${pk}/`,
     videoDetail: (pk: Id) => `media/videos/${pk}/details/`,
     videoStream: (pk: Id) => `media/videos/${pk}/stream/`,
+    videoFrameStream: (pk: Id, frameNumber: Id) => `media/videos/${pk}/frames/${frameNumber}/stream/`,
     videoReimport: (pk: Id) => `media/videos/${pk}/reimport/`,
     exportAnnotated: 'media/videos/export-annotated/',
 
@@ -134,6 +143,12 @@ export const endpoints = {
     ensureSegmentAnnotationsForVideo: (pk: Id) =>
       `media/videos/${pk}/ensure-segment-annotations/`,
     ensureSegmentAnnotationsBulk: 'media/videos/ensure-segment-annotations/',
+    // Redundant AI-derived frame annotations (separate track, does not overwrite manual_annotation)
+    // Default backend information_source_name: "prediction_annotation"
+    ensurePredictionSegmentAnnotationsForVideo: (pk: Id) =>
+      `media/videos/${pk}/ensure-prediction-segment-annotations/`,
+    ensurePredictionSegmentAnnotationsBulk:
+      'media/videos/ensure-prediction-segment-annotations/',
 
     videoSensitiveMetadata: (pk: Id) => `media/videos/${pk}/sensitive-metadata/`,
     videoSensitiveMetadataVerify: (pk: Id) => `media/videos/${pk}/sensitive-metadata/verify/`,

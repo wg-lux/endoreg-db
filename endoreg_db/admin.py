@@ -2,6 +2,7 @@ from django.urls import path
 from django.contrib import admin
 from django.http import JsonResponse
 from endoreg_db.models import (
+    ApplicationSettings,
     Patient,
     Examination,
     # PatientExamination,
@@ -33,6 +34,24 @@ class ExaminationAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     list_filter = ("name",)
     ordering = ("name",)
+
+
+@admin.register(ApplicationSettings)
+class ApplicationSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "center",
+        "processor",
+        "annotator_name",
+        "report_template_name",
+        "updated_at",
+    )
+    fields = ("center", "processor", "annotator_name", "report_template_name")
+
+    def has_add_permission(self, request):
+        if ApplicationSettings.objects.exists():
+            return False
+        return super().has_add_permission(request)
 
 
 class PatientFindingInterventionAdmin(admin.ModelAdmin):

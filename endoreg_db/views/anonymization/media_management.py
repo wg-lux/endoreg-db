@@ -232,8 +232,8 @@ class MediaManagementView(APIView):
 
     def _cleanup_unfinished_media(self, force: bool) -> Dict[str, Any]:
         """Remove unfinished media processing entries"""
-        removed_videos = []
-        removed_pdfs = []
+        removed_videos: list[dict[str, Any]] = []
+        removed_pdfs: list[dict[str, Any]] = []
 
         # Find unfinished videos using VideoState boolean fields
         unfinished_videos = VideoFile.objects.select_related("state").all()

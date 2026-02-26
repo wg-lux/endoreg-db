@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import cv2
 
@@ -90,7 +90,7 @@ def _get_fps(video: "VideoFile") -> float:
             if video.has_raw:
                 video_path = video.get_raw_file_path()  # Use helper
                 if video_path and video_path.exists():
-                    cap = cv2.VideoCapture(video_path.as_posix())
+                    cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
                     if not cap.isOpened():
                         raise IOError(f"Cannot open video file: {video_path}")
                     try:

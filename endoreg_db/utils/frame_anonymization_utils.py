@@ -6,6 +6,7 @@ einschließlich Bildverarbeitung, Pfad-Management und Sicherheitsfunktionen.
 """
 
 import hashlib
+import importlib
 import secrets
 from pathlib import Path
 from typing import Optional, Dict, List
@@ -133,13 +134,16 @@ def validate_secure_token(token: str, frame_id: int) -> bool:
         True wenn Token gültig ist
     """
     try:
-        from endoreg_db.models import AnonymousFrame
+        models_mod = importlib.import_module("endoreg_db.models")
+        anonymous_frame_model = getattr(models_mod, "AnonymousFrame", None)
+        if anonymous_frame_model is None:
+            return False
 
         # Token hashen
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 
         # Frame mit Token finden
-        frame = AnonymousFrame.objects.filter(
+        frame = anonymous_frame_model.objects.filter(
             id=frame_id,
             download_token_hash=token_hash,
             download_expires_at__gt=timezone.now(),
@@ -302,12 +306,19 @@ def get_anonymization_statistics(video_id: Optional[int] = None) -> Dict:
         Dict mit Statistiken
     """
     try:
-        from endoreg_db.models import FrameAnonymizationRequest, AnonymousFrame
+        models_mod = importlib.import_module("endoreg_db.models")
+        request_model = getattr(models_mod, "FrameAnonymizationRequest", None)
+        anonymous_frame_model = getattr(models_mod, "AnonymousFrame", None)
+        if request_model is None or anonymous_frame_model is None:
+            return {
+                "error": "frame anonymization models unavailable",
+                "video_id": video_id,
+            }
         from django.db.models import Count, Q
 
         # Basis-Queryset
-        requests_qs = FrameAnonymizationRequest.objects.all()
-        frames_qs = AnonymousFrame.objects.all()
+        requests_qs = request_model.objects.all()
+        frames_qs = anonymous_frame_model.objects.all()
 
         if video_id:
             requests_qs = requests_qs.filter(video_file_id=video_id)
@@ -421,7 +432,7 @@ def get_video_frame_count(video_id: int) -> int:
         return 0
 
 
-def format_file_size(size_bytes: int) -> str:
+def format_file_size(size_bytes: float) -> str:
     """
     Formatiert Dateigröße in lesbares Format.
 

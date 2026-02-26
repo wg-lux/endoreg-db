@@ -1,4 +1,9 @@
+from typing import TYPE_CHECKING
+
 from django.db import models
+
+if TYPE_CHECKING:
+    from endoreg_db.models import Center
 
 
 class EndoscopyProcessorManager(models.Manager):
@@ -9,7 +14,7 @@ class EndoscopyProcessorManager(models.Manager):
 class EndoscopyProcessor(models.Model):
     objects = EndoscopyProcessorManager()
 
-    centers = models.ManyToManyField(
+    centers: "models.ManyToManyField[Center, Center]" = models.ManyToManyField(
         "Center",
         blank=True,
         related_name="endoscopy_processors",

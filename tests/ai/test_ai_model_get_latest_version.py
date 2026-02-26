@@ -60,6 +60,7 @@ def test_get_latest_version_returns_latest_metadata_when_no_active_meta():
 
     # Should pick '2' over '1'
     assert result == meta_v2
+    assert result != meta_v1
 
 
 @pytest.mark.django_db
@@ -70,7 +71,7 @@ def test_get_latest_version_calls_hf_service_when_no_meta():
     """
     # 1. Use a UNIQUE name to avoid IntegrityError and ensure no pre-existing metadata
     ai_model = AiModel.objects.create(
-        name="temp_model_for_hf_fallback_test", 
+        name="temp_model_for_hf_fallback_test",
         description="test model",
     )
 

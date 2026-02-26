@@ -22,15 +22,10 @@ class Migration(migrations.Migration):
             name="uuid",
             field=models.UUIDField(null=True, editable=False),
         ),
-        migrations.RunPython(
-            populate_rawpdffile_uuid, migrations.RunPython.noop
-        ),
+        migrations.RunPython(populate_rawpdffile_uuid, migrations.RunPython.noop),
         migrations.AlterField(
             model_name="rawpdffile",
             name="uuid",
-            field=models.UUIDField(
-                default=uuid.uuid4, unique=True, editable=False
-            ),
+            field=models.UUIDField(default=uuid.uuid4, unique=True, editable=False),
         ),
     ]
-

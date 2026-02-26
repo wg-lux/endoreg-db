@@ -37,8 +37,12 @@ class TestSegmentAnnotationFlow(TestCase):
         self.video.get_fps.return_value = 25.0
         self.video.objects = Mock()
 
-        # Mock VideoFile.objects.get to return our mock video
-        VideoFile.objects.get = Mock(return_value=self.video)
+        # Patch manager lookup with automatic cleanup to avoid leaking into other tests.
+        self.video_get_patcher = patch.object(
+            VideoFile.objects, "get", return_value=self.video
+        )
+        self.mock_video_get = self.video_get_patcher.start()
+        self.addCleanup(self.video_get_patcher.stop)
 
     def test_create_user_segment_from_new_annotation(self):
         """Test creating a user segment from a new segment annotation"""
@@ -93,46 +97,48 @@ class TestSegmentAnnotationFlow(TestCase):
         original_segment.label = self.label
         original_segment.prediction_meta = Mock()
 
-        # Mock LabelVideoSegment.objects.get to return original segment
-        LabelVideoSegment.objects.get = Mock(return_value=original_segment)
-
-        # Create annotation data with changes (different end time)
-        annotation_data = {
-            "type": "segment",
-            "videoId": 1,
-            "startTime": 10.0,
-            "endTime": 18.0,  # Changed from 15.0 to 18.0
-            "text": "polyp",
-            "metadata": {"segmentId": 456},
-            "userId": "testdoctor",
-        }
-
-        # Mock new user segment
-        mock_new_segment = Mock(spec=LabelVideoSegment)
-        mock_new_segment.id = 789
-        mock_new_segment.source = self.user_source
-        mock_new_segment.save = Mock()
-
         with patch.object(
-            LabelVideoSegment, "create_from_video", return_value=mock_new_segment
+            LabelVideoSegment.objects, "get", return_value=original_segment
         ):
-            with patch.object(Label.objects, "filter") as mock_label_filter:
-                mock_label_filter.return_value.first.return_value = self.label
+            # Create annotation data with changes (different end time)
+            annotation_data = {
+                "type": "segment",
+                "videoId": 1,
+                "startTime": 10.0,
+                "endTime": 18.0,  # Changed from 15.0 to 18.0
+                "text": "polyp",
+                "metadata": {"segmentId": 456},
+                "userId": "testdoctor",
+            }
 
-                result = create_user_segment_from_annotation(annotation_data, self.user)
+            # Mock new user segment
+            mock_new_segment = Mock(spec=LabelVideoSegment)
+            mock_new_segment.id = 789
+            mock_new_segment.source = self.user_source
+            mock_new_segment.save = Mock()
 
-                # Verify new segment was created
-                self.assertIsNotNone(result)
-                self.assertEqual(result.id, 789)
+            with patch.object(
+                LabelVideoSegment, "create_from_video", return_value=mock_new_segment
+            ):
+                with patch.object(Label.objects, "filter") as mock_label_filter:
+                    mock_label_filter.return_value.first.return_value = self.label
 
-                # Verify create_from_video was called with updated parameters
-                LabelVideoSegment.create_from_video.assert_called_once_with(
-                    source=self.video,
-                    prediction_meta=original_segment.prediction_meta,
-                    label=self.label,
-                    start_frame_number=250,  # 10.0 * 25 fps
-                    end_frame_number=450,  # 18.0 * 25 fps (updated)
-                )
+                    result = create_user_segment_from_annotation(
+                        annotation_data, self.user
+                    )
+
+                    # Verify new segment was created
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result.id, 789)
+
+                    # Verify create_from_video was called with updated parameters
+                    LabelVideoSegment.create_from_video.assert_called_once_with(
+                        source=self.video,
+                        prediction_meta=original_segment.prediction_meta,
+                        label=self.label,
+                        start_frame_number=250,  # 10.0 * 25 fps
+                        end_frame_number=450,  # 18.0 * 25 fps (updated)
+                    )
 
     def test_no_segment_created_for_unchanged_annotation(self):
         """Test that no new segment is created if annotation hasn't changed"""
@@ -144,26 +150,27 @@ class TestSegmentAnnotationFlow(TestCase):
         original_segment.label = self.label
         original_segment.prediction_meta = Mock()
 
-        LabelVideoSegment.objects.get = Mock(return_value=original_segment)
+        with patch.object(
+            LabelVideoSegment.objects, "get", return_value=original_segment
+        ):
+            # Create annotation data with no changes
+            annotation_data = {
+                "type": "segment",
+                "videoId": 1,
+                "startTime": 10.0,
+                "endTime": 15.0,  # Same as original
+                "text": "polyp",  # Same label
+                "metadata": {"segmentId": 456},
+                "userId": "testdoctor",
+            }
 
-        # Create annotation data with no changes
-        annotation_data = {
-            "type": "segment",
-            "videoId": 1,
-            "startTime": 10.0,
-            "endTime": 15.0,  # Same as original
-            "text": "polyp",  # Same label
-            "metadata": {"segmentId": 456},
-            "userId": "testdoctor",
-        }
+            with patch.object(Label.objects, "filter") as mock_label_filter:
+                mock_label_filter.return_value.first.return_value = self.label
 
-        with patch.object(Label.objects, "filter") as mock_label_filter:
-            mock_label_filter.return_value.first.return_value = self.label
+                result = create_user_segment_from_annotation(annotation_data, self.user)
 
-            result = create_user_segment_from_annotation(annotation_data, self.user)
-
-            # Verify no new segment was created
-            self.assertIsNone(result)
+                # Verify no new segment was created
+                self.assertIsNone(result)
 
     def test_segment_creation_preserves_original_prediction(self):
         """Test that original prediction segment remains unmodified"""
@@ -176,36 +183,39 @@ class TestSegmentAnnotationFlow(TestCase):
         original_segment.source = self.prediction_source
         original_segment.prediction_meta = Mock()
 
-        LabelVideoSegment.objects.get = Mock(return_value=original_segment)
-
-        annotation_data = {
-            "type": "segment",
-            "videoId": 1,
-            "startTime": 10.0,
-            "endTime": 18.0,  # Changed
-            "text": "polyp",
-            "metadata": {"segmentId": 456},
-            "userId": "testdoctor",
-        }
-
-        mock_new_segment = Mock(spec=LabelVideoSegment)
-        mock_new_segment.id = 789
-        mock_new_segment.source = self.user_source
-        mock_new_segment.save = Mock()
-
         with patch.object(
-            LabelVideoSegment, "create_from_video", return_value=mock_new_segment
+            LabelVideoSegment.objects, "get", return_value=original_segment
         ):
-            with patch.object(Label.objects, "filter") as mock_label_filter:
-                mock_label_filter.return_value.first.return_value = self.label
+            annotation_data = {
+                "type": "segment",
+                "videoId": 1,
+                "startTime": 10.0,
+                "endTime": 18.0,  # Changed
+                "text": "polyp",
+                "metadata": {"segmentId": 456},
+                "userId": "testdoctor",
+            }
 
-                result = create_user_segment_from_annotation(annotation_data, self.user)
+            mock_new_segment = Mock(spec=LabelVideoSegment)
+            mock_new_segment.id = 789
+            mock_new_segment.source = self.user_source
+            mock_new_segment.save = Mock()
 
-                # Verify original segment was not modified
-                # In a real test, you'd check the database state
-                self.assertIsNotNone(result)
-                self.assertNotEqual(result.id, original_segment.id)
-                self.assertEqual(result.source, self.user_source)
+            with patch.object(
+                LabelVideoSegment, "create_from_video", return_value=mock_new_segment
+            ):
+                with patch.object(Label.objects, "filter") as mock_label_filter:
+                    mock_label_filter.return_value.first.return_value = self.label
+
+                    result = create_user_segment_from_annotation(
+                        annotation_data, self.user
+                    )
+
+                    # Verify original segment was not modified
+                    # In a real test, you'd check the database state
+                    self.assertIsNotNone(result)
+                    self.assertNotEqual(result.id, original_segment.id)
+                    self.assertEqual(result.source, self.user_source)
 
     def test_non_segment_annotation_ignored(self):
         """Test that non-segment annotations don't create segments"""
@@ -241,21 +251,22 @@ class TestSegmentAnnotationFlow(TestCase):
     def test_video_not_found_handling(self):
         """Test handling when video doesn't exist"""
         # Mock VideoFile.objects.get to raise DoesNotExist
-        VideoFile.objects.get = Mock(side_effect=VideoFile.DoesNotExist())
+        with patch.object(
+            VideoFile.objects, "get", side_effect=VideoFile.DoesNotExist()
+        ):
+            annotation_data = {
+                "type": "segment",
+                "videoId": 999,  # Non-existent video
+                "startTime": 10.0,
+                "endTime": 15.0,
+                "text": "polyp",
+                "userId": "testdoctor",
+            }
 
-        annotation_data = {
-            "type": "segment",
-            "videoId": 999,  # Non-existent video
-            "startTime": 10.0,
-            "endTime": 15.0,
-            "text": "polyp",
-            "userId": "testdoctor",
-        }
+            result = create_user_segment_from_annotation(annotation_data, self.user)
 
-        result = create_user_segment_from_annotation(annotation_data, self.user)
-
-        # Verify no segment was created
-        self.assertIsNone(result)
+            # Verify no segment was created
+            self.assertIsNone(result)
 
 
 @pytest.mark.django_db

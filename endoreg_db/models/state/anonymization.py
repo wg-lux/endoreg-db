@@ -3,7 +3,7 @@ from enum import Enum
 
 class AnonymizationState(str, Enum):
     """Enumeration for the various states of the anonymization process.
-    
+
     Cheat Sheet:
     Desired Status (AnonymizationState)	Boolean Flags to Set in create()
     VALIDATED	anonymization_validated=True
@@ -19,6 +19,7 @@ class AnonymizationState(str, Enum):
         str (_type_): _description_
         Enum (_type_): _description_
     """
+
     NOT_STARTED = "not_started"
     EXTRACTING_FRAMES = "extracting_frames"
     PROCESSING_ANONYMIZING = "processing_anonymization"
@@ -27,4 +28,3 @@ class AnonymizationState(str, Enum):
     FAILED = "failed"
     STARTED = "started"
     ANONYMIZED = "anonymized"
-    

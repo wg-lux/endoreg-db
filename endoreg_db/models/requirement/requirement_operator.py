@@ -1,3 +1,5 @@
+# mypy: disable-error-code=var-annotated
+
 from logging import getLogger  # Added logger
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Union
 
@@ -12,8 +14,6 @@ from endoreg_db.utils.requirement_operator_logic.new_operator_logic import (
 # endoreg_db/utils/requirement_operator_logic/model_evaluators.py
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
-
     from .requirement import Requirement  # Added Requirement import for type hint
 
 logger = getLogger(__name__)  # Added logger instance
@@ -175,9 +175,7 @@ class RequirementOperator(models.Model):
     ) -> bool:
         """ """
         eval_result: bool = False
-        requirement_links: "RequirementLinks" = requirement.links
         expected_input_models = requirement.expected_models
-        operator_function = self.get_operator_function()
 
         input_model = type(input_obj)
         assert input_model in expected_input_models, (

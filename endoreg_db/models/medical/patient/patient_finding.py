@@ -6,9 +6,7 @@ from django.utils import timezone
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
-        Finding,
         LabelVideoSegment,
-        PatientExamination,
         PatientFindingClassification,
         PatientFindingIntervention,
     )
@@ -55,23 +53,21 @@ class PatientFinding(models.Model):
     )
 
     if TYPE_CHECKING:
-        patient_examination: models.ForeignKey["PatientExamination"]
-        finding: models.ForeignKey["Finding"]
 
         @property
         def video_segments(
             self,
-        ) -> models.manager.RelatedManager["LabelVideoSegment"]: ...
+        ) -> models.Manager["LabelVideoSegment"]: ...
 
         @property
         def interventions(
             self,
-        ) -> models.manager.RelatedManager["PatientFindingIntervention"]: ...
+        ) -> models.Manager["PatientFindingIntervention"]: ...
 
         @property
         def classifications(
             self,
-        ) -> models.manager.RelatedManager["PatientFindingClassification"]: ...
+        ) -> models.Manager["PatientFindingClassification"]: ...
 
     class Meta:
         verbose_name = "Patient Finding"

@@ -7,7 +7,9 @@ from django.db.models import Prefetch, QuerySet
 from endoreg_db.models import PatientExamination, PatientFinding
 
 
-def _serialize_patient_finding_summary(patient_finding: PatientFinding) -> dict[str, Any]:
+def _serialize_patient_finding_summary(
+    patient_finding: PatientFinding,
+) -> dict[str, Any]:
     return {
         "patient_finding_id": patient_finding.id,
         "finding_id": patient_finding.finding_id,
@@ -18,13 +20,15 @@ def _serialize_patient_finding_summary(patient_finding: PatientFinding) -> dict[
                 "classification_id": pfc.classification_id,
                 "classification_choice_id": pfc.classification_choice_id,
                 "classification_name": getattr(pfc.classification, "name", None),
-                "classification_choice_name": getattr(pfc.classification_choice, "name", None),
+                "classification_choice_name": getattr(
+                    pfc.classification_choice, "name", None
+                ),
                 "subcategories": pfc.subcategories or {},
                 "numerical_descriptors": pfc.numerical_descriptors or {},
             }
-            for pfc in patient_finding.classifications.filter(is_active=True).select_related(
-                "classification", "classification_choice"
-            )
+            for pfc in patient_finding.classifications.filter(
+                is_active=True
+            ).select_related("classification", "classification_choice")
         ],
         "interventions": [
             {
@@ -36,9 +40,9 @@ def _serialize_patient_finding_summary(patient_finding: PatientFinding) -> dict[
                 "time_start": pfi.time_start,
                 "time_end": pfi.time_end,
             }
-            for pfi in patient_finding.interventions.filter(is_active=True).select_related(
-                "intervention"
-            )
+            for pfi in patient_finding.interventions.filter(
+                is_active=True
+            ).select_related("intervention")
         ],
     }
 
@@ -89,4 +93,3 @@ def get_patient_examination_history_context(
             for pe in prior_examinations
         ],
     }
-

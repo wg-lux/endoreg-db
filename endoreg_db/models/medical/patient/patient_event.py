@@ -4,7 +4,7 @@ from django.db import models
 
 if TYPE_CHECKING:
     from ...administration.person.patient.patient import Patient
-    from ..event import Event, EventClassificationChoice
+    from ..event import Event
 
 
 class PatientEvent(models.Model):
@@ -34,9 +34,7 @@ class PatientEvent(models.Model):
     last_update = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        patient: models.ForeignKey["Patient"]
-        event: models.ForeignKey["Event"]
-        classification_choice: models.ForeignKey["EventClassificationChoice|None"]
+        pass
 
     @property
     def links(self):

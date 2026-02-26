@@ -2,6 +2,9 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 
+if TYPE_CHECKING:
+    from .label import Label
+
 
 class LabelSetManager(models.Manager):
     """
@@ -40,16 +43,14 @@ class LabelSet(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     version = models.IntegerField()
-    labels = models.ManyToManyField("Label", related_name="label_sets")
+    labels: "models.ManyToManyField[Label, Label]" = models.ManyToManyField(
+        "Label", related_name="label_sets"
+    )
 
     objects = LabelSetManager()
 
     if TYPE_CHECKING:
-        from typing import cast
-
-        from .label import Label
-
-        labels = cast(models.manager.RelatedManager["Label"], labels)
+        pass
 
     def natural_key(self):
         """Return the natural key of this label set"""

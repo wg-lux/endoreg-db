@@ -1,17 +1,25 @@
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from django.db import models
+
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        FindingType,
+        InformationSource,
+    )
 
 
 class FindingClassificationTypeManager(models.Manager):
     def get_by_natural_key(self, name):
-        return self.get(name=name)
+        return cast("FindingClassificationType", self.get(name=name))
 
 
 class FindingClassificationType(models.Model):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
-    objects = FindingClassificationTypeManager()
+    objects: models.Manager["FindingClassificationType"] = (
+        FindingClassificationTypeManager()
+    )
 
     def natural_key(self):
         return (self.name,)
@@ -22,16 +30,18 @@ class FindingClassificationType(models.Model):
 
 class FindingClassificationManager(models.Manager):
     def get_by_natural_key(self, name):
-        return self.get(name=name)
+        return cast("FindingClassification", self.get(name=name))
 
 
 class FindingClassification(models.Model):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
-    finding_types = models.ManyToManyField(
-        "FindingType", blank=True, related_name="finding_classifications"
+    finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
+        models.ManyToManyField(
+            "FindingType", blank=True, related_name="finding_classifications"
+        )
     )
-    choices = models.ManyToManyField(
+    choices: "models.ManyToManyField['FindingClassificationChoice', 'FindingClassificationChoice']" = models.ManyToManyField(
         "FindingClassificationChoice", related_name="classifications", blank=True
     )
 
@@ -39,7 +49,7 @@ class FindingClassification(models.Model):
         to=FindingClassificationType,
         # on_delete=models.CASCADE
     )
-    information_sources = models.ManyToManyField(
+    information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource",
         related_name="finding_classifications",
         blank=True,
@@ -51,7 +61,7 @@ class FindingClassification(models.Model):
 
         return Examination.objects.filter(findings__finding_classifications=self)
 
-    objects = FindingClassificationManager()
+    objects: models.Manager["FindingClassification"] = FindingClassificationManager()
 
     if TYPE_CHECKING:
         from endoreg_db.models import (
@@ -62,22 +72,8 @@ class FindingClassification(models.Model):
             PatientFindingClassification,
         )
 
-        classification_types = cast(
-            models.manager.RelatedManager["FindingClassificationType"],
-            classification_types,
-        )
-        choices = cast(
-            models.manager.RelatedManager["FindingClassificationChoice"], choices
-        )
-        finding_types = cast(
-            models.manager.RelatedManager["FindingType"], finding_types
-        )
-        information_sources = cast(
-            models.manager.RelatedManager["InformationSource"], information_sources
-        )
-
         @property
-        def findings(self) -> "models.manager.RelatedManager[Finding]": ...
+        def findings(self) -> "models.Manager[Finding]": ...
 
     def natural_key(self):
         return (self.name,)
@@ -114,10 +110,20 @@ class FindingClassificationChoice(models.Model):
     description = models.TextField(blank=True)
     subcategories = models.JSONField(default=dict)
     numerical_descriptors = models.JSONField(default=dict)
-    objects = FindingClassificationChoiceManager()
+    objects: models.Manager["FindingClassificationChoice"] = (
+        FindingClassificationChoiceManager()
+    )
 
     if TYPE_CHECKING:
         from endoreg_db.models import PatientFindingClassification
+        from lx_dtypes.models.knowledge_base.classification_choice_descriptor.ClassificationChoiceDescriptorDataDict import (
+            ClassificationChoiceDescriptorDataDict,
+        )
+
+        DescriptorTemplateMap: TypeAlias = dict[
+            str, "ClassificationChoiceDescriptorDataDict"
+        ]
+        JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
 
         classifications: models.QuerySet["FindingClassification"]
         patient_finding_classifications: models.QuerySet["PatientFindingClassification"]

@@ -16,7 +16,7 @@ class VideoRemoveFramesView(APIView):
     permission_classes = [EnvironmentAwarePermission]
 
     def post(self, request, pk):
-        video = get_object_or_404(VideoFile, pk=pk)
+        get_object_or_404(VideoFile, pk=pk)
 
         selection_method = request.data.get("selection_method", "automatic")
         detection_engine = request.data.get("detection_engine", "minicpm")
@@ -25,7 +25,9 @@ class VideoRemoveFramesView(APIView):
 
         try:
             # Start async task for frame removal
-            from endoreg_db.tasks.video_processing_tasks import remove_video_frames_task
+            from endoreg_db.tasks.video_processing_tasks import (  # type: ignore[import-untyped]
+                remove_video_frames_task,
+            )
 
             task_data = {
                 "video_id": pk,

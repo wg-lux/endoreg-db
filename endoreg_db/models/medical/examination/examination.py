@@ -3,17 +3,23 @@ from typing import TYPE_CHECKING, List, cast
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Finding
+    from endoreg_db.models import (
+        ExaminationIndication,
+        ExaminationTime,
+        ExaminationType,
+        Finding,
+        InformationSource,
+    )
     from endoreg_db.utils.links.requirement_link import RequirementLinks
 
 
-class ExaminationManager(models.Manager):
+class ExaminationManager(models.Manager["Examination"]):
     """
     Manager for Examination with custom query methods.
     """
 
     def get_by_natural_key(self, name: str) -> "Examination":
-        return self.get(name=name)
+        return cast("Examination", self.get(name=name))
 
 
 class Examination(models.Model):
@@ -26,25 +32,29 @@ class Examination(models.Model):
     """
 
     name = models.CharField(max_length=100, unique=True)
-    examination_types = models.ManyToManyField("ExaminationType", blank=True)
+    examination_types: "models.ManyToManyField[ExaminationType, ExaminationType]" = (
+        models.ManyToManyField("ExaminationType", blank=True)
+    )
     description = models.TextField(blank=True, null=True)
-    indications = models.ManyToManyField(
+    indications: "models.ManyToManyField[ExaminationIndication, ExaminationIndication]" = models.ManyToManyField(
         "ExaminationIndication",
         related_name="examinations",
         blank=True,
     )
-    examination_times = models.ManyToManyField(
-        "ExaminationTime",
-        related_name="examinations",
-        blank=True,
+    examination_times: "models.ManyToManyField[ExaminationTime, ExaminationTime]" = (
+        models.ManyToManyField(
+            "ExaminationTime",
+            related_name="examinations",
+            blank=True,
+        )
     )
 
-    findings = models.ManyToManyField(
+    findings: "models.ManyToManyField[Finding, Finding]" = models.ManyToManyField(
         "Finding",
         blank=True,
         related_name="examinations",
     )
-    information_sources = models.ManyToManyField(
+    information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource",
         related_name="examinations",
         blank=True,
@@ -56,31 +66,21 @@ class Examination(models.Model):
         from endoreg_db.models import (
             ExaminationIndication,
             ExaminationTime,
+            ExaminationType,
             Finding,
             FindingClassification,
             InformationSource,
         )
 
-        indications = cast(
-            "models.manager.RelatedManager[ExaminationIndication]", indications
-        )
-        examination_times = cast(
-            "models.manager.RelatedManager[ExaminationTime]", examination_times
-        )
-        findings = cast("models.manager.RelatedManager[Finding]", findings)
-        information_sources = cast(
-            "models.manager.RelatedManager[InformationSource]", information_sources
-        )
-
         @property
         def finding_classifications(
             self,
-        ) -> "models.manager.RelatedManager[FindingClassification]": ...
+        ) -> "models.Manager[FindingClassification]": ...
 
         @property
         def exam_reqset_links(
             self,
-        ) -> "models.manager.RelatedManager[ExaminationRequirementSet]": ...
+        ) -> "models.Manager[ExaminationRequirementSet]": ...
 
     @property
     def links(self) -> "RequirementLinks":
@@ -135,13 +135,13 @@ class Examination(models.Model):
         ordering = ["name"]
 
 
-class ExaminationRequirementSetManager(models.Manager):
+class ExaminationRequirementSetManager(models.Manager["ExaminationRequirementSet"]):
     """
     Manager for ExaminationRequirementSet with custom query methods.
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationRequirementSet":
-        return self.get(name=name)
+        return cast("ExaminationRequirementSet", self.get(name=name))
 
 
 class ExaminationRequirementSet(models.Model):
@@ -150,10 +150,12 @@ class ExaminationRequirementSet(models.Model):
     Lets you store per-link metadata (order, default, etc.)
     """
 
-    examinations = models.ManyToManyField(
-        "Examination",
-        related_name="exam_reqset_links",
-        blank=True,
+    examinations: "models.ManyToManyField[Examination, Examination]" = (
+        models.ManyToManyField(
+            "Examination",
+            related_name="exam_reqset_links",
+            blank=True,
+        )
     )
     # requirement_set = models.ForeignKey(
     #     "RequirementSet",

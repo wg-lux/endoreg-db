@@ -103,7 +103,7 @@ def calculate_prediction_array_logic(
         predictions = (
             base_pred_qs.filter(label=label)
             .order_by("frame__frame_number")
-            .values_list("frame__frame_number", "confidence")
+            .values_list("frame__frame_number", "float_value")
         )
 
         # Initialize with 0.5 (neutral confidence)

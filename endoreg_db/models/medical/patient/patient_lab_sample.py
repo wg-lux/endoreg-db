@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import LabValue, Patient, PatientLabValue
+    from endoreg_db.models import LabValue, PatientLabValue
     from endoreg_db.utils.links.requirement_link import RequirementLinks  # Added import
 
 DEFAULT_PATIENT_LAB_SAMPLE_TYPE_NAME = "generic"
@@ -67,11 +67,9 @@ class PatientLabSample(models.Model):
     date = models.DateTimeField()
 
     if TYPE_CHECKING:
-        patient: models.ForeignKey["Patient"]
-        sample_type: models.ForeignKey["PatientLabSampleType"]
 
         @property
-        def values(self) -> models.manager.RelatedManager["PatientLabValue"]: ...
+        def values(self) -> models.Manager["PatientLabValue"]: ...
 
     def __str__(self):
         """Returns a string representation including patient, type, and date."""

@@ -3,7 +3,6 @@ from django.db import models
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..person import Patient
     from ...medical.patient.patient_examination import PatientExamination
 from django.utils import timezone
 
@@ -32,7 +31,7 @@ class Case(models.Model):
         help_text="The patient associated with this case.",
         db_index=True,
     )
-    patient_examinations = models.ManyToManyField(
+    patient_examinations: "models.ManyToManyField[PatientExamination, PatientExamination]" = models.ManyToManyField(
         "PatientExamination",
         related_name="cases",
         help_text="The examinations included in this case.",
@@ -73,10 +72,7 @@ class Case(models.Model):
     )
 
     if TYPE_CHECKING:
-        patient: models.ForeignKey["Patient"]
-        patient_examinations: models.ManyToManyField[
-            "PatientExamination", "PatientExamination"
-        ]
+        pass
 
     class Meta:
         ordering = ["-start_date", "patient"]

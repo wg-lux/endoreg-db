@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, cast
 
 from django.conf import settings
 from django.core.cache import cache
@@ -11,9 +11,8 @@ from endoreg_db.schemas.lookup_state import normalize_lookup_keys, validate_look
 
 # Align TTL with Django cache TIMEOUT for consistency in tests and runtime
 try:
-    DEFAULT_TTL_SECONDS = int(
-        settings.CACHES.get("default", {}).get("TIMEOUT", 60 * 30)
-    )
+    _cache_timeout_raw = settings.CACHES.get("default", {}).get("TIMEOUT", 60 * 30)
+    DEFAULT_TTL_SECONDS = int(cast(int | str, _cache_timeout_raw))
 except Exception:
     DEFAULT_TTL_SECONDS = 60 * 30  # 30 minutes fallback
 

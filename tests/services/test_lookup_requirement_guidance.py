@@ -4,7 +4,9 @@ import pytest
 
 
 @pytest.mark.django_db
-@pytest.mark.xfail(reason="Needs compact requirement-set fixtures for deterministic evaluation")
+@pytest.mark.xfail(
+    reason="Needs compact requirement-set fixtures for deterministic evaluation"
+)
 def test_evaluate_patient_exam_requirement_guidance_returns_advisory_payload_scaffold():
     """
     Scaffold for advisory requirement guidance helper.
@@ -15,4 +17,3 @@ def test_evaluate_patient_exam_requirement_guidance_returns_advisory_payload_sca
     - selected requirement set IDs override prior narrowing
     """
     raise NotImplementedError
-

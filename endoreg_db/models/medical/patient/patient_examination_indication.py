@@ -3,11 +3,7 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 if TYPE_CHECKING:
-    from ..examination import (
-        ExaminationIndication,
-        ExaminationIndicationClassificationChoice,
-    )
-    from .patient_examination import PatientExamination
+    pass
 
 
 class PatientExaminationIndication(models.Model):
@@ -27,11 +23,7 @@ class PatientExaminationIndication(models.Model):
     )
 
     if TYPE_CHECKING:
-        patient_examination: models.ForeignKey["PatientExamination"]
-        examination_indication: models.ForeignKey["ExaminationIndication"]
-        indication_choice: models.ForeignKey[
-            "ExaminationIndicationClassificationChoice|None"
-        ]
+        pass
 
     def __str__(self):
         return f"{self.patient_examination} - {self.examination_indication}"

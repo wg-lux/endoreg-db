@@ -1,9 +1,12 @@
 import pytest
-from endoreg_db.models import AiModel, LabelSet, ModelMeta
+from endoreg_db.models import ModelMeta
 import endoreg_db.models.metadata.model_meta as model_meta_module
 
+
 @pytest.mark.django_db
-def test_model_meta_natural_key_and_manager_get_by_natural_key(unique_ai_model, base_labelset):
+def test_model_meta_natural_key_and_manager_get_by_natural_key(
+    unique_ai_model, base_labelset
+):
     # Use unique_ai_model to ensure we have a clean slate
     meta, created = ModelMeta.objects.get_or_create(
         name="default_meta",
@@ -35,7 +38,9 @@ def test_model_meta_str_representation(unique_ai_model, base_labelset):
     s = str(meta)
     assert f"ModelMeta: meta_name (v2a) for {unique_ai_model.name}" == s
 
+
 # ... (Rest of the file remains exactly the same as your previous version) ...
+
 
 def test_get_latest_version_number_delegates_to_logic(monkeypatch):
     called = {}
@@ -167,7 +172,7 @@ def test_get_inference_dataset_config_delegates_to_logic(monkeypatch):
     # We don't need DB here, just any instance-like object; but using the real class is fine
     dummy = object()
     # Monkeypatch the method to accept any object and see it's passed through:
-    result = ModelMeta.get_inference_dataset_config(dummy)  # type: ignore[arg-type]
+    result = ModelMeta.get_inference_dataset_config(dummy)
 
     assert result == {"dummy": True}
     assert called["instance"] is dummy
@@ -187,7 +192,7 @@ def test_get_config_dict_delegates_to_logic(monkeypatch):
     )
 
     dummy = object()
-    result = ModelMeta.get_config_dict(dummy)  # type: ignore[arg-type]
+    result = ModelMeta.get_config_dict(dummy)
 
     assert result == {"config": "value"}
     assert called["instance"] is dummy

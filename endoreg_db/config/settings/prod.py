@@ -11,7 +11,9 @@ if not SECRET_KEY:
     if pytest_active:
         SECRET_KEY = "test-secret-key"
     else:
-        raise ValueError("DJANGO_SECRET_KEY environment variable must be set in production")
+        raise ValueError(
+            "DJANGO_SECRET_KEY environment variable must be set in production"
+        )
 ALLOWED_HOSTS = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
 if not ALLOWED_HOSTS:
     if pytest_active:
@@ -35,7 +37,9 @@ if DB_ENGINE.endswith("sqlite3"):
 else:
     DB_NAME = env_str("DB_NAME")
     if not DB_NAME:
-        raise ValueError("DB_NAME must be set when using a non-sqlite database engine in production")
+        raise ValueError(
+            "DB_NAME must be set when using a non-sqlite database engine in production"
+        )
 
 # Optional credentials/connection params (only include if provided)
 DB_USER = env_str("DB_USER", "")
@@ -59,7 +63,7 @@ if not DB_ENGINE.endswith("sqlite3"):
 
 DATABASES = {"default": _db_config}
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # Enforce HTTPS by default in production. Override via env only with strong justification.
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", True)

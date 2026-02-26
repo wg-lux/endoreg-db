@@ -96,12 +96,12 @@ class DiseaseClassification(models.Model):
     objects = DiseaseClassificationManager()
 
     if TYPE_CHECKING:
-        disease: models.ForeignKey["Disease"]
+        pass
 
         @property
         def disease_classification_choices(
             self,
-        ) -> models.manager.RelatedManager["DiseaseClassificationChoice"]: ...
+        ) -> models.Manager["DiseaseClassificationChoice"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""
@@ -158,12 +158,12 @@ class DiseaseClassificationChoice(models.Model):
     objects = DiseaseClassificationChoiceManager()
 
     if TYPE_CHECKING:
-        disease_classification: models.ForeignKey["DiseaseClassification"]
+        pass
 
         @property
         def patient_diseases(
             self,
-        ) -> models.manager.RelatedManager["PatientDisease"]: ...
+        ) -> models.Manager["PatientDisease"]: ...
 
     def natural_key(self):
         """Returns the natural key (name) as a tuple."""

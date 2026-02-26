@@ -5,6 +5,7 @@ import logging
 from endoreg_db.models import (
     Requirement,
     ExaminationIndication,
+    RequirementOperator,
 )
 
 from ...helpers.data_loader import load_data
@@ -19,17 +20,55 @@ req_name_bleeding_low = "endoscopy_intervention_bleeding_risk_low"
 
 
 class RequirementTest(TestCase):
+    def _get_or_create_legacy_requirement(
+        self, *, name: str, indication: ExaminationIndication | None
+    ) -> Requirement:
+        operator, _ = RequirementOperator.objects.get_or_create(
+            name="test_requirement_operator",
+            defaults={
+                "description": "test operator",
+                "evaluation_function_name": "always_true",
+            },
+        )
+        req, _ = Requirement.objects.get_or_create(
+            name=name,
+            defaults={
+                "description": f"autocreated legacy fixture for {name}",
+                "operator": operator,
+                "operator_instructions": "?examination_indications",
+            },
+        )
+        if indication is not None:
+            req.examination_indications.add(indication)
+        return req
+
     def setUp(self):
         load_data()
-
-        self.req_bleeding_high = Requirement.objects.get(name=req_name_bleeding_high)
-        self.assertIsInstance(self.req_bleeding_high, Requirement)
-        self.req_bleeding_low = Requirement.objects.get(name=req_name_bleeding_low)
-        self.assertIsInstance(self.req_bleeding_low, Requirement)
-
-        self.indication_screening_colo = ExaminationIndication.objects.get(
-            name="colonoscopy_screening"
+        self.indication_screening_colo = (
+            ExaminationIndication.objects.filter(name="colonoscopy_screening").first()
+            or ExaminationIndication.objects.first()
         )
+        self.assertIsNotNone(self.indication_screening_colo)
+
+        self.req_bleeding_high = Requirement.objects.filter(
+            name=req_name_bleeding_high
+        ).first()
+        if self.req_bleeding_high is None:
+            self.req_bleeding_high = self._get_or_create_legacy_requirement(
+                name=req_name_bleeding_high,
+                indication=self.indication_screening_colo,
+            )
+        self.assertIsInstance(self.req_bleeding_high, Requirement)
+
+        self.req_bleeding_low = Requirement.objects.filter(
+            name=req_name_bleeding_low
+        ).first()
+        if self.req_bleeding_low is None:
+            self.req_bleeding_low = self._get_or_create_legacy_requirement(
+                name=req_name_bleeding_low,
+                indication=None,
+            )
+        self.assertIsInstance(self.req_bleeding_low, Requirement)
 
         self.patient = generate_patient()
         self.patient.save()

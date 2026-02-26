@@ -4,7 +4,7 @@ from django.db.models import Min, Max, Count, fields
 from django.utils.timezone import is_aware, make_naive
 import datetime
 import os
-from openpyxl import Workbook
+from openpyxl import Workbook  # type: ignore[import-untyped]
 import csv
 
 
@@ -116,7 +116,6 @@ class Command(BaseCommand):
                     "birth_date",
                     "record_date",
                 ]
-                processed_date_field = False
                 for field_obj in model._meta.get_fields():
                     if field_obj.name in date_fields_to_check and isinstance(
                         field_obj, (fields.DateField, fields.DateTimeField)
@@ -151,7 +150,6 @@ class Command(BaseCommand):
                                 self.stdout.write(
                                     f"  {field_obj.verbose_name.capitalize()} range: {min_val} to {max_val}"
                                 )
-                                processed_date_field = True
                                 break  # Process only the first found relevant date field for brevity
                         except Exception as e:
                             self.stdout.write(

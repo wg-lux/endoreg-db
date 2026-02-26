@@ -21,7 +21,7 @@ def _get_frame(video: "VideoFile", frame_number: int) -> "Frame":
             video.video_hash,
         )
         # Fallback query
-        return Frame.objects.get(video_file=video, frame_number=frame_number)
+        return Frame.objects.get(video=video, frame_number=frame_number)
     except Frame.DoesNotExist:
         logger.error("Frame %d not found for video %s.", frame_number, video.video_hash)
         raise  # Re-raise DoesNotExist

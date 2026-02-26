@@ -12,7 +12,7 @@ maintainers = [
   {name = "Hamza Zahid"},
   {name = "Peter Kowalczyk"},
 ]
-name = "endoreg-db"
+name = "endoreg_db"
 readme = "README.md"
 dynamic = ["version"] 
 
@@ -194,6 +194,59 @@ exclude = [
   "tools",
   "tools/**",
 ]
+
+# Repo-local mypy baseline for incremental adoption in a large Django codebase.
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+namespace_packages = true
+explicit_package_bases = true
+follow_imports = "silent"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_untyped_globals = false
+check_untyped_defs = false
+allow_redefinition = true
+warn_return_any = false
+warn_unused_ignores = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+  "celery",
+  "celery.*",
+  "dateparser",
+  "dateparser.*",
+  "gender_guesser",
+  "gender_guesser.*",
+  "lx_anonymizer",
+  "lx_anonymizer.*",
+  "lx_dtypes",
+  "lx_dtypes.*",
+  "mozilla_django_oidc",
+  "mozilla_django_oidc.*",
+  "pytesseract",
+  "sklearn",
+  "sklearn.*",
+  "torchvision",
+  "torchvision.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  "endoreg_db.models.*",
+]
+disable_error_code = [
+  "var-annotated",
+  "no-redef",
+  "assignment",
+  "name-defined",
+  "attr-defined",
+]
+
+[tool.django-stubs]
+django_settings_module = "endoreg_db.config.settings.test"
 
 # [tool.uv.sources]
 # lx-anonymizer = { workspace = true }

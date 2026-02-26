@@ -28,8 +28,7 @@ LANGUAGES = [
     ("en", "English"),
 ]
 
-#ROOT_URLCONF = 'endoreg_db.urls.root_urls'
-
+# ROOT_URLCONF = 'endoreg_db.urls.root_urls'
 
 
 # Core apps
@@ -71,7 +70,9 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": os.environ.get("CACHE_LOCATION", "endoreg-default-cache"),
-        "TIMEOUT": int(os.environ.get("CACHE_TIMEOUT", str(60 * 30))),  # 30 minutes default
+        "TIMEOUT": int(
+            os.environ.get("CACHE_TIMEOUT", str(60 * 30))
+        ),  # 30 minutes default
     }
 }
 

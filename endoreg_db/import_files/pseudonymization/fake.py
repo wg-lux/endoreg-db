@@ -42,8 +42,6 @@ def fake_name_with_similar_dob_and_gender(
         first_name = fake.first_name_female()
 
     last_name = fake.last_name()
-    full_name = f"{first_name} {last_name}"
-
     # --- Generate similar DOB ---
     days_range = year_tolerance * 365
     offset_days = random.randint(-days_range, days_range)

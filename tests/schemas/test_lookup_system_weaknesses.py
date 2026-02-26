@@ -17,7 +17,7 @@ class _ReqSet:
     id: int
     name: str
     description: str | None = None
-    requirement_set_type: _ReqType | None = None
+    requirement_set_type: object | None = None
 
 
 @dataclass
@@ -39,11 +39,15 @@ class _Graph:
     edges: list[_Edge]
 
 
-def test_markov_prior_is_safe_when_templates_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_markov_prior_is_safe_when_templates_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         mps,
         "_load_report_templates",
-        lambda: mps.ReportTemplateIndex(templates=[], sections_by_name={}, findings_by_name={}),
+        lambda: mps.ReportTemplateIndex(
+            templates=[], sections_by_name={}, findings_by_name={}
+        ),
     )
 
     result = mps.propose_candidate_requirement_sets(
@@ -90,7 +94,10 @@ def test_markov_prior_returns_low_confidence_when_no_candidate_scores(
         lambda **_: [mps.ReportTemplatePrior(tokens={"polyp"}, match_score=1)],
     )
 
-    req_sets = [_ReqSet(id=20, name="liver enzymes"), _ReqSet(id=21, name="kidney labs")]
+    req_sets = [
+        _ReqSet(id=20, name="liver enzymes"),
+        _ReqSet(id=21, name="kidney labs"),
+    ]
     result = mps.propose_candidate_requirement_sets(
         patient_finding_names=["polyp"],
         examination_name=None,
@@ -125,7 +132,9 @@ def test_markov_state_tokenizer_should_treat_underscore_like_whitespace() -> Non
     assert mps._tokenize("low_quality") == {"low", "quality"}
 
 
-@pytest.mark.xfail(reason="Known weakness: graph expansion is only one hop from matched nodes.")
+@pytest.mark.xfail(
+    reason="Known weakness: graph expansion is only one hop from matched nodes."
+)
 def test_graph_prior_should_expand_multiple_hops() -> None:
     graph = _Graph(
         nodes=[

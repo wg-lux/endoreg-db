@@ -45,7 +45,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         return bool(
             user
             and getattr(user, "is_authenticated", False)
-            and (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+            and (
+                getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+            )
         )
 
     def _allowed_center_ids_for_user(self, user) -> set[int] | None:
@@ -62,14 +64,18 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
 
         center_ids: set[int] = set()
         portal_user_info = getattr(user, "portaluserinfo", None)
-        examiner = getattr(portal_user_info, "examiner", None) if portal_user_info else None
+        examiner = (
+            getattr(portal_user_info, "examiner", None) if portal_user_info else None
+        )
         center_id = getattr(examiner, "center_id", None) if examiner else None
         if isinstance(center_id, int):
             center_ids.add(center_id)
         return center_ids
 
     def _apply_center_scope(self, queryset):
-        allowed_center_ids = self._allowed_center_ids_for_user(getattr(self.request, "user", None))
+        allowed_center_ids = self._allowed_center_ids_for_user(
+            getattr(self.request, "user", None)
+        )
         if allowed_center_ids is None:
             return queryset
         if not allowed_center_ids:
@@ -78,7 +84,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             patient_examination__patient__center_id__in=allowed_center_ids
         )
 
-    def _get_scoped_patient_examination(self, patient_examination_id: int) -> PatientExamination:
+    def _get_scoped_patient_examination(
+        self, patient_examination_id: int
+    ) -> PatientExamination:
         queryset = PatientExamination.objects.select_related("patient", "examination")
         queryset = self._apply_center_scope(queryset)
         patient_examination = queryset.filter(pk=patient_examination_id).first()
@@ -93,7 +101,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         patient_examination_id = self.request.query_params.get("patient_examination_id")
         if patient_examination_id:
             queryset = queryset.filter(patient_examination_id=patient_examination_id)
-        elif self.action == "list" and not self._is_privileged_user(getattr(self.request, "user", None)):
+        elif self.action == "list" and not self._is_privileged_user(
+            getattr(self.request, "user", None)
+        ):
             # Prevent broad report listing for non-privileged users without explicit scoping.
             queryset = queryset.none()
         return queryset.order_by("-updated_at", "-id")
@@ -106,16 +116,24 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         template_name: str | None = None,
     ) -> tuple[PatientExaminationReport, bool]:
         if report_id is not None:
-            report = self._apply_center_scope(
-                PatientExaminationReport.objects.select_related("patient_examination__patient")
-            ).filter(pk=report_id, patient_examination=patient_examination).first()
+            report = (
+                self._apply_center_scope(
+                    PatientExaminationReport.objects.select_related(
+                        "patient_examination__patient"
+                    )
+                )
+                .filter(pk=report_id, patient_examination=patient_examination)
+                .first()
+            )
             if report is None:
                 raise PermissionDenied("Report not found for this patient examination.")
             return report, False
 
         existing = (
             self._apply_center_scope(
-                PatientExaminationReport.objects.select_related("patient_examination__patient")
+                PatientExaminationReport.objects.select_related(
+                    "patient_examination__patient"
+                )
             )
             .filter(patient_examination=patient_examination, is_active=True)
             .order_by("-updated_at", "-id")
@@ -124,7 +142,12 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         if existing is not None:
             return existing, False
 
-        user = self.request.user if getattr(self.request, "user", None) and self.request.user.is_authenticated else None
+        user = (
+            self.request.user
+            if getattr(self.request, "user", None)
+            and self.request.user.is_authenticated
+            else None
+        )
         report = PatientExaminationReport.objects.create(
             patient_examination=patient_examination,
             template_name=template_name or "segment_frame_selection",
@@ -139,7 +162,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _get_segment_selection_map(report: PatientExaminationReport) -> dict[str, dict]:
         payload = report.editor_payload or {}
-        selections = payload.get(PatientExaminationReportViewSet.SEGMENT_FRAME_SELECTIONS_KEY)
+        selections = payload.get(
+            PatientExaminationReportViewSet.SEGMENT_FRAME_SELECTIONS_KEY
+        )
         if isinstance(selections, dict):
             return selections
         return {}
@@ -164,7 +189,8 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         report.editor_payload = payload
         report.updated_by = (
             self.request.user
-            if getattr(self.request, "user", None) and self.request.user.is_authenticated
+            if getattr(self.request, "user", None)
+            and self.request.user.is_authenticated
             else report.updated_by
         )
         report.save(update_fields=["editor_payload", "updated_by", "updated_at"])
@@ -189,7 +215,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
 
         if action == "random":
             frame_numbers = list(
-                segment.get_frames().order_by("frame_number").values_list("frame_number", flat=True)
+                segment.get_frames()
+                .order_by("frame_number")
+                .values_list("frame_number", flat=True)
             )
             if frame_numbers:
                 return int(random.choice(frame_numbers)), "random"
@@ -201,17 +229,26 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                 step = int(raw_step)
             except (TypeError, ValueError):
                 step = 5
-            base = current_frame_number if current_frame_number is not None else self._segment_midpoint_frame(segment)
+            base = (
+                current_frame_number
+                if current_frame_number is not None
+                else self._segment_midpoint_frame(segment)
+            )
             return max(start_n, min(end_n, base + step)), f"step_{step}"
 
         # default / explicit set
         if "frame_number" not in request_data:
             return (
-                current_frame_number if current_frame_number is not None else self._segment_midpoint_frame(segment),
+                current_frame_number
+                if current_frame_number is not None
+                else self._segment_midpoint_frame(segment),
                 "default",
             )
         try:
-            chosen = int(request_data.get("frame_number"))
+            frame_number_raw = request_data.get("frame_number")
+            if frame_number_raw is None:
+                raise ValueError
+            chosen = int(frame_number_raw)
         except (TypeError, ValueError):
             raise ValueError("frame_number must be an integer")
         return max(start_n, min(end_n, chosen)), "set"
@@ -238,7 +275,12 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         if finding is None:
             raise ValueError("finding_id does not exist")
 
-        user = self.request.user if getattr(self.request, "user", None) and self.request.user.is_authenticated else None
+        user = (
+            self.request.user
+            if getattr(self.request, "user", None)
+            and self.request.user.is_authenticated
+            else None
+        )
         patient_finding = (
             PatientFinding.objects.filter(
                 patient_examination=patient_examination,
@@ -274,7 +316,11 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         segment: LabelVideoSegment,
         selection_map: dict[str, dict],
     ) -> dict:
-        selection = selection_map.get(str(segment.pk), {}) if isinstance(selection_map, dict) else {}
+        selection = (
+            selection_map.get(str(segment.pk), {})
+            if isinstance(selection_map, dict)
+            else {}
+        )
         stored_frame_number = selection.get("frame_number")
         if isinstance(stored_frame_number, str) and stored_frame_number.isdigit():
             stored_frame_number = int(stored_frame_number)
@@ -282,7 +328,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             stored_frame_number = None
 
         patient_finding = (
-            segment.patient_findings.filter(patient_examination=patient_examination, is_active=True)
+            segment.patient_findings.filter(
+                patient_examination=patient_examination, is_active=True
+            )
             .select_related("finding")
             .order_by("-updated_at", "-id")
             .first()
@@ -292,7 +340,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             if pf_id:
                 patient_finding = (
                     PatientFinding.objects.filter(
-                        pk=pf_id, patient_examination=patient_examination, is_active=True
+                        pk=pf_id,
+                        patient_examination=patient_examination,
+                        is_active=True,
                     )
                     .select_related("finding")
                     .first()
@@ -306,7 +356,11 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                 min(segment.end_frame_number, stored_frame_number),
             )
         else:
-            selected_frame_number = stored_frame_number or (available_frame_numbers[0] if available_frame_numbers else self._segment_midpoint_frame(segment))
+            selected_frame_number = stored_frame_number or (
+                available_frame_numbers[0]
+                if available_frame_numbers
+                else self._segment_midpoint_frame(segment)
+            )
 
         selected_frame = (
             frame_qs.filter(frame_number=selected_frame_number).first()
@@ -333,8 +387,12 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             if available_frame_numbers
             else random.randint(segment.start_frame_number, segment.end_frame_number)
         )
-        step_back = max(segment.start_frame_number, (selected_frame_number or midpoint) - 5)
-        step_forward = min(segment.end_frame_number, (selected_frame_number or midpoint) + 5)
+        step_back = max(
+            segment.start_frame_number, (selected_frame_number or midpoint) - 5
+        )
+        step_forward = min(
+            segment.end_frame_number, (selected_frame_number or midpoint) + 5
+        )
 
         return {
             "segment_id": segment.pk,
@@ -362,13 +420,17 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             ),
             "selection_meta": {
                 "updated_at": selection.get("updated_at"),
-                "selection_source": selection.get("selection_source", "stored") if selection else None,
+                "selection_source": selection.get("selection_source", "stored")
+                if selection
+                else None,
             },
         }
 
     @action(detail=False, methods=["post"], url_path="save-submission")
     def save_submission(self, request):
-        payload_serializer = PatientExaminationReportSubmissionSerializer(data=request.data)
+        payload_serializer = PatientExaminationReportSubmissionSerializer(
+            data=request.data
+        )
         payload_serializer.is_valid(raise_exception=True)
         payload = payload_serializer.validated_data
 
@@ -380,7 +442,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             editor_payload=payload.get("editor_payload"),
             rendered_text=payload.get("rendered_text", ""),
             status=payload.get("status", PatientExaminationReport.Status.DRAFT),
-            user=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+            user=request.user
+            if getattr(request, "user", None) and request.user.is_authenticated
+            else None,
             report_id=payload.get("report_id"),
             expected_version=payload.get("expected_version"),
             patient_data=payload.get("patient_data"),
@@ -415,7 +479,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                     else None
                 ),
                 "patient_timeline_url": (
-                    request.build_absolute_uri(f"/api/media/patients/{patient_id}/timeline/")
+                    request.build_absolute_uri(
+                        f"/api/media/patients/{patient_id}/timeline/"
+                    )
                     if patient_id is not None
                     else None
                 ),
@@ -438,7 +504,11 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get", "patch"], url_path="segment-frame-selector")
     def segment_frame_selector(self, request):
-        pe_raw = request.query_params.get("patient_examination_id") if request.method == "GET" else request.data.get("patient_examination_id")
+        pe_raw = (
+            request.query_params.get("patient_examination_id")
+            if request.method == "GET"
+            else request.data.get("patient_examination_id")
+        )
         if not pe_raw:
             return Response(
                 {"detail": "patient_examination_id is required."},
@@ -457,7 +527,11 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
         except PermissionDenied as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
-        report_id_raw = request.query_params.get("report_id") if request.method == "GET" else request.data.get("report_id")
+        report_id_raw = (
+            request.query_params.get("report_id")
+            if request.method == "GET"
+            else request.data.get("report_id")
+        )
         report_id: int | None
         if report_id_raw in (None, ""):
             report_id = None
@@ -470,7 +544,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        template_name = request.data.get("template_name") if request.method == "PATCH" else None
+        template_name = (
+            request.data.get("template_name") if request.method == "PATCH" else None
+        )
         report, auto_created = self._get_or_create_selection_report(
             patient_examination=patient_examination,
             report_id=report_id,
@@ -492,10 +568,14 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            segments_qs = LabelVideoSegment.objects.select_related("video_file", "label").filter(
-                Q(video_file__examination_id=patient_examination.id)
-                | Q(video_file_id=getattr(patient_examination, "video_id", None))
-            ).distinct()
+            segments_qs = (
+                LabelVideoSegment.objects.select_related("video_file", "label")
+                .filter(
+                    Q(video_file__examination_id=patient_examination.id)
+                    | Q(video_file_id=getattr(patient_examination, "video_id", None))
+                )
+                .distinct()
+            )
             segment = segments_qs.filter(pk=segment_id_int).first()
             if segment is None:
                 return Response(
@@ -504,8 +584,16 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                 )
 
             selection_map = self._get_segment_selection_map(report)
-            current = selection_map.get(str(segment.pk), {}) if isinstance(selection_map, dict) else {}
-            current_frame_number = current.get("frame_number") if isinstance(current.get("frame_number"), int) else None
+            current = (
+                selection_map.get(str(segment.pk), {})
+                if isinstance(selection_map, dict)
+                else {}
+            )
+            current_frame_number = (
+                current.get("frame_number")
+                if isinstance(current.get("frame_number"), int)
+                else None
+            )
 
             try:
                 frame_number, selection_source = self._resolve_segment_frame_number(
@@ -514,7 +602,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                     current_frame_number=current_frame_number,
                 )
             except ValueError as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                )
 
             finding_input = request.data.get("finding_id", "__unchanged__")
             try:
@@ -533,7 +623,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                         finding_id=int(finding_input),
                     )
             except (ValueError, TypeError) as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                )
 
             with transaction.atomic():
                 if frame_number is None:
@@ -554,7 +646,9 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
                             "video_id": segment.video_file_id,
                             "frame_number": int(frame_number),
                             "frame_id": getattr(selected_frame, "pk", None),
-                            "relative_path": getattr(selected_frame, "relative_path", None),
+                            "relative_path": getattr(
+                                selected_frame, "relative_path", None
+                            ),
                             "finding_id": getattr(patient_finding, "finding_id", None),
                             "patient_finding_id": getattr(patient_finding, "pk", None),
                             "updated_at": timezone.now().isoformat(),

@@ -1,8 +1,17 @@
 """Model for medication indication."""
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from django.db import models
+
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        Disease,
+        DiseaseClassificationChoice,
+        Event,
+        InformationSource,
+        MedicationSchedule,
+    )
 
 
 class MedicationIndicationManager(models.Manager):
@@ -22,41 +31,22 @@ class MedicationIndication(models.Model):
         on_delete=models.CASCADE,
         related_name="medication_indications",
     )
-    medication_schedules = models.ManyToManyField(
+    medication_schedules: "models.ManyToManyField[MedicationSchedule, MedicationSchedule]" = models.ManyToManyField(
         "MedicationSchedule",
     )
-    diseases = models.ManyToManyField("Disease")
-    events = models.ManyToManyField("Event")
-    disease_classification_choices = models.ManyToManyField(
+    diseases: "models.ManyToManyField[Disease, Disease]" = models.ManyToManyField(
+        "Disease"
+    )
+    events: "models.ManyToManyField[Event, Event]" = models.ManyToManyField("Event")
+    disease_classification_choices: "models.ManyToManyField[DiseaseClassificationChoice, DiseaseClassificationChoice]" = models.ManyToManyField(
         "DiseaseClassificationChoice"
     )
-    sources = models.ManyToManyField("InformationSource")
+    sources: "models.ManyToManyField[InformationSource, InformationSource]" = (
+        models.ManyToManyField("InformationSource")
+    )
 
     if TYPE_CHECKING:
-        from endoreg_db.models import (
-            Disease,
-            DiseaseClassificationChoice,
-            Event,
-            InformationSource,
-            MedicationIndicationType,
-            MedicationSchedule,
-        )
-
-        indication_type: models.ForeignKey["MedicationIndicationType"]
-        medication_schedules = cast(
-            "models.manager.RelatedManager[MedicationSchedule]",
-            medication_schedules,
-        )
-        diseases = cast("models.manager.RelatedManager[Disease]", diseases)
-        events = cast("models.manager.RelatedManager[Event]", events)
-        disease_classification_choices = cast(
-            "models.manager.RelatedManager[DiseaseClassificationChoice]",
-            disease_classification_choices,
-        )
-        sources = cast(
-            "models.manager.RelatedManager[InformationSource]",
-            sources,
-        )
+        pass
 
     def get_indication_links(self) -> dict:
         """Return a dictionary of all linked objects for this medication indication."""

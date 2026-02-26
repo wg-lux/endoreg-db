@@ -23,7 +23,7 @@ from endoreg_db.serializers.misc.upload_job import UploadJobStatusSerializer
 
 # Try to import celery task, but provide fallback
 try:
-    from endoreg_db.tasks.upload_tasks import process_upload_job
+    from endoreg_db.tasks.upload_tasks import process_upload_job  # type: ignore[import-untyped]
 
     CELERY_AVAILABLE = True
 except ImportError:
@@ -182,9 +182,9 @@ class UploadFileView(APIView):
                     pass  # Fall back to mimetypes
 
             # Fallback to mimetypes module
-            mime_type, _ = mimetypes.guess_type(uploaded_file.name)
-            if mime_type:
-                return mime_type
+            mime_guess, _ = mimetypes.guess_type(uploaded_file.name)
+            if isinstance(mime_guess, str):
+                return mime_guess
 
             # Last resort - check file extension
             if uploaded_file.name.lower().endswith(".pdf"):

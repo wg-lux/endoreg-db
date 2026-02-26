@@ -1,7 +1,7 @@
 # endoreg_db/codemods/rename_datetime_fields.py
-from bowler import Query
 from pathlib import Path
 import argparse
+import importlib
 import yaml
 import sys
 
@@ -38,7 +38,9 @@ def iter_python_targets(paths):
 
 def build_query(files):
     # Bowler can take a list of files; we’ve already filtered them
-    return Query(list(files))
+    bowler_mod = importlib.import_module("bowler")
+    query_cls = getattr(bowler_mod, "Query")
+    return query_cls(list(files))
 
 
 def main(argv=None):

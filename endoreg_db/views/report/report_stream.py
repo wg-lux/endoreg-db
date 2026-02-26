@@ -69,7 +69,9 @@ def _get_report_path(pdf_obj: RawPdfFile, file_type: str) -> Path:
     return path
 
 
-def _serve_with_nginx(path: Path, content_type: str, *, as_download: bool, filename: str) -> Optional[HttpResponse]:
+def _serve_with_nginx(
+    path: Path, content_type: str, *, as_download: bool, filename: str
+) -> Optional[HttpResponse]:
     try:
         relative_path = path.relative_to(STORAGE_DIR)
     except ValueError:
@@ -169,8 +171,12 @@ class ReportStreamView(APIView):
             content_type = mime or "application/pdf"
 
             # Production path: nginx offload (full response only, no Python range handling)
-            serve_with_nginx = os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
-            range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+            serve_with_nginx = (
+                os.environ.get("SERVE_WITH_NGINX", "false").lower() == "true"
+            )
+            range_header = request.headers.get("Range") or request.META.get(
+                "HTTP_RANGE"
+            )
             if serve_with_nginx and not range_header:
                 nginx_response = _serve_with_nginx(
                     path,
@@ -207,7 +213,7 @@ class ReportStreamView(APIView):
                     chunk_size = end - start + 1
 
                     try:
-                        file_handle = open(file_path, "rb")
+                        file_handle = open(path, "rb")
                         file_handle.seek(start)
 
                         logger.debug(

@@ -25,7 +25,6 @@ urlpatterns = [  # URL patterns for ExaminationForm.vue API calls
         get_classification_choices,
         name="get_choices_for_classification",
     ),
-
     # TODO: Clearly Distinguish between Examination (the template) and PatientExamination (the instance).
     # The views below handle PatientExamination instances, which represent a specific examination performed on a patient.
     # The URL names are updated to reflect this, using the 'patient_examination_*' prefix for clarity.

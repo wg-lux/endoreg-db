@@ -1,16 +1,19 @@
 import random
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy as np
 from django.db import models
 
 # Corrected imports for type hints
 if TYPE_CHECKING:
-    from ..finding import (
-        FindingClassification,
-        FindingClassificationChoice,
+    from lx_dtypes.models.ledger.p_finding_classification_choice_descriptor.DataDict import (
+        PFindingClassificationChoiceDescriptorDataDict,
     )
-    from .patient_finding import PatientFinding
+
+    JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
+    DescriptorValueMap: TypeAlias = dict[
+        str, "PFindingClassificationChoiceDescriptorDataDict" | dict[str, Any]
+    ]
 
 
 class PatientFindingClassification(models.Model):
@@ -39,9 +42,7 @@ class PatientFindingClassification(models.Model):
     numerical_descriptors = models.JSONField(blank=True, null=True)
 
     if TYPE_CHECKING:
-        finding: models.ForeignKey["PatientFinding"]
-        classification: models.ForeignKey["FindingClassification"]
-        classification_choice: models.ForeignKey["FindingClassificationChoice"]
+        pass
 
     class Meta:
         verbose_name = "Patient Finding Classification"
@@ -73,7 +74,7 @@ class PatientFindingClassification(models.Model):
 
         super().save(*args, **kwargs)
 
-    def initialize_and_get_subcategories(self):
+    def initialize_and_get_subcategories(self) -> "JsonObjectMap":
         """
         Ensure the subcategories field is initialized and return its dictionary.
 
@@ -82,9 +83,10 @@ class PatientFindingClassification(models.Model):
         """
         if not self.subcategories:
             self.save()
+        assert self.subcategories is not None
         return self.subcategories
 
-    def initialize_and_get_descriptors(self):
+    def initialize_and_get_descriptors(self) -> "DescriptorValueMap":
         """
         Return the numerical descriptors dictionary, initializing it if necessary.
 
@@ -92,11 +94,12 @@ class PatientFindingClassification(models.Model):
         """
         if not self.numerical_descriptors:
             self.save()
+        assert self.numerical_descriptors is not None
         return self.numerical_descriptors
 
     def set_subcategory(
-        self, subcategory_name: str, subcategory_value: Dict[str, dict]
-    ):
+        self, subcategory_name: str, subcategory_value: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Update the value of a specified subcategory and save the classification.
 
@@ -116,7 +119,7 @@ class PatientFindingClassification(models.Model):
 
         return self.subcategories[subcategory_name]
 
-    def set_random_subcategories(self):
+    def set_random_subcategories(self) -> "JsonObjectMap":
         """
         Assign random values to all required subcategories that do not already have a value.
 
@@ -141,7 +144,7 @@ class PatientFindingClassification(models.Model):
 
         return self.subcategories
 
-    def get_random_value_for_numerical_descriptor(self, descriptor_name):
+    def get_random_value_for_numerical_descriptor(self, descriptor_name: str) -> float:
         """
         Generate a random value for the specified numerical descriptor using its defined distribution parameters.
 
@@ -177,7 +180,9 @@ class PatientFindingClassification(models.Model):
 
         return value
 
-    def set_random_numerical_descriptor(self, descriptor_name, save=True):
+    def set_random_numerical_descriptor(
+        self, descriptor_name: str, save: bool = True
+    ) -> dict[str, Any]:
         """
         Assigns a random value to the specified numerical descriptor and optionally saves the model.
 
@@ -191,20 +196,22 @@ class PatientFindingClassification(models.Model):
         Raises:
             ValueError: If the descriptor name is not present in the numerical descriptors.
         """
+        if self.numerical_descriptors is None:
+            self.save()
+        assert self.numerical_descriptors is not None, (
+            "Numerical descriptors must be initialized."
+        )
         if descriptor_name not in self.numerical_descriptors:
             raise ValueError("Descriptor name must be in numerical descriptors.")
 
         value = self.get_random_value_for_numerical_descriptor(descriptor_name)
-        assert self.numerical_descriptors is not None, (
-            "Numerical descriptors must be initialized."
-        )
         self.numerical_descriptors[descriptor_name]["value"] = value
         if save:
             self.save()
 
         return self.numerical_descriptors[descriptor_name]
 
-    def set_random_numerical_descriptors(self):
+    def set_random_numerical_descriptors(self) -> "DescriptorValueMap":
         """
         Assigns random values to all numerical descriptors and saves the model.
 

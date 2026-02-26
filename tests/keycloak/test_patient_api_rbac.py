@@ -32,6 +32,7 @@ If these fail → the API part of RBAC is broken and the frontend will not work 
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from unittest.mock import patch
 from endoreg_db.models import Patient
 
 User = get_user_model()
@@ -68,7 +69,8 @@ class PatientApiRBACTests(TestCase):
         # Simulate a logged-in user (session authentication)
         self.client.force_login(user)
 
-        resp = self.client.get("/api/patients/")
+        with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
+            resp = self.client.get("/api/patients/")
 
         self.assertEqual(
             resp.status_code,
@@ -88,7 +90,8 @@ class PatientApiRBACTests(TestCase):
 
         self.client.force_login(user)
 
-        resp = self.client.get("/api/patients/")
+        with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
+            resp = self.client.get("/api/patients/")
 
         # PolicyPermission might return 401 (unauthenticated) or 403 (forbidden)
         self.assertIn(

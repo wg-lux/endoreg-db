@@ -1,5 +1,6 @@
 from django.test import TestCase
-from scipy.constants import value
+from rest_framework.test import APIRequestFactory
+from unittest.mock import patch
 
 # Adjust imports based on your actual project structure
 from endoreg_db.models import (
@@ -11,7 +12,12 @@ from endoreg_db.models import (
     InformationSource,
     Center,
 )
+from endoreg_db.services.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.serializers import LabelVideoSegmentSerializer
+from endoreg_db.views.video.segments_crud import (
+    ensure_prediction_segment_annotations_for_video,
+    video_segment_validate,
+)
 
 
 class LabelVideoSegmentSerializerTest(TestCase):
@@ -75,12 +81,18 @@ class LabelVideoSegmentSerializerTest(TestCase):
         # EXPECTATION: The serializer correctly rounded the float back to the integer frame
         self.assertEqual(updated_segment.start_frame_number, 7)
 
-
     def test_video_store_creation_payload(self):
         """
         Scenario: videoStore.ts -> createSegment
         The store calculates frames on the client side using Math.floor and sends frame numbers directly.
         """
+        # Guard against order-dependent side effects from other tests mutating/deleting
+        # global fixtures/models while keeping this test intention intact.
+        self.video.refresh_from_db()
+        self.assertTrue(
+            VideoFile.objects.filter(pk=self.video.pk).exists(),
+            "Test setup video must exist before serializer.create()",
+        )
         payload = {
             "video_id": self.video.pk,
             "label_id": self.label_polyp.pk,
@@ -107,9 +119,7 @@ class LabelVideoSegmentSerializerTest(TestCase):
         # (Assuming your Frame model is linked to VideoFile and has frame_number)
         frames = []
         for i in range(50):
-            frames.append(
-                Frame(video=self.video, frame_number=i)
-            )
+            frames.append(Frame(video=self.video, frame_number=i))
         Frame.objects.bulk_create(frames)
 
         # 2. Update segment to cover these frames
@@ -152,3 +162,183 @@ class LabelVideoSegmentSerializerTest(TestCase):
             # Verify data integrity just in case
             self.assertEqual(len(data["frames"]), 50)
             self.assertTrue(len(data["frames"][0]["all_classifications"]) > 0)
+
+
+class PredictionSegmentAnnotationsRouteTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Prediction Route Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="pred-anno-route-hash",
+            original_file_name="pred_route.mp4",
+            fps=25.0,
+            frame_count=100,
+        )
+        self.label = Label.objects.create(name="prediction-route-polyp")
+        self.prediction_source = InformationSource.objects.create(name="prediction")
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
+
+        self.segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=5,
+            end_frame_number=8,  # frames 5,6,7
+            source=self.prediction_source,
+            prediction_meta=None,
+        )
+
+        self.frames = [
+            Frame.objects.create(
+                video=self.video,
+                frame_number=frame_number,
+                relative_path=f"frame_{frame_number}.jpg",
+            )
+            for frame_number in range(5, 8)
+        ]
+
+        # Existing manual annotations must remain untouched (redundant tracks).
+        ImageClassificationAnnotation.objects.bulk_create(
+            [
+                ImageClassificationAnnotation(
+                    frame=frame,
+                    label=self.label,
+                    value=True,
+                    information_source=self.manual_source,
+                )
+                for frame in self.frames
+            ]
+        )
+
+    def test_prediction_annotation_route_creates_redundant_annotations(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/ensure-prediction-segment-annotations/",
+            {},
+            format="json",
+        )
+
+        response = ensure_prediction_segment_annotations_for_video(
+            request, pk=self.video.pk
+        )
+
+        self.assertEqual(response.status_code, 202)
+        stats = response.data["stats"]
+        self.assertEqual(stats["eligible_prediction_segments"], 1)
+        self.assertEqual(stats["annotations_created"], 3)
+
+        prediction_annotation_source = InformationSource.objects.get(
+            name="prediction_annotation"
+        )
+        self.assertEqual(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                label=self.label,
+                information_source=self.manual_source,
+            ).count(),
+            3,
+        )
+        self.assertEqual(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                label=self.label,
+                information_source=prediction_annotation_source,
+            ).count(),
+            3,
+        )
+
+
+class VideoSegmentValidateAsyncSafetyTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Validation Async Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="validate-async-video",
+            original_file_name="validate_async.mp4",
+            fps=25.0,
+            frame_count=100,
+        )
+        self.label = Label.objects.create(name="validate-async-label")
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
+        self.segment_source = InformationSource.objects.create(name="prediction")
+        self.segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=10,
+            end_frame_number=13,  # frames 10,11,12
+            source=self.segment_source,
+        )
+        self.frames = [
+            Frame.objects.create(
+                video=self.video,
+                frame_number=i,
+                relative_path=f"frame_{i:07d}.jpg",
+            )
+            for i in range(10, 13)
+        ]
+        ImageClassificationAnnotation.objects.bulk_create(
+            [
+                ImageClassificationAnnotation(
+                    frame=frame,
+                    label=self.label,
+                    value=True,
+                    information_source=self.manual_source,
+                )
+                for frame in self.frames
+            ]
+        )
+
+    def test_validation_keeps_manual_frame_annotations_and_queues_job(self):
+        before = list(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                label=self.label,
+                information_source=self.manual_source,
+            )
+            .order_by("frame__frame_number")
+            .values_list("frame__frame_number", flat=True)
+        )
+        self.assertEqual(before, [10, 11, 12])
+
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/{self.segment.pk}/validate/",
+            {"is_validated": True, "information_source_name": "manual_annotation"},
+            format="json",
+        )
+
+        with (
+            patch(
+                "endoreg_db.views.video.segments_crud.dispatch_video_post_validation_rebuild",
+                return_value=JobDispatchResult(
+                    task_id="job-123",
+                    mode="thread",
+                    status="queued",
+                    video_id=self.video.pk,
+                ),
+            ) as mock_dispatch,
+            patch(
+                "endoreg_db.views.video.segments_crud.record_operation",
+                return_value=None,
+            ),
+        ):
+            response = video_segment_validate(
+                request, pk=self.video.pk, segment_id=self.segment.pk
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["post_processing_job"]["status"], "queued")
+        self.assertEqual(
+            response.data["post_processing_job"]["video_id"], self.video.pk
+        )
+        mock_dispatch.assert_called_once_with(video_id=self.video.pk)
+
+        after = list(
+            ImageClassificationAnnotation.objects.filter(
+                frame__video=self.video,
+                label=self.label,
+                information_source=self.manual_source,
+            )
+            .order_by("frame__frame_number")
+            .values_list("frame__frame_number", flat=True)
+        )
+        self.assertEqual(after, before)

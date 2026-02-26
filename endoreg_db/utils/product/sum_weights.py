@@ -6,7 +6,7 @@ from typing import List
 
 def sum_weights(product_materials: List["ProductMaterial"]):
     # sum up the weights
-    weight = 0
+    weight = 0.0
     reference_unit = None
     for product_material in product_materials:
         if not reference_unit:

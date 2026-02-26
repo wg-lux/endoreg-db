@@ -12,13 +12,12 @@ if TYPE_CHECKING:
 
 
 class Examiner(Person):
-    center = models.ForeignKey(
+    center: "models.ForeignKey[administration.Center | None, administration.Center | None]" = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
-    hash = models.CharField(max_length=255, unique=True)
+    hash: "models.CharField[str, str]" = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        center: models.ForeignKey["administration.Center|None"]
         portal_user_info: models.OneToOneField["administration.PortalUserInfo"]
 
     def __str__(self):

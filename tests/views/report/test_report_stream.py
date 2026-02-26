@@ -33,12 +33,14 @@ class ReportStreamViewTests(TestCase):
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             monkeypatches.setenv("FRONTEND_ORIGIN", "http://frontend.test")
-            monkeypatches.setattr(view_module, "NGINX_PROTECTED_URL", "/protected_media/")
-            monkeypatches.setattr(view_module.RawPdfFile.objects, "filter", lambda **kwargs: fake_qs)
-
-            resp = self.client.get(
-                "/api/media/pdfs/123/stream/?type=raw&download=1"
+            monkeypatches.setattr(
+                view_module, "NGINX_PROTECTED_URL", "/protected_media/"
             )
+            monkeypatches.setattr(
+                view_module.RawPdfFile.objects, "filter", lambda **kwargs: fake_qs
+            )
+
+            resp = self.client.get("/api/media/pdfs/123/stream/?type=raw&download=1")
         finally:
             monkeypatches.undo()
             if tmp_file_path and tmp_file_path.exists():

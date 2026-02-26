@@ -1,7 +1,7 @@
 import logging
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 import os
 import numpy as np
 from safetensors import safe_open
@@ -9,10 +9,10 @@ from safetensors import safe_open
 from ...metadata import ModelMeta, VideoPredictionMeta
 from ...utils import TEST_RUN as GLOBAL_TEST_RUN
 
-#TODO is this needed?
+# TODO is this needed?
 n = os.getenv("GLOBAL_N_TEST_FRAMES", 100)
-if not isinstance(n, int): 
-    GLOBAL_N_TEST_FRAMES = 100 
+if not isinstance(n, int):
+    GLOBAL_N_TEST_FRAMES = 100
 else:
     GLOBAL_N_TEST_FRAMES = n
 
@@ -179,7 +179,7 @@ def _remap_prediction_dict(
 
 def _extract_text_from_video_frames(
     video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15
-) -> Optional[Dict[str, str]]:
+) -> Optional[Dict[str, str | None]]:
     """
     Extracts text from a sample of video frames using OCR based on processor ROIs.
     Requires frames to be extracted. Raises ValueError on pre-condition failure.
@@ -268,23 +268,24 @@ def _extract_text_from_video_frames(
             errors_encountered = True  # Flag that an error occurred
 
     # Determine the most frequent text for each ROI
-    most_frequent_texts = {}
+    most_frequent_texts: dict[str, str | None] = {}
     for roi, texts in rois_texts.items():
+        roi_key = str(roi)
         if not texts:
-            most_frequent_texts[roi] = None
+            most_frequent_texts[roi_key] = None
             continue
         try:
             counter = Counter(texts)
             most_common = counter.most_common(1)
             if most_common:
-                most_frequent_texts[roi] = most_common[0][0]
+                most_frequent_texts[roi_key] = most_common[0][0]
             else:
-                most_frequent_texts[roi] = None
+                most_frequent_texts[roi_key] = None
         except Exception as e:
             logger.error(
                 "Error finding most common text for ROI %s: %s", roi, e, exc_info=True
             )
-            most_frequent_texts[roi] = None
+            most_frequent_texts[roi_key] = None
 
     if errors_encountered:
         logger.warning(
@@ -299,7 +300,7 @@ def _extract_text_from_video_frames(
     logger.info(
         "Extracted text for video %s: %s", video.video_hash, most_frequent_texts
     )
-    return most_frequent_texts
+    return cast(Dict[str, str | None], most_frequent_texts)
 
 
 def _predict_video_pipeline(
@@ -810,7 +811,7 @@ def _predict_video_entry(
 
 def _extract_text_information(
     video: "VideoFile", frame_fraction: float = 0.001, cap: int = 15
-) -> Optional[Dict[str, str]]:
+) -> Optional[Dict[str, str | None]]:
     """Facade function to call the text extraction logic."""
     logger.info("Attempting text extraction for video %s.", video.video_hash)
 

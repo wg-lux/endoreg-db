@@ -123,7 +123,7 @@ class StreamingVideoProcessor:
                     logger.debug(
                         f"Creating chunk {chunk_count}: {start_time}s-{end_time}s"
                     )
-                    result = subprocess.run(
+                    subprocess.run(
                         cmd, capture_output=True, text=True, check=True, timeout=300
                     )  # 5 minute timeout per chunk
 
@@ -236,7 +236,7 @@ class StreamingVideoProcessor:
             logger.info(f"Merging {len(chunk_paths)} chunks into {output_path}")
 
             # Change working directory to temp_dir for relative paths
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 cwd=str(self.temp_dir),
                 capture_output=True,

@@ -23,7 +23,10 @@ def test_adapter_re_exports_same_helper_functions() -> None:
     assert adapter_normalize_lookup_keys is dtypes_normalize_lookup_keys
     assert adapter_validate_lookup_state is dtypes_validate_lookup_state
     assert adapter_validate_lookup_updates is dtypes_validate_lookup_updates
-    assert adapter_build_lookup_recompute_response is dtypes_build_lookup_recompute_response
+    assert (
+        adapter_build_lookup_recompute_response
+        is dtypes_build_lookup_recompute_response
+    )
 
 
 def test_validate_lookup_state_normalizes_legacy_keys() -> None:

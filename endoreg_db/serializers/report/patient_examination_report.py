@@ -45,7 +45,9 @@ class PatientExaminationReportSubmissionSerializer(serializers.Serializer):
     report_id = serializers.IntegerField(required=False)
     patient_examination_id = serializers.IntegerField()
     template_name = serializers.CharField()
-    template_version = serializers.CharField(required=False, allow_blank=True, default="")
+    template_version = serializers.CharField(
+        required=False, allow_blank=True, default=""
+    )
     template_hash = serializers.CharField(required=False, allow_blank=True, default="")
     title = serializers.CharField(required=False, allow_blank=True, default="")
     status = serializers.ChoiceField(
@@ -68,4 +70,6 @@ class PatientExaminationReportSubmissionSerializer(serializers.Serializer):
         allow_empty=True,
     )
     expected_version = serializers.IntegerField(required=False, min_value=1)
-    history_limit = serializers.IntegerField(required=False, min_value=1, max_value=50, default=5)
+    history_limit = serializers.IntegerField(
+        required=False, min_value=1, max_value=50, default=5
+    )

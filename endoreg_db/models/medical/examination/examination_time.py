@@ -6,13 +6,13 @@ if TYPE_CHECKING:
     from endoreg_db.models import ExaminationTimeType, InformationSource
 
 
-class ExaminationTimeManager(models.Manager):
+class ExaminationTimeManager(models.Manager["ExaminationTime"]):
     """
     Manager for ExaminationTime with custom query methods.
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationTime":
-        return self.get(name=name)
+        return cast("ExaminationTime", self.get(name=name))
 
 
 class ExaminationTime(models.Model):
@@ -27,22 +27,19 @@ class ExaminationTime(models.Model):
     """
 
     name = models.CharField(max_length=100, unique=True)
-    time_types = models.ManyToManyField("ExaminationTimeType", blank=True)
+    time_types: "models.ManyToManyField[ExaminationTimeType, ExaminationTimeType]" = (
+        models.ManyToManyField("ExaminationTimeType", blank=True)
+    )
     objects = ExaminationTimeManager()
 
-    information_sources = models.ManyToManyField(
+    information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource",
         related_name="examination_times",
         blank=True,
     )
 
     if TYPE_CHECKING:
-        time_types = cast(
-            models.manager.RelatedManager["ExaminationTimeType"], time_types
-        )
-        information_sources = cast(
-            models.manager.RelatedManager["InformationSource"], information_sources
-        )
+        pass
 
     def __str__(self) -> str:
         """

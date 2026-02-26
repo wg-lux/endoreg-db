@@ -21,12 +21,14 @@ from endoreg_db.export.frames.export_frames_with_labels import (
 
 
 class Command(BaseCommand):
-    help = "Export frame annotations to CSV with optional transcoding. /n Usage Example: /n python manage.py export_frame_annot \
+    help = (
+        "Export frame annotations to CSV with optional transcoding. /n Usage Example: /n python manage.py export_frame_annot \
    --output-path data/export/frames.csv \
    --video-id 1 \
    --only-true \
    --transcode-frames \
    --transcode-fps 50"
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -205,8 +207,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                "Exported %s rows to %s"
-                % (result.row_count, result.output_path)
+                "Exported %s rows to %s" % (result.row_count, result.output_path)
             )
         )
 

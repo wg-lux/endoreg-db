@@ -3,7 +3,7 @@ import os
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 
-def get_env_var(var_name: str, default: str = None) -> str | None:
+def get_env_var(var_name: str, default: str = "None") -> str | None:
     """
     Get the value of an environment variable, with an optional default value.
     If the environment variable is set, we need to remove flanking quotation marks and spaces.

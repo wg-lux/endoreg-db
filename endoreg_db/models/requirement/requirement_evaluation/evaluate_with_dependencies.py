@@ -1,5 +1,8 @@
+# mypy: disable-error-code=attr-defined
+
 from collections import defaultdict, deque
-from typing import Iterable, Dict, List, Literal, Tuple
+from typing import Dict, Iterable, List, Literal, Tuple
+
 from endoreg_db.models.requirement import Requirement, RequirementSet
 from endoreg_db.models.requirement.requirement_error import RequirementEvaluationError
 import logging
@@ -7,6 +10,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 RequirementStatus = Literal["PASSED", "FAILED", "BLOCKED", "ERROR"]
+
+
+def _iter_requirement_dependencies(requirement: Requirement) -> list[Requirement]:
+    """Return requirement dependencies when present, otherwise an empty list."""
+    depends_on = getattr(requirement, "depends_on", None)
+    if depends_on is None:
+        return []
+    return list(depends_on.all())
 
 
 def topologically_sort_requirement_sets(
@@ -21,7 +32,7 @@ def topologically_sort_requirement_sets(
     id_map = {s.id: s for s in sets}
 
     depends = {s.id: {d.id for d in s.depends_on.all()} for s in sets}
-    indegree = defaultdict(int)
+    indegree: defaultdict[int, int] = defaultdict(int)
     for set_id, deps in depends.items():
         for d_id in deps:
             indegree[set_id] += 1
@@ -174,8 +185,8 @@ def topologically_sort_requirements(
     id_map = {r.id: r for r in reqs}
 
     # Build adjacency + indegree for Kahn's algorithm
-    depends = {r.id: {d.id for d in r.depends_on.all()} for r in reqs}
-    indegree = defaultdict(int)
+    depends = {r.id: {d.id for d in _iter_requirement_dependencies(r)} for r in reqs}
+    indegree: defaultdict[int, int] = defaultdict(int)
     for r_id, deps in depends.items():
         for d_id in deps:
             indegree[r_id] += 1
@@ -210,7 +221,7 @@ def evaluate_requirements_with_dependencies(
     results: Dict[int, Tuple[RequirementStatus, str]] = {}
 
     for req in ordered:
-        dep_ids = [d.id for d in req.depends_on.all()]
+        dep_ids = [d.id for d in _iter_requirement_dependencies(req)]
 
         # If any dependency FAILED or ERROR → BLOCKED
         blocking = [

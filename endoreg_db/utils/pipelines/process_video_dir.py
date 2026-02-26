@@ -1,13 +1,14 @@
 import logging
 import os
 from pathlib import Path
+
 from django.core.management import call_command
+from django.core.exceptions import ObjectDoesNotExist
 from icecream import ic
 from tqdm import tqdm
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.models import (
     AiModel,
-    LabelVideoSegment,
     ModelMeta,
     VideoFile,
 )
@@ -40,10 +41,11 @@ def process_video_dir(
         endoscopy_processor_name (str): Name of the endoscopy processor to associate with the video files.
     """
     # Make sure the ai model exists:
-    ai_model = AiModel.objects.filter(name=MODEL_NAME)
-    if ai_model:
-        ai_model = ai_model.first()
+    ai_model_qs = AiModel.objects.filter(name=MODEL_NAME)
+    ai_model = ai_model_qs.first()
     try:
+        if ai_model is None:
+            raise ValueError(f"AiModel not found for {MODEL_NAME}")
         model_meta = ai_model.get_latest_version()
         assert isinstance(model_meta, ModelMeta), "No ModelMeta found in the database."
     except Exception:
@@ -96,7 +98,7 @@ def process_video_dir(
                         seg_state.is_validated = True
                         seg_state.save()
                         logger.info(f"Simulated validation for segment {segment.id}")
-                    except LabelVideoSegment.state.RelatedObjectDoesNotExist:
+                    except ObjectDoesNotExist:
                         logger.warning(
                             f"Cannot simulate validation for segment {segment.id}: Related state object does not exist."
                         )

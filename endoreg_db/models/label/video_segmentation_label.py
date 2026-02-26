@@ -1,4 +1,5 @@
 from django.db import models
+from typing import cast
 
 
 class VideoSegmentationLabelManager(models.Manager):
@@ -7,7 +8,7 @@ class VideoSegmentationLabelManager(models.Manager):
     """
 
     def get_by_natural_key(self, name: str) -> "VideoSegmentationLabel":
-        return self.get(name=name)
+        return cast("VideoSegmentationLabel", self.get(name=name))
 
 
 class VideoSegmentationLabel(models.Model):

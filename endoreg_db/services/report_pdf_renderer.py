@@ -36,8 +36,10 @@ def build_report_template_pdf_payload(
     patient = patient_examination.patient
     header = {
         "center_name": getattr(getattr(patient, "center", None), "name", None),
-        "patient_label": f"{getattr(patient, 'first_name', '')} {getattr(patient, 'last_name', '')}".strip() or None,
-        "examination_date": str(getattr(patient_examination, "date_start", None) or "") or None,
+        "patient_label": f"{getattr(patient, 'first_name', '')} {getattr(patient, 'last_name', '')}".strip()
+        or None,
+        "examination_date": str(getattr(patient_examination, "date_start", None) or "")
+        or None,
         "report_version": str(getattr(report, "version", "")) or None,
     }
 
@@ -90,11 +92,15 @@ def render_pdf_with_rust_renderer(
 ) -> Path:
     binary = get_renderer_binary()
     if not binary:
-        raise ReportPdfRendererError("report_pdf_renderer binary not configured or found in PATH")
+        raise ReportPdfRendererError(
+            "report_pdf_renderer binary not configured or found in PATH"
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", delete=False, encoding="utf-8"
+    ) as tmp:
         json.dump(payload, tmp, ensure_ascii=False)
         tmp.flush()
         input_path = Path(tmp.name)
@@ -112,7 +118,9 @@ def render_pdf_with_rust_renderer(
                 f"renderer failed with exit code {proc.returncode}: {proc.stderr.strip() or proc.stdout.strip()}"
             )
         if not output_path.exists():
-            raise ReportPdfRendererError("renderer completed without producing output pdf")
+            raise ReportPdfRendererError(
+                "renderer completed without producing output pdf"
+            )
         return output_path
     except subprocess.TimeoutExpired as exc:
         raise ReportPdfRendererError("renderer timed out") from exc

@@ -7,7 +7,8 @@ from django.http import FileResponse, Http404, HttpResponse
 from rest_framework.views import APIView
 
 from endoreg_db.models import Frame, VideoFile
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission, is_debug_mode
 from endoreg_db.utils.paths import STORAGE_DIR
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class FrameStreamView(APIView):
     - GET /api/media/videos/<video_id>/frames/<frame_number>/stream/
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     @staticmethod
     def _serve_with_nginx(frame_path: Path, content_type: str) -> HttpResponse | None:
@@ -47,7 +48,78 @@ class FrameStreamView(APIView):
     def _expected_relative_path(frame_number: int) -> str:
         return f"frame_{frame_number:07d}.jpg"
 
-    def _get_or_create_frame_record(self, *, video: VideoFile, frame_number: int) -> Frame:
+    @staticmethod
+    def _is_privileged_user(user) -> bool:
+        return bool(
+            user
+            and getattr(user, "is_authenticated", False)
+            and (
+                getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+            )
+        )
+
+    def _assert_video_access_allowed(self, *, request, video: VideoFile) -> None:
+        self.check_object_permissions(request, video)
+        if is_debug_mode():
+            return
+
+        user = getattr(request, "user", None)
+        if self._is_privileged_user(user):
+            return
+        if not user or not getattr(user, "is_authenticated", False):
+            raise Http404("Video not found")
+
+        portal_user_info = getattr(user, "portaluserinfo", None)
+        examiner = (
+            getattr(portal_user_info, "examiner", None) if portal_user_info else None
+        )
+        center_id = getattr(examiner, "center_id", None) if examiner else None
+        if center_id is None:
+            raise Http404("Video not found")
+        if int(video.center_id) != int(center_id):
+            raise Http404("Video not found")
+
+    @staticmethod
+    def _validate_frame_path_for_serving(*, video: VideoFile, frame_path: Path) -> Path:
+        try:
+            resolved_frame_path = frame_path.resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise Http404("Frame file not found on disk") from exc
+
+        frame_dir = video.get_frame_dir_path()
+        if frame_dir is None:
+            raise Http404("Video frame directory is not configured")
+        try:
+            resolved_frame_dir = frame_dir.resolve()
+        except Exception as exc:
+            raise Http404("Video frame directory path is invalid") from exc
+
+        try:
+            resolved_frame_path.relative_to(resolved_frame_dir)
+        except ValueError as exc:
+            logger.warning(
+                "Rejected frame path outside frame_dir for video %s: %s (frame_dir=%s)",
+                getattr(video, "pk", None),
+                resolved_frame_path,
+                resolved_frame_dir,
+            )
+            raise Http404("Frame file path is invalid") from exc
+
+        try:
+            resolved_frame_path.relative_to(STORAGE_DIR.resolve())
+        except ValueError as exc:
+            logger.warning(
+                "Rejected frame path outside STORAGE_DIR for video %s: %s",
+                getattr(video, "pk", None),
+                resolved_frame_path,
+            )
+            raise Http404("Frame file path is invalid") from exc
+
+        return resolved_frame_path
+
+    def _get_or_create_frame_record(
+        self, *, video: VideoFile, frame_number: int
+    ) -> Frame:
         frame = (
             Frame.objects.select_related("video")
             .filter(video=video, frame_number=frame_number)
@@ -70,7 +142,9 @@ class FrameStreamView(APIView):
         frame_path = frame.file_path
         if frame_path.exists() and frame_path.is_file():
             if not frame.is_extracted:
-                Frame.objects.filter(pk=frame.pk, is_extracted=False).update(is_extracted=True)
+                Frame.objects.filter(pk=frame.pk, is_extracted=False).update(
+                    is_extracted=True
+                )
                 frame.is_extracted = True
             return
 
@@ -92,23 +166,13 @@ class FrameStreamView(APIView):
         except Exception as exc:
             extraction_error = exc
             logger.warning(
-                "Range extraction failed for video %s frame %s: %s. Falling back to full extraction.",
+                "Range extraction failed for video %s frame %s: %s. Not attempting full extraction in request path.",
                 video.pk,
                 frame_number,
                 exc,
                 exc_info=True,
             )
-            try:
-                video.extract_frames(overwrite=False)
-            except Exception as full_exc:
-                logger.error(
-                    "Full frame extraction fallback failed for video %s frame %s: %s",
-                    video.pk,
-                    frame_number,
-                    full_exc,
-                    exc_info=True,
-                )
-                raise Http404("Frame could not be extracted on demand") from full_exc
+            raise Http404("Frame could not be extracted on demand") from exc
 
         frame.refresh_from_db()
         frame_path = frame.file_path
@@ -135,6 +199,7 @@ class FrameStreamView(APIView):
             video = VideoFile.objects.get(pk=video_id_int)
         except VideoFile.DoesNotExist:
             raise Http404(f"Video {video_id_int} not found")
+        self._assert_video_access_allowed(request=request, video=video)
 
         if frame_number_int < 0:
             raise Http404("frame_number must be non-negative")
@@ -165,6 +230,9 @@ class FrameStreamView(APIView):
 
         if not frame_path.exists() or not frame_path.is_file():
             raise Http404("Frame file not found on disk")
+        frame_path = self._validate_frame_path_for_serving(
+            video=video, frame_path=frame_path
+        )
 
         mime_type, _ = mimetypes.guess_type(str(frame_path))
         content_type = mime_type or "image/jpeg"
@@ -174,7 +242,9 @@ class FrameStreamView(APIView):
         if serve_with_nginx:
             nginx_response = self._serve_with_nginx(frame_path, content_type)
             if nginx_response is not None:
-                nginx_response["Content-Disposition"] = f'inline; filename="{frame_path.name}"'
+                nginx_response["Content-Disposition"] = (
+                    f'inline; filename="{frame_path.name}"'
+                )
                 nginx_response["Access-Control-Allow-Origin"] = frontend_origin
                 nginx_response["Access-Control-Allow-Credentials"] = "true"
                 return nginx_response

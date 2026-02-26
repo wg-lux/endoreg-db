@@ -104,7 +104,7 @@ class OptimizedPatientFindingViewSet(viewsets.ModelViewSet):
             "location_classifications__choices", "morphology_classifications__choices"
         )
 
-        manifest_data = {
+        _manifest_data = {
             "examination": {
                 "id": examination.id,
                 "name": examination.name,

@@ -84,4 +84,3 @@ class PatientExaminationReport(models.Model):
         self.status = self.Status.FINAL
         self.finalized_at = timezone.now()
         self.finalized_by = user
-

@@ -5,9 +5,7 @@ from django.db import models
 from endoreg_db.models.other.unit import Unit
 
 if TYPE_CHECKING:
-    from ...other.material import Material
     from ...other.unit import Unit
-    from .product import Product
 
 
 class ProductMaterial(models.Model):
@@ -30,9 +28,7 @@ class ProductMaterial(models.Model):
     quantity = models.FloatField()
 
     if TYPE_CHECKING:
-        product: models.ForeignKey["Product"]
-        material: models.ForeignKey["Material"]
-        unit: models.ForeignKey["Unit"]
+        pass
 
     def get_emission(self) -> tuple[float, Unit]:
         emission_factor = self.material.emission_factor

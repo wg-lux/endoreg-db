@@ -73,7 +73,7 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
         raise
 
     except Exception:
-    # Unexpected error → server error (500)
+        # Unexpected error → server error (500)
         logger.exception(
             f"Unexpected error while generating pseudonym for patient {patient.id}"
         )

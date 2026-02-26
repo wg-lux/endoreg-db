@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from endoreg_db.models import (
         Frame,
         ImageClassificationAnnotation,
-        InformationSource,
         Label,
         LabelVideoSegmentState,
         ModelMeta,
@@ -58,10 +57,12 @@ class LabelVideoSegment(models.Model):
     )
 
     # M2M relationship with patient finding
-    patient_findings = models.ManyToManyField(
-        "PatientFinding",
-        related_name="video_segments",
-        blank=True,
+    patient_findings: "models.ManyToManyField[PatientFinding, PatientFinding]" = (
+        models.ManyToManyField(
+            "PatientFinding",
+            related_name="video_segments",
+            blank=True,
+        )
     )
 
     export_segment = models.BooleanField(
@@ -70,16 +71,8 @@ class LabelVideoSegment(models.Model):
     )
 
     if TYPE_CHECKING:
-        video_file: models.ForeignKey["VideoFile"]
-        label: models.ForeignKey["Label|None"]
-        source: models.ForeignKey["InformationSource|None"]
-        prediction_meta: models.ForeignKey["VideoPredictionMeta|None"]
-
-        patient_findings = cast(
-            models.manager.RelatedManager["PatientFinding"], patient_findings
-        )
-        model_meta: models.ForeignKey["ModelMeta|None"]
-        state: models.OneToOneField["LabelVideoSegmentState"]
+        model_meta: ModelMeta | None
+        state: LabelVideoSegmentState
 
     class Meta:
         constraints = [
@@ -495,8 +488,8 @@ class LabelVideoSegment(models.Model):
 
         Annotations are generated only if the segment has associated prediction metadata, model metadata, and label. Existing annotations for the same frame, label, model, and information source are not duplicated. Uses bulk creation for efficiency.
         """
-        
-        #TODO For annotations from the frontend this should not be an exit criterion
+
+        # TODO For annotations from the frontend this should not be an exit criterion
         # if not self.prediction_meta:
         #     logger.info(
         #         "Skipping annotation generation for segment %s: Requires linked VideoPredictionMeta.",

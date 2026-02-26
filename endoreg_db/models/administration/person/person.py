@@ -1,4 +1,5 @@
 from abc import abstractmethod
+
 from django.db import models
 
 
@@ -18,7 +19,9 @@ class Person(models.Model):
     first_name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
     dob = models.DateField("Date of Birth", blank=True, null=True)
-    gender = models.ForeignKey("Gender", on_delete=models.SET_NULL, null=True)
+    gender = models.ForeignKey(
+        "endoreg_db.Gender", on_delete=models.SET_NULL, null=True
+    )
     email = models.EmailField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=255, blank=True, null=True)
     is_real_person = models.BooleanField(default=True)

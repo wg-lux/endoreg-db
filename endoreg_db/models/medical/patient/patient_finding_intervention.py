@@ -3,8 +3,7 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 if TYPE_CHECKING:
-    from ..finding import FindingIntervention
-    from .patient_finding import PatientFinding
+    pass
 
 
 class PatientFindingIntervention(models.Model):
@@ -25,8 +24,7 @@ class PatientFindingIntervention(models.Model):
     date = models.DateField(blank=True, null=True)
 
     if TYPE_CHECKING:
-        finding: models.ForeignKey["PatientFinding"]
-        intervention: models.ForeignKey["FindingIntervention"]
+        pass
 
     def __str__(self):
         return self.intervention.name

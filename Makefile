@@ -6,8 +6,10 @@ RUST_RENDERER_EXAMPLE := $(RUST_RENDERER_DIR)/examples/report_payload.json
 RUST_RENDERER_OUT ?= /tmp/report_example.pdf
 LOCAL_BIN_DIR ?= $(HOME)/.local/bin
 LOCAL_RENDERER_BIN := $(LOCAL_BIN_DIR)/report_pdf_renderer
+MYPY_BIN ?= .devenv/state/venv/bin/mypy
+MYPY_TIMEOUT ?= 240
 
-.PHONY: help report-renderer-build report-renderer-build-devenv report-renderer-run-example report-renderer-run-example-devenv report-renderer-install report-renderer-install-devenv report-renderer-env report-renderer-clean pypi-build-check pypi-clean
+.PHONY: help report-renderer-build report-renderer-build-devenv report-renderer-run-example report-renderer-run-example-devenv report-renderer-install report-renderer-install-devenv report-renderer-env report-renderer-clean pypi-build-check pypi-clean mypy-requirement mypy-requirement-files
 
 help:
 	@echo "Available targets:"
@@ -21,10 +23,14 @@ help:
 	@echo "  report-renderer-clean           Remove renderer build artifacts"
 	@echo "  pypi-build-check               Build wheel/sdist and list contents (publish preflight)"
 	@echo "  pypi-clean                     Remove dist/build artifacts"
+	@echo "  mypy-requirement               Run mypy on endoreg_db/models/requirement (repo config)"
+	@echo "  mypy-requirement-files         Run mypy per file in requirement subtree (repo config)"
 	@echo ""
 	@echo "Variables:"
 	@echo "  RUST_RENDERER_OUT=$(RUST_RENDERER_OUT)"
 	@echo "  LOCAL_BIN_DIR=$(LOCAL_BIN_DIR)"
+	@echo "  MYPY_BIN=$(MYPY_BIN)"
+	@echo "  MYPY_TIMEOUT=$(MYPY_TIMEOUT)"
 
 report-renderer-build:
 	@if command -v cargo >/dev/null 2>&1; then \
@@ -87,3 +93,39 @@ tf.close()"
 pypi-clean:
 	@rm -rf dist build *.egg-info
 	@echo \"Cleaned dist/build artifacts\"
+
+mypy-requirement:
+	@timeout $(MYPY_TIMEOUT)s $(MYPY_BIN) endoreg_db/models/requirement
+
+mypy-requirement-files:
+	@python - <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path.cwd()
+files = sorted((root / "endoreg_db/models/requirement").rglob("*.py"))
+mypy_bin = root / ".devenv/state/venv/bin/mypy"
+timeout_s = "$(MYPY_TIMEOUT)"
+failed = False
+
+for file_path in files:
+    rel = file_path.relative_to(root)
+    print(f"== {rel} ==")
+    proc = subprocess.run(
+        ["timeout", f"{timeout_s}s", str(mypy_bin), str(rel)],
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+    output = (proc.stdout or "") + (proc.stderr or "")
+    filtered = [ln for ln in output.splitlines() if ln and not ln.startswith("20")]
+    if proc.returncode == 0:
+        print("OK")
+        continue
+    failed = True
+    print("\n".join(filtered[-20:]))
+    break
+
+sys.exit(1 if failed else 0)
+PY

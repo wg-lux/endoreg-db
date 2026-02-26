@@ -1,7 +1,9 @@
+from typing import cast
+
 from django.db import models
 
 
-class ExaminationTypeManager(models.Manager):
+class ExaminationTypeManager(models.Manager["ExaminationType"]):
     """
     Manager for ExaminationType with custom query methods.
     """
@@ -16,7 +18,7 @@ class ExaminationTypeManager(models.Manager):
         Returns:
             The ExaminationType instance that matches the given name.
         """
-        return self.get(name=name)
+        return cast("ExaminationType", self.get(name=name))
 
 
 class ExaminationType(models.Model):

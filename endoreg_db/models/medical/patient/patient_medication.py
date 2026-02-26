@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List, cast  # Added List
+from typing import TYPE_CHECKING, List  # Added List
 
 from django.db import models
 
@@ -7,8 +7,6 @@ if TYPE_CHECKING:
     from ....utils.links.requirement_link import (
         RequirementLinks,
     )  # Added RequirementLinks
-    from ...administration.person.patient import Patient
-    from ...other.unit import Unit
     from ..medication import Medication, MedicationIndication, MedicationIntakeTime
 
 
@@ -34,7 +32,7 @@ class PatientMedication(models.Model):
         related_name="medication_patient_medications",
     )
 
-    intake_times = models.ManyToManyField(
+    intake_times: "models.ManyToManyField[MedicationIntakeTime, MedicationIntakeTime]" = models.ManyToManyField(
         "MedicationIntakeTime",
         related_name="intake_time_patient_medications",
         blank=True,
@@ -47,15 +45,7 @@ class PatientMedication(models.Model):
     objects = models.Manager()
 
     if TYPE_CHECKING:  # Added type hints block
-        patient: models.ForeignKey["Patient"]
-        medication_indication: models.ForeignKey["MedicationIndication|None"]
-        medication: models.ForeignKey["Medication|None"]
-
-        intake_times = cast(
-            models.manager.RelatedManager["MedicationIntakeTime"], intake_times
-        )
-        unit: models.ForeignKey["Unit|None"]
-        dosage = cast(models.JSONField, dosage)
+        pass
 
     @property
     def links(self) -> "RequirementLinks":

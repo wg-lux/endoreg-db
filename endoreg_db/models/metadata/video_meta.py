@@ -7,10 +7,7 @@ from django.conf import settings
 from django.db import models
 
 # check if endoreg_center_id is set
-if not hasattr(settings, "ENDOREG_CENTER_ID"):
-    ENDOREG_CENTER_ID = 9999
-else:
-    ENDOREG_CENTER_ID = settings.ENDOREG_CENTER_ID
+ENDOREG_CENTER_ID = int(getattr(settings, "ENDOREG_CENTER_ID", 9999))
 
 # Import the new utility function
 from ...utils.video import ffmpeg_wrapper

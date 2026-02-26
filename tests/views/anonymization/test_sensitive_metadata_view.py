@@ -1,9 +1,11 @@
 from __future__ import annotations
+from collections.abc import Generator
+from datetime import date, datetime, time
+
 import pytest
 from django.contrib.auth.models import User
-from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework import status
-from datetime import date, datetime, time
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import (
     VideoFile,
@@ -30,14 +32,14 @@ class TestSensitiveMetadataView:
         return APIRequestFactory()
 
     @pytest.fixture
-    def user(self) -> User:
+    def user(self) -> Generator[User, None, None]:
         # Simple enough, but we can still clean up explicitly
         user = User.objects.create_user(username="testuser")
         yield user
         user.delete()
 
     @pytest.fixture
-    def sensitive_meta(self, db) -> SensitiveMeta:
+    def sensitive_meta(self, db) -> Generator[SensitiveMeta, None, None]:
         # create required FK objects first
         patient = Patient.objects.create(
             first_name="Pseudo",
@@ -88,13 +90,15 @@ class TestSensitiveMetadataView:
         center.delete()
 
     @pytest.fixture
-    def video(self, sensitive_meta: SensitiveMeta) -> VideoFile:
-        v = VideoFile.objects.create(sensitive_meta=sensitive_meta, center=sensitive_meta.center)
+    def video(self, sensitive_meta: SensitiveMeta) -> Generator[VideoFile, None, None]:
+        center = sensitive_meta.center
+        assert center is not None
+        v = VideoFile.objects.create(sensitive_meta=sensitive_meta, center=center)
         yield v
         v.delete()
 
     @pytest.fixture
-    def pdf(self, sensitive_meta: SensitiveMeta) -> RawPdfFile:
+    def pdf(self, sensitive_meta: SensitiveMeta) -> Generator[RawPdfFile, None, None]:
         p = RawPdfFile.objects.create(sensitive_meta=sensitive_meta)
         yield p
         p.delete()

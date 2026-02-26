@@ -237,9 +237,9 @@ def _test_after_pipe_1(
             logger.info("Setting sensitive meta state to verified.")
 
             # Example: using a boolean field
-            video_file.sensitive_meta.state.dob_verified = True
-            video_file.sensitive_meta.state.names_verified = True
-            video_file.sensitive_meta.state.save()  # Save the SensitiveMeta instance
+            st_state.dob_verified = True
+            st_state.names_verified = True
+            st_state.save()  # Save the SensitiveMeta state instance
             logger.info("Sensitive meta state updated.")
 
         else:

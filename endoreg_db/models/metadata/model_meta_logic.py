@@ -82,7 +82,7 @@ def create_from_file_logic(
         raise ValueError(f"AiModel with name '{model_name}' not found.") from exc
 
     labelset_qs = LabelSet.objects.filter(name=labelset_name)
-    if labelset_version not in (None, "", -1):
+    if isinstance(labelset_version, (int, str)) and labelset_version not in ("", -1):
         try:
             version_value = int(labelset_version)
         except (TypeError, ValueError):
@@ -449,7 +449,10 @@ def setup_default_from_huggingface_logic(
             raise ValueError("No labelset found and no labelset_name provided")
     else:
         labelset_qs = LabelSet.objects.filter(name=labelset_name)
-        if labelset_version not in (None, "", -1):
+        if isinstance(labelset_version, (int, str)) and labelset_version not in (
+            "",
+            -1,
+        ):
             try:
                 version_value = int(labelset_version)
             except (TypeError, ValueError):

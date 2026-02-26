@@ -1,5 +1,5 @@
 import uuid
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from django.db import models
 
@@ -61,7 +61,7 @@ class UploadJob(models.Model):
     if TYPE_CHECKING:
         from django.db.models.fields.files import FieldFile
 
-        file = cast(FieldFile, file)
+        file: FieldFile
 
     class Meta:
         ordering = ["-created_at"]

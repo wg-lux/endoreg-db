@@ -29,7 +29,7 @@ from endoreg_db.models import (
     VideoMetadata,
     VideoProcessingHistory,
 )
-from endoreg_db.serializers import VideoMetaSerializer, VideoProcessingHistorySerializer
+from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.utils.paths import ANONYM_VIDEO_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
@@ -153,8 +153,6 @@ def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) 
         "segments_deleted": segments_deleted,
         "segments_unchanged": segments_unchanged,
     }
-
-
 
 
 class VideoProcessingHistoryView(APIView):
@@ -512,13 +510,13 @@ class VideoRemoveFramesView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def _parse_frame_ranges(self, ranges_str: str) -> list:
+    def _parse_frame_ranges(self, ranges_str: str) -> list[int]:
         """
         Parse frame ranges string to list of frame numbers.
 
         Example: "10-20,30,45-50" -> [10,11,...,20,30,45,...,50]
         """
-        frames = []
+        frames: list[int] = []
         for part in ranges_str.split(","):
             part = part.strip()
             if "-" in part:

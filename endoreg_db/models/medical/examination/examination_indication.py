@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from django.db import models
 
@@ -27,7 +27,7 @@ class ExaminationIndicationManager(models.Manager):
         Returns:
             The ExaminationIndication instance corresponding to the specified name.
         """
-        return self.get(name=name)
+        return cast("ExaminationIndication", self.get(name=name))
 
 
 class ExaminationIndication(models.Model):
@@ -44,19 +44,19 @@ class ExaminationIndication(models.Model):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
 
-    classifications = models.ManyToManyField(
+    classifications: "models.ManyToManyField[ExaminationIndicationClassification, ExaminationIndicationClassification]" = models.ManyToManyField(
         "ExaminationIndicationClassification",
         related_name="indications",
         blank=True,
     )
 
-    expected_interventions = models.ManyToManyField(
+    expected_interventions: "models.ManyToManyField[FindingIntervention, FindingIntervention]" = models.ManyToManyField(
         "FindingIntervention",
         related_name="indications",
         blank=True,
     )
 
-    information_sources = models.ManyToManyField(
+    information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource",
         related_name="examination_indications",
         blank=True,
@@ -65,24 +65,14 @@ class ExaminationIndication(models.Model):
     objects = ExaminationIndicationManager()
 
     if TYPE_CHECKING:
-        classifications = cast(
-            models.manager.RelatedManager["ExaminationIndicationClassification"],
-            classifications,
-        )
-        expected_interventions = cast(
-            models.manager.RelatedManager["FindingIntervention"], expected_interventions
-        )
-        information_sources = cast(
-            models.manager.RelatedManager["InformationSource"], information_sources
-        )
 
         @property
         def related_requirements(
             self,
-        ) -> "models.manager.RelatedManager[Requirement]": ...
+        ) -> "models.Manager[Requirement]": ...
 
         @property
-        def examinations(self) -> "models.manager.RelatedManager[Examination]": ...
+        def examinations(self) -> "models.Manager[Examination]": ...
 
     @property
     def links(self) -> "RequirementLinks":
@@ -131,7 +121,7 @@ class ExaminationIndicationClassificationManager(models.Manager):
         Returns:
             The ExaminationIndicationClassification instance corresponding to the given name.
         """
-        return self.get(name=name)
+        return cast("ExaminationIndicationClassification", self.get(name=name))
 
 
 class ExaminationIndicationClassification(models.Model):
@@ -146,7 +136,7 @@ class ExaminationIndicationClassification(models.Model):
 
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True, null=True)
-    choices = models.ManyToManyField(
+    choices: "models.ManyToManyField[ExaminationIndicationClassificationChoice, ExaminationIndicationClassificationChoice]" = models.ManyToManyField(
         "ExaminationIndicationClassificationChoice",
         related_name="classifications",
         blank=True,
@@ -190,7 +180,7 @@ class ExaminationIndicationClassificationChoiceManager(models.Manager):
         Returns:
             An ExaminationIndicationClassificationChoice instance corresponding to the given name.
         """
-        return self.get(name=name)
+        return cast("ExaminationIndicationClassificationChoice", self.get(name=name))
 
 
 class ExaminationIndicationClassificationChoice(models.Model):
@@ -209,6 +199,16 @@ class ExaminationIndicationClassificationChoice(models.Model):
     numerical_descriptors = models.JSONField(default=dict)
 
     objects = ExaminationIndicationClassificationChoiceManager()
+
+    if TYPE_CHECKING:
+        from lx_dtypes.models.knowledge_base.classification_choice_descriptor.ClassificationChoiceDescriptorDataDict import (
+            ClassificationChoiceDescriptorDataDict,
+        )
+
+        JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
+        DescriptorTemplateMap: TypeAlias = dict[
+            str, "ClassificationChoiceDescriptorDataDict"
+        ]
 
     def natural_key(self) -> tuple:
         """

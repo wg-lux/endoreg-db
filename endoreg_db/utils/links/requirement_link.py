@@ -1,4 +1,4 @@
-from typing import List, Optional, TYPE_CHECKING  # Modified import
+from typing import List, Optional, TYPE_CHECKING, cast  # Modified import
 
 from pydantic import BaseModel, Field
 
@@ -116,37 +116,37 @@ class RequirementLinks(BaseModel):
                     and hasattr(plv.sample, "patient")
                     and plv.sample.patient
                 ):
-                    return plv.sample.patient
+                    return cast("Patient", plv.sample.patient)
         if self.patient_lab_samples:
             for pls in self.patient_lab_samples:
                 if hasattr(pls, "patient") and pls.patient:
-                    return pls.patient
+                    return cast("Patient", pls.patient)
         if self.patient_examinations:
             for pe in self.patient_examinations:
                 if hasattr(pe, "patient") and pe.patient:
-                    return pe.patient
+                    return cast("Patient", pe.patient)
         if self.patient_diseases:
             for pd in self.patient_diseases:
                 if hasattr(pd, "patient") and pd.patient:
-                    return pd.patient
+                    return cast("Patient", pd.patient)
         if self.patient_events:
             for pev in self.patient_events:
                 if hasattr(pev, "patient") and pev.patient:
-                    return pev.patient
+                    return cast("Patient", pev.patient)
         if self.patient_findings:
             for pf in self.patient_findings:
                 if hasattr(pf, "patient") and pf.patient:
-                    return pf.patient
+                    return cast("Patient", pf.patient)
         # Check PatientMedication
         if self.patient_medications:
             for pm in self.patient_medications:
                 if hasattr(pm, "patient") and pm.patient:
-                    return pm.patient
+                    return cast("Patient", pm.patient)
         # Check PatientMedicationSchedule
         if self.patient_medication_schedules:
             for pms in self.patient_medication_schedules:
                 if hasattr(pms, "patient") and pms.patient:
-                    return pms.patient
+                    return cast("Patient", pms.patient)
         return None
 
     @property

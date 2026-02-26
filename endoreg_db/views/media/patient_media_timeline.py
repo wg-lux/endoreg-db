@@ -21,11 +21,21 @@ def _make_aware_if_needed(value: datetime) -> datetime:
 
 
 def _combine_date_time(date_value: dt_date, time_value: dt_time | None) -> datetime:
-    return _make_aware_if_needed(datetime.combine(date_value, time_value or dt_time.min))
+    return _make_aware_if_needed(
+        datetime.combine(date_value, time_value or dt_time.min)
+    )
 
 
 def _safe_iso(value: Any) -> str | None:
     if value is None:
+        return None
+    if isinstance(value, datetime):
+        return _make_aware_if_needed(value).isoformat()
+    if isinstance(value, dt_date):
+        return value.isoformat()
+    try:
+        return str(value)
+    except Exception:
         return None
 
 
@@ -40,17 +50,11 @@ def _patient_ref(patient_obj: Any) -> dict[str, Any] | None:
         "last_name": getattr(patient_obj, "last_name", None),
         "dob": _safe_iso(getattr(patient_obj, "dob", None)),
     }
-    if isinstance(value, datetime):
-        return _make_aware_if_needed(value).isoformat()
-    if isinstance(value, dt_date):
-        return value.isoformat()
-    try:
-        return str(value)
-    except Exception:
-        return None
 
 
-def _report_timestamp(report: AnonymExaminationReport) -> tuple[datetime | None, str, bool]:
+def _report_timestamp(
+    report: AnonymExaminationReport,
+) -> tuple[datetime | None, str, bool]:
     if report.date:
         return (
             _combine_date_time(report.date, report.time),
@@ -90,12 +94,15 @@ def _video_timestamp(video: VideoFile) -> tuple[datetime | None, str, bool]:
             "examination_date",
             True,
         )
-    if getattr(video, "date", None):
-        return _combine_date_time(video.date, None), "video_date", True
-    if getattr(video, "uploaded_at", None):
-        return _make_aware_if_needed(video.uploaded_at), "uploaded_at", False
-    if getattr(video, "date_created", None):
-        return _make_aware_if_needed(video.date_created), "date_created", False
+    video_date = getattr(video, "date", None)
+    if isinstance(video_date, dt_date):
+        return _combine_date_time(video_date, None), "video_date", True
+    uploaded_at = getattr(video, "uploaded_at", None)
+    if isinstance(uploaded_at, datetime):
+        return _make_aware_if_needed(uploaded_at), "uploaded_at", False
+    date_created = getattr(video, "date_created", None)
+    if isinstance(date_created, datetime):
+        return _make_aware_if_needed(date_created), "date_created", False
     return None, "missing_timestamp", False
 
 
@@ -139,8 +146,12 @@ class PatientMediaTimelineView(APIView):
             if hasattr(report, "raw_pdf_file") and report.raw_pdf_file is not None:
                 raw_pdf_id = report.raw_pdf_file.pk
             direct_patient = getattr(report, "patient", None)
-            pseudo_patient = getattr(getattr(report, "sensitive_meta", None), "pseudo_patient", None)
-            exam_patient = getattr(getattr(report, "patient_examination", None), "patient", None)
+            pseudo_patient = getattr(
+                getattr(report, "sensitive_meta", None), "pseudo_patient", None
+            )
+            exam_patient = getattr(
+                getattr(report, "patient_examination", None), "patient", None
+            )
             items.append(
                 {
                     "media_type": "full_report",
@@ -162,8 +173,23 @@ class PatientMediaTimelineView(APIView):
                         source_name
                         for source_name, value in (
                             ("patient", getattr(report, "patient_id", None)),
-                            ("sensitive_meta.pseudo_patient", getattr(getattr(report, "sensitive_meta", None), "pseudo_patient_id", None)),
-                            ("patient_examination.patient", getattr(report, "patient_examination_id", None) and getattr(getattr(report, "patient_examination", None), "patient_id", None)),
+                            (
+                                "sensitive_meta.pseudo_patient",
+                                getattr(
+                                    getattr(report, "sensitive_meta", None),
+                                    "pseudo_patient_id",
+                                    None,
+                                ),
+                            ),
+                            (
+                                "patient_examination.patient",
+                                getattr(report, "patient_examination_id", None)
+                                and getattr(
+                                    getattr(report, "patient_examination", None),
+                                    "patient_id",
+                                    None,
+                                ),
+                            ),
                         )
                         if value is not None
                     ],
@@ -171,7 +197,9 @@ class PatientMediaTimelineView(APIView):
             )
 
         pdfs = (
-            RawPdfFile.objects.select_related("patient", "sensitive_meta", "center", "anonym_examination_report")
+            RawPdfFile.objects.select_related(
+                "patient", "sensitive_meta", "center", "anonym_examination_report"
+            )
             .filter(
                 Q(patient_id=patient_id)
                 | Q(sensitive_meta__pseudo_patient_id=patient_id)
@@ -206,14 +234,19 @@ class PatientMediaTimelineView(APIView):
                     "processed_file_name": getattr(pdf.processed_file, "name", None)
                     if pdf.processed_file
                     else None,
-                    "full_report_id": getattr(pdf, "anonym_examination_report_id", None),
+                    "full_report_id": getattr(
+                        pdf, "anonym_examination_report_id", None
+                    ),
                     "linked_patient": _patient_ref(direct_patient),
                     "pseudo_patient": _patient_ref(pseudo_patient),
                     "patient_link_sources": [
                         source_name
                         for source_name, value in (
                             ("patient", getattr(pdf, "patient_id", None)),
-                            ("sensitive_meta.pseudo_patient", getattr(sm, "pseudo_patient_id", None) if sm else None),
+                            (
+                                "sensitive_meta.pseudo_patient",
+                                getattr(sm, "pseudo_patient_id", None) if sm else None,
+                            ),
                         )
                         if value is not None
                     ],
@@ -254,7 +287,8 @@ class PatientMediaTimelineView(APIView):
                     "timestamp_source": source,
                     "timestamp_is_examination_date": is_exam,
                     "examination_date": _safe_iso(
-                        getattr(sm, "examination_date", None) or getattr(video, "date", None)
+                        getattr(sm, "examination_date", None)
+                        or getattr(video, "date", None)
                     ),
                     "examination_time": _safe_iso(
                         getattr(sm, "examination_time", None)
@@ -273,8 +307,18 @@ class PatientMediaTimelineView(APIView):
                         source_name
                         for source_name, value in (
                             ("patient", getattr(video, "patient_id", None)),
-                            ("sensitive_meta.pseudo_patient", getattr(sm, "pseudo_patient_id", None) if sm else None),
-                            ("examination.patient", getattr(getattr(video, "examination", None), "patient_id", None)),
+                            (
+                                "sensitive_meta.pseudo_patient",
+                                getattr(sm, "pseudo_patient_id", None) if sm else None,
+                            ),
+                            (
+                                "examination.patient",
+                                getattr(
+                                    getattr(video, "examination", None),
+                                    "patient_id",
+                                    None,
+                                ),
+                            ),
                         )
                         if value is not None
                     ],

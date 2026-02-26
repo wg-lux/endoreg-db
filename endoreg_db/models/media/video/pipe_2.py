@@ -53,7 +53,6 @@ def _pipe_2(video_file: "VideoFile") -> bool:
         # --- Part 2: Video Anonymization ---
         # Determine if anonymization is needed (short transaction for state read)
         with transaction.atomic():
-            state: "VideoState" = video_file.get_or_create_state()
             anonymization_needed = not state.anonymized
             if anonymization_needed:
                 state.sensitive_meta_processed = False
@@ -88,7 +87,6 @@ def _pipe_2(video_file: "VideoFile") -> bool:
             video_file.refresh_from_db()  # Ensure we have the latest video_file state for these ops
 
             # Set sensitive_meta_processed True atomically
-            state: "VideoState" = video_file.get_or_create_state()
             state.sensitive_meta_processed = True
 
             # Delete Sensitive Meta Object

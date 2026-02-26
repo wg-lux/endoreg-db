@@ -1,3 +1,5 @@
+from typing import Any
+
 from rest_framework import serializers
 
 from endoreg_db.models.requirement.requirement_set import RequirementSet
@@ -18,7 +20,7 @@ class RequirementSetSerializer(serializers.ModelSerializer):
         tags: List of tag names (optional, read-only)
     """
 
-    tags = serializers.SlugRelatedField(
+    tags: Any = serializers.SlugRelatedField(
         many=True, read_only=True, slug_field="name", required=False
     )
 

@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict
 
 
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from django.db import models
 
 from endoreg_db.models import AIDataSet
 from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
@@ -36,15 +35,21 @@ from endoreg_db.utils.ai.model_training.model_backbones import (
 # ---------------------------------------------------------------------
 
 
+class TrainingHistory(TypedDict):
+    train_loss: list[float]
+    val_loss: list[float]
+    test_loss: float | None
+
+
 def filter_labels_by_labelset_version(
-    labels: Sequence[models.Model],
+    labels: Sequence[Any],
     label_vectors: Sequence[Sequence[Optional[int]]],
     label_masks: Sequence[Sequence[int]],
     target_version: int,
 ) -> Tuple[
     List[List[Optional[int]]],
     List[List[int]],
-    List[models.Model],
+    List[Any],
     List[int],
 ]:
     """
@@ -256,7 +261,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             vec = label_vectors[i]
             mask = label_masks[i]
 
-            new_vec = []
+            new_vec: list[Optional[int]] = []
             new_mask = []
             for x in vec:
                 if x is None:
@@ -272,10 +277,10 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
             label_masks[i] = new_mask
     else:
         # Respect original semantics: None = unknown -> mask=0
-        cleaned_vectors = []
+        cleaned_vectors: list[list[Optional[int]]] = []
         cleaned_masks = []
         for vec, mask in zip(label_vectors, label_masks):
-            v = []
+            v: list[Optional[int]] = []
             m = []
             for x, ms in zip(vec, mask):
                 if x is None:
@@ -296,7 +301,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     labels_arr = []
     masks_arr = []
     for vec, mask in zip(label_vectors, label_masks):
-        v = [int(x) for x in vec]  # now guaranteed 0/1
+        v = [0 if x is None else int(x) for x in vec]
         m = [int(x) for x in mask]  # typically 1
         labels_arr.append(v)
         masks_arr.append(m)
@@ -475,7 +480,7 @@ def train_gastronet_multilabel(config: TrainingConfig) -> Dict:
     # ------------------------------------------------------------------
     # 9. Training loop
     # ------------------------------------------------------------------
-    history = {"train_loss": [], "val_loss": [], "test_loss": None}
+    history: TrainingHistory = {"train_loss": [], "val_loss": [], "test_loss": None}
 
     # One-time debug of first batch
     first_batch = next(iter(train_loader))

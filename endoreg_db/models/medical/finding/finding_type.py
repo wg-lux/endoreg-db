@@ -29,7 +29,7 @@ class FindingType(models.Model):
         @property
         def finding_classifications(
             self,
-        ) -> "models.manager.RelatedManager[FindingClassification]": ...
+        ) -> "models.Manager[FindingClassification]": ...
 
     def natural_key(self):
         return (self.name,)

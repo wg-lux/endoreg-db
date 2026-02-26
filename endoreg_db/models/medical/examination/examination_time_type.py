@@ -1,13 +1,18 @@
+from typing import TYPE_CHECKING, cast
+
 from django.db import models
 
+if TYPE_CHECKING:
+    from .examination import Examination
 
-class ExaminationTimeTypeManager(models.Manager):
+
+class ExaminationTimeTypeManager(models.Manager["ExaminationTimeType"]):
     """
     Manager for ExaminationTimeType with custom query methods.
     """
 
     def get_by_natural_key(self, name: str) -> "ExaminationTimeType":
-        return self.get(name=name)
+        return cast("ExaminationTimeType", self.get(name=name))
 
 
 class ExaminationTimeType(models.Model):
@@ -21,7 +26,9 @@ class ExaminationTimeType(models.Model):
 
     objects = ExaminationTimeTypeManager()
     name = models.CharField(max_length=100, unique=True)
-    examinations = models.ManyToManyField("Examination", blank=True)
+    examinations: "models.ManyToManyField[Examination, Examination]" = (
+        models.ManyToManyField("Examination", blank=True)
+    )
 
     def __str__(self) -> str:
         """

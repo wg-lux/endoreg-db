@@ -1,6 +1,7 @@
 ####### Administration ########
 from .administration import (
     ActiveModel,
+    ApplicationSettings,
     AiModel,
     Case,
     Center,
@@ -165,6 +166,7 @@ __all__ = [
     # AI
     "AiModel",
     "ActiveModel",
+    "ApplicationSettings",
     "ModelType",
     # Case
     "Case",
