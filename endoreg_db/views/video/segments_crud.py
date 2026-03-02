@@ -163,6 +163,12 @@ def _normalize_int_list(value):
     return [int(value)]
 
 
+def _query_param_as_bool(value, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
 def video_segments_stats(request):
@@ -213,7 +219,8 @@ def video_segments_collection(request):
 
     GET /api/media/videos/segments/
     - Lists all segments, optionally filtered by video_id and/or label_id
-    - Query params: video_id, label_id
+    - Query params: video_id, label_id, include_annotation_payload
+      (set include_annotation_payload=1 to include expensive frame-level data)
 
     POST /api/media/videos/segments/
     - Creates a new video segment
@@ -253,8 +260,12 @@ def video_segments_collection(request):
         # Optional filtering by video_id
         video_id = request.GET.get("video_id")
         label_id = request.GET.get("label_id")
+        include_annotation_payload = _query_param_as_bool(
+            request.GET.get("include_annotation_payload"),
+            default=False,
+        )
 
-        queryset = LabelVideoSegment.objects.all()
+        queryset = LabelVideoSegment.objects.select_related("video_file", "label").all()
 
         if video_id:
             try:
@@ -278,7 +289,14 @@ def video_segments_collection(request):
 
         # Order by video and start time for consistent results
         segments = queryset.order_by("video_file__id", "start_frame_number")
-        serializer = LabelVideoSegmentSerializer(segments, many=True)
+        serializer = LabelVideoSegmentSerializer(
+            segments,
+            many=True,
+            context={
+                "request": request,
+                "include_annotation_payload": include_annotation_payload,
+            },
+        )
         return Response(serializer.data)
 
 
@@ -290,7 +308,8 @@ def video_segments_by_video(request, pk):
 
     GET /api/media/videos/<pk>/segments/
     - Lists all segments for a specific video
-    - Query params: label (label name filter)
+    - Query params: label (label name filter), include_annotation_payload
+      (set include_annotation_payload=1 to include expensive frame-level data)
     - Note: This was already implemented in segments.py as video_segments_by_pk
 
     POST /api/media/videos/<pk>/segments/
@@ -307,8 +326,14 @@ def video_segments_by_video(request, pk):
         # This duplicates video_segments_by_pk functionality
         # We keep both for compatibility during migration
         label_name = request.GET.get("label")
+        include_annotation_payload = _query_param_as_bool(
+            request.GET.get("include_annotation_payload"),
+            default=False,
+        )
 
-        queryset = LabelVideoSegment.objects.filter(video_file=video)
+        queryset = LabelVideoSegment.objects.filter(video_file=video).select_related(
+            "video_file", "label"
+        )
 
         if label_name:
             try:
@@ -321,7 +346,14 @@ def video_segments_by_video(request, pk):
                 )
 
         segments = queryset.order_by("start_frame_number")
-        serializer = LabelVideoSegmentSerializer(segments, many=True)
+        serializer = LabelVideoSegmentSerializer(
+            segments,
+            many=True,
+            context={
+                "request": request,
+                "include_annotation_payload": include_annotation_payload,
+            },
+        )
         return Response(serializer.data)
 
     elif request.method == "POST":

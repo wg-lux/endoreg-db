@@ -3,7 +3,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.conf import settings
 from urllib.parse import urljoin
 from pathlib import Path
-from typing import Any, Literal, Dict
+from typing import Any, Literal
 import logging
 from django.db.models import Prefetch
 from django.db import models
@@ -149,6 +149,16 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             "label": {"required": False},
             "export_segment": {"required": False},
         }
+
+    def _include_annotation_payload(self) -> bool:
+        """
+        Toggle expensive nested payloads (frame annotations + frame lists).
+
+        Defaults to True to preserve serializer behavior unless explicitly disabled
+        by a caller (list endpoints use this to avoid heavy ASGI request handling).
+        """
+        context = getattr(self, "context", None) or {}
+        return bool(context.get("include_annotation_payload", True))
 
     # --- Internal Helpers ---
 
@@ -432,6 +442,26 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         return data
 
     def get_time_segments(self, obj: LabelVideoSegment) -> dict[str, Any]:
+        if not self._include_annotation_payload():
+            start_time = None
+            end_time = None
+            video = getattr(obj, "video_file", None)
+            if video is not None:
+                try:
+                    start_time = video.frame_number_to_s(obj.start_frame_number)
+                    end_time = video.frame_number_to_s(obj.end_frame_number)
+                except Exception:
+                    start_time = None
+                    end_time = None
+            return {
+                "segment_id": obj.pk,
+                "segment_start": obj.start_frame_number,
+                "segment_end": obj.end_frame_number,
+                "start_time": start_time,
+                "end_time": end_time,
+                "frames": [],
+            }
+
         annotations_prefetch = Prefetch(
             "image_classification_annotations",
             queryset=ImageClassificationAnnotation.objects.select_related("label"),
@@ -475,12 +505,16 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
     def get_label_name(self, obj) -> Any | Literal["Unknown"]:
         return obj.label.name if obj.label else "Unknown"
 
-    def get_manual_frame_annotations(self, obj: LabelVideoSegment) -> Dict[Any, Any]:
+    def get_manual_frame_annotations(self, obj: LabelVideoSegment) -> Any:
+        if not self._include_annotation_payload():
+            return []
         return ImageClassificationAnnotationSerializer(
             obj.manual_frame_annotations, many=True
         ).data
 
-    def get_frame_predictions(self, obj: LabelVideoSegment) -> Dict[Any, Any]:
+    def get_frame_predictions(self, obj: LabelVideoSegment) -> Any:
+        if not self._include_annotation_payload():
+            return []
         return ImageClassificationAnnotationSerializer(
             obj.frame_predictions, many=True
         ).data

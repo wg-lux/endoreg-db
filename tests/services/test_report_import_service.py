@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 from django.test import TestCase
+from django.utils import timezone
 
 from endoreg_db.models import Center, RawPdfFile
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.views.anonymization.validate import _upsert_validated_report_file
 from tests.helpers.default_objects import get_default_center, get_default_processor
 
 # Environment-based test control (mirror video tests)
@@ -155,3 +157,53 @@ class TestReportImportService(TestCase):
             # Clean up if file still exists (delete_source=True may have removed it)
             if temp_path.exists():
                 temp_path.unlink()
+
+    @pytest.mark.integration
+    def test_imported_raw_pdf_can_link_to_anonym_examination_report(self):
+        """
+        Verify that a successfully imported RawPdfFile can be promoted into
+        a report_file artifact (AnonymExaminationReport) later in the workflow.
+        """
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest(
+                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            pdf_path = Path(tmp.name)
+        pdf_path.write_bytes(MINIMAL_report_BYTES + b"\n%report-link-check\n")
+
+        try:
+            service = ReportImportService()
+            raw_pdf = service.import_and_anonymize(
+                file_path=pdf_path,
+                center_name=self.center.name,
+                retry=False,
+                delete_source=False,
+            )
+
+            self.assertIsInstance(raw_pdf, RawPdfFile)
+            assert isinstance(raw_pdf, RawPdfFile)
+            raw_pdf.refresh_from_db()
+
+            self.assertIsNotNone(raw_pdf.pk)
+            self.assertTrue(bool(raw_pdf.file))
+            self.assertTrue(bool(raw_pdf.processed_file))
+            self.assertIsNotNone(raw_pdf.sensitive_meta_id)
+
+            report_obj, _created = _upsert_validated_report_file(
+                pdf=raw_pdf,
+                payload={"anonymized_text": "validated report text"},
+                document_type_name="report_draft",
+                validated_at_iso=timezone.now().isoformat(),
+            )
+
+            raw_pdf.refresh_from_db()
+            self.assertIsNotNone(raw_pdf.anonym_examination_report_id)
+            self.assertEqual(raw_pdf.anonym_examination_report_id, report_obj.id)
+            self.assertEqual(report_obj.raw_pdf_file.id, raw_pdf.id)
+            self.assertEqual(report_obj.type.name, "report_draft")
+
+        finally:
+            if pdf_path.exists():
+                pdf_path.unlink()

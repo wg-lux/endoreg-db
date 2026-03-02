@@ -17,6 +17,7 @@ from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.views.video.segments_crud import (
     ensure_prediction_segment_annotations_for_video,
     video_segment_validate,
+    video_segments_by_video,
 )
 
 
@@ -245,6 +246,71 @@ class PredictionSegmentAnnotationsRouteTest(TestCase):
             ).count(),
             3,
         )
+
+
+class VideoSegmentsByVideoPayloadModeTest(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.center = Center.objects.create(name="Segments Payload Center")
+        self.video = VideoFile.objects.create(
+            center=self.center,
+            video_hash="segments-payload-video",
+            original_file_name="segments_payload.mp4",
+            fps=25.0,
+            frame_count=200,
+        )
+        self.label = Label.objects.create(name="segments-payload-label")
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
+        self.segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=10,
+            end_frame_number=13,
+            source=self.manual_source,
+        )
+        self.frames = [
+            Frame.objects.create(
+                video=self.video,
+                frame_number=i,
+                relative_path=f"frame_{i:07d}.jpg",
+            )
+            for i in range(10, 13)
+        ]
+        ImageClassificationAnnotation.objects.bulk_create(
+            [
+                ImageClassificationAnnotation(
+                    frame=frame,
+                    label=self.label,
+                    value=True,
+                    information_source=self.manual_source,
+                )
+                for frame in self.frames
+            ]
+        )
+
+    def test_default_list_payload_skips_annotation_expansion(self):
+        request = self.factory.get(f"/api/media/videos/{self.video.pk}/segments/")
+        response = video_segments_by_video(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+        payload = response.data[0]
+        self.assertEqual(payload["manual_frame_annotations"], [])
+        self.assertEqual(payload["frame_predictions"], [])
+        self.assertEqual(payload["time_segments"]["frames"], [])
+
+    def test_list_payload_can_opt_in_to_annotation_expansion(self):
+        request = self.factory.get(
+            f"/api/media/videos/{self.video.pk}/segments/?include_annotation_payload=1"
+        )
+        response = video_segments_by_video(request, pk=self.video.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+        payload = response.data[0]
+        self.assertEqual(len(payload["time_segments"]["frames"]), 3)
 
 
 class VideoSegmentValidateAsyncSafetyTest(TestCase):
