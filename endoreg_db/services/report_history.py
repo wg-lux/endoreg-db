@@ -11,12 +11,12 @@ def _serialize_patient_finding_summary(
     patient_finding: PatientFinding,
 ) -> dict[str, Any]:
     return {
-        "patient_finding_id": patient_finding.id,
+        "patient_finding_id": patient_finding.pk,
         "finding_id": patient_finding.finding_id,
         "finding_name": getattr(patient_finding.finding, "name", None),
         "classifications": [
             {
-                "id": pfc.id,
+                "id": pfc.pk,
                 "classification_id": pfc.classification_id,
                 "classification_choice_id": pfc.classification_choice_id,
                 "classification_name": getattr(pfc.classification, "name", None),
@@ -32,7 +32,7 @@ def _serialize_patient_finding_summary(
         ],
         "interventions": [
             {
-                "id": pfi.id,
+                "id": pfi.pk,
                 "intervention_id": pfi.intervention_id,
                 "intervention_name": getattr(pfi.intervention, "name", None),
                 "state": pfi.state,

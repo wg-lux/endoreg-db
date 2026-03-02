@@ -30,6 +30,8 @@ class SensitiveMeta(models.Model):
     Logic for creation, hashing, pseudo-anonymization, and saving is in sensitive_meta_logic.py.
     """
 
+    objects = models.Manager()
+
     # --- Examination and Patient Info ---
     examination_date = models.DateField(blank=True, null=True)
     examination_time = models.TimeField(blank=True, null=True)

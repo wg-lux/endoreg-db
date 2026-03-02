@@ -343,9 +343,6 @@ class RawPdfFile(models.Model):
         It also ensures the video file is properly saved after the metadata update.
         """
 
-        self.mark_sensitive_meta_processed()
-        self.mark_sensitive_meta_verified()
-
         if not extracted_data_dict:
             logger.error("No extracted data provided for validation.")
             return False
@@ -380,6 +377,9 @@ class RawPdfFile(models.Model):
             self.save(
                 update_fields=["file", "processed_file"]
             )  # Persist cleared fields
+
+        self.mark_sensitive_meta_processed()
+        self.mark_sensitive_meta_verified()
 
         logger.info(f"Files for report {self.pk} deleted successfully.")
         return True

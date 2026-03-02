@@ -57,6 +57,22 @@ class PdfMediaView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
+    @staticmethod
+    def _resolved_anonymized_text(pdf: RawPdfFile) -> str | None:
+        if isinstance(pdf.anonymized_text, str) and pdf.anonymized_text.strip():
+            return pdf.anonymized_text
+        full_report = getattr(pdf, "anonym_examination_report", None)
+        if full_report is not None and isinstance(full_report.text, str):
+            if full_report.text.strip():
+                return full_report.text
+        sensitive_meta = getattr(pdf, "sensitive_meta", None)
+        if sensitive_meta is not None and isinstance(
+            sensitive_meta.anonymized_text, str
+        ):
+            if sensitive_meta.anonymized_text.strip():
+                return sensitive_meta.anonymized_text
+        return None
+
     def get(self, request, pk=None):
         """
         Handle GET requests for report listing, detail retrieval, or streaming.
@@ -103,7 +119,11 @@ class PdfMediaView(APIView):
                 raise Http404("Invalid report ID format")
 
             # Fetch report with related data
-            pdf = RawPdfFile.objects.select_related("sensitive_meta").get(pk=pdf_id_int)
+            pdf = RawPdfFile.objects.select_related(
+                "sensitive_meta", "anonym_examination_report"
+            ).get(pk=pdf_id_int)
+
+            resolved_anonymized_text = self._resolved_anonymized_text(pdf)
 
             # Build report details
             pdf_data = {
@@ -114,10 +134,8 @@ class PdfMediaView(APIView):
                 "uploaded_at": pdf.date_created.isoformat()
                 if getattr(pdf, "date_created", None)
                 else None,
-                "anonymized_text": pdf.anonymized_text,
-                "has_anonymized_text": bool(
-                    pdf.anonymized_text and pdf.anonymized_text.strip()
-                ),
+                "anonymized_text": resolved_anonymized_text,
+                "has_anonymized_text": bool(resolved_anonymized_text),
                 "is_validated": getattr(pdf.sensitive_meta, "is_verified", False)
                 if pdf.sensitive_meta
                 else False,
@@ -226,7 +244,9 @@ class PdfMediaView(APIView):
         """
         try:
             # Start with all reports
-            queryset = RawPdfFile.objects.select_related("sensitive_meta").all()
+            queryset = RawPdfFile.objects.select_related(
+                "sensitive_meta", "anonym_examination_report"
+            ).all()
 
             # Apply filters
             queryset = self._apply_filters(queryset, request.query_params)
@@ -257,9 +277,7 @@ class PdfMediaView(APIView):
                     "filename": getattr(pdf.file, "name", "Unknown"),
                     "file_size": self._safe_get_file_size(pdf.file),
                     "pdf_hash": pdf.pdf_hash,
-                    "has_anonymized_text": bool(
-                        pdf.anonymized_text and pdf.anonymized_text.strip()
-                    ),
+                    "has_anonymized_text": bool(self._resolved_anonymized_text(pdf)),
                     "is_validated": getattr(pdf.sensitive_meta, "is_verified", False)
                     if pdf.sensitive_meta
                     else False,
@@ -269,7 +287,8 @@ class PdfMediaView(APIView):
                 }
 
                 # Determine status based on anonymization and validation
-                if not pdf.anonymized_text or not pdf.anonymized_text.strip():
+                resolved_anonymized_text = self._resolved_anonymized_text(pdf)
+                if not resolved_anonymized_text:
                     pdf_item["status"] = "not_started"
                 elif pdf.sensitive_meta and pdf.sensitive_meta.is_verified:
                     pdf_item["status"] = "validated"
@@ -331,6 +350,16 @@ class PdfMediaView(APIView):
             QuerySet: Filtered queryset
         """
         status_filter = query_params.get("status", "").strip().lower()
+        patient_examination_filter = query_params.get(
+            "patient_examination_id", ""
+        ).strip()
+
+        if patient_examination_filter:
+            try:
+                patient_examination_id = int(patient_examination_filter)
+            except ValueError as exc:
+                raise ValueError("patient_examination_id must be an integer") from exc
+            queryset = queryset.filter(examination_id=patient_examination_id)
 
         if status_filter:
             if status_filter == "not_started":

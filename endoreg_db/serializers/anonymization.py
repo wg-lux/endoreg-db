@@ -7,6 +7,14 @@ Unterstützt DD.MM.YYYY als Primärformat und YYYY-MM-DD als Fallback.
 from rest_framework import serializers
 from endoreg_db.models.metadata.sensitive_meta_logic import parse_any_date
 
+REPORT_DOCUMENT_TYPE_CHOICES = [
+    ("report_draft", "report_draft"),
+    ("report_final", "report_final"),
+    ("pathology_draft", "pathology_draft"),
+    ("pathology_final", "pathology_final"),
+    ("pathology_addon", "pathology_addon"),
+]
+
 
 class SensitiveMetaValidateSerializer(serializers.Serializer):
     """
@@ -31,6 +39,10 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
     file_type = serializers.ChoiceField(
         choices=["video", "pdf"], required=False
     )  # Optional: "video" oder "pdf"
+    document_type = serializers.ChoiceField(
+        choices=REPORT_DOCUMENT_TYPE_CHOICES,
+        required=False,
+    )
     center_name = serializers.CharField(required=False, allow_blank=True)
     external_id = serializers.CharField(required=False, allow_blank=True)
     external_id_origin = serializers.CharField(required=False, allow_blank=True)

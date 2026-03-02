@@ -8,6 +8,7 @@ from endoreg_db.views.anonymization import (
     polling_coordinator_info,
     clear_processing_locks,
     has_raw_video_file,
+    anonymization_document_types_dropdown,
 )
 from endoreg_db.views.anonymization import media_management
 
@@ -37,6 +38,11 @@ url_patterns = [
         "anonymization/<int:file_id>/validate/",
         AnonymizationValidateView.as_view(),
         name="validate_anonymization",
+    ),
+    path(
+        "anonymization/document-types/dropdown/",
+        anonymization_document_types_dropdown,
+        name="anonymization_document_types_dropdown",
     ),
     # Polling Coordination API (new endpoints)
     path(

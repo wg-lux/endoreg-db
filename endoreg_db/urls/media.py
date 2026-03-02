@@ -16,6 +16,10 @@ from endoreg_db.views.media.sensitive_metadata import (
 )
 from endoreg_db.views.media.video_media import VideoMediaView
 from endoreg_db.views.report.reimport import ReportReimportView
+from endoreg_db.views.report.pdf_redaction import (
+    PdfApplyRedactionsView,
+    PdfProcessingHistoryView,
+)
 from endoreg_db.views.report.report_stream import ReportStreamView
 from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
@@ -289,6 +293,16 @@ urlpatterns = [
         "media/pdfs/<int:pk>/reimport/",
         ReportReimportView.as_view(),
         name="report-reimport",
+    ),
+    path(
+        "media/pdfs/<int:pk>/apply-redactions/",
+        PdfApplyRedactionsView.as_view(),
+        name="pdf-apply-redactions",
+    ),
+    path(
+        "media/pdfs/<int:pk>/processing-history/",
+        PdfProcessingHistoryView.as_view(),
+        name="pdf-processing-history",
     ),
 ]
 # ---------------------------------------------------------------------------------------

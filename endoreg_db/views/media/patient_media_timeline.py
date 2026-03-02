@@ -121,20 +121,29 @@ class PatientMediaTimelineView(APIView):
         except Patient.DoesNotExist:
             raise Http404(f"Patient with ID {patient_id} not found")
 
+        pe_filter_raw = request.query_params.get("patient_examination_id")
+        pe_filter_id: int | None = None
+        if pe_filter_raw not in (None, ""):
+            try:
+                pe_filter_id = int(pe_filter_raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "patient_examination_id must be an integer."},
+                    status=400,
+                )
+
         items: list[dict[str, Any]] = []
 
-        reports = (
-            AnonymExaminationReport.objects.select_related(
-                "patient", "patient_examination", "sensitive_meta", "center"
-            )
-            .filter(
-                Q(patient_id=patient_id)
-                | Q(sensitive_meta__pseudo_patient_id=patient_id)
-                | Q(patient_examination__patient_id=patient_id)
-            )
-            .distinct()
-            .all()
+        reports_qs = AnonymExaminationReport.objects.select_related(
+            "patient", "patient_examination", "sensitive_meta", "center", "type"
+        ).filter(
+            Q(patient_id=patient_id)
+            | Q(sensitive_meta__pseudo_patient_id=patient_id)
+            | Q(patient_examination__patient_id=patient_id)
         )
+        if pe_filter_id is not None:
+            reports_qs = reports_qs.filter(patient_examination_id=pe_filter_id)
+        reports = reports_qs.distinct().all()
         for report in reports:
             ts, source, is_exam = _report_timestamp(report)
             file_name = None
@@ -166,6 +175,12 @@ class PatientMediaTimelineView(APIView):
                     "file_name": file_name,
                     "raw_pdf_id": raw_pdf_id,
                     "patient_examination_id": report.patient_examination_id,
+                    "document_type": getattr(
+                        getattr(report, "type", None), "name", None
+                    ),
+                    "anonymized_text": report.text
+                    if isinstance(report.text, str)
+                    else None,
                     "linked_patient": _patient_ref(direct_patient),
                     "pseudo_patient": _patient_ref(pseudo_patient),
                     "examination_patient": _patient_ref(exam_patient),
@@ -196,22 +211,36 @@ class PatientMediaTimelineView(APIView):
                 }
             )
 
-        pdfs = (
-            RawPdfFile.objects.select_related(
-                "patient", "sensitive_meta", "center", "anonym_examination_report"
-            )
-            .filter(
-                Q(patient_id=patient_id)
-                | Q(sensitive_meta__pseudo_patient_id=patient_id)
-            )
-            .distinct()
-            .all()
+        pdfs_qs = RawPdfFile.objects.select_related(
+            "patient",
+            "sensitive_meta",
+            "center",
+            "anonym_examination_report",
+            "anonym_examination_report__type",
+        ).filter(
+            Q(patient_id=patient_id) | Q(sensitive_meta__pseudo_patient_id=patient_id)
         )
+        if pe_filter_id is not None:
+            pdfs_qs = pdfs_qs.filter(
+                Q(examination_id=pe_filter_id)
+                | Q(anonym_examination_report__patient_examination_id=pe_filter_id)
+            )
+        pdfs = pdfs_qs.distinct().all()
         for pdf in pdfs:
             ts, source, is_exam = _pdf_timestamp(pdf)
             sm = pdf.sensitive_meta
             direct_patient = getattr(pdf, "patient", None)
             pseudo_patient = getattr(sm, "pseudo_patient", None) if sm else None
+            full_report = getattr(pdf, "anonym_examination_report", None)
+            resolved_anonymized_text = (
+                pdf.anonymized_text
+                if isinstance(pdf.anonymized_text, str) and pdf.anonymized_text
+                else (
+                    full_report.text
+                    if full_report is not None and isinstance(full_report.text, str)
+                    else None
+                )
+            )
             items.append(
                 {
                     "media_type": "pdf",
@@ -237,6 +266,12 @@ class PatientMediaTimelineView(APIView):
                     "full_report_id": getattr(
                         pdf, "anonym_examination_report_id", None
                     ),
+                    "document_type": getattr(
+                        getattr(full_report, "type", None), "name", None
+                    ),
+                    "patient_examination_id": getattr(pdf, "examination_id", None)
+                    or getattr(full_report, "patient_examination_id", None),
+                    "anonymized_text": resolved_anonymized_text,
                     "linked_patient": _patient_ref(direct_patient),
                     "pseudo_patient": _patient_ref(pseudo_patient),
                     "patient_link_sources": [
@@ -253,18 +288,16 @@ class PatientMediaTimelineView(APIView):
                 }
             )
 
-        videos = (
-            VideoFile.objects.select_related(
-                "patient", "sensitive_meta", "center", "examination", "state"
-            )
-            .filter(
-                Q(patient_id=patient_id)
-                | Q(sensitive_meta__pseudo_patient_id=patient_id)
-                | Q(examination__patient_id=patient_id)
-            )
-            .distinct()
-            .all()
+        videos_qs = VideoFile.objects.select_related(
+            "patient", "sensitive_meta", "center", "examination", "state"
+        ).filter(
+            Q(patient_id=patient_id)
+            | Q(sensitive_meta__pseudo_patient_id=patient_id)
+            | Q(examination__patient_id=patient_id)
         )
+        if pe_filter_id is not None:
+            videos_qs = videos_qs.filter(examination_id=pe_filter_id)
+        videos = videos_qs.distinct().all()
         for video in videos:
             ts, source, is_exam = _video_timestamp(video)
             sm = video.sensitive_meta
