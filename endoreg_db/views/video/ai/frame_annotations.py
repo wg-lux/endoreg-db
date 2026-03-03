@@ -1,4 +1,5 @@
 import logging
+import random
 import secrets
 from typing import Any
 
@@ -332,6 +333,73 @@ def _build_bulk_upsert_response(
     return Response(response_data, status=status.HTTP_200_OK)
 
 
+def _as_int(value: Any, field_name: str) -> tuple[int | None, Response | None]:
+    if value is None:
+        return None, None
+    try:
+        return int(value), None
+    except (TypeError, ValueError):
+        return None, Response(
+            {"error": f"{field_name} must be an integer."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_request_annotator(request, requested_annotator: str | None = None) -> str:
+    if requested_annotator is not None and str(requested_annotator).strip():
+        return str(requested_annotator).strip()
+    if request.user and request.user.is_authenticated:
+        return str(request.user.username)
+    return ""
+
+
+def _pick_random_frame(
+    *,
+    video_id: int | None,
+    information_source_name: str,
+    annotator: str,
+    exclude_annotated: bool,
+) -> Frame | None:
+    frames_qs = Frame.objects.select_related("video")
+    if video_id is not None:
+        frames_qs = frames_qs.filter(video_id=video_id)
+
+    if exclude_annotated:
+        annotation_filter: dict[str, Any] = {
+            "image_classification_annotations__information_source__name": information_source_name
+        }
+        if annotator:
+            annotation_filter["image_classification_annotations__annotator"] = annotator
+        frames_qs = frames_qs.exclude(**annotation_filter)
+
+    frames_qs = frames_qs.order_by("id").distinct()
+    count = frames_qs.count()
+    if count == 0:
+        return None
+    offset = random.randint(0, count - 1)
+    return frames_qs[offset]
+
+
+def _serialize_frame_task(frame: Frame) -> dict[str, Any]:
+    return {
+        "frame_id": frame.id,
+        "video_id": frame.video_id,
+        "frame_number": frame.frame_number,
+        "relative_path": frame.relative_path,
+        "frame_stream_path": (
+            f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+        ),
+    }
+
+
 class FrameAnnotationBulkUpsertView(APIView):
     """
     Bulk upsert endpoint for frame-level annotations.
@@ -532,3 +600,151 @@ class LabelStudioWebhookReceiverView(APIView):
             if external_annotation_id is not None:
                 response.data["external_annotation_id"] = external_annotation_id
         return response
+
+
+class FrameAnnotationRandomTaskView(APIView):
+    """
+    Return one random frame task for annotation.
+    """
+
+    permission_classes = [EnvironmentAwarePermission]
+
+    def get(self, request, *args, **kwargs):
+        video_id, error = _as_int(request.query_params.get("video_id"), "video_id")
+        if error is not None:
+            return error
+
+        information_source_name = str(
+            request.query_params.get(
+                "information_source_name",
+                getattr(
+                    settings,
+                    "LABEL_STUDIO_INFORMATION_SOURCE_NAME",
+                    "manual_annotation",
+                ),
+            )
+            or "manual_annotation"
+        ).strip()
+        if not information_source_name:
+            information_source_name = "manual_annotation"
+
+        requested_annotator = request.query_params.get("annotator")
+        annotator = _resolve_request_annotator(request, requested_annotator)
+        exclude_annotated = _as_bool(
+            request.query_params.get("exclude_annotated"), default=True
+        )
+
+        frame = _pick_random_frame(
+            video_id=video_id,
+            information_source_name=information_source_name,
+            annotator=annotator,
+            exclude_annotated=exclude_annotated,
+        )
+        if frame is None:
+            return Response(
+                {
+                    "error": "No frame task available.",
+                    "details": {
+                        "video_id": video_id,
+                        "information_source_name": information_source_name,
+                        "annotator": annotator,
+                        "exclude_annotated": exclude_annotated,
+                    },
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {
+                "status": "success",
+                "task": _serialize_frame_task(frame),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class FrameAnnotationSkipView(APIView):
+    """
+    Acknowledge skipped frame tasks without creating annotations.
+    """
+
+    permission_classes = [EnvironmentAwarePermission]
+
+    def post(self, request, *args, **kwargs):
+        payload = request.data if isinstance(request.data, dict) else {}
+
+        frame_id, error = _as_int(payload.get("frame_id"), "frame_id")
+        if error is not None:
+            return error
+        if frame_id is None:
+            return Response(
+                {"error": "Field 'frame_id' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        video_id, error = _as_int(payload.get("video_id"), "video_id")
+        if error is not None:
+            return error
+
+        try:
+            frame = Frame.objects.get(pk=frame_id)
+        except Frame.DoesNotExist:
+            return Response(
+                {"error": "Unknown frame_id."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if video_id is not None and frame.video_id != video_id:
+            return Response(
+                {
+                    "error": "frame_id does not belong to video_id.",
+                    "details": {"frame_id": frame_id, "video_id": video_id},
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        requested_annotator = payload.get("annotator")
+        annotator = _resolve_request_annotator(request, requested_annotator)
+        reason = str(payload.get("reason", "") or "").strip()
+
+        information_source_name = str(
+            payload.get(
+                "information_source_name",
+                getattr(
+                    settings,
+                    "LABEL_STUDIO_INFORMATION_SOURCE_NAME",
+                    "manual_annotation",
+                ),
+            )
+            or "manual_annotation"
+        ).strip()
+        if not information_source_name:
+            information_source_name = "manual_annotation"
+
+        exclude_annotated = _as_bool(payload.get("exclude_annotated"), default=True)
+        next_frame = _pick_random_frame(
+            video_id=video_id if video_id is not None else frame.video_id,
+            information_source_name=information_source_name,
+            annotator=annotator,
+            exclude_annotated=exclude_annotated,
+        )
+
+        logger.info(
+            "Frame annotation skip: frame_id=%s video_id=%s annotator=%s reason=%s",
+            frame.id,
+            frame.video_id,
+            annotator,
+            reason,
+        )
+
+        response_data: dict[str, Any] = {
+            "status": "success",
+            "skipped_frame_id": frame.id,
+            "video_id": frame.video_id,
+            "annotator": annotator,
+            "reason": reason,
+        }
+        if next_frame is not None:
+            response_data["next_task"] = _serialize_frame_task(next_frame)
+
+        return Response(response_data, status=status.HTTP_200_OK)

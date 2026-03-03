@@ -39,6 +39,8 @@ from endoreg_db.views.video import (
 )
 from endoreg_db.views.video.ai import (
     FrameAnnotationBulkUpsertView,
+    FrameAnnotationRandomTaskView,
+    FrameAnnotationSkipView,
     LabelStudioWebhookReceiverView,
     label_list,
 )
@@ -146,6 +148,16 @@ urlpatterns = [
         "media/annotations/frames/bulk-upsert/",
         FrameAnnotationBulkUpsertView.as_view(),
         name="frame-annotations-bulk-upsert",
+    ),
+    path(
+        "media/annotations/frames/random-task/",
+        FrameAnnotationRandomTaskView.as_view(),
+        name="frame-annotations-random-task",
+    ),
+    path(
+        "media/annotations/frames/skip/",
+        FrameAnnotationSkipView.as_view(),
+        name="frame-annotations-skip",
     ),
     path(
         "media/annotations/frames/label-studio-webhook/",
