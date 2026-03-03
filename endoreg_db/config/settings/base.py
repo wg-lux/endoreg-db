@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 # Use centralized environment helpers
-from endoreg_db.config.env import env_bool, env_path
+from endoreg_db.config.env import env_bool, env_path, env_str
 
 
 # Small helper to coerce relative paths to absolute under BASE_DIR
@@ -16,6 +16,10 @@ BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 # Test assets directory (used in tests and utilities)
 ASSET_DIR = _abs_under_base("ASSET_DIR", "tests/assets")
 RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
+LABEL_STUDIO_WEBHOOK_SECRET = env_str("LABEL_STUDIO_WEBHOOK_SECRET", "")
+LABEL_STUDIO_INFORMATION_SOURCE_NAME = env_str(
+    "LABEL_STUDIO_INFORMATION_SOURCE_NAME", "manual_annotation"
+)
 
 # Internationalization
 LANGUAGE_CODE = "de"
@@ -129,6 +133,8 @@ __all__ = [
     "BASE_DIR",
     "ASSET_DIR",
     "RUN_VIDEO_TESTS",
+    "LABEL_STUDIO_WEBHOOK_SECRET",
+    "LABEL_STUDIO_INFORMATION_SOURCE_NAME",
     "TEMPLATES",
     "TEST_LOGGER_NAMES",
     "REST_FRAMEWORK",

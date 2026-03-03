@@ -194,15 +194,13 @@ class RawPdfFile(models.Model):
         Get the path to the raw report file, searching common locations.
 
         This method attempts to find the original raw report file by checking:
-        1. Direct hash-based path in raw_pdfs/
-        2. Scanning raw_pdfs/ directory for files matching the hash
-        3. Checking the file field if it exists
+        1. Checking the file field if it already points to a valid file
+        2. Direct hash-based path in import/report_import or sensitive_reports
+        3. Scanning canonical report directories for files matching the hash
 
         Returns:
             Path to raw file if it exists, None otherwise
         """
-        from django.conf import settings
-
         # Check if file field already points to a valid file
         if self.file and self.file.name:
             try:
@@ -213,13 +211,10 @@ class RawPdfFile(models.Model):
             except (ValueError, AttributeError, NotImplementedError):
                 pass
 
-        # Define potential raw directories
-        base_dir = Path(str(getattr(settings, "BASE_DIR", Path.cwd())))
+        # Canonical raw report lookup order.
         raw_dirs = [
-            SENSITIVE_REPORT_DIR,  # Files might be in sensitive dir
-            base_dir / "data" / "temporary_reports",
-            base_dir / "data" / "pdfs" / "raw",
             IMPORT_REPORT_DIR,  # General report directory
+            SENSITIVE_REPORT_DIR,  # Files might be in sensitive dir
         ]
 
         # Check direct hash-based name in each directory

@@ -17,8 +17,8 @@ class Command(BaseCommand):
     Start the file watcher service for automatic video and report processing.
     
     This command monitors:
-    - data/raw_videos/ for video files (.mp4, .avi, .mov, .mkv, .webm, .m4v)
-    - data/raw_pdfs/ for report files (.pdf)
+    - data/import/video_import/ for video files (.mp4, .avi, .mov, .mkv, .webm, .m4v)
+    - data/import/report_import/ for report files (.pdf)
     
     When files are detected, they are automatically processed with:
     - Video: Import, anonymization, and segmentation

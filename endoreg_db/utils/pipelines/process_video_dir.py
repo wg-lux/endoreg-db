@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # from endoreg_db.utils.pipelines.process_video_dir import process_video_dir
 # (video_dir=Path("/path/to/your/videos"))
 
-# DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data/raw_videos"
+# DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data/import/video_import"
 DEFAULT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data/study_data"
 CENTER_NAME = os.environ.get("CENTER_NAME", "university_hospital_wuerzburg")
 ENDOSCOPY_PROCESSOR_NAME = os.environ.get("ENDOSCOPY_PROCESSOR_NAME", "olympus_cv_1500")

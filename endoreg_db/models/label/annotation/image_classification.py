@@ -45,6 +45,12 @@ class ImageClassificationAnnotation(models.Model):
     value = models.BooleanField()
     float_value = models.FloatField(blank=True, null=True)
     annotator = models.CharField(max_length=255, blank=True, null=True)
+    external_annotation_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
     model_meta = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
@@ -74,6 +80,12 @@ class ImageClassificationAnnotation(models.Model):
         indexes = [
             models.Index(fields=["frame", "label"]),
             models.Index(fields=["frame"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["frame", "label", "information_source", "annotator"],
+                name="uniq_frame_label_source_annotator",
+            )
         ]
 
     def __str__(self) -> str:

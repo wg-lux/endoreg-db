@@ -1,8 +1,14 @@
 from .label import label_list, add_label, delete_label, update_label
+from .frame_annotations import (
+    FrameAnnotationBulkUpsertView,
+    LabelStudioWebhookReceiverView,
+)
 
 __all__ = [
     "label_list",
     "add_label",
     "delete_label",
     "update_label",
+    "FrameAnnotationBulkUpsertView",
+    "LabelStudioWebhookReceiverView",
 ]

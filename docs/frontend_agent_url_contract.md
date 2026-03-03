@@ -129,6 +129,7 @@ export const endpoints = {
     videoApplyMask: (pk: Id) => `media/videos/${pk}/apply-mask/`,
     videoRemoveFrames: (pk: Id) => `media/videos/${pk}/remove-frames/`,
     videoLabelsList: 'media/videos/labels/list/',
+    frameAnnotationsBulkUpsert: 'media/annotations/frames/bulk-upsert/',
 
     segmentsCollection: 'media/videos/segments/',
     segmentsStats: 'media/videos/segments/stats/',
