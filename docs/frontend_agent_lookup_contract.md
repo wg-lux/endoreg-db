@@ -34,6 +34,18 @@ If no valid graph prior is available, low-confidence/no-prior behavior is expect
 ## Endpoints
 Base viewset: `endoreg_db/views/requirement/lookup.py`
 
+### Lifecycle Contract
+Canonical flow:
+1. `POST /lookup/init/`
+2. `GET /lookup/{token}/all/` (or `GET /lookup/{token}/parts/?keys=...`)
+3. `PATCH /lookup/{token}/parts/` as user selections change
+4. `POST /lookup/{token}/recompute/` to refresh derived guidance
+
+Token-less fallback for recompute intent:
+- `POST /lookup/recompute/` with `patient_examination_id`
+- Backend re-initializes a lookup session server-side and returns normal recompute payload including a fresh `token`.
+
+### Endpoint Details
 1. `POST /lookup/init/`
 - Request: `patient_examination_id`, optional `user_tags`
 - Response: `{ "token": "<token>" }` (HTTP `201 Created`)
@@ -74,6 +86,10 @@ Base viewset: `endoreg_db/views/requirement/lookup.py`
   }
 }
 ```
+
+6. `POST /lookup/recompute/`
+- Request: `patient_examination_id`, optional `user_tags`
+- Response shape is identical to token-based recompute and includes a usable `token`.
 
 ## New Report Persistence Endpoints (Thread Additions)
 Base viewset: `endoreg_db/views/report/patient_examination_report.py`
@@ -328,10 +344,39 @@ Notes:
 - `markov_prior_service` remains stateless/read-only (no persistence).
 
 ## Error Handling
-- `404` on expired/missing token: call `init` again, then resume with new token.
-- `400` on invalid payload: validate request keys and value types before retry.
+Lookup endpoints now return standardized error payloads:
+```json
+{
+  "ok": false,
+  "error_code": "lookup_session_not_found",
+  "detail": "Lookup data not found or expired.",
+  "next_step": "Call POST /api/lookup/init/ with patient_examination_id and retry with the new token.",
+  "lifecycle": "recompute",
+  "lifecycle_contract": "init -> all/parts -> recompute",
+  "token": "optional-token-when-applicable"
+}
+```
+
+Error code usage:
+- `lookup_recompute_patient_examination_id_required` (`400`):
+  token-less recompute called without valid `patient_examination_id`.
+- `lookup_token_required` (`400`):
+  token-bound endpoint called without token context.
+- `lookup_parts_keys_required` (`400`):
+  parts GET called without `keys` query parameter.
+- `lookup_parts_invalid_updates` (`400`):
+  parts PATCH called without non-empty `updates`.
+- `lookup_session_not_found` (`404`):
+  token expired/missing in cache; re-init is required.
+- `lookup_data_unavailable_after_restart` (`404`):
+  restart recovery attempted but session data is still unavailable.
+
+Retry expectations:
+- If `lookup_session_not_found`: call `POST /lookup/init/`, then continue flow with returned token.
+- If token is not available in frontend state: call `POST /lookup/recompute/` with `patient_examination_id`.
 - Keep retry logic idempotent for `recompute`.
-- For report save:
+
+For report save:
 - `400` may indicate data-integrity issues (unknown finding/classification/intervention, version conflict), not guideline deviations.
 - Guideline deviations are returned in `warnings` / `requirement_guidance`, not as transport errors.
 
@@ -340,6 +385,11 @@ Notes:
 - Treat backend `updates` as partial patches, then merge into local state.
 - Never infer field names; use the contract constants/types.
 - Prefer strict schema checks at API boundary before mutating UI state.
+
+## Legacy Boundaries
+- Legacy declarations for lookup modules/docs live in:
+- `docs/lookup_legacy_status.md`
+- Frontend integrations should treat this document and `lookup.py` as canonical for current behavior.
 
 ## Thread Summary (Implemented)
 - `lx_dtypes` report-template schema extension:

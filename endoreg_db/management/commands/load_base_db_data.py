@@ -10,6 +10,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Display verbose output for all commands",
         )
+        parser.add_argument(
+            "--include-legacy-requirements",
+            action="store_true",
+            help="Include legacy requirement graph seed data (compatibility only).",
+        )
 
     def handle(self, *args, **options):
         # verbose = options['verbose']
@@ -45,12 +50,33 @@ class Command(BaseCommand):
         call_command("load_organ_data", stdout=out, verbose=verbose)
         call_command("load_contraindication_data", stdout=out, verbose=verbose)
         call_command("load_finding_data", stdout=out, verbose=verbose)
-        call_command("load_examination_indication_data", stdout=out, verbose=verbose)
+        # 1) Seed legacy YAML indication rows first so examination YAML can resolve FKs.
+        call_command(
+            "load_examination_indication_data",
+            stdout=out,
+            verbose=verbose,
+            source="yaml",
+        )
         call_command("load_examination_data", stdout=out, verbose=verbose)
+        # 2) Overlay with lx_dtypes terminology and sync examination->indication links.
+        call_command(
+            "load_examination_indication_data",
+            stdout=out,
+            verbose=verbose,
+            source="hybrid",
+        )
         call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
 
-        call_command("load_requirement_data", stdout=out, verbose=verbose)
+        if options.get("include_legacy_requirements", False):
+            call_command("load_requirement_data", stdout=out, verbose=verbose)
+        else:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Skipping load_requirement_data (legacy compatibility). "
+                    "Use --include-legacy-requirements to enable."
+                )
+            )
 
         # Load AI Model Data
         call_command("load_ai_model_label_data", stdout=out, verbose=verbose)

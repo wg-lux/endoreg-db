@@ -21,6 +21,7 @@ New durable docs added for this purpose:
 Examples in this repository root:
 - `docs/frontend_reporting_pages_design.md`
 - `docs/frontend_agent_lookup_contract.md`
+- `docs/lookup_legacy_status.md`
 - `docs/frontend_agent_url_contract.md`
 - `docs/handoff_report_pdf_renderer.md`
 - `docs/handoff_pypi_release.md`
@@ -32,4 +33,3 @@ Keep these while implementing. Remove or merge into wiki docs after rollout.
 - Reference `load_base_db_data` when documenting base dataset bootstrap flows.
 - API examples should use `snake_case` (no camelCase in contracts/docs).
 - Video/report heavy endpoints belong under `/api/media/...` in examples.
-

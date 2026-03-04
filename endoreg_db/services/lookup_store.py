@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Iterable, Optional, cast
+from typing import Any, Dict, Iterable, Mapping, Optional, cast
 
 from django.conf import settings
 from django.core.cache import cache
@@ -59,7 +59,9 @@ class LookupStore:
         return f"lookup:{self.token}"
 
     def init(
-        self, initial: Optional[Dict[str, Any]] = None, ttl: int = DEFAULT_TTL_SECONDS
+        self,
+        initial: Optional[Mapping[str, Any]] = None,
+        ttl: int = DEFAULT_TTL_SECONDS,
     ) -> str:
         """
         Initialize a new lookup session in cache.
@@ -101,7 +103,9 @@ class LookupStore:
         data = self.get_all()
         return {k: data.get(k) for k in keys}
 
-    def set_many(self, updates: Dict[str, Any], ttl: int = DEFAULT_TTL_SECONDS) -> None:
+    def set_many(
+        self, updates: Mapping[str, Any], ttl: int = DEFAULT_TTL_SECONDS
+    ) -> None:
         """
         Update multiple keys in the lookup session atomically.
 
@@ -150,7 +154,7 @@ class LookupStore:
         """
         cache.delete(self.cache_key)
 
-    def patch(self, updates: Dict[str, Any], ttl: int = DEFAULT_TTL_SECONDS) -> None:
+    def patch(self, updates: Mapping[str, Any], ttl: int = DEFAULT_TTL_SECONDS) -> None:
         """
         Update existing data with new values (alias for set_many).
 

@@ -83,6 +83,7 @@ export const endpoints = {
       return `lookup/${token}/parts/?keys=${encodeURIComponent(keys.join(','))}`
     },
     lookupRecompute: (token: Id) => `lookup/${token}/recompute/`,
+    lookupRecomputeWithoutToken: 'lookup/recompute/',
     evaluateRequirements: 'evaluate-requirements/'
   },
 

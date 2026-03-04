@@ -26,11 +26,14 @@ _prefer_repo_lx_dtypes()
 try:
     from lx_dtypes.models.knowledge_base.report_template import (
         LEGACY_LOOKUP_KEY_MAP,
+        LookupDerivedUpdatesDataDict,
         LookupInitRequest,
+        LookupRecomputeResponseDataDict,
         LookupPartsPatchRequest,
         LookupPartsResponse,
         LookupRecomputeResponse,
         LookupState,
+        LookupStateDataDict,
         RequirementSetSummary,
         ValidationError,
         build_lookup_recompute_response,
@@ -48,11 +51,14 @@ except Exception as exc:
 
 __all__ = [
     "LEGACY_LOOKUP_KEY_MAP",
+    "LookupDerivedUpdatesDataDict",
     "LookupInitRequest",
     "LookupPartsPatchRequest",
     "LookupPartsResponse",
     "LookupRecomputeResponse",
+    "LookupRecomputeResponseDataDict",
     "LookupState",
+    "LookupStateDataDict",
     "RequirementSetSummary",
     "ValidationError",
     "build_lookup_recompute_response",

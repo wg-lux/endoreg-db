@@ -4,6 +4,8 @@ from endoreg_db.views import (
     get_classifications_for_finding,
     get_classification_choices,
     get_classifications_for_examination,
+    get_indications_for_examination,
+    get_indication_choices,
     ExaminationCreateView,
     PatientExaminationDetailView,
     PatientExaminationListView,
@@ -24,6 +26,16 @@ urlpatterns = [  # URL patterns for ExaminationForm.vue API calls
         "classifications/<int:classification_id>/choices/",
         get_classification_choices,
         name="get_choices_for_classification",
+    ),
+    path(
+        "examinations/<int:exam_id>/indications/",
+        get_indications_for_examination,
+        name="get_indications_for_examination",
+    ),
+    path(
+        "indications/<int:indication_id>/choices/",
+        get_indication_choices,
+        name="get_indication_choices",
     ),
     # TODO: Clearly Distinguish between Examination (the template) and PatientExamination (the instance).
     # The views below handle PatientExamination instances, which represent a specific examination performed on a patient.

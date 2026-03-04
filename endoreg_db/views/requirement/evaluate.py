@@ -1,284 +1,225 @@
-from endoreg_db.models.requirement.requirement import Requirement
-from endoreg_db.views.requirement.requirement_utils import safe_evaluate_requirement
-from endoreg_db.models.requirement.requirement_set import RequirementSet
-from endoreg_db.models.requirement.requirement_evaluation.evaluate_with_dependencies import (
-    evaluate_requirement_sets_with_dependencies,  # if you export it there, otherwise re-declare in view
-)
-from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from __future__ import annotations
+
+import logging
+from typing import Any
+
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from rest_framework.decorators import permission_classes
-from rest_framework.permissions import IsAuthenticated
-
-
-import json
-import logging
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.services import lookup_service
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_requirement_set_ids(raw_value: Any) -> tuple[list[int] | None, str | None]:
+    if raw_value in (None, ""):
+        return None, None
+    if not isinstance(raw_value, list):
+        return None, "requirement_set_ids must be a list of positive integers"
+
+    parsed: list[int] = []
+    for item in raw_value:
+        try:
+            parsed_value = int(item)
+        except (TypeError, ValueError):
+            return None, "requirement_set_ids must be a list of positive integers"
+        if parsed_value <= 0:
+            return None, "requirement_set_ids must be a list of positive integers"
+        parsed.append(parsed_value)
+    return parsed, None
+
+
+def _to_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_response(
+    *,
+    ok: bool,
+    errors: list[str],
+    patient_examination_id: int | None,
+    sets_evaluated: int,
+    requirements_evaluated: int,
+    status_label: str,
+    results: list[dict[str, Any]],
+) -> Response:
+    return Response(
+        {
+            "ok": ok,
+            "errors": errors,
+            "meta": {
+                "patient_examination_id": patient_examination_id,
+                "sets_evaluated": sets_evaluated,
+                "requirements_evaluated": requirements_evaluated,
+                "status": status_label,
+            },
+            "results": results,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def evaluate_requirements(request):
     """
-    Evaluate requirements (all selected sets) and always return 200 with structured results.
+    Evaluate requirement guidance using the lookup service dtypes runtime.
+
+    Response contract is intentionally stable at top-level:
+    - ok: bool
+    - errors: list[str]
+    - meta: object
+    - results: list[object]
     """
     payload = request.data or {}
-    req_set_ids = payload.get("requirement_set_ids")
-    pe_id = payload.get("patient_examination_id")
-
-    results: list[dict] = []
     errors: list[str] = []
-    sets_evaluated = 0
-    requirements_evaluated = 0
+    results: list[dict[str, Any]] = []
 
-    # ---- basic validation (still 200 on failure)
-    if not pe_id:
-        msg = "patient_examination_id is required"
-        errors.append(msg)
-        logger.warning("evaluate_requirements: %s; payload=%s", msg, payload)
-        return Response(
-            {
-                "ok": False,
-                "errors": errors,
-                "meta": {
-                    "patientExaminationId": None,
-                    "setsEvaluated": 0,
-                    "requirementsEvaluated": 0,
-                    "status": "failed",
-                },
-                "results": [],
-            },
-            status=status.HTTP_200_OK,
+    selected_requirement_set_ids, req_set_id_error = _parse_requirement_set_ids(
+        payload.get("requirement_set_ids")
+    )
+    if req_set_id_error:
+        errors.append(req_set_id_error)
+
+    patient_examination_id = _to_int(payload.get("patient_examination_id"))
+    if patient_examination_id is None or patient_examination_id <= 0:
+        errors.append("patient_examination_id is required")
+
+    if errors:
+        return _build_response(
+            ok=False,
+            errors=errors,
+            patient_examination_id=patient_examination_id,
+            sets_evaluated=0,
+            requirements_evaluated=0,
+            status_label="failed",
+            results=[],
         )
 
-    # ---- fetch PatientExamination
     try:
-        pe = PatientExamination.objects.select_related("patient").get(id=pe_id)
+        pe = lookup_service.load_patient_exam_for_eval(patient_examination_id)
     except PatientExamination.DoesNotExist:
-        msg = f"PatientExamination with id {pe_id} does not exist"
-        errors.append(msg)
-        logger.warning("evaluate_requirements: %s", msg)
-        return Response(
-            {
-                "ok": False,
-                "errors": errors,
-                "meta": {
-                    "patientExaminationId": pe_id,
-                    "setsEvaluated": 0,
-                    "requirementsEvaluated": 0,
-                    "status": "failed",
-                },
-                "results": [],
-            },
-            status=status.HTTP_200_OK,
+        return _build_response(
+            ok=False,
+            errors=[
+                f"PatientExamination with id {patient_examination_id} does not exist"
+            ],
+            patient_examination_id=patient_examination_id,
+            sets_evaluated=0,
+            requirements_evaluated=0,
+            status_label="failed",
+            results=[],
         )
-    except Exception as e:
-        msg = f"Unexpected error retrieving PatientExamination {pe_id}: {e}"
-        errors.append(msg)
-        logger.exception("evaluate_requirements: %s", msg)
-        return Response(
-            {
-                "ok": False,
-                "errors": errors,
-                "meta": {
-                    "patientExaminationId": pe_id,
-                    "setsEvaluated": 0,
-                    "requirementsEvaluated": 0,
-                    "status": "failed",
-                },
-                "results": [],
-            },
-            status=status.HTTP_200_OK,
+    except Exception as exc:
+        logger.exception(
+            "evaluate_requirements: failed loading patient examination %s",
+            patient_examination_id,
+        )
+        return _build_response(
+            ok=False,
+            errors=[
+                f"Unexpected error retrieving PatientExamination {patient_examination_id}: {exc}"
+            ],
+            patient_examination_id=patient_examination_id,
+            sets_evaluated=0,
+            requirements_evaluated=0,
+            status_label="failed",
+            results=[],
         )
 
-    # ---- determine requirement sets
     try:
-        q = RequirementSet.objects.prefetch_related("requirements")
-        if req_set_ids:
-            q = q.filter(id__in=req_set_ids)
-
-        requirement_sets = list(q)
-        sets_evaluated = len(requirement_sets)
-
-        if req_set_ids and sets_evaluated == 0:
-            msg = f"No RequirementSets found for IDs: {req_set_ids}"
-            errors.append(msg)
-            logger.warning("evaluate_requirements: %s", msg)
-    except Exception as e:
-        msg = f"Error loading RequirementSets: {e}"
-        errors.append(msg)
-        logger.exception("evaluate_requirements: %s", msg)
-        return Response(
-            {
-                "ok": False,
-                "errors": errors,
-                "meta": {
-                    "patientExaminationId": pe_id,
-                    "setsEvaluated": 0,
-                    "requirementsEvaluated": 0,
-                    "status": "failed",
-                },
-                "results": [],
-            },
-            status=status.HTTP_200_OK,
+        guidance = lookup_service.evaluate_patient_exam_requirement_guidance(
+            pe,
+            selected_requirement_set_ids=selected_requirement_set_ids,
+        )
+    except Exception as exc:
+        logger.exception(
+            "evaluate_requirements: dtypes requirement guidance failed for pe=%s",
+            patient_examination_id,
+        )
+        return _build_response(
+            ok=False,
+            errors=[f"Requirement evaluation failed: {exc}"],
+            patient_examination_id=patient_examination_id,
+            sets_evaluated=0,
+            requirements_evaluated=0,
+            status_label="failed",
+            results=[],
         )
 
-    # nothing to evaluate → still return 200
-    if not requirement_sets:
-        response_payload = {
-            "ok": len(errors) == 0,
-            "errors": errors,
-            "meta": {
-                "patientExaminationId": pe_id,
-                "setsEvaluated": 0,
-                "requirementsEvaluated": 0,
-                "status": "failed" if errors else "ok",
-            },
-            "results": [],
-        }
-        return Response(response_payload, status=status.HTTP_200_OK)
+    requirements_by_set = guidance.get("requirements_by_set") or {}
+    requirement_status = guidance.get("requirement_status") or {}
+    suggested_actions = guidance.get("suggested_actions") or {}
 
-    # mapping from IDs to objects for later lookup
-    sets_by_id: dict[int, RequirementSet] = {s.id: s for s in requirement_sets}
+    selected_set_filter = set(selected_requirement_set_ids or [])
+    seen_set_ids: set[int] = set()
+    for set_id_raw, set_requirements in requirements_by_set.items():
+        set_id = _to_int(set_id_raw)
+        if set_id is None:
+            continue
+        if selected_set_filter and set_id not in selected_set_filter:
+            continue
+        seen_set_ids.add(set_id)
 
-    # ---- main evaluation with set dependencies
-    try:
-        # returns: { set_id: { req_id: (status, details) } }
-        set_results = evaluate_requirement_sets_with_dependencies(
-            requirement_sets,
-            pe.patient,
-            mode="strict",
-        )
+        if not isinstance(set_requirements, list):
+            continue
 
-        for set_id, req_dict in set_results.items():
-            req_set = sets_by_id.get(set_id)
-            set_name = (
-                getattr(req_set, "name", str(set_id))
-                if req_set is not None
-                else str(set_id)
+        for req in set_requirements:
+            if not isinstance(req, dict):
+                continue
+
+            requirement_id = _to_int(req.get("id"))
+            if requirement_id is None:
+                continue
+            requirement_key = str(requirement_id)
+            requirement_name = str(req.get("name") or f"#{requirement_id}")
+            met = bool(requirement_status.get(requirement_key, False))
+
+            detail = "Voraussetzung erfüllt" if met else "Voraussetzung nicht erfüllt"
+            if not met:
+                actions = suggested_actions.get(requirement_key) or []
+                if actions and isinstance(actions[0], dict):
+                    note = actions[0].get("note")
+                    if note:
+                        detail = str(note)
+
+            results.append(
+                {
+                    "requirement_set_id": set_id,
+                    "requirement_set_name": str(set_id),
+                    "requirement_name": requirement_name,
+                    "met": met,
+                    "details": detail,
+                    "error": None,
+                    "status": "PASSED" if met else "FAILED",
+                }
             )
 
-            for req_id, (status_value, details) in req_dict.items():
-                try:
-                    requirement_obj = Requirement.objects.get(id=req_id)
-                    req_name = getattr(requirement_obj, "name", f"#{req_id}")
-                except Requirement.DoesNotExist:
-                    requirement_obj = None
-                    req_name = f"#{req_id}"
+    sets_evaluated = len(seen_set_ids)
+    if selected_requirement_set_ids and sets_evaluated == 0:
+        errors.append(
+            f"No RequirementSets found for IDs: {selected_requirement_set_ids}"
+        )
 
-                # map RequirementStatus → met + error
-                if status_value == "PASSED":
-                    met = True
-                    error_str = None
-                elif status_value in ("FAILED", "BLOCKED"):
-                    met = False
-                    error_str = None
-                else:  # "ERROR"
-                    met = False
-                    error_str = "Technischer Fehler bei der Auswertung"
-
-                # normalize details to string
-                if isinstance(details, str):
-                    details_str = details
-                else:
-                    try:
-                        details_str = json.dumps(
-                            details, ensure_ascii=False, default=str
-                        )
-                    except Exception:
-                        details_str = str(details)
-
-                # default fallback text if details are empty
-                if not details_str:
-                    details_str = (
-                        "Voraussetzung erfüllt"
-                        if met
-                        else "Voraussetzung nicht erfüllt"
-                    )
-
-                if status_value == "ERROR":
-                    # add a high-level error for meta if there was an internal error
-                    msg = (
-                        f"Technischer Fehler bei der Auswertung von "
-                        f"Voraussetzung '{req_name}' in Set '{set_name}'."
-                    )
-                    errors.append(msg)
-
-                results.append(
-                    {
-                        "requirement_set_id": set_id,
-                        "requirement_set_name": set_name,
-                        "requirement_name": req_name,
-                        "met": bool(met),
-                        "details": details_str,
-                        "error": error_str,
-                        "status": status_value,
-                    }
-                )
-                requirements_evaluated += 1
-
-    except Exception as e:
-        # hard failure of the orchestrator → log and fall back to per-requirement evaluation
-        msg = f"Unerwarteter Fehler bei der gruppenbasierten Bewertung: {e}"
-        errors.append(msg)
-        logger.exception("evaluate_requirements: %s", msg)
-
-        for req_set in requirement_sets:
-            for req in req_set.requirements.all():
-                met, details, error = safe_evaluate_requirement(
-                    req, pe.patient, mode="strict"
-                )
-                # normalize details to string
-                if not isinstance(details, str):
-                    try:
-                        details = json.dumps(details, ensure_ascii=False, default=str)
-                    except Exception:
-                        details = str(details)
-
-                if not details:
-                    details = (
-                        "Voraussetzung erfüllt"
-                        if met
-                        else "Voraussetzung nicht erfüllt"
-                    )
-
-                results.append(
-                    {
-                        "requirement_set_id": req_set.id,
-                        "requirement_set_name": getattr(
-                            req_set, "name", str(req_set.id)
-                        ),
-                        "requirement_name": getattr(req, "name", "unknown"),
-                        "met": bool(met),
-                        "details": details,
-                        "error": error,
-                        "status": "PASSED" if met else "FAILED",
-                    }
-                )
-                requirements_evaluated += 1
-
-    # ---- response meta & status summary
-    any_errors = len(errors) > 0
-    if not requirement_sets:
-        status_label = "failed"
-    elif any_errors and len(results) > 0:
+    if errors and results:
         status_label = "partial"
+    elif errors:
+        status_label = "failed"
     else:
         status_label = "ok"
 
-    response_payload = {
-        "ok": not any_errors,
-        "errors": errors,
-        "meta": {
-            "patientExaminationId": pe_id,
-            "setsEvaluated": sets_evaluated,
-            "requirementsEvaluated": requirements_evaluated,
-            "status": status_label,
-        },
-        "results": results,
-    }
-
-    return Response(response_payload, status=status.HTTP_200_OK)
+    return _build_response(
+        ok=not errors,
+        errors=errors,
+        patient_examination_id=patient_examination_id,
+        sets_evaluated=sets_evaluated,
+        requirements_evaluated=len(results),
+        status_label=status_label,
+        results=results,
+    )

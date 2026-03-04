@@ -45,6 +45,14 @@ _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
         "endoreg_db.views.examination",
         "get_findings_for_examination",
     ),
+    "get_indication_choices": (
+        "endoreg_db.views.examination",
+        "get_indication_choices",
+    ),
+    "get_indications_for_examination": (
+        "endoreg_db.views.examination",
+        "get_indications_for_examination",
+    ),
     "get_instruments_for_examination": (
         "endoreg_db.views.examination",
         "get_instruments_for_examination",
@@ -212,6 +220,8 @@ __all__ = [
     "get_location_classifications_for_examination",
     "get_morphology_classifications_for_examination",
     "get_findings_for_examination",
+    "get_indications_for_examination",
+    "get_indication_choices",
     "get_instruments_for_examination",
     "get_interventions_for_examination",
     "FindingViewSet",

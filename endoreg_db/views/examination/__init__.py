@@ -11,6 +11,10 @@ from .get_finding_classifications import (
     get_morphology_classifications_for_examination,
 )
 from .get_findings import get_findings_for_examination
+from .get_indications import (
+    get_indication_choices,
+    get_indications_for_examination,
+)
 from .get_instruments import get_instruments_for_examination
 from .get_interventions import get_interventions_for_examination
 
@@ -25,6 +29,8 @@ __all__ = [
     "get_location_classifications_for_examination",
     "get_morphology_classifications_for_examination",
     "get_findings_for_examination",
+    "get_indications_for_examination",
+    "get_indication_choices",
     "get_instruments_for_examination",
     "get_interventions_for_examination",
 ]
