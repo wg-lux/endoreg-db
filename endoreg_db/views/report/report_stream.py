@@ -59,21 +59,59 @@ def _get_report_path(pdf_obj: RawPdfFile, file_type: str) -> Path:
     if not file_name:
         raise Http404("Report file reference is missing")
 
-    if str(file_name).startswith("/"):
-        path = Path(file_name)
+    # Canonical path resolution: prefer the storage-backed FieldFile.path.
+    try:
+        path = Path(file_field.path)
+        if path.exists():
+            return path.resolve()
+        logger.warning(
+            "Resolved %s report path via file_field.path but file is missing: %s",
+            file_type,
+            path,
+        )
+    except (NotImplementedError, AttributeError, ValueError, OSError) as exc:
+        logger.debug(
+            "Could not resolve %s report via file_field.path for %s: %s",
+            file_type,
+            file_name,
+            exc,
+        )
+
+    # Fallback: resolve from stored name (absolute or relative to STORAGE_DIR).
+    file_name_str = str(file_name)
+    if file_name_str.startswith("/"):
+        path = Path(file_name_str)
     else:
-        path = STORAGE_DIR / str(file_name)
+        path = STORAGE_DIR / file_name_str
 
     if not path.exists():
+        try:
+            exists_in_storage = file_field.storage.exists(file_name_str)
+        except Exception as exc:
+            logger.warning(
+                "Failed checking storage existence for %s report %s: %s",
+                file_type,
+                file_name_str,
+                exc,
+            )
+            exists_in_storage = False
+
+        if exists_in_storage:
+            logger.warning(
+                "%s report exists in storage backend but not as local path: %s",
+                file_type.capitalize(),
+                file_name_str,
+            )
+
         raise Http404(f"Report file not found on disk: {path}")
-    return path
+    return path.resolve()
 
 
 def _serve_with_nginx(
     path: Path, content_type: str, *, as_download: bool, filename: str
 ) -> Optional[HttpResponse]:
     try:
-        relative_path = path.relative_to(STORAGE_DIR)
+        relative_path = path.resolve().relative_to(STORAGE_DIR.resolve())
     except ValueError:
         logger.warning(
             "Report file %s is outside STORAGE_DIR %s; falling back to Python streaming",
