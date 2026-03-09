@@ -1,8 +1,11 @@
 import logging
+import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import cv2
+
+from endoreg_db.utils.video import ffmpeg_wrapper
 
 if TYPE_CHECKING:
     from ..video_file import VideoFile
@@ -28,6 +31,122 @@ def _validate_video_path(video_path: Path):
 logger = logging.getLogger(__name__)
 
 
+def _is_valid_fps(value: Any) -> bool:
+    try:
+        fps = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(fps) and fps > 0
+
+
+def _parse_frame_rate(frame_rate: Any) -> Optional[float]:
+    if frame_rate is None:
+        return None
+
+    if isinstance(frame_rate, (int, float)):
+        fps = float(frame_rate)
+        return fps if _is_valid_fps(fps) else None
+
+    if isinstance(frame_rate, str):
+        value = frame_rate.strip()
+        if not value:
+            return None
+        if "/" in value:
+            num_str, den_str = value.split("/", 1)
+            try:
+                numerator = float(num_str)
+                denominator = float(den_str)
+            except ValueError:
+                return None
+            if denominator == 0:
+                return None
+            fps = numerator / denominator
+            return fps if _is_valid_fps(fps) else None
+        try:
+            fps = float(value)
+        except ValueError:
+            return None
+        return fps if _is_valid_fps(fps) else None
+
+    return None
+
+
+def _get_fps_from_ffprobe(video_path: Path) -> Optional[float]:
+    stream_info = ffmpeg_wrapper.get_stream_info(video_path)
+    if not stream_info or "streams" not in stream_info:
+        return None
+
+    video_stream = next(
+        (s for s in stream_info["streams"] if s.get("codec_type") == "video"),
+        None,
+    )
+    if not isinstance(video_stream, dict):
+        return None
+
+    avg_rate = _parse_frame_rate(video_stream.get("avg_frame_rate"))
+    if avg_rate is not None:
+        return avg_rate
+
+    raw_rate = _parse_frame_rate(video_stream.get("r_frame_rate"))
+    if raw_rate is not None:
+        return raw_rate
+
+    return None
+
+
+def _resolve_video_path(video: "VideoFile") -> Optional[Path]:
+    try:
+        video_path = video.active_file_path
+        _validate_video_path(video_path)
+        return video_path
+    except Exception:
+        return None
+
+
+def _get_fps_from_video_file(video: "VideoFile") -> Optional[float]:
+    video_path = _resolve_video_path(video)
+    if video_path is None:
+        return None
+
+    ffprobe_fps = _get_fps_from_ffprobe(video_path)
+    if ffprobe_fps is not None:
+        return ffprobe_fps
+
+    cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
+    if not cap.isOpened():
+        logger.warning("Cannot open video file for FPS read: %s", video_path)
+        cap.release()
+        return None
+    try:
+        fps = _get_fps_from_property(cap)
+    finally:
+        cap.release()
+
+    if _is_valid_fps(fps):
+        return float(fps)
+
+    return None
+
+
+def _persist_video_fps(video: "VideoFile", fps: float) -> float:
+    fps_value = float(fps)
+
+    if _is_valid_fps(video.fps) and math.isclose(
+        float(cast(Any, video.fps)),
+        fps_value,
+        rel_tol=1e-6,
+        abs_tol=1e-6,
+    ):
+        setattr(video, "_fps_verified", True)
+        return fps_value
+
+    video.fps = fps_value
+    setattr(video, "_fps_verified", True)
+    if getattr(video, "pk", None) and not getattr(video, "_saving", False):
+        video.save(update_fields=["fps"])
+    return fps_value
+
+
 def _get_fps(video: "VideoFile") -> float:
     """
     Determine and return the frames per second (FPS) of a video associated with a VideoFile instance.
@@ -42,101 +161,62 @@ def _get_fps(video: "VideoFile") -> float:
     """
     from .video_meta import _update_video_meta
 
-    if video.fps is not None:
-        return video.fps
+    if getattr(video, "_fps_verified", False) and _is_valid_fps(video.fps):
+        return float(cast(Any, video.fps))
 
-    if getattr(video, "use_default_fps", False):
-        return video.ensure_default_fps()
+    file_fps = _get_fps_from_video_file(video)
+    if file_fps is not None:
+        logger.debug(
+            "Resolved FPS %.6f from active video file for %s.",
+            file_fps,
+            video.video_hash,
+        )
+        return _persist_video_fps(video, file_fps)
 
-    logger.debug("FPS not set on instance %s, checking VideoMeta.", video.video_hash)
+    if _is_valid_fps(video.fps):
+        logger.warning(
+            "Using cached FPS %.6f for %s because active file was unavailable.",
+            float(cast(Any, video.fps)),
+            video.video_hash,
+        )
+        return float(cast(Any, video.fps))
+
+    logger.debug("FPS not available on %s, checking VideoMeta.", video.video_hash)
 
     if not video.video_meta:
         logger.info("VideoMeta not linked for %s, attempting update.", video.video_hash)
+        try:
+            _update_video_meta(video, save_instance=True)
+        except Exception as exc:
+            logger.warning(
+                "VideoMeta update failed for %s while resolving FPS: %s",
+                video.video_hash,
+                exc,
+            )
 
-        _update_video_meta(video, save_instance=True)  # Call the helper function
-
-    # Check again after potential update
-    if video.fps is not None:
-        return video.fps
-    elif video.video_meta and video.video_meta.fps is not None:
+    meta_fps = getattr(getattr(video, "video_meta", None), "fps", None)
+    if _is_valid_fps(meta_fps):
         logger.info(
-            "Retrieved FPS %.2f from VideoMeta for %s.",
-            video.video_meta.fps,
+            "Retrieved FPS %.6f from VideoMeta for %s.",
+            float(cast(Any, meta_fps)),
             video.video_hash,
         )
-        _fps = video.video_meta.fps
-        try:
-            _fps = float(_fps)
-        except (TypeError, ValueError):
+        return _persist_video_fps(video, float(cast(Any, meta_fps)))
+
+    if getattr(video, "use_default_fps", False):
+        default_fps = float(video.ensure_default_fps())
+        if _is_valid_fps(default_fps):
             logger.warning(
-                "Invalid FPS value %.2f in VideoMeta for video %s.",
-                video.video_meta.fps,
+                "Falling back to default FPS %.6f for %s because no verifiable file FPS was found.",
+                default_fps,
                 video.video_hash,
             )
-            raise ValueError(
-                f"Could not determine FPS for video {video.video_hash} due to invalid VideoMeta FPS value."
-            )
-        video.fps = _fps
-        # Avoid saving if called from within the save method itself
-        if not getattr(video, "_saving", False):
-            video.save(update_fields=["fps"])
-        return _fps
-    else:
-        logger.warning(
-            "Could not determine FPS from VideoMeta for video %s. Trying direct raw file access.",
-            video.video_hash,
-        )
-        try:
-            if video.has_raw:
-                video_path = video.get_raw_file_path()  # Use helper
-                if video_path and video_path.exists():
-                    cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
-                    if not cap.isOpened():
-                        raise IOError(f"Cannot open video file: {video_path}")
-                    try:
-                        fps = _get_fps_from_property(cap)
+            return default_fps
 
-                        if fps is None or fps <= 0:
-                            # Reset video capture to the beginning for manual calculation
-                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                            fps = _calculate_fps_manually(cap, video_path)
-                    finally:
-                        cap.release()
-                    if fps and fps > 0:
-                        video.fps = fps
-                        logger.info(
-                            "Determined FPS %.2f directly from file for %s.",
-                            video.fps,
-                            video.video_hash,
-                        )
-                        if not getattr(video, "_saving", False):
-                            video.save(update_fields=["fps"])
-                        return fps
-                    else:
-                        logger.warning(
-                            "Could not determine a valid FPS for video file %s.",
-                            video_path,
-                        )
-                elif video_path:
-                    logger.warning(
-                        "Raw file path %s does not exist for direct FPS check.",
-                        video_path,
-                    )
-                else:
-                    logger.warning("Raw file path is None for direct FPS check.")
-            else:
-                logger.warning("Raw file not available for direct FPS check.")
-
-        except Exception as e:
-            logger.error(
-                "Error getting FPS directly from file %s: %s",
-                video.raw_file.name if video.has_raw else "N/A",
-                e,
-            )
-
-        raise ValueError(
-            f"Could not determine FPS for video {video.video_hash}. Ensure the video file is valid and accessible."
-        )
+    raise ValueError(
+        f"Could not determine FPS from the actual video file for {video.video_hash}. "
+        "Ensure the file exists and has valid stream metadata."
+    )
 
 
 # TODO Refactor to utils / check if similar function exists in utils
@@ -151,36 +231,3 @@ def _get_fps_from_property(cap: cv2.VideoCapture) -> float:
         float: The FPS value obtained from the video capture properties, or 0.0 if unavailable.
     """
     return cap.get(cv2.CAP_PROP_FPS)
-
-
-def _calculate_fps_manually(cap, video_path: Path) -> float:
-    """
-    Estimate the frames per second (FPS) of a video by reading all frames and dividing the total frame count by the elapsed time.
-
-    Parameters:
-        cap: An OpenCV video capture object positioned at the start of the video.
-        video_path (Path): Path to the video file, used for logging.
-
-    Returns:
-        float: The estimated FPS, or 0.0 if the duration is zero or calculation fails.
-    """
-    logger.warning(
-        f"Could not get a valid FPS for {video_path}. Trying to calculate manually."
-    )
-    # This is less accurate and slower
-    num_frames = 0
-    start_time = cv2.getTickCount()
-    while True:
-        ret, _ = cap.read()
-        if not ret:
-            break
-        num_frames += 1
-    end_time = cv2.getTickCount()
-    seconds = (end_time - start_time) / cv2.getTickFrequency()
-    if seconds > 0:
-        return num_frames / seconds
-
-    logger.error(
-        f"Manual FPS calculation failed for {video_path} due to zero duration."
-    )
-    return 0.0

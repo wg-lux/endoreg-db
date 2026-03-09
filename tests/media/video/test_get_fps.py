@@ -1,0 +1,87 @@
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from endoreg_db.models.media.video.video_file_meta.get_fps import _get_fps
+
+
+def _build_video(
+    *,
+    fps=None,
+    use_default_fps=False,
+):
+    return SimpleNamespace(
+        fps=fps,
+        use_default_fps=use_default_fps,
+        video_meta=None,
+        video_hash="video-hash-test",
+        pk=1,
+        _saving=False,
+        save=MagicMock(),
+        ensure_default_fps=MagicMock(return_value=50.0),
+    )
+
+
+def test_get_fps_prefers_file_based_value_over_cached_field():
+    video = _build_video(fps=50.0, use_default_fps=False)
+
+    with patch(
+        "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+        return_value=29.97,
+    ):
+        resolved_fps = _get_fps(video)
+
+    assert resolved_fps == 29.97
+    assert video.fps == 29.97
+    video.save.assert_called_once_with(update_fields=["fps"])
+    assert getattr(video, "_fps_verified", False) is True
+
+
+def test_get_fps_uses_cached_value_when_no_file_source():
+    video = _build_video(fps=25.0, use_default_fps=False)
+
+    with patch(
+        "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+        return_value=None,
+    ):
+        resolved_fps = _get_fps(video)
+
+    assert resolved_fps == 25.0
+    video.save.assert_not_called()
+
+
+def test_get_fps_uses_default_only_when_explicitly_enabled():
+    video = _build_video(fps=None, use_default_fps=True)
+
+    with (
+        patch(
+            "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+            return_value=None,
+        ),
+        patch(
+            "endoreg_db.models.media.video.video_file_meta.video_meta._update_video_meta",
+            return_value=None,
+        ),
+    ):
+        resolved_fps = _get_fps(video)
+
+    assert resolved_fps == 50.0
+    video.ensure_default_fps.assert_called_once()
+
+
+def test_get_fps_errs_when_no_file_and_no_fps_fallback():
+    video = _build_video(fps=None, use_default_fps=False)
+
+    with (
+        patch(
+            "endoreg_db.models.media.video.video_file_meta.get_fps._get_fps_from_video_file",
+            return_value=None,
+        ),
+        patch(
+            "endoreg_db.models.media.video.video_file_meta.video_meta._update_video_meta",
+            return_value=None,
+        ),
+    ):
+        with pytest.raises(ValueError, match="Could not determine FPS"):
+            _get_fps(video)

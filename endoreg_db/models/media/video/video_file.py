@@ -106,7 +106,7 @@ class VideoQuerySet(models.QuerySet):
 class VideoFile(models.Model):
     objects = VideoQuerySet.as_manager()
     default_fps = 50.0
-    use_default_fps = True
+    use_default_fps = False
     _default_fps_persisted_ids = set()
 
     raw_file = models.FileField(
