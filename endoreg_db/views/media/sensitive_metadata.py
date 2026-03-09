@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile, SensitiveMeta, VideoFile
 from endoreg_db.serializers.meta import (
     SensitiveMetaDetailSerializer,
@@ -22,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
-@permission_classes([EnvironmentAwarePermission])
-def get_sensitive_metadata_pk(request, pk: int, mediaType: str) -> Response:
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
+def get_sensitive_metadata_pk(request, pk: int, media_type: str) -> Response:
     """
     A route to get the sensitive meta pk for a media type quickly.
 
-    GET api/media/sensitive-media-id/<pk>/<str:mediaType>
+    GET api/media/sensitive-media-id/<pk>/<str:media_type>
 
     Args:
         request (_type_): _description_
@@ -37,7 +38,7 @@ def get_sensitive_metadata_pk(request, pk: int, mediaType: str) -> Response:
         Response | None: _description_
     """
 
-    if mediaType == "video":
+    if media_type == "video":
         video = get_object_or_404(VideoFile, pk=pk)
         if not video.sensitive_meta:
             return Response(
@@ -46,7 +47,7 @@ def get_sensitive_metadata_pk(request, pk: int, mediaType: str) -> Response:
             )
         sm_id = video.sensitive_meta.pk
         return Response({"sm": sm_id})
-    if mediaType == "pdf":
+    if media_type == "pdf":
         pdf = get_object_or_404(RawPdfFile, pk=pk)
         if not pdf.sensitive_meta:
             return Response(
@@ -56,29 +57,28 @@ def get_sensitive_metadata_pk(request, pk: int, mediaType: str) -> Response:
         sm_id = pdf.sensitive_meta.pk
         return Response({"sm": sm_id})
     return Response(
-        {"error": f"Unsupported mediaType '{mediaType}'"},
+        {"error": f"Unsupported media_type '{media_type}'"},
         status=status.HTTP_400_BAD_REQUEST,
     )
 
 
 @api_view(["GET", "PATCH"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 def video_sensitive_metadata(request, pk):
     """
     GET /api/media/videos/<pk>/sensitive-metadata/
     PATCH /api/media/videos/<pk>/sensitive-metadata/
 
     Get or update sensitive metadata for a video.
-    Video-scoped: Uses sensitive meta ID to locate related sensitive metadata.
+    Video-scoped: Uses video ID to locate related sensitive metadata.
     """
-    sensitive_meta = get_object_or_404(SensitiveMeta, pk=pk)
-
-    # Get related sensitive metadata
-    if not sensitive_meta:
+    video = get_object_or_404(VideoFile, pk=pk)
+    if not video.sensitive_meta:
         return Response(
             {"error": f"No sensitive metadata found for video {pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
+    sensitive_meta = video.sensitive_meta
 
     if request.method == "GET":
         serializer = SensitiveMetaDetailSerializer(sensitive_meta)
@@ -97,7 +97,7 @@ def video_sensitive_metadata(request, pk):
                 {
                     "message": "Sensitive metadata updated successfully",
                     "sensitive_meta": response_serializer.data,
-                    "video_id": pk,
+                    "video_id": video.pk,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -106,7 +106,7 @@ def video_sensitive_metadata(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 @transaction.atomic
 def video_sensitive_metadata_verify(request, pk):
     """
@@ -166,7 +166,7 @@ def video_sensitive_metadata_verify(request, pk):
 
 
 @api_view(["GET", "PATCH"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 def pdf_sensitive_metadata(request, pk):
     """
     GET /api/media/pdfs/<pk>/sensitive-metadata/
@@ -175,14 +175,13 @@ def pdf_sensitive_metadata(request, pk):
     Get or update sensitive metadata for a report.
     report-scoped: Uses report ID to locate related sensitive metadata.
     """
-    sensitive_meta = get_object_or_404(SensitiveMeta, pk=pk)
-
-    # Get related sensitive metadata
-    if not sensitive_meta:
+    pdf = get_object_or_404(RawPdfFile, pk=pk)
+    if not pdf.sensitive_meta:
         return Response(
             {"error": f"No sensitive metadata found for report {pk}"},
             status=status.HTTP_404_NOT_FOUND,
         )
+    sensitive_meta = pdf.sensitive_meta
 
     if request.method == "GET":
         serializer = SensitiveMetaDetailSerializer(sensitive_meta)
@@ -204,7 +203,7 @@ def pdf_sensitive_metadata(request, pk):
                 {
                     "message": "Sensitive metadata updated successfully",
                     "sensitive_meta": response_serializer.data,
-                    "pdf_id": pk,
+                    "pdf_id": pdf.pk,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -213,7 +212,7 @@ def pdf_sensitive_metadata(request, pk):
 
 
 @api_view(["POST"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 @transaction.atomic
 def pdf_sensitive_metadata_verify(request, pk):
     """
@@ -273,7 +272,7 @@ def pdf_sensitive_metadata_verify(request, pk):
 
 
 @api_view(["GET"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 def sensitive_metadata_list(request):
     """
     GET /api/media/sensitive-metadata/
@@ -335,7 +334,7 @@ def sensitive_metadata_list(request):
 
 
 @api_view(["GET"])
-@permission_classes([EnvironmentAwarePermission])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
 def pdf_sensitive_metadata_list(request):
     """
     GET /api/media/pdfs/sensitive-metadata/

@@ -94,6 +94,18 @@ ROUTE_RESOURCE = {
     "video-apply-mask": "video",
     "video-remove-frames": "video",
     "get_lvs_list": "video",
+    # report + sensitive metadata endpoints expose patient-linked data.
+    "pdf-list": "patient",
+    "pdf-detail": "patient",
+    "pdf-stream": "patient",
+    "patient-media-timeline": "patient",
+    "sm-pk": "patient",
+    "video-sensitive-metadata": "patient",
+    "video-sensitive-metadata-verify": "patient",
+    "pdf-sensitive-metadata": "patient",
+    "pdf-sensitive-metadata-verify": "patient",
+    "sensitive-metadata-list": "patient",
+    "pdf-sensitive-metadata-list": "patient",
     "anonymization_items_overview": "anonymization",
     # Add more mappings as your API grows
 }

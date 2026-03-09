@@ -6,6 +6,8 @@ from endoreg_db.views import (
     get_classifications_for_examination,
     get_indications_for_examination,
     get_indication_choices,
+    get_interventions_for_examination,
+    get_interventions_for_finding,
     ExaminationCreateView,
     PatientExaminationDetailView,
     PatientExaminationListView,
@@ -66,5 +68,15 @@ urlpatterns = [  # URL patterns for ExaminationForm.vue API calls
         "patient-examinations/<int:examination_id>/findings/",
         get_findings_for_examination,
         name="get_patient_examination_findings",
+    ),
+    path(
+        "examinations/<int:exam_id>/interventions/",
+        get_interventions_for_examination,
+        name="get_interventions_for_examination",
+    ),
+    path(
+        "examinations/<int:exam_id>/findings/<int:finding_id>/interventions/",
+        get_interventions_for_finding,
+        name="get_interventions_for_finding",
     ),
 ]

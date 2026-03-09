@@ -46,9 +46,4 @@ url_patterns = [
     # GET /api/stats/
     # Liefert allgemeine Übersichtsstatistiken für das Dashboard
     path("stats/", GeneralStatsView.as_view(), name="general_stats"),
-    path(
-        "video-segments/stats/",
-        VideoSegmentStatsView.as_view(),
-        name="video_segments_stats",
-    ),
 ]

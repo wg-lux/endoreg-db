@@ -21,6 +21,7 @@ from django.http import FileResponse, Http404, StreamingHttpResponse, HttpRespon
 from rest_framework.views import APIView
 
 from ...models import VideoFile
+from ...authz.permissions import PolicyPermission
 from ...utils.permissions import EnvironmentAwarePermission
 from ...utils.paths import STORAGE_DIR
 
@@ -250,7 +251,7 @@ class VideoStreamView(APIView):
     - Dual file type support (raw/processed)
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def get(self, request, pk=None):
         if pk is None:

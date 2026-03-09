@@ -11,6 +11,7 @@ from django.views.decorators.clickjacking import (
 )
 from rest_framework.views import APIView
 
+from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.paths import STORAGE_DIR
 
@@ -146,7 +147,7 @@ class ReportStreamView(APIView):
         GET /api/media/pdf/1/?type=processed - Stream processed report
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     @xframe_options_exempt
     def get(self, request, pk: int, *args, **kwargs):

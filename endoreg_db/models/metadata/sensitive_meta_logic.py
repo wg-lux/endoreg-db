@@ -998,6 +998,10 @@ def update_sensitive_meta_from_dict(
                         setattr(instance, "examination_time", val.time())
                 except Exception as e:
                     logger.warning(f"Skipping invalid examination_time '{val}': {e}")
+                    # selected_data is initialized from `data`, so it may still carry the
+                    # original raw string (e.g. "51:16"). Remove it to avoid later
+                    # setattr(instance, "examination_time", raw_invalid_value).
+                    selected_data.pop("examination_time", None)
 
     # Update other attributes from selected_data
     patient_name_changed = False

@@ -152,6 +152,7 @@ class TestAnonymizationValidateView:
             "casenumber": "12345",
             "anonymized_text": "Anonymized report content",
             "file_type": "pdf",
+            "document_type": "report_final",
         }
 
         with patch.object(

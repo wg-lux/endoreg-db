@@ -82,8 +82,8 @@ router.register(r"patient-examination-reports", PatientExaminationReportViewSet)
 # Export raw API urlpatterns (no prefix). The project-level endoreg_db/urls.py mounts these under /api/.
 urlpatterns: list[URLPattern | URLResolver] = [
     path("auth/bootstrap", auth_bootstrap, name="auth-bootstrap"),
-    path("", include(router.urls)),
     path("", include(api_urls)),
+    path("", include(router.urls)),
 ]
 
 if django_settings.DEBUG:

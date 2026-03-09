@@ -18,6 +18,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import file_exists
@@ -55,7 +56,7 @@ class PdfMediaView(APIView):
     - Error handling with proper HTTP status codes
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     @staticmethod
     def _resolved_anonymized_text(pdf: RawPdfFile) -> str | None:

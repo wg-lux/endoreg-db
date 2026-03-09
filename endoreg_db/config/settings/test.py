@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from endoreg_db.config.env import env_bool, env_str
 
@@ -22,10 +23,13 @@ DB_HOST = env_str("TEST_DB_HOST", "")
 DB_PORT = env_str("TEST_DB_PORT", "")
 
 # Build DB config without redundant conditionals and avoid passing empty creds
-_db_config = {
+_db_config: dict[str, Any] = {
     "ENGINE": DB_ENGINE,
     "NAME": DB_NAME,
 }
+if DB_ENGINE.endswith("sqlite3"):
+    # Reduce flaky "database is locked" failures with reused file-backed test DBs.
+    _db_config["OPTIONS"] = {"timeout": 30}
 if not DB_ENGINE.endswith("sqlite3"):
     if DB_USER:
         _db_config["USER"] = DB_USER

@@ -43,9 +43,10 @@ def disable_faker_logging():
 # Call this immediately to suppress faker logging
 disable_faker_logging()
 
-# Ensure the project root is in the Python path
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# Ensure the repository root is in the Python path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Configure pytest-django to use our test settings
 os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"

@@ -8,10 +8,24 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.models import AnonymExaminationReport, Patient, RawPdfFile, VideoFile
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.models import (
+    AnonymExaminationReport,
+    Frame,
+    LabelVideoSegment,
+    Patient,
+    RawPdfFile,
+    VideoFile,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
+
+
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _make_aware_if_needed(value: datetime) -> datetime:
@@ -50,6 +64,47 @@ def _patient_ref(patient_obj: Any) -> dict[str, Any] | None:
         "last_name": getattr(patient_obj, "last_name", None),
         "dob": _safe_iso(getattr(patient_obj, "dob", None)),
     }
+
+
+def _segment_category(segment: LabelVideoSegment) -> str | None:
+    label_name = (getattr(getattr(segment, "label", None), "name", "") or "").lower()
+    patient_findings = list(segment.patient_findings.all())
+    finding_names = [
+        (getattr(getattr(pf, "finding", None), "name", "") or "").lower()
+        for pf in patient_findings
+    ]
+    has_polyp = ("polyp" in label_name) or any(
+        "polyp" in name for name in finding_names
+    )
+    if has_polyp:
+        return "polyp"
+
+    has_intervention_label = "intervention" in label_name
+    has_active_intervention = any(
+        intervention.is_active
+        for pf in patient_findings
+        for intervention in pf.interventions.all()
+    )
+    if has_intervention_label or has_active_intervention:
+        return "intervention"
+
+    if patient_findings:
+        return "other_findings"
+
+    return None
+
+
+def _segment_preferred_frame_number(segment: LabelVideoSegment) -> int | None:
+    try:
+        start_n = int(segment.start_frame_number)
+        end_n = int(segment.end_frame_number)
+    except (TypeError, ValueError):
+        return None
+
+    # Segment ranges are [start, end), so the latest valid frame is end-1.
+    if end_n <= start_n:
+        return None
+    return max(start_n, end_n - 1)
 
 
 def _report_timestamp(
@@ -110,10 +165,37 @@ class PatientMediaTimelineView(APIView):
     """
     Combined media timeline for a patient.
 
-    GET /api/media/patients/<patient_id>/timeline/
+    Endpoint:
+        GET /api/media/patients/<patient_id>/timeline/
+
+    Query parameters:
+        - patient_examination_id (int, optional):
+            Restrict report/pdf/video items to one patient examination.
+        - latest_only (bool-ish, optional):
+            If true (1/true/yes/on), returns a compact reporting payload:
+                {
+                  "patient": {...},
+                  "latest_report": {...} | null,
+                  "latest_video": {...} | null,
+                  "latest_frames": [ ... up to 3 ... ]
+                }
+
+    latest_only selection behavior:
+        - latest_report: newest item among media_type in {"pdf", "full_report"}.
+        - latest_video: newest item with media_type == "video".
+        - latest_frames:
+            Prefer one frame per category (if available) from mapped segments:
+              1) polyp
+              2) intervention
+              3) other_findings
+            Remaining slots are filled with newest frame numbers from Frame rows.
+
+    Stream fields for frontend reporting pages:
+        - report/video items include `stream_options` with raw + processed URLs.
+        - frame entries include `stream_url`.
     """
 
-    permission_classes = [EnvironmentAwarePermission]
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     def get(self, request, patient_id: int):
         try:
@@ -122,6 +204,7 @@ class PatientMediaTimelineView(APIView):
             raise Http404(f"Patient with ID {patient_id} not found")
 
         pe_filter_raw = request.query_params.get("patient_examination_id")
+        latest_only = _is_truthy(request.query_params.get("latest_only"))
         pe_filter_id: int | None = None
         if pe_filter_raw not in (None, ""):
             try:
@@ -208,6 +291,24 @@ class PatientMediaTimelineView(APIView):
                         )
                         if value is not None
                     ],
+                    "stream_options": (
+                        [
+                            {
+                                "type": "raw",
+                                "url": request.build_absolute_uri(
+                                    f"/api/media/pdfs/{raw_pdf_id}/stream/?type=raw"
+                                ),
+                            },
+                            {
+                                "type": "processed",
+                                "url": request.build_absolute_uri(
+                                    f"/api/media/pdfs/{raw_pdf_id}/stream/?type=processed"
+                                ),
+                            },
+                        ]
+                        if raw_pdf_id is not None
+                        else []
+                    ),
                 }
             )
 
@@ -285,6 +386,20 @@ class PatientMediaTimelineView(APIView):
                         )
                         if value is not None
                     ],
+                    "stream_options": [
+                        {
+                            "type": "raw",
+                            "url": request.build_absolute_uri(
+                                f"/api/media/pdfs/{pdf.pk}/stream/?type=raw"
+                            ),
+                        },
+                        {
+                            "type": "processed",
+                            "url": request.build_absolute_uri(
+                                f"/api/media/pdfs/{pdf.pk}/stream/?type=processed"
+                            ),
+                        },
+                    ],
                 }
             )
 
@@ -355,6 +470,20 @@ class PatientMediaTimelineView(APIView):
                         )
                         if value is not None
                     ],
+                    "stream_options": [
+                        {
+                            "type": "raw",
+                            "url": request.build_absolute_uri(
+                                f"/api/media/videos/{video.pk}/stream/?type=raw"
+                            ),
+                        },
+                        {
+                            "type": "processed",
+                            "url": request.build_absolute_uri(
+                                f"/api/media/videos/{video.pk}/stream/?type=processed"
+                            ),
+                        },
+                    ],
                 }
             )
 
@@ -375,6 +504,117 @@ class PatientMediaTimelineView(APIView):
             return (0, _make_aware_if_needed(datetime.min), int(item.get("id") or 0))
 
         items.sort(key=_sort_key, reverse=True)
+
+        if latest_only:
+            latest_report = next(
+                (
+                    item
+                    for item in items
+                    if item.get("media_type") in {"pdf", "full_report"}
+                ),
+                None,
+            )
+            latest_video = next(
+                (item for item in items if item.get("media_type") == "video"),
+                None,
+            )
+
+            latest_frames: list[dict[str, Any]] = []
+            latest_video_id = (
+                latest_video.get("id") if isinstance(latest_video, dict) else None
+            )
+            if isinstance(latest_video_id, int):
+                seen_frame_numbers: set[int] = set()
+
+                segment_qs = (
+                    LabelVideoSegment.objects.filter(video_file_id=latest_video_id)
+                    .select_related("label")
+                    .prefetch_related(
+                        "patient_findings",
+                        "patient_findings__finding",
+                        "patient_findings__interventions",
+                    )
+                    .order_by("-start_frame_number", "-id")
+                )
+
+                prioritized_segments: dict[str, LabelVideoSegment] = {}
+                for segment in segment_qs:
+                    category = _segment_category(segment)
+                    if category and category not in prioritized_segments:
+                        prioritized_segments[category] = segment
+                    if len(prioritized_segments) == 3:
+                        break
+
+                for category in ("polyp", "intervention", "other_findings"):
+                    selected_segment = prioritized_segments.get(category)
+                    if selected_segment is None:
+                        continue
+                    frame_number = _segment_preferred_frame_number(selected_segment)
+                    if frame_number is None or frame_number in seen_frame_numbers:
+                        continue
+                    seen_frame_numbers.add(frame_number)
+                    latest_frames.append(
+                        {
+                            "id": None,
+                            "video_id": latest_video_id,
+                            "frame_number": frame_number,
+                            "timestamp": None,
+                            "category": category,
+                            "selection_source": "segment_priority",
+                            "segment_id": selected_segment.pk,
+                            "segment_label": getattr(
+                                selected_segment.label, "name", None
+                            ),
+                            "stream_url": request.build_absolute_uri(
+                                f"/api/media/videos/{latest_video_id}/frames/{frame_number}/stream/"
+                            ),
+                        }
+                    )
+
+                remaining = 3 - len(latest_frames)
+                if remaining > 0:
+                    frame_qs = (
+                        Frame.objects.filter(video_id=latest_video_id)
+                        .order_by("-frame_number")
+                        .only("id", "video_id", "frame_number", "timestamp")
+                    )[:12]
+                    for frame in frame_qs:
+                        if frame.frame_number in seen_frame_numbers:
+                            continue
+                        latest_frames.append(
+                            {
+                                "id": frame.pk,
+                                "video_id": frame.video_id,
+                                "frame_number": frame.frame_number,
+                                "timestamp": frame.timestamp,
+                                "category": "fallback_latest",
+                                "selection_source": "latest_frame",
+                                "stream_url": request.build_absolute_uri(
+                                    f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+                                ),
+                            }
+                        )
+                        seen_frame_numbers.add(frame.frame_number)
+                        if len(latest_frames) >= 3:
+                            break
+
+            return Response(
+                {
+                    "patient": {
+                        "id": patient.pk,
+                        "first_name": patient.first_name,
+                        "last_name": patient.last_name,
+                        "dob": _safe_iso(patient.dob),
+                        "is_real_person": bool(
+                            getattr(patient, "is_real_person", True)
+                        ),
+                        "patient_hash": getattr(patient, "patient_hash", None),
+                    },
+                    "latest_report": latest_report,
+                    "latest_video": latest_video,
+                    "latest_frames": latest_frames,
+                }
+            )
 
         return Response(
             {

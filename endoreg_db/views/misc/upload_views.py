@@ -131,7 +131,7 @@ class UploadFileView(APIView):
                     process_upload_job.delay(str(upload_job.id))
                 except Exception as e:
                     # If Celery task fails to start, mark job as failed
-                    upload_job.mark_failed(f"Failed to start processing: {str(e)}")
+                    upload_job.mark_error(f"Failed to start processing: {str(e)}")
                     return Response(
                         {"error": f"Failed to start processing: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -168,8 +168,76 @@ export const endpoints = {
     // Inline view by default. Add query params manually for mode control:
     // ?type=raw|processed&download=1 (download forces attachment)
     pdfStream: (pk: Id) => `media/pdfs/${pk}/stream/`,
+    pdfExportProcessed: (pk: Id) => `media/pdfs/${pk}/stream/?type=processed&download=1`,
+    pdfExportRaw: (pk: Id) => `media/pdfs/${pk}/stream/?type=raw&download=1`,
     pdfReimport: (pk: Id) => `media/pdfs/${pk}/reimport/`
   }
 } as const
 
 export type ApiEndpoints = typeof endpoints
+
+## Patient Timeline Reporting Payload
+
+`GET /api/media/patients/{patient_id}/timeline/` supports:
+
+- `patient_examination_id=<int>`: scope timeline items to one examination.
+- `latest_only=true`: compact payload for reporting pages.
+
+When `latest_only=true`, backend returns:
+
+```json
+{
+  "patient": {
+    "id": 123,
+    "first_name": "...",
+    "last_name": "...",
+    "dob": "...",
+    "is_real_person": false,
+    "patient_hash": "..."
+  },
+  "latest_report": {
+    "media_type": "pdf|full_report",
+    "id": 1,
+    "anonymized_text": "...",
+    "stream_options": [
+      { "type": "raw", "url": "/api/media/pdfs/1/stream/?type=raw" },
+      { "type": "processed", "url": "/api/media/pdfs/1/stream/?type=processed" }
+    ]
+  },
+  "latest_video": {
+    "media_type": "video",
+    "id": 99,
+    "stream_options": [
+      { "type": "raw", "url": "/api/media/videos/99/stream/?type=raw" },
+      { "type": "processed", "url": "/api/media/videos/99/stream/?type=processed" }
+    ]
+  },
+  "latest_frames": [
+    {
+      "video_id": 99,
+      "frame_number": 120,
+      "category": "polyp|intervention|other_findings|fallback_latest",
+      "selection_source": "segment_priority|latest_frame",
+      "stream_url": "/api/media/videos/99/frames/120/stream/"
+    }
+  ]
+}
+```
+
+Frame selection priority in `latest_only`:
+1. `polyp`
+2. `intervention`
+3. `other_findings`
+4. fallback to newest frames if fewer than 3 categorized frames are available.
+
+## Case Generator and Export Availability
+
+- Case generator:
+  - currently script-based (`scripts/case_generator/prototype.py`)
+  - no public REST endpoint exposed yet for frontend use.
+
+- Report export:
+  - use `media.pdfExportProcessed(pk)` (preferred) or `media.pdfExportRaw(pk)` for forced file download.
+
+- Annotation/media export:
+  - `POST /api/media/videos/export-annotated/` via `media.exportAnnotated`.

@@ -240,7 +240,7 @@ class LabelVideoSegmentModelTest(TestCase):
         """
         Tests that the segment's duration in seconds is correctly calculated based on its frame range and the video's FPS.
         """
-        expected_fps = self.video_file.fps
+        expected_fps = self.video_file.get_fps()
 
         expected_duration = (
             self.segment.end_frame_number - self.segment.start_frame_number
@@ -369,6 +369,7 @@ class LabelVideoSegmentModelTest(TestCase):
         self.assertIn("end_frame_number", data)
 
         label = self.segment.label
+        assert label is not None
 
         self.assertEqual(data["label_id"], label.pk)
 
@@ -378,6 +379,7 @@ class LabelVideoSegmentModelTest(TestCase):
         Tests whether the serializer can create a new segment with the correct fields.
         """
         label = Label.objects.first()
+        assert label is not None
         label_id = label.pk
         frame_count = self.video_file.frame_count
         data = {
@@ -407,15 +409,17 @@ class LabelVideoSegmentModelTest(TestCase):
         from rest_framework import serializers
 
         label = Label.objects.first()
+        assert isinstance(label, Label)
         label_id = label.pk
         frame_count = (
             self.video_file.frame_count + 10
         )  # Intentionally exceed frame count
+        fps = self.video_file.get_fps()
         data = {
             "video_id": self.video_file.pk,
             "label_id": label_id,
             "start_time": 0,
-            "end_time": frame_count / self.video_file.fps,
+            "end_time": frame_count / fps,
         }
         serializer = LabelVideoSegmentSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)

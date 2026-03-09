@@ -441,12 +441,10 @@ def reset_processing_status(request, file_id: int):
         try:
             video = VideoFile.objects.get(id=file_id)
 
-            # Reset to 'not_started' state
-            not_started_state, created = VideoState.objects.get_or_create(
-                name="not_started"
-            )
-            video.state = not_started_state
-            video.save()
+            if video.state is None:
+                video.state = VideoState.objects.create()
+                video.save(update_fields=["state"])
+            video.state.mark_processing_not_started()
 
             return Response(
                 {

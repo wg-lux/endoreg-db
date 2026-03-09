@@ -62,7 +62,7 @@ urlpatterns = [
         name="patient-media-timeline",
     ),
     path(
-        "media/sensitive-media-id/<int:pk>/<str:mediaType>/",
+        "media/sensitive-media-id/<int:pk>/<str:media_type>/",
         get_sensitive_metadata_pk,
         name="sm-pk",
     ),
