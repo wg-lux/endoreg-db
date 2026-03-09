@@ -24,6 +24,7 @@ from endoreg_db.views.report.report_stream import ReportStreamView
 from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
     VideoReimportView,
+    VideoFpsView,
     export_annotated_data,
     video_segment_detail,
     video_segment_validate,
@@ -120,6 +121,11 @@ urlpatterns = [
         "media/videos/<int:pk>/metadata/",
         VideoMetadataStatsView.as_view(),
         name="video-metadata",
+    ),
+    path(
+        "media/videos/<int:pk>/fps/",
+        VideoFpsView.as_view(),
+        name="video-fps",
     ),
     # Video Analysis API
     # POST /api/media/videos/<int:pk>/analyze/

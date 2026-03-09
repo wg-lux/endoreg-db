@@ -3,10 +3,9 @@ import sys
 from pathlib import Path
 
 from django.core.management import BaseCommand
-from icecream import ic
 
 from endoreg_db.helpers.data_loader import load_data
-from endoreg_db.models import PdfType, RawPdfFile
+from endoreg_db.services.report_import import ReportImportService
 
 
 # python manage.py import_report tests/assets/lux-gastro-report.pdf --verbose --start_ollama
@@ -38,7 +37,7 @@ local_version_available = ensure_local_lx_anonymizer()
 
 # Now import from lx_anonymizer
 try:
-    from lx_anonymizer.ollama.ollama_service import ollama_service
+    from lx_anonymizer.ollama.ollama_service import init_ollama_service
 except ImportError:
     print("Could not import init_ollama_service from local or installed lx_anonymizer")
     raise
@@ -48,7 +47,7 @@ class Command(BaseCommand):
     """Management Command to import a report file to the database"""
 
     help = """
-        Imports a .pdf file to the database.
+        Imports a report file (.pdf or .txt) to the database.
         1. Get center by center name from db (default: university_hospital_wuerzburg)
     """
 
@@ -241,7 +240,7 @@ class Command(BaseCommand):
                             )
 
                     # Start the service with explicit initialization
-                    ollama_service(auto_start=True)
+                    init_ollama_service(auto_start=True)
                     self.stdout.write(
                         self.style.SUCCESS("Ollama service initialized successfully")
                     )
@@ -267,80 +266,52 @@ class Command(BaseCommand):
             report_dir_root = Path(report_dir_root).expanduser()
             report_dir_root.mkdir(parents=True, exist_ok=True)
 
-            # Create the report file object
+            if save:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "--save is deprecated and ignored; the central service always persists."
+                    )
+                )
+
+            # Use the central report import service
             self.stdout.write(
-                self.style.SUCCESS(f"Creating RawPdfFile object from {file_path}...")
+                self.style.SUCCESS(
+                    f"Importing report via ReportImportService from {file_path}..."
+                )
             )
-            report_file_obj = RawPdfFile.create_from_file(
+            report_file_obj = ReportImportService().import_and_anonymize(
                 file_path=file_path,
                 center_name=center_name,
                 delete_source=delete_source,
-                save=save,
+                retry=False,
             )
             if not report_file_obj:
-                self.stdout.write(
-                    self.style.ERROR("Failed to create RawPdfFile object.")
-                )
+                self.stdout.write(self.style.ERROR("Failed to import report."))
                 return
+            report_file_obj.refresh_from_db()
 
-            report_file_obj.anonymized = False
-
-            # Assign pdfType to the report file object
-            if "report" in file_path.name:
-                pdf_type_name = "ukw-endoscopy-examination-report-generic"
-            elif "histo" in file_path.name:
-                pdf_type_name = "ukw-endoscopy-histology-report-generic"
-            elif "AW_PA" in file_path.name:
-                pdf_type_name = "rkh-endoscopy-histology-report-generic"
-            elif "AW" in file_path.name:
-                pdf_type_name = "rkh-endoscopy-examination-report-generic"
-            else:
-                raise ValueError(f"Unknown report type: {file_path.name}")
-
-            self.stdout.write(self.style.SUCCESS(f"Using report type: {pdf_type_name}"))
-            try:
-                pdf_type = PdfType.objects.get(name=pdf_type_name)
-            except PdfType.DoesNotExist:
+            text_len = len(report_file_obj.text or "")
+            anonymized_text_len = len(report_file_obj.anonymized_text or "")
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Imported report id={report_file_obj.pk} hash={report_file_obj.pdf_hash}"
+                )
+            )
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "Import summary: "
+                    f"text_len={text_len}, "
+                    f"anonymized_text_len={anonymized_text_len}, "
+                    f"sensitive_meta_id={getattr(report_file_obj.sensitive_meta, 'pk', None)}"
+                )
+            )
+            if verbose:
                 self.stdout.write(
-                    self.style.ERROR(
-                        f"PdfType with name '{pdf_type_name}' does not exist."
+                    self.style.SUCCESS(
+                        f"Stored file={getattr(report_file_obj.file, 'name', None)} "
+                        f"processed_file={getattr(report_file_obj.processed_file, 'name', None)}"
                     )
                 )
-                return
-            report_file_obj.pdf_type = pdf_type
-
-            rr_config = report_file_obj.get_report_reader_config()
-            pdf_path = report_file_obj.file.path
-
-            # Import at this point to avoid initializing the module too early
-            from lx_anonymizer import ReportReader
-
-            self.stdout.write(self.style.SUCCESS("Creating ReportReader..."))
-            rr = ReportReader(**rr_config)
-
-            self.stdout.write(self.style.SUCCESS(f"Processing report: {pdf_path}"))
-            text, anonymized_text, report_meta = rr.process_report(
-                pdf_path, verbose=verbose
-            )
-
-            if verbose:
-                ic(text, anonymized_text, report_meta)
-
-            self.stdout.write(self.style.SUCCESS("Processing file..."))
-            report_file_obj.process_file(
-                text, anonymized_text, report_meta, verbose=verbose
-            )
-
-            sensitive_meta = report_file_obj.sensitive_meta
-            if verbose:
-                ic(report_file_obj.sensitive_meta)
-
-            self.stdout.write(self.style.SUCCESS("Saving..."))
-            sensitive_meta.save()
-            if verbose:
-                ic(sensitive_meta)
-
-            report_file_obj.state.anonymization_status.mark_anonymized()
         finally:
             # Clean up Ollama process if we started it
             if ollama_proc is not None:

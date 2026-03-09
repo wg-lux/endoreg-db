@@ -10,6 +10,7 @@ from ..media.video_media import VideoMediaView
 from .reimport import VideoReimportView
 from .video_stream import VideoStreamView
 from .video_examination_viewset import VideoExaminationViewSet
+from .video_fps import VideoFpsView
 from .video_metadata import VideoMetadataStatsView
 from .export_annotated import export_annotated_data
 
@@ -35,6 +36,7 @@ __all__ = [
     "VideoApplyMaskView",
     "VideoRemoveFramesView",
     "VideoMetadataStatsView",
+    "VideoFpsView",
     "VideoMediaView",
     "VideoCorrectionView",
     # Reimport views

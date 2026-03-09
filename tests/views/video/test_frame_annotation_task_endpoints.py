@@ -7,6 +7,7 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     InformationSource,
     Label,
+    LabelSet,
     VideoFile,
 )
 from endoreg_db.views.video.ai import (
@@ -39,8 +40,24 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
             frame_number=11,
             relative_path="frame_0000011.jpg",
         )
+        self.frame_3 = Frame.objects.create(
+            video=self.video,
+            frame_number=12,
+            relative_path="frame_0000012.jpg",
+        )
         self.source = InformationSource.objects.create(name="manual_annotation")
+        self.prediction_source = InformationSource.objects.create(
+            name="task-prediction-source"
+        )
         self.label = Label.objects.create(name="task-test-label")
+        self.target_label = Label.objects.create(name="task-target-label")
+        self.filter_label = Label.objects.create(name="task-filter-label")
+        self.unrelated_label = Label.objects.create(name="task-unrelated-label")
+        self.label_set = LabelSet.objects.create(
+            name="frame-task-label-group",
+            version=1,
+        )
+        self.label_set.labels.add(self.target_label, self.filter_label, self.label)
 
     def test_random_task_returns_available_frame(self):
         request = self.factory.get(
@@ -70,6 +87,13 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         )
         ImageClassificationAnnotation.objects.create(
             frame=self.frame_2,
+            label=self.label,
+            value=True,
+            information_source=self.source,
+            annotator="alice",
+        )
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_3,
             label=self.label,
             value=True,
             information_source=self.source,
@@ -126,3 +150,148 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"], "Unknown frame_id.")
+
+    def test_random_task_filtered_mode_requires_filter_label(self):
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "task_mode": "filtered",
+                "target_label": self.target_label.name,
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("filter_label", response.data["error"])
+
+    def test_random_task_filtered_mode_returns_only_matching_frames(self):
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.filter_label,
+            value=True,
+            information_source=self.prediction_source,
+            annotator="model",
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "task_mode": "filtered",
+                "filter_label": self.filter_label.name,
+                "target_label": self.target_label.name,
+                "information_source_name": self.source.name,
+                "annotator": "alice",
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "success")
+        self.assertEqual(response.data["task_mode"], "filtered")
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_1.pk)
+        self.assertEqual(response.data["count"], 1)
+
+    def test_random_task_filtered_mode_excludes_target_already_annotated(self):
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.filter_label,
+            value=True,
+            information_source=self.prediction_source,
+            annotator="model",
+        )
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_2,
+            label=self.filter_label,
+            value=True,
+            information_source=self.prediction_source,
+            annotator="model",
+        )
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_1,
+            label=self.target_label,
+            value=True,
+            information_source=self.source,
+            annotator="alice",
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "task_mode": "filtered",
+                "filter_label": self.filter_label.name,
+                "target_label": self.target_label.name,
+                "information_source_name": self.source.name,
+                "annotator": "alice",
+                "exclude_annotated": "true",
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_2.pk)
+
+    def test_random_task_uses_previous_label_alias(self):
+        ImageClassificationAnnotation.objects.create(
+            frame=self.frame_3,
+            label=self.filter_label,
+            value=True,
+            information_source=self.prediction_source,
+            annotator="model",
+        )
+
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "task_mode": "filtered",
+                "previous_label": self.filter_label.name,
+                "target_label": self.target_label.name,
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["task"]["frame_id"], self.frame_3.pk)
+
+    def test_random_task_label_group_restricts_label_lookup(self):
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "task_mode": "filtered",
+                "label_group_id": self.label_set.pk,
+                "filter_label": self.unrelated_label.name,
+                "target_label": self.target_label.name,
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error"], "Unknown filter_label.")
+
+    def test_random_task_limit_returns_multiple_tasks(self):
+        request = self.factory.get(
+            "/api/media/annotations/frames/random-task/",
+            {
+                "video_id": self.video.pk,
+                "limit": 2,
+                "information_source_name": self.source.name,
+                "exclude_annotated": "false",
+            },
+        )
+
+        response = self.random_task_view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "success")
+        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(len(response.data["tasks"]), 2)
+        self.assertIn("task", response.data)

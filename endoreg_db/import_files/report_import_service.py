@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
 from typing import Optional, Union
 
@@ -21,6 +22,7 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 from endoreg_db.models.media import RawPdfFile
+from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import SENSITIVE_REPORT_DIR
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,85 @@ class ReportImportService:
 
         validate_directories()
 
+    @staticmethod
+    def _read_txt_content(txt_path: Path) -> str:
+        for encoding in ("utf-8", "cp1252", "latin-1"):
+            try:
+                return txt_path.read_text(encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+        return txt_path.read_text(encoding="utf-8", errors="replace")
+
+    @staticmethod
+    def _escape_pdf_text(value: str) -> str:
+        return (
+            value.replace("\\", "\\\\")
+            .replace("(", "\\(")
+            .replace(")", "\\)")
+            .replace("\r", " ")
+            .replace("\n", " ")
+        )
+
+    @classmethod
+    def _render_single_page_pdf(cls, text: str) -> bytes:
+        normalized_lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        max_lines = 65
+        lines = normalized_lines[:max_lines] if normalized_lines else [""]
+        commands = ["BT", "/F1 10 Tf", "36 806 Td"]
+        for idx, raw_line in enumerate(lines):
+            safe_line = raw_line.encode("latin-1", "replace").decode("latin-1")
+            commands.append(f"({cls._escape_pdf_text(safe_line)}) Tj")
+            if idx < len(lines) - 1:
+                commands.append("0 -12 Td")
+        commands.append("ET")
+        stream = "\n".join(commands).encode("latin-1")
+
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream),
+        ]
+
+        payload = b"%PDF-1.4\n"
+        offsets = [0]
+        for obj_index, obj_payload in enumerate(objects, start=1):
+            offsets.append(len(payload))
+            payload += f"{obj_index} 0 obj\n".encode("ascii")
+            payload += obj_payload
+            payload += b"\nendobj\n"
+
+        startxref = len(payload)
+        payload += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
+        payload += b"0000000000 65535 f \n"
+        for offset in offsets[1:]:
+            payload += f"{offset:010d} 00000 n \n".encode("ascii")
+        payload += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{startxref}\n%%EOF\n".encode(
+            "ascii"
+        )
+        return payload
+
+    def _create_temp_pdf_from_txt(self, txt_path: Path) -> Path:
+        txt_content = self._read_txt_content(txt_path)
+        txt_hash = sha256_file(txt_path)
+        pdf_bytes = self._render_single_page_pdf(
+            f"txt_sha256:{txt_hash}\n{txt_content}"
+        )
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp.flush()
+            return Path(tmp.name)
+
+    def _cleanup_path(self, file_path: Path, log_prefix: str) -> None:
+        if not file_path.exists():
+            return
+        try:
+            file_path.unlink()
+            logger.info("%s %s", log_prefix, file_path)
+        except OSError as exc:
+            logger.warning("%s failed for %s: %s", log_prefix, file_path, exc)
+
     def import_and_anonymize(
         self,
         file_path: Union[Path, str],
@@ -65,86 +146,117 @@ class ReportImportService:
             file_type="report",
             original_path=Path(file_path),
         )
+        temp_pdf_path: Optional[Path] = None
+        is_txt_input = False
+        should_delete_original_txt = False
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
 
-        ctx.sensitive_path = create_sensitive_copy(ctx.file_path, SENSITIVE_REPORT_DIR)
+        try:
+            if ctx.file_path.suffix.lower() == ".txt":
+                is_txt_input = True
+                temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
+                ctx.file_path = temp_pdf_path
+                ctx.file_hash = sha256_file(ctx.file_path)
+                ctx.delete_source = True
+                should_delete_original_txt = bool(delete_source)
 
-        with file_lock(ctx.file_path):
-            logger.info("Acquired file lock for %s", ctx.file_path)
-
-            # create or retrieve RawPdfFile + update history
-            ctx.current_report, processed, needs_processing = (
-                create_or_retrieve_report_file(ctx)
+            lock_path = ctx.original_path if is_txt_input else ctx.file_path
+            assert lock_path is not None
+            sensitive_src = ctx.original_path if is_txt_input else ctx.file_path
+            assert sensitive_src is not None
+            ctx.sensitive_path = create_sensitive_copy(
+                sensitive_src, SENSITIVE_REPORT_DIR
             )
-            ctx.current_report.get_or_create_state()
-            assert ctx.current_report.state is not None
-            ctx.current_report = ctx.current_report
 
-            if processed or retry:
-                ctx.retry = True
+            with file_lock(lock_path):
+                logger.info("Acquired file lock for %s", lock_path)
 
-            # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
-            if (
-                ctx.retry
-                and needs_processing
-                and ctx.current_report.state
-                and not ctx.current_report.state.anonymization_validated
-            ):
-                # ensure clean slate for forced reprocessing
-                finalize_failure(ctx)
+                # create or retrieve RawPdfFile + update history
                 ctx.current_report, processed, needs_processing = (
                     create_or_retrieve_report_file(ctx)
                 )
-                assert needs_processing is True
-            elif not needs_processing and not ctx.retry:
-                return ctx.current_report
-            else:
-                finalize_failure(ctx)
-                ctx.current_report, processed, needs_processing = (
-                    create_or_retrieve_report_file(ctx)
-                )
-                assert needs_processing is True
+                ctx.current_report.get_or_create_state()
+                assert ctx.current_report.state is not None
+                ctx.current_report = ctx.current_report
 
-            mark_instance_processing_started(ctx.current_report, ctx)
-            try:
-                # --- Anonymization with fallback ---
+                if should_delete_original_txt and ctx.original_path is not None:
+                    self._cleanup_path(
+                        ctx.original_path, "Deleted source txt after import setup:"
+                    )
+                    should_delete_original_txt = False
+
+                if processed or retry:
+                    ctx.retry = True
+
+                # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
+                if (
+                    ctx.retry
+                    and needs_processing
+                    and ctx.current_report.state
+                    and not ctx.current_report.state.anonymization_validated
+                ):
+                    # ensure clean slate for forced reprocessing
+                    finalize_failure(ctx)
+                    ctx.current_report, processed, needs_processing = (
+                        create_or_retrieve_report_file(ctx)
+                    )
+                    assert needs_processing is True
+                elif not needs_processing and not ctx.retry:
+                    return ctx.current_report
+                else:
+                    finalize_failure(ctx)
+                    ctx.current_report, processed, needs_processing = (
+                        create_or_retrieve_report_file(ctx)
+                    )
+                    assert needs_processing is True
+
+                mark_instance_processing_started(ctx.current_report, ctx)
                 try:
-                    ctx = self.anonymizer.anonymize_report(ctx)
-                    logger.info(
-                        "Primary report anonymization succeeded for %s",
-                        ctx.file_path,
-                    )
-                except Exception as primary_exc:
-                    logger.exception(
-                        "Primary report anonymization failed for %s: %s "
-                        "- trying basic anonymization",
-                        ctx.file_path,
-                        primary_exc,
-                    )
+                    # --- Anonymization with fallback ---
                     try:
                         ctx = self.anonymizer.anonymize_report(ctx)
-                    except Exception as e:
-                        logger.error(
-                            f"report Extraction failed for the second time. {e}"
+                        logger.info(
+                            "Primary report anonymization succeeded for %s",
+                            ctx.file_path,
                         )
-                        raise
+                    except Exception as primary_exc:
+                        logger.exception(
+                            "Primary report anonymization failed for %s: %s "
+                            "- trying basic anonymization",
+                            ctx.file_path,
+                            primary_exc,
+                        )
+                        try:
+                            ctx = self.anonymizer.anonymize_report(ctx)
+                        except Exception as e:
+                            logger.error(
+                                f"report Extraction failed for the second time. {e}"
+                            )
+                            raise
 
-                    logger.info(
-                        "Basic report anonymization succeeded for %s",
+                        logger.info(
+                            "Basic report anonymization succeeded for %s",
+                            ctx.file_path,
+                        )
+
+                    # --- Finalize success: history + move anonymized file ---
+                    finalize_report_success(ctx)
+
+                    return ctx.current_report
+
+                except Exception as exc:
+                    logger.exception(
+                        "Report import/anonymization failed for %s: %s",
                         ctx.file_path,
+                        exc,
                     )
-
-                # --- Finalize success: history + move anonymized file ---
-                finalize_report_success(ctx)
-
-                return ctx.current_report
-
-            except Exception as exc:
-                logger.exception(
-                    "Report import/anonymization failed for %s: %s", ctx.file_path, exc
+                    # mark failure in history
+                    finalize_failure(ctx)
+                    raise
+        finally:
+            if temp_pdf_path is not None:
+                self._cleanup_path(
+                    temp_pdf_path, "Cleaned temporary txt-converted pdf:"
                 )
-                # mark failure in history
-                finalize_failure(ctx)
-                raise

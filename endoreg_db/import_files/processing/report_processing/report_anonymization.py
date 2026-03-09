@@ -23,39 +23,78 @@ class ReportAnonymizer:
         self._ensure_report_reading_available()
         self.storage = False
 
+    @staticmethod
+    def _read_txt_content(txt_path: Path) -> str:
+        for encoding in ("utf-8", "cp1252", "latin-1"):
+            try:
+                return txt_path.read_text(encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+        return txt_path.read_text(encoding="utf-8", errors="replace")
+
+    @staticmethod
+    def _is_txt_input(ctx: ImportContext) -> bool:
+        source_path = ctx.original_path if isinstance(ctx.original_path, Path) else None
+        if source_path is None:
+            source_path = ctx.file_path
+        return source_path.suffix.lower() == ".txt"
+
     def anonymize_report(self, ctx: ImportContext):
-        # Setup anonymized directory
-        anonymized_dir = ANONYM_REPORT_DIR
-        anonymized_dir.mkdir(parents=True, exist_ok=True)
         assert ctx.current_report is not None
-        # Generate output path for anonymized report
-        pdf_hash = ctx.current_report.pdf_hash
-        anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
-        self._report_reader_class = self._instantiate_report_reader()
+        is_txt_input = self._is_txt_input(ctx)
+        if is_txt_input:
+            source_path = (
+                ctx.original_path
+                if isinstance(ctx.original_path, Path)
+                else ctx.file_path
+            )
+            txt_content = self._read_txt_content(source_path)
+            ctx.original_text = txt_content
+            ctx.anonymized_text = txt_content
+            ctx.extracted_metadata = {}
+            ctx.anonymized_path = None
+        else:
+            # Setup anonymized directory
+            anonymized_dir = ANONYM_REPORT_DIR
+            anonymized_dir.mkdir(parents=True, exist_ok=True)
+            # Generate output path for anonymized report
+            pdf_hash = ctx.current_report.pdf_hash
+            anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
+            self._report_reader_class = self._instantiate_report_reader()
 
-        assert isinstance(self._report_reader_class, ReportReader)
+            assert isinstance(self._report_reader_class, ReportReader)
 
-        # Process with enhanced process_report method (returns 4-tuple now)
-        (
-            ctx.original_text,
-            ctx.anonymized_text,
-            extracted_metadata,
-            ctx.anonymized_path,
-        ) = self._report_reader_class.process_report(
-            pdf_path=ctx.file_path,
-            create_anonymized_pdf=True,
-            anonymized_pdf_output_path=str(anonymized_output_path),
-        )
-
-        if ctx.anonymized_path:
-            logger.info(
-                "DEBUG: after anonymizer, ctx.anonymized_path=%s (exists=%s)",
+            # Process with enhanced process_report method (returns 4-tuple now)
+            (
+                ctx.original_text,
+                ctx.anonymized_text,
+                extracted_metadata,
                 ctx.anonymized_path,
-                isinstance(ctx.anonymized_path, str),
+            ) = self._report_reader_class.process_report(
+                pdf_path=ctx.file_path,
+                create_anonymized_pdf=True,
+                anonymized_pdf_output_path=str(anonymized_output_path),
+            )
+            ctx.extracted_metadata = (
+                extracted_metadata if isinstance(extracted_metadata, dict) else {}
             )
 
+            if ctx.anonymized_path:
+                logger.info(
+                    "DEBUG: after anonymizer, ctx.anonymized_path=%s (exists=%s)",
+                    ctx.anonymized_path,
+                    isinstance(ctx.anonymized_path, str),
+                )
+
+        if isinstance(ctx.original_text, str):
+            ctx.current_report.text = ctx.original_text
+        if isinstance(ctx.anonymized_text, str):
+            ctx.current_report.anonymized_text = ctx.anonymized_text
+        ctx.current_report.save(update_fields=["text", "anonymized_text"])
+
         sm = LxSM()
-        sm.safe_update(extracted_metadata)
+        if isinstance(ctx.extracted_metadata, dict):
+            sm.safe_update(ctx.extracted_metadata)
 
         self.storage = sensitive_meta_storage(sm, ctx.current_report)
         return ctx

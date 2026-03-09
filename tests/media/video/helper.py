@@ -30,13 +30,8 @@ def get_video_path(video_key: str) -> Path:
     Retrieves the video path based on the provided video key.
     """
     if video_key in TEST_VIDEOS:
-        video_path = TEST_VIDEOS[video_key]
-        if video_path is not None:
-            return video_path
-        else:
-            raise ValueError(f"Video file for key '{video_key}' does not exist.")
-    else:
-        raise ValueError(f"Video key '{video_key}' not found in TEST_VIDEOS.")
+        return TEST_VIDEOS[video_key]
+    raise ValueError(f"Video key '{video_key}' not found in TEST_VIDEOS.")
 
 
 def get_video_keys(
@@ -107,8 +102,7 @@ def get_random_video_path_by_examination_alias(
     Retrieves a random video key that matches the provided regex pattern based on examination alias, content, and anonymity status.
     """
     keys = get_video_keys(examination_alias, content, is_anonymous)
-    # Filter out keys that have None values (non-existent files)
-    valid_keys = [key for key in keys if TEST_VIDEOS.get(key) is not None]
+    valid_keys = [key for key in keys if key in TEST_VIDEOS]
 
     if valid_keys:
         random_video_key = random.choice(valid_keys)
@@ -120,6 +114,4 @@ def get_random_video_path_by_examination_alias(
         )
 
 
-TEST_VIDEOS = {
-    key: value if value.exists() else None for key, value in TEST_VIDEOS.items()
-}
+TEST_VIDEOS = {key: value for key, value in TEST_VIDEOS.items() if value.exists()}

@@ -17,6 +17,7 @@ from endoreg_db.models import (
     ImageClassificationAnnotation,
     InformationSource,
     Label,
+    LabelSet,
     ModelMeta,
 )
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
@@ -26,6 +27,7 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission, is_debug_mo
 
 logger = logging.getLogger(__name__)
 SUPPORTED_LABEL_STUDIO_ACTIONS = {"ANNOTATION_CREATED", "ANNOTATION_UPDATED"}
+SUPPORTED_FRAME_TASK_MODES = {"random", "filtered"}
 
 
 def _extract_webhook_token(request) -> str:
@@ -353,6 +355,26 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _as_positive_int(
+    value: Any, field_name: str, *, default: int
+) -> tuple[int, Response | None]:
+    if value is None or value == "":
+        return default, None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default, Response(
+            {"error": f"{field_name} must be an integer."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if parsed < 1:
+        return default, Response(
+            {"error": f"{field_name} must be >= 1."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return parsed, None
+
+
 def _resolve_request_annotator(request, requested_annotator: str | None = None) -> str:
     if requested_annotator is not None and str(requested_annotator).strip():
         return str(requested_annotator).strip()
@@ -361,16 +383,77 @@ def _resolve_request_annotator(request, requested_annotator: str | None = None) 
     return ""
 
 
-def _pick_random_frame(
+def _resolve_label_set_for_tasks(
+    label_group_id_raw: Any,
+) -> tuple[LabelSet | None, Response | None]:
+    label_group_id, error = _as_int(label_group_id_raw, "label_group_id")
+    if error is not None:
+        return None, error
+    if label_group_id is None:
+        return None, None
+
+    label_set = LabelSet.objects.filter(pk=label_group_id).first()
+    if label_set is None:
+        return None, Response(
+            {
+                "error": "Unknown label_group_id.",
+                "details": {"label_group_id": label_group_id},
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return label_set, None
+
+
+def _resolve_label_for_tasks(
+    *,
+    label_name_raw: Any,
+    field_name: str,
+    label_set: LabelSet | None,
+) -> tuple[Label | None, Response | None]:
+    if label_name_raw is None:
+        return None, None
+
+    label_name = str(label_name_raw).strip()
+    if not label_name:
+        return None, None
+
+    label_qs = Label.objects.all()
+    if label_set is not None:
+        label_qs = label_qs.filter(label_sets=label_set)
+
+    label = label_qs.filter(name=label_name).first()
+    if label is None:
+        label = label_qs.filter(name__iexact=label_name).first()
+    if label is None:
+        details: dict[str, Any] = {field_name: label_name}
+        if label_set is not None:
+            details["label_group_id"] = label_set.id
+        return None, Response(
+            {"error": f"Unknown {field_name}.", "details": details},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return label, None
+
+
+def _build_frame_task_queryset(
     *,
     video_id: int | None,
+    filter_label_id: int | None,
     information_source_name: str,
     annotator: str,
     exclude_annotated: bool,
-) -> Frame | None:
+    target_label_id: int | None,
+    exclude_frame_ids: set[int] | None = None,
+):
     frames_qs = Frame.objects.select_related("video")
     if video_id is not None:
         frames_qs = frames_qs.filter(video_id=video_id)
+
+    if filter_label_id is not None:
+        frames_qs = frames_qs.filter(
+            image_classification_annotations__label_id=filter_label_id,
+            image_classification_annotations__value=True,
+        )
 
     if exclude_annotated:
         annotation_filter: dict[str, Any] = {
@@ -378,9 +461,37 @@ def _pick_random_frame(
         }
         if annotator:
             annotation_filter["image_classification_annotations__annotator"] = annotator
+        if target_label_id is not None:
+            annotation_filter["image_classification_annotations__label_id"] = (
+                target_label_id
+            )
         frames_qs = frames_qs.exclude(**annotation_filter)
 
-    frames_qs = frames_qs.order_by("id").distinct()
+    if exclude_frame_ids:
+        frames_qs = frames_qs.exclude(id__in=exclude_frame_ids)
+
+    return frames_qs.order_by("id").distinct()
+
+
+def _pick_random_frame(
+    *,
+    video_id: int | None,
+    filter_label_id: int | None,
+    information_source_name: str,
+    annotator: str,
+    exclude_annotated: bool,
+    target_label_id: int | None,
+    exclude_frame_ids: set[int] | None = None,
+) -> Frame | None:
+    frames_qs = _build_frame_task_queryset(
+        video_id=video_id,
+        filter_label_id=filter_label_id,
+        information_source_name=information_source_name,
+        annotator=annotator,
+        exclude_annotated=exclude_annotated,
+        target_label_id=target_label_id,
+        exclude_frame_ids=exclude_frame_ids,
+    )
     count = frames_qs.count()
     if count == 0:
         return None
@@ -610,9 +721,62 @@ class FrameAnnotationRandomTaskView(APIView):
     permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, *args, **kwargs):
+        limit, error = _as_positive_int(
+            request.query_params.get("limit"), "limit", default=1
+        )
+        if error is not None:
+            return error
+
         video_id, error = _as_int(request.query_params.get("video_id"), "video_id")
         if error is not None:
             return error
+
+        label_set, error = _resolve_label_set_for_tasks(
+            request.query_params.get("label_group_id")
+        )
+        if error is not None:
+            return error
+
+        task_mode = (
+            str(request.query_params.get("task_mode", "random") or "random")
+            .strip()
+            .lower()
+        )
+        if task_mode not in SUPPORTED_FRAME_TASK_MODES:
+            return Response(
+                {
+                    "error": "task_mode must be one of ['random', 'filtered'].",
+                    "details": {"task_mode": task_mode},
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_label, error = _resolve_label_for_tasks(
+            label_name_raw=request.query_params.get("target_label"),
+            field_name="target_label",
+            label_set=label_set,
+        )
+        if error is not None:
+            return error
+
+        filter_label_raw = request.query_params.get("filter_label")
+        if filter_label_raw is None:
+            filter_label_raw = request.query_params.get("previous_label")
+        filter_label, error = _resolve_label_for_tasks(
+            label_name_raw=filter_label_raw,
+            field_name="filter_label",
+            label_set=label_set,
+        )
+        if error is not None:
+            return error
+
+        if task_mode == "filtered" and filter_label is None:
+            return Response(
+                {
+                    "error": "filter_label (or previous_label) is required when task_mode='filtered'."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         information_source_name = str(
             request.query_params.get(
@@ -634,31 +798,62 @@ class FrameAnnotationRandomTaskView(APIView):
             request.query_params.get("exclude_annotated"), default=True
         )
 
-        frame = _pick_random_frame(
-            video_id=video_id,
-            information_source_name=information_source_name,
-            annotator=annotator,
-            exclude_annotated=exclude_annotated,
-        )
-        if frame is None:
+        tasks: list[dict[str, Any]] = []
+        excluded_ids: set[int] = set()
+        for _ in range(limit):
+            frame = _pick_random_frame(
+                video_id=video_id,
+                filter_label_id=filter_label.id if filter_label is not None else None,
+                information_source_name=information_source_name,
+                annotator=annotator,
+                exclude_annotated=exclude_annotated,
+                target_label_id=target_label.id if target_label is not None else None,
+                exclude_frame_ids=excluded_ids,
+            )
+            if frame is None:
+                break
+            tasks.append(_serialize_frame_task(frame))
+            excluded_ids.add(frame.id)
+
+        if not tasks:
+            details: dict[str, Any] = {
+                "video_id": video_id,
+                "information_source_name": information_source_name,
+                "annotator": annotator,
+                "exclude_annotated": exclude_annotated,
+                "task_mode": task_mode,
+                "limit": limit,
+            }
+            if label_set is not None:
+                details["label_group_id"] = label_set.id
+            if target_label is not None:
+                details["target_label"] = target_label.name
+            if filter_label is not None:
+                details["filter_label"] = filter_label.name
             return Response(
                 {
                     "error": "No frame task available.",
-                    "details": {
-                        "video_id": video_id,
-                        "information_source_name": information_source_name,
-                        "annotator": annotator,
-                        "exclude_annotated": exclude_annotated,
-                    },
+                    "details": details,
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        response_data: dict[str, Any] = {
+            "status": "success",
+            "task": tasks[0],
+            "tasks": tasks,
+            "count": len(tasks),
+            "task_mode": task_mode,
+        }
+        if label_set is not None:
+            response_data["label_group_id"] = label_set.id
+        if target_label is not None:
+            response_data["target_label"] = target_label.name
+        if filter_label is not None:
+            response_data["filter_label"] = filter_label.name
+
         return Response(
-            {
-                "status": "success",
-                "task": _serialize_frame_task(frame),
-            },
+            response_data,
             status=status.HTTP_200_OK,
         )
 
@@ -724,9 +919,11 @@ class FrameAnnotationSkipView(APIView):
         exclude_annotated = _as_bool(payload.get("exclude_annotated"), default=True)
         next_frame = _pick_random_frame(
             video_id=video_id if video_id is not None else frame.video_id,
+            filter_label_id=None,
             information_source_name=information_source_name,
             annotator=annotator,
             exclude_annotated=exclude_annotated,
+            target_label_id=None,
         )
 
         logger.info(

@@ -5,6 +5,9 @@ Last updated: 2026-03-04
 ## Goal
 Migrate requirement evaluation from legacy DB/YAML requirement graph (`Requirement`, `RequirementSet`, `RequirementOperator`) to dtypes report-template validators (`findings_validator`, `examination_validator`) while preserving current lookup/report API contracts.
 
+Companion entrypoint:
+- `docs/dtypes_lookup_module_entrypoint.md`
+
 ## Current State
 - Lookup schema contract is already dtypes-backed:
   - `endoreg_db/schemas/lookup_state.py`
