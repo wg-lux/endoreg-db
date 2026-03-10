@@ -172,6 +172,65 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
             assert "report validated" in message
+            pdf_file.refresh_from_db()
+            assert pdf_file.anonymized_text == "Anonymized report content"
+            assert pdf_file.anonym_examination_report_id is None
+            assert isinstance(pdf_file.raw_meta, dict)
+            assert pdf_file.raw_meta["document_type"] == "report_final"
+            assert (
+                pdf_file.raw_meta["pseudo_examination_id"]
+                == pdf_file.sensitive_meta.pseudo_examination_id
+            )
+            assert payload["anonymized_text_saved"] is True
+            assert payload["report_file"] is None
+            assert (
+                payload["validation_context"]["pseudo_examination_id"]
+                == pdf_file.sensitive_meta.pseudo_examination_id
+            )
+
+    def test_validate_pdf_does_not_materialize_report_before_case_resolution(
+        self, factory, user, pdf_file
+    ):
+        """
+        Regression test:
+        PDF validation must not create AnonymExaminationReport before explicit
+        case resolution attaches or creates a PatientExamination.
+        """
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "patient_gender": "männlich",
+            "casenumber": "12345",
+            "anonymized_text": "Validated text without explicit case linkage",
+            "file_type": "pdf",
+            "document_type": "report_final",
+        }
+
+        with patch.object(
+            RawPdfFile, "validate_metadata_annotation", return_value=True
+        ):
+            request = factory.post(
+                f"/api/anonymization/{pdf_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=pdf_file.id)
+
+            assert response.status_code == status.HTTP_200_OK
+
+        pdf_file.refresh_from_db()
+        assert pdf_file.anonym_examination_report_id is None, (
+            "PDF validation must not materialize AnonymExaminationReport before "
+            "explicit case resolution. This regression test is needed because "
+            "validation and case linkage were previously entangled, which caused "
+            "reports to be created implicitly during validation instead of only "
+            "after the user explicitly attaches or creates a PatientExamination."
+        )
 
     def test_validate_pdf_failure(self, factory, user, pdf_file):
         """Test report validation failure."""

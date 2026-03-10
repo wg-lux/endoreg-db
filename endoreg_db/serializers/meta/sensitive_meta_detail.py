@@ -30,6 +30,8 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
     # Hash displays (last 8 chars)
     patient_hash_display = serializers.SerializerMethodField()
     examination_hash_display = serializers.SerializerMethodField()
+    pseudo_patient_id = serializers.IntegerField(read_only=True)
+    pseudo_examination_id = serializers.IntegerField(read_only=True)
 
     # Text fields
     text = serializers.SerializerMethodField()
@@ -53,6 +55,8 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
             "endoscope_sn",
             "patient_hash_display",
             "examination_hash_display",
+            "pseudo_patient_id",
+            "pseudo_examination_id",
             "examiners_display",
             "is_verified",
             "dob_verified",

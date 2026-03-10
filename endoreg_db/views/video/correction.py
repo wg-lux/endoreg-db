@@ -15,6 +15,7 @@ Available Functions from lx_anonymizer (already implemented):
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
@@ -40,10 +41,48 @@ logger = logging.getLogger(__name__)
 def update_processed_file(video, output_path: Path):
     try:
         rel_path = output_path.relative_to(ANONYM_VIDEO_DIR)
+        assert video.processed_file is not None
     except ValueError:
         rel_path = output_path.relative_to(Path(settings.MEDIA_ROOT))
+
     video.processed_file.name = str(rel_path)
     video.save(update_fields=["processed_file"])
+
+
+def _resolve_processing_method(payload: Any) -> str:
+    explicit = payload.get("processing_method")
+    if explicit:
+        return str(explicit)
+
+    use_streaming = payload.get("use_streaming")
+    if use_streaming is None:
+        return "streaming"
+    return "streaming" if bool(use_streaming) else "direct"
+
+
+def _masked_output_path(video: VideoFile) -> Path:
+    return ANONYM_VIDEO_DIR / f"{video.video_hash}_masked.mp4"
+
+
+def _cleaned_output_path(video: VideoFile) -> Path:
+    return ANONYM_VIDEO_DIR / f"{video.video_hash}_cleaned.mp4"
+
+
+def _normalize_custom_roi(roi: Any) -> dict[str, Any] | None:
+    if not isinstance(roi, dict):
+        return None
+    if {"x", "y", "width", "height"}.issubset(roi.keys()):
+        return roi
+    if {"endoscope_x", "endoscope_y", "endoscope_width", "endoscope_height"}.issubset(
+        roi.keys()
+    ):
+        return {
+            "x": roi.get("endoscope_x"),
+            "y": roi.get("endoscope_y"),
+            "width": roi.get("endoscope_width"),
+            "height": roi.get("endoscope_height"),
+        }
+    return roi
 
 
 class VideoCorrectionView(APIView):
@@ -236,8 +275,10 @@ class VideoApplyMaskView(APIView):
         # Extract parameters
         mask_type = request.data.get("mask_type", "device")
         device_name = request.data.get("device_name")
-        roi = request.data.get("roi")
-        processing_method = request.data.get("processing_method", "streaming")
+        roi = _normalize_custom_roi(
+            request.data.get("roi") or request.data.get("custom_mask")
+        )
+        processing_method = _resolve_processing_method(request.data)
 
         # Validate required parameters
         if mask_type == "device" and not device_name:
@@ -277,28 +318,32 @@ class VideoApplyMaskView(APIView):
                 if hasattr(video.raw_file, "path")
                 else Path(str(video.raw_file))
             )
-            output_path = video.get_output_path()
+            output_path = _masked_output_path(video)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Load or create mask config
+            # Load or create mask config against current lx_anonymizer API.
             if mask_type == "device":
-                # Load device-specific mask from lx_anonymizer/masks/
-                mask_config = frame_cleaner._load_mask(device_name)
+                frame_cleaner.mask_application.device_name = str(
+                    device_name or "olympus_cv_1500"
+                )
+                mask_config = frame_cleaner.mask_application._load_mask()
             else:  # custom
-                # Convert ROI to mask config
-                mask_config = frame_cleaner._create_mask_config_from_roi(
-                    endoscope_roi=roi,
+                mask_config = (
+                    frame_cleaner.mask_application.create_mask_config_from_roi(
+                        endoscope_image_roi=roi or {},
+                    )
                 )
 
-            # Apply mask (uses existing FrameCleaner._mask_video)
+            # Apply mask using the current streaming masker API.
             import time
 
             start_time = time.time()
 
-            success = frame_cleaner._mask_video(
+            success = frame_cleaner.mask_application.mask_video_streaming(
                 input_video=video_path,
                 mask_config=mask_config,
                 output_video=output_path,
+                use_named_pipe=processing_method == "streaming",
             )
 
             processing_time = time.time() - start_time
@@ -372,10 +417,13 @@ class VideoRemoveFramesView(APIView):
         video = get_object_or_404(VideoFile, pk=pk)
 
         # Extract parameters
-        frame_list = request.data.get("frame_list")
+        frame_list = request.data.get("frame_list") or request.data.get("manual_frames")
         frame_ranges = request.data.get("frame_ranges")
         detection_method = request.data.get("detection_method")
-        processing_method = request.data.get("processing_method", "streaming")
+        selection_method = request.data.get("selection_method")
+        if detection_method is None and selection_method == "automatic":
+            detection_method = "automatic"
+        processing_method = _resolve_processing_method(request.data)
 
         # Determine frames to remove
         frames_to_remove = []
@@ -437,22 +485,20 @@ class VideoRemoveFramesView(APIView):
                 if hasattr(video.raw_file, "path")
                 else Path(str(video.raw_file))
             )
-            output_path = (
-                Path(settings.MEDIA_ROOT)
-                / "anonym_videos"
-                / f"{video.video_hash}_cleaned.mp4"
-            )
+            output_path = _cleaned_output_path(video)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Remove frames (uses existing FrameCleaner.remove_frames_from_video)
+            # Remove frames using the current streaming removal API.
             import time
 
             start_time = time.time()
 
-            success = frame_cleaner.remove_frames_from_video(
+            success = frame_cleaner.remove_frames_from_video_streaming(
                 original_video=video_path,
                 frames_to_remove=frames_to_remove,
                 output_video=output_path,
+                total_frames=video.frame_count,
+                use_named_pipe=processing_method == "streaming",
             )
 
             processing_time = time.time() - start_time

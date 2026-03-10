@@ -16,7 +16,9 @@ from django.utils import timezone
 
 from endoreg_db.models import Center, RawPdfFile
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.views.anonymization.validate import _upsert_validated_report_file
+from endoreg_db.services.report_materialization import (
+    upsert_anonym_examination_report_from_pdf,
+)
 from tests.helpers.default_objects import get_default_center, get_default_processor
 
 # Environment-based test control (mirror video tests)
@@ -191,7 +193,7 @@ class TestReportImportService(TestCase):
             self.assertTrue(bool(raw_pdf.processed_file))
             self.assertIsNotNone(raw_pdf.sensitive_meta_id)
 
-            report_obj, _created = _upsert_validated_report_file(
+            report_obj, _created = upsert_anonym_examination_report_from_pdf(
                 pdf=raw_pdf,
                 payload={"anonymized_text": "validated report text"},
                 document_type_name="report_draft",

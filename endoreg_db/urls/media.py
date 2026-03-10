@@ -7,10 +7,12 @@ from endoreg_db.views.media.pdf_media import (
 )
 from endoreg_db.views.media.sensitive_metadata import (
     get_sensitive_metadata_pk,
+    pdf_case_resolution,
     pdf_sensitive_metadata,
     pdf_sensitive_metadata_list,
     pdf_sensitive_metadata_verify,
     sensitive_metadata_list,
+    video_case_resolution,
     video_sensitive_metadata,
     video_sensitive_metadata_verify,
 )
@@ -273,6 +275,11 @@ urlpatterns = [
         video_sensitive_metadata,
         name="video-sensitive-metadata",
     ),
+    path(
+        "media/videos/<int:pk>/case-resolution/",
+        video_case_resolution,
+        name="video-case-resolution",
+    ),
     # POST /api/media/videos/<pk>/sensitive-metadata/verify/
     # Update verification state (dob_verified, names_verified)
     path(
@@ -287,6 +294,11 @@ urlpatterns = [
         "media/pdfs/<int:pk>/sensitive-metadata/",
         pdf_sensitive_metadata,
         name="pdf-sensitive-metadata",
+    ),
+    path(
+        "media/pdfs/<int:pk>/case-resolution/",
+        pdf_case_resolution,
+        name="pdf-case-resolution",
     ),
     # POST /api/media/pdfs/<pk>/sensitive-metadata/verify/
     # Update verification state (dob_verified, names_verified)

@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 # Modern Media Framework: Sensitive Metadata Management
+
+from typing import Literal, cast
 
 from django.db import transaction
 from django.db.models import Q
@@ -7,18 +11,368 @@ import json
 import logging
 
 from rest_framework import status
+from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models import RawPdfFile, SensitiveMeta, VideoFile
+from endoreg_db.models import (
+    Examination,
+    Patient,
+    PatientExamination,
+    RawPdfFile,
+    SensitiveMeta,
+    VideoFile,
+)
+from endoreg_db.schemas.case_resolution import (
+    CaseResolutionRequest,
+    CaseResolutionResponse,
+    ValidationError,
+)
+from endoreg_db.services.report_materialization import (
+    upsert_anonym_examination_report_from_pdf,
+)
 from endoreg_db.serializers.meta import (
     SensitiveMetaDetailSerializer,
     SensitiveMetaUpdateSerializer,
 )
+from endoreg_db.serializers.patient import PatientSerializer
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_patient_examination_match(
+    patient_examination: PatientExamination,
+) -> dict[str, object]:
+    examination_name = None
+    examination = getattr(patient_examination, "examination", None)
+    if examination is not None:
+        examination_name = examination.name
+    return {
+        "id": patient_examination.pk,
+        "patient_id": patient_examination.patient_id,
+        "examination_name": examination_name,
+        "date_start": patient_examination.date_start.isoformat()
+        if patient_examination.date_start
+        else None,
+        "date_end": patient_examination.date_end.isoformat()
+        if patient_examination.date_end
+        else None,
+        "hash": patient_examination.hash,
+    }
+
+
+def _case_resolution_payload(
+    *,
+    media_type: Literal["video", "pdf"],
+    media_pk: int,
+    sensitive_meta: SensitiveMeta,
+    linked_patient_examination_id: int | None,
+) -> dict[str, object]:
+    patient_hash = getattr(sensitive_meta, "patient_hash", None)
+    examination_hash = getattr(sensitive_meta, "examination_hash", None)
+
+    examination_matches_qs = PatientExamination.objects.none()
+
+    patient_matches_count = 0
+    if patient_hash:
+        patient_matches_count = Patient.objects.filter(
+            patient_hash=patient_hash
+        ).count()
+
+    if examination_hash:
+        examination_matches_qs = PatientExamination.objects.select_related(
+            "patient", "examination"
+        ).filter(hash=examination_hash)
+    examination_matches = list(examination_matches_qs.order_by("-id"))
+    examination_matches_count = len(examination_matches)
+
+    if examination_matches_count == 0:
+        match_status = "0_matches"
+    elif examination_matches_count == 1:
+        match_status = "1_suggested_match"
+    else:
+        match_status = "multiple_matches"
+
+    recommended_patient_examination_id = (
+        examination_matches[0].pk if examination_matches_count == 1 else None
+    )
+
+    return {
+        "media_type": media_type,
+        "media_id": media_pk,
+        "sensitive_meta_id": sensitive_meta.pk,
+        "patient_hash_display": (
+            f"...{patient_hash[-8:]}"
+            if isinstance(patient_hash, str) and patient_hash
+            else None
+        ),
+        "examination_hash_display": (
+            f"...{examination_hash[-8:]}"
+            if isinstance(examination_hash, str) and examination_hash
+            else None
+        ),
+        "pseudo_patient": {
+            "id": sensitive_meta.pseudo_patient_id,
+            "match_count": patient_matches_count,
+        },
+        "pseudo_examination": {
+            "id": sensitive_meta.pseudo_examination_id,
+            "linked_patient_examination_id": linked_patient_examination_id,
+        },
+        "match_status": match_status,
+        "recommended_patient_examination_id": recommended_patient_examination_id,
+        "patient_examination_matches": [
+            _serialize_patient_examination_match(patient_examination)
+            for patient_examination in examination_matches
+        ],
+    }
+
+
+def _build_case_resolution_write_response(
+    *,
+    action: Literal["attach", "create", "defer"],
+    created: bool,
+    media_type: Literal["video", "pdf"],
+    media_pk: int,
+    patient_examination_id: int | None,
+    patient_id: int | None,
+    sensitive_meta: SensitiveMeta,
+) -> dict[str, object]:
+    response_payload = CaseResolutionResponse(
+        media_type=media_type,
+        media_id=media_pk,
+        action=action,
+        status="deferred" if action == "defer" else "linked",
+        patient_examination_id=patient_examination_id,
+        patient_id=patient_id,
+        created=created,
+    ).model_dump()
+    response_payload["case_resolution"] = _case_resolution_payload(
+        media_type=media_type,
+        media_pk=media_pk,
+        sensitive_meta=sensitive_meta,
+        linked_patient_examination_id=patient_examination_id,
+    )
+    return response_payload
+
+
+def _resolve_case_resolution_request(request) -> CaseResolutionRequest:
+    payload = request.data or {}
+    return CaseResolutionRequest.model_validate(payload)
+
+
+def _resolve_target_patient_examination(
+    *, patient_examination_id: int
+) -> PatientExamination:
+    return get_object_or_404(
+        PatientExamination.objects.select_related("patient", "examination"),
+        pk=patient_examination_id,
+    )
+
+
+def _resolve_case_resolution_patient(
+    *,
+    patient_id: int | None,
+    new_patient_payload,
+    sensitive_meta: SensitiveMeta,
+) -> Patient:
+    if patient_id is not None:
+        return get_object_or_404(Patient, pk=patient_id)
+
+    if new_patient_payload is not None:
+        patient_payload = new_patient_payload.model_dump()
+        if (
+            patient_payload.get("gender") is None
+            and sensitive_meta.patient_gender is not None
+        ):
+            patient_payload["gender"] = sensitive_meta.patient_gender.name
+        if patient_payload.get("center") is None and sensitive_meta.center is not None:
+            patient_payload["center"] = sensitive_meta.center.name
+        patient_serializer = PatientSerializer(data=patient_payload)
+        patient_serializer.is_valid(raise_exception=True)
+        return patient_serializer.save()
+
+    pseudo_patient = sensitive_meta.pseudo_patient
+    if pseudo_patient is None:
+        raise ValueError(
+            "patient_id or new_patient is required for create action when no pseudo_patient exists"
+        )
+    return pseudo_patient
+
+
+def _resolve_case_resolution_examination(
+    *, examination_name: str | None, sensitive_meta: SensitiveMeta
+) -> Examination | None:
+    if examination_name:
+        return get_object_or_404(Examination, name=examination_name)
+
+    pseudo_examination = sensitive_meta.pseudo_examination
+    if pseudo_examination is not None:
+        return pseudo_examination.examination
+    return None
+
+
+def _create_patient_examination_for_case_resolution(
+    *, payload: CaseResolutionRequest, sensitive_meta: SensitiveMeta
+) -> PatientExamination:
+    patient = _resolve_case_resolution_patient(
+        patient_id=payload.patient_id,
+        new_patient_payload=payload.new_patient,
+        sensitive_meta=sensitive_meta,
+    )
+    examination = _resolve_case_resolution_examination(
+        examination_name=payload.examination_name,
+        sensitive_meta=sensitive_meta,
+    )
+
+    return PatientExamination.objects.create(
+        patient=patient,
+        examination=examination,
+        date_start=payload.date_start or sensitive_meta.examination_date,
+        date_end=payload.date_end,
+    )
+
+
+def _link_video_primary_examination(
+    *, video: VideoFile, patient_examination: PatientExamination
+) -> None:
+    existing_primary = None
+    try:
+        existing_primary = video.patient_examination
+    except PatientExamination.DoesNotExist:
+        existing_primary = None
+
+    if (
+        patient_examination.video_id is not None
+        and patient_examination.video_id != video.pk
+    ):
+        raise ValueError(
+            "patient_examination is already linked to a different primary video"
+        )
+
+    if existing_primary is not None and existing_primary.pk != patient_examination.pk:
+        existing_primary.video = None
+        existing_primary.save(update_fields=["video"])
+
+    if patient_examination.video_id != video.pk:
+        patient_examination.video = video
+        patient_examination.save(update_fields=["video"])
+
+
+def _link_media_to_patient_examination(
+    *,
+    media_type: Literal["video", "pdf"],
+    media_obj: RawPdfFile | VideoFile,
+    patient_examination: PatientExamination,
+) -> None:
+    update_fields: list[str] = []
+
+    if media_obj.examination_id != patient_examination.pk:
+        media_obj.examination = patient_examination
+        update_fields.append("examination")
+    if media_obj.patient_id != patient_examination.patient_id:
+        media_obj.patient = patient_examination.patient
+        update_fields.append("patient")
+
+    if update_fields:
+        media_obj.save(update_fields=update_fields)
+
+    if media_type == "video":
+        assert isinstance(media_obj, VideoFile)
+        _link_video_primary_examination(
+            video=media_obj, patient_examination=patient_examination
+        )
+
+
+def _handle_case_resolution_post(
+    *,
+    request,
+    media_type: Literal["video", "pdf"],
+    media_obj: RawPdfFile | VideoFile,
+) -> Response:
+    sensitive_meta = media_obj.sensitive_meta
+    if sensitive_meta is None:
+        return Response(
+            {"error": f"No sensitive metadata found for {media_type} {media_obj.pk}"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        payload = _resolve_case_resolution_request(request)
+    except ValidationError as exc:
+        return Response(
+            {"error": "Invalid case resolution payload", "detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    created = False
+    patient_examination = None
+
+    try:
+        if payload.action == "attach":
+            assert payload.patient_examination_id is not None
+            patient_examination = _resolve_target_patient_examination(
+                patient_examination_id=payload.patient_examination_id
+            )
+            _link_media_to_patient_examination(
+                media_type=media_type,
+                media_obj=media_obj,
+                patient_examination=patient_examination,
+            )
+        elif payload.action == "create":
+            patient_examination = _create_patient_examination_for_case_resolution(
+                payload=payload,
+                sensitive_meta=sensitive_meta,
+            )
+            created = True
+            _link_media_to_patient_examination(
+                media_type=media_type,
+                media_obj=media_obj,
+                patient_examination=patient_examination,
+            )
+        else:
+            patient_examination = media_obj.examination
+
+        if media_type == "pdf" and payload.action in {"attach", "create"}:
+            assert isinstance(media_obj, RawPdfFile)
+            upsert_anonym_examination_report_from_pdf(
+                pdf=media_obj,
+                validated_at_iso=None,
+                source="case_resolution",
+            )
+    except drf_serializers.ValidationError as exc:
+        return Response(
+            {"error": "Case resolution failed", "detail": exc.detail},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except ValueError as exc:
+        return Response(
+            {"error": "Case resolution failed", "detail": str(exc)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        _build_case_resolution_write_response(
+            action=cast(Literal["attach", "create", "defer"], payload.action),
+            created=created,
+            media_type=media_type,
+            media_pk=media_obj.pk,
+            patient_examination_id=(
+                patient_examination.pk if patient_examination is not None else None
+            ),
+            patient_id=(
+                patient_examination.patient_id
+                if patient_examination is not None
+                else media_obj.patient_id
+            ),
+            sensitive_meta=sensitive_meta,
+        ),
+        status=status.HTTP_200_OK,
+    )
+
+
 # === VIDEO SENSITIVE METADATA ===
 
 
@@ -103,6 +457,39 @@ def video_sensitive_metadata(request, pk):
             )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
+def video_case_resolution(request, pk):
+    """
+    GET /api/media/videos/<pk>/case-resolution/
+
+    Return read-only case resolution hints for a validated or pending video.
+    """
+    video = get_object_or_404(VideoFile, pk=pk)
+    if not video.sensitive_meta:
+        return Response(
+            {"error": f"No sensitive metadata found for video {pk}"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "POST":
+        return _handle_case_resolution_post(
+            request=request,
+            media_type="video",
+            media_obj=video,
+        )
+
+    return Response(
+        _case_resolution_payload(
+            media_type="video",
+            media_pk=video.pk,
+            sensitive_meta=video.sensitive_meta,
+            linked_patient_examination_id=video.examination_id,
+        ),
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])
@@ -209,6 +596,39 @@ def pdf_sensitive_metadata(request, pk):
             )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([EnvironmentAwarePermission, PolicyPermission])
+def pdf_case_resolution(request, pk):
+    """
+    GET /api/media/pdfs/<pk>/case-resolution/
+
+    Return read-only case resolution hints for a validated or pending PDF.
+    """
+    pdf = get_object_or_404(RawPdfFile, pk=pk)
+    if not pdf.sensitive_meta:
+        return Response(
+            {"error": f"No sensitive metadata found for report {pk}"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "POST":
+        return _handle_case_resolution_post(
+            request=request,
+            media_type="pdf",
+            media_obj=pdf,
+        )
+
+    return Response(
+        _case_resolution_payload(
+            media_type="pdf",
+            media_pk=pdf.pk,
+            sensitive_meta=pdf.sensitive_meta,
+            linked_patient_examination_id=pdf.examination_id,
+        ),
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])
