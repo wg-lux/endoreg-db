@@ -83,9 +83,9 @@ endo_reset() {
     _endo_curl POST "media-management/reset-status/$1/" | _endo_jq
 }
 
-endo_reimport() {
+endo_video_reimport() {
     if [[ -z "$1" ]]; then
-        echo "Usage: endo_reimport <video_id>"
+        echo "Usage: endo_video_reimport <video_id>"
         return 1
     fi
     _endo_curl POST "media/videos/$1/reimport/" | _endo_jq
