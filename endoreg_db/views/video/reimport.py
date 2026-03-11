@@ -56,7 +56,9 @@ class VideoReimportView(APIView):
             )
 
         # Check if the raw file actually exists on disk
-        raw_file_path = Path(video.raw_file.path)
+        raw_file_path = video.get_raw_file_path()
+        if raw_file_path is not None:
+            raw_file_path = Path(raw_file_path)
         if not raw_file_path.exists():
             logger.error(f"Raw file not found on disk: {raw_file_path}")
             return Response(
@@ -146,8 +148,10 @@ class VideoReimportView(APIView):
                         file_path=raw_file_path,
                         center_name=video.center.name,
                         processor_name=processor_name,
+                        retry=True,
                         delete_source=False,
                     )
+                    video.refresh_from_db()
 
                     logger.info(
                         f"VideoImportService anonymization completed for {video.video_hash}"

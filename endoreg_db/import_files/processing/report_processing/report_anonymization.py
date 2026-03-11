@@ -21,7 +21,6 @@ class ReportAnonymizer:
     def __init__(self):
         self._report_reader_class = None
         self._ensure_report_reading_available()
-        self.storage = False
 
     @staticmethod
     def _read_txt_content(txt_path: Path) -> str:
@@ -96,7 +95,7 @@ class ReportAnonymizer:
         if isinstance(ctx.extracted_metadata, dict):
             sm.safe_update(ctx.extracted_metadata)
 
-        self.storage = sensitive_meta_storage(sm, ctx.current_report)
+        sensitive_meta_storage(sm, ctx.current_report)
         return ctx
 
     def _instantiate_report_reader(self) -> ReportReader:

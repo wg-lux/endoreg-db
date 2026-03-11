@@ -14,6 +14,7 @@ Available Functions from lx_anonymizer (already implemented):
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,20 @@ def _masked_output_path(video: VideoFile) -> Path:
 
 def _cleaned_output_path(video: VideoFile) -> Path:
     return ANONYM_VIDEO_DIR / f"{video.video_hash}_cleaned.mp4"
+
+
+def _part_output_path(output_path: Path) -> Path:
+    return output_path.with_name(f"{output_path.stem}.part{output_path.suffix}")
+
+
+def _promote_processed_output(temp_path: Path, final_path: Path) -> Path:
+    if not temp_path.exists():
+        raise FileNotFoundError(f"Temporary processed output missing: {temp_path}")
+    if temp_path.stat().st_size <= 0:
+        raise RuntimeError(f"Temporary processed output is empty: {temp_path}")
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(temp_path, final_path)
+    return final_path
 
 
 def _normalize_custom_roi(roi: Any) -> dict[str, Any] | None:
@@ -313,13 +328,16 @@ class VideoApplyMaskView(APIView):
             frame_cleaner = FrameCleaner()
 
             # Get video paths
-            video_path = (
-                Path(video.raw_file.path)
-                if hasattr(video.raw_file, "path")
-                else Path(str(video.raw_file))
-            )
+            raw_file_path = video.get_raw_file_path()
+            if raw_file_path is None:
+                raise FileNotFoundError(
+                    f"Raw video file not found for correction: {video.video_hash}"
+                )
+            video_path = Path(raw_file_path)
             output_path = _masked_output_path(video)
+            temp_output_path = _part_output_path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_output_path.unlink(missing_ok=True)
 
             # Load or create mask config against current lx_anonymizer API.
             if mask_type == "device":
@@ -342,7 +360,7 @@ class VideoApplyMaskView(APIView):
             success = frame_cleaner.mask_application.mask_video_streaming(
                 input_video=video_path,
                 mask_config=mask_config,
-                output_video=output_path,
+                output_video=temp_output_path,
                 use_named_pipe=processing_method == "streaming",
             )
 
@@ -350,8 +368,9 @@ class VideoApplyMaskView(APIView):
 
             if success:
                 # Update video record with anonymized file
-
-                processed_file_path = output_path
+                processed_file_path = _promote_processed_output(
+                    temp_output_path, output_path
+                )
                 update_processed_file(video, processed_file_path)
                 # Mark history as success
                 history.mark_success(
@@ -374,6 +393,8 @@ class VideoApplyMaskView(APIView):
 
         except Exception as e:
             logger.error(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
+            temp_output_path = _part_output_path(_masked_output_path(video))
+            temp_output_path.unlink(missing_ok=True)
 
             history.mark_failure(str(e))
 
@@ -480,13 +501,16 @@ class VideoRemoveFramesView(APIView):
             frame_cleaner = FrameCleaner()
 
             # Get video paths
-            video_path = (
-                Path(video.raw_file.path)
-                if hasattr(video.raw_file, "path")
-                else Path(str(video.raw_file))
-            )
+            raw_file_path = video.get_raw_file_path()
+            if raw_file_path is None:
+                raise FileNotFoundError(
+                    f"Raw video file not found for frame removal: {video.video_hash}"
+                )
+            video_path = Path(raw_file_path)
             output_path = _cleaned_output_path(video)
+            temp_output_path = _part_output_path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_output_path.unlink(missing_ok=True)
 
             # Remove frames using the current streaming removal API.
             import time
@@ -496,7 +520,7 @@ class VideoRemoveFramesView(APIView):
             success = frame_cleaner.remove_frames_from_video_streaming(
                 original_video=video_path,
                 frames_to_remove=frames_to_remove,
-                output_video=output_path,
+                output_video=temp_output_path,
                 total_frames=video.frame_count,
                 use_named_pipe=processing_method == "streaming",
             )
@@ -505,7 +529,10 @@ class VideoRemoveFramesView(APIView):
 
             if success:
                 # Update video record
-                update_processed_file(video, output_path)
+                final_output_path = _promote_processed_output(
+                    temp_output_path, output_path
+                )
+                update_processed_file(video, final_output_path)
 
                 # Phase 1.4: Update LabelVideoSegments (shift frame numbers)
                 segment_update_result = update_segments_after_frame_removal(
@@ -526,7 +553,7 @@ class VideoRemoveFramesView(APIView):
                     )
 
                 history.mark_success(
-                    output_file=str(output_path), details="; ".join(details_parts)
+                    output_file=str(final_output_path), details="; ".join(details_parts)
                 )
 
                 logger.info(
@@ -536,7 +563,7 @@ class VideoRemoveFramesView(APIView):
                 return Response(
                     {
                         "task_id": None,  # Will be Celery task ID in Phase 1.2
-                        "output_file": str(output_path),
+                        "output_file": str(final_output_path),
                         "frames_removed": len(frames_to_remove),
                         "segment_updates": segment_update_result,
                         "message": "Frame removal complete",
@@ -548,6 +575,8 @@ class VideoRemoveFramesView(APIView):
 
         except Exception as e:
             logger.error(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
+            temp_output_path = _part_output_path(_cleaned_output_path(video))
+            temp_output_path.unlink(missing_ok=True)
 
             history.mark_failure(str(e))
 

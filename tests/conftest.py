@@ -526,19 +526,39 @@ def optimize_database_queries(db):
     """
     from django.conf import settings
     from django.db import connection
+    from django.db.utils import (
+        DatabaseError,
+        InterfaceError,
+        OperationalError,
+        ProgrammingError,
+    )
 
     # Enable query optimization for tests
-    if hasattr(settings, "DATABASES"):
-        # Use WAL mode for SQLite to improve performance
+    if not hasattr(settings, "DATABASES"):
+        return
+
+    engine = settings.DATABASES.get("default", {}).get("ENGINE", "")
+    if "sqlite" not in engine:
+        return
+
+    try:
+        connection.ensure_connection()
+    except (DatabaseError, InterfaceError, OperationalError, ProgrammingError):
+        try:
+            connection.close()
+            connection.ensure_connection()
+        except (DatabaseError, InterfaceError, OperationalError, ProgrammingError):
+            return
+
+    try:
         with connection.cursor() as cursor:
-            try:
-                cursor.execute("PRAGMA journal_mode=WAL;")
-                cursor.execute("PRAGMA synchronous=NORMAL;")
-                cursor.execute("PRAGMA cache_size=10000;")
-                cursor.execute("PRAGMA temp_store=MEMORY;")
-            except Exception:
-                # Ignore errors if not SQLite or permissions issue
-                pass
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+            cursor.execute("PRAGMA cache_size=10000;")
+            cursor.execute("PRAGMA temp_store=MEMORY;")
+    except (DatabaseError, InterfaceError, OperationalError, ProgrammingError):
+        # Ignore transient closed/recycled connection errors in test teardown/setup churn.
+        return
 
 
 @pytest.fixture(scope="session")

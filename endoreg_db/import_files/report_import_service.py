@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Union
 
-from endoreg_db.import_files.context.file_lock import file_lock
+from endoreg_db.import_files.context import content_hash_lock, file_lock
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.validate_directories import validate_directories
 from endoreg_db.import_files.file_storage.create_report_file import (
@@ -22,10 +22,14 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 from endoreg_db.models.media import RawPdfFile
+from endoreg_db.models.state.processing_history.processing_history import (
+    ProcessingHistory,
+)
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.paths import SENSITIVE_REPORT_DIR
+from endoreg_db.utils.paths import IMPORT_REPORT_DIR, SENSITIVE_REPORT_DIR, STORAGE_DIR
 
 logger = logging.getLogger(__name__)
+HASH_LOCK_DIR = STORAGE_DIR / "locks" / "report_content"
 
 
 class ReportImportService:
@@ -151,7 +155,7 @@ class ReportImportService:
         should_delete_original_txt = False
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
-            raise FileNotFoundError(f"Video file not found: {file_path}")
+            raise FileNotFoundError(f"Report file not found: {file_path}")
 
         try:
             if ctx.file_path.suffix.lower() == ".txt":
@@ -164,99 +168,177 @@ class ReportImportService:
 
             lock_path = ctx.original_path if is_txt_input else ctx.file_path
             assert lock_path is not None
-            sensitive_src = ctx.original_path if is_txt_input else ctx.file_path
-            assert sensitive_src is not None
-            ctx.sensitive_path = create_sensitive_copy(
-                sensitive_src, SENSITIVE_REPORT_DIR
-            )
 
             with file_lock(lock_path):
                 logger.info("Acquired file lock for %s", lock_path)
+                assert isinstance(ctx.file_hash, str)
+                with content_hash_lock(ctx.file_hash, HASH_LOCK_DIR):
+                    logger.info("Acquired content-hash lock for %s", ctx.file_hash)
+                    existing_completed_report = self._get_existing_completed_report(ctx)
+                    if existing_completed_report is not None and not retry:
+                        ctx.current_report = existing_completed_report
+                        self._cleanup_duplicate_staging(ctx)
+                        return existing_completed_report
 
-                # create or retrieve RawPdfFile + update history
-                ctx.current_report, processed, needs_processing = (
-                    create_or_retrieve_report_file(ctx)
-                )
-                ctx.current_report.get_or_create_state()
-                assert ctx.current_report.state is not None
-                ctx.current_report = ctx.current_report
-
-                if should_delete_original_txt and ctx.original_path is not None:
-                    self._cleanup_path(
-                        ctx.original_path, "Deleted source txt after import setup:"
+                    sensitive_src = ctx.original_path if is_txt_input else ctx.file_path
+                    assert sensitive_src is not None
+                    ctx.sensitive_path = create_sensitive_copy(
+                        sensitive_src, SENSITIVE_REPORT_DIR
                     )
-                    should_delete_original_txt = False
 
-                if processed or retry:
-                    ctx.retry = True
-
-                # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
-                if (
-                    ctx.retry
-                    and needs_processing
-                    and ctx.current_report.state
-                    and not ctx.current_report.state.anonymization_validated
-                ):
-                    # ensure clean slate for forced reprocessing
-                    finalize_failure(ctx)
+                    # create or retrieve RawPdfFile + update history
                     ctx.current_report, processed, needs_processing = (
                         create_or_retrieve_report_file(ctx)
                     )
-                    assert needs_processing is True
-                elif not needs_processing and not ctx.retry:
-                    return ctx.current_report
-                else:
-                    finalize_failure(ctx)
-                    ctx.current_report, processed, needs_processing = (
-                        create_or_retrieve_report_file(ctx)
-                    )
-                    assert needs_processing is True
+                    ctx.current_report.get_or_create_state()
+                    assert ctx.current_report.state is not None
+                    ctx.current_report = ctx.current_report
 
-                mark_instance_processing_started(ctx.current_report, ctx)
-                try:
-                    # --- Anonymization with fallback ---
+                    if should_delete_original_txt and ctx.original_path is not None:
+                        self._cleanup_path(
+                            ctx.original_path, "Deleted source txt after import setup:"
+                        )
+                        should_delete_original_txt = False
+
+                    if processed or retry:
+                        ctx.retry = True
+
+                    # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
                     try:
-                        ctx = self.anonymizer.anonymize_report(ctx)
-                        logger.info(
-                            "Primary report anonymization succeeded for %s",
-                            ctx.file_path,
-                        )
-                    except Exception as primary_exc:
-                        logger.exception(
-                            "Primary report anonymization failed for %s: %s "
-                            "- trying basic anonymization",
-                            ctx.file_path,
-                            primary_exc,
-                        )
+                        if (
+                            ctx.retry
+                            and needs_processing
+                            and ctx.current_report.state
+                            and not ctx.current_report.state.anonymization_validated
+                        ):
+                            finalize_failure(ctx)
+                            ctx.current_report, processed, needs_processing = (
+                                create_or_retrieve_report_file(ctx)
+                            )
+                            assert needs_processing is True
+                        elif not needs_processing and not ctx.retry:
+                            self._cleanup_duplicate_staging(ctx)
+                            return ctx.current_report
+                        else:
+                            finalize_failure(ctx)
+                            ctx.current_report, processed, needs_processing = (
+                                create_or_retrieve_report_file(ctx)
+                            )
+                            assert needs_processing is True
+
+                        mark_instance_processing_started(ctx.current_report, ctx)
                         try:
                             ctx = self.anonymizer.anonymize_report(ctx)
-                        except Exception as e:
-                            logger.error(
-                                f"report Extraction failed for the second time. {e}"
+                            logger.info(
+                                "Primary report anonymization succeeded for %s",
+                                ctx.file_path,
                             )
-                            raise
+                        except Exception as primary_exc:
+                            logger.exception(
+                                "Primary report anonymization failed for %s: %s "
+                                "- trying basic anonymization",
+                                ctx.file_path,
+                                primary_exc,
+                            )
+                            try:
+                                ctx = self.anonymizer.anonymize_report(ctx)
+                            except Exception as e:
+                                logger.error(
+                                    f"report Extraction failed for the second time. {e}"
+                                )
+                                raise
 
-                        logger.info(
-                            "Basic report anonymization succeeded for %s",
+                            logger.info(
+                                "Basic report anonymization succeeded for %s",
+                                ctx.file_path,
+                            )
+
+                        # --- Finalize success: history + move anonymized file ---
+                        finalize_report_success(ctx)
+
+                        return ctx.current_report
+
+                    except Exception as exc:
+                        logger.exception(
+                            "Report import/anonymization failed for %s: %s",
                             ctx.file_path,
+                            exc,
                         )
-
-                    # --- Finalize success: history + move anonymized file ---
-                    finalize_report_success(ctx)
-
-                    return ctx.current_report
-
-                except Exception as exc:
-                    logger.exception(
-                        "Report import/anonymization failed for %s: %s",
-                        ctx.file_path,
-                        exc,
-                    )
-                    # mark failure in history
-                    finalize_failure(ctx)
-                    raise
+                        finalize_failure(ctx)
+                        raise
         finally:
             if temp_pdf_path is not None:
                 self._cleanup_path(
                     temp_pdf_path, "Cleaned temporary txt-converted pdf:"
                 )
+
+    def _get_existing_completed_report(self, ctx: ImportContext) -> RawPdfFile | None:
+        """
+        Return an already-successful report for this content hash, if one exists.
+
+        This mirrors the video flow so duplicate-content uploads can short-circuit
+        before any new staging work happens.
+        """
+        file_hash = ctx.file_hash
+        if not isinstance(file_hash, str):
+            return None
+
+        if not ProcessingHistory.has_history_for_hash(
+            file_hash=file_hash,
+            success=True,
+        ):
+            return None
+
+        try:
+            existing_report = RawPdfFile.get_report_by_hash(file_hash)
+        except ValueError:
+            logger.warning(
+                "Successful processing history exists for %s but no RawPdfFile was found.",
+                file_hash,
+            )
+            return None
+
+        logger.info(
+            "RawPdfFile already has successful processing history (file_hash=%s) - short-circuiting before staging",
+            file_hash,
+        )
+        return existing_report
+
+    def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
+        """Remove duplicate staging files without touching canonical managed assets."""
+        current_report = ctx.current_report
+        raw_path = None
+        if current_report is not None:
+            raw_path = current_report.get_raw_file_path()
+            if isinstance(raw_path, str):
+                raw_path = Path(raw_path)
+
+        def _safe_unlink(path: Path | None, *, label: str) -> None:
+            if not isinstance(path, Path) or not path.exists():
+                return
+            try:
+                if raw_path is not None and path.resolve() == raw_path.resolve():
+                    return
+            except FileNotFoundError:
+                return
+            try:
+                path.unlink()
+                logger.info("Deleted duplicate %s after short-circuit: %s", label, path)
+            except Exception as exc:
+                logger.warning(
+                    "Could not delete duplicate %s after short-circuit %s: %s",
+                    label,
+                    path,
+                    exc,
+                )
+
+        _safe_unlink(ctx.sensitive_path, label="sensitive copy")
+
+        original_path = (
+            ctx.original_path if isinstance(ctx.original_path, Path) else None
+        )
+        if (
+            isinstance(original_path, Path)
+            and original_path.parent == IMPORT_REPORT_DIR
+        ):
+            _safe_unlink(original_path, label="import source")

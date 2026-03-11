@@ -1,6 +1,7 @@
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
+from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.paths import ANONYM_REPORT_DIR, ANONYM_VIDEO_DIR
 
 import logging
@@ -17,6 +18,20 @@ from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import sha256_file
 
 logger = logging.getLogger(__name__)
+
+
+def _verify_final_video_output(path: Path) -> None:
+    """Fail finalization if the committed anonymized video is not probeable."""
+    if not path.exists():
+        raise RuntimeError(f"Final anonymized video missing: {path}")
+    stream_info = get_stream_info(path)
+    if not stream_info or "streams" not in stream_info:
+        raise RuntimeError(f"Final anonymized video failed ffprobe validation: {path}")
+    has_video_stream = any(
+        stream.get("codec_type") == "video" for stream in stream_info["streams"]
+    )
+    if not has_video_stream:
+        raise RuntimeError(f"Final anonymized video has no video stream: {path}")
 
 
 def _get_history_filename(ctx: ImportContext) -> str:
@@ -161,6 +176,30 @@ def finalize_report_success(
 
         instance.save()
 
+    raw_path = instance.get_raw_file_path()
+    if isinstance(ctx.sensitive_path, Path):
+        try:
+            same_raw = (
+                raw_path is not None
+                and ctx.sensitive_path.resolve() == raw_path.resolve()
+            )
+        except FileNotFoundError:
+            same_raw = False
+
+        if not same_raw and ctx.sensitive_path.exists():
+            try:
+                ctx.sensitive_path.unlink()
+                logger.info(
+                    "Deleted temporary sensitive copy after successful import: %s",
+                    ctx.sensitive_path,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Could not delete temporary sensitive copy %s: %s",
+                    ctx.sensitive_path,
+                    e,
+                )
+
     # --- ProcessingHistory entry ---
     try:
         with transaction.atomic():
@@ -260,6 +299,7 @@ def finalize_video_success(
 
         # Update FileField if we have a final path
         if final_path is not None:
+            _verify_final_video_output(final_path)
             relative_name = path_utils.to_storage_relative(final_path)
             current_name = getattr(instance.processed_file, "name", None)
             if current_name != relative_name:
@@ -289,6 +329,30 @@ def finalize_video_success(
             state.save()
 
         instance.save()
+
+    raw_path = instance.get_raw_file_path()
+    if isinstance(ctx.sensitive_path, Path):
+        try:
+            same_raw = (
+                raw_path is not None
+                and ctx.sensitive_path.resolve() == raw_path.resolve()
+            )
+        except FileNotFoundError:
+            same_raw = False
+
+        if not same_raw and ctx.sensitive_path.exists():
+            try:
+                ctx.sensitive_path.unlink()
+                logger.info(
+                    "Deleted temporary sensitive copy after successful import: %s",
+                    ctx.sensitive_path,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Could not delete temporary sensitive copy %s: %s",
+                    ctx.sensitive_path,
+                    e,
+                )
 
     # --- ProcessingHistory entry ---
     try:

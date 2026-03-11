@@ -1,10 +1,11 @@
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from endoreg_db.models import Center, EndoscopyProcessor
-from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
 import endoreg_db.models.media.video.create_from_file as create_from_file_module
@@ -322,15 +323,77 @@ def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypat
         create_from_file_module.check_storage_capacity(src_file, tmp_path)
 
 
+def test_create_or_retrieve_prefers_sensitive_path(monkeypatch, tmp_path):
+    """
+    The managed sensitive copy is the source of truth for VideoFile creation.
+    """
+    original_path = tmp_path / "import" / "watcher.mp4"
+    sensitive_path = tmp_path / "sensitive" / "watcher.mp4"
+    original_path.parent.mkdir(parents=True, exist_ok=True)
+    sensitive_path.parent.mkdir(parents=True, exist_ok=True)
+    original_path.write_bytes(b"original")
+    sensitive_path.write_bytes(b"sensitive")
+
+    ctx = ImportContext(
+        file_path=original_path,
+        center_name="university_hospital_wuerzburg",
+        processor_name="olympus_cv_1500",
+        delete_source=False,
+    )
+    ctx.sensitive_path = sensitive_path
+    ctx.file_hash = "hash-from-sensitive-copy"
+
+    captured = {}
+
+    monkeypatch.setattr(
+        create_video_file.ProcessingHistory,
+        "has_history_for_hash",
+        staticmethod(lambda **kwargs: False),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file.ProcessingHistory,
+        "get_or_create_for_hash",
+        staticmethod(lambda **kwargs: None),
+        raising=True,
+    )
+
+    def fake_create_from_file_initialized(**kwargs):
+        captured["file_path"] = kwargs["file_path"]
+        return SimpleNamespace(pk=1)
+
+    monkeypatch.setattr(
+        create_video_file.VideoFile,
+        "create_from_file_initialized",
+        staticmethod(fake_create_from_file_initialized),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        create_video_file,
+        "ensure_center",
+        lambda video, center_name: SimpleNamespace(name=center_name),
+        raising=True,
+    )
+
+    video, processed, needs_processing = (
+        create_video_file.create_or_retrieve_video_file(ctx)
+    )
+
+    assert captured["file_path"] == sensitive_path
+    assert video.pk == 1
+    assert processed is False
+    assert needs_processing is True
+
+
 @pytest.mark.django_db
-def test_create_from_file_transcoding_error_is_wrapped(
+def test_create_from_file_transcoding_failure_falls_back_to_original(
     tmp_path, monkeypatch, base_db_data
 ):
     """
-    If the transcoder raises, create_or_retrieve_video_file should propagate TranscodingError.
+    If standardization fails, the original managed file is still stored so the import can proceed.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
-        "transcode_error"
+        "transcode_fallback"
     )
 
     monkeypatch.setattr(
@@ -368,5 +431,13 @@ def test_create_from_file_transcoding_error_is_wrapped(
         original_path=Path(src_file),
     )
 
-    with pytest.raises(TranscodingError):
+    video, processed, needs_processing = (
         create_video_file.create_or_retrieve_video_file(ctx)
+    )
+
+    raw_path = video.get_raw_file_path()
+    assert raw_path is not None
+    assert raw_path.exists()
+    assert raw_path.read_bytes() == src_file.read_bytes()
+    assert processed is False
+    assert needs_processing is True

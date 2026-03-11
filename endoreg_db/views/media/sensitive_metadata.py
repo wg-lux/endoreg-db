@@ -14,6 +14,11 @@ from rest_framework import status
 from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from lx_dtypes.models.contracts import (
+    CaseResolutionRequest,
+    CaseResolutionResponse,
+    ValidationError,
+)
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import (
@@ -24,10 +29,9 @@ from endoreg_db.models import (
     SensitiveMeta,
     VideoFile,
 )
-from endoreg_db.schemas.case_resolution import (
-    CaseResolutionRequest,
-    CaseResolutionResponse,
-    ValidationError,
+from endoreg_db.services.case_resolution_state import (
+    get_case_resolution_meta,
+    persist_case_resolution_state,
 )
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
@@ -67,11 +71,16 @@ def _case_resolution_payload(
     *,
     media_type: Literal["video", "pdf"],
     media_pk: int,
+    media_obj: RawPdfFile | VideoFile,
     sensitive_meta: SensitiveMeta,
     linked_patient_examination_id: int | None,
 ) -> dict[str, object]:
     patient_hash = getattr(sensitive_meta, "patient_hash", None)
     examination_hash = getattr(sensitive_meta, "examination_hash", None)
+    case_resolution_meta = get_case_resolution_meta(media_obj)
+    explicit_linked_patient_examination_id = linked_patient_examination_id
+    if not case_resolution_meta.get("is_explicitly_resolved"):
+        explicit_linked_patient_examination_id = None
 
     examination_matches_qs = PatientExamination.objects.none()
 
@@ -87,13 +96,17 @@ def _case_resolution_payload(
         ).filter(hash=examination_hash)
     examination_matches = list(examination_matches_qs.order_by("-id"))
     examination_matches_count = len(examination_matches)
+    is_explicitly_resolved = bool(case_resolution_meta.get("is_explicitly_resolved"))
+    is_deferred = bool(case_resolution_meta.get("deferred"))
 
-    if examination_matches_count == 0:
-        match_status = "0_matches"
-    elif examination_matches_count == 1:
-        match_status = "1_suggested_match"
+    if explicit_linked_patient_examination_id is not None:
+        match_status = "linked"
+    elif is_deferred:
+        match_status = "deferred"
+    elif examination_matches_count > 0:
+        match_status = "suggested"
     else:
-        match_status = "multiple_matches"
+        match_status = "unresolved"
 
     recommended_patient_examination_id = (
         examination_matches[0].pk if examination_matches_count == 1 else None
@@ -103,6 +116,16 @@ def _case_resolution_payload(
         "media_type": media_type,
         "media_id": media_pk,
         "sensitive_meta_id": sensitive_meta.pk,
+        "linked_patient_examination_id": explicit_linked_patient_examination_id,
+        "linked_patient_id": (
+            case_resolution_meta.get("linked_patient_id")
+            if is_explicitly_resolved
+            else None
+        ),
+        "current_patient_examination_id": getattr(media_obj, "examination_id", None),
+        "current_patient_id": getattr(media_obj, "patient_id", None),
+        "pseudo_patient_id": sensitive_meta.pseudo_patient_id,
+        "pseudo_examination_id": sensitive_meta.pseudo_examination_id,
         "patient_hash_display": (
             f"...{patient_hash[-8:]}"
             if isinstance(patient_hash, str) and patient_hash
@@ -119,9 +142,12 @@ def _case_resolution_payload(
         },
         "pseudo_examination": {
             "id": sensitive_meta.pseudo_examination_id,
-            "linked_patient_examination_id": linked_patient_examination_id,
+            "linked_patient_examination_id": explicit_linked_patient_examination_id,
         },
         "match_status": match_status,
+        "is_explicitly_resolved": is_explicitly_resolved,
+        "is_deferred": is_deferred,
+        "suggested_match_count": examination_matches_count,
         "recommended_patient_examination_id": recommended_patient_examination_id,
         "patient_examination_matches": [
             _serialize_patient_examination_match(patient_examination)
@@ -136,6 +162,7 @@ def _build_case_resolution_write_response(
     created: bool,
     media_type: Literal["video", "pdf"],
     media_pk: int,
+    media_obj: RawPdfFile | VideoFile,
     patient_examination_id: int | None,
     patient_id: int | None,
     sensitive_meta: SensitiveMeta,
@@ -152,6 +179,7 @@ def _build_case_resolution_write_response(
     response_payload["case_resolution"] = _case_resolution_payload(
         media_type=media_type,
         media_pk=media_pk,
+        media_obj=media_obj,
         sensitive_meta=sensitive_meta,
         linked_patient_examination_id=patient_examination_id,
     )
@@ -194,12 +222,7 @@ def _resolve_case_resolution_patient(
         patient_serializer.is_valid(raise_exception=True)
         return patient_serializer.save()
 
-    pseudo_patient = sensitive_meta.pseudo_patient
-    if pseudo_patient is None:
-        raise ValueError(
-            "patient_id or new_patient is required for create action when no pseudo_patient exists"
-        )
-    return pseudo_patient
+    raise ValueError("patient_id or new_patient is required for create action")
 
 
 def _resolve_case_resolution_examination(
@@ -311,37 +334,60 @@ def _handle_case_resolution_post(
     patient_examination = None
 
     try:
-        if payload.action == "attach":
-            assert payload.patient_examination_id is not None
-            patient_examination = _resolve_target_patient_examination(
-                patient_examination_id=payload.patient_examination_id
-            )
-            _link_media_to_patient_examination(
-                media_type=media_type,
-                media_obj=media_obj,
-                patient_examination=patient_examination,
-            )
-        elif payload.action == "create":
-            patient_examination = _create_patient_examination_for_case_resolution(
-                payload=payload,
-                sensitive_meta=sensitive_meta,
-            )
-            created = True
-            _link_media_to_patient_examination(
-                media_type=media_type,
-                media_obj=media_obj,
-                patient_examination=patient_examination,
-            )
-        else:
-            patient_examination = media_obj.examination
+        with transaction.atomic():
+            if payload.action == "attach":
+                assert payload.patient_examination_id is not None
+                patient_examination = _resolve_target_patient_examination(
+                    patient_examination_id=payload.patient_examination_id
+                )
+                _link_media_to_patient_examination(
+                    media_type=media_type,
+                    media_obj=media_obj,
+                    patient_examination=patient_examination,
+                )
+                persist_case_resolution_state(
+                    media_obj=media_obj,
+                    action="attach",
+                    patient_examination_id=patient_examination.pk,
+                    patient_id=patient_examination.patient_id,
+                )
+            elif payload.action == "create":
+                patient_examination = _create_patient_examination_for_case_resolution(
+                    payload=payload,
+                    sensitive_meta=sensitive_meta,
+                )
+                created = True
+                _link_media_to_patient_examination(
+                    media_type=media_type,
+                    media_obj=media_obj,
+                    patient_examination=patient_examination,
+                )
+                persist_case_resolution_state(
+                    media_obj=media_obj,
+                    action="create",
+                    patient_examination_id=patient_examination.pk,
+                    patient_id=patient_examination.patient_id,
+                )
+            else:
+                if media_obj.examination_id is not None:
+                    raise ValueError(
+                        "cannot defer case resolution for already linked media"
+                    )
+                patient_examination = media_obj.examination
+                persist_case_resolution_state(
+                    media_obj=media_obj,
+                    action="defer",
+                    patient_examination_id=None,
+                    patient_id=None,
+                )
 
-        if media_type == "pdf" and payload.action in {"attach", "create"}:
-            assert isinstance(media_obj, RawPdfFile)
-            upsert_anonym_examination_report_from_pdf(
-                pdf=media_obj,
-                validated_at_iso=None,
-                source="case_resolution",
-            )
+            if media_type == "pdf" and payload.action in {"attach", "create"}:
+                assert isinstance(media_obj, RawPdfFile)
+                upsert_anonym_examination_report_from_pdf(
+                    pdf=media_obj,
+                    validated_at_iso=None,
+                    source="case_resolution",
+                )
     except drf_serializers.ValidationError as exc:
         return Response(
             {"error": "Case resolution failed", "detail": exc.detail},
@@ -359,6 +405,7 @@ def _handle_case_resolution_post(
             created=created,
             media_type=media_type,
             media_pk=media_obj.pk,
+            media_obj=media_obj,
             patient_examination_id=(
                 patient_examination.pk if patient_examination is not None else None
             ),
@@ -485,6 +532,7 @@ def video_case_resolution(request, pk):
         _case_resolution_payload(
             media_type="video",
             media_pk=video.pk,
+            media_obj=video,
             sensitive_meta=video.sensitive_meta,
             linked_patient_examination_id=video.examination_id,
         ),
@@ -624,6 +672,7 @@ def pdf_case_resolution(request, pk):
         _case_resolution_payload(
             media_type="pdf",
             media_pk=pdf.pk,
+            media_obj=pdf,
             sensitive_meta=pdf.sensitive_meta,
             linked_patient_examination_id=pdf.examination_id,
         ),

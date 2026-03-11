@@ -14,7 +14,7 @@ import pytest
 from django.test import TestCase
 from django.utils import timezone
 
-from endoreg_db.models import Center, RawPdfFile
+from endoreg_db.models import Center, PatientExamination, RawPdfFile
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
@@ -192,6 +192,12 @@ class TestReportImportService(TestCase):
             self.assertTrue(bool(raw_pdf.file))
             self.assertTrue(bool(raw_pdf.processed_file))
             self.assertIsNotNone(raw_pdf.sensitive_meta_id)
+            self.assertIsNotNone(raw_pdf.sensitive_meta.pseudo_patient_id)
+
+            raw_pdf.examination = PatientExamination.objects.create(
+                patient=raw_pdf.sensitive_meta.pseudo_patient
+            )
+            raw_pdf.save(update_fields=["examination"])
 
             report_obj, _created = upsert_anonym_examination_report_from_pdf(
                 pdf=raw_pdf,

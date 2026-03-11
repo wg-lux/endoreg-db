@@ -2,9 +2,7 @@ import logging
 from pathlib import Path
 from endoreg_db.models.media.video.create_from_file import (
     atomic_copy_with_fallback,
-    atomic_move_with_fallback,
 )
-from endoreg_db.utils import transcode_videofile_if_required
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +21,5 @@ def create_sensitive_copy(src: Path, sensitive_root: Path) -> Path:
     ensure_dir(sensitive_root)
     dest = sensitive_root / src.name
     logger.info("Creating sensitive copy: %s -> %s", src, dest)
-    transcode_videofile_if_required(src, dest)
     atomic_copy_with_fallback(src, dest)
-    return dest
-
-
-def move_to_anonymized(temp_path: Path, anonymized_root: Path) -> Path:
-    """
-    Move a (temporary) anonymized file into the canonical anonymized root.
-
-    Returns:
-        Final path inside anonymized_root.
-    """
-    ensure_dir(anonymized_root)
-    dest = anonymized_root / temp_path.name
-    logger.info("Moving anonymized file: %s -> %s", temp_path, dest)
-    transcode_videofile_if_required(temp_path, dest)
-    atomic_move_with_fallback(temp_path, dest)
     return dest

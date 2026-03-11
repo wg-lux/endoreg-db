@@ -1,6 +1,14 @@
 import logging
+import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _temp_media_path(final_path: Path, marker: str = "part") -> Path:
+    """Keep the media suffix last so FFmpeg can infer the container."""
+    return final_path.with_name(f"{final_path.stem}.{marker}{final_path.suffix}")
+
 
 from lx_anonymizer import FrameCleaner
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta as LxSM
@@ -18,7 +26,6 @@ class VideoAnonymizer:
         self._ensure_frame_cleaning_available()
         self._frame_cleaning_available = None
         self._frame_cleaning_class = None
-        self.storage = False
 
     def anonymize_video(self, ctx: ImportContext):
         # Setup anonymized directory
@@ -29,24 +36,45 @@ class VideoAnonymizer:
 
         video_hash = ctx.current_video.video_hash
         anonymized_output_path = anonymized_dir / f"{video_hash}.mp4"
+        temp_output_path = _temp_media_path(anonymized_output_path)
+        temp_output_path.unlink(missing_ok=True)
 
         self._frame_cleaning_class = FrameCleaner()
 
         assert isinstance(self._frame_cleaning_class, FrameCleaner)
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
+        source_path = ctx.current_video.get_raw_file_path()
+        if source_path is None:
+            source_path = ctx.sensitive_path or ctx.file_path
+
         # Process with enhanced process_report method (returns 4-tuple now)
         ctx.anonymized_path, extracted_metadata = (
             self._frame_cleaning_class.clean_video(
-                video_path=ctx.file_path,
+                video_path=source_path,
                 endoscope_image_roi=endoscope_roi,
                 endoscope_data_roi_nested=endoscope_roi_nested,
-                output_path=anonymized_output_path,
+                output_path=temp_output_path,
             )
         )
+        if ctx.anonymized_path is None:
+            raise RuntimeError("Video anonymization returned no output path.")
+
+        temp_result_path = ctx.anonymized_path
+        if not temp_result_path.exists():
+            raise RuntimeError(
+                f"Video anonymization output does not exist: {temp_result_path}"
+            )
+        if temp_result_path.stat().st_size <= 0:
+            raise RuntimeError(
+                f"Video anonymization output is empty: {temp_result_path}"
+            )
+
+        os.replace(temp_result_path, anonymized_output_path)
+        ctx.anonymized_path = anonymized_output_path
         sm = LxSM()
         sm.safe_update(extracted_metadata)
 
-        self.storage = sensitive_meta_storage(sm, ctx.current_video)
+        sensitive_meta_storage(sm, ctx.current_video)
         return ctx
 
     def _ensure_frame_cleaning_available(self):

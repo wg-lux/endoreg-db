@@ -1,16 +1,15 @@
 import logging
+import os
 import shutil
-import uuid
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Type
 
 # Import the new exceptions from the correct path
-from endoreg_db.exceptions import InsufficientStorageError, TranscodingError
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.utils.paths import (
     IMPORT_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
-    TRANSCODING_DIR,
 )
 
 if TYPE_CHECKING:
@@ -21,6 +20,27 @@ import endoreg_db.utils.paths as path_utils
 from ....utils.video.ffmpeg_wrapper import transcode_videofile_if_required
 
 logger = logging.getLogger(__name__)
+TRANSCODING_DIR = path_utils.data_paths["transcoding"]
+
+
+def _verify_completed_file(path: Path) -> None:
+    if not path.exists():
+        raise RuntimeError(f"Expected output file does not exist: {path}")
+    if path.stat().st_size <= 0:
+        raise RuntimeError(f"Expected output file is empty: {path}")
+
+
+def _promote_atomic(temp_path: Path, final_path: Path) -> None:
+    temp_path.parent.mkdir(parents=True, exist_ok=True)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    _verify_completed_file(temp_path)
+    os.replace(temp_path, final_path)
+    logger.debug("Promoted file atomically: %s -> %s", temp_path, final_path)
+
+
+def _temp_media_path(final_path: Path, marker: str) -> Path:
+    """Keep the media suffix last so FFmpeg can infer the container."""
+    return final_path.with_name(f"{final_path.stem}.{marker}{final_path.suffix}")
 
 
 def check_storage_capacity(
@@ -90,7 +110,7 @@ def atomic_copy_with_fallback(
             )
 
         # Use a temporary name during copy for atomicity
-        temp_dst = dst_path.with_suffix(dst_path.suffix + ".tmp")
+        temp_dst = _temp_media_path(dst_path, "tmp")
 
         try:
             shutil.copy2(str(src_path), str(temp_dst))
@@ -150,7 +170,7 @@ def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
         logger.info(f"Copying file (cross-filesystem): {src_path} -> {dst_path}")
 
         # Use a temporary name during copy for atomicity
-        temp_dst = dst_path.with_suffix(dst_path.suffix + ".tmp")
+        temp_dst = _temp_media_path(dst_path, "tmp")
 
         try:
             shutil.copy2(str(src_path), str(temp_dst))
@@ -209,7 +229,6 @@ def _create_from_file(
 
     Raises:
         InsufficientStorageError: When not enough disk space
-        TranscodingError: When video transcoding fails
         ValueError: When required objects (Center, Processor) not found
         RuntimeError: For other processing errors
     """
@@ -220,6 +239,7 @@ def _create_from_file(
     original_suffix = file_path.suffix
     final_storage_path = None
     transcoded_file_path = None
+    temp_output_path = None
 
     try:
         # Ensure we operate under the canonical video path root
@@ -234,26 +254,38 @@ def _create_from_file(
         # Check storage capacity before starting any work
         check_storage_capacity(file_path, storage_root)
 
+        filename = f"{video_hash}{original_suffix}"
+        final_storage_path = video_dir / filename
+        temp_output_path = _temp_media_path(final_storage_path, "part")
+
+        # Ensure the DIRECTORY exists (video_dir), not the parent of a nested file
+        final_storage_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if temp_output_path.exists():
+            temp_output_path.unlink(missing_ok=True)
+
         # 1. Transcode if necessary
         logger.debug("Checking transcoding requirement for %s", file_path)
-        temp_transcode_dir = TRANSCODING_DIR
-        temp_transcode_dir.mkdir(parents=True, exist_ok=True)
-
-        # Use a unique name for the potential transcoded file
-        temp_transcoded_output_path = (
-            temp_transcode_dir / f"{uuid.uuid4()}{original_suffix}"
-        )
 
         try:
             transcoded_file_path = transcode_videofile_if_required(
-                input_path=file_path, output_path=temp_transcoded_output_path
+                input_path=file_path, output_path=temp_output_path
             )
-            if transcoded_file_path is None:
-                raise TranscodingError(
-                    f"Transcoding check/process failed for {file_path}"
-                )
         except Exception as e:
-            raise TranscodingError(f"Video transcoding failed: {e}") from e
+            logger.warning(
+                "Video transcoding failed for %s, falling back to original file: %s",
+                file_path,
+                e,
+            )
+            transcoded_file_path = file_path
+
+        if transcoded_file_path is None:
+            logger.warning(
+                "Transcoding returned no output for %s, falling back to original file.",
+                file_path,
+            )
+            transcoded_file_path = file_path
 
         logger.debug("Using file for hashing: %s", transcoded_file_path)
 
@@ -288,36 +320,18 @@ def _create_from_file(
             )
             existing_video.delete()
 
-        filename = f"{video_hash}{transcoded_file_path.suffix}"
-        final_storage_path = video_dir / filename
-
-        # Ensure the DIRECTORY exists (video_dir), not the parent of a nested file
-        final_storage_path.parent.mkdir(parents=True, exist_ok=True)
-
         # 5. Move or Copy the file to final storage using improved method
         try:
-            if delete_source and transcoded_file_path == file_path:
-                logger.debug(
-                    "Moving original file %s to %s", file_path, final_storage_path
-                )
-                atomic_move_with_fallback(file_path, final_storage_path)
-            elif delete_source and transcoded_file_path != file_path:
-                logger.debug(
-                    "Moving transcoded file %s to %s",
-                    transcoded_file_path,
-                    final_storage_path,
-                )
-                atomic_move_with_fallback(transcoded_file_path, final_storage_path)
+            if transcoded_file_path == temp_output_path:
+                _promote_atomic(temp_output_path, final_storage_path)
             else:
                 logger.debug(
-                    "Copying file %s to %s", transcoded_file_path, final_storage_path
+                    "Copying file %s to temporary destination %s",
+                    transcoded_file_path,
+                    temp_output_path,
                 )
-                atomic_copy_with_fallback(transcoded_file_path, final_storage_path)
-                if transcoded_file_path != file_path and transcoded_file_path.exists():
-                    logger.debug(
-                        "Cleaning up temporary transcoded file %s", transcoded_file_path
-                    )
-                    transcoded_file_path.unlink(missing_ok=True)
+                atomic_copy_with_fallback(transcoded_file_path, temp_output_path)
+                _promote_atomic(temp_output_path, final_storage_path)
         except InsufficientStorageError:
             # Re-raise storage errors as-is
             raise
@@ -376,7 +390,7 @@ def _create_from_file(
 
         return video
 
-    except (InsufficientStorageError, TranscodingError, ValueError):
+    except (InsufficientStorageError, ValueError):
         # Re-raise these specific errors as-is
         raise
     except Exception as e:
@@ -391,9 +405,14 @@ def _create_from_file(
         if final_storage_path and final_storage_path.exists():
             logger.warning("Cleaning up orphaned file: %s", final_storage_path)
             final_storage_path.unlink(missing_ok=True)
+        if temp_output_path and temp_output_path.exists():
+            logger.warning(
+                "Cleaning up orphaned temporary output file: %s", temp_output_path
+            )
+            temp_output_path.unlink(missing_ok=True)
         if (
             transcoded_file_path
-            and transcoded_file_path != file_path
+            and transcoded_file_path not in {file_path, temp_output_path}
             and transcoded_file_path.exists()
         ):
             logger.warning(

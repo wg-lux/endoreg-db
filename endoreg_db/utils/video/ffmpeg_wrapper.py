@@ -11,6 +11,9 @@ import cv2
 from tqdm import tqdm
 
 logger = logging.getLogger("ffmpeg_wrapper")
+FFMPEG_TRANSCODE_TIMEOUT_SECONDS = int(
+    os.environ.get("FFMPEG_TRANSCODE_TIMEOUT_SECONDS", "3600")
+)
 
 # Global hardware acceleration cache
 _nvenc_available = None
@@ -459,26 +462,23 @@ def transcode_video(
     logger.debug("FFmpeg command: %s", " ".join(command))
 
     try:
-        process = subprocess.Popen(
-            command, stderr=subprocess.PIPE, text=True, universal_newlines=True
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+            check=False,
         )
+        stderr_output = result.stderr or ""
 
-        # Progress reporting and error handling
-        stderr_output = ""
-        if process.stderr:
-            for line in process.stderr:
-                stderr_output += line
-
-        process.wait()
-
-        if process.returncode == 0:
+        if result.returncode == 0:
             logger.info("Transcoding finished successfully: %s", output_path)
             return output_path
         else:
             logger.error(
                 "FFmpeg transcoding failed for %s with return code %d.",
                 input_path.name,
-                process.returncode,
+                result.returncode,
             )
             logger.error("FFmpeg stderr:\n%s", stderr_output)
 
@@ -504,6 +504,20 @@ def transcode_video(
                         "Failed to delete incomplete output file %s: %s", output_path, e
                     )
             return None
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "FFmpeg transcoding timed out for %s after %ss.",
+            input_path.name,
+            FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+        )
+        if output_path.exists():
+            try:
+                output_path.unlink()
+            except OSError as e:
+                logger.error(
+                    "Failed to delete timed-out output file %s: %s", output_path, e
+                )
+        return None
 
     except FileNotFoundError:
         logger.error(
@@ -570,76 +584,36 @@ def _transcode_video_fallback(
         )
         logger.debug("Fallback FFmpeg command: %s", " ".join(command))
 
-        process = subprocess.Popen(
-            command, stderr=subprocess.PIPE, text=True, universal_newlines=True
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+            check=False,
         )
-        stderr_output = ""
-        if process.stderr:
-            for line in process.stderr:
-                stderr_output += line
+        stderr_output = result.stderr or ""
 
-        process.wait()
-
-        if process.returncode == 0:
+        if result.returncode == 0:
             logger.info("CPU fallback transcoding successful: %s", output_path)
             return output_path
         else:
             logger.error("CPU fallback transcoding also failed for %s", input_path.name)
             logger.error("Fallback stderr:\n%s", stderr_output)
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
             return None
 
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "CPU fallback transcoding timed out for %s after %ss.",
+            input_path.name,
+            FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+        )
+        if output_path.exists():
+            output_path.unlink(missing_ok=True)
+        return None
     except Exception as e:
         logger.error("Error during CPU fallback transcoding: %s", e, exc_info=True)
-        return None
-
-    logger.info("Starting transcoding: %s -> %s", input_path.name, output_path.name)
-    logger.debug("FFmpeg command: %s", " ".join(command))
-
-    try:
-        process = subprocess.Popen(
-            command, stderr=subprocess.PIPE, text=True, universal_newlines=True
-        )
-
-        # Optional: Progress reporting (can be complex to parse ffmpeg output reliably)
-        # For simplicity, just wait and check the return code
-        stderr_output = ""
-        if process.stderr:
-            for line in process.stderr:
-                stderr_output += line
-                # Simple progress indication or detailed logging
-                # logger.debug(f"ffmpeg: {line.strip()}")
-
-        process.wait()
-
-        if process.returncode == 0:
-            logger.info("Transcoding finished successfully: %s", output_path)
-            return output_path
-        else:
-            logger.error(
-                "FFmpeg transcoding failed for %s with return code %d.",
-                input_path.name,
-                process.returncode,
-            )
-            logger.error("FFmpeg stderr:\n%s", stderr_output)
-            # Clean up potentially corrupted output file
-            if output_path.exists():
-                try:
-                    output_path.unlink()
-                except OSError as e:
-                    logger.error(
-                        "Failed to delete incomplete output file %s: %s", output_path, e
-                    )
-            return None
-
-    except FileNotFoundError:
-        logger.error(
-            "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
-        )
-        return None
-    except Exception as e:
-        logger.error(
-            "Error during transcoding of %s: %s", input_path.name, e, exc_info=True
-        )
         return None
 
 

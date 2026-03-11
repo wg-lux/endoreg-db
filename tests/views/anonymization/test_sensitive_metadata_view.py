@@ -11,6 +11,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from django.contrib.auth.models import User
 
 from endoreg_db.models import (
+    AnonymExaminationReport,
     Center,
     Examination,
     Gender,
@@ -83,6 +84,7 @@ class TestSensitiveMetadataEndpoints:
                 content_type="application/pdf",
             ),
             sensitive_meta=sensitive_meta,
+            raw_meta={"document_type": "report_draft"},
         )
 
     def _call_view(self, view, request, **kwargs) -> DRFResponse:
@@ -154,7 +156,9 @@ class TestSensitiveMetadataEndpoints:
             payload["pseudo_examination"]["id"]
             == video.sensitive_meta.pseudo_examination_id
         )
-        assert payload["match_status"] == "1_suggested_match"
+        assert payload["match_status"] == "suggested"
+        assert payload["is_explicitly_resolved"] is False
+        assert payload["linked_patient_examination_id"] is None
         assert (
             payload["recommended_patient_examination_id"]
             == video.sensitive_meta.pseudo_examination_id
@@ -168,14 +172,31 @@ class TestSensitiveMetadataEndpoints:
         assert payload["media_type"] == "pdf"
         assert payload["media_id"] == pdf.pk
         assert payload["sensitive_meta_id"] == pdf.sensitive_meta_id
-        assert (
-            payload["pseudo_examination"]["linked_patient_examination_id"]
-            == pdf.examination_id
-        )
+        assert payload["match_status"] == "suggested"
+        assert payload["is_explicitly_resolved"] is False
+        assert payload["linked_patient_examination_id"] is None
+        assert payload["pseudo_examination"]["linked_patient_examination_id"] is None
         assert (
             payload["patient_examination_matches"][0]["id"]
             == pdf.sensitive_meta.pseudo_examination_id
         )
+
+    def test_get_pdf_case_resolution_unresolved_when_no_hash_matches(self, client, pdf):
+        SensitiveMeta.objects.filter(pk=pdf.sensitive_meta_id).update(
+            patient_hash=f"no-patient-match-{uuid4().hex}",
+            examination_hash=f"no-examination-match-{uuid4().hex}",
+        )
+        pdf.refresh_from_db()
+        pdf.sensitive_meta.refresh_from_db()
+
+        response = client.get(f"/api/media/pdfs/{pdf.pk}/case-resolution/")
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["match_status"] == "unresolved"
+        assert payload["suggested_match_count"] == 0
+        assert payload["recommended_patient_examination_id"] is None
+        assert payload["patient_examination_matches"] == []
 
     def test_post_video_case_resolution_attach_existing(self, client, video):
         target_patient = Patient.objects.create(
@@ -212,17 +233,22 @@ class TestSensitiveMetadataEndpoints:
             ]
             == target_patient_examination.pk
         )
+        assert payload["case_resolution"]["match_status"] == "linked"
+        assert payload["case_resolution"]["is_explicitly_resolved"] is True
         assert video.examination_id == target_patient_examination.pk
         assert video.patient_id == target_patient.pk
         assert target_patient_examination.video_id == video.pk
 
     def test_post_pdf_case_resolution_create_new(self, client, pdf):
         examination = Examination.objects.create(name=f"colonoscopy-{uuid4().hex[:8]}")
+        pdf.anonymized_text = "Latest corrected text for explicit create"
+        pdf.save(update_fields=["anonymized_text"])
 
         response = client.post(
             f"/api/media/pdfs/{pdf.pk}/case-resolution/",
             data={
                 "action": "create",
+                "patient_id": pdf.sensitive_meta.pseudo_patient_id,
                 "examination_name": examination.name,
                 "date_start": "2025-11-28",
             },
@@ -250,6 +276,12 @@ class TestSensitiveMetadataEndpoints:
         assert pdf.patient_id == pdf.sensitive_meta.pseudo_patient_id
         assert pdf.anonym_examination_report_id is not None
         assert pdf.anonym_examination_report.type.name == "report_draft"
+        assert (
+            pdf.anonym_examination_report.text
+            == "Latest corrected text for explicit create"
+        )
+        assert payload["case_resolution"]["match_status"] == "linked"
+        assert payload["case_resolution"]["is_explicitly_resolved"] is True
 
     def test_post_pdf_case_resolution_create_new_patient_and_examination(
         self, client, pdf
@@ -291,6 +323,45 @@ class TestSensitiveMetadataEndpoints:
         assert pdf.examination_id == created_patient_examination.pk
         assert pdf.anonym_examination_report_id is not None
 
+    def test_post_pdf_case_resolution_create_requires_explicit_patient_and_examination(
+        self, client, pdf
+    ):
+        response = client.post(
+            f"/api/media/pdfs/{pdf.pk}/case-resolution/",
+            data={"action": "create"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        payload = response.json()
+        assert payload["error"] == "Invalid case resolution payload"
+
+    def test_post_pdf_case_resolution_attach_without_document_type_rolls_back_link(
+        self, client, pdf
+    ):
+        original_examination_id = pdf.examination_id
+        original_patient_id = pdf.patient_id
+        pdf.raw_meta = {}
+        pdf.save(update_fields=["raw_meta"])
+        target_examination = PatientExamination.objects.create(
+            patient=pdf.sensitive_meta.pseudo_patient
+        )
+
+        response = client.post(
+            f"/api/media/pdfs/{pdf.pk}/case-resolution/",
+            data={"action": "attach", "patient_examination_id": target_examination.pk},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        payload = response.json()
+        assert payload["error"] == "Case resolution failed"
+
+        pdf.refresh_from_db()
+        assert pdf.examination_id == original_examination_id
+        assert pdf.patient_id == original_patient_id
+        assert pdf.anonym_examination_report_id is None
+
     def test_post_video_case_resolution_defer(self, client, video):
         response = client.post(
             f"/api/media/videos/{video.pk}/case-resolution/",
@@ -305,7 +376,18 @@ class TestSensitiveMetadataEndpoints:
         assert payload["action"] == "defer"
         assert payload["status"] == "deferred"
         assert payload["patient_examination_id"] is None
+        assert payload["case_resolution"]["match_status"] == "deferred"
+        assert payload["case_resolution"]["is_explicitly_resolved"] is False
+        assert payload["case_resolution"]["is_deferred"] is True
         assert video.examination_id is None
+
+        read_response = client.get(f"/api/media/videos/{video.pk}/case-resolution/")
+
+        assert read_response.status_code == 200, read_response.content
+        read_payload = read_response.json()
+        assert read_payload["match_status"] == "deferred"
+        assert read_payload["is_deferred"] is True
+        assert read_payload["linked_patient_examination_id"] is None
 
     def test_post_video_case_resolution_attach_rejects_conflicting_primary_video(
         self, client, video, sensitive_meta
@@ -332,6 +414,33 @@ class TestSensitiveMetadataEndpoints:
         assert response.status_code == 400, response.content
         payload = response.json()
         assert payload["error"] == "Case resolution failed"
+
+    def test_post_video_case_resolution_attach_has_no_report_side_effect(
+        self, client, video
+    ):
+        target_patient = Patient.objects.create(
+            first_name="Video",
+            last_name="Target",
+            patient_hash=f"video-target-{uuid4().hex[:8]}",
+        )
+        target_patient_examination = PatientExamination.objects.create(
+            patient=target_patient
+        )
+        report_count_before = AnonymExaminationReport.objects.count()
+
+        response = client.post(
+            f"/api/media/videos/{video.pk}/case-resolution/",
+            data={
+                "action": "attach",
+                "patient_examination_id": target_patient_examination.pk,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        video.refresh_from_db()
+        assert video.examination_id == target_patient_examination.pk
+        assert AnonymExaminationReport.objects.count() == report_count_before
 
     def test_pdf_validation_then_case_resolution_materializes_report_and_updates_read_side(
         self, client, factory, user, pdf
@@ -364,7 +473,6 @@ class TestSensitiveMetadataEndpoints:
         pdf.refresh_from_db()
         assert pdf.anonymized_text == "Latest validated report text"
         assert pdf.anonym_examination_report_id is None
-        assert pdf.examination_id is not None
         assert isinstance(pdf.raw_meta, dict)
         assert pdf.raw_meta["examination_hash"] == pdf.sensitive_meta.examination_hash
         assert (
@@ -401,16 +509,20 @@ class TestSensitiveMetadataEndpoints:
 
         assert read_response.status_code == 200, read_response.content
         read_payload = read_response.json()
+        assert read_payload["match_status"] == "linked"
+        assert read_payload["is_explicitly_resolved"] is True
+        assert read_payload["linked_patient_examination_id"] == target_examination.pk
         assert (
             read_payload["pseudo_examination"]["linked_patient_examination_id"]
             == target_examination.pk
         )
-        assert any(
-            match["id"] == target_examination.pk
-            for match in read_payload["patient_examination_matches"]
+        assert (
+            read_payload["pseudo_examination"]["linked_patient_examination_id"]
+            == target_examination.pk
         ), (
-            "Read-side case resolution must reflect the explicit linked "
-            "PatientExamination after case resolution succeeds."
+            "Read-side case resolution must reflect the explicitly linked "
+            "PatientExamination after case resolution succeeds, even when the "
+            "linked examination is not one of the hash-based suggestions."
         )
 
     def test_patch_pdf_sensitive_metadata(self, client, pdf):

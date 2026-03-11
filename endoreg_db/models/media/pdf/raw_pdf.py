@@ -5,7 +5,7 @@
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
 import uuid
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional, Any, cast
 
 from django.core.exceptions import ValidationError
 from django.core.files import File
@@ -246,7 +246,7 @@ class RawPdfFile(models.Model):
         return None
 
     @property
-    def file_url(self):
+    def file_url(self) -> Any | str | None:
         """
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
