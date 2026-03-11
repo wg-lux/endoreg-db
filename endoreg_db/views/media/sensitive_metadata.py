@@ -347,7 +347,7 @@ def _handle_case_resolution_post(
                 )
                 persist_case_resolution_state(
                     media_obj=media_obj,
-                    action="attach",
+                    payload=payload,
                     patient_examination_id=patient_examination.pk,
                     patient_id=patient_examination.patient_id,
                 )
@@ -364,7 +364,7 @@ def _handle_case_resolution_post(
                 )
                 persist_case_resolution_state(
                     media_obj=media_obj,
-                    action="create",
+                    payload=payload,
                     patient_examination_id=patient_examination.pk,
                     patient_id=patient_examination.patient_id,
                 )
@@ -376,7 +376,7 @@ def _handle_case_resolution_post(
                 patient_examination = media_obj.examination
                 persist_case_resolution_state(
                     media_obj=media_obj,
-                    action="defer",
+                    payload=payload,
                     patient_examination_id=None,
                     patient_id=None,
                 )

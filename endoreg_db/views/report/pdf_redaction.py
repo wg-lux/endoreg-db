@@ -1,9 +1,13 @@
 import hashlib
-import json
 import logging
 from typing import Any
 
 from django.db import transaction
+from lx_dtypes.models.contracts import (
+    PdfRedactionRequest,
+    PdfRedactionResponse,
+    ValidationError,
+)
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -34,85 +38,6 @@ def _state_status_value(state_obj: Any) -> str | None:
     if status_value is None:
         return None
     return str(getattr(status_value, "value", status_value))
-
-
-def _parse_manifest(raw_manifest: Any) -> dict[str, Any]:
-    if isinstance(raw_manifest, dict):
-        return raw_manifest
-    if isinstance(raw_manifest, str):
-        payload = raw_manifest.strip()
-        if not payload:
-            raise ValueError("redaction_manifest must not be empty.")
-        parsed = json.loads(payload)
-        if not isinstance(parsed, dict):
-            raise ValueError("redaction_manifest must be a JSON object.")
-        return parsed
-    raise ValueError("redaction_manifest must be a JSON string.")
-
-
-def _validate_manifest(manifest: dict[str, Any]) -> str | None:
-    version = manifest.get("version")
-    if not isinstance(version, int) or version < 1:
-        return "redaction_manifest.version must be an integer >= 1."
-
-    normalized = manifest.get("normalized")
-    if normalized is not True:
-        return "redaction_manifest.normalized must be true."
-
-    pages = manifest.get("pages")
-    if not isinstance(pages, list):
-        return "redaction_manifest.pages must be a list."
-
-    for page_index, page_entry in enumerate(pages):
-        if not isinstance(page_entry, dict):
-            return f"redaction_manifest.pages[{page_index}] must be an object."
-
-        page_number = page_entry.get("page")
-        if not isinstance(page_number, int) or page_number < 1:
-            return (
-                f"redaction_manifest.pages[{page_index}].page must be an integer >= 1."
-            )
-
-        boxes = page_entry.get("boxes")
-        if not isinstance(boxes, list):
-            return f"redaction_manifest.pages[{page_index}].boxes must be a list."
-
-        for box_index, box in enumerate(boxes):
-            if not isinstance(box, dict):
-                return (
-                    f"redaction_manifest.pages[{page_index}].boxes[{box_index}] "
-                    "must be an object."
-                )
-
-            for key in ("x", "y", "width", "height"):
-                value = box.get(key)
-                if not isinstance(value, (int, float)):
-                    return (
-                        f"redaction_manifest.pages[{page_index}].boxes[{box_index}].{key} "
-                        "must be numeric."
-                    )
-                if value < 0 or value > 1:
-                    return (
-                        f"redaction_manifest.pages[{page_index}].boxes[{box_index}].{key} "
-                        "must be within [0, 1]."
-                    )
-
-            width = float(box["width"])
-            height = float(box["height"])
-            x_coord = float(box["x"])
-            y_coord = float(box["y"])
-            if width <= 0 or height <= 0:
-                return (
-                    f"redaction_manifest.pages[{page_index}].boxes[{box_index}] "
-                    "width and height must be > 0."
-                )
-            if x_coord + width > 1 or y_coord + height > 1:
-                return (
-                    f"redaction_manifest.pages[{page_index}].boxes[{box_index}] "
-                    "must fit inside normalized page bounds."
-                )
-
-    return None
 
 
 def _is_pdf_file(uploaded_file) -> bool:
@@ -208,53 +133,28 @@ class PdfApplyRedactionsView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-                source_type = str(request.data.get("source_type", "")).strip().lower()
-                if source_type not in {
-                    PdfProcessingHistory.SOURCE_TYPE_RAW,
-                    PdfProcessingHistory.SOURCE_TYPE_PROCESSED,
-                }:
-                    return Response(
-                        {"error": "source_type must be either 'raw' or 'processed'."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
                 try:
-                    manifest = _parse_manifest(request.data.get("redaction_manifest"))
-                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    payload = PdfRedactionRequest.model_validate(
+                        {
+                            "source_type": request.data.get("source_type", ""),
+                            "redaction_manifest": request.data.get(
+                                "redaction_manifest"
+                            ),
+                            "note": request.data.get("note", ""),
+                            "client_source_sha256": request.data.get(
+                                "client_source_sha256", ""
+                            ),
+                        }
+                    )
+                except ValidationError as exc:
                     return Response(
                         {"error": f"invalid redaction_manifest: {exc}"},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-
-                manifest_error = _validate_manifest(manifest)
-                if manifest_error is not None:
-                    return Response(
-                        {"error": manifest_error},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                note_value = request.data.get("note", "")
-                note = str(note_value).strip() if note_value is not None else ""
-
-                client_source_sha256_raw = request.data.get("client_source_sha256", "")
-                client_source_sha256 = (
-                    str(client_source_sha256_raw).strip().lower()
-                    if client_source_sha256_raw is not None
-                    else ""
-                )
-                if client_source_sha256:
-                    if len(client_source_sha256) != 64:
-                        return Response(
-                            {
-                                "error": "client_source_sha256 must contain 64 hex chars."
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-                    if any(ch not in "0123456789abcdef" for ch in client_source_sha256):
-                        return Response(
-                            {"error": "client_source_sha256 must be lowercase hex."},
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
+                source_type = payload.source_type
+                note = payload.note
+                client_source_sha256 = payload.client_source_sha256
+                manifest = payload.redaction_manifest.model_dump(mode="python")
 
                 source_field = (
                     pdf.file
@@ -356,17 +256,18 @@ class PdfApplyRedactionsView(APIView):
                         },
                     )
 
+                response_payload = PdfRedactionResponse(
+                    file_id=pdf.pk,
+                    revision_id=history_entry.pk,
+                    processed_stream_url=(
+                        f"/api/media/pdfs/{pdf.pk}/stream/?type=processed"
+                    ),
+                    status="done_processing_anonymization",
+                    anonymization_validated=False,
+                    updated_at=pdf.date_modified.isoformat(),
+                )
                 return Response(
-                    {
-                        "file_id": pdf.pk,
-                        "revision_id": history_entry.pk,
-                        "processed_stream_url": (
-                            f"/api/media/pdfs/{pdf.pk}/stream/?type=processed"
-                        ),
-                        "status": "done_processing_anonymization",
-                        "anonymization_validated": False,
-                        "updated_at": pdf.date_modified.isoformat(),
-                    },
+                    response_payload.model_dump(mode="python"),
                     status=status.HTTP_201_CREATED,
                 )
 

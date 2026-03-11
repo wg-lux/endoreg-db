@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
+from lx_dtypes.models.contracts import (
+    RequirementEvaluationMeta,
+    RequirementEvaluationRequest,
+    RequirementEvaluationResponse,
+    RequirementEvaluationResult,
+    ValidationError,
+)
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -14,31 +20,6 @@ from endoreg_db.services import lookup_service
 logger = logging.getLogger(__name__)
 
 
-def _parse_requirement_set_ids(raw_value: Any) -> tuple[list[int] | None, str | None]:
-    if raw_value in (None, ""):
-        return None, None
-    if not isinstance(raw_value, list):
-        return None, "requirement_set_ids must be a list of positive integers"
-
-    parsed: list[int] = []
-    for item in raw_value:
-        try:
-            parsed_value = int(item)
-        except (TypeError, ValueError):
-            return None, "requirement_set_ids must be a list of positive integers"
-        if parsed_value <= 0:
-            return None, "requirement_set_ids must be a list of positive integers"
-        parsed.append(parsed_value)
-    return parsed, None
-
-
-def _to_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _build_response(
     *,
     ok: bool,
@@ -47,20 +28,21 @@ def _build_response(
     sets_evaluated: int,
     requirements_evaluated: int,
     status_label: str,
-    results: list[dict[str, Any]],
+    results: list[RequirementEvaluationResult],
 ) -> Response:
+    response_payload = RequirementEvaluationResponse(
+        ok=ok,
+        errors=errors,
+        meta=RequirementEvaluationMeta(
+            patient_examination_id=patient_examination_id,
+            sets_evaluated=sets_evaluated,
+            requirements_evaluated=requirements_evaluated,
+            status=status_label,
+        ),
+        results=results,
+    )
     return Response(
-        {
-            "ok": ok,
-            "errors": errors,
-            "meta": {
-                "patient_examination_id": patient_examination_id,
-                "sets_evaluated": sets_evaluated,
-                "requirements_evaluated": requirements_evaluated,
-                "status": status_label,
-            },
-            "results": results,
-        },
+        response_payload.model_dump(mode="python"),
         status=status.HTTP_200_OK,
     )
 
@@ -79,17 +61,17 @@ def evaluate_requirements(request):
     """
     payload = request.data or {}
     errors: list[str] = []
-    results: list[dict[str, Any]] = []
+    results: list[RequirementEvaluationResult] = []
 
-    selected_requirement_set_ids, req_set_id_error = _parse_requirement_set_ids(
-        payload.get("requirement_set_ids")
-    )
-    if req_set_id_error:
-        errors.append(req_set_id_error)
+    patient_examination_id: int | None = None
+    selected_requirement_set_ids: list[int] | None = None
 
-    patient_examination_id = _to_int(payload.get("patient_examination_id"))
-    if patient_examination_id is None or patient_examination_id <= 0:
-        errors.append("patient_examination_id is required")
+    try:
+        request_payload = RequirementEvaluationRequest.model_validate(payload)
+        patient_examination_id = request_payload.patient_examination_id
+        selected_requirement_set_ids = request_payload.requirement_set_ids
+    except ValidationError as exc:
+        errors.append(str(exc))
 
     if errors:
         return _build_response(
@@ -160,8 +142,9 @@ def evaluate_requirements(request):
     selected_set_filter = set(selected_requirement_set_ids or [])
     seen_set_ids: set[int] = set()
     for set_id_raw, set_requirements in requirements_by_set.items():
-        set_id = _to_int(set_id_raw)
-        if set_id is None:
+        try:
+            set_id = int(set_id_raw)
+        except (TypeError, ValueError):
             continue
         if selected_set_filter and set_id not in selected_set_filter:
             continue
@@ -174,8 +157,9 @@ def evaluate_requirements(request):
             if not isinstance(req, dict):
                 continue
 
-            requirement_id = _to_int(req.get("id"))
-            if requirement_id is None:
+            try:
+                requirement_id = int(req.get("id"))
+            except (TypeError, ValueError):
                 continue
             requirement_key = str(requirement_id)
             requirement_name = str(req.get("name") or f"#{requirement_id}")
@@ -190,15 +174,15 @@ def evaluate_requirements(request):
                         detail = str(note)
 
             results.append(
-                {
-                    "requirement_set_id": set_id,
-                    "requirement_set_name": str(set_id),
-                    "requirement_name": requirement_name,
-                    "met": met,
-                    "details": detail,
-                    "error": None,
-                    "status": "PASSED" if met else "FAILED",
-                }
+                RequirementEvaluationResult(
+                    requirement_set_id=set_id,
+                    requirement_set_name=str(set_id),
+                    requirement_name=requirement_name,
+                    met=met,
+                    details=detail,
+                    error=None,
+                    status="PASSED" if met else "FAILED",
+                )
             )
 
     sets_evaluated = len(seen_set_ids)

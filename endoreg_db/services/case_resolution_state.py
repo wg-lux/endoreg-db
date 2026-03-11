@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.utils import timezone
+from lx_dtypes.models.contracts import CaseResolutionRequest
 
 from endoreg_db.models import RawPdfFile, VideoFile
 
@@ -33,12 +34,13 @@ def get_case_resolution_meta(media_obj: RawPdfFile | VideoFile) -> dict[str, Any
 def persist_case_resolution_state(
     *,
     media_obj: RawPdfFile | VideoFile,
-    action: str,
+    payload: CaseResolutionRequest,
     patient_examination_id: int | None,
     patient_id: int | None,
 ) -> None:
     media_meta = get_media_meta(media_obj)
     case_resolution_meta = get_case_resolution_meta(media_obj)
+    action = payload.action
     case_resolution_meta.update(
         {
             "last_action": action,

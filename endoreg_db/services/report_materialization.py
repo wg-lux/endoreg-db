@@ -88,6 +88,10 @@ def build_report_context_from_pdf(
         raise ValueError(
             "pdf.examination.patient must be resolved before report materialization"
         )
+    if pdf.examination_id is None:
+        raise ValueError(
+            "pdf.examination_id must be resolved before report materialization"
+        )
 
     sensitive_meta = pdf.sensitive_meta
     document_type = DocumentTypeContract(
@@ -100,6 +104,38 @@ def build_report_context_from_pdf(
         anonymized_text=resolve_report_text(pdf, payload),
         patient_hash=getattr(sensitive_meta, "patient_hash", None),
         examination_hash=getattr(sensitive_meta, "examination_hash", None),
+        source_pdf_id=pdf.pk,
+    )
+
+
+def build_report_context_from_validation(
+    *,
+    pdf: RawPdfFile,
+    payload: dict[str, Any] | None = None,
+    document_type_name: str | DocumentTypeContract,
+) -> ReportContext:
+    sensitive_meta = pdf.sensitive_meta
+    if sensitive_meta is None:
+        raise ValueError("pdf.sensitive_meta is required for validation context")
+    if sensitive_meta.pseudo_examination_id is None:
+        raise ValueError(
+            "sensitive_meta.pseudo_examination_id is required for validation context"
+        )
+    if sensitive_meta.pseudo_patient_id is None:
+        raise ValueError(
+            "sensitive_meta.pseudo_patient_id is required for validation context"
+        )
+
+    document_type = DocumentTypeContract(
+        resolve_pdf_document_type_name(pdf, document_type_name=document_type_name)
+    )
+    return ReportContext(
+        patient_examination_id=sensitive_meta.pseudo_examination_id,
+        patient_id=sensitive_meta.pseudo_patient_id,
+        document_type=document_type,
+        anonymized_text=resolve_report_text(pdf, payload),
+        patient_hash=sensitive_meta.patient_hash,
+        examination_hash=sensitive_meta.examination_hash,
         source_pdf_id=pdf.pk,
     )
 
@@ -180,6 +216,7 @@ __all__ = [
     "DOCUMENT_TYPE_VALUES",
     "ensure_document_types",
     "build_report_context_from_pdf",
+    "build_report_context_from_validation",
     "resolve_report_text",
     "resolve_pdf_document_type_name",
     "upsert_anonym_examination_report_from_pdf",

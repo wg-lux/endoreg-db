@@ -4,6 +4,7 @@ from typing import Any, Dict, cast
 
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -19,8 +20,8 @@ from endoreg_db.serializers.anonymization import (
 )
 from endoreg_db.services.report_materialization import (
     DOCUMENT_TYPE_VALUES,
+    build_report_context_from_validation,
     ensure_document_types,
-    resolve_report_text,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.operation_log import (
@@ -96,9 +97,14 @@ def _persist_pdf_validation_state(
     pdf: RawPdfFile,
     payload: Dict[str, Any],
     validated_at_iso: str,
-    document_type_name: str,
+    document_type: DocumentTypeContract,
 ) -> str:
-    resolved_text = resolve_report_text(pdf, payload)
+    report_context = build_report_context_from_validation(
+        pdf=pdf,
+        payload=payload,
+        document_type_name=document_type,
+    )
+    resolved_text = report_context.anonymized_text
     raw_meta: Dict[str, Any]
     if isinstance(pdf.raw_meta, dict):
         raw_meta = dict(pdf.raw_meta)
@@ -108,15 +114,13 @@ def _persist_pdf_validation_state(
     sensitive_meta = pdf.sensitive_meta
     raw_meta.update(
         {
-            "document_type": document_type_name,
+            "document_type": report_context.document_type.value,
             "validation_source": "anonymization_validate",
             "validated_at": validated_at_iso,
-            "patient_hash": getattr(sensitive_meta, "patient_hash", None),
-            "examination_hash": getattr(sensitive_meta, "examination_hash", None),
-            "pseudo_patient_id": getattr(sensitive_meta, "pseudo_patient_id", None),
-            "pseudo_examination_id": getattr(
-                sensitive_meta, "pseudo_examination_id", None
-            ),
+            "patient_hash": report_context.patient_hash,
+            "examination_hash": report_context.examination_hash,
+            "pseudo_patient_id": report_context.patient_id,
+            "pseudo_examination_id": report_context.patient_examination_id,
         }
     )
 
@@ -360,6 +364,7 @@ class AnonymizationValidateView(APIView):
                                 },
                                 status=status.HTTP_400_BAD_REQUEST,
                             )
+                        document_type = DocumentTypeContract(document_type_name)
                         # this is here for tests!
                         if pdf.sensitive_meta is None:
                             sm = SensitiveMeta.objects.create(center=pdf.center)
@@ -391,7 +396,7 @@ class AnonymizationValidateView(APIView):
                             pdf=pdf,
                             payload=prepared_payload,
                             validated_at_iso=response_timestamp,
-                            document_type_name=document_type_name,
+                            document_type=document_type,
                         )
 
                     status_after = status_before
