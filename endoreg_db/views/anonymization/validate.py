@@ -312,29 +312,6 @@ class AnonymizationValidateView(APIView):
                     .first()
                 )
                 if pdf is not None:
-                    document_type_name = payload.get("document_type")
-                    if (
-                        not isinstance(document_type_name, str)
-                        or not document_type_name
-                    ):
-                        return Response(
-                            {
-                                "error": "document_type is required for pdf validation.",
-                                "allowed_document_types": DOCUMENT_TYPE_VALUES,
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-                    if document_type_name not in DOCUMENT_TYPE_VALUES:
-                        return Response(
-                            {
-                                "error": (
-                                    f"Unsupported document_type '{document_type_name}'."
-                                ),
-                                "allowed_document_types": DOCUMENT_TYPE_VALUES,
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-
                     status_before = _state_status_value(pdf.state)
                     prepared_payload = self._prepare_payload(payload, pdf)
                     try:
@@ -361,6 +338,28 @@ class AnonymizationValidateView(APIView):
                             status=status.HTTP_400_BAD_REQUEST,
                         )
                     else:
+                        document_type_name = payload.get("document_type")
+                        if (
+                            not isinstance(document_type_name, str)
+                            or not document_type_name
+                        ):
+                            return Response(
+                                {
+                                    "error": "document_type is required for pdf validation.",
+                                    "allowed_document_types": DOCUMENT_TYPE_VALUES,
+                                },
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        if document_type_name not in DOCUMENT_TYPE_VALUES:
+                            return Response(
+                                {
+                                    "error": (
+                                        f"Unsupported document_type '{document_type_name}'."
+                                    ),
+                                    "allowed_document_types": DOCUMENT_TYPE_VALUES,
+                                },
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
                         # this is here for tests!
                         if pdf.sensitive_meta is None:
                             sm = SensitiveMeta.objects.create(center=pdf.center)
