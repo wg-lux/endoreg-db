@@ -889,7 +889,7 @@ requires-dist = [
     { name = "librosa", specifier = "==0.11.0" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.0.4" },
+    { name = "lx-anonymizer", extras = ["llm", "ocr"], specifier = "==0.9.0.5" },
     { name = "lx-dtypes" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1498,7 +1498,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.0.4"
+version = "0.9.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1520,10 +1520,11 @@ dependencies = [
     { name = "requests" },
     { name = "spacy" },
     { name = "tenacity" },
+    { name = "types-requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/90/907f4aad381e83a79c569437b075b335e75fb438b72eec8775a32402a2a4/lx_anonymizer-0.9.0.4.tar.gz", hash = "sha256:7d917d9c1848602d1ca8f62f3575321c3db3c946599c59f43d19e3793de85c72", size = 387488, upload-time = "2026-03-11T14:29:12.89Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/78/c6cf433a798a0e65a457a191c470aa545a532a41b668734eee8f653be666/lx_anonymizer-0.9.0.5.tar.gz", hash = "sha256:28975bd7bd36592837ae18e2e38759145c5899fe0e1b376328a26ab48cb50e83", size = 390133, upload-time = "2026-03-12T15:18:44.494Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/3c/e9d2d92b9cf7b6da42643ec0ee01de3086fc2f736400c9395bc7a1c1ee39/lx_anonymizer-0.9.0.4-py3-none-any.whl", hash = "sha256:f3979db3bccc39d8aae1d61e1628ad97beedf0c5b20eb934a03362d352d432d6", size = 470744, upload-time = "2026-03-11T14:29:10.52Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/18/359f13601112bb0006b424a4a6752a19a0d50cf5535429ca97686ac8f711/lx_anonymizer-0.9.0.5-py3-none-any.whl", hash = "sha256:7eaa6ab1b118cf07440ba07565b8bfc74c9400da5fe596c26e4ad2a82228cb9a", size = 473746, upload-time = "2026-03-12T15:18:41.628Z" },
 ]
 
 [package.optional-dependencies]
@@ -3621,14 +3622,14 @@ wheels = [
 
 [[package]]
 name = "types-requests"
-version = "2.32.4.20250913"
+version = "2.32.4.20260107"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/27/489922f4505975b11de2b5ad07b4fe1dca0bca9be81a703f26c5f3acfce5/types_requests-2.32.4.20250913.tar.gz", hash = "sha256:abd6d4f9ce3a9383f269775a9835a4c24e5cd6b9f647d64f88aa4613c33def5d", size = 23113, upload-time = "2025-09-13T02:40:02.309Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/f3/a0663907082280664d745929205a89d41dffb29e89a50f753af7d57d0a96/types_requests-2.32.4.20260107.tar.gz", hash = "sha256:018a11ac158f801bfa84857ddec1650750e393df8a004a8a9ae2a9bec6fcb24f", size = 23165, upload-time = "2026-01-07T03:20:54.091Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/20/9a227ea57c1285986c4cf78400d0a91615d25b24e257fd9e2969606bdfae/types_requests-2.32.4.20250913-py3-none-any.whl", hash = "sha256:78c9c1fffebbe0fa487a418e0fa5252017e9c60d1a2da394077f1780f655d7e1", size = 20658, upload-time = "2025-09-13T02:40:01.115Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/12/709ea261f2bf91ef0a26a9eed20f2623227a8ed85610c1e54c5805692ecb/types_requests-2.32.4.20260107-py3-none-any.whl", hash = "sha256:b703fe72f8ce5b31ef031264fe9395cac8f46a04661a79f7ed31a80fb308730d", size = 20676, upload-time = "2026-01-07T03:20:52.929Z" },
 ]
 
 [[package]]

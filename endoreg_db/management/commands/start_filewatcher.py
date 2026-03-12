@@ -23,6 +23,10 @@ class Command(BaseCommand):
     When files are detected, they are automatically processed with:
     - Video: Import, anonymization, and segmentation
     - report: Import and anonymization
+
+    Note:
+    - The watcher script currently lives in lx-annotate at:
+      /home/admin/dev/lx-annotate/scripts/file_watcher.py
     """
 
     def add_arguments(self, parser):
@@ -55,13 +59,21 @@ class Command(BaseCommand):
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
 
-            # Import the file watcher service from the correct location
-            file_watcher_path = project_root / "scripts" / "file_watcher.py"
+            # Import the file watcher service from either local repo scripts/ or lx-annotate.
+            candidate_paths = [
+                project_root / "scripts" / "file_watcher.py",
+                Path("/home/admin/dev/lx-annotate/scripts/file_watcher.py"),
+            ]
+            file_watcher_path = next(
+                (candidate for candidate in candidate_paths if candidate.exists()),
+                None,
+            )
 
-            if not file_watcher_path.exists():
+            if file_watcher_path is None:
                 self.stdout.write(
                     self.style.ERROR(
-                        f"❌ File watcher script not found: {file_watcher_path}"
+                        "❌ File watcher script not found in expected locations: "
+                        f"{candidate_paths[0]} or {candidate_paths[1]}"
                     )
                 )
                 return

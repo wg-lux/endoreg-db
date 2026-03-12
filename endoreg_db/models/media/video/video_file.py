@@ -13,7 +13,12 @@ from django.db.models import F
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, SENSITIVE_VIDEO_DIR
+from endoreg_db.utils.paths import (
+    ANONYM_VIDEO_DIR,
+    SENSITIVE_VIDEO_DIR,
+    data_paths,
+    to_storage_relative,
+)
 from endoreg_db.utils.video.ffmpeg_wrapper import assemble_video_from_frames
 
 from ...label import Label, LabelVideoSegment
@@ -847,25 +852,32 @@ class VideoFile(models.Model):
             frame_dir_path = instance.get_frame_dir_path()
             if frame_dir_path is None:
                 raise AssertionError("Frame directory path is not available.")
-            frames: list[Path] = [frame_dir_path]
+            frames: list[Path] = video.get_frame_paths()
             fps = (
                 video.fps if video.fps else 120.0
             )  # Default to 30 FPS if fps is not set
             assert censored is True
+            if not frames:
+                raise AssertionError("No extracted frame files found for reassembly.")
             assert fps is not None
             assert video.width is not None
             assert video.height is not None
-            # assert isinstance(frames, list[Path]) #TODO improve TypeCheck
 
             # Step 2: Reassemble the video with frames excluding the 'outside' labeled frames
-            output_video_path = Path(f"/path/to/output/{video.video_hash}_filtered.mp4")
+            output_video_path = (
+                data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+            )
             fps = (
                 video.fps if video.fps else 30.0
             )  # Default to 30 FPS if fps is not set
-            new_video_file = assemble_video_from_frames(
+            new_video_path = assemble_video_from_frames(
                 frames, output_video_path, fps, width=video.width, height=video.height
             )
-            video.processed_file = new_video_file
+            if new_video_path is None:
+                raise AssertionError("Failed to assemble filtered video from frames.")
+
+            video.processed_file.name = to_storage_relative(new_video_path)
+            video.save(update_fields=["processed_file", "date_modified"])
             return True
         except AssertionError as ae:
             logger.error(

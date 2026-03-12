@@ -30,6 +30,73 @@ The current intended flow is:
    It is also written to a `.part` path first and atomically promoted into place.
 10. The transient sensitive working copy is deleted after successful finalization.
 
+## Filewatcher Operation Ledger
+
+The management command at `endoreg_db/management/commands/start_filewatcher.py` still points to `scripts/file_watcher.py`, but that script is currently missing from the repository. The concrete filesystem behavior below is therefore derived from the import services the watcher is intended to call:
+
+- `VideoImportService.import_and_anonymize(...)`
+- `ReportImportService.import_and_anonymize(...)`
+
+### Video copy and transcode operations
+
+For one video dropped into `data/import/video_import`, the current pipeline performs these file operations in order:
+
+1. Sensitive staging copy.
+   `create_sensitive_copy(...)` copies the watched import file into `SENSITIVE_VIDEO_DIR` under the original filename via `atomic_copy_with_fallback(...)`.
+2. Canonical raw video standardization.
+   `VideoFile.create_from_file_initialized(...)` calls `transcode_videofile_if_required(...)` with the sensitive staging copy as input and a `.part` file in canonical sensitive storage as output.
+3. FFmpeg transcode when the source is not compliant.
+   If codec is not `h264`, pixel format is not `yuv420p`, or color range is not `pc`, FFmpeg writes a transcoded file to the `.part` path.
+4. Plain file copy when the source is already compliant.
+   If no transcode is required and the canonical output path differs from the input path, `transcode_videofile_if_required(...)` still copies the file into the `.part` path with `shutil.copy2(...)`.
+5. Atomic promotion into canonical raw storage.
+   The `.part` file is promoted with `os.replace(...)` to `SENSITIVE_VIDEO_DIR/<video_hash><original_suffix>`.
+6. Anonymizer output write.
+   `VideoAnonymizer.anonymize_video(...)` reads from the canonical raw path when available and writes anonymized output to `ANONYM_VIDEO_DIR/<video_hash>.part.mp4`.
+7. Atomic promotion into final anonymized storage.
+   The anonymizer promotes its temp result to `ANONYM_VIDEO_DIR/<video_hash>.mp4` using `os.replace(...)`.
+8. Final move safety net.
+   `finalize_video_success(...)` moves `ctx.anonymized_path` to the same canonical anonymized target if the anonymizer did not already write there.
+9. Cleanup of transient copies.
+   `finalize_video_success(...)` deletes the original-name sensitive staging copy if it is not the canonical raw file and clears the transcoding directory.
+
+In the normal successful path, a compliant video causes two full-size copies and zero FFmpeg transcodes:
+
+- import source -> original-name sensitive staging copy
+- sensitive staging copy -> canonical raw video `.part` -> canonical raw video
+
+In the normal successful path, a non-compliant video causes one copy plus one FFmpeg transcode:
+
+- import source -> original-name sensitive staging copy
+- sensitive staging copy -> FFmpeg transcode -> canonical raw video `.part` -> canonical raw video
+
+After that, the anonymizer writes one more full anonymized output file.
+
+### Report copy operations
+
+For one report dropped into `data/import/report_import`, the current pipeline performs these file operations:
+
+1. Optional txt-to-pdf materialization.
+   If the watched file ends in `.txt`, `_create_temp_pdf_from_txt(...)` renders a temporary single-page PDF in the system temp directory.
+2. Sensitive staging copy of the original payload.
+   `create_sensitive_copy(...)` copies the original report source into `SENSITIVE_REPORT_DIR` under the original filename.
+   For `.txt` inputs this copies the original `.txt`, not the temporary PDF.
+3. Canonical raw report save into Django-managed storage.
+   `RawPdfFile.create_from_file_initialized(...)` opens `ctx.file_path` and saves it through Django storage using a generated content-hash-based filename.
+   For PDF input, this means the imported PDF is copied from the watched location into managed raw storage.
+   For TXT input, this means the temporary rendered PDF is copied from `/tmp/...pdf` into managed raw storage.
+4. Optional restoration copy for pre-existing records.
+   If a `RawPdfFile` record already exists but its stored file is missing, `create_from_file(...)` re-saves the source file into storage from the current import path.
+5. Anonymized report write.
+   `ReportAnonymizer.anonymize_report(...)` asks `lx_anonymizer.ReportReader.process_report(...)` to write `ANONYM_REPORT_DIR/<pdf_hash>.pdf`.
+6. Final move safety net.
+   `finalize_report_success(...)` moves `ctx.anonymized_path` into `ANONYM_REPORT_DIR/<pdf_hash>.pdf` only if the anonymizer wrote somewhere else.
+7. Cleanup of transient files.
+   Success cleanup deletes the original-name sensitive staging copy if it is not the canonical raw file.
+   TXT imports also delete the original `.txt` once the managed record exists and delete the temporary rendered PDF in the `finally` block.
+
+There is no report transcoding step in the current report import path. The only format conversion is `.txt` -> temporary generated `.pdf`.
+
 ## Steady-State Video Artifacts
 
 After a successful import/anonymization cycle, the intended durable state is exactly two managed video files:

@@ -160,6 +160,7 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
                     raise RuntimeError(
                         f"Failed to update state after frame initialization for video {video.video_hash}"
                     ) from state_e
+                return
 
             except OperationalError as e:
                 if "database is locked" in str(e):

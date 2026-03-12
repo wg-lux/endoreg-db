@@ -75,7 +75,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[llm,ocr]==0.9.0.4",
+    "lx-anonymizer[llm,ocr]==0.9.0.5",
     "lx-dtypes",
     "googlemaps>=4.10.0",
 ]
