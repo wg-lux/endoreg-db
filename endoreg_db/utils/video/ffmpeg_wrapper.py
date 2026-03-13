@@ -340,7 +340,7 @@ def assemble_video_from_frames(  # Renamed from assemble_video
             )
             return None
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter.fourcc(*"mp4v")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     video_writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
