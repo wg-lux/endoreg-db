@@ -22,6 +22,8 @@ _build
 *.sqlite3
 
 .devenv.flake.nix
+standardized_dataset/ledger/*
+standardized_dataset/knowledge_base/*
 
 ###### Do not Remove ###### # Deprecated?
 # Protects temporary files from being comitted

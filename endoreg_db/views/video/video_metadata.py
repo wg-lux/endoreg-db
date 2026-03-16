@@ -1,4 +1,5 @@
 from endoreg_db.models import VideoFile
+from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -41,11 +42,8 @@ class VideoMetadataStatsView(APIView):
         is_anonymized = False
 
         if hasattr(video, "state") and video.state:
-            # anonymization_status returns an Enum, we need the value (string)
-            raw_status = video.state.anonymization_status
-            status_val = getattr(raw_status, "value", str(raw_status))
+            status_val = resolve_lx_anonymization_state(video).value
 
-            # Check logical anonymization state
             is_anonymized = (
                 status_val == "done_processing_anonymization" or video.state.anonymized
             )

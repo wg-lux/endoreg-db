@@ -82,6 +82,18 @@ class LabelVideoSegmentSerializerTest(TestCase):
         # EXPECTATION: The serializer correctly rounded the float back to the integer frame
         self.assertEqual(updated_segment.start_frame_number, 7)
 
+    def test_partial_time_update_reuses_existing_boundary(self):
+        payload = {
+            "end_time": self.segment.start_time,
+        }
+
+        serializer = LabelVideoSegmentSerializer(
+            instance=self.segment, data=payload, partial=True
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("end_time", serializer.errors)
+
     def test_video_store_creation_payload(self):
         """
         Scenario: videoStore.ts -> createSegment

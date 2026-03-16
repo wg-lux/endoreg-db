@@ -31,10 +31,17 @@ from django.db.models import Prefetch, QuerySet
 
 from endoreg_db.models.medical.examination import ExaminationRequirementSet
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_examination_indication import (
+    PatientExaminationIndication,
+)
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models.medical.patient.patient_finding_classification import (
     PatientFindingClassification,
 )
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    PatientFindingIntervention,
+)
+from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
 from endoreg_db.models.requirement.requirement_set import RequirementSet
 from endoreg_db.schemas.lookup_state import (
     LookupDerivedUpdatesDataDict,
@@ -81,6 +88,78 @@ HYBRID_COMPARE_UPDATES_KEYS: tuple[str, ...] = (
     "candidate_requirement_set_ids",
     "candidate_requirement_set_confidence",
 )
+
+
+def _indication_prefetch_bundle() -> tuple[Prefetch, ...]:
+    return (
+        Prefetch(
+            "indications",
+            queryset=PatientExaminationIndication.objects.select_related(
+                "examination_indication",
+                "indication_choice",
+            ),
+        ),
+    )
+
+
+def _lab_value_prefetch_bundle() -> tuple[Prefetch, ...]:
+    return (
+        Prefetch(
+            "patient__lab_values",
+            queryset=PatientLabValue.objects.select_related(
+                "lab_value",
+                "unit",
+                "sample",
+            ),
+        ),
+    )
+
+
+def _finding_prefetch_bundle() -> tuple[Prefetch, ...]:
+    return (
+        Prefetch(
+            "patient_findings",
+            queryset=PatientFinding.objects.select_related("finding").prefetch_related(
+                Prefetch(
+                    "classifications",
+                    queryset=PatientFindingClassification.objects.select_related(
+                        "classification",
+                        "classification_choice",
+                    ),
+                ),
+                Prefetch(
+                    "interventions",
+                    queryset=PatientFindingIntervention.objects.select_related(
+                        "intervention",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def _requirement_set_prefetch_bundle() -> tuple[Prefetch, ...]:
+    return (
+        # Prefetch ERS groups on the Examination…
+        Prefetch(
+            "examination__exam_reqset_links",
+            queryset=ExaminationRequirementSet.objects.only(
+                "id", "name", "enabled_by_default"
+            ),
+        ),
+        # …and the RequirementSets reachable via those ERS groups.
+        Prefetch(
+            "examination__exam_reqset_links__requirement_set",
+            queryset=RequirementSet.objects.select_related(
+                "requirement_set_type"
+            ).prefetch_related(
+                "requirements",
+                "links_to_sets",
+                "links_to_sets__requirements",
+                "links_to_sets__requirement_set_type",
+            ),
+        ),
+    )
 
 
 def _empty_lookup_updates() -> LookupDerivedUpdatesDataDict:
@@ -414,45 +493,15 @@ def load_patient_exam_for_eval(pk: int) -> PatientExamination:
     Raises:
         PatientExamination.DoesNotExist: If no examination exists with the given pk
     """
+    prefetches = (
+        *_indication_prefetch_bundle(),
+        *_lab_value_prefetch_bundle(),
+        *_finding_prefetch_bundle(),
+        *_requirement_set_prefetch_bundle(),
+    )
     return (
         PatientExamination.objects.select_related("patient", "examination")
-        .prefetch_related(
-            Prefetch(
-                "patient_findings",
-                queryset=PatientFinding.objects.select_related(
-                    "finding"
-                ).prefetch_related(
-                    Prefetch(
-                        "classifications",
-                        queryset=PatientFindingClassification.objects.select_related(
-                            "classification",
-                            "classification_choice",
-                        ),
-                    )
-                ),
-            ),
-            # Prefetch ERS groups on the Examination…
-            Prefetch(
-                "examination__exam_reqset_links",
-                queryset=ExaminationRequirementSet.objects.only(
-                    "id", "name", "enabled_by_default"
-                ),
-            ),
-            # …and the RequirementSets reachable via those ERS groups.
-            Prefetch(
-                "examination__exam_reqset_links__requirement_set",
-                queryset=(
-                    RequirementSet.objects.select_related(
-                        "requirement_set_type"
-                    ).prefetch_related(
-                        "requirements",
-                        "links_to_sets",
-                        "links_to_sets__requirements",
-                        "links_to_sets__requirement_set_type",
-                    )
-                ),
-            ),
-        )
+        .prefetch_related(*prefetches)
         .get(pk=pk)
     )
 

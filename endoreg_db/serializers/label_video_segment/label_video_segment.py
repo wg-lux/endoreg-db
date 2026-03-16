@@ -7,6 +7,7 @@ from typing import Any, Literal
 import logging
 from django.db.models import Prefetch
 from django.db import models
+from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models import (
     LabelVideoSegment,
@@ -18,6 +19,7 @@ from endoreg_db.models import (
 from endoreg_db.serializers.label_video_segment.image_classification_annotation import (
     ImageClassificationAnnotationSerializer,
 )
+from endoreg_db.services.segment_contracts import SegmentAnnotationInput
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +219,40 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
             description="Manually created label segments via web interface",
         )
 
+    def _validate_segment_contract(
+        self, video_id: int, start_time: float, end_time: float
+    ) -> None:
+        try:
+            SegmentAnnotationInput.model_validate(
+                {
+                    "type": "segment",
+                    "video_id": video_id,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "metadata": {},
+                }
+            )
+        except PydanticValidationError as exc:
+            errors: dict[str, list[str]] = {}
+            for error in exc.errors():
+                location = error.get("loc", ())
+                message = str(error.get("msg", "Invalid value"))
+                field = (
+                    str(location[-1])
+                    if location
+                    and str(location[-1]) in {"video_id", "start_time", "end_time"}
+                    else "non_field_errors"
+                )
+                if field == "non_field_errors":
+                    if "end_time" in message:
+                        field = "end_time"
+                    elif "start_time" in message:
+                        field = "start_time"
+                    elif "video_id" in message:
+                        field = "video_id"
+                errors.setdefault(field, []).append(message)
+            raise serializers.ValidationError(errors)
+
     # --- DRF Overrides ---
 
     def to_internal_value(self, data) -> Any:
@@ -240,12 +276,15 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         end_time = attrs.get("end_time")
         start_frame = attrs.get("start_frame_number")
         end_frame = attrs.get("end_frame_number")
+        effective_start_time = start_time
+        effective_end_time = end_time
 
         # If updating, fallback to instance values
         if self.instance:
             if start_time is None and "start_time" not in attrs:
-                # We don't have time in attrs, but we might have frames
-                pass
+                effective_start_time = self.instance.start_time
+            if end_time is None and "end_time" not in attrs:
+                effective_end_time = self.instance.end_time
             if start_frame is None:
                 start_frame = self.instance.start_frame_number
             if end_frame is None:
@@ -253,6 +292,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
 
         has_time = start_time is not None and end_time is not None
         has_frames = start_frame is not None and end_frame is not None
+        has_effective_time = (
+            effective_start_time is not None and effective_end_time is not None
+        )
 
         if not has_time and not has_frames:
             # If creating, strictly require one set
@@ -262,15 +304,21 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 )
 
         # 2. Logical Constraints
-        if has_time:
-            if start_time < 0:
+        if has_effective_time:
+            effective_video_id = attrs.get("video_id") or self.initial_data.get(
+                "video_id"
+            )
+            if self.instance and not effective_video_id:
+                effective_video_id = self.instance.video_file_id
+            if not effective_video_id:
                 raise serializers.ValidationError(
-                    {"start_time": "Must be non-negative."}
+                    {"video_id": "This field is required."}
                 )
-            if end_time <= start_time:
-                raise serializers.ValidationError(
-                    {"end_time": "Must be greater than start_time."}
-                )
+            self._validate_segment_contract(
+                int(effective_video_id),
+                float(effective_start_time),
+                float(effective_end_time),
+            )
 
         if has_frames:
             if start_frame < 0:
@@ -363,10 +411,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
         """
         try:
             # Pop fields
-            video_id = validated_data.pop("video_id", None)
-            label_id = validated_data.pop("label_id", None)
             label_id_present = "label_id" in validated_data
             label_name_present = "label_name" in validated_data
+            video_id = validated_data.pop("video_id", None)
+            label_id = validated_data.pop("label_id", None)
             label_name = validated_data.pop("label_name", None)
             start_time = validated_data.pop("start_time", None)
             end_time = validated_data.pop("end_time", None)

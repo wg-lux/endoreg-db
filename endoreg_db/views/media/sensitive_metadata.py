@@ -33,6 +33,7 @@ from endoreg_db.services.case_resolution_state import (
     get_case_resolution_meta,
     persist_case_resolution_state,
 )
+from endoreg_db.services.auto_case_resolution import link_media_to_patient_examination
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
@@ -81,6 +82,16 @@ def _case_resolution_payload(
     explicit_linked_patient_examination_id = linked_patient_examination_id
     if not case_resolution_meta.get("is_explicitly_resolved"):
         explicit_linked_patient_examination_id = None
+    auto_linked_patient_examination_id = case_resolution_meta.get(
+        "linked_patient_examination_id"
+    )
+    if not isinstance(auto_linked_patient_examination_id, int):
+        auto_linked_patient_examination_id = None
+    resolved_linked_patient_examination_id = (
+        explicit_linked_patient_examination_id
+        or auto_linked_patient_examination_id
+        or getattr(media_obj, "examination_id", None)
+    )
 
     examination_matches_qs = PatientExamination.objects.none()
 
@@ -97,9 +108,10 @@ def _case_resolution_payload(
     examination_matches = list(examination_matches_qs.order_by("-id"))
     examination_matches_count = len(examination_matches)
     is_explicitly_resolved = bool(case_resolution_meta.get("is_explicitly_resolved"))
+    is_auto_resolved = bool(case_resolution_meta.get("is_auto_resolved"))
     is_deferred = bool(case_resolution_meta.get("deferred"))
 
-    if explicit_linked_patient_examination_id is not None:
+    if resolved_linked_patient_examination_id is not None:
         match_status = "linked"
     elif is_deferred:
         match_status = "deferred"
@@ -116,11 +128,11 @@ def _case_resolution_payload(
         "media_type": media_type,
         "media_id": media_pk,
         "sensitive_meta_id": sensitive_meta.pk,
-        "linked_patient_examination_id": explicit_linked_patient_examination_id,
+        "linked_patient_examination_id": resolved_linked_patient_examination_id,
         "linked_patient_id": (
             case_resolution_meta.get("linked_patient_id")
-            if is_explicitly_resolved
-            else None
+            if (is_explicitly_resolved or is_auto_resolved)
+            else getattr(media_obj, "patient_id", None)
         ),
         "current_patient_examination_id": getattr(media_obj, "examination_id", None),
         "current_patient_id": getattr(media_obj, "patient_id", None),
@@ -142,10 +154,11 @@ def _case_resolution_payload(
         },
         "pseudo_examination": {
             "id": sensitive_meta.pseudo_examination_id,
-            "linked_patient_examination_id": explicit_linked_patient_examination_id,
+            "linked_patient_examination_id": resolved_linked_patient_examination_id,
         },
         "match_status": match_status,
         "is_explicitly_resolved": is_explicitly_resolved,
+        "is_auto_resolved": is_auto_resolved,
         "is_deferred": is_deferred,
         "suggested_match_count": examination_matches_count,
         "recommended_patient_examination_id": recommended_patient_examination_id,
@@ -258,57 +271,6 @@ def _create_patient_examination_for_case_resolution(
     )
 
 
-def _link_video_primary_examination(
-    *, video: VideoFile, patient_examination: PatientExamination
-) -> None:
-    existing_primary = None
-    try:
-        existing_primary = video.patient_examination
-    except PatientExamination.DoesNotExist:
-        existing_primary = None
-
-    if (
-        patient_examination.video_id is not None
-        and patient_examination.video_id != video.pk
-    ):
-        raise ValueError(
-            "patient_examination is already linked to a different primary video"
-        )
-
-    if existing_primary is not None and existing_primary.pk != patient_examination.pk:
-        existing_primary.video = None
-        existing_primary.save(update_fields=["video"])
-
-    if patient_examination.video_id != video.pk:
-        patient_examination.video = video
-        patient_examination.save(update_fields=["video"])
-
-
-def _link_media_to_patient_examination(
-    *,
-    media_type: Literal["video", "pdf"],
-    media_obj: RawPdfFile | VideoFile,
-    patient_examination: PatientExamination,
-) -> None:
-    update_fields: list[str] = []
-
-    if media_obj.examination_id != patient_examination.pk:
-        media_obj.examination = patient_examination
-        update_fields.append("examination")
-    if media_obj.patient_id != patient_examination.patient_id:
-        media_obj.patient = patient_examination.patient
-        update_fields.append("patient")
-
-    if update_fields:
-        media_obj.save(update_fields=update_fields)
-
-    if media_type == "video":
-        assert isinstance(media_obj, VideoFile)
-        _link_video_primary_examination(
-            video=media_obj, patient_examination=patient_examination
-        )
-
-
 def _handle_case_resolution_post(
     *,
     request,
@@ -340,7 +302,7 @@ def _handle_case_resolution_post(
                 patient_examination = _resolve_target_patient_examination(
                     patient_examination_id=payload.patient_examination_id
                 )
-                _link_media_to_patient_examination(
+                link_media_to_patient_examination(
                     media_type=media_type,
                     media_obj=media_obj,
                     patient_examination=patient_examination,
@@ -357,7 +319,7 @@ def _handle_case_resolution_post(
                     sensitive_meta=sensitive_meta,
                 )
                 created = True
-                _link_media_to_patient_examination(
+                link_media_to_patient_examination(
                     media_type=media_type,
                     media_obj=media_obj,
                     patient_examination=patient_examination,

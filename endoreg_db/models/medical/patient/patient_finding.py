@@ -325,6 +325,9 @@ class PatientFinding(models.Model):
         Returns:
                 QuerySet: Active related classifications where `is_active` is True.
         """
+        prefetched = getattr(self, "_prefetched_objects_cache", {})
+        if "classifications" in prefetched:
+            return [item for item in prefetched["classifications"] if item.is_active]
         return self.classifications.filter(is_active=True)
 
     @property
@@ -355,6 +358,9 @@ class PatientFinding(models.Model):
 
     @property
     def active_interventions(self):
+        prefetched = getattr(self, "_prefetched_objects_cache", {})
+        if "interventions" in prefetched:
+            return [item for item in prefetched["interventions"] if item.is_active]
         return self.interventions.filter(is_active=True)
 
     @property

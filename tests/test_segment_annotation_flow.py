@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from unittest.mock import Mock, patch
 
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
+from endoreg_db.services.segment_contracts import parse_segment_annotation_input
 from endoreg_db.services.segment_sync import create_user_segment_from_annotation
 
 
@@ -247,6 +248,83 @@ class TestSegmentAnnotationFlow(TestCase):
 
         # Verify no segment was created
         self.assertIsNone(result)
+
+    def test_invalid_segment_time_range_handling(self):
+        annotation_data = {
+            "type": "segment",
+            "videoId": 1,
+            "startTime": 15.0,
+            "endTime": 10.0,
+            "text": "polyp",
+        }
+
+        result = create_user_segment_from_annotation(annotation_data, self.user)
+
+        self.assertIsNone(result)
+
+    def test_annotation_contract_parses_camel_case_payload(self):
+        annotation_data = {
+            "type": "segment",
+            "videoId": 1,
+            "startTime": 10.0,
+            "endTime": 15.0,
+            "text": "polyp",
+            "tags": ["polyp"],
+            "metadata": {"segmentId": 456},
+        }
+
+        parsed = parse_segment_annotation_input(annotation_data)
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed.video_id, 1)
+        self.assertEqual(parsed.start_time, 10.0)
+        self.assertEqual(parsed.metadata.segment_id, 456)
+
+    def test_annotation_contract_rejects_negative_start_time(self):
+        annotation_data = {
+            "type": "segment",
+            "videoId": 1,
+            "startTime": -0.1,
+            "endTime": 15.0,
+            "text": "polyp",
+        }
+
+        parsed = parse_segment_annotation_input(annotation_data)
+
+        self.assertIsNone(parsed)
+
+    def test_create_user_segment_rounds_time_to_nearest_frame(self):
+        annotation_data = {
+            "type": "segment",
+            "videoId": 1,
+            "startTime": 7 / 25.0,
+            "endTime": 15 / 25.0,
+            "text": "polyp",
+            "metadata": {},
+        }
+
+        mock_segment = Mock(spec=LabelVideoSegment)
+        mock_segment.id = 123
+        mock_segment.source = self.user_source
+        mock_segment.save = Mock()
+
+        with patch.object(
+            LabelVideoSegment, "create_from_video", return_value=mock_segment
+        ):
+            with patch.object(Label.objects, "filter") as mock_label_filter:
+                mock_label_filter.return_value.first.return_value = self.label
+
+                result = create_user_segment_from_annotation(annotation_data, self.user)
+
+                self.assertIsNotNone(result)
+                LabelVideoSegment.create_from_video.assert_called_once_with(
+                    source=self.video,
+                    prediction_meta=None,
+                    label=self.label,
+                    start_frame_number=7,
+                    end_frame_number=15,
+                )
 
     def test_video_not_found_handling(self):
         """Test handling when video doesn't exist"""

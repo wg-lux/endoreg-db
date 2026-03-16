@@ -22,7 +22,9 @@ from endoreg_db.services.report_materialization import (
     DOCUMENT_TYPE_VALUES,
     build_report_context_from_validation,
     ensure_document_types,
+    upsert_anonym_examination_report_from_pdf,
 )
+from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.operation_log import (
     record_operation,
@@ -292,10 +294,25 @@ class AnonymizationValidateView(APIView):
                         meta=operation_meta,
                     )
 
+                    auto_case_resolution = auto_resolve_media_case(
+                        media_type="video",
+                        media_obj=video,
+                    )
+
                     return Response(
                         {
                             "message": "Video validated.",
                             "timestamp": response_timestamp,
+                            "case_resolution": {
+                                "status": auto_case_resolution.status,
+                                "patient_examination_id": (
+                                    auto_case_resolution.patient_examination.pk
+                                    if auto_case_resolution.patient_examination
+                                    else None
+                                ),
+                                "created": auto_case_resolution.created,
+                                "reason": auto_case_resolution.reason,
+                            },
                         },
                         status=status.HTTP_200_OK,
                     )
@@ -399,6 +416,20 @@ class AnonymizationValidateView(APIView):
                             document_type=document_type,
                         )
 
+                    auto_case_resolution = auto_resolve_media_case(
+                        media_type="pdf",
+                        media_obj=pdf,
+                    )
+                    if (
+                        auto_case_resolution.status == "linked"
+                        and pdf.examination_id is not None
+                    ):
+                        upsert_anonym_examination_report_from_pdf(
+                            pdf=pdf,
+                            validated_at_iso=None,
+                            source="anonymization_validate_auto_case_resolution",
+                        )
+
                     status_after = status_before
                     try:
                         if pdf.state is not None:
@@ -437,6 +468,16 @@ class AnonymizationValidateView(APIView):
                             ),
                             "anonymized_text_saved": bool(resolved_text),
                             "validation_context": _build_pdf_validation_context(pdf),
+                            "case_resolution": {
+                                "status": auto_case_resolution.status,
+                                "patient_examination_id": (
+                                    auto_case_resolution.patient_examination.pk
+                                    if auto_case_resolution.patient_examination
+                                    else None
+                                ),
+                                "created": auto_case_resolution.created,
+                                "reason": auto_case_resolution.reason,
+                            },
                         },
                         status=status.HTTP_200_OK,
                     )

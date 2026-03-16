@@ -58,9 +58,37 @@ def persist_case_resolution_state(
     media_obj.save(update_fields=[field_name])
 
 
+def persist_auto_case_resolution_state(
+    *,
+    media_obj: RawPdfFile | VideoFile,
+    patient_examination_id: int,
+    patient_id: int,
+    created: bool,
+) -> None:
+    media_meta = get_media_meta(media_obj)
+    case_resolution_meta = get_case_resolution_meta(media_obj)
+    case_resolution_meta.update(
+        {
+            "last_action": "auto_create" if created else "auto_attach",
+            "updated_at": timezone.now().isoformat(),
+            "is_explicitly_resolved": False,
+            "is_auto_resolved": True,
+            "linked_patient_examination_id": patient_examination_id,
+            "linked_patient_id": patient_id,
+            "deferred": False,
+        }
+    )
+    media_meta[CASE_RESOLUTION_META_KEY] = case_resolution_meta
+
+    field_name = _meta_field_name(media_obj)
+    setattr(media_obj, field_name, media_meta)
+    media_obj.save(update_fields=[field_name])
+
+
 __all__ = [
     "CASE_RESOLUTION_META_KEY",
     "get_case_resolution_meta",
     "get_media_meta",
+    "persist_auto_case_resolution_state",
     "persist_case_resolution_state",
 ]

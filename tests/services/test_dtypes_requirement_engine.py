@@ -612,3 +612,47 @@ def test_guidance_evaluates_pydantic_findings_validator_query_model():
     action = result["suggested_actions"][req_key][0]
     assert action["type"] == "add_finding"
     assert "lst" in action.get("classification_names", [])
+
+
+def test_guidance_rejects_legacy_findings_validator_operator_aliases():
+    kb = SimpleNamespace(
+        report_template={
+            "template_legacy": _make_template(
+                name="template_legacy",
+                examination="colonoscopy",
+                findings_validators=["fv_legacy"],
+                examination_validators=[],
+            )
+        },
+        findings_validator={
+            "fv_legacy": _make_findings_validator(
+                name="fv_legacy",
+                finding="colon_polyp",
+                operator="present",
+                query={"finding": "colon_polyp", "operator": "present"},
+            )
+        },
+        examination_validator={},
+        report_template_section={},
+        report_finding={},
+    )
+    pe = _make_patient_exam(
+        examination="colonoscopy",
+        patient_findings=[_make_patient_finding(finding="colon_polyp")],
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    _patch_kb(monkeypatch, kb)
+    try:
+        result = drs.try_build_dtypes_requirement_guidance(pe=pe)
+    finally:
+        monkeypatch.undo()
+
+    assert result is not None
+    set_id = result["candidate_requirement_set_ids"][0]
+    requirement_entry = result["requirements_by_set"][str(set_id)][0]
+    req_key = str(requirement_entry["id"])
+    assert result["requirement_status"][req_key] is False
+    action = result["suggested_actions"][req_key][0]
+    assert action["type"] == "add_finding"
+    assert action["note"] == "validator_unsupported_operator"

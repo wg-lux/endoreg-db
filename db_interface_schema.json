@@ -4562,8 +4562,7 @@
         }
       },
       "required": [
-        "name",
-        "unit_types"
+        "name"
       ],
       "title": "Unit",
       "type": "object"

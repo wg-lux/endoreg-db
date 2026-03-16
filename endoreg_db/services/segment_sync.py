@@ -6,17 +6,22 @@ when segment annotations are created or updated.
 """
 
 import logging
-from typing import Optional, Dict, Any, cast
+from typing import Any, Optional, cast
+
 from django.contrib.auth.models import User
 from django.db import transaction
 
 from ..models import VideoFile, Label, LabelVideoSegment, InformationSource
+from .segment_contracts import (
+    SegmentAnnotationInput,
+    parse_segment_annotation_input,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def create_user_segment_from_annotation(
-    annotation: Dict[str, Any], request_user: User
+    annotation: SegmentAnnotationInput | dict[str, object], request_user: User
 ) -> Optional[LabelVideoSegment]:
     """
     Create a user-source LabelVideoSegment from a segment annotation.
@@ -35,40 +40,20 @@ def create_user_segment_from_annotation(
     Returns:
         New LabelVideoSegment instance or None if creation failed/skipped
     """
-    # Validate this is a segment annotation
-    if annotation.get("type") != "segment":
-        logger.debug("Annotation is not a segment type, skipping user segment creation")
+    annotation_input = parse_segment_annotation_input(annotation)
+    if annotation_input is None:
+        logger.debug("Annotation is invalid for segment creation, skipping")
         return None
 
-    # Get required data from annotation
-    video_id_raw = annotation.get("videoId")
-    start_time_raw = annotation.get("startTime")
-    end_time_raw = annotation.get("endTime")
-    label_text = annotation.get("text", "").strip()
-    metadata = annotation.get("metadata", {})
-    original_segment_id = metadata.get("segmentId")
-
-    if not isinstance(video_id_raw, int):
-        return None
-    try:
-        start_time = float(cast(float | int | str, start_time_raw))
-        end_time = float(cast(float | int | str, end_time_raw))
-    except (TypeError, ValueError):
-        start_time = None
-        end_time = None
-
-    video_id = video_id_raw
-    if start_time is None or end_time is None:
-        logger.warning(
-            "Missing required segment data in annotation, skipping user segment creation"
-        )
-        return None
+    video_id = annotation_input.video_id
+    start_time = annotation_input.start_time
+    end_time = annotation_input.end_time
+    label_text = annotation_input.text.strip()
+    original_segment_id = annotation_input.metadata.segment_id
 
     try:
-        # Get the video file
         video_file = VideoFile.objects.get(id=video_id)
 
-        # Get video FPS for frame calculation
         fps = video_file.get_fps()
         if not fps or fps <= 0:
             logger.warning(
@@ -76,31 +61,24 @@ def create_user_segment_from_annotation(
             )
             fps = 25.0
 
-        # Calculate frame numbers
-        start_frame_number = int(start_time * fps)
-        end_frame_number = int(end_time * fps)
+        start_frame_number, end_frame_number = annotation_input.to_frame_range(fps)
 
-        # Get or create user information source
         user_source, _ = InformationSource.objects.get_or_create(
             name="user", defaults={"description": "User-generated annotations"}
         )
 
-        # Try to find label by name from annotation text
         label = None
         if label_text:
             try:
                 label = Label.objects.filter(name__iexact=label_text).first()
                 if not label:
-                    # Try to extract label from tags
-                    tags = annotation.get("tags", [])
-                    for tag in tags:
+                    for tag in annotation_input.tags:
                         label = Label.objects.filter(name__iexact=tag).first()
                         if label:
                             break
             except Exception as e:
                 logger.warning(f"Error finding label '{label_text}': {e}")
 
-        # Start with default segment data
         segment_data = {
             "video_file": video_file,
             "start_frame_number": start_frame_number,
@@ -110,18 +88,15 @@ def create_user_segment_from_annotation(
             "prediction_meta": None,  # User segments don't have prediction meta
         }
 
-        # If original segment ID is provided, try to clone from original
         if original_segment_id:
             try:
                 original_segment = LabelVideoSegment.objects.get(id=original_segment_id)
 
-                # Check if timing or label actually changed
                 original_start_time = original_segment.start_frame_number / fps
                 original_end_time = original_segment.end_frame_number / fps
 
                 timing_changed = (
-                    abs(original_start_time - start_time)
-                    > 0.1  # Allow small floating point differences
+                    abs(original_start_time - start_time) > 0.1
                     or abs(original_end_time - end_time) > 0.1
                 )
 
@@ -129,19 +104,16 @@ def create_user_segment_from_annotation(
                     not label and original_segment.label is not None
                 )
 
-                # Only create new segment if something actually changed
                 if not timing_changed and not label_changed:
                     logger.debug(
                         f"No changes detected in segment {original_segment_id}, skipping user segment creation"
                     )
                     return None
 
-                # Clone relevant fields from original segment
                 segment_data.update(
                     {
                         "prediction_meta": original_segment.prediction_meta,
-                        "label": label
-                        or original_segment.label,  # Use new label if provided, otherwise keep original
+                        "label": label or original_segment.label,
                     }
                 )
 
@@ -154,7 +126,6 @@ def create_user_segment_from_annotation(
                     f"Original segment {original_segment_id} not found, creating new user segment"
                 )
 
-        # Create the new user segment using the manager
         with transaction.atomic():
             new_segment = LabelVideoSegment.create_from_video(
                 source=video_file,
@@ -164,7 +135,6 @@ def create_user_segment_from_annotation(
                 end_frame_number=end_frame_number,
             )
 
-            # Set the user information source
             new_segment.source = user_source
             new_segment.save()
 

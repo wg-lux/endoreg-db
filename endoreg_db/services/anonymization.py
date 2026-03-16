@@ -6,6 +6,7 @@ from typing import Optional, Literal
 from django.db import transaction
 
 from endoreg_db.models import RawPdfFile, VideoFile
+from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.paths import STORAGE_DIR
@@ -57,9 +58,7 @@ class AnonymizationService:
             if vf:
                 return {
                     "mediaType": "video",
-                    "anonymizationStatus": vf.state.anonymization_status
-                    if vf.state
-                    else "not_started",
+                    "anonymizationStatus": resolve_lx_anonymization_state(vf).value,
                     "fileExists": file_exists(vf.raw_file),
                     "uuid": str(vf.video_hash) if vf.video_hash else None,
                 }

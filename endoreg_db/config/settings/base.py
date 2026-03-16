@@ -1,8 +1,12 @@
 import os
 from pathlib import Path
 
+import django_stubs_ext
+
 # Use centralized environment helpers
 from endoreg_db.config.env import env_bool, env_path, env_str
+
+django_stubs_ext.monkeypatch()
 
 
 # Small helper to coerce relative paths to absolute under BASE_DIR

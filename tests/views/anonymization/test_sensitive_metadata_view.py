@@ -172,10 +172,13 @@ class TestSensitiveMetadataEndpoints:
         assert payload["media_type"] == "pdf"
         assert payload["media_id"] == pdf.pk
         assert payload["sensitive_meta_id"] == pdf.sensitive_meta_id
-        assert payload["match_status"] == "suggested"
+        assert payload["match_status"] == "linked"
         assert payload["is_explicitly_resolved"] is False
-        assert payload["linked_patient_examination_id"] is None
-        assert payload["pseudo_examination"]["linked_patient_examination_id"] is None
+        assert payload["linked_patient_examination_id"] == pdf.examination_id
+        assert (
+            payload["pseudo_examination"]["linked_patient_examination_id"]
+            == pdf.examination_id
+        )
         assert (
             payload["patient_examination_matches"][0]["id"]
             == pdf.sensitive_meta.pseudo_examination_id
@@ -193,10 +196,63 @@ class TestSensitiveMetadataEndpoints:
 
         assert response.status_code == 200, response.content
         payload = response.json()
-        assert payload["match_status"] == "unresolved"
-        assert payload["suggested_match_count"] == 0
-        assert payload["recommended_patient_examination_id"] is None
-        assert payload["patient_examination_matches"] == []
+        assert payload["match_status"] == "linked"
+        assert payload["linked_patient_examination_id"] == pdf.examination_id
+
+    def test_validate_video_auto_links_exact_case_match_and_updates_read_side(
+        self, client, factory, user, video
+    ):
+        validation_payload = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "file_type": "video",
+        }
+
+        validation_request = factory.post(
+            f"/api/anonymization/{video.id}/validate/",
+            data=validation_payload,
+            format="json",
+        )
+        force_authenticate(validation_request, user=user)
+        validation_view = AnonymizationValidateView.as_view()
+        validation_response = self._call_view(
+            validation_view, validation_request, file_id=video.id
+        )
+
+        assert validation_response.status_code == status.HTTP_200_OK
+
+        video.refresh_from_db()
+        assert video.examination_id == video.sensitive_meta.pseudo_examination_id
+        assert video.patient_id == video.sensitive_meta.pseudo_patient_id
+        assert validation_response.data["case_resolution"]["status"] == "linked"
+        assert (
+            validation_response.data["case_resolution"]["patient_examination_id"]
+            == video.sensitive_meta.pseudo_examination_id
+        )
+        assert validation_response.data["case_resolution"]["created"] is False
+        assert validation_response.data["case_resolution"]["reason"] in {
+            "matched_by_hash",
+            "already_linked",
+        }
+
+        read_response = client.get(f"/api/media/videos/{video.pk}/case-resolution/")
+
+        assert read_response.status_code == 200, read_response.content
+        read_payload = read_response.json()
+        assert read_payload["match_status"] == "linked"
+        assert read_payload["is_explicitly_resolved"] is False
+        assert read_payload["is_auto_resolved"] is True
+        assert (
+            read_payload["linked_patient_examination_id"]
+            == video.sensitive_meta.pseudo_examination_id
+        )
+        assert (
+            read_payload["pseudo_examination"]["linked_patient_examination_id"]
+            == video.sensitive_meta.pseudo_examination_id
+        )
 
     def test_post_video_case_resolution_attach_existing(self, client, video):
         target_patient = Patient.objects.create(
@@ -442,7 +498,7 @@ class TestSensitiveMetadataEndpoints:
         assert video.examination_id == target_patient_examination.pk
         assert AnonymExaminationReport.objects.count() == report_count_before
 
-    def test_pdf_validation_then_case_resolution_materializes_report_and_updates_read_side(
+    def test_pdf_validation_auto_resolves_case_and_materializes_report(
         self, client, factory, user, pdf
     ):
         validation_payload = {
@@ -471,38 +527,30 @@ class TestSensitiveMetadataEndpoints:
         assert validation_response.status_code == status.HTTP_200_OK
 
         pdf.refresh_from_db()
+        linked_patient_examination_id = validation_response.data["case_resolution"][
+            "patient_examination_id"
+        ]
         assert pdf.anonymized_text == "Latest validated report text"
-        assert pdf.anonym_examination_report_id is None
+        assert validation_response.data["case_resolution"]["status"] == "linked"
+        assert linked_patient_examination_id == pdf.examination_id
+        assert validation_response.data["case_resolution"]["created"] is False
+        assert validation_response.data["case_resolution"]["reason"] in {
+            "matched_by_hash",
+            "already_linked",
+        }
+        assert pdf.examination_id is not None
+        assert pdf.patient_id is not None
+        assert pdf.anonym_examination_report_id is not None
         assert isinstance(pdf.raw_meta, dict)
         assert pdf.raw_meta["examination_hash"] == pdf.sensitive_meta.examination_hash
         assert (
             pdf.raw_meta["pseudo_examination_id"]
             == pdf.sensitive_meta.pseudo_examination_id
         )
-
-        target_examination = PatientExamination.objects.create(
-            patient=pdf.sensitive_meta.pseudo_patient,
-            examination=pdf.sensitive_meta.pseudo_examination.examination,
-        )
-
-        case_resolution_response = client.post(
-            f"/api/media/pdfs/{pdf.pk}/case-resolution/",
-            data={"action": "attach", "patient_examination_id": target_examination.pk},
-            content_type="application/json",
-        )
-
-        assert case_resolution_response.status_code == 200, (
-            case_resolution_response.content
-        )
-
-        pdf.refresh_from_db()
-        assert pdf.examination_id == target_examination.pk
-        assert pdf.patient_id == target_examination.patient_id
-        assert pdf.anonym_examination_report_id is not None
         assert pdf.anonym_examination_report.text == "Latest validated report text"
         assert (
             pdf.anonym_examination_report.patient_examination_id
-            == target_examination.pk
+            == linked_patient_examination_id
         )
 
         read_response = client.get(f"/api/media/pdfs/{pdf.pk}/case-resolution/")
@@ -510,19 +558,15 @@ class TestSensitiveMetadataEndpoints:
         assert read_response.status_code == 200, read_response.content
         read_payload = read_response.json()
         assert read_payload["match_status"] == "linked"
-        assert read_payload["is_explicitly_resolved"] is True
-        assert read_payload["linked_patient_examination_id"] == target_examination.pk
+        assert read_payload["is_explicitly_resolved"] is False
+        assert read_payload["is_auto_resolved"] is True
         assert (
-            read_payload["pseudo_examination"]["linked_patient_examination_id"]
-            == target_examination.pk
+            read_payload["linked_patient_examination_id"]
+            == linked_patient_examination_id
         )
         assert (
             read_payload["pseudo_examination"]["linked_patient_examination_id"]
-            == target_examination.pk
-        ), (
-            "Read-side case resolution must reflect the explicitly linked "
-            "PatientExamination after case resolution succeeds, even when the "
-            "linked examination is not one of the hash-based suggestions."
+            == linked_patient_examination_id
         )
 
     def test_patch_pdf_sensitive_metadata(self, client, pdf):

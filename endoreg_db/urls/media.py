@@ -31,7 +31,6 @@ from endoreg_db.views.video import (
     video_segment_detail,
     video_segment_validate,
     video_segments_by_video,
-    video_segments_collection,
     video_segments_stats,
     video_segments_validate_bulk,
     video_segments_validation_status,
@@ -173,14 +172,6 @@ urlpatterns = [
         name="frame-annotations-label-studio-webhook",
     ),
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
-    # Video Segments Collection API
-    # GET/POST /api/media/videos/segments/
-    # List all video segments across videos or create new segment
-    path(
-        "media/videos/segments/",
-        video_segments_collection,
-        name="video-segments-collection",
-    ),
     # Video Segments Stats API
     # GET /api/media/videos/segments/stats/
     # Get statistics about video segments

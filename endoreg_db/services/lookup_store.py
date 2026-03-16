@@ -7,14 +7,24 @@ from typing import Any, Dict, Iterable, Mapping, Optional, cast
 from django.conf import settings
 from django.core.cache import cache
 
+from endoreg_db.config.env import env_int
 from endoreg_db.schemas.lookup_state import normalize_lookup_keys, validate_lookup_state
 
-# Align TTL with Django cache TIMEOUT for consistency in tests and runtime
+# Keep lookup sessions short-lived and explicit instead of inheriting the full cache TTL.
+# The session is refreshed on access/patch, so this is effectively an idle timeout.
 try:
     _cache_timeout_raw = settings.CACHES.get("default", {}).get("TIMEOUT", 60 * 30)
-    DEFAULT_TTL_SECONDS = int(cast(int | str, _cache_timeout_raw))
+    _cache_timeout_seconds = int(cast(int | str, _cache_timeout_raw))
 except Exception:
-    DEFAULT_TTL_SECONDS = 60 * 30  # 30 minutes fallback
+    _cache_timeout_seconds = 60 * 30
+
+DEFAULT_TTL_SECONDS = max(
+    60,
+    min(
+        _cache_timeout_seconds,
+        env_int("LOOKUP_TOKEN_TTL_SECONDS", 15 * 60),
+    ),
+)
 
 
 class LookupStore:

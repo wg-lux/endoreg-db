@@ -596,7 +596,7 @@ def _evaluate_findings_validator(
     observations_for_finding = list(observations_by_finding.get(finding_name, []))
     finding_exists = bool(observations_for_finding)
 
-    if operator in {"exists", "present"}:
+    if operator == "exists":
         return finding_exists, {
             "finding_name": finding_name,
             "missing_finding": not finding_exists,
@@ -604,16 +604,16 @@ def _evaluate_findings_validator(
             "reason": "validator_exists",
         }
 
-    if operator in {"not_exists", "absent", "missing"}:
+    if operator == "missing":
         return (not finding_exists), {
             "finding_name": finding_name,
             "missing_finding": False,
             "missing_classifications": [],
-            "reason": "validator_absent",
+            "reason": "validator_missing",
         }
 
-    condition = _as_mapping(query.get("condition"))
-    if condition:
+    if operator == "condition":
+        condition = _as_mapping(query.get("condition"))
         condition_ok, missing_classifications = _evaluate_query_condition(
             observations_for_finding,
             condition=condition,
@@ -625,18 +625,16 @@ def _evaluate_findings_validator(
             "reason": "validator_condition",
         }
 
-    # Unsupported operators fall back to existence semantics so dtypes evaluation
-    # stays deterministic instead of silently skipping checks.
     logger.debug(
-        "dtypes requirement service: unsupported findings operator '%s' on '%s'; using existence fallback",
+        "dtypes requirement service: unsupported findings operator '%s' on '%s'",
         operator,
         finding_name,
     )
-    return finding_exists, {
+    return False, {
         "finding_name": finding_name,
-        "missing_finding": not finding_exists,
+        "missing_finding": False,
         "missing_classifications": [],
-        "reason": "validator_operator_fallback",
+        "reason": "validator_unsupported_operator",
     }
 
 

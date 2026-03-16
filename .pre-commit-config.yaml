@@ -26,6 +26,11 @@ repos:
         entry: python scripts/check_django_startup_imports.py
         language: system
         pass_filenames: false
+      - id: deployment-settings-contract
+        name: deployment settings contract
+        entry: pytest tests/deployment/test_prod_settings_contract.py -q
+        language: system
+        pass_filenames: false
       - id: pytest-expensive
         name: pytest expensive suite
         entry: pytest -m "expensive or pipeline or slow"

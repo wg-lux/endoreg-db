@@ -187,7 +187,6 @@ class PatientExamination(models.Model):
         - Examination indications and their choices
         - Patient lab values
         """
-        from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
         from endoreg_db.utils.links.requirement_link import RequirementLinks
 
         # Get all PatientExaminationIndication instances linked to this PatientExamination
@@ -205,9 +204,7 @@ class PatientExamination(models.Model):
         # Fetch all patient lab values associated with this patient examination's patient
         patient_lab_values = []
         if self.patient:
-            patient_lab_values = list(
-                PatientLabValue.objects.filter(patient=self.patient)
-            )
+            patient_lab_values = list(self.patient.lab_values.all())
 
         current_examination = [self.examination] if self.examination else []
 

@@ -26,6 +26,7 @@ Examples in this repository root:
 - `docs/handoff_report_pdf_renderer.md`
 - `docs/handoff_pypi_release.md`
 - `docs/pydantic_django_hardening_plan.md`
+- `docs/requirement_evaluation_with_lx_data_models.md`
 
 Keep these while implementing. Remove or merge into wiki docs after rollout.
 

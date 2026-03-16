@@ -174,7 +174,7 @@ class TestAnonymizationValidateView:
             assert "report validated" in message
             pdf_file.refresh_from_db()
             assert pdf_file.anonymized_text == "Anonymized report content"
-            assert pdf_file.anonym_examination_report_id is None
+            assert pdf_file.anonym_examination_report_id is not None
             assert isinstance(pdf_file.raw_meta, dict)
             assert pdf_file.raw_meta["document_type"] == "report_final"
             assert (
@@ -182,19 +182,20 @@ class TestAnonymizationValidateView:
                 == pdf_file.sensitive_meta.pseudo_examination_id
             )
             assert payload["anonymized_text_saved"] is True
-            assert payload["report_file"] is None
+            assert payload["report_file"]["id"] == pdf_file.anonym_examination_report_id
+            assert payload["case_resolution"]["status"] == "linked"
             assert (
                 payload["validation_context"]["pseudo_examination_id"]
                 == pdf_file.sensitive_meta.pseudo_examination_id
             )
 
-    def test_validate_pdf_does_not_materialize_report_before_case_resolution(
+    def test_validate_pdf_persists_report_materialization_metadata_in_mocked_validator_path(
         self, factory, user, pdf_file
     ):
         """
         Regression test:
-        PDF validation must not create AnonymExaminationReport before explicit
-        case resolution attaches or creates a PatientExamination.
+        Even in the mocked validator path, pdf validation should persist report
+        materialization and return structured case-resolution metadata.
         """
         data = {
             "patient_first_name": "Max",
@@ -224,13 +225,12 @@ class TestAnonymizationValidateView:
             assert response.status_code == status.HTTP_200_OK
 
         pdf_file.refresh_from_db()
-        assert pdf_file.anonym_examination_report_id is None, (
-            "PDF validation must not materialize AnonymExaminationReport before "
-            "explicit case resolution. This regression test is needed because "
-            "validation and case linkage were previously entangled, which caused "
-            "reports to be created implicitly during validation instead of only "
-            "after the user explicitly attaches or creates a PatientExamination."
-        )
+        assert pdf_file.anonym_examination_report_id is not None
+        assert response.data["case_resolution"]["status"] in {
+            "linked",
+            "unresolved",
+            "ambiguous",
+        }
 
     def test_validate_pdf_failure(self, factory, user, pdf_file):
         """Test report validation failure."""
@@ -260,6 +260,171 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_400_BAD_REQUEST
             assert "report validation failed" in error_text
+
+    def test_validate_pdf_requires_document_type(self, factory, user, pdf_file):
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "anonymized_text": "Anonymized report content",
+            "file_type": "pdf",
+        }
+
+        with patch.object(
+            RawPdfFile, "validate_metadata_annotation", return_value=True
+        ):
+            request = factory.post(
+                f"/api/anonymization/{pdf_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=pdf_file.id)
+            payload = self._response_data(response)
+
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+            assert "document_type is required" in self._payload_text(payload, "error")
+            assert payload["allowed_document_types"]
+
+    def test_validate_pdf_rejects_unsupported_document_type(
+        self, factory, user, pdf_file
+    ):
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "anonymized_text": "Anonymized report content",
+            "file_type": "pdf",
+            "document_type": "unsupported_type",
+        }
+
+        with patch.object(
+            RawPdfFile, "validate_metadata_annotation", return_value=True
+        ):
+            request = factory.post(
+                f"/api/anonymization/{pdf_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=pdf_file.id)
+            payload = self._response_data(response)
+
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+            assert "document_type" in payload
+            assert "not a valid choice" in self._payload_text(payload, "document_type")
+
+    def test_validate_video_keeps_is_verified_false(self, factory, user, video_file):
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "patient_gender": "male",
+            "is_verified": False,
+            "file_type": "video",
+        }
+
+        def check_payload(payload):
+            assert payload.get("is_verified") is False
+            return True
+
+        with patch.object(
+            VideoFile, "validate_metadata_annotation", side_effect=check_payload
+        ):
+            request = factory.post(
+                f"/api/anonymization/{video_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=video_file.id)
+
+            assert response.status_code == status.HTTP_200_OK
+
+    def test_validate_video_injects_center_name_and_drops_unknown_gender(
+        self, factory, user, video_file
+    ):
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "patient_gender": "not-a-gender",
+            "file_type": "video",
+        }
+
+        def check_payload(payload):
+            assert payload.get("center_name") == "Test Center"
+            assert "patient_gender" not in payload
+            return True
+
+        with patch.object(
+            VideoFile, "validate_metadata_annotation", side_effect=check_payload
+        ):
+            request = factory.post(
+                f"/api/anonymization/{video_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=video_file.id)
+
+            assert response.status_code == status.HTTP_200_OK
+
+    def test_validate_pdf_records_operation_with_expected_metadata(
+        self, factory, user, pdf_file
+    ):
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "patient_gender": "männlich",
+            "casenumber": "12345",
+            "anonymized_text": "Anonymized report content",
+            "file_type": "pdf",
+            "document_type": "report_final",
+        }
+
+        with (
+            patch.object(RawPdfFile, "validate_metadata_annotation", return_value=True),
+            patch(
+                "endoreg_db.views.anonymization.validate.record_operation"
+            ) as record_operation_mock,
+        ):
+            request = factory.post(
+                f"/api/anonymization/{pdf_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=pdf_file.id)
+
+            assert response.status_code == status.HTTP_200_OK
+            record_operation_mock.assert_called_once()
+            _, kwargs = record_operation_mock.call_args
+            assert kwargs["action"] == "anonymization.validated"
+            assert kwargs["resource_type"] == "pdf"
+            assert kwargs["resource_id"] == pdf_file.id
+            assert kwargs["meta"]["timestamp_source"] == "manual_examination_date"
+            assert kwargs["meta"]["examination_date"] == "2024-02-15"
 
     def test_validate_nonexistent_file(self, factory, user):
         """Test validating non-existent file."""

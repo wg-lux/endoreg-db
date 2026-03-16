@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         Frame,
         ImageClassificationAnnotation,
         Label,
+        LabelSet,
         LabelVideoSegmentState,
         ModelMeta,
         PatientFinding,
@@ -118,6 +119,33 @@ class LabelVideoSegment(models.Model):
         Returns the duration of the video segment in seconds, calculated as the difference between end and start times.
         """
         return self.end_time - self.start_time
+
+    def resolve_labelset(self) -> "LabelSet | None":
+        prediction_meta = self.prediction_meta
+        if (
+            prediction_meta is not None
+            and prediction_meta.model_meta is not None
+            and prediction_meta.model_meta.labelset is not None
+        ):
+            return prediction_meta.model_meta.labelset
+
+        label = self.label
+        if label is not None:
+            labelset = label.label_sets.order_by("-version", "name").first()
+            if labelset is not None:
+                return labelset
+
+        video = self.video_file
+        if video.ai_model_meta is not None and video.ai_model_meta.labelset is not None:
+            return video.ai_model_meta.labelset
+
+        return None
+
+    def resolve_labelset_name(self) -> str | None:
+        labelset = self.resolve_labelset()
+        if labelset is None:
+            return None
+        return labelset.name
 
     @property
     def is_validated(self) -> bool:
