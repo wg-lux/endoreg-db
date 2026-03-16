@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 from django.core.management import call_command
+from endoreg_db.models import Label, LabelSet
+from endoreg_db.models.label import LabelType
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
@@ -186,6 +188,12 @@ def load_requirement_data():
 
 
 def load_ai_model_label_data():
+    if (
+        LabelType.objects.exists()
+        and Label.objects.exists()
+        and LabelSet.objects.exists()
+    ):
+        return
     call_command(
         "load_ai_model_label_data",
     )

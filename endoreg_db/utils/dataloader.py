@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import UTC, datetime
 
 import yaml
@@ -258,13 +259,19 @@ def load_data_with_foreign_keys(
                     created = False
             return obj, created
 
-        try:
-            # Attempt save inside a transaction for consistency
-            with transaction.atomic():
-                obj, created = _save_instance()
-        except OperationalError:
-            # Retry once on SQLite lock
-            obj, created = _save_instance()
+        max_attempts = 4
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with transaction.atomic():
+                    obj, created = _save_instance()
+                break
+            except OperationalError as exc:
+                if (
+                    "database is locked" not in str(exc).lower()
+                    or attempt == max_attempts
+                ):
+                    raise
+                time.sleep(0.05 * attempt)
 
         if created and verbose:
             command.stdout.write(
