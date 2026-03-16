@@ -51,6 +51,43 @@ def test_convert_sequences_creates_segments():
 
 
 @pytest.mark.django_db
+def test_convert_sequences_skips_single_frame_segments():
+    center = Center.objects.create(
+        name="singleton-center", display_name="Singleton Center"
+    )
+    video = VideoFile.objects.create(center=center, video_hash="singleton-hash")
+
+    label_type = LabelType.objects.create(name="video")
+    label = Label.objects.create(name="appendix", label_type=label_type)
+
+    labelset = LabelSet.objects.create(name="set-b", version=1)
+    labelset.labels.add(label)
+
+    ai_model = AiModel.objects.create(name="model-b")
+    model_meta = ModelMeta.objects.create(
+        name="meta-b", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
+
+    sequences = {
+        "appendix": [(5, 5), (10, 12)],
+    }
+
+    segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
+
+    created = LabelVideoSegment.objects.filter(
+        video_file=video, label=label, prediction_meta=prediction_meta
+    )
+    assert created.count() == 1
+    segment = created.get()
+    assert segment.start_frame_number == 10
+    assert segment.end_frame_number == 12
+    assert segment.state is not None
+
+
+@pytest.mark.django_db
 def test_get_outside_helpers_return_expected_frames(tmp_path):
     center = Center.objects.create(name="outside-center", display_name="Outside Center")
     video = VideoFile.objects.create(center=center, video_hash="outside-hash")

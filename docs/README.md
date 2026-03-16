@@ -25,6 +25,7 @@ Examples in this repository root:
 - `docs/frontend_agent_url_contract.md`
 - `docs/handoff_report_pdf_renderer.md`
 - `docs/handoff_pypi_release.md`
+- `docs/pydantic_django_hardening_plan.md`
 
 Keep these while implementing. Remove or merge into wiki docs after rollout.
 

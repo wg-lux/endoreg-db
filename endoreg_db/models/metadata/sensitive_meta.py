@@ -56,7 +56,10 @@ class SensitiveMeta(models.Model):
     patient_gender = models.ForeignKey(
         "Gender", on_delete=models.CASCADE, blank=True, null=True
     )
-    examiners: "models.ManyToManyField[Examiner, Examiner]" = models.ManyToManyField(
+    if TYPE_CHECKING:
+        examiners: models.ManyToManyField[Examiner, Examiner]
+
+    examiners = models.ManyToManyField(
         "Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)"
     )
     center = models.ForeignKey(

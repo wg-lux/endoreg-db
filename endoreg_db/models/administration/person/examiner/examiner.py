@@ -12,7 +12,12 @@ if TYPE_CHECKING:
 
 
 class Examiner(Person):
-    center: "models.ForeignKey[administration.Center | None, administration.Center | None]" = models.ForeignKey(
+    if TYPE_CHECKING:
+        center: models.ForeignKey[
+            administration.Center | None, administration.Center | None
+        ]
+
+    center = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
     hash: "models.CharField[str, str]" = models.CharField(max_length=255, unique=True)

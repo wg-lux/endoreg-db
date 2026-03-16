@@ -58,7 +58,7 @@ def _convert_sequences_to_db_segments(
 
         segments_to_create = []
         for start_frame, end_frame in sequence_list:
-            if start_frame > end_frame or start_frame < 0:
+            if start_frame >= end_frame or start_frame < 0:
                 logger.warning(
                     "Skipping invalid sequence for label '%s': start=%d, end=%d",
                     label_name,

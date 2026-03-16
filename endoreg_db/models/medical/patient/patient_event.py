@@ -15,10 +15,14 @@ class PatientEvent(models.Model):
     subcategories, and numerical descriptors.
     """
 
-    patient: models.ForeignKey["Patient"] = models.ForeignKey(
+    if TYPE_CHECKING:
+        patient: models.ForeignKey[Patient]
+        event: models.ForeignKey[Event]
+
+    patient = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="events"
     )
-    event: models.ForeignKey["Event"] = models.ForeignKey(
+    event = models.ForeignKey(
         "Event", on_delete=models.CASCADE, related_name="patient_events"
     )
     date_start = models.DateField()

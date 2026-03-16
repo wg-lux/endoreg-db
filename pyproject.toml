@@ -78,6 +78,7 @@ dependencies = [
     "lx-anonymizer[llm,ocr]==0.9.0.5",
     "lx-dtypes",
     "googlemaps>=4.10.0",
+    "de-core-news-lg",
 ]
 
 
@@ -243,6 +244,9 @@ disable_error_code = [
 
 [tool.django-stubs]
 django_settings_module = "endoreg_db.config.settings.test"
+
+[tool.uv.sources]
+de-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
 
 # [tool.uv.sources]
 # lx-anonymizer = { workspace = true }

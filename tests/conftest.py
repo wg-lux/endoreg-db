@@ -522,18 +522,13 @@ def video_test_mode():
 @pytest.fixture(autouse=True)
 def optimize_database_queries(db):
     """
-    Optimize database operations for tests.
+    Apply lightweight SQLite tuning without interfering with Django's
+    transaction-managed test connection.
     """
     from django.conf import settings
     from django.db import connection
-    from django.db.utils import (
-        DatabaseError,
-        InterfaceError,
-        OperationalError,
-        ProgrammingError,
-    )
+    from django.db.utils import DatabaseError, InterfaceError, OperationalError
 
-    # Enable query optimization for tests
     if not hasattr(settings, "DATABASES"):
         return
 
@@ -541,23 +536,33 @@ def optimize_database_queries(db):
     if "sqlite" not in engine:
         return
 
-    try:
-        connection.ensure_connection()
-    except (DatabaseError, InterfaceError, OperationalError, ProgrammingError):
+    raw_connection = getattr(connection, "connection", None)
+    if raw_connection is None:
         try:
-            connection.close()
             connection.ensure_connection()
-        except (DatabaseError, InterfaceError, OperationalError, ProgrammingError):
+        except (DatabaseError, InterfaceError, OperationalError):
             return
+        raw_connection = getattr(connection, "connection", None)
+
+    if raw_connection is None:
+        return
+
+    # Do not mutate SQLite connection state while Django's TestCase transaction
+    # wrappers are active. Closing or reconfiguring the connection here can
+    # invalidate the shared test connection and cause cascading closed-database
+    # and locked-database failures across the suite.
+    if connection.in_atomic_block:
+        return
+
+    if getattr(raw_connection, "_endoreg_test_pragmas_applied", False):
+        return
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
             cursor.execute("PRAGMA cache_size=10000;")
             cursor.execute("PRAGMA temp_store=MEMORY;")
-    except (DatabaseError, InterfaceError, OperationalError, ProgrammingError):
-        # Ignore transient closed/recycled connection errors in test teardown/setup churn.
+        raw_connection._endoreg_test_pragmas_applied = True
+    except (AttributeError, DatabaseError, InterfaceError, OperationalError):
         return
 
 

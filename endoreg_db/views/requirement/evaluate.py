@@ -20,6 +20,25 @@ from endoreg_db.services import lookup_service
 logger = logging.getLogger(__name__)
 
 
+def _format_validation_errors(exc: ValidationError) -> list[str]:
+    errors: list[str] = []
+    for error in exc.errors(include_url=False):
+        loc = error.get("loc") or ()
+        field_name = ".".join(str(part) for part in loc)
+        message = str(error.get("msg") or "Invalid request payload")
+        error_type = str(error.get("type") or "")
+
+        if error_type == "missing" and field_name:
+            errors.append(f"{field_name} is required")
+            continue
+
+        if field_name:
+            errors.append(f"{field_name}: {message}")
+        else:
+            errors.append(message)
+    return errors or ["Invalid request payload"]
+
+
 def _build_response(
     *,
     ok: bool,
@@ -71,7 +90,7 @@ def evaluate_requirements(request):
         patient_examination_id = request_payload.patient_examination_id
         selected_requirement_set_ids = request_payload.requirement_set_ids
     except ValidationError as exc:
-        errors.append(str(exc))
+        errors.extend(_format_validation_errors(exc))
 
     if errors:
         return _build_response(

@@ -10,26 +10,24 @@ if TYPE_CHECKING:
 
 
 class CenterWaste(models.Model):
-    center: models.ForeignKey["Center"] = models.ForeignKey(
+    if TYPE_CHECKING:
+        center: models.ForeignKey[Center, Center]
+        waste: models.ForeignKey[Waste, Waste]
+        unit: models.ForeignKey[Unit | None, Unit | None]
+        emission_factor: models.ForeignKey[EmissionFactor | None, EmissionFactor | None]
+
+    center = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_wastes",
     )
     year = models.IntegerField()
-    waste: models.ForeignKey["Waste"] = models.ForeignKey(
-        "Waste", on_delete=models.CASCADE
-    )
+    waste = models.ForeignKey("Waste", on_delete=models.CASCADE)
     quantity = models.FloatField()
     unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
     emission_factor = models.ForeignKey(
         "EmissionFactor", on_delete=models.SET_NULL, null=True
     )
-
-    if TYPE_CHECKING:
-        center: models.ForeignKey["Center"]
-        waste: models.ForeignKey["Waste"]
-        unit: models.ForeignKey["Unit|None"]
-        emission_factor: models.ForeignKey["EmissionFactor|None"]
 
     def __str__(self) -> str:
         """
