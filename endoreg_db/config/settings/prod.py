@@ -5,14 +5,15 @@ from .base import BASE_DIR
 from endoreg_db.config.env import env_bool, env_str
 from . import keycloak as KEYCLOAK
 
-DEBUG = env_bool("DJANGO_DEBUG", False)
-if DEBUG:
+pytest_active = "PYTEST_CURRENT_TEST" in os.environ
+
+DEBUG = False if pytest_active else env_bool("DJANGO_DEBUG", False)
+if env_bool("DJANGO_DEBUG", False) and not pytest_active:
     raise ValueError(
         "DJANGO_DEBUG must be false in production; refusing to start with debug-mode auth bypass enabled"
     )
 
 SECRET_KEY = env_str("DJANGO_SECRET_KEY")
-pytest_active = "PYTEST_CURRENT_TEST" in os.environ
 if not SECRET_KEY:
     if pytest_active:
         SECRET_KEY = "test-secret-key"

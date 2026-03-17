@@ -14,6 +14,7 @@ from endoreg_db.models import AiModel, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet
 import pytest
 from django.core.files.base import ContentFile
+from django.db.backends.signals import connection_created
 from django.test import override_settings
 
 pytest_plugins = [
@@ -164,15 +165,6 @@ def client():
 # ==========================================
 # Database Optimization Fixtures
 # ==========================================
-
-
-@pytest.fixture(scope="session")
-def django_db_setup():
-    """
-    Set up the test database for the session.
-    Since we're using in-memory SQLite, this is minimal.
-    """
-    pass
 
 
 # Base data loading - now using centralized caching
@@ -519,51 +511,54 @@ def video_test_mode():
     return RUN_VIDEO_TESTS
 
 
-@pytest.fixture(autouse=True)
-def optimize_database_queries(db):
+def _apply_sqlite_test_pragmas(db_connection):
     """
-    Apply lightweight SQLite tuning without interfering with Django's
-    transaction-managed test connection.
+    Configure SQLite connections once at creation time so Django's test
+    transaction wrappers inherit the settings without mutating live handles.
     """
-    from django.conf import settings
-    from django.db import connection
     from django.db.utils import DatabaseError, InterfaceError, OperationalError
 
-    if not hasattr(settings, "DATABASES"):
+    if getattr(db_connection, "vendor", "") != "sqlite":
         return
 
-    engine = settings.DATABASES.get("default", {}).get("ENGINE", "")
-    if "sqlite" not in engine:
-        return
-
-    raw_connection = getattr(connection, "connection", None)
+    raw_connection = getattr(db_connection, "connection", None)
     if raw_connection is None:
-        try:
-            connection.ensure_connection()
-        except (DatabaseError, InterfaceError, OperationalError):
-            return
-        raw_connection = getattr(connection, "connection", None)
-
-    if raw_connection is None:
-        return
-
-    # Do not mutate SQLite connection state while Django's TestCase transaction
-    # wrappers are active. Closing or reconfiguring the connection here can
-    # invalidate the shared test connection and cause cascading closed-database
-    # and locked-database failures across the suite.
-    if connection.in_atomic_block:
         return
 
     if getattr(raw_connection, "_endoreg_test_pragmas_applied", False):
         return
 
     try:
-        with connection.cursor() as cursor:
+        with db_connection.cursor() as cursor:
+            cursor.execute("PRAGMA busy_timeout=30000;")
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
             cursor.execute("PRAGMA cache_size=10000;")
             cursor.execute("PRAGMA temp_store=MEMORY;")
         raw_connection._endoreg_test_pragmas_applied = True
     except (AttributeError, DatabaseError, InterfaceError, OperationalError):
         return
+
+
+def _configure_sqlite_test_connection(sender, connection, **kwargs):
+    _apply_sqlite_test_pragmas(connection)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def optimize_database_queries():
+    """
+    Apply SQLite pragmas to every Django test connection, including ones opened
+    lazily after pytest-django starts wrapping tests in transactions.
+    """
+    dispatch_uid = "endoreg.tests.sqlite_pragmas"
+    connection_created.connect(
+        _configure_sqlite_test_connection,
+        dispatch_uid=dispatch_uid,
+    )
+
+    yield
+
+    connection_created.disconnect(dispatch_uid=dispatch_uid)
 
 
 @pytest.fixture(scope="session")
@@ -582,11 +577,25 @@ def setup_test_environment(cache):
     """
     import shutil
 
+    from django.conf import settings
+    from django.db import connections
+
     # Ensure faker logging is disabled
     disable_faker_logging()
 
     # Ensure storage directories exist
     TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Remove stale lock files from interrupted runs so lock-based import tests
+    # start from a clean session state.
+    for lock_root in (TEST_STORAGE_DIR / "locks",):
+        if not lock_root.exists():
+            continue
+        for lock_path in lock_root.rglob("*.lock"):
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
 
     # Set environment variables for tests
     os.environ.setdefault("STORAGE_DIR", str(TEST_STORAGE_DIR))
@@ -598,6 +607,28 @@ def setup_test_environment(cache):
     yield
 
     # Cleanup after all tests
+    connections.close_all()
+
+    db_config = getattr(settings, "DATABASES", {}).get("default", {})
+    if (
+        db_config.get("ENGINE", "").endswith("sqlite3")
+        and os.environ.get("TEST_DB_REUSE", "false").lower() != "true"
+    ):
+        db_path = Path(db_config.get("NAME", ""))
+        for candidate in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    lock_root = TEST_STORAGE_DIR / "locks"
+    if lock_root.exists():
+        for lock_path in lock_root.rglob("*.lock"):
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
+
     if TEST_STORAGE_DIR.exists():
         shutil.rmtree(TEST_STORAGE_DIR, ignore_errors=True)
 
@@ -738,6 +769,11 @@ def pytest_configure(config):
     """
     Configure pytest with custom markers for performance optimization.
     """
+    test_db_engine = os.environ.get("TEST_DB_ENGINE", "django.db.backends.sqlite3")
+    test_db_reuse = os.environ.get("TEST_DB_REUSE", "false").lower() == "true"
+    if test_db_engine.endswith("sqlite3") and not test_db_reuse:
+        config.option.reuse_db = False
+
     config.addinivalue_line(
         "markers", "expensive: marks tests as expensive/resource-intensive"
     )
@@ -808,28 +844,6 @@ def pytest_collection_modifyitems(config, items):
                         reason="Video tests disabled (RUN_VIDEO_TESTS=false)"
                     )
                 )
-
-
-# ==========================================
-# Session-Scoped Database Connection Pool
-# ==========================================
-
-
-@pytest.fixture(scope="session")
-def db_connection_pool():
-    """
-    Maintain a connection pool for the session to reduce connection overhead.
-    """
-    from django.db import connections
-
-    # Warm up connections
-    for alias in connections:
-        connections[alias].ensure_connection()
-
-    yield connections
-
-    # Clean up connections
-    connections.close_all()
 
 
 # ==========================================

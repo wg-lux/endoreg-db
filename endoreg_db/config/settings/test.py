@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any
 
@@ -6,9 +7,43 @@ from endoreg_db.config.env import env_bool, env_str
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR
 
-# Persistent test DB
-DEFAULT_TEST_DB_PATH = BASE_DIR / "data" / "tests" / "db" / "test_db.sqlite3"
-TEST_DB_FILE = Path(env_str("TEST_DB_FILE", str(DEFAULT_TEST_DB_PATH)))
+TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
+TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
+
+# Use an isolated SQLite file per pytest process by default. Shared file-backed
+# databases interact badly with --reuse-db after interrupted runs because stale
+# pytest processes can keep WAL/SHM locks open for the next session.
+TEST_DB_REUSE = env_bool("TEST_DB_REUSE", False)
+TEST_DB_WORKER = env_str("PYTEST_XDIST_WORKER", "main")
+DEFAULT_TEST_DB_PATH = TEST_DB_DIR / (
+    "test_db.sqlite3"
+    if TEST_DB_REUSE
+    else f"test_db_{TEST_DB_WORKER}_{os.getpid()}.sqlite3"
+)
+LEGACY_SHARED_TEST_DB_PATH = TEST_DB_DIR / "test_db.sqlite3"
+
+raw_test_db_file = os.environ.get("TEST_DB_FILE")
+raw_test_db_name = os.environ.get("TEST_DB_NAME")
+
+
+def _normalize_test_db_path(value: str | os.PathLike[str]) -> Path:
+    candidate = Path(value)
+    if candidate.is_absolute():
+        return candidate
+    return BASE_DIR / candidate
+
+
+if raw_test_db_file:
+    resolved_test_db_path = _normalize_test_db_path(raw_test_db_file)
+elif raw_test_db_name and (
+    TEST_DB_REUSE
+    or _normalize_test_db_path(raw_test_db_name) != LEGACY_SHARED_TEST_DB_PATH
+):
+    resolved_test_db_path = _normalize_test_db_path(raw_test_db_name)
+else:
+    resolved_test_db_path = DEFAULT_TEST_DB_PATH
+
+TEST_DB_FILE = resolved_test_db_path
 TEST_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
@@ -16,7 +51,7 @@ SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 DB_ENGINE = env_str("TEST_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = env_str("TEST_DB_NAME", str(TEST_DB_FILE))
+DB_NAME = str(TEST_DB_FILE)
 DB_USER = env_str("TEST_DB_USER", "")
 DB_PASSWORD = env_str("TEST_DB_PASSWORD", "")
 DB_HOST = env_str("TEST_DB_HOST", "")
