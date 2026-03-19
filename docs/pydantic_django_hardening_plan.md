@@ -22,7 +22,7 @@ Strict contract mode is used for request and response payloads such as:
 
 - `lx-data-models/lx_dtypes/models/contracts/case_resolution.py`
 - `lx-data-models/lx_dtypes/models/contracts/pdf_redaction.py`
-- `lx-data-models/lx_dtypes/models/knowledge_base/report_template/LookupState.py`
+- `endoreg_db/schemas/lookup_state.py`
 
 Domain aggregation and serialization mode is used for:
 
@@ -358,4 +358,3 @@ Recommended order for actual hardening work:
 - do not optimize prefetching without checking which relations are actually traversed
 
 The biggest immediate gains come from making evaluation paths measurably query-safe and from putting guardrails around future Pydantic mixin growth.
-

@@ -2,6 +2,8 @@ import hashlib
 import os
 from pathlib import Path
 
+from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
+
 
 def get_content_hash_filename(file: Path) -> tuple[str, str]:
     """
@@ -29,8 +31,13 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     Returns:
         Hexadecimal SHA-256 digest (64 characters).
     """
-    h = hashlib.sha256()
     path_obj = Path(path)
+
+    rust_digest = rust_sha256_file_hex(path_obj, chunk_size)
+    if isinstance(rust_digest, str):
+        return rust_digest
+
+    h = hashlib.sha256()
 
     with path_obj.open("rb") as f:
         while True:

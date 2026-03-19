@@ -10,14 +10,16 @@ Primary goals:
 - Treat requirement evaluation as advisory guidance (nag), not a hard protocol lock.
 
 ## Canonical Contract Source
-Lookup contracts are defined in `lx_dtypes`:
-- `lx_dtypes.models.knowledge_base.report_template.LookupState`
-- `lx_dtypes.models.knowledge_base.report_template.LookupStateDataDict`
+Lookup contracts are now defined locally in:
 
-`endoreg_db` imports these contracts through:
 - `endoreg_db/schemas/lookup_state.py`
 
-Treat `lx_dtypes` as the source of truth.
+Treat `endoreg_db/schemas/lookup_state.py` as the source of truth for lookup session/cache payloads.
+
+Important boundary:
+
+- `lx_dtypes` still owns validator, KB, and ledger contracts
+- `endoreg_db` owns lookup session-state contracts and response shaping
 
 Related backend integrations implemented in this thread:
 - `lx_dtypes` report-template schema now supports first-class non-finding sections (`patient_data`, `history`) with typed `fields`.

@@ -13,6 +13,8 @@ import shutil
 
 from django.db import transaction
 
+from endoreg_db.utils.rust_backend import parse_extracted_frame_numbers as rust_parse
+
 logger = logging.getLogger(__name__)
 
 
@@ -158,17 +160,21 @@ def _extract_frames(
             video.video_hash,
         )
 
-        extracted_frame_numbers = []
-        for frame_path in extracted_paths:
-            try:
-                frame_number = int(frame_path.stem.split("_")[-1])
-                extracted_frame_numbers.append(frame_number)
-            except (ValueError, IndexError) as e:
-                logger.warning(
-                    "Could not parse frame number from extracted file %s: %s",
-                    frame_path.name,
-                    e,
-                )
+        extracted_frame_numbers: list[int] = []
+        rust_frame_numbers = rust_parse(extracted_paths)
+        if rust_frame_numbers is not None:
+            extracted_frame_numbers = rust_frame_numbers
+        else:
+            for frame_path in extracted_paths:
+                try:
+                    frame_number = int(frame_path.stem.split("_")[-1])
+                    extracted_frame_numbers.append(frame_number)
+                except (ValueError, IndexError) as e:
+                    logger.warning(
+                        "Could not parse frame number from extracted file %s: %s",
+                        frame_path.name,
+                        e,
+                    )
 
         # Step 2: Perform all the quick DB updates inside a minimal atomic transaction.
         with transaction.atomic():

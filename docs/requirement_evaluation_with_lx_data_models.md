@@ -1,6 +1,6 @@
 # Requirement Evaluation and `lx-data-models`
 
-Last updated: 2026-03-16
+Last updated: 2026-03-19
 
 ## Purpose
 
@@ -20,6 +20,12 @@ Use this together with:
 - `docs/dtypes_requirement_migration.md`
 - `docs/pydantic_django_hardening_plan.md`
 
+Audience note:
+
+- this document explains the technical runtime path
+- it is not an end-user authoring guide for report-template YAML
+- raw report-template authoring is still a technical maintenance task in the current repository state
+
 ## Short Version
 
 Requirement evaluation is now a dtypes-backed flow.
@@ -28,14 +34,20 @@ At a high level:
 
 1. the API view validates the request with `lx_dtypes` contract models
 2. `endoreg_db` loads a `PatientExamination` with a prefetched object graph
-3. the evaluation service reads report-template validators from `lx-data-models`
-4. the service evaluates those validators against live Django state
-5. the response is shaped back into stable typed payloads
+3. the evaluation service resolves the effective knowledge base from persisted KB identity
+4. the evaluation service reads report-template validators from `lx-data-models`
+5. the service evaluates those validators against live Django state
+6. the response is shaped back into stable typed payloads
 
 The important architectural split is:
 
 - `lx-data-models` owns the strict validator and payload contracts
 - `endoreg_db` owns ORM loading, orchestration, and runtime traversal
+
+The corresponding operational split should stay explicit:
+
+- domain experts define reporting intent and review outputs
+- technical owners maintain YAML/module wiring and validator definitions
 
 ## Primary Code Paths
 
@@ -154,34 +166,63 @@ Important settings:
 
 - `LOOKUP_REQUIREMENT_SOURCE`
 - `LOOKUP_DTYPES_MODULE_NAME`
+- `LOOKUP_DTYPES_MODULE_VERSION`
+- `LX_DTYPES_KB_REGISTRY`
 - `LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED`
 
 Today the `/api/evaluate-requirements/` path is dtypes-backed by default.
 
+Identity precedence for dtypes evaluation is now:
+
+1. `PatientExamination.knowledge_base_module` / `knowledge_base_version`
+2. configured defaults from settings
+3. current unversioned module data only when no version pin exists
+
+This is the critical boundary that prevents historical records from being silently re-evaluated against a newer KB version.
+
 ## Step 5: Load Validators from `lx-data-models`
 
-The dtypes evaluation service resolves report-template data from `lx-data-models`.
+The dtypes evaluation service resolves report-template data from `lx-data-models`, but it no longer does so as a simple "load the current module from repo data" step.
 
 Main entrypoint:
 
-- `_load_dtypes_kb(module_name)` in `endoreg_db/services/dtypes_requirement_service.py`
+- `_load_dtypes_kb(module_name, version)` in `endoreg_db/services/dtypes_requirement_service.py`
 
-That loader uses:
+That loader now uses:
 
-- `lx_dtypes.models.interface.DataLoader`
+- `lx_dtypes.models.interface.KnowledgeBaseResolver.load_knowledge_base(...)`
 
-to load knowledge-base modules from:
+Resolution behavior:
 
-- the repo-local `lx-data-models/lx_dtypes/data` directory when available
-- otherwise the installed `lx_dtypes` package data
+- if `version` is pinned, the resolver requires an entry in `LX_DTYPES_KB_REGISTRY`
+- if `version` is not pinned, the loader can still use current module data from:
+  - `LOOKUP_DTYPES_DATA_ROOT`
+  - repo-local `lx-data-models/lx_dtypes/data`
+  - installed `lx_dtypes` package data
 
-This is important because it keeps evaluation aligned with the checked-out repository data during development and CI.
+This split is deliberate:
+
+- current-version developer workflows can still use checked-out local data
+- historical evaluation must use explicitly provisioned immutable KB artifacts
+
+Expected registry shape:
+
+```json
+{
+  "modules": {
+    "report_template_examples": {
+      "0.1.0": "/nix/store/.../lx_dtypes/data"
+    }
+  }
+}
+```
 
 The loaded knowledge base contains typed report-template objects such as:
 
 - `ReportTemplate`
 - `ReportTemplateSection`
 - `ReportFinding`
+- `ClassificationValidator`
 - `FindingsValidator`
 - `ExaminationValidator`
 
@@ -203,9 +244,10 @@ This is the core contract split:
 
 In practice, the service:
 
-- loads the configured report-template module
+- loads the effective `(module, version)` for the current patient examination
 - selects applicable templates/validators for the current examination
 - evaluates findings validators against available findings, classifications, interventions, and examination context
+- evaluates classification/intervention/unit validators where present or implicitly derived from the template
 - evaluates examination validators recursively
 - builds normalized lookup updates such as:
   - `requirements_by_set`
@@ -215,26 +257,36 @@ In practice, the service:
   - `classification_choices`
   - `suggested_actions`
 
-The shape of those payloads is then validated again against the typed `lx_dtypes` lookup contracts.
+The shape of those payloads is then validated again against the typed local lookup contracts in:
+
+- `endoreg_db/schemas/lookup_state.py`
+
+Fail-closed behavior:
+
+- if a patient examination is pinned to a KB version that is not provisioned locally, `try_build_dtypes_requirement_guidance(...)` raises `DtypesKnowledgeBaseResolutionError`
+- `/api/evaluate-requirements/` currently returns a failed evaluation response in that case
+- report persistence currently catches the failure and records a warning so report save continues
 
 ## Step 7: Typed State and Response Shaping
 
-The lookup/evaluation payloads are validated through:
+The lookup/evaluation payloads are now validated through the repo-local contract in:
+
+- `endoreg_db/schemas/lookup_state.py`
+
+Current typed models and payload shapes include:
 
 - `LookupState`
 - `LookupStateDataDict`
 - `LookupDerivedUpdatesDataDict`
 
-from:
+This is no longer imported from `lx-data-models`.
 
-- `lx-data-models/lx_dtypes/models/knowledge_base/report_template/LookupState.py`
-- `lx-data-models/lx_dtypes/models/knowledge_base/report_template/LookupStateDataDict.py`
+Reason for the boundary change:
 
-Repo-local adapter boundary:
-
-- `endoreg_db/schemas/lookup_state.py`
-
-This layer exists so `endoreg_db` can keep using typed `DataDict` payloads without hardcoding the schema locally.
+- `LookupState` was part of the older Django-driven lookup-state workflow
+- the current direction is that lookup/report-building state lives in the frontend
+- `lx-data-models` now owns validator and ledger/report contracts, not the frontend session-state contract
+- `endoreg_db` still needs a stable typed shape for its lookup cache and response lifecycle, so that contract now lives locally
 
 For the direct evaluation endpoint, `evaluate.py` finally maps the guidance payload into the stable response contract:
 
@@ -244,6 +296,16 @@ For the direct evaluation endpoint, `evaluate.py` finally maps the guidance payl
 - `results`
 
 The top-level API response is intentionally stable even though the internals are now dtypes-backed.
+
+## Current Integration Gap
+The Python-side resolver is implemented, but historical validation is not operational until deployment provides the historical artifacts.
+
+Still required outside Python:
+
+- build-time generation of a version registry file
+- deployment wiring of `LX_DTYPES_KB_REGISTRY`
+- provisioning of the historical KB revisions referenced by persisted patient examinations
+- backfill of `knowledge_base_module` / `knowledge_base_version` for older rows that predate stamping
 
 ## Where Django Ends and `lx-data-models` Begins
 

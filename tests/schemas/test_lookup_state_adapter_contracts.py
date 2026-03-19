@@ -1,32 +1,16 @@
 from __future__ import annotations
+
 from endoreg_db.schemas.lookup_state import (
-    LookupState as AdapterLookupState,
-    build_lookup_recompute_response as adapter_build_lookup_recompute_response,
-    normalize_lookup_keys as adapter_normalize_lookup_keys,
-    validate_lookup_state as adapter_validate_lookup_state,
-    validate_lookup_updates as adapter_validate_lookup_updates,
-)
-from lx_dtypes.models.knowledge_base.report_template import (
-    LookupState as DtypesLookupState,
-    build_lookup_recompute_response as dtypes_build_lookup_recompute_response,
-    normalize_lookup_keys as dtypes_normalize_lookup_keys,
-    validate_lookup_state as dtypes_validate_lookup_state,
-    validate_lookup_updates as dtypes_validate_lookup_updates,
+    LookupState,
+    build_lookup_recompute_response,
+    normalize_lookup_keys,
+    validate_lookup_state,
+    validate_lookup_updates,
 )
 
 
-def test_adapter_re_exports_same_lookup_state_class() -> None:
-    assert AdapterLookupState is DtypesLookupState
-
-
-def test_adapter_re_exports_same_helper_functions() -> None:
-    assert adapter_normalize_lookup_keys is dtypes_normalize_lookup_keys
-    assert adapter_validate_lookup_state is dtypes_validate_lookup_state
-    assert adapter_validate_lookup_updates is dtypes_validate_lookup_updates
-    assert (
-        adapter_build_lookup_recompute_response
-        is dtypes_build_lookup_recompute_response
-    )
+def test_lookup_state_is_local_endoreg_contract() -> None:
+    assert LookupState.__module__ == "endoreg_db.schemas.lookup_state"
 
 
 def test_validate_lookup_state_normalizes_legacy_keys() -> None:
@@ -36,14 +20,40 @@ def test_validate_lookup_state_normalizes_legacy_keys() -> None:
         "selectedChoices": {"req_10": {"choice": "a"}},
     }
 
-    normalized = adapter_validate_lookup_state(payload)
+    normalized = validate_lookup_state(payload)
     assert normalized is not None
     assert normalized["selected_requirement_set_ids"] == [1, 2, 3]
     assert normalized["selected_choices"] == {"req_10": {"choice": "a"}}
 
 
+def test_normalize_lookup_keys_maps_legacy_keys() -> None:
+    normalized = normalize_lookup_keys(
+        {
+            "selectedRequirementSetIds": [4],
+            "selectedChoices": {"req_11": {"choice": "b"}},
+        }
+    )
+
+    assert normalized["selected_requirement_set_ids"] == [4]
+    assert normalized["selected_choices"] == {"req_11": {"choice": "b"}}
+
+
+def test_validate_lookup_updates_accepts_typed_updates_payload() -> None:
+    updates = validate_lookup_updates(
+        {
+            "requirement_status": {"10": False},
+            "candidate_requirement_set_ids": [20, 21],
+            "candidate_requirement_set_confidence": 0.72,
+        }
+    )
+
+    assert updates["requirement_status"] == {"10": False}
+    assert updates["candidate_requirement_set_ids"] == [20, 21]
+    assert updates["candidate_requirement_set_confidence"] == 0.72
+
+
 def test_recompute_response_contract_shape() -> None:
-    response = adapter_build_lookup_recompute_response(
+    response = build_lookup_recompute_response(
         token="abc123",
         updates={
             "requirements_by_set": {},

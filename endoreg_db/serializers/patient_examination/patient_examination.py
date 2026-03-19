@@ -35,12 +35,16 @@ class PatientExaminationSerializer(serializers.ModelSerializer):
             "date_start",
             "date_end",
             "hash",
+            "knowledge_base_module",
+            "knowledge_base_version",
             "patient_name",
             "examination_name",
         ]
         read_only_fields = [
             "id",
             "hash",
+            "knowledge_base_module",
+            "knowledge_base_version",
             "patient_name",
             "examination_name",
             "patient_data",

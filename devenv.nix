@@ -16,6 +16,8 @@ let
   exportFramesSampleExportDir = "${exportFramesRootDir}/test_outputs";
   modelDir = "${dataDir}/models";
   confDir = "./conf"; # Define confDir here
+  lxAnonymizerApp = inputs.lx-anonymizer.packages.${pkgs.system}.lx-anonymizer-with-native;
+  lxAnonymizerSitePackages = "${lxAnonymizerApp}/lib/python3.12/site-packages";
 
   # Pin to specific Python 3.12 version to match pyproject.toml
   python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
@@ -24,6 +26,7 @@ let
   buildInputs = with pkgs; [
     python312
     stdenv.cc.cc
+    clang
     glib
     openssh
     cmake
@@ -33,9 +36,14 @@ let
     libglvnd
     xorg.libxcb
     xorg.libX11
+    cargo
+    rustc
+    rustfmt
+    maturin
   ];
   runtimePackages = with pkgs; [
     stdenv.cc.cc
+    clang
     ffmpeg-headless.bin
     tesseract
     uvPackage
@@ -51,6 +59,10 @@ let
     xorg.libXrender  # Common dependency for OpenCV
     libxkbcommon     # Often required by newer Qt/OpenCV builds
     # ------------------------------------------
+    cargo
+    rustc
+    rustfmt
+    maturin
   ];
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
@@ -75,25 +87,65 @@ in
   dotenv.enable = true;
   dotenv.disableHint = true;
 
-  packages = runtimePackages ++ buildInputs;
+  packages = runtimePackages ++ buildInputs ++ [ lxAnonymizerApp ];
 
   env = {
     # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
     LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
-    # Force uv to use the Nix-provided Python - override any conflicts
-    # UV_PYTHON = lib.mkForce "${python}/bin/python";
-    # UV_PYTHON_DOWNLOADS = "never";
+    LX_ANONYMIZER_NIX_APP = lxAnonymizerApp;
+    PYO3_PYTHON = "${python}/bin/python";
+    UV_PYTHON = lib.mkForce "${python}/bin/python";
+    UV_PYTHON_DOWNLOADS = "never";
   };
 
   languages.python = {
     enable = true;
-    package = python;
+    version = "3.12";
     uv = {
       enable = true;
       package = uvPackage;
       sync.enable = true;
     };
   };
+
+  languages.rust.enable = true;
+
+  outputs =
+    lib.optionalAttrs (inputs ? pyproject-nix) (
+      let
+        pythonApp = config.languages.python.import ./. { };
+        nativeDrv = pkgs.rustPlatform.buildRustPackage {
+          pname = "rust_endoreg_rust_backend";
+          version = "0.1.0";
+          src = ./rust/endoreg_rust_backend;
+          cargoLock.lockFile = ./rust/endoreg_rust_backend/Cargo.lock;
+          cargoBuildFlags = [ "--lib" ];
+          doCheck = false;
+          nativeBuildInputs = [ python ];
+          PYO3_PYTHON = "${python}/bin/python";
+        };
+        nativeLibDrv = lib.getLib nativeDrv;
+
+        nativeApp = pkgs.runCommand "endoreg-rust-backend-0.1.0" { } ''
+          mkdir -p "$out/${python.sitePackages}"
+          native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'libendoreg_rust_backend*.so' | head -n 1)"
+          test -n "$native_lib"
+          cp "$native_lib" "$out/${python.sitePackages}/endoreg_rust_backend.so"
+        '';
+      in
+      {
+        python = pythonApp;
+        native = nativeApp;
+        native-raw = nativeDrv;
+        app = pkgs.symlinkJoin {
+          name = "endoreg-db-with-native";
+          paths = [
+            pythonApp
+            nativeApp
+          ];
+        };
+      }
+    );
 
   scripts = {
 
@@ -177,6 +229,9 @@ in
     # fi
 
     export SYNC_CMD="${SYNC_CMD}"
+
+    export PYTHONPATH="${lxAnonymizerSitePackages}${PYTHONPATH:+:$PYTHONPATH}"
+    echo "Using lx-anonymizer from ${lxAnonymizerApp}"
 
 
     # Ensure dependencies are synced using uv

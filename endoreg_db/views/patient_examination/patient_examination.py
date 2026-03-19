@@ -1,9 +1,12 @@
-from rest_framework import viewsets, status
+from django.utils import timezone
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from endoreg_db.models import PatientExamination, Patient, Examination
 from endoreg_db.serializers.patient.patient_dropdown import PatientDropdownSerializer
 from endoreg_db.serializers.patient_examination import (
+    PatientExaminationDraftResponseSerializer,
+    PatientExaminationDraftSerializer,
     PatientExaminationSerializer,
 )
 from endoreg_db.serializers.examination import ExaminationDropdownSerializer
@@ -85,6 +88,41 @@ class PatientExaminationViewSet(viewsets.ModelViewSet):
             else None,
         }
         return Response(data)
+
+    @action(detail=True, methods=["get", "put"])
+    def draft(self, request, pk=None):
+        """
+        Draft endpoint for transient report editor state.
+
+        GET /api/patient-examinations/{id}/draft/
+        PUT /api/patient-examinations/{id}/draft/
+        """
+        examination = self.get_object()
+
+        if request.method == "GET":
+            serializer = PatientExaminationDraftResponseSerializer(
+                {
+                    "patient_examination_id": examination.id,
+                    "draft": examination.report_draft or {},
+                    "updated_at": examination.draft_updated_at,
+                }
+            )
+            return Response(serializer.data)
+
+        serializer = PatientExaminationDraftSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        examination.report_draft = serializer.validated_data
+        examination.draft_updated_at = timezone.now()
+        examination.save(update_fields=["report_draft", "draft_updated_at"])
+
+        response_serializer = PatientExaminationDraftResponseSerializer(
+            {
+                "patient_examination_id": examination.id,
+                "draft": examination.report_draft,
+                "updated_at": examination.draft_updated_at,
+            }
+        )
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
     def create(self, request, *args, **kwargs):
         """

@@ -39,6 +39,10 @@ class PatientExamination(models.Model):
     date_start = models.DateField(null=True, blank=True)
     date_end = models.DateField(null=True, blank=True)
     hash = models.CharField(max_length=255, unique=True)
+    knowledge_base_module = models.CharField(max_length=255, blank=True, default="")
+    knowledge_base_version = models.CharField(max_length=255, blank=True, default="")
+    report_draft = models.JSONField(default=dict, blank=True)
+    draft_updated_at = models.DateTimeField(null=True, blank=True)
 
     if TYPE_CHECKING:
         patient_findings: models.QuerySet["PatientFinding"]
@@ -113,7 +117,26 @@ class PatientExamination(models.Model):
     def save(self, *args, **kwargs):
         if not self.hash:
             self.hash = self.generate_default_hash()
+        self.assign_knowledge_base_identity()
         super().save(*args, **kwargs)
+
+    def assign_knowledge_base_identity(self) -> None:
+        if self.knowledge_base_module and self.knowledge_base_version:
+            return
+
+        from endoreg_db.services.knowledge_base_identity import (
+            get_configured_knowledge_base_identity,
+        )
+
+        knowledge_base_identity = get_configured_knowledge_base_identity()
+        if knowledge_base_identity is None:
+            return
+
+        knowledge_base_module, knowledge_base_version = knowledge_base_identity
+        if not self.knowledge_base_module:
+            self.knowledge_base_module = knowledge_base_module
+        if not self.knowledge_base_version:
+            self.knowledge_base_version = knowledge_base_version
 
     def get_patient_age_at_examination(self) -> int:
         """

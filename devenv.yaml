@@ -1,4 +1,9 @@
 inputs:
+  crate2nix:
+    url: github:nix-community/crate2nix
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
   nixpkgs:
     url: github:NixOS/nixpkgs/nixpkgs-unstable
   nix2container:
@@ -8,4 +13,26 @@ inputs:
         follows: nixpkgs
   mk-shell-bin:
     url: github:rrbutani/nix-mk-shell-bin
+  nixpkgs-python:
+    url: github:cachix/nixpkgs-python
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+  lx-anonymizer:
+    url: github:wg-lux/lx-anonymizer
+  pyproject-build-systems:
+    url: github:pyproject-nix/build-system-pkgs
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+  pyproject-nix:
+    url: github:pyproject-nix/pyproject.nix
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+  uv2nix:
+    url: github:pyproject-nix/uv2nix
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
 allowUnfree: true

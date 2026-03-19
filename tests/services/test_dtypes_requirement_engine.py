@@ -4,6 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel, Field
+from lx_dtypes.models.knowledge_base.report_template import (
+    ClassificationValidator,
+    ExaminationValidator,
+    FindingsValidator,
+)
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    KnowledgeBaseVersionNotFoundError,
+)
 
 from endoreg_db.services import dtypes_requirement_service as drs
 
@@ -62,7 +70,13 @@ def _make_patient_finding(*, finding: str, classifications=None):
     )
 
 
-def _make_patient_exam(*, examination: str, patient_findings=None):
+def _make_patient_exam(
+    *,
+    examination: str,
+    patient_findings=None,
+    knowledge_base_module: str | None = None,
+    knowledge_base_version: str | None = None,
+):
     return SimpleNamespace(
         id=123,
         examination=SimpleNamespace(
@@ -70,15 +84,22 @@ def _make_patient_exam(*, examination: str, patient_findings=None):
             get_available_findings=lambda: [],
         ),
         patient_findings=_RelatedManager(patient_findings or []),
+        knowledge_base_module=knowledge_base_module,
+        knowledge_base_version=knowledge_base_version,
     )
 
 
-def _make_findings_validator(*, name: str, finding: str, operator: str, query: dict):
-    return SimpleNamespace(
-        name=name,
-        finding=finding,
-        operator=operator,
-        query=query,
+def _make_findings_validator(*, name: str, finding: str, operator: str, query: object):
+    query_payload = (
+        query.model_dump(mode="python") if hasattr(query, "model_dump") else query
+    )
+    return FindingsValidator.model_validate(
+        {
+            "name": name,
+            "finding": finding,
+            "operator": operator,
+            "query": query_payload,
+        }
     )
 
 
@@ -88,10 +109,12 @@ def _make_examination_validator(
     finding_validators: list[str],
     examination_validators: list[str],
 ):
-    return SimpleNamespace(
-        name=name,
-        finding_validators=finding_validators,
-        examination_validators=examination_validators,
+    return ExaminationValidator.model_validate(
+        {
+            "name": name,
+            "finding_validators": finding_validators,
+            "examination_validators": examination_validators,
+        }
     )
 
 
@@ -101,6 +124,7 @@ def _make_template(
     examination: str,
     findings_validators: list[str],
     examination_validators: list[str],
+    classification_validators: list[str] | None = None,
 ):
     return SimpleNamespace(
         name=name,
@@ -109,13 +133,111 @@ def _make_template(
         validators=SimpleNamespace(
             findings_validators=findings_validators,
             examination_validators=examination_validators,
+            classification_validators=classification_validators or [],
         ),
     )
 
 
+def _make_report_finding(
+    *,
+    finding: str,
+    required: bool,
+    classifications: list[tuple[str, bool]],
+):
+    return SimpleNamespace(
+        finding=finding,
+        required=required,
+        multiple_allowed=False,
+        classifications=[
+            SimpleNamespace(classification=name, required=is_required)
+            for name, is_required in classifications
+        ],
+    )
+
+
+def _make_report_template_section(*, findings):
+    return SimpleNamespace(findings=findings)
+
+
+def _attach_mock_classification_validator_resolver(kb):
+    explicit_validators = getattr(kb, "classification_validator", {}) or {}
+
+    def _resolver(template_name: str):
+        template = kb.report_template[template_name]
+        validators_by_name = dict(explicit_validators)
+        explicit_keys: set[tuple[str, str]] = set()
+
+        for validator_name in getattr(
+            getattr(template, "validators", SimpleNamespace()),
+            "classification_validators",
+            [],
+        ):
+            validator = explicit_validators.get(validator_name)
+            if validator is None:
+                continue
+            explicit_keys.add((validator.finding, validator.classification))
+
+        for section_name in getattr(template, "report_sections", []):
+            section = kb.report_template_section.get(section_name)
+            if section is None:
+                continue
+            for finding_ref in getattr(section, "findings", []):
+                report_finding = (
+                    kb.report_finding.get(finding_ref)
+                    if isinstance(finding_ref, str)
+                    else finding_ref
+                )
+                if report_finding is None:
+                    continue
+                finding_name = getattr(report_finding, "finding", None)
+                if not isinstance(finding_name, str) or not finding_name:
+                    continue
+                for classification_req in getattr(
+                    report_finding, "classifications", []
+                ):
+                    if not bool(getattr(classification_req, "required", False)):
+                        continue
+                    classification_name = getattr(
+                        classification_req, "classification", None
+                    )
+                    if (
+                        not isinstance(classification_name, str)
+                        or not classification_name
+                    ):
+                        continue
+                    if (finding_name, classification_name) in explicit_keys:
+                        continue
+                    validator_name = (
+                        "implicit_classification_validator__"
+                        f"{template.name}__{finding_name}__{classification_name}"
+                    )
+                    validators_by_name[validator_name] = (
+                        ClassificationValidator.model_validate(
+                            {
+                                "name": validator_name,
+                                "finding": finding_name,
+                                "classification": classification_name,
+                                "operator": "exists",
+                                "precedence": "required",
+                                "query": {
+                                    "finding": finding_name,
+                                    "classification": classification_name,
+                                    "operator": "exists",
+                                },
+                            }
+                        )
+                    )
+        return validators_by_name
+
+    kb.get_report_template_classification_validators = _resolver
+    if not hasattr(kb, "classification_validator"):
+        kb.classification_validator = explicit_validators
+
+
 def _patch_kb(monkeypatch: pytest.MonkeyPatch, kb):
-    monkeypatch.setattr(drs, "_load_dtypes_kb", lambda module_name: kb)
+    monkeypatch.setattr(drs, "_load_dtypes_kb", lambda module_name, version=None: kb)
     monkeypatch.setattr(drs, "get_lookup_dtypes_module_name", lambda: "test_module")
+    monkeypatch.setattr(drs, "get_lookup_dtypes_module_version", lambda: None)
     monkeypatch.setattr(drs, "_fill_missing_finding_ids", lambda names, mapping: None)
     monkeypatch.setattr(
         drs, "_fill_missing_classification_ids", lambda names, mapping: None
@@ -248,8 +370,9 @@ def test_guidance_evaluates_conditional_then_requires_when_missing():
     req_key = str(requirement_entry["id"])
     assert result["requirement_status"][req_key] is False
     action = result["suggested_actions"][req_key][0]
-    assert action["type"] == "add_finding"
+    assert action["type"] == "add_classification"
     assert "lst" in action.get("classification_names", [])
+    assert action["classification_hints"][0]["precedence"] == "required"
 
 
 def test_guidance_evaluates_conditional_then_requires_when_present():
@@ -610,36 +733,57 @@ def test_guidance_evaluates_pydantic_findings_validator_query_model():
     req_key = str(requirement_entry["id"])
     assert result["requirement_status"][req_key] is False
     action = result["suggested_actions"][req_key][0]
-    assert action["type"] == "add_finding"
+    assert action["type"] == "add_classification"
     assert "lst" in action.get("classification_names", [])
+    assert action["classification_hints"][0]["precedence"] == "required"
 
 
-def test_guidance_rejects_legacy_findings_validator_operator_aliases():
+def test_guidance_adds_required_classification_validator_entries_with_hints():
+    template = _make_template(
+        name="template_classifications",
+        examination="colonoscopy",
+        findings_validators=[],
+        examination_validators=[],
+    )
+    template.report_sections = ["baseline_section"]
+
     kb = SimpleNamespace(
-        report_template={
-            "template_legacy": _make_template(
-                name="template_legacy",
-                examination="colonoscopy",
-                findings_validators=["fv_legacy"],
-                examination_validators=[],
-            )
-        },
-        findings_validator={
-            "fv_legacy": _make_findings_validator(
-                name="fv_legacy",
-                finding="colon_polyp",
-                operator="present",
-                query={"finding": "colon_polyp", "operator": "present"},
-            )
-        },
+        report_template={"template_classifications": template},
+        findings_validator={},
         examination_validator={},
-        report_template_section={},
-        report_finding={},
+        report_template_section={
+            "baseline_section": _make_report_template_section(
+                findings=["rf_colon_polyp"]
+            )
+        },
+        report_finding={
+            "rf_colon_polyp": _make_report_finding(
+                finding="colon_polyp",
+                required=True,
+                classifications=[
+                    ("lesion_size_mm", True),
+                    ("colon_lesion_paris", False),
+                ],
+            )
+        },
+        classification={
+            "lesion_size_mm": SimpleNamespace(classification_choices=[]),
+            "colon_lesion_paris": SimpleNamespace(
+                classification_choices=["paris_0_is", "paris_0_iia", "paris_0_iic"]
+            ),
+        },
+        classification_choice={
+            "paris_0_is": SimpleNamespace(classification_choice_descriptors=[]),
+            "paris_0_iia": SimpleNamespace(classification_choice_descriptors=[]),
+            "paris_0_iic": SimpleNamespace(classification_choice_descriptors=[]),
+        },
+        classification_choice_descriptor={},
     )
     pe = _make_patient_exam(
         examination="colonoscopy",
         patient_findings=[_make_patient_finding(finding="colon_polyp")],
     )
+    _attach_mock_classification_validator_resolver(kb)
 
     monkeypatch = pytest.MonkeyPatch()
     _patch_kb(monkeypatch, kb)
@@ -650,9 +794,174 @@ def test_guidance_rejects_legacy_findings_validator_operator_aliases():
 
     assert result is not None
     set_id = result["candidate_requirement_set_ids"][0]
-    requirement_entry = result["requirements_by_set"][str(set_id)][0]
-    req_key = str(requirement_entry["id"])
+    entries = result["requirements_by_set"][str(set_id)]
+    by_name = {entry["name"]: str(entry["id"]) for entry in entries}
+    req_key = by_name[
+        "classification_validator:"
+        "implicit_classification_validator__template_classifications__"
+        "colon_polyp__lesion_size_mm"
+    ]
     assert result["requirement_status"][req_key] is False
+    assert result["requirement_set_status"][str(set_id)] is False
+    assert (
+        result["classification_choices"][req_key][0]["classification_name"]
+        == "lesion_size_mm"
+    )
+    assert result["classification_choices"][req_key][0]["precedence"] == "required"
+    assert (
+        result["classification_choices"][req_key][0]["data_type_hint"]
+        == "non_categorical"
+    )
+
     action = result["suggested_actions"][req_key][0]
+    assert action["type"] == "add_classification"
+    assert action["classification_name"] == "lesion_size_mm"
+    assert action["classification_hints"][0]["data_type_hint"] == "non_categorical"
+
+
+def test_guidance_add_finding_includes_required_and_optional_classification_hints():
+    template = _make_template(
+        name="template_add_finding_hints",
+        examination="colonoscopy",
+        findings_validators=["fv_missing"],
+        examination_validators=[],
+    )
+    template.report_sections = ["baseline_section"]
+
+    kb = SimpleNamespace(
+        report_template={"template_add_finding_hints": template},
+        findings_validator={
+            "fv_missing": _make_findings_validator(
+                name="fv_missing",
+                finding="colon_polyp",
+                operator="exists",
+                query={"finding": "colon_polyp", "operator": "exists"},
+            )
+        },
+        examination_validator={},
+        report_template_section={
+            "baseline_section": _make_report_template_section(
+                findings=["rf_colon_polyp"]
+            )
+        },
+        report_finding={
+            "rf_colon_polyp": _make_report_finding(
+                finding="colon_polyp",
+                required=True,
+                classifications=[
+                    ("lesion_size_mm", True),
+                    ("colon_lesion_paris", False),
+                ],
+            )
+        },
+        classification={
+            "lesion_size_mm": SimpleNamespace(classification_choices=[]),
+            "colon_lesion_paris": SimpleNamespace(
+                classification_choices=["paris_0_is", "paris_0_iia", "paris_0_iic"]
+            ),
+        },
+        classification_choice={
+            "paris_0_is": SimpleNamespace(classification_choice_descriptors=[]),
+            "paris_0_iia": SimpleNamespace(classification_choice_descriptors=[]),
+            "paris_0_iic": SimpleNamespace(classification_choice_descriptors=[]),
+        },
+        classification_choice_descriptor={},
+    )
+    pe = _make_patient_exam(examination="colonoscopy")
+
+    monkeypatch = pytest.MonkeyPatch()
+    _patch_kb(monkeypatch, kb)
+    try:
+        result = drs.try_build_dtypes_requirement_guidance(pe=pe)
+    finally:
+        monkeypatch.undo()
+
+    assert result is not None
+    set_id = result["candidate_requirement_set_ids"][0]
+    req_key = str(result["requirements_by_set"][str(set_id)][0]["id"])
+    action = result["suggested_actions"][req_key][0]
+
     assert action["type"] == "add_finding"
-    assert action["note"] == "validator_unsupported_operator"
+    hints = {
+        hint["classification_name"]: hint for hint in action["classification_hints"]
+    }
+    assert hints["lesion_size_mm"]["precedence"] == "required"
+    assert hints["lesion_size_mm"]["data_type_hint"] == "non_categorical"
+    assert hints["colon_lesion_paris"]["precedence"] == "optional"
+    assert hints["colon_lesion_paris"]["data_type_hint"] == "ordered"
+
+
+def test_guidance_uses_persisted_patient_exam_knowledge_base_identity():
+    kb = SimpleNamespace(
+        report_template={
+            "template_a": _make_template(
+                name="template_a",
+                examination="colonoscopy",
+                findings_validators=[],
+                examination_validators=[],
+            )
+        },
+        findings_validator={},
+        examination_validator={},
+        report_template_section={},
+        report_finding={},
+        classification_validator={},
+        classification={},
+        classification_choice={},
+        classification_choice_descriptor={},
+    )
+    pe = _make_patient_exam(
+        examination="colonoscopy",
+        knowledge_base_module="historical_module",
+        knowledge_base_version="0.1.0",
+    )
+    captured: dict[str, str | None] = {}
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        drs,
+        "_load_dtypes_kb",
+        lambda module_name, version=None: captured.update(
+            {"module_name": module_name, "version": version}
+        )
+        or kb,
+    )
+    monkeypatch.setattr(drs, "_fill_missing_finding_ids", lambda names, mapping: None)
+    monkeypatch.setattr(
+        drs, "_fill_missing_classification_ids", lambda names, mapping: None
+    )
+    try:
+        result = drs.try_build_dtypes_requirement_guidance(pe=pe)
+    finally:
+        monkeypatch.undo()
+
+    assert result is not None
+    assert captured == {
+        "module_name": "historical_module",
+        "version": "0.1.0",
+    }
+
+
+def test_guidance_fails_closed_when_persisted_knowledge_base_version_is_missing():
+    pe = _make_patient_exam(
+        examination="colonoscopy",
+        knowledge_base_module="historical_module",
+        knowledge_base_version="0.1.0",
+    )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        drs,
+        "_load_dtypes_kb",
+        lambda module_name, version=None: (_ for _ in ()).throw(
+            KnowledgeBaseVersionNotFoundError("missing")
+        ),
+    )
+    try:
+        with pytest.raises(
+            drs.DtypesKnowledgeBaseResolutionError,
+            match="not provisioned locally",
+        ):
+            drs.try_build_dtypes_requirement_guidance(pe=pe)
+    finally:
+        monkeypatch.undo()

@@ -4,9 +4,11 @@ from django.test import TestCase, override_settings
 
 from endoreg_db.services.dtypes_requirement_service import (
     DEFAULT_LOOKUP_DTYPES_MODULE,
+    DEFAULT_LOOKUP_DTYPES_MODULE_VERSION,
     DEFAULT_LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED,
     DEFAULT_LOOKUP_REQUIREMENT_SOURCE,
     get_lookup_dtypes_module_name,
+    get_lookup_dtypes_module_version,
     get_lookup_requirement_legacy_fallback_enabled,
     get_lookup_requirement_source,
 )
@@ -51,3 +53,12 @@ class DtypesRequirementServiceConfigTests(TestCase):
     @override_settings(LOOKUP_DTYPES_MODULE_NAME="")
     def test_get_lookup_dtypes_module_name_falls_back_for_empty_string(self):
         assert get_lookup_dtypes_module_name() == DEFAULT_LOOKUP_DTYPES_MODULE
+
+    @override_settings(LOOKUP_DTYPES_MODULE_VERSION="0.1.0")
+    def test_get_lookup_dtypes_module_version_uses_setting(self):
+        assert get_lookup_dtypes_module_version() == "0.1.0"
+
+    @override_settings(LOOKUP_DTYPES_MODULE_VERSION="")
+    def test_get_lookup_dtypes_module_version_returns_none_for_empty_string(self):
+        assert DEFAULT_LOOKUP_DTYPES_MODULE_VERSION == ""
+        assert get_lookup_dtypes_module_version() is None

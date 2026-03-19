@@ -27,6 +27,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import IMPORT_REPORT_DIR, SENSITIVE_REPORT_DIR, STORAGE_DIR
+from endoreg_db.utils.rust_backend import render_single_page_pdf as rust_render_pdf
 
 logger = logging.getLogger(__name__)
 HASH_LOCK_DIR = STORAGE_DIR / "locks" / "report_content"
@@ -74,6 +75,10 @@ class ReportImportService:
 
     @classmethod
     def _render_single_page_pdf(cls, text: str) -> bytes:
+        rust_pdf = rust_render_pdf(text)
+        if isinstance(rust_pdf, bytes):
+            return rust_pdf
+
         normalized_lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
         max_lines = 65
         lines = normalized_lines[:max_lines] if normalized_lines else [""]
