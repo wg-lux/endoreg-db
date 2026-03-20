@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-dynamic = ["version"] 
+version = "0.9.1.5"
 
 
 classifiers = [
@@ -121,51 +121,19 @@ docs = [
 ]
 
 [build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling", "hatch-vcs"] 
-
-
-
-[tool.hatch.version]
-source = "vcs"
-
-[tool.hatch.build.hooks.vcs]
-version-file = "endoreg_db/_version.py" # Optional: Writes version to a file you can import
+build-backend = "maturin"
+requires = ["maturin>=1.7,<2"]
 
 [tool.setuptools]
 packages = ["endoreg_db"]
 
-[tool.hatch.build]
-exclude = [
-  ".git",
-  ".git/**",
-  ".gitmodules",
-  ".direnv",
-  ".direnv/**",
-  ".devenv",
-  ".devenv/**",
-  ".devenv.flake.nix",
-  "devenv.*",
-  "Makefile",
-  "tests",
-  "tests/**",
-  "docs/production",
-  "docs/production/**",
-  "docs/handoff_report_pdf_renderer.md",
-  "htmlcov",
-  "htmlcov/**",
-  "lx-data-models",
-  "lx-data-models/**",
-  "storage",
-  "storage/**",
-  "tools",
-  "tools/**",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["endoreg_db"]
-
-[tool.hatch.build.targets.sdist]
+[tool.maturin]
+manifest-path = "rust/endoreg_rust_backend/Cargo.toml"
+module-name = "endoreg_db.endoreg_rust_backend"
+bindings = "pyo3"
+python-source = "."
+python-packages = ["endoreg_db"]
+include = ["endoreg_db/endoreg_rust_backend.pyi"]
 exclude = [
   ".git",
   ".git/**",
@@ -244,8 +212,13 @@ disable_error_code = [
 
 [tool.django-stubs]
 django_settings_module = "endoreg_db.config.settings.test"
-
-
+[tool.uv.extra-build-dependencies]
+"antlr4-python3-runtime" = ["setuptools"]
+"bibtexparser" = ["setuptools"]
+"encodec" = ["setuptools"]
+"googlemaps" = ["setuptools"]
+"imutils" = ["setuptools"]
+"tesseract" = ["setuptools"]
 [tool.uv.sources]
 de-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
 

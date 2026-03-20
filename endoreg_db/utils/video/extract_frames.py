@@ -13,6 +13,10 @@ import io
 
 from django.core.files import File
 
+from endoreg_db.utils.rust_backend import (
+    build_frame_records as rust_build_frame_records,
+)
+
 from .ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
 
 
@@ -70,14 +74,23 @@ def initialize_frame_objects(video: "VideoFile", extracted_paths: List[Path]):
     storage = video._meta.get_field("raw_file").storage
     storage_base_path = Path(cast(Any, storage).location)  # Get storage root
 
-    for i, path in tqdm(enumerate(extracted_paths, start=1)):
-        frame_number = (
-            int(path.stem.split("_")[1]) - 1
-        )  # Assuming frame_0000001.jpg is frame_number 0
-        relative_path = path.relative_to(
-            storage_base_path
-        ).as_posix()  # Path relative to MEDIA_ROOT
+    rust_records = rust_build_frame_records(
+        extracted_paths,
+        relative_to=storage_base_path,
+        zero_based=True,
+    )
+    if rust_records is None:
+        frame_records = [
+            (
+                int(path.stem.split("_")[1]) - 1,
+                path.relative_to(storage_base_path).as_posix(),
+            )
+            for path in extracted_paths
+        ]
+    else:
+        frame_records = rust_records
 
+    for i, (frame_number, relative_path) in tqdm(enumerate(frame_records, start=1)):
         # Create Frame instance (without saving yet)
         frame_obj_instance = video.create_frame_object(
             frame_number, relative_path=relative_path, extracted=True

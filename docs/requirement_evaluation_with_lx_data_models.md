@@ -257,36 +257,22 @@ In practice, the service:
   - `classification_choices`
   - `suggested_actions`
 
-The shape of those payloads is then validated again against the typed local lookup contracts in:
-
-- `endoreg_db/schemas/lookup_state.py`
-
 Fail-closed behavior:
 
 - if a patient examination is pinned to a KB version that is not provisioned locally, `try_build_dtypes_requirement_guidance(...)` raises `DtypesKnowledgeBaseResolutionError`
 - `/api/evaluate-requirements/` currently returns a failed evaluation response in that case
 - report persistence currently catches the failure and records a warning so report save continues
 
-## Step 7: Typed State and Response Shaping
+## Step 7: Response Shaping
 
-The lookup/evaluation payloads are now validated through the repo-local contract in:
+The legacy lookup-session contract has been removed.
 
-- `endoreg_db/schemas/lookup_state.py`
+Current direction:
 
-Current typed models and payload shapes include:
-
-- `LookupState`
-- `LookupStateDataDict`
-- `LookupDerivedUpdatesDataDict`
-
-This is no longer imported from `lx-data-models`.
-
-Reason for the boundary change:
-
-- `LookupState` was part of the older Django-driven lookup-state workflow
-- the current direction is that lookup/report-building state lives in the frontend
-- `lx-data-models` now owns validator and ledger/report contracts, not the frontend session-state contract
-- `endoreg_db` still needs a stable typed shape for its lookup cache and response lifecycle, so that contract now lives locally
+- report-building state lives in the frontend
+- draft persistence lives in `endoreg_db`
+- `lx-data-models` owns validator and ledger/report contracts
+- direct evaluation returns a stable top-level response contract without a backend-owned lookup session model
 
 For the direct evaluation endpoint, `evaluate.py` finally maps the guidance payload into the stable response contract:
 

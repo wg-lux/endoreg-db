@@ -192,7 +192,6 @@ _IMPORT_TARGETS: dict[str, tuple[str, str]] = {
     "ReportReimportView": ("endoreg_db.views.report", "ReportReimportView"),
     "ReportStreamView": ("endoreg_db.views.report", "ReportStreamView"),
     "evaluate_requirements": ("endoreg_db.views.requirement", "evaluate_requirements"),
-    "LookupViewSet": ("endoreg_db.views.requirement", "LookupViewSet"),
     "VideoApplyMaskView": ("endoreg_db.views.video", "VideoApplyMaskView"),
     "VideoCorrectionView": ("endoreg_db.views.video", "VideoCorrectionView"),
     "VideoExaminationViewSet": ("endoreg_db.views.video", "VideoExaminationViewSet"),
@@ -260,7 +259,6 @@ __all__ = [
     "ReportStreamView",
     "PatientExaminationReportViewSet",
     "evaluate_requirements",
-    "LookupViewSet",
     "VideoApplyMaskView",
     "VideoRemoveFramesView",
     "VideoCorrectionView",
@@ -278,7 +276,7 @@ __all__ = [
     "pdf_sensitive_metadata_list",
 ]
 
-_OPTIONAL_IMPORT_NAMES = {"evaluate_requirements", "LookupViewSet"}
+_OPTIONAL_IMPORT_NAMES = {"evaluate_requirements"}
 
 
 def __getattr__(name: str):

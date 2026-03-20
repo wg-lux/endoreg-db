@@ -1,8 +1,5 @@
 """
-Tests for tag-based filtering of requirement sets in the lookup service.
-
-These tests verify that the lookup system correctly filters requirement sets
-based on user role tags like "Gastroenterologist", "Student", etc.
+Tests for tag-based filtering of requirement sets in requirement guidance.
 """
 
 from __future__ import annotations
@@ -134,28 +131,6 @@ class TestLookupTagFiltering(TestCase):
         result = ls.requirement_sets_for_patient_exam(self.pe, user_tags=["Professor"])
         self.assertEqual(result.count(), 1)
         self.assertIn(self.req_set_gastro, result)
-
-    def test_create_lookup_token_with_tags(self):
-        """Token creation should respect tag filtering in initial data."""
-        token = ls.create_lookup_token_for_pe(self.pe.pk, user_tags=["Student"])
-        store = ls.LookupStore(token=token)
-        data = store.get_all()
-
-        # Should only have student requirement set
-        self.assertEqual(len(data["requirement_sets"]), 1)
-        self.assertEqual(data["requirement_sets"][0]["name"], "Basic Endoscopy")
-
-    def test_build_initial_lookup_with_tags(self):
-        """build_initial_lookup should filter requirement sets by tags."""
-        initial_data = ls.build_initial_lookup(
-            self.pe, user_tags=["Gastroenterologist"]
-        )
-
-        # Should only have gastro requirement set
-        self.assertEqual(len(initial_data["requirement_sets"]), 1)
-        self.assertEqual(
-            initial_data["requirement_sets"][0]["name"], "Advanced Colonoscopy QA"
-        )
 
     def test_empty_tags_list_returns_all(self):
         """Empty tags list should be treated same as None - return all requirement sets."""

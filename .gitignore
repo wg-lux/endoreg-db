@@ -5,6 +5,7 @@ result/
 .devenv
 untracked_notes.md
 tests/sensitive/
+tests/assets/*.lock
 erc_data/
 /data/
 test_reports/*
@@ -20,14 +21,12 @@ _build
 .direnv
 
 *.sqlite3
-
+result-app
 .devenv.flake.nix
 standardized_dataset/ledger/*
 standardized_dataset/knowledge_base/*
 
-###### Do not Remove ###### # Deprecated?
-# Protects temporary files from being comitted
-endoreg_client_manager/data/* 
+
 
 # C extensions
 *.so

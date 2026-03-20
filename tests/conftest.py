@@ -7,6 +7,7 @@ Includes session-scoped fixtures for video files and database optimization.
 
 import logging
 import os
+import posixpath
 import shutil
 import sys
 from pathlib import Path
@@ -62,6 +63,7 @@ USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "
 # Set up storage directory for tests
 TEST_STORAGE_DIR = Path(__file__).parent.parent / "storage" / "tests"
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+TEST_ASSET_DIR = Path(__file__).parent / "assets"
 
 
 @pytest.fixture
@@ -182,16 +184,6 @@ def base_db_data(django_db_setup, cache):
         DEFAULT_SEGMENTATION_MODEL_NAME,
     )
 
-    db_cache = cache.namespace("db")
-    loaded_flag = db_cache.get("base_data_loaded")
-    center_available = Center.objects.filter(name=DEFAULT_CENTER_NAME).exists()
-
-    if loaded_flag and center_available:
-        return True
-
-    if loaded_flag and not center_available:
-        db_cache.invalidate("base_data_loaded")
-
     from django.core.files.storage import default_storage
 
     from tests.helpers.data_loader import (
@@ -207,6 +199,69 @@ def base_db_data(django_db_setup, cache):
         load_gender_data,
         load_information_source_data,
     )
+
+    def cleanup_managed_stub_weight_collisions(weights_name: str) -> None:
+        """
+        Remove orphaned storage collision variants for managed stub weights.
+
+        This only deletes files when all of the following are true:
+        - the file is a collision variant of the managed stub name
+        - no ModelMeta currently references it
+        - the file content exactly matches the tiny stub payload
+        """
+        directory = posixpath.dirname(weights_name)
+        filename = posixpath.basename(weights_name)
+        stem = Path(filename).stem
+        suffix = Path(filename).suffix
+
+        try:
+            _, files = default_storage.listdir(directory)
+        except Exception:
+            return
+
+        referenced_names = set(
+            ModelMeta.objects.exclude(weights="")
+            .filter(weights__startswith=f"{directory}/")
+            .values_list("weights", flat=True)
+        )
+
+        for candidate_name in files:
+            if candidate_name == filename:
+                continue
+            if not candidate_name.startswith(f"{stem}_") or not candidate_name.endswith(
+                suffix
+            ):
+                continue
+
+            candidate_path = posixpath.join(directory, candidate_name)
+            if candidate_path in referenced_names:
+                continue
+
+            try:
+                with default_storage.open(candidate_path, "rb") as handle:
+                    if handle.read() != b"stub-weights":
+                        continue
+                default_storage.delete(candidate_path)
+            except Exception:
+                continue
+
+    db_cache = cache.namespace("db")
+    loaded_flag = db_cache.get("base_data_loaded")
+    center_available = Center.objects.filter(name=DEFAULT_CENTER_NAME).exists()
+
+    managed_stub_names = [
+        f"model_weights/{DEFAULT_SEGMENTATION_MODEL_NAME}_stub.safetensors",
+        "model_weights/test_segmentation_model_stub.safetensors",
+    ]
+
+    for managed_stub_name in managed_stub_names:
+        cleanup_managed_stub_weight_collisions(managed_stub_name)
+
+    if loaded_flag and center_available:
+        return True
+
+    if loaded_flag and not center_available:
+        db_cache.invalidate("base_data_loaded")
 
     # Load all required base data once
     load_base_db_data()
@@ -247,13 +302,15 @@ def base_db_data(django_db_setup, cache):
 
         def ensure_stub_weights(meta: ModelMeta, *, suffix: str) -> None:
             """Attach lightweight stub weights to the provided ModelMeta if missing."""
+            weights_name = f"model_weights/{suffix}"
+            cleanup_managed_stub_weight_collisions(weights_name)
             if meta.weights:
                 return
-            weights_name = f"model_weights/{suffix}"
             if not default_storage.exists(weights_name):
                 default_storage.save(weights_name, ContentFile(b"stub-weights"))
             meta.weights.name = weights_name
             meta.save(update_fields=["weights"])
+            cleanup_managed_stub_weight_collisions(weights_name)
 
         metadata_qs = ai_model.metadata_versions.all()
         if not metadata_qs.exists():
@@ -561,6 +618,17 @@ def optimize_database_queries():
     connection_created.disconnect(dispatch_uid=dispatch_uid)
 
 
+def _cleanup_test_lock_files() -> None:
+    for lock_root in (TEST_STORAGE_DIR / "locks", TEST_ASSET_DIR):
+        if not lock_root.exists():
+            continue
+        for lock_path in lock_root.rglob("*.lock"):
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
+
+
 @pytest.fixture(scope="session")
 def session_mocker():
     """Session-scoped mock fixture."""
@@ -588,14 +656,7 @@ def setup_test_environment(cache):
 
     # Remove stale lock files from interrupted runs so lock-based import tests
     # start from a clean session state.
-    for lock_root in (TEST_STORAGE_DIR / "locks",):
-        if not lock_root.exists():
-            continue
-        for lock_path in lock_root.rglob("*.lock"):
-            try:
-                lock_path.unlink()
-            except OSError:
-                pass
+    _cleanup_test_lock_files()
 
     # Set environment variables for tests
     os.environ.setdefault("STORAGE_DIR", str(TEST_STORAGE_DIR))
@@ -621,13 +682,7 @@ def setup_test_environment(cache):
             except OSError:
                 pass
 
-    lock_root = TEST_STORAGE_DIR / "locks"
-    if lock_root.exists():
-        for lock_path in lock_root.rglob("*.lock"):
-            try:
-                lock_path.unlink()
-            except OSError:
-                pass
+    _cleanup_test_lock_files()
 
     if TEST_STORAGE_DIR.exists():
         shutil.rmtree(TEST_STORAGE_DIR, ignore_errors=True)

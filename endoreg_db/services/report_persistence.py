@@ -745,6 +745,11 @@ def save_report_submission(
 
     report.save()
 
+    if report.status == PatientExaminationReport.Status.FINAL:
+        patient_examination.report_draft = {}
+        patient_examination.draft_updated_at = None
+        patient_examination.save(update_fields=["report_draft", "draft_updated_at"])
+
     persisted_report_artifact_id: int | None = None
     persisted_pdf_artifact_id: int | None = None
     if report.status == PatientExaminationReport.Status.FINAL:

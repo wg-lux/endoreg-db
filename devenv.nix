@@ -40,6 +40,7 @@ let
     rustc
     rustfmt
     maturin
+    tbb
   ];
   runtimePackages = with pkgs; [
     stdenv.cc.cc
@@ -111,9 +112,9 @@ in
   languages.rust.enable = true;
 
   outputs =
-    lib.optionalAttrs (inputs ? pyproject-nix) (
+    lib.optionalAttrs (inputs ? pyproject-nix ) (
       let
-        pythonApp = config.languages.python.import ./. { };
+        pythonApp = config.languages.python.import ./. { inherit pkgs;};
         nativeDrv = pkgs.rustPlatform.buildRustPackage {
           pname = "rust_endoreg_rust_backend";
           version = "0.1.0";

@@ -3,9 +3,13 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.rust_backend import parse_extracted_frame_numbers
+from endoreg_db.utils.rust_backend import (
+    parse_extracted_frame_numbers,
+)
 
 
 def test_sha256_file_matches_python_hashlib(tmp_path: Path) -> None:
@@ -42,3 +46,33 @@ def test_parse_extracted_frame_numbers_matches_expected_values() -> None:
         parsed = [int(path.stem.split("_")[-1]) for path in frame_paths]
 
     assert parsed == [1, 17, 900]
+
+
+def test_build_frame_records_returns_none_when_rust_backend_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    frame_paths = [Path("/tmp/frame_0000001.jpg")]
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_build_frame_records",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad frame name")),
+    )
+
+    assert rust_backend_module.build_frame_records(frame_paths) is None
+
+
+def test_build_expected_frame_records_returns_none_when_rust_backend_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    monkeypatch.setattr(
+        rust_backend_module,
+        "_build_expected_frame_records",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad frame count")),
+    )
+
+    assert rust_backend_module.build_expected_frame_records(3) is None

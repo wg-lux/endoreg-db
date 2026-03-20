@@ -1,47 +1,33 @@
 # Lookup Workflow Legacy Status
 
-This document declares which lookup-related codepaths are active and which are legacy as of March 4, 2026.
+This document records the retirement of the legacy lookup-session workflow.
 
-## Active (source of truth)
+## Retired
+
+The following codepaths and endpoints are no longer part of the supported backend contract:
+
 - `endoreg_db/views/requirement/lookup.py`
-  - REST lifecycle contract and error payloads for:
-  - `POST /api/lookup/init/`
-  - `GET /api/lookup/{token}/all/`
-  - `GET|PATCH /api/lookup/{token}/parts/`
-  - `POST /api/lookup/{token}/recompute/`
-  - `POST /api/lookup/recompute/` (token-less fallback)
-- `endoreg_db/services/lookup_service.py`
-  - session init/recompute business logic
-  - dtypes is primary runtime (`LOOKUP_REQUIREMENT_SOURCE=dtypes` by default)
-  - legacy fallback only when `LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED=true`
-- `endoreg_db/views/requirement/evaluate.py`
-  - `/api/evaluate-requirements/` is dtypes-guidance backed
-  - returns normalized `snake_case` meta keys
 - `endoreg_db/services/lookup_store.py`
-  - cache-backed session storage and validation/recovery
 - `endoreg_db/schemas/lookup_state.py`
-  - typed lookup contract adapter to `lx_dtypes`
-- `docs/frontend_agent_lookup_contract.md`
-  - canonical frontend-facing workflow contract
+- `POST /api/lookup/init/`
+- `GET /api/lookup/{token}/all/`
+- `GET|PATCH /api/lookup/{token}/parts/`
+- `POST /api/lookup/{token}/recompute/`
+- `POST /api/lookup/recompute/`
 
-## Legacy (do not extend)
-- removed legacy lookup view shims (kept in git history only):
-  - `endoreg_db/views/requirement_lookup/lookup.py`
-  - `endoreg_db/views/requirement_lookup/lookup_store.py`
-  - all lookup behavior is now in `endoreg_db/views/requirement/lookup.py` and `endoreg_db/services/lookup_store.py`
-- Requirement graph runtime (legacy requirement DSL):
-  - `endoreg_db/models/requirement/*`
-  - `endoreg_db/management/commands/load_requirement_data.py`
-  - status: compatibility layer while dtypes validator runtime is phased out
-  - do not add new product behavior here; add it in dtypes-backed paths
-  - `load_requirement_data` is no longer part of default `load_base_db_data`; use `--include-legacy-requirements` explicitly
+## Active
 
-## Legacy compatibility behavior
-- camel_case lookup keys remain accepted only via compatibility normalization (`LEGACY_LOOKUP_KEY_MAP` in `lx_dtypes` adapter path), but snake_case is the only supported contract for new client code.
+- `endoreg_db/views/requirement/evaluate.py`
+  - `/api/evaluate-requirements/` evaluates a persisted `patient_examination_id`
+- `endoreg_db/services/lookup_service.py`
+  - retained as a compatibility import path for persisted requirement guidance only
+  - no token/session/cache responsibilities remain
+- `GET|PUT /api/patient-examinations/{pk}/draft/`
+  - draft persistence for frontend-owned reporting state
 
-## Implementation-note docs (non-canonical)
-- `docs/tag_management_guide.md`
-- `docs/tag_filtering_implementation.md`
-- `docs/handoff_frontend_reporting_anonymization.md`
+## Current architecture
 
-These documents can be useful historical context, but they are not the canonical contract for lookup lifecycle behavior.
+- frontend owns transient reporting state
+- `endoreg_db` persists drafts and finalized relational state
+- `lx_dtypes` validates typed knowledge-base and ledger payloads
+- final requirement/report validation runs against persisted or explicitly submitted typed state, not lookup sessions

@@ -1,31 +1,19 @@
 """
-Lookup Service Module
+Requirement guidance service for persisted PatientExamination state.
 
-This module provides server-side evaluation and lookup functionality for patient examinations.
-It handles requirement set evaluation, finding availability, and status computation for
-medical examination workflows.
+This module intentionally keeps the historical ``lookup_service`` import path for
+backend callers that still import it, but the cache-backed lookup session logic
+has been removed. The remaining responsibility is:
 
-The lookup system uses a token-based approach where client sessions are stored in Django cache,
-allowing for efficient state management and recomputation of derived data.
-
-Key Components:
-- PatientExamination loading with optimized prefetching
-- Requirement set resolution and evaluation
-- Status computation for requirements and requirement sets
-- Suggested actions for unsatisfied requirements
-- Cache-based session management
-
-Architecture:
-1. LookupStore: Handles cache-based session storage
-2. lookup_service: Core business logic for evaluation
-3. LookupViewSet: Django REST API endpoints
+- loading a PatientExamination with the required prefetch graph
+- resolving linked RequirementSets
+- evaluating advisory requirement guidance for persisted examinations
 """
 
-# services/lookup_service.py
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
+from typing import Any, Dict, List, Optional, Sequence, cast
 
 from django.db.models import Prefetch, QuerySet
 
@@ -43,21 +31,12 @@ from endoreg_db.models.medical.patient.patient_finding_intervention import (
 )
 from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
 from endoreg_db.models.requirement.requirement_set import RequirementSet
-from endoreg_db.schemas.lookup_state import (
-    LookupDerivedUpdatesDataDict,
-    LookupState,
-    LookupStateDataDict,
-    validate_lookup_state,
-    validate_lookup_updates,
-)
 
-from .lookup_store import LookupStore
 from .dtypes_requirement_service import (
     LOOKUP_REQUIREMENT_SOURCE_DTYPES,
     LOOKUP_REQUIREMENT_SOURCE_HYBRID_COMPARE,
     get_lookup_requirement_legacy_fallback_enabled,
     get_lookup_requirement_source,
-    try_build_dtypes_lookup_updates,
     try_build_dtypes_requirement_guidance,
 )
 from .markov_prior_service import (
@@ -69,16 +48,6 @@ from .report_history import get_patient_examination_history_context
 logger = logging.getLogger(__name__)
 
 HYBRID_COMPARE_GUIDANCE_KEYS: tuple[str, ...] = (
-    "requirements_by_set",
-    "requirement_status",
-    "requirement_set_status",
-    "requirement_defaults",
-    "classification_choices",
-    "suggested_actions",
-    "candidate_requirement_set_ids",
-    "candidate_requirement_set_confidence",
-)
-HYBRID_COMPARE_UPDATES_KEYS: tuple[str, ...] = (
     "requirements_by_set",
     "requirement_status",
     "requirement_set_status",
@@ -140,14 +109,12 @@ def _finding_prefetch_bundle() -> tuple[Prefetch, ...]:
 
 def _requirement_set_prefetch_bundle() -> tuple[Prefetch, ...]:
     return (
-        # Prefetch ERS groups on the Examination…
         Prefetch(
             "examination__exam_reqset_links",
             queryset=ExaminationRequirementSet.objects.only(
                 "id", "name", "enabled_by_default"
             ),
         ),
-        # …and the RequirementSets reachable via those ERS groups.
         Prefetch(
             "examination__exam_reqset_links__requirement_set",
             queryset=RequirementSet.objects.select_related(
@@ -162,14 +129,10 @@ def _requirement_set_prefetch_bundle() -> tuple[Prefetch, ...]:
     )
 
 
-def _empty_lookup_updates() -> LookupDerivedUpdatesDataDict:
-    return validate_lookup_updates({})
-
-
 def _divergent_lookup_keys(
     *,
-    legacy_payload: Mapping[str, Any],
-    dtypes_payload: Mapping[str, Any],
+    legacy_payload: dict[str, Any],
+    dtypes_payload: dict[str, Any],
     keys: Sequence[str],
 ) -> list[str]:
     sentinel = object()
@@ -183,16 +146,14 @@ def _divergent_lookup_keys(
 def _log_hybrid_compare_divergence(
     *,
     context: str,
-    token: str | None,
     patient_examination_id: int | None,
     divergent_keys: Sequence[str],
 ) -> None:
     if not divergent_keys:
         return
     logger.warning(
-        "lookup hybrid_compare divergence context=%s token=%s pe_id=%s keys=%s",
+        "requirement guidance hybrid_compare divergence context=%s pe_id=%s keys=%s",
         context,
-        token,
         patient_examination_id,
         list(divergent_keys),
     )
@@ -278,33 +239,40 @@ def _evaluate_patient_exam_requirement_guidance_legacy(
 
     for rs in rs_objs:
         req_results = []
-        for r in rs.requirements.all():
-            ok = bool(r.evaluate(pe, mode="strict"))
-            requirement_status[str(r.id)] = ok
+        for requirement in rs.requirements.all():
+            ok = bool(requirement.evaluate(pe, mode="strict"))
+            requirement_status[str(requirement.id)] = ok
             req_results.append(ok)
 
-            defaults: list[Any] = getattr(r, "default_findings", lambda pe: [])(pe)
-            choices: list[Any] = getattr(r, "classification_choices", lambda pe: [])(pe)
+            defaults: list[Any] = getattr(
+                requirement, "default_findings", lambda patient_exam: []
+            )(pe)
+            choices: list[Any] = getattr(
+                requirement, "classification_choices", lambda patient_exam: []
+            )(pe)
             if defaults:
-                req_defaults[str(r.id)] = defaults
+                req_defaults[str(requirement.id)] = defaults
             if choices:
-                cls_choices[str(r.id)] = choices
+                cls_choices[str(requirement.id)] = choices
 
             if not ok:
                 acts: List[Dict[str, Any]] = []
-                for d in defaults or []:
+                for default in defaults or []:
                     acts.append(
                         {
                             "type": "add_finding",
-                            "finding_id": d.get("finding_id"),
-                            "classification_ids": d.get("classification_ids") or [],
+                            "finding_id": default.get("finding_id"),
+                            "classification_ids": default.get("classification_ids")
+                            or [],
                             "note": "default",
                         }
                     )
-                if "PatientExamination" in [m.__name__ for m in r.expected_models]:
+                if "PatientExamination" in [
+                    model.__name__ for model in requirement.expected_models
+                ]:
                     acts.append({"type": "edit_patient", "fields": ["gender", "dob"]})
                 if acts:
-                    suggested_actions[str(r.id)] = acts
+                    suggested_actions[str(requirement.id)] = acts
 
         set_status[str(rs.id)] = (
             rs.eval_function(req_results) if rs.eval_function else all(req_results)
@@ -325,74 +293,6 @@ def _evaluate_patient_exam_requirement_guidance_legacy(
     }
 
 
-def _build_legacy_lookup_updates(
-    *,
-    pe: PatientExamination,
-    rs_objs: list[RequirementSet],
-    prior_result: Any,
-) -> LookupDerivedUpdatesDataDict:
-    # 1) requirements grouped by set (already prefetched in load func)
-    requirements_by_set = {
-        rs.id: [{"id": r.id, "name": r.name} for r in rs.requirements.all()]
-        for rs in rs_objs
-    }
-
-    # 2) status per requirement + set status
-    requirement_status: Dict[str, bool] = {}
-    set_status: Dict[str, bool] = {}
-    for rs in rs_objs:
-        req_results = []
-        for r in rs.requirements.all():
-            ok = bool(r.evaluate(pe, mode="strict"))
-            requirement_status[str(r.id)] = ok
-            req_results.append(ok)
-        set_status[str(rs.id)] = (
-            rs.eval_function(req_results) if rs.eval_function else all(req_results)
-        )
-
-    # 3) suggestions per requirement (defaults + classification choices)
-    suggested_actions: Dict[str, List[Dict[str, Any]]] = {}
-    req_defaults: Dict[str, Any] = {}
-    cls_choices: Dict[str, Any] = {}
-
-    for rs in rs_objs:
-        for r in rs.requirements.all():
-            defaults: list[Any] = getattr(r, "default_findings", lambda pe: [])(pe)
-            choices: list[Any] = getattr(r, "classification_choices", lambda pe: [])(pe)
-            if defaults:
-                req_defaults[str(r.id)] = defaults
-            if choices:
-                cls_choices[str(r.id)] = choices
-
-            if not requirement_status.get(str(r.id), False):
-                acts = []
-                for d in defaults or []:
-                    acts.append(
-                        {
-                            "type": "add_finding",
-                            "finding_id": d.get("finding_id"),
-                            "classification_ids": d.get("classification_ids") or [],
-                            "note": "default",
-                        }
-                    )
-                if "PatientExamination" in [m.__name__ for m in r.expected_models]:
-                    acts.append({"type": "edit_patient", "fields": ["gender", "dob"]})
-                if acts:
-                    suggested_actions[str(r.id)] = acts
-
-    updates_raw = {
-        "requirements_by_set": requirements_by_set,
-        "requirement_status": requirement_status,
-        "requirement_set_status": set_status,
-        "requirement_defaults": req_defaults,
-        "classification_choices": cls_choices,
-        "suggested_actions": suggested_actions,
-        "candidate_requirement_set_ids": prior_result.candidate_requirement_set_ids,
-        "candidate_requirement_set_confidence": prior_result.confidence,
-    }
-    return validate_lookup_updates(updates_raw)
-
-
 def evaluate_patient_exam_requirement_guidance(
     pe: PatientExamination,
     *,
@@ -401,10 +301,7 @@ def evaluate_patient_exam_requirement_guidance(
     use_history_priors: bool = True,
 ) -> Dict[str, Any]:
     """
-    Evaluate requirement guidance for a persisted PatientExamination state.
-
-    Advisory only: returns statuses, defaults, and suggestions. It does not mutate
-    the database or cache. Intended for report persistence/finalization UX.
+    Evaluate advisory requirement guidance for a persisted PatientExamination.
     """
     requirement_source = get_lookup_requirement_source()
     if requirement_source in (
@@ -422,7 +319,7 @@ def evaluate_patient_exam_requirement_guidance(
                 return dtypes_guidance
             if get_lookup_requirement_legacy_fallback_enabled():
                 logger.warning(
-                    "lookup dtypes guidance unavailable; emergency legacy fallback enabled for pe_id=%s",
+                    "dtypes guidance unavailable; emergency legacy fallback enabled for pe_id=%s",
                     pe.id,
                 )
                 return _evaluate_patient_exam_requirement_guidance_legacy(
@@ -435,7 +332,6 @@ def evaluate_patient_exam_requirement_guidance(
                 "dtypes guidance unavailable and LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED is false"
             )
 
-        # hybrid_compare: execute both and compare, return dtypes as primary when available.
         legacy_guidance = _evaluate_patient_exam_requirement_guidance_legacy(
             pe,
             selected_requirement_set_ids=selected_requirement_set_ids,
@@ -444,7 +340,7 @@ def evaluate_patient_exam_requirement_guidance(
         )
         if dtypes_guidance is None:
             logger.warning(
-                "lookup hybrid_compare dtypes guidance unavailable; using legacy guidance for pe_id=%s",
+                "hybrid_compare dtypes guidance unavailable; using legacy guidance for pe_id=%s",
                 pe.id,
             )
             return legacy_guidance
@@ -456,7 +352,6 @@ def evaluate_patient_exam_requirement_guidance(
         )
         _log_hybrid_compare_divergence(
             context="guidance",
-            token=None,
             patient_examination_id=pe.id,
             divergent_keys=divergent_keys,
         )
@@ -471,28 +366,6 @@ def evaluate_patient_exam_requirement_guidance(
 
 
 def load_patient_exam_for_eval(pk: int) -> PatientExamination:
-    """
-    Load a PatientExamination with all related data needed for evaluation.
-
-    This function performs optimized database queries to fetch a PatientExamination
-    along with all related objects required for requirement evaluation, including:
-    - Patient and examination details
-    - Patient findings
-    - Examination requirement sets and their requirements
-    - Nested requirement set relationships
-
-    The query uses select_related and prefetch_related to minimize database hits
-    and ensure all data is available for evaluation without additional queries.
-
-    Args:
-        pk: Primary key of the PatientExamination to load
-
-    Returns:
-        PatientExamination: Fully loaded instance with all related data prefetched
-
-    Raises:
-        PatientExamination.DoesNotExist: If no examination exists with the given pk
-    """
     prefetches = (
         *_indication_prefetch_bundle(),
         *_lab_value_prefetch_bundle(),
@@ -509,396 +382,13 @@ def load_patient_exam_for_eval(pk: int) -> PatientExamination:
 def requirement_sets_for_patient_exam(
     pe: PatientExamination, user_tags: Optional[List[str]] = None
 ) -> QuerySet:
-    """
-    Retrieve all RequirementSets linked to a PatientExamination's examination.
-
-    Args:
-        pe: PatientExamination instance
-        user_tags: Optional list of tag names to filter requirement sets
-
-    Returns:
-        QuerySet of RequirementSet instances
-    """
     if not pe or not pe.examination:
-        from endoreg_db.models import RequirementSet
-
         return RequirementSet.objects.none()
 
-    # Start with examination-linked requirement sets
     req_sets = pe.examination.exam_reqset_links.values_list(
         "requirement_set", flat=True
     )
-
-    from endoreg_db.models import RequirementSet
-
     qs = RequirementSet.objects.filter(pk__in=req_sets)
-
-    # Apply tag filtering if provided
     if user_tags:
         qs = qs.filter(tags__name__in=user_tags).distinct()
-
     return qs
-
-
-def build_initial_lookup(
-    pe: PatientExamination, user_tags: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """
-    Build the initial lookup dictionary for a patient examination.
-
-    This function creates the base lookup data structure that will be stored in cache
-    and used by the client for requirement evaluation. It includes:
-
-    - Available findings for the examination type
-    - Required findings based on requirement defaults
-    - Requirement sets metadata
-    - Default findings and classification choices per requirement
-    - Empty placeholders for dynamic data (status, suggestions, etc.)
-
-    The returned dictionary is JSON-serializable and contains stable keys that
-    won't change between versions.
-
-    Args:
-        pe: PatientExamination instance to build lookup for
-
-    Returns:
-        Dictionary containing initial lookup data with the following keys:
-        - patient_examination_id: ID of the patient examination
-        - requirement_sets: List of available requirement sets with metadata
-        - available_findings: List of finding IDs available for the examination
-        - required_findings: List of finding IDs that are required by defaults
-        - requirement_defaults: Default findings per requirement
-        - classification_choices: Available classification choices per requirement
-        - requirements_by_set: Empty dict (populated on selection)
-        - requirement_status: Empty dict (computed on evaluation)
-        - requirement_set_status: Empty dict (computed on evaluation)
-        - suggested_actions: Empty dict (computed on evaluation)
-    """
-    # Available + required findings
-    available_findings = (
-        [f.id for f in pe.examination.get_available_findings()]
-        if pe.examination
-        else []
-    )
-    required_findings: List[int] = []  # fill by scanning requirements below
-
-    # Requirement sets: ids + meta
-    rs_objs = requirement_sets_for_patient_exam(pe, user_tags=user_tags)
-    requirement_sets = [
-        {
-            "id": rs.id,
-            "name": rs.name,
-            "type": rs.requirement_set_type.name if rs.requirement_set_type else "all",
-        }
-        for rs in rs_objs
-    ]
-
-    # Requirement-level defaults and classification choices (skeleton)
-    # You said: each Requirement can provide default findings and addable choices
-    req_defaults: Dict[str, Any] = {}
-    cls_choices: Dict[str, Any] = {}
-
-    for rs in rs_objs:
-        for req in rs.requirements.all():
-            # You’ll implement these helpers on Requirement
-            defaults: list[Any] = getattr(req, "default_findings", lambda pe: [])(pe)
-            choices: list[Any] = getattr(req, "classification_choices", lambda pe: [])(
-                pe
-            )
-            if defaults:
-                req_defaults[str(req.id)] = defaults  # list of {finding_id, payload...}
-                required_findings.extend(
-                    [d.get("finding_id") for d in defaults if "finding_id" in d]
-                )
-            if choices:
-                cls_choices[str(req.id)] = (
-                    choices  # list of {classification_id, label, ...}
-                )
-
-    # De-dup required
-    required_findings = sorted(set(required_findings))
-
-    return {
-        "patient_examination_id": pe.id,
-        "requirement_sets": requirement_sets,
-        "available_findings": available_findings,
-        "required_findings": required_findings,
-        "requirement_defaults": req_defaults,
-        "classification_choices": cls_choices,
-        # New fields for expanded lookup payload
-        "requirements_by_set": {},  # Will be populated when requirement sets are selected
-        "requirement_status": {},  # Status of each requirement (satisfied/unsatisfied)
-        "requirement_set_status": {},  # Status of each requirement set
-        "suggested_actions": {},  # Suggested actions to satisfy requirements
-        "candidate_requirement_set_ids": [],
-        "candidate_requirement_set_confidence": 0.0,
-        "selected_requirement_set_ids": [],
-        "selected_choices": {},
-    }
-
-
-def create_lookup_token_for_pe(
-    pe_id: int, user_tags: Optional[List[str]] = None
-) -> str:
-    """
-    Create a lookup token for a patient examination.
-
-    This function initializes a new lookup session for the given patient examination
-    by building the initial lookup data and storing it in the cache via LookupStore.
-
-    Args:
-        pe_id: Primary key of the PatientExamination
-
-    Returns:
-        String token that can be used to access the lookup session
-
-    Raises:
-        PatientExamination.DoesNotExist: If examination doesn't exist
-        Exception: For any other errors during initialization
-    """
-    pe = load_patient_exam_for_eval(pe_id)
-    token = LookupStore().init(build_initial_lookup(pe, user_tags=user_tags))
-    return token
-
-
-def recompute_lookup(token: str) -> LookupDerivedUpdatesDataDict:
-    """
-    Recompute derived lookup data based on current patient examination state and user selections.
-
-    This function performs the core evaluation logic for the lookup system. It:
-
-    1. Validates and recovers corrupted lookup data
-    2. Loads the current PatientExamination state from database
-    3. Evaluates requirements against the current examination state
-    4. Computes status for individual requirements and requirement sets
-    5. Generates suggested actions for unsatisfied requirements
-    6. Updates the cache with new derived data (idempotent)
-
-    The function includes reentrancy protection to prevent concurrent recomputation
-    of the same token.
-
-    Args:
-        token: Lookup session token
-
-    Returns:
-        Dictionary of updates containing:
-        - requirements_by_set: Requirements grouped by selected requirement sets
-        - requirement_status: Boolean status for each requirement
-        - requirement_set_status: Boolean status for each requirement set
-        - requirement_defaults: Default findings per requirement
-        - classification_choices: Available choices per requirement
-        - suggested_actions: UI actions to satisfy unsatisfied requirements
-
-    Raises:
-        ValueError: If lookup data is invalid or patient examination not found
-    """
-    logger = logging.getLogger(__name__)
-
-    store = LookupStore(token=token)
-
-    # Simple reentrancy guard using data
-    data = store.get_all()
-    if data.get("_recomputing"):
-        logger.warning(f"Recompute already in progress for token {token}, skipping")
-        return _empty_lookup_updates()
-
-    store.set("_recomputing", True)
-
-    try:
-        # First validate and attempt to recover corrupted data
-        validated_data = store.validate_and_recover_data(token)
-        if validated_data is None:
-            logger.error(f"No lookup data found for token {token}")
-            raise ValueError(f"No lookup data found for token {token}")
-
-        lookup_data: LookupStateDataDict | None = validate_lookup_state(validated_data)
-        if lookup_data is None:
-            raise ValueError(f"No lookup data found for token {token}")
-        logger.debug(
-            f"Recomputing lookup for token {token}, data keys: {list(lookup_data.keys())}"
-        )
-
-        # Check if required data exists
-        if "patient_examination_id" not in lookup_data:
-            logger.error(
-                f"Invalid lookup data for token {token}: missing patient_examination_id. Data: {lookup_data}"
-            )
-            raise ValueError(
-                f"Invalid lookup data for token {token}: missing patient_examination_id"
-            )
-
-        if not lookup_data.get("patient_examination_id"):
-            logger.error(
-                f"Invalid lookup data for token {token}: patient_examination_id is empty. Data: {lookup_data}"
-            )
-            raise ValueError(
-                f"Invalid lookup data for token {token}: patient_examination_id is empty"
-            )
-
-        pe_id = lookup_data["patient_examination_id"]
-        logger.debug(f"Loading patient examination {pe_id} for token {token}")
-
-        try:
-            pe = load_patient_exam_for_eval(pe_id)
-        except Exception as e:
-            logger.error(
-                f"Failed to load patient examination {pe_id} for token {token}: {e}"
-            )
-            raise ValueError(f"Failed to load patient examination {pe_id}: {e}")
-
-        state = LookupState.model_validate(lookup_data)
-        selected_rs_ids: List[int] = state.selected_requirement_set_ids
-        logger.debug(
-            f"Selected requirement set IDs for token {token}: {selected_rs_ids}"
-        )
-
-        all_rs_for_exam = list(requirement_sets_for_patient_exam(pe))
-        patient_finding_names = []
-        try:
-            for patient_finding in pe.patient_findings.all():
-                finding_name = getattr(
-                    getattr(patient_finding, "finding", None), "name", None
-                )
-                if isinstance(finding_name, str) and finding_name:
-                    patient_finding_names.append(finding_name)
-        except Exception:
-            patient_finding_names = []
-
-        history_context: Dict[str, Any] | None = None
-        history_tokens: List[str] = []
-        try:
-            history_context = get_patient_examination_history_context(pe, limit=5)
-            for previous_exam in history_context.get("previous_examinations", []) or []:
-                if not isinstance(previous_exam, dict):
-                    continue
-                exam_name = previous_exam.get("examination_name")
-                if isinstance(exam_name, str) and exam_name:
-                    history_tokens.append(exam_name)
-                for finding_item in previous_exam.get("findings", []) or []:
-                    if not isinstance(finding_item, dict):
-                        continue
-                    finding_name = finding_item.get("finding_name")
-                    if isinstance(finding_name, str) and finding_name:
-                        history_tokens.append(finding_name)
-        except Exception as exc:
-            logger.debug(
-                "Failed to build history context for priors (pe=%s): %s", pe_id, exc
-            )
-            history_context = None
-            history_tokens = []
-
-        prior_result = propose_candidate_requirement_sets(
-            patient_finding_names=patient_finding_names,
-            examination_name=getattr(pe.examination, "name", None),
-            requirement_sets=all_rs_for_exam,
-            history_context=history_context,
-            history_tokens=history_tokens,
-        )
-
-        if selected_rs_ids:
-            eval_rs_ids = set(selected_rs_ids)
-        elif (
-            prior_result.confidence >= DEFAULT_MARKOV_CONFIDENCE_THRESHOLD
-            and prior_result.candidate_requirement_set_ids
-        ):
-            # High-confidence prior: reduce search space to candidates only.
-            eval_rs_ids = set(prior_result.candidate_requirement_set_ids)
-        else:
-            # Strict fallback: evaluate all requirement sets for this exam.
-            eval_rs_ids = {rs.id for rs in all_rs_for_exam}
-
-        rs_objs = [rs for rs in all_rs_for_exam if rs.id in eval_rs_ids]
-        logger.debug(
-            "Found %s requirement set objects for token %s (confidence=%.3f, candidates=%s)",
-            len(rs_objs),
-            token,
-            prior_result.confidence,
-            prior_result.candidate_requirement_set_ids,
-        )
-
-        requirement_source = get_lookup_requirement_source()
-        if requirement_source in (
-            LOOKUP_REQUIREMENT_SOURCE_DTYPES,
-            LOOKUP_REQUIREMENT_SOURCE_HYBRID_COMPARE,
-        ):
-            dtypes_updates = try_build_dtypes_lookup_updates(
-                pe=cast(Any, pe),
-                selected_requirement_set_ids=selected_rs_ids,
-            )
-            if requirement_source == LOOKUP_REQUIREMENT_SOURCE_DTYPES:
-                if dtypes_updates is not None:
-                    validated_dtypes_updates = validate_lookup_updates(dtypes_updates)
-                    prev_derived = store.get_many(list(validated_dtypes_updates.keys()))
-                    if prev_derived != validated_dtypes_updates:
-                        store.set_many(validated_dtypes_updates)
-                    store.mark_recompute_done()
-                    return validated_dtypes_updates
-                if get_lookup_requirement_legacy_fallback_enabled():
-                    logger.warning(
-                        "lookup dtypes updates unavailable; emergency legacy fallback enabled for token=%s pe_id=%s",
-                        token,
-                        pe_id,
-                    )
-                else:
-                    raise ValueError(
-                        "dtypes recompute unavailable and LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED is false"
-                    )
-            else:
-                # hybrid_compare: execute both and compare, return dtypes as primary.
-                legacy_updates = _build_legacy_lookup_updates(
-                    pe=pe,
-                    rs_objs=rs_objs,
-                    prior_result=prior_result,
-                )
-                if dtypes_updates is None:
-                    logger.warning(
-                        "lookup hybrid_compare dtypes updates unavailable; using legacy updates for token=%s pe_id=%s",
-                        token,
-                        pe_id,
-                    )
-                    updates = legacy_updates
-                else:
-                    validated_dtypes_updates = validate_lookup_updates(dtypes_updates)
-                    divergent_keys = _divergent_lookup_keys(
-                        legacy_payload=legacy_updates,
-                        dtypes_payload=validated_dtypes_updates,
-                        keys=HYBRID_COMPARE_UPDATES_KEYS,
-                    )
-                    _log_hybrid_compare_divergence(
-                        context="recompute",
-                        token=token,
-                        patient_examination_id=pe_id,
-                        divergent_keys=divergent_keys,
-                    )
-                    updates = validated_dtypes_updates
-
-                prev_derived = store.get_many(list(updates.keys()))
-                if prev_derived != updates:
-                    store.set_many(updates)
-                store.mark_recompute_done()
-                return updates
-
-        updates = _build_legacy_lookup_updates(
-            pe=pe,
-            rs_objs=rs_objs,
-            prior_result=prior_result,
-        )
-
-        logger.debug(
-            f"Updating store for token {token} with {len(updates)} update keys"
-        )
-
-        # Only write if changed (idempotent)
-        prev_derived = store.get_many(list(updates.keys()))
-        if prev_derived != updates:
-            store.set_many(updates)  # <-- does NOT call recompute
-            logger.debug(f"Derived data changed, updated store for token {token}")
-        else:
-            logger.debug(
-                f"Derived data unchanged, skipping store update for token {token}"
-            )
-
-        store.mark_recompute_done()
-        return updates
-    finally:
-        store.set("_recomputing", False)

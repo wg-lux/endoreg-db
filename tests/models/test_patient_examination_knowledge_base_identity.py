@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from endoreg_db.models import Patient, PatientExamination
+from endoreg_db.models import Examination, Patient, PatientExamination
 from endoreg_db.serializers.patient_examination.patient_examination import (
     PatientExaminationSerializer,
 )
@@ -61,6 +61,7 @@ def test_patient_examination_serializer_create_stamps_knowledge_base_identity(
         first_name="Serializer",
         last_name="Patient",
     )
+    Examination.objects.create(name="serializer_exam")
 
     monkeypatch.setattr(
         "endoreg_db.services.knowledge_base_identity.get_configured_knowledge_base_identity",

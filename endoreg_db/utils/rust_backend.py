@@ -7,19 +7,31 @@ from typing import Callable, Sequence
 logger = logging.getLogger(__name__)
 
 _parse_extracted_frame_numbers: Callable[[list[str]], list[int]] | None
+_build_expected_frame_records: Callable[[int, str], list[tuple[int, str]]] | None
+_build_frame_records: Callable[..., list[tuple[int, str]]] | None
 _render_single_page_pdf: Callable[[str], bytes] | None
 _sha256_file_hex: Callable[[Path, int], str] | None
 
 try:
-    from endoreg_rust_backend import (
+    from endoreg_db.endoreg_rust_backend import (
+        build_expected_frame_records as _build_expected_frame_records,
+    )
+    from endoreg_db.endoreg_rust_backend import (
+        build_frame_records as _build_frame_records,
+    )
+    from endoreg_db.endoreg_rust_backend import (
         parse_extracted_frame_numbers as _parse_extracted_frame_numbers,
     )
-    from endoreg_rust_backend import render_single_page_pdf as _render_single_page_pdf
-    from endoreg_rust_backend import sha256_file_hex as _sha256_file_hex
+    from endoreg_db.endoreg_rust_backend import (
+        render_single_page_pdf as _render_single_page_pdf,
+    )
+    from endoreg_db.endoreg_rust_backend import sha256_file_hex as _sha256_file_hex
 
     RUST_BACKEND_AVAILABLE = True
 except Exception as exc:
     logger.debug("Rust backend unavailable, using Python fallbacks: %s", exc)
+    _build_expected_frame_records = None
+    _build_frame_records = None
     _parse_extracted_frame_numbers = None
     _render_single_page_pdf = None
     _sha256_file_hex = None
@@ -56,6 +68,44 @@ def parse_extracted_frame_numbers(paths: Sequence[Path]) -> list[int] | None:
     except Exception as exc:
         logger.warning(
             "Rust parse_extracted_frame_numbers failed, falling back to Python: %s",
+            exc,
+        )
+        return None
+
+
+def build_frame_records(
+    paths: Sequence[Path],
+    *,
+    relative_to: Path | None = None,
+    zero_based: bool = False,
+) -> list[tuple[int, str]] | None:
+    if _build_frame_records is None:
+        return None
+    try:
+        return list(
+            _build_frame_records(
+                [str(path) for path in paths],
+                relative_to=str(relative_to) if relative_to is not None else None,
+                zero_based=zero_based,
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "Rust build_frame_records failed, falling back to Python: %s", exc
+        )
+        return None
+
+
+def build_expected_frame_records(
+    frame_count: int, ext: str = "jpg"
+) -> list[tuple[int, str]] | None:
+    if _build_expected_frame_records is None:
+        return None
+    try:
+        return list(_build_expected_frame_records(frame_count, ext))
+    except Exception as exc:
+        logger.warning(
+            "Rust build_expected_frame_records failed, falling back to Python: %s",
             exc,
         )
         return None

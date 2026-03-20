@@ -75,15 +75,6 @@ export const endpoints = {
   },
 
   requirements: {
-    lookup: 'lookup/',
-    lookupInit: 'lookup/init/',
-    lookupAll: (token: Id) => `lookup/${token}/all/`,
-    lookupParts: (token: Id, keys?: string[]) => {
-      if (!keys?.length) return `lookup/${token}/parts/`
-      return `lookup/${token}/parts/?keys=${encodeURIComponent(keys.join(','))}`
-    },
-    lookupRecompute: (token: Id) => `lookup/${token}/recompute/`,
-    lookupRecomputeWithoutToken: 'lookup/recompute/',
     evaluateRequirements: 'evaluate-requirements/'
   },
 

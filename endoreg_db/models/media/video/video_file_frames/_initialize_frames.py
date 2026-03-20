@@ -5,6 +5,12 @@ from typing import TYPE_CHECKING, List, Optional
 
 from django.db import OperationalError
 from tqdm import tqdm
+from endoreg_db.utils.rust_backend import (
+    build_expected_frame_records as rust_build_expected_frame_records,
+)
+from endoreg_db.utils.rust_backend import (
+    build_frame_records as rust_build_frame_records,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models import VideoFile
@@ -51,27 +57,36 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
         )
         mark_as_extracted = True
         num_expected_or_provided = len(frame_paths)
-        for frame_path in tqdm(
-            frame_paths,
+        rust_records = rust_build_frame_records(frame_paths)
+        if rust_records is None:
+            frame_records: list[tuple[int, str]] = []
+            for frame_path in frame_paths:
+                try:
+                    frame_records.append(
+                        (int(frame_path.stem.split("_")[-1]), frame_path.name)
+                    )
+                except (ValueError, IndexError) as e:
+                    logger.warning(
+                        "Could not parse frame number from %s: %s",
+                        frame_path.name,
+                        e,
+                    )
+        else:
+            frame_records = rust_records
+
+        for frame_number, relative_path_str in tqdm(
+            frame_records,
             desc=f"Initializing Frames from Paths {video.video_hash}",
             unit="frame",
         ):
-            try:
-                frame_number = int(frame_path.stem.split("_")[-1])
-                relative_path_str = frame_path.name
-                frames_to_create.append(
-                    _create_frame_object(
-                        video,
-                        frame_number,
-                        relative_path_str,
-                        extracted=mark_as_extracted,
-                    )
+            frames_to_create.append(
+                _create_frame_object(
+                    video,
+                    frame_number,
+                    relative_path_str,
+                    extracted=mark_as_extracted,
                 )
-            except (ValueError, IndexError) as e:
-                logger.warning(
-                    "Could not parse frame number from %s: %s", frame_path.name, e
-                )
-                continue
+            )
     else:
         expected_frame_count = video.frame_count
         if expected_frame_count is None or expected_frame_count <= 0:
@@ -102,12 +117,20 @@ def _initialize_frames(video: "VideoFile", frame_paths: Optional[List[Path]] = N
         )
         mark_as_extracted = False
         num_expected_or_provided = expected_frame_count
-        for frame_number in tqdm(
-            range(expected_frame_count),
+        rust_expected_records = rust_build_expected_frame_records(expected_frame_count)
+        if rust_expected_records is None:
+            expected_records = [
+                (frame_number, f"frame_{frame_number:07d}.jpg")
+                for frame_number in range(expected_frame_count)
+            ]
+        else:
+            expected_records = rust_expected_records
+
+        for frame_number, relative_path_str in tqdm(
+            expected_records,
             desc=f"Initializing Expected Frames {video.video_hash}",
             unit="frame",
         ):
-            relative_path_str = f"frame_{frame_number:07d}.jpg"
             frames_to_create.append(
                 _create_frame_object(
                     video, frame_number, relative_path_str, extracted=mark_as_extracted
