@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
+requires = ["maturin[zig]>=1.7,<2"]
 build-backend = "maturin"
 
 [project]
@@ -9,5 +9,7 @@ requires-python = ">=3.12,<3.13"
 
 [tool.maturin]
 module-name = "endoreg_rust_backend"
+compatibility = "pypi"
+zig = true
+auditwheel = "repair"
 features = ["pyo3/extension-module"]
-
