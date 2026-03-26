@@ -7,9 +7,8 @@ if TYPE_CHECKING:
         Examination,
         FindingIntervention,
         InformationSource,
-        Requirement,
     )
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    from endoreg_db.utils.links import ModelLinks
 
 
 class ExaminationIndicationManager(models.Manager):
@@ -67,24 +66,19 @@ class ExaminationIndication(models.Model):
     if TYPE_CHECKING:
 
         @property
-        def related_requirements(
-            self,
-        ) -> "models.Manager[Requirement]": ...
-
-        @property
         def examinations(self) -> "models.Manager[Examination]": ...
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Aggregates related requirements, classifications, examination, and interventions into a RequirementLinks object.
+        Aggregates related classifications, examinations, and interventions into a ModelLinks object.
 
         Returns:
-            A RequirementLinks instance representing all entities linked to this examination indication.
+            A ModelLinks instance representing all entities linked to this examination indication.
         """
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.utils.links import ModelLinks
 
-        return RequirementLinks(
+        return ModelLinks(
             examination_indications=[self],
             examinations=list(self.examinations.all()),
             finding_interventions=list(self.expected_interventions.all()),
@@ -201,7 +195,7 @@ class ExaminationIndicationClassificationChoice(models.Model):
     objects = ExaminationIndicationClassificationChoiceManager()
 
     if TYPE_CHECKING:
-        from lx_dtypes.models.knowledge_base.classification_choice_descriptor.ClassificationChoiceDescriptorDataDict import (
+        from lx_dtypes.models.knowledge_base.classification_choice_descriptor import (
             ClassificationChoiceDescriptorDataDict,
         )
 

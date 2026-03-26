@@ -33,6 +33,7 @@ from .misc import (
     UploadJobStatusSerializer,
     VoPPatientDataSerializer,
 )
+from .hub import TransferJobCreateSerializer, TransferJobStatusSerializer
 from .patient import PatientDropdownSerializer, PatientSerializer
 from .patient_examination import PatientExaminationSerializer
 from .patient_finding import (
@@ -84,6 +85,8 @@ __all__ = [
     "StatsSerializer",
     "UploadJobStatusSerializer",
     "UploadCreateResponseSerializer",
+    "TransferJobCreateSerializer",
+    "TransferJobStatusSerializer",
     "TranslatableFieldMixin",
     # Patient
     "PatientSerializer",

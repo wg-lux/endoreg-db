@@ -1,12 +1,12 @@
 import mimetypes
 
 from django.http import Http404
+from rest_framework.exceptions import PermissionDenied
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -18,12 +18,19 @@ try:
 except ImportError:
     MAGIC_AVAILABLE = False
 
-from endoreg_db.models.upload_job import UploadJob
-from endoreg_db.serializers.misc.upload_job import UploadJobStatusSerializer
+from endoreg_db.models import UploadJob
+from endoreg_db.serializers.hub import UploadJobStatusSerializer
+from endoreg_db.services.hub import (
+    create_or_reuse_upload_job,
+    resolve_declared_upload_center,
+    resolve_allowed_center_id,
+    resolve_upload_center,
+)
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 # Try to import celery task, but provide fallback
 try:
-    from endoreg_db.tasks.upload_tasks import process_upload_job  # type: ignore[import-untyped]
+    from endoreg_db.tasks import process_upload_job
 
     CELERY_AVAILABLE = True
 except ImportError:
@@ -48,7 +55,7 @@ class UploadFileView(APIView):
     """
 
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = [AllowAny]  # Adjust based on your auth requirements
+    permission_classes = [EnvironmentAwarePermission]
 
     # Maximum file size (1 GiB)
     MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1 GiB in bytes
@@ -120,13 +127,74 @@ class UploadFileView(APIView):
             )
 
         try:
+            declared_center, center_resolution_error = resolve_declared_upload_center(
+                center_key=request.data.get("center_key"),
+                center_name=request.data.get("center_name"),
+            )
+            if center_resolution_error:
+                return Response(
+                    {"error": center_resolution_error},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            allowed_center_id = resolve_allowed_center_id(
+                getattr(request, "user", None)
+            )
+            if (
+                allowed_center_id is not None
+                and allowed_center_id >= 0
+                and declared_center is not None
+                and declared_center.id != allowed_center_id
+            ):
+                raise PermissionDenied(
+                    "Upload center is outside the authenticated scope"
+                )
+
+            source_center = resolve_upload_center(
+                user=getattr(request, "user", None),
+                center_key=request.data.get("center_key"),
+                center_name=request.data.get("center_name"),
+            )
+            if (
+                allowed_center_id is not None
+                and allowed_center_id >= 0
+                and source_center is not None
+                and source_center.id != allowed_center_id
+            ):
+                raise PermissionDenied(
+                    "Upload center is outside the authenticated scope"
+                )
+
+            source_system = (
+                str(request.data.get("source_system", "api")).strip() or "api"
+            )
+            idempotency_key = (
+                request.headers.get("Idempotency-Key")
+                or request.data.get("idempotency_key")
+                or ""
+            )
+
             # Create upload job
-            upload_job = UploadJob.objects.create(
-                file=uploaded_file, content_type=content_type
+            upload_job, created = create_or_reuse_upload_job(
+                uploaded_file=uploaded_file,
+                content_type=content_type,
+                created_by=getattr(request, "user", None),
+                source_center=source_center,
+                source_system=source_system,
+                idempotency_key=str(idempotency_key),
+                ingest_mode=UploadJob.IngestMode.API,
+                processing_provenance={
+                    "entrypoint": "api",
+                    "declared_center_key": request.data.get("center_key"),
+                    "declared_center_name": request.data.get("center_name"),
+                    "resolved_center_key": source_center.center_key
+                    if source_center
+                    else None,
+                },
             )
 
             # Start asynchronous processing if Celery is available
-            if CELERY_AVAILABLE:
+            if created and CELERY_AVAILABLE:
                 try:
                     process_upload_job.delay(str(upload_job.id))
                 except Exception as e:
@@ -136,14 +204,14 @@ class UploadFileView(APIView):
                         {"error": f"Failed to start processing: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
-            else:
+            elif created:
                 # For development without Celery, mark as processing immediately
                 upload_job.mark_processing()
                 # In production, this would be handled by Celery
                 # For now, just leave it in processing state
 
             # Prepare response
-            status_url = reverse("upload_status", kwargs={"id": upload_job.id})
+            status_url = reverse("api:upload_status", kwargs={"id": upload_job.id})
             response_data = {
                 "upload_id": str(upload_job.id),  # Ensure UUID is converted to string
                 "status_url": status_url,
@@ -151,8 +219,16 @@ class UploadFileView(APIView):
             }
 
             # Return the response data directly since serializer fields are read-only
-            return Response(response_data, status=status.HTTP_201_CREATED)
+            return Response(
+                response_data,
+                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            )
 
+        except PermissionDenied as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         except Exception as e:
             return Response(
                 {"error": f"Failed to create upload job: {str(e)}"},
@@ -217,7 +293,7 @@ class UploadStatusView(APIView):
         404 Not Found: Upload job not found
     """
 
-    permission_classes = [AllowAny]  # Adjust based on your auth requirements
+    permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, id, *args, **kwargs):
         """
@@ -225,7 +301,23 @@ class UploadStatusView(APIView):
         """
         try:
             # Look up upload job by UUID
-            upload_job = UploadJob.objects.select_related("sensitive_meta").get(id=id)
+            upload_job = UploadJob.objects.select_related(
+                "sensitive_meta",
+                "source_center",
+            ).get(id=id)
+
+            allowed_center_id = resolve_allowed_center_id(
+                getattr(request, "user", None)
+            )
+            if (
+                allowed_center_id is not None
+                and allowed_center_id != -1
+                and upload_job.source_center_id is not None
+                and upload_job.source_center_id != allowed_center_id
+            ):
+                raise Http404("Upload job not found")
+            if allowed_center_id == -1:
+                raise PermissionDenied("You do not have access to upload jobs.")
 
             # Serialize the response
             serializer = UploadJobStatusSerializer(upload_job)
@@ -234,6 +326,8 @@ class UploadStatusView(APIView):
 
         except UploadJob.DoesNotExist:
             raise Http404("Upload job not found")
+        except (Http404, PermissionDenied):
+            raise
         except Exception as e:
             return Response(
                 {"error": f"Failed to get upload status: {str(e)}"},

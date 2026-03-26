@@ -35,6 +35,8 @@ def deduplicate_image_classification_annotations(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
+
     dependencies = [
         ("endoreg_db", "0007_pdfprocessinghistory"),
     ]

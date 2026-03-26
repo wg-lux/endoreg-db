@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.utils.translation import override
 from rest_framework import status
 from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -304,23 +305,26 @@ class TestAnonymizationValidateView:
             "document_type": "unsupported_type",
         }
 
-        with patch.object(
-            RawPdfFile, "validate_metadata_annotation", return_value=True
-        ):
-            request = factory.post(
-                f"/api/anonymization/{pdf_file.id}/validate/",
-                data=data,
-                format="json",
-            )
-            force_authenticate(request, user=user)
+        with override("en"):
+            with patch.object(
+                RawPdfFile, "validate_metadata_annotation", return_value=True
+            ):
+                request = factory.post(
+                    f"/api/anonymization/{pdf_file.id}/validate/",
+                    data=data,
+                    format="json",
+                )
+                force_authenticate(request, user=user)
 
-            view = AnonymizationValidateView.as_view()
-            response = self._call_view(view, request, file_id=pdf_file.id)
-            payload = self._response_data(response)
+                view = AnonymizationValidateView.as_view()
+                response = self._call_view(view, request, file_id=pdf_file.id)
+                payload = self._response_data(response)
 
-            assert response.status_code == status.HTTP_400_BAD_REQUEST
-            assert "document_type" in payload
-            assert "not a valid choice" in self._payload_text(payload, "document_type")
+                assert response.status_code == status.HTTP_400_BAD_REQUEST
+                assert "document_type" in payload
+                assert "not a valid choice" in self._payload_text(
+                    payload, "document_type"
+                )
 
     def test_validate_video_keeps_is_verified_false(self, factory, user, video_file):
         data = {

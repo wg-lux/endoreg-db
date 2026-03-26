@@ -130,13 +130,6 @@ Metadata
    :undoc-members:
    :show-inheritance:
 
-Requirement
-====================
-.. automodule:: endoreg_db.models.requirement
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 State
 ====================
 .. automodule:: endoreg_db.models.state

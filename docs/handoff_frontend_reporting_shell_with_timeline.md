@@ -239,7 +239,7 @@ If UI needs editable sensitive fields, use dedicated endpoints:
 ## Rust PDF Renderer State
 
 Rust module path:
-- `tools/report_pdf_renderer_rust/src/main.rs`
+- `lx-report-generator/src/main.rs`
 
 Current backend integration state:
 - integrated and used by report persistence during report submission save.

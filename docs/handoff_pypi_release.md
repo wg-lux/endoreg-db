@@ -1,90 +1,174 @@
 # Handoff: PyPI Release (`endoreg-db`)
 
-This project uses:
-- `lx-dtypes` as a Python dependency from PyPI
-- local `lx-data-models/` submodule for development convenience
-- local Rust renderer source in `tools/report_pdf_renderer_rust/` (external runtime binary, not bundled in the Python package)
+This repository publishes the root Python package with a Rust extension through the `maturin` backend configured in [pyproject.toml](../pyproject.toml).
 
-## What changed for PyPI readiness
-`pyproject.toml` now excludes these from wheel/sdist builds:
-- `lx-data-models/`
-- `tools/` (including `report_pdf_renderer_rust`)
-- local devenv/direnv/git artifacts
-- tests/storage/htmlcov
+## Current version source
 
-This prevents shipping local submodules/tooling inside `endoreg-db` PyPI artifacts.
+The publishable package version is currently a static value, not a git-derived dynamic version:
 
-## Versioning model (important)
-`endoreg-db` version is **dynamic from git tags** (`hatch-vcs`).
+- [pyproject.toml](../pyproject.toml): `project.version`
+- [package.nix](../package.nix): `version`
 
-You do **not** edit a static version string in `pyproject.toml`.
+Before a release, bump both files to the new version.
 
-To publish a new version, create a new git tag (example):
+## Platform-configurable release workflow
+
+The release `Makefile` targets now use `maturin` directly so wheel settings can be overridden per platform.
+
+Available knobs:
+
+- `PYPI_DIST_DIR`: output directory, default `dist`
+- `PYPI_INTERPRETER`: interpreter passed to `maturin build --interpreter`
+- `PYPI_COMPATIBILITY`: compatibility tag such as `linux`, `manylinux2014`, `manylinux_2_28`, or `musllinux_1_2`
+- `PYPI_ZIG`: if set to any non-empty value, adds `--zig`
+- `PYPI_MATURIN_ARGS`: extra arguments forwarded to `maturin build` and `maturin sdist`
+- `PYPI_REPOSITORY`: optional `twine --repository`
+- `PYPI_REPOSITORY_URL`: optional `twine --repository-url`
+- `PYPI_TWINE_ARGS`: extra arguments forwarded to `twine upload`
+
+Default command resolution:
+
+- `MATURIN_BIN=maturin`
+- `TWINE_BIN=twine`
+- `PYPI_COMPATIBILITY=linux`
+
+Override them if your environment only exposes module entrypoints or wrapped commands.
+
+Primary targets:
+
+- `make pypi-wheel`
+- `make pypi-sdist`
+- `make pypi-build-check`
+- `make pypi-upload`
+- `make pypi-clean`
+
+## Release checklist
+
+1. Update version numbers:
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+$EDITOR pyproject.toml
+$EDITOR package.nix
 ```
 
-Builds created from that tag will resolve the package version from VCS metadata.
-
-## Release checklist (repo root)
-1. Ensure `lx-dtypes` dependency version is correct in `pyproject.toml`
-- `endoreg-db` should depend on a published `lx-dtypes` version
-- do not rely on local `lx-data-models/` being present for production installs
-
-2. Ensure Rust renderer deployment strategy is documented for ops
-- `report_pdf_renderer_rust` is **not** included in PyPI package
-- runtime must provide compiled binary and set:
+2. Commit the release candidate and ensure the tree is clean:
 ```bash
-ENDOREG_REPORT_PDF_RENDERER_BIN=/path/to/report_pdf_renderer
+git status
+git add pyproject.toml package.nix
+git commit -m "Release vX.Y.Z"
+git status
 ```
 
-3. Build and inspect artifacts (preflight)
+3. Clean previous artifacts:
 ```bash
 make pypi-clean
+```
+
+4. Build platform-specific wheels plus sdist.
+
+Default local Linux build:
+```bash
 make pypi-build-check
 ```
 
-Verify the sdist listing does **not** contain:
-- `lx-data-models/`
-- `tools/report_pdf_renderer_rust/`
+This produces a native Linux wheel. It does not try to enforce manylinux compliance.
 
-4. Run smoke checks (recommended)
+Linux `manylinux2014`:
 ```bash
-pytest -q tests/views/report/test_patient_examination_report_viewset.py::PatientExaminationReportSegmentFrameSelectorTests::test_segment_frame_selector_get_auto_creates_draft_report
-pytest -q tests/views/report/test_report_stream.py::ReportStreamViewTests::test_pdf_stream_download_nginx_headers
+make pypi-build-check \
+  PYPI_INTERPRETER=python3.12 \
+  PYPI_COMPATIBILITY=manylinux2014
 ```
 
-5. Create/push release tag (version source)
+Linux with `zig`-assisted portability:
 ```bash
-git tag vX.Y.Z
+make pypi-build-check \
+  PYPI_INTERPRETER=python3.12 \
+  PYPI_COMPATIBILITY=manylinux2014 \
+  PYPI_ZIG=1
+```
+
+Musl / Alpine-style target:
+```bash
+make pypi-build-check \
+  PYPI_INTERPRETER=python3.12 \
+  PYPI_COMPATIBILITY=musllinux_1_2
+```
+
+Native macOS wheel:
+```bash
+make pypi-build-check \
+  PYPI_INTERPRETER=python3.12
+```
+
+Native Windows wheel:
+```bash
+make pypi-build-check \
+  PYPI_INTERPRETER=python
+```
+
+Notes:
+
+- Build Linux wheels on Linux, macOS wheels on macOS, and Windows wheels on Windows unless you have a deliberate cross-compilation setup.
+- `PYPI_COMPATIBILITY=linux` is the default because it works for local native builds on the current host.
+- `PYPI_COMPATIBILITY` is mainly relevant for Linux wheel tagging and repair behavior.
+- `manylinux*` wheels must be built in a compatible manylinux environment or with an explicit cross-compilation strategy. Building them on a newer general host glibc often fails compliance checks.
+- The sdist is platform-independent and is produced together with the wheel by `make pypi-build-check`.
+
+5. Inspect the artifacts in `dist/` and confirm the sdist excludes local-only directories:
+
+- `lx-data-models/`
+- `lx-report-generator/`
+- `lx-terminology-editor/`
+- `tools/`
+
+6. Upload to PyPI or TestPyPI.
+
+PyPI:
+```bash
+make pypi-upload
+```
+
+TestPyPI:
+```bash
+make pypi-upload \
+  PYPI_REPOSITORY_URL=https://test.pypi.org/legacy/
+```
+
+7. Tag and push the release if you want git history to match the published version:
+```bash
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin prototype
 git push origin vX.Y.Z
 ```
 
-6. Publish to PyPI
+## Separate uploads per platform
+
+If you publish multiple wheels for the same version, build each platform artifact into the same `dist/` layout and upload only after all wheels are present alongside the sdist.
+
+Example sequence:
+
+1. Build Linux wheel on Linux host
+2. Copy resulting wheel into shared `dist/`
+3. Build macOS wheel on macOS host
+4. Copy resulting wheel into shared `dist/`
+5. Build Windows wheel on Windows host
+6. Copy resulting wheel into shared `dist/`
+7. Build the sdist once
+8. Run `make pypi-upload`
+
+## Notes on bundled and external components
+
+`endoreg-db` publishes the Python package plus the `endoreg_db.endoreg_rust_backend` extension module built from:
+
+- [rust/endoreg_rust_backend/Cargo.toml](../rust/endoreg_rust_backend/Cargo.toml)
+
+The standalone report renderer remains an external runtime binary and is not bundled into the PyPI package:
+
+- `tools/report_pdf_renderer_rust/`
+- `lx-report-generator/`
+
+Operational deployments that want the external renderer still need to provide the binary and set:
+
 ```bash
-python -m twine upload dist/*
+export ENDOREG_REPORT_PDF_RENDERER_BIN=/path/to/report_pdf_renderer
 ```
-
-## Notes on `lx-data-models` submodule
-The submodule is useful in development, but published `endoreg-db` should install against:
-- `lx-dtypes` from PyPI (declared dependency)
-
-Runtime code in `endoreg_db/urls/__init__.py` only prepends local `lx-data-models/` to `sys.path` if present.
-This is safe for PyPI installs because it falls back to the installed `lx-dtypes` package.
-
-## Notes on `report_pdf_renderer_rust`
-The Rust renderer is integrated as an **optional external binary**.
-
-`endoreg-db` runtime behavior:
-- If renderer binary is found (`ENDOREG_REPORT_PDF_RENDERER_BIN` or PATH), use it.
-- Otherwise, fallback to internal minimal PDF generation.
-
-This is intentional and keeps PyPI publication platform-independent.
-
-## Optional: publish Rust renderer separately
-If you publish `report_pdf_renderer_rust` to Cargo (`crates.io`), that is **source publication**, not backend runtime deployment.
-You still need a compiled binary on the target environment.
-
-See:
-- `docs/handoff_report_pdf_renderer.md`

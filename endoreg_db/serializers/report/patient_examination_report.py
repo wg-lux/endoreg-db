@@ -64,11 +64,6 @@ class PatientExaminationReportSubmissionSerializer(serializers.Serializer):
     findings = serializers.ListField(
         child=serializers.DictField(), required=False, allow_empty=True
     )
-    selected_requirement_set_ids = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
-        required=False,
-        allow_empty=True,
-    )
     expected_version = serializers.IntegerField(required=False, min_value=1)
     history_limit = serializers.IntegerField(
         required=False, min_value=1, max_value=50, default=5

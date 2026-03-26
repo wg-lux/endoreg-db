@@ -731,3 +731,28 @@ def test_should_run_startup_reconciliation_skips_pytest_entrypoints(monkeypatch)
         )
         is False
     )
+
+
+def test_should_run_startup_reconciliation_only_allows_runtime_commands(monkeypatch):
+    import endoreg_db.services.reconciliation as reconciliation_module
+
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    assert (
+        reconciliation_module.should_run_startup_reconciliation(
+            ["/venv/bin/python", "runserver"]
+        )
+        is True
+    )
+    assert (
+        reconciliation_module.should_run_startup_reconciliation(
+            ["/venv/bin/python", "load_base_db_data"]
+        )
+        is False
+    )
+    assert (
+        reconciliation_module.should_run_startup_reconciliation(
+            ["/venv/bin/python", "migrate"]
+        )
+        is False
+    )

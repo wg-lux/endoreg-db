@@ -8,8 +8,20 @@ LOCAL_BIN_DIR ?= $(HOME)/.local/bin
 LOCAL_RENDERER_BIN := $(LOCAL_BIN_DIR)/report_pdf_renderer
 MYPY_BIN ?= .devenv/state/venv/bin/mypy
 MYPY_TIMEOUT ?= 240
+PYTHON_BIN ?= python
+MATURIN_BIN ?= maturin
+TWINE_BIN ?= twine
+PYPI_DIST_DIR ?= dist
+PYPI_MANIFEST_PATH ?= rust/endoreg_rust_backend/Cargo.toml
+PYPI_INTERPRETER ?=
+PYPI_COMPATIBILITY ?= linux
+PYPI_ZIG ?=
+PYPI_MATURIN_ARGS ?=
+PYPI_TWINE_ARGS ?=
+PYPI_REPOSITORY ?=
+PYPI_REPOSITORY_URL ?=
 
-.PHONY: help report-renderer-build report-renderer-build-devenv report-renderer-run-example report-renderer-run-example-devenv report-renderer-install report-renderer-install-devenv report-renderer-env report-renderer-clean pypi-build-check pypi-clean mypy-requirement mypy-requirement-files
+.PHONY: help report-renderer-build report-renderer-build-devenv report-renderer-run-example report-renderer-run-example-devenv report-renderer-install report-renderer-install-devenv report-renderer-env report-renderer-clean pypi-wheel pypi-sdist pypi-build-check pypi-clean pypi-upload mypy-requirement mypy-requirement-files
 
 help:
 	@echo "Available targets:"
@@ -21,8 +33,11 @@ help:
 	@echo "  report-renderer-install-devenv  Install binary via devenv shell"
 	@echo "  report-renderer-env             Print export command for backend integration"
 	@echo "  report-renderer-clean           Remove renderer build artifacts"
+	@echo "  pypi-wheel                     Build a maturin wheel with configurable platform settings"
+	@echo "  pypi-sdist                     Build an sdist"
 	@echo "  pypi-build-check               Build wheel/sdist and list contents (publish preflight)"
 	@echo "  pypi-clean                     Remove dist/build artifacts"
+	@echo "  pypi-upload                    Upload dist artifacts with twine"
 	@echo "  mypy-requirement               Run mypy on endoreg_db/models/requirement (repo config)"
 	@echo "  mypy-requirement-files         Run mypy per file in requirement subtree (repo config)"
 	@echo ""
@@ -31,6 +46,18 @@ help:
 	@echo "  LOCAL_BIN_DIR=$(LOCAL_BIN_DIR)"
 	@echo "  MYPY_BIN=$(MYPY_BIN)"
 	@echo "  MYPY_TIMEOUT=$(MYPY_TIMEOUT)"
+	@echo "  PYTHON_BIN=$(PYTHON_BIN)"
+	@echo "  MATURIN_BIN=$(MATURIN_BIN)"
+	@echo "  TWINE_BIN=$(TWINE_BIN)"
+	@echo "  PYPI_DIST_DIR=$(PYPI_DIST_DIR)"
+	@echo "  PYPI_MANIFEST_PATH=$(PYPI_MANIFEST_PATH)"
+	@echo "  PYPI_INTERPRETER=$(PYPI_INTERPRETER)"
+	@echo "  PYPI_COMPATIBILITY=$(PYPI_COMPATIBILITY)  # set to manylinux2014, manylinux_2_28, musllinux_1_2, etc. when needed"
+	@echo "  PYPI_ZIG=$(PYPI_ZIG)"
+	@echo "  PYPI_MATURIN_ARGS=$(PYPI_MATURIN_ARGS)"
+	@echo "  PYPI_TWINE_ARGS=$(PYPI_TWINE_ARGS)"
+	@echo "  PYPI_REPOSITORY=$(PYPI_REPOSITORY)"
+	@echo "  PYPI_REPOSITORY_URL=$(PYPI_REPOSITORY_URL)"
 
 report-renderer-build:
 	@if command -v cargo >/dev/null 2>&1; then \
@@ -72,17 +99,34 @@ report-renderer-clean:
 	@rm -rf $(RUST_RENDERER_DIR)/target
 	@echo "Cleaned $(RUST_RENDERER_DIR)/target"
 
-pypi-build-check:
-	@if command -v python >/dev/null 2>&1; then \
-		python -m build; \
-	else \
-		echo "python not found"; \
-		exit 1; \
-	fi
+# Use a specific platform tag for Zig to prevent the empty "." tag
+ZIG_PLATFORM := x86_64-unknown-linux-gnu
+
+pypi-wheel:
+	@echo "Building Rust Backend Extension and Main Django Wheel with Zig/Manylinux..."
+	@mkdir -p $(PYPI_DIST_DIR)
+	# Unset the Nix-specific platform override to let Maturin/Zig do their job
+	unset _PYTHON_HOST_PLATFORM; \
+	$(MATURIN_BIN) build --release \
+		--zig \
+		--compatibility manylinux2014 \
+		--out $(PYPI_DIST_DIR)
+		
+pypi-sdist:
+	@mkdir -p $(PYPI_DIST_DIR)
+	@set -e; \
+	args="--out $(PYPI_DIST_DIR)"; \
+	if [ -n "$(PYPI_MATURIN_ARGS)" ]; then \
+		args="$$args $(PYPI_MATURIN_ARGS)"; \
+	fi; \
+	echo "$(MATURIN_BIN) sdist $$args"; \
+	$(MATURIN_BIN) sdist $$args
+
+pypi-build-check: pypi-wheel pypi-sdist
 	@echo \"\\n== dist contents ==\"
-	@ls -lh dist || true
+	@ls -lh $(PYPI_DIST_DIR) || true
 	@echo \"\\n== sdist top-level preview ==\"
-	@python -c "import tarfile, pathlib; sdists=sorted(pathlib.Path('dist').glob('*.tar.gz')); \
+	@$(PYTHON_BIN) -c "import tarfile, pathlib; sdists=sorted(pathlib.Path('$(PYPI_DIST_DIR)').glob('*.tar.gz')); \
 assert sdists, 'No sdist found'; \
 tf=tarfile.open(sdists[-1], 'r:gz'); \
 names=tf.getnames(); \
@@ -91,41 +135,53 @@ tf.close()"
 	@echo \"\\nCheck that lx-data-models/ and tools/report_pdf_renderer_rust/ are absent from the sdist listing above.\"
 
 pypi-clean:
-	@rm -rf dist build *.egg-info
+	@rm -rf $(PYPI_DIST_DIR) build *.egg-info
 	@echo \"Cleaned dist/build artifacts\"
+
+pypi-upload:
+	@set -e; \
+	args="$(PYPI_TWINE_ARGS)"; \
+	if [ -n "$(PYPI_REPOSITORY)" ]; then \
+		args="$$args --repository $(PYPI_REPOSITORY)"; \
+	fi; \
+	if [ -n "$(PYPI_REPOSITORY_URL)" ]; then \
+		args="$$args --repository-url $(PYPI_REPOSITORY_URL)"; \
+	fi; \
+	echo "$(TWINE_BIN) upload $$args $(PYPI_DIST_DIR)/*"; \
+	$(TWINE_BIN) upload $$args $(PYPI_DIST_DIR)/*
 
 mypy-requirement:
 	@timeout $(MYPY_TIMEOUT)s $(MYPY_BIN) endoreg_db/models/requirement
 
 mypy-requirement-files:
-	@python - <<'PY'
-from pathlib import Path
-import subprocess
-import sys
+	@python - <<-'PY'
+	from pathlib import Path
+	import subprocess
+	import sys
 
-root = Path.cwd()
-files = sorted((root / "endoreg_db/models/requirement").rglob("*.py"))
-mypy_bin = root / ".devenv/state/venv/bin/mypy"
-timeout_s = "$(MYPY_TIMEOUT)"
-failed = False
+	root = Path.cwd()
+	files = sorted((root / "endoreg_db/models/requirement").rglob("*.py"))
+	mypy_bin = root / ".devenv/state/venv/bin/mypy"
+	timeout_s = "$(MYPY_TIMEOUT)"
+	failed = False
 
-for file_path in files:
-    rel = file_path.relative_to(root)
-    print(f"== {rel} ==")
-    proc = subprocess.run(
-        ["timeout", f"{timeout_s}s", str(mypy_bin), str(rel)],
-        cwd=root,
-        text=True,
-        capture_output=True,
-    )
-    output = (proc.stdout or "") + (proc.stderr or "")
-    filtered = [ln for ln in output.splitlines() if ln and not ln.startswith("20")]
-    if proc.returncode == 0:
-        print("OK")
-        continue
-    failed = True
-    print("\n".join(filtered[-20:]))
-    break
+	for file_path in files:
+	    rel = file_path.relative_to(root)
+	    print(f"== {rel} ==")
+	    proc = subprocess.run(
+	        ["timeout", f"{timeout_s}s", str(mypy_bin), str(rel)],
+	        cwd=root,
+	        text=True,
+	        capture_output=True,
+	    )
+	    output = (proc.stdout or "") + (proc.stderr or "")
+	    filtered = [ln for ln in output.splitlines() if ln and not ln.startswith("20")]
+	    if proc.returncode == 0:
+	        print("OK")
+	        continue
+	    failed = True
+	    print("\n".join(filtered[-20:]))
+	    break
 
-sys.exit(1 if failed else 0)
-PY
+	sys.exit(1 if failed else 0)
+	PY

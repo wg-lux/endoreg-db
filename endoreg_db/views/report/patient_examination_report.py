@@ -454,7 +454,6 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             template_version=payload.get("template_version", ""),
             template_hash=payload.get("template_hash", ""),
             history_limit=payload.get("history_limit", 5),
-            selected_requirement_set_ids=payload.get("selected_requirement_set_ids"),
         )
 
         persisted_artifacts = None
@@ -492,7 +491,6 @@ class PatientExaminationReportViewSet(viewsets.ModelViewSet):
             "created": result.created,
             "warnings": result.warnings,
             "history_context": result.history_context,
-            "requirement_guidance": result.requirement_guidance,
             "persisted_report_artifact_id": result.persisted_report_artifact_id,
             "persisted_pdf_artifact_id": result.persisted_pdf_artifact_id,
             "persisted_artifacts": persisted_artifacts,

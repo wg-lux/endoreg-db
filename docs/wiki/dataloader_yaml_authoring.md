@@ -67,9 +67,6 @@ Notes:
 ## Validation and Constraints
 Some datasets add validators before save.
 
-Observed special behavior:
-- `Requirement` entries must define at least one `requirement_types` item.
-
 Also note:
 - Translation helper fields like `name_de`, `name_en`, `description_de`, `description_en` are currently stripped by the loader in shared code (temporary compatibility behavior).
 
@@ -134,4 +131,3 @@ This page is intentionally generic. After implementation stabilizes, add model-s
 - command names
 - field-by-field examples
 - known validator rules
-

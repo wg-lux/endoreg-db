@@ -137,7 +137,6 @@ def test_patient_examination_draft_is_empty_after_final_report_save(api_client) 
         editor_payload={"sections": [{"id": "findings"}]},
         rendered_text="Final report text",
         status=PatientExaminationReport.Status.FINAL,
-        evaluate_requirements=False,
     )
 
     response = api_client.get(

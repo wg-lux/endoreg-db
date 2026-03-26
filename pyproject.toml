@@ -14,7 +14,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "0.9.1.6"
+version = "0.9.2.1"
 
 
 classifiers = [
@@ -79,6 +79,8 @@ dependencies = [
     "lx-dtypes",
     "googlemaps>=4.10.0",
     "de-core-news-lg",
+    "numba>=0.63.1",
+    "ziglang>=0.15.2",
 ]
 
 
@@ -133,18 +135,17 @@ module-name = "endoreg_db.endoreg_rust_backend"
 bindings = "pyo3"
 python-source = "."
 python-packages = ["endoreg_db"]
-include = ["endoreg_db/endoreg_rust_backend.pyi"]
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "README.md", format = "sdist" },
+    "endoreg_db/endoreg_rust_backend.pyi",
+    "rust/endoreg_rust_backend/Cargo.toml",
+    "rust/endoreg_rust_backend/src/**/*",
+]
 exclude = [
   ".git",
   ".git/**",
   ".gitmodules",
-  ".direnv",
-  ".direnv/**",
-  ".devenv",
-  ".devenv/**",
-  ".devenv.flake.nix",
-  "devenv.*",
-  "Makefile",
   "tests",
   "tests/**",
   "docs/production",
@@ -221,6 +222,13 @@ django_settings_module = "endoreg_db.config.settings.test"
 "tesseract" = ["setuptools"]
 [tool.uv.sources]
 de-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
+endoreg-rust-backend = { path = "dist/endoreg_rust_backend-0.1.0-cp312-cp312-linux_x86_64.whl" }
+lx-dtypes = { workspace = true, editable = true }
+
+[tool.uv.workspace]
+members = [
+    "lx-data-models",
+]
 
 # [tool.uv.sources]
 # lx-anonymizer = { workspace = true }

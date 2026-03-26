@@ -8,7 +8,6 @@
   ffmpeg-headless,
   tesseract,
   ollama,
-  pythonDeps,
 }:
 
 let
@@ -74,7 +73,6 @@ py.buildPythonApplication {
     pkg-config
   ];
 
-  propagatedBuildInputs = pythonDeps;
 
   buildInputs = [
     ffmpeg-headless

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import yaml
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import OperationalError, transaction
+from django.db import OperationalError, connection, transaction
 
 from endoreg_db.utils.paths import STORAGE_DIR
 
@@ -56,6 +56,20 @@ def load_model_data_from_yaml(command, model_name, metadata, verbose):
     foreign_keys = metadata["foreign_keys"]
     foreign_key_models = metadata["foreign_key_models"]
     validators = metadata.get("validators", [])
+
+    existing_tables = set(connection.introspection.table_names())
+    required_tables = {
+        candidate._meta.db_table for candidate in [model, *foreign_key_models]
+    }
+    missing_tables = sorted(required_tables - existing_tables)
+    if missing_tables:
+        _record_warning(
+            command,
+            f"Skipping load because database tables are not available yet: {', '.join(missing_tables)}",
+            verbose,
+            model_name or model.__name__,
+        )
+        return
 
     _files = [f for f in os.listdir(dir_path) if f.endswith(".yaml")]
     # sort
@@ -118,14 +132,6 @@ def load_data_with_foreign_keys(
 
         fields = dict(raw_fields)
         name = fields.pop("name", None)
-
-        if getattr(model, "_meta", None) and model._meta.model_name == "requirement":
-            requirement_types = fields.get("requirement_types", [])
-
-            if not requirement_types:
-                raise ValueError(
-                    f"Requirement '{name}' must define at least one requirement_types entry."
-                )
 
         ####################
         # TODO REMOVE AFTER TRANSLATION SUPPORT IS ADDED

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
         PatientFindingClassification,
         PatientFindingIntervention,
     )
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    from endoreg_db.utils.links import ModelLinks
 
 
 class PatientFinding(models.Model):
@@ -364,10 +364,10 @@ class PatientFinding(models.Model):
         return self.interventions.filter(is_active=True)
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object.
+        Aggregates and returns all related model instances for linked-model traversal
+        as a ModelLinks object.
 
         This property provides access to:
         - The finding associated with this patient finding
@@ -377,7 +377,7 @@ class PatientFinding(models.Model):
         """
         from typing import List, cast
 
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.utils.links import ModelLinks
 
         # Get the base finding
         findings_list = [self.finding] if self.finding else []
@@ -408,7 +408,7 @@ class PatientFinding(models.Model):
             "List[PatientFinding]", [self]
         )  # Include self for direct patient finding evaluations
 
-        return RequirementLinks(
+        return ModelLinks(
             findings=findings_list,
             finding_classifications=finding_classifications_list,
             finding_classification_choices=finding_classification_choices_list,

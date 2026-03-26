@@ -1,4 +1,4 @@
-# Handoff: `report_pdf_renderer_rust`
+# Handoff: `lx-report-generator`
 
 ## Purpose
 This handoff describes how to:
@@ -6,7 +6,7 @@ This handoff describes how to:
 - publish the renderer as a Cargo crate (`crates.io`)
 
 Renderer source lives at:
-- `tools/report_pdf_renderer_rust/`
+- `lx-report-generator/`
 
 Backend integration entry point:
 - `endoreg_db/services/report_pdf_renderer.py`
@@ -16,21 +16,21 @@ Backend runtime env var:
 
 ## 1. Install For `endoreg_db` Runtime (Repo Root Workflow)
 
-### Option A (Recommended local/dev): use `Makefile` from repo root
+### Recommended local/dev: use the standalone module directly
 From `/home/admin/endoreg-db`:
 
 ```bash
-make report-renderer-install-devenv
+cd lx-report-generator
+direnv allow   # optional
+devenv shell
 ```
 
-This will:
-- build the Rust binary (via `devenv` in `tools/report_pdf_renderer_rust`)
-- install it to `~/.local/bin/report_pdf_renderer`
+This bootstraps the release binary automatically on shell entry if missing.
 
 Then export the runtime path for `endoreg_db`:
 
 ```bash
-eval "$(make -s report-renderer-env)"
+export ENDOREG_REPORT_PDF_RENDERER_BIN="$PWD/target/release/report_pdf_renderer"
 ```
 
 Verify backend can resolve the binary:
@@ -42,12 +42,10 @@ print(get_renderer_binary())
 PY
 ```
 
-### Option B: build inside renderer directory (manual)
+Optional local install:
 ```bash
-cd tools/report_pdf_renderer_rust
-devenv shell
-cargo build --release
-export ENDOREG_REPORT_PDF_RENDERER_BIN="$PWD/target/release/report_pdf_renderer"
+install -m755 ./target/release/report_pdf_renderer ~/.local/bin/report_pdf_renderer
+export ENDOREG_REPORT_PDF_RENDERER_BIN="$HOME/.local/bin/report_pdf_renderer"
 ```
 
 ### Production recommendation
@@ -62,7 +60,7 @@ ENDOREG_REPORT_PDF_RENDERER_BIN=/opt/endoreg/bin/report_pdf_renderer
 The renderer repo contains a `devenv` task that auto-builds the binary on first shell entry if missing:
 
 ```bash
-cd tools/report_pdf_renderer_rust
+cd lx-report-generator
 devenv shell
 ```
 
@@ -81,7 +79,7 @@ If missing, it runs:
 - crate name available on crates.io
 
 Current crate manifest:
-- `tools/report_pdf_renderer_rust/Cargo.toml`
+- `lx-report-generator/Cargo.toml`
 
 ### 3.1. Login to Cargo (one-time per machine)
 Generate a token from crates.io account settings, then:
@@ -94,7 +92,7 @@ cargo login <YOUR_CRATES_IO_TOKEN>
 Inside renderer directory:
 
 ```bash
-cd tools/report_pdf_renderer_rust
+cd lx-report-generator
 cargo check
 cargo test || true
 cargo package
@@ -126,7 +124,7 @@ license = "MIT"
 
 ### 3.4. Publish
 ```bash
-cd tools/report_pdf_renderer_rust
+cd lx-report-generator
 cargo publish
 ```
 
@@ -155,9 +153,10 @@ You still need one of:
 ## 6. Troubleshooting
 
 ### `cargo: command not found`
-Use the provided devenv flow:
+Use the standalone module's Nix shell:
 ```bash
-make report-renderer-build-devenv
+cd /home/admin/endoreg-db/lx-report-generator
+devenv shell
 ```
 
 ### Backend falls back to minimal PDF renderer

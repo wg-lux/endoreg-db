@@ -244,6 +244,63 @@ MIT - see LICENSE
 
 All extended documentation lives in the project **Wiki** → **[Browse the Wiki »](https://github.com/wg-lux/endoreg-db/wiki)**
 
+### Standalone Modules In This Checkout
+
+This repository now vendors two standalone LX modules that should be used directly for report rendering and terminology bundle authoring:
+
+- [lx-report-generator](/home/admin/endoreg-db/lx-report-generator): standalone Rust PDF renderer
+- [lx-terminology-editor](/home/admin/endoreg-db/lx-terminology-editor): local terminology bundle editor and publisher
+
+#### `lx-report-generator` with Nix
+
+From the repo root:
+
+```bash
+cd lx-report-generator
+direnv allow   # optional
+devenv shell
+./target/release/report_pdf_renderer \
+  --input examples/report_payload.json \
+  --output /tmp/report_example.pdf
+```
+
+To wire it into `endoreg_db`:
+
+```bash
+export ENDOREG_REPORT_PDF_RENDERER_BIN="$PWD/target/release/report_pdf_renderer"
+```
+
+#### `lx-terminology-editor` with Nix
+
+From the repo root:
+
+```bash
+cd lx-terminology-editor
+direnv allow   # optional
+devenv shell
+python server.py
+```
+
+Then open:
+
+```text
+http://localhost:4173
+```
+
+The editor can publish a terminology bundle locally under:
+
+```text
+lx-terminology-editor/.published/<publish-name>/<version>/
+```
+
+and writes a registry file at:
+
+```text
+lx-terminology-editor/.published/kb_registry.json
+```
+
+That registry can then be used as an `LX_DTYPES_KB_REGISTRY` source.
+
 ### Optimization Documentation
 - [Complete Optimization Project Report](https://github.com/wg-lux/endoreg-db/wiki/Complete-Optimiztion-Project-Report)
 - [Test Performance Optimization Guide](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-Guide)

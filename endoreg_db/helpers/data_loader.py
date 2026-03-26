@@ -210,15 +210,6 @@ def load_medication_data():
     )
 
 
-def load_requirement_data():
-    """
-    Loads requirement data into the database by invoking the corresponding Django management command.
-    """
-    call_command(
-        "load_requirement_data",
-    )
-
-
 def load_ai_model_label_data():
     """
     Loads AI model label data into the database by invoking the corresponding Django management command.
@@ -272,7 +263,6 @@ def load_data():
     load_finding_data()
     load_examination_indication_data()
     load_medication_data()
-    load_requirement_data()
 
     load_ai_model_label_data()
     load_ai_model_data()

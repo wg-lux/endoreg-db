@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links.requirement_link import RequirementLinks  # Added import
+    from endoreg_db.utils.links import ModelLinks  # Added import
 
     from ...administration.person.patient import Patient
     from ...other.unit import Unit
@@ -231,13 +231,13 @@ class PatientLabValue(models.Model):
             return value
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object.
+        Aggregates and returns all related model instances for linked-model traversal
+        as a ModelLinks object.
         """
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.utils.links import ModelLinks
 
-        return RequirementLinks(
+        return ModelLinks(
             patient_lab_values=[self]  # Include the lab value itself
         )

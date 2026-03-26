@@ -9,7 +9,7 @@ from faker import Faker
 
 from ..person import Person
 
-# Import RequirementLinks and Disease for the links property
+# Import ModelLinks and Disease for the links property
 
 logger = logging.getLogger("patient")
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
         PatientMedication,
         RawPdfFile,
     )
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    from endoreg_db.utils.links import ModelLinks
 
 
 class Patient(Person):
@@ -438,10 +438,10 @@ class Patient(Person):
         return patient_lab_sample
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object. For a Patient, this includes their diseases, associated classification choices,
+        Aggregates and returns all related model instances for linked-model traversal
+        as a ModelLinks object. For a Patient, this includes their diseases, associated classification choices,
         all their lab values, and medication information.
         """
         from endoreg_db.models.medical.disease import (
@@ -457,7 +457,7 @@ class Patient(Person):
         from endoreg_db.models.medical.medication.medication_intake_time import (
             MedicationIntakeTime,
         )
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.utils.links import ModelLinks
 
         # PatientMedication objects are retrieved via self.patientmedication_set
         # PatientLabValue objects are retrieved via self.lab_values
@@ -501,7 +501,7 @@ class Patient(Person):
                 list(pm_instance.intake_times.all())
             )  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
-        return RequirementLinks(
+        return ModelLinks(
             diseases=list(set(actual_diseases)),
             patient_diseases=patient_disease_instances,
             disease_classification_choices=list(set(all_classification_choices)),

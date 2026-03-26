@@ -15,18 +15,18 @@ New durable docs added for this purpose:
 - `docs/wiki/new_setup_overview.md`
 - `docs/wiki/new_setup_general_purpose.md`
 - `docs/wiki/dataloader_yaml_authoring.md`
+- `docs/wiki/hub_ingest_current_state.md`
+- `docs/wiki/hub_ingest_gap_closure.md`
 - `docs/wiki/README.md`
 
 ## Temporary / Implementation-Phase Docs (candidate cleanup after rollout)
 Examples in this repository root:
 - `docs/frontend_reporting_pages_design.md`
 - `docs/frontend_agent_lookup_contract.md`
-- `docs/lookup_legacy_status.md`
 - `docs/frontend_agent_url_contract.md`
 - `docs/handoff_report_pdf_renderer.md`
 - `docs/handoff_pypi_release.md`
 - `docs/pydantic_django_hardening_plan.md`
-- `docs/requirement_evaluation_with_lx_data_models.md`
 
 Keep these while implementing. Remove or merge into wiki docs after rollout.
 

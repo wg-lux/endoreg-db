@@ -181,12 +181,6 @@ def load_medication_data():
     )
 
 
-def load_requirement_data():
-    call_command(
-        "load_requirement_data",
-    )
-
-
 def load_ai_model_label_data():
     if (
         LabelType.objects.exists()
@@ -237,7 +231,6 @@ def load_data():
     load_examination_data()
     load_lab_value_data()
     load_medication_data()
-    load_requirement_data()
 
     load_ai_model_label_data()
     load_ai_model_data()

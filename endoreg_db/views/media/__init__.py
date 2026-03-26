@@ -3,6 +3,11 @@
 from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
 from .frame_media import FrameStreamView
+from .hub import (
+    HubTransferCreateView,
+    HubTransferMediaUploadView,
+    HubTransferStatusView,
+)
 from .patient_media_timeline import PatientMediaTimelineView
 from ..video.reimport import VideoReimportView
 from ..report.reimport import ReportReimportView
@@ -22,6 +27,9 @@ __all__ = [
     "VideoMediaView",
     "PdfMediaView",
     "FrameStreamView",
+    "HubTransferCreateView",
+    "HubTransferMediaUploadView",
+    "HubTransferStatusView",
     "PatientMediaTimelineView",
     "VideoReimportView",
     "ReportReimportView",

@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links.requirement_link import (
-        RequirementLinks,
-    )  # Added RequirementLinks
+    from endoreg_db.utils.links import (
+        ModelLinks,
+    )  # Added ModelLinks
 
     from ..disease import Disease, DiseaseClassificationChoice
 
@@ -42,21 +42,21 @@ class PatientDisease(models.Model):
         return f"{self.patient} - {self.disease}"
 
     @property
-    def links(self) -> "RequirementLinks":
-        from endoreg_db.utils.links.requirement_link import (
-            RequirementLinks,
-        )  # Added RequirementLinks
+    def links(self) -> "ModelLinks":
+        from endoreg_db.utils.links import (
+            ModelLinks,
+        )  # Added ModelLinks
 
         """
-        Aggregates and returns related model instances relevant for requirement evaluation
-        as a RequirementLinks object.
+        Aggregates and returns related model instances for linked-model traversal
+        as a ModelLinks object.
         """
         diseases: list["Disease"] = []
         disease_classification_choices = list(self.classification_choices.all())
         if self.disease:
             diseases.append(self.disease)
 
-        return RequirementLinks(
+        return ModelLinks(
             patient_diseases=[self],
             diseases=diseases,
             disease_classification_choices=disease_classification_choices,

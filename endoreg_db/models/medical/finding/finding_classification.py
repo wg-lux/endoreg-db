@@ -116,7 +116,7 @@ class FindingClassificationChoice(models.Model):
 
     if TYPE_CHECKING:
         from endoreg_db.models import PatientFindingClassification
-        from lx_dtypes.models.knowledge_base.classification_choice_descriptor.ClassificationChoiceDescriptorDataDict import (
+        from lx_dtypes.models.knowledge_base.classification_choice_descriptor import (
             ClassificationChoiceDescriptorDataDict,
         )
 

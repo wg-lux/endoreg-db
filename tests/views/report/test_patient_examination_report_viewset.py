@@ -33,7 +33,7 @@ class PatientExaminationReportViewSetTests(TestCase):
         )
         assert resp.status_code == 400
 
-    def test_save_submission_includes_requirement_guidance(self):
+    def test_save_submission_returns_history_and_warnings(self):
         from endoreg_db.views.report import patient_examination_report as view_module
 
         class _FakeSerializer:
@@ -84,7 +84,6 @@ class PatientExaminationReportViewSetTests(TestCase):
                 created=True,
                 warnings=["nag"],
                 history_context={"previous_examinations": []},
-                requirement_guidance={"advisory_only": True, "requirement_status": {}},
                 persisted_report_artifact_id=None,
                 persisted_pdf_artifact_id=None,
             ),
@@ -113,8 +112,7 @@ class PatientExaminationReportViewSetTests(TestCase):
 
         assert resp.status_code == 201
         data = resp.json()
-        assert "requirement_guidance" in data
-        assert data["requirement_guidance"]["advisory_only"] is True
+        assert data["history_context"] == {"previous_examinations": []}
         assert data["warnings"] == ["nag"]
 
 

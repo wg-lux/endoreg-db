@@ -41,7 +41,6 @@ class SaveReportSubmissionResult:
     created: bool
     warnings: list[str]
     history_context: dict[str, Any]
-    requirement_guidance: dict[str, Any]
     persisted_report_artifact_id: int | None = None
     persisted_pdf_artifact_id: int | None = None
 
@@ -601,8 +600,6 @@ def save_report_submission(
     template_version: str = "",
     template_hash: str = "",
     history_limit: int = 5,
-    selected_requirement_set_ids: list[int] | None = None,
-    evaluate_requirements: bool = True,
 ) -> SaveReportSubmissionResult:
     """
     Transactional persistence skeleton for edited report submissions.
@@ -672,53 +669,8 @@ def save_report_submission(
     history_context = get_patient_examination_history_context(
         patient_examination, limit=history_limit
     )
-    requirement_guidance: dict[str, Any] = {}
 
     requested_status = status or PatientExaminationReport.Status.DRAFT
-
-    if evaluate_requirements:
-        try:
-            from endoreg_db.services.lookup_service import (
-                evaluate_patient_exam_requirement_guidance,
-                load_patient_exam_for_eval,
-            )
-
-            pe_for_eval = load_patient_exam_for_eval(patient_examination.id)
-            requirement_guidance = evaluate_patient_exam_requirement_guidance(
-                pe_for_eval,
-                selected_requirement_set_ids=selected_requirement_set_ids,
-            )
-
-            failed_req_ids = [
-                req_id
-                for req_id, ok in (
-                    requirement_guidance.get("requirement_status", {}) or {}
-                ).items()
-                if ok is False
-            ]
-            failed_set_ids = [
-                rs_id
-                for rs_id, ok in (
-                    requirement_guidance.get("requirement_set_status", {}) or {}
-                ).items()
-                if ok is False
-            ]
-            if failed_req_ids:
-                warnings.append(
-                    f"Requirement guidance: {len(failed_req_ids)} requirement(s) are currently unmet."
-                )
-            if (
-                requested_status == PatientExaminationReport.Status.FINAL
-                and failed_set_ids
-            ):
-                warnings.append(
-                    "Final report saved with guideline deviations. "
-                    "This is advisory-only and does not block clinician workflow."
-                )
-        except Exception as exc:
-            warnings.append(
-                f"Requirement guidance unavailable ({type(exc).__name__}). Report save continued."
-            )
 
     report.template_name = template_name
     report.template_version = template_version or ""
@@ -772,7 +724,6 @@ def save_report_submission(
         created=created,
         warnings=warnings,
         history_context=history_context,
-        requirement_guidance=requirement_guidance,
         persisted_report_artifact_id=persisted_report_artifact_id,
         persisted_pdf_artifact_id=persisted_pdf_artifact_id,
     )

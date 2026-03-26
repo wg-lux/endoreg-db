@@ -1,6 +1,11 @@
 from django.urls import path
 
 from endoreg_db.views.media.frame_media import FrameStreamView
+from endoreg_db.views.media.hub import (
+    HubTransferCreateView,
+    HubTransferMediaUploadView,
+    HubTransferStatusView,
+)
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
@@ -57,6 +62,21 @@ from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
 # Simplified Meta and Validation Endpoints
 
 urlpatterns = [
+    path(
+        "media/hub/transfers/",
+        HubTransferCreateView.as_view(),
+        name="hub-transfer-create",
+    ),
+    path(
+        "media/hub/transfers/<str:transfer_key>/status/",
+        HubTransferStatusView.as_view(),
+        name="hub-transfer-status",
+    ),
+    path(
+        "media/hub/transfers/<str:transfer_key>/media/",
+        HubTransferMediaUploadView.as_view(),
+        name="hub-transfer-media-upload",
+    ),
     path(
         "media/patients/<int:patient_id>/timeline/",
         PatientMediaTimelineView.as_view(),

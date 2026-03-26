@@ -32,7 +32,10 @@ The current intended flow is:
 
 ## Filewatcher Operation Ledger
 
-The management command at `endoreg_db/management/commands/start_filewatcher.py` still points to `scripts/file_watcher.py`, but that script is currently missing from the repository. The concrete filesystem behavior below is therefore derived from the import services the watcher is intended to call:
+The management command at `endoreg_db/management/commands/start_filewatcher.py`
+loads `scripts/file_watcher.py` from this repository. The watcher keeps
+filesystem-based dropoff ingestion available for trusted local workflows and
+delegates concrete processing to the same import services used elsewhere:
 
 - `VideoImportService.import_and_anonymize(...)`
 - `ReportImportService.import_and_anonymize(...)`

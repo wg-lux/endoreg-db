@@ -5,7 +5,7 @@ from datetime import datetime as dt
 if TYPE_CHECKING:
     from .patient_medication import PatientMedication
     from ..medication import MedicationSchedule
-    from ....utils.links.requirement_link import RequirementLinks  # Added
+    from ....utils.links import ModelLinks  # Added
     from ..medication import (
         Medication,
         MedicationIndication,
@@ -32,11 +32,11 @@ class PatientMedicationSchedule(models.Model):
         pass
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Aggregates RequirementLinks from all PatientMedication instances in this schedule.
+        Aggregates ModelLinks from all PatientMedication instances in this schedule.
         """
-        from ....utils.links.requirement_link import RequirementLinks
+        from ....utils.links import ModelLinks
 
         aggregated_medications: List["Medication"] = []
         aggregated_medication_indications: List["MedicationIndication"] = []
@@ -57,7 +57,7 @@ class PatientMedicationSchedule(models.Model):
                 pm_links_obj.medication_intake_times
             )
 
-        return RequirementLinks(
+        return ModelLinks(
             medications=list(set(aggregated_medications)),
             medication_indications=list(set(aggregated_medication_indications)),
             medication_intake_times=list(set(aggregated_medication_intake_times)),

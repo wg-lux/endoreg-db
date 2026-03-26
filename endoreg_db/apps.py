@@ -10,10 +10,12 @@ class EndoregDbConfig(AppConfig):
 
     def ready(self):
         """
-        Performs application startup tasks when the Django app is fully loaded.
+        Finalize app startup integration hooks.
 
-        This method imports media-related model modules to ensure they are registered
-        and ready for use when the application starts.
+        This currently ensures auth-related settings are normalized and, for
+        runtime server entrypoints only, attaches the reconciliation service to
+        Django's `connection_created` signal so startup repair runs after the
+        first database connection becomes available.
         """
         ensure_keycloak_settings()
         from endoreg_db.services.reconciliation import (

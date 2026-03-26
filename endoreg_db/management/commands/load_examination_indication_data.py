@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import connection, transaction
 
 from ...data import (
     EXAMINATION_INDICATION_CLASSIFICATION_CHOICE_DATA_DIR,
@@ -172,6 +172,31 @@ class Command(BaseCommand):
             _metadata = IMPORT_METADATA[model_name]
             load_model_data_from_yaml(self, model_name, _metadata, verbose)
 
+    def _required_tables_available(self, *, verbose: bool) -> bool:
+        existing_tables = set(connection.introspection.table_names())
+        required_tables = {
+            model._meta.db_table
+            for model in (
+                Examination,
+                ExaminationIndication,
+                ExaminationIndicationClassification,
+                FindingIntervention,
+                InformationSource,
+            )
+        }
+        missing_tables = sorted(required_tables - existing_tables)
+        if not missing_tables:
+            return True
+
+        if verbose:
+            self.stdout.write(
+                self.style.WARNING(
+                    "[dtypes] Skipping load because database tables are not available yet: "
+                    + ", ".join(missing_tables)
+                )
+            )
+        return False
+
     def _upsert_dtypes_indications(
         self,
         *,
@@ -302,6 +327,9 @@ class Command(BaseCommand):
         module_name: str,
         strict: bool,
     ) -> None:
+        if not self._required_tables_available(verbose=verbose):
+            return
+
         try:
             kb = _load_dtypes_knowledge_base(module_name)
         except Exception as exc:

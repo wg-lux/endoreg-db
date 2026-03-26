@@ -1,4 +1,4 @@
-from .examination import Examination, ExaminationRequirementSet
+from .examination import Examination
 from .examination_indication import (
     ExaminationIndication,
     ExaminationIndicationClassification,
@@ -10,7 +10,6 @@ from .examination_type import ExaminationType
 
 __all__ = [
     "Examination",
-    "ExaminationRequirementSet",
     "ExaminationType",
     "ExaminationTime",
     "ExaminationTimeType",

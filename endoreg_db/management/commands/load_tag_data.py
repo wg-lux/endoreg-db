@@ -22,9 +22,7 @@ IMPORT_METADATA = {
 
 
 class Command(BaseCommand):
-    help = """Load all requirement-related YAML files from their respective directories
-    into the database, including RequirementType, RequirementOperator, Requirement, 
-    RequirementSetType, and RequirementSet models"""
+    help = "Load tag YAML files into the database."
 
     def add_arguments(self, parser):
         """
@@ -41,7 +39,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """
-        Executes data import for requirement models from YAML files.
+        Executes data import for tag models from YAML files.
 
         Retrieves the verbosity setting from the command options and iterates over each model
         listed in IMPORT_MODELS. For each model, it obtains the corresponding metadata from

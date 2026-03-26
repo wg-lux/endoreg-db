@@ -23,10 +23,30 @@ _reconciliation_ran = False
 
 
 class ReconciliationService:
+    """Startup repair service for media-processing files and state.
+
+    The service is intentionally conservative: it only repairs well-understood
+    inconsistencies that can be inferred from on-disk artifacts and persisted
+    processing state. It is meant to run once when a runtime process starts so
+    interrupted imports do not leave the application stuck behind stale locks,
+    broken raw-file links, or permanently "processing" state flags.
+    """
+
     lock_filename = ".reconciliation.lock"
     artifact_stale_seconds = STALE_LOCK_SECONDS
 
     def run_once(self) -> None:
+        """Run reconciliation at most once per process.
+
+        The method short-circuits when reconciliation has already completed in
+        this process, when it is explicitly disabled via environment variable,
+        or when another process is already holding the startup lock.
+
+        Database bootstrap races are tolerated: if the schema is not ready yet,
+        reconciliation is skipped and a warning is logged instead of crashing
+        the process during startup.
+        """
+
         global _reconciliation_ran
         if _reconciliation_ran:
             return
@@ -43,12 +63,16 @@ class ReconciliationService:
             logger.warning("Skipping reconciliation during startup: %s", exc)
 
     def run(self) -> None:
+        """Execute the full recovery pass in a deterministic order."""
+
         self.clear_stale_lock_files()
         self.relink_broken_video_raw_files()
         self.cleanup_orphaned_artifacts()
         self.reset_incomplete_processing_states()
 
     def clear_stale_lock_files(self) -> int:
+        """Delete abandoned import lock files older than the stale threshold."""
+
         now = self._now()
         removed = 0
         for root in (data_paths["import_video"], data_paths["import_report"]):
@@ -64,6 +88,8 @@ class ReconciliationService:
         return removed
 
     def cleanup_orphaned_artifacts(self) -> int:
+        """Remove stale temporary and partial artifacts from media directories."""
+
         removed = 0
         scan_dirs = (
             data_paths["sensitive_video"],
@@ -84,6 +110,14 @@ class ReconciliationService:
         return removed
 
     def relink_broken_video_raw_files(self) -> int:
+        """Repair `VideoFile.raw_file` pointers whose referenced file is missing.
+
+        The service first looks for deterministic candidates such as the
+        canonical `<video_hash>.<suffix>` name and then falls back to content
+        hash matches in the sensitive video directory. Ambiguous matches are
+        skipped rather than guessed.
+        """
+
         recovered = 0
         sensitive_dir = Path(data_paths["sensitive_video"])
         storage_root = Path(data_paths["storage"])
@@ -149,6 +183,14 @@ class ReconciliationService:
         return recovered
 
     def reset_incomplete_processing_states(self) -> int:
+        """Reset media states that were left mid-processing by interrupted work.
+
+        Only rows that still claim `processing_started=True` while lacking the
+        expected downstream completion flags are reset. A failure entry is also
+        recorded in `ProcessingHistory` so follow-up processing can reason about
+        the interrupted attempt.
+        """
+
         reset = 0
 
         video_states = VideoState.objects.select_related("video_file").filter(
@@ -363,6 +405,14 @@ class _exclusive_lock:
 
 
 def should_run_startup_reconciliation(argv: list[str] | None = None) -> bool:
+    """Return whether reconciliation should attach for the current entrypoint.
+
+    Reconciliation is runtime recovery logic, not migration or management
+    command logic. The startup hook therefore runs only for server-style
+    entrypoints and is suppressed for pytest and one-off management commands
+    such as `migrate` or `load_base_db_data`.
+    """
+
     argv = argv or sys.argv
     executable = Path(argv[0]).name if argv else ""
     if (
@@ -372,14 +422,13 @@ def should_run_startup_reconciliation(argv: list[str] | None = None) -> bool:
     ):
         return False
     if len(argv) < 2:
-        return True
-    blocked = {
-        "makemigrations",
-        "migrate",
-        "collectstatic",
-        "shell",
-        "dbshell",
-        "test",
-        "pytest",
+        return False
+
+    runtime_commands = {
+        "runserver",
+        "run_gunicorn",
+        "gunicorn",
+        "uvicorn",
+        "daphne",
     }
-    return argv[1] not in blocked
+    return argv[1] in runtime_commands

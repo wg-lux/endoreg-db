@@ -1,0 +1,434 @@
+from __future__ import annotations
+
+import hashlib
+from unittest.mock import patch
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
+
+from endoreg_db.models import Center, NetworkNode, RawPdfFile, TransferJob, VideoFile
+from endoreg_db.models.state.processing_history.processing_history import (
+    ProcessingHistory,
+)
+from tests.helpers.data_loader import load_gender_data
+
+
+class HubTransferEndpointTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        load_gender_data()
+
+    def setUp(self):
+        self.center = Center.objects.create(name="center-a", display_name="Center A")
+        self.source_node = NetworkNode.objects.create(
+            display_name="Site A Node",
+            node_key="site-a-node",
+            role=NetworkNode.Role.SITE_NODE,
+            owning_center=self.center,
+        )
+        self.source_secret = "site-a-secret"
+        self.source_node.set_shared_secret(self.source_secret)
+        self.source_node.save(update_fields=["shared_secret_hash"])
+        self.target_node = NetworkNode.objects.create(
+            display_name="Study Hub",
+            node_key="study-hub",
+            role=NetworkNode.Role.CENTRAL_HUB,
+        )
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {
+            "HTTP_X_NETWORK_NODE_KEY": self.source_node.node_key,
+            "HTTP_X_NETWORK_NODE_SECRET": self.source_secret,
+        }
+
+    @staticmethod
+    def _sha256(content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    def _video_transfer_payload(
+        self,
+        *,
+        transfer_key: str,
+        video_hash: str,
+        transfer_mode: str = "metadata_only",
+        processing_policy: str = "reprocess_if_missing_outputs",
+        sender_processing_success: bool = False,
+        processed_video_hash: str | None = None,
+        examination_date: str = "2026-03-20",
+    ) -> dict:
+        video_file_payload = {
+            "video_hash": video_hash,
+            "original_file_name": "example.mp4",
+            "suffix": ".mp4",
+            "fps": 25.0,
+            "duration": 12.5,
+            "frame_count": 300,
+            "width": 1280,
+            "height": 720,
+            "meta": {"origin": "site-a"},
+        }
+        if processed_video_hash:
+            video_file_payload["processed_video_hash"] = processed_video_hash
+
+        return {
+            "transfer_key": transfer_key,
+            "source_node_key": self.source_node.node_key,
+            "target_node_key": self.target_node.node_key,
+            "source_center_key": self.center.center_key,
+            "resource_kind": "video",
+            "resource_hash": video_hash,
+            "transfer_mode": transfer_mode,
+            "processing_policy": processing_policy,
+            "processing_intent": "sender_requests_state_preservation",
+            "cleanup_policy": "retain_all",
+            "resource_rows": {
+                "video_file": video_file_payload,
+                "sensitive_meta": {
+                    "patient_first_name": "Max",
+                    "patient_last_name": "Mustermann",
+                    "patient_dob": "1990-01-01",
+                    "examination_date": examination_date,
+                },
+                "video_state": {
+                    "processing_started": True,
+                    "frames_extracted": True,
+                    "sensitive_meta_processed": True,
+                },
+                "processing_history": {
+                    "file_hash": video_hash,
+                    "success": True,
+                },
+            },
+            "processing_snapshot": {
+                "sender_processing_success": sender_processing_success,
+            },
+        }
+
+    def _report_transfer_payload(
+        self,
+        *,
+        transfer_key: str,
+        pdf_hash: str,
+        transfer_mode: str = "metadata_only",
+        processing_policy: str = "reprocess_if_missing_outputs",
+        sender_processing_success: bool = False,
+    ) -> dict:
+        return {
+            "transfer_key": transfer_key,
+            "source_node_key": self.source_node.node_key,
+            "target_node_key": self.target_node.node_key,
+            "source_center_key": self.center.center_key,
+            "resource_kind": "report",
+            "resource_hash": pdf_hash,
+            "transfer_mode": transfer_mode,
+            "processing_policy": processing_policy,
+            "processing_intent": "sender_requests_state_preservation",
+            "cleanup_policy": "retain_all",
+            "resource_rows": {
+                "raw_pdf_file": {
+                    "pdf_hash": pdf_hash,
+                    "text": "Clinical report",
+                },
+                "sensitive_meta": {
+                    "patient_first_name": "Max",
+                    "patient_last_name": "Mustermann",
+                    "patient_dob": "1990-01-01",
+                    "examination_date": "2026-03-20",
+                },
+                "raw_pdf_state": {
+                    "processing_started": True,
+                    "text_meta_extracted": True,
+                },
+                "processing_history": {
+                    "file_hash": pdf_hash,
+                    "success": sender_processing_success,
+                },
+            },
+            "processing_snapshot": {
+                "sender_processing_success": sender_processing_success,
+            },
+        }
+
+    def test_transfer_registration_creates_placeholder_video_and_waits_for_media(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__hash-1",
+            video_hash="hash-1",
+        )
+
+        response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["transfer_status"] == "awaiting_media"
+        assert body["processing_decision"] == "wait_for_missing_media"
+
+        video = VideoFile.objects.get(video_hash="hash-1")
+        assert video.center == self.center
+        assert video.original_file_name == "example.mp4"
+        assert video.state is not None
+        assert video.state.processing_started is True
+        assert ProcessingHistory.objects.get(file_hash="hash-1").success is True
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        assert transfer_job.case_resolution_status == "linked"
+        assert transfer_job.linked_patient_id is not None
+        assert transfer_job.linked_patient_examination_id is not None
+
+    def test_transfer_registration_requires_matching_node_credentials(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__auth-fail",
+            video_hash="hash-auth-fail",
+        )
+
+        response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            HTTP_X_NETWORK_NODE_KEY="wrong-node",
+            HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
+        )
+
+        assert response.status_code == 403, response.content
+        assert not TransferJob.objects.filter(
+            transfer_key="site-a__video__auth-fail"
+        ).exists()
+
+    def test_transfer_registration_is_idempotent_for_same_transfer_key(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__hash-2",
+            video_hash="hash-2",
+        )
+
+        first = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        second = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert first.status_code == 201, first.content
+        assert second.status_code == 200, second.content
+        assert first.json()["id"] == second.json()["id"]
+        assert (
+            TransferJob.objects.filter(transfer_key=payload["transfer_key"]).count()
+            == 1
+        )
+
+    def test_transfer_skips_reprocessing_when_local_success_exists(self):
+        video = VideoFile.objects.create(
+            video_hash="hash-3",
+            center=self.center,
+            processed_file=SimpleUploadedFile(
+                "hash-3-processed.mp4",
+                b"processed-video",
+                content_type="video/mp4",
+            ),
+        )
+        ProcessingHistory.mark_success(file_hash=video.video_hash, obj=video)
+
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__hash-3",
+            video_hash="hash-3",
+        )
+
+        response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["transfer_status"] == "applied"
+        assert body["processing_decision"] == "skip_processing_existing_success"
+
+        status_response = self.client.get(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/status/",
+            **self._auth_headers(),
+        )
+        assert status_response.status_code == 200, status_response.content
+        assert (
+            status_response.json()["processing_decision"]
+            == "skip_processing_existing_success"
+        )
+
+    def test_transfers_for_same_patient_join_by_sensitive_meta_hash_inputs(self):
+        first_payload = self._video_transfer_payload(
+            transfer_key="site-a__video__join-1",
+            video_hash="join-hash-1",
+        )
+        second_payload = self._video_transfer_payload(
+            transfer_key="site-a__video__join-2",
+            video_hash="join-hash-2",
+            examination_date="2026-03-21",
+        )
+
+        first_response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=first_payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        second_response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=second_payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+
+        assert first_response.status_code == 201, first_response.content
+        assert second_response.status_code == 201, second_response.content
+
+        first_transfer = TransferJob.objects.get(
+            transfer_key=first_payload["transfer_key"]
+        )
+        second_transfer = TransferJob.objects.get(
+            transfer_key=second_payload["transfer_key"]
+        )
+
+        assert first_transfer.case_resolution_status == "linked"
+        assert second_transfer.case_resolution_status == "linked"
+        assert first_transfer.linked_patient_id == second_transfer.linked_patient_id
+        assert (
+            first_transfer.linked_patient_examination_id
+            != second_transfer.linked_patient_examination_id
+        )
+
+    def test_raw_video_upload_attaches_media_and_triggers_processing(self):
+        raw_bytes = b"raw-video-bytes"
+        video_hash = self._sha256(raw_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__raw-upload",
+            video_hash=video_hash,
+        )
+
+        create_response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        with patch(
+            "endoreg_db.services.hub.transfers.VideoImportService.import_and_anonymize"
+        ) as mocked_import:
+            mocked_import.return_value = VideoFile.objects.get(video_hash=video_hash)
+
+            upload_response = self.client.post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "raw",
+                    "file": SimpleUploadedFile(
+                        "source.mp4",
+                        raw_bytes,
+                        content_type="video/mp4",
+                    ),
+                },
+                **self._auth_headers(),
+            )
+
+        assert upload_response.status_code == 200, upload_response.content
+        mocked_import.assert_called_once()
+        import_kwargs = mocked_import.call_args.kwargs
+        assert import_kwargs["retry"] is True
+        assert import_kwargs["center_name"] == self.center.name
+
+        body = upload_response.json()
+        assert body["transfer_status"] == "applied"
+        assert body["processing_decision"] == "start_processing"
+
+        video = VideoFile.objects.get(video_hash=video_hash)
+        assert video.raw_file.name.endswith(".mp4")
+
+    def test_processed_video_upload_preserves_sender_state(self):
+        raw_hash = self._sha256(b"raw-video")
+        processed_bytes = b"processed-video"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__processed-upload",
+            video_hash=raw_hash,
+            transfer_mode="metadata_and_processed_media",
+            processing_policy="preserve_processing_state",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+
+        create_response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        upload_response = self.client.post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={
+                "media_role": "processed",
+                "file": SimpleUploadedFile(
+                    "processed.mp4",
+                    processed_bytes,
+                    content_type="video/mp4",
+                ),
+            },
+            **self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 200, upload_response.content
+        body = upload_response.json()
+        assert body["transfer_status"] == "applied"
+        assert body["processing_decision"] == "skip_processing_preserved_state"
+
+        video = VideoFile.objects.get(video_hash=raw_hash)
+        assert video.processed_video_hash == processed_hash
+        assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
+
+    def test_raw_report_upload_attaches_media_and_triggers_processing(self):
+        report_bytes = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+        pdf_hash = self._sha256(report_bytes)
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__raw-upload",
+            pdf_hash=pdf_hash,
+        )
+
+        create_response = self.client.post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            **self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        with patch(
+            "endoreg_db.services.hub.transfers.ReportImportService.import_and_anonymize"
+        ) as mocked_import:
+            mocked_import.return_value = RawPdfFile.objects.get(pdf_hash=pdf_hash)
+
+            upload_response = self.client.post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "raw",
+                    "file": SimpleUploadedFile(
+                        "report.pdf",
+                        report_bytes,
+                        content_type="application/pdf",
+                    ),
+                },
+                **self._auth_headers(),
+            )
+
+        assert upload_response.status_code == 200, upload_response.content
+        mocked_import.assert_called_once()
+        assert upload_response.json()["processing_decision"] == "start_processing"

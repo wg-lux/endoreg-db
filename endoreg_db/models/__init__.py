@@ -27,6 +27,7 @@ from .administration import (
     Profession,
     Qualification,
     QualificationType,
+    NetworkNode,
     ReferenceProduct,
     ScheduledDays,
     Shift,
@@ -76,7 +77,6 @@ from .medical import (
     ExaminationIndication,
     ExaminationIndicationClassification,
     ExaminationIndicationClassificationChoice,
-    ExaminationRequirementSet,
     ExaminationTime,
     ExaminationTimeType,
     ExaminationType,
@@ -138,13 +138,6 @@ from .other import (
     Unit,
     Waste,
 )
-from .requirement import (
-    Requirement,
-    RequirementOperator,
-    RequirementSet,
-    RequirementSetType,
-    RequirementType,
-)
 from .state import (
     AnonymizationState,
     LabelVideoSegmentState,
@@ -160,6 +153,7 @@ from .report import (
 from .aidataset import (
     AIDataSet,
 )
+from .hub import TransferJob, UploadJob
 
 
 __all__ = [
@@ -168,6 +162,7 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ApplicationSettings",
+    "NetworkNode",
     "ModelType",
     # Case
     "Case",
@@ -224,6 +219,8 @@ __all__ = [
     "VideoMetadata",
     "VideoProcessingHistory",
     "PatientExaminationReport",
+    "TransferJob",
+    "UploadJob",
     ######## Medical ########
     # Disease
     "Disease",
@@ -237,7 +234,6 @@ __all__ = [
     "Contraindication",
     # Examination
     "Examination",
-    "ExaminationRequirementSet",
     "ExaminationType",
     "ExaminationIndication",
     "ExaminationIndicationClassificationChoice",
@@ -313,12 +309,6 @@ __all__ = [
     "Unit",
     "EmissionFactor",
     "Tag",
-    ###### Requirement ######
-    "Requirement",
-    "RequirementType",
-    "RequirementOperator",
-    "RequirementSet",
-    "RequirementSetType",
     ####### State ########
     "SensitiveMetaState",
     "VideoState",

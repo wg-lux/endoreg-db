@@ -1,19 +1,24 @@
 from django.core.management import BaseCommand, call_command
+from django.db import connection
+from django.db.migrations.recorder import MigrationRecorder
 
 
 class Command(BaseCommand):
     help = "Run all data loading commands in the correct order"
+
+    @staticmethod
+    def _endoreg_db_schema_is_ready() -> bool:
+        recorder = MigrationRecorder(connection)
+        if not recorder.has_table():
+            return False
+
+        return any(app == "endoreg_db" for app, _name in recorder.applied_migrations())
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output for all commands",
-        )
-        parser.add_argument(
-            "--include-legacy-requirements",
-            action="store_true",
-            help="Include legacy requirement graph seed data (compatibility only).",
         )
 
     def handle(self, *args, **options):
@@ -28,6 +33,14 @@ class Command(BaseCommand):
         verbose = True
 
         self.stdout.write(self.style.SUCCESS("Populating base db models with data..."))
+
+        if not self._endoreg_db_schema_is_ready():
+            self.stdout.write(
+                self.style.WARNING(
+                    "Skipping base data load because endoreg_db migrations have not been applied yet."
+                )
+            )
+            return
 
         out = self.stdout
 
@@ -67,16 +80,6 @@ class Command(BaseCommand):
         )
         call_command("load_lab_value_data", stdout=out, verbose=verbose)
         call_command("load_medication_data", stdout=out, verbose=verbose)
-
-        if options.get("include_legacy_requirements", False):
-            call_command("load_requirement_data", stdout=out, verbose=verbose)
-        else:
-            self.stdout.write(
-                self.style.WARNING(
-                    "Skipping load_requirement_data (legacy compatibility). "
-                    "Use --include-legacy-requirements to enable."
-                )
-            )
 
         # Load AI Model Data
         call_command("load_ai_model_label_data", stdout=out, verbose=verbose)

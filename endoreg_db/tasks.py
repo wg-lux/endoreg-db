@@ -15,3 +15,10 @@ def run_video_post_validation_rebuild_task(
         int(video_id),
         only_validated=bool(only_validated),
     )
+
+
+@shared_task(name="endoreg_db.process_upload_job")
+def process_upload_job(job_id: str) -> bool:
+    from endoreg_db.services.hub import process_upload_job as _process_upload_job
+
+    return _process_upload_job(str(job_id))

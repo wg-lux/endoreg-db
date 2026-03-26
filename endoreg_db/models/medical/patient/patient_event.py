@@ -46,9 +46,9 @@ class PatientEvent(models.Model):
         Returns a dictionary of links related to this PatientEvent.
         Currently, it only includes the patient and event.
         """
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.utils.links import ModelLinks
 
-        return RequirementLinks(patient_events=[self], events=[self.event])
+        return ModelLinks(patient_events=[self], events=[self.event])
 
     @property
     def date(self):

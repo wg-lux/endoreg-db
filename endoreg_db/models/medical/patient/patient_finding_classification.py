@@ -6,7 +6,7 @@ from django.db import models
 
 # Corrected imports for type hints
 if TYPE_CHECKING:
-    from lx_dtypes.models.ledger.p_finding_classification_choice_descriptor.DataDict import (
+    from lx_dtypes.models.ledger.p_finding_classification_choice_descriptor import (
         PFindingClassificationChoiceDescriptorDataDict,
     )
 

@@ -17,7 +17,6 @@ from ..helpers.data_loader import (
     load_lab_value_data,
     load_pdf_type_data,
     load_report_reader_flag_data,
-    load_requirement_data,
     load_information_source_data,
     load_unit_data,
     load_risk_data,
@@ -219,15 +218,6 @@ class TestDataLoader(TestCase):
             load_medication_data()
         except Exception as e:
             self.fail(f"load_medication_data command failed: {e}")
-
-    def test_load_requirement_data(self):
-        """
-        Test if the load_requirement_data command runs without errors.
-        """
-        try:
-            load_requirement_data()
-        except Exception as e:
-            self.fail(f"load_requirement_data command failed: {e}")
 
     def test_load_ai_model_label_data(self):
         """

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    from endoreg_db.utils.links import ModelLinks
 
     from ...media import (
         AnonymExaminationReport,
@@ -198,10 +198,10 @@ class PatientExamination(models.Model):
             return self.objects.filter(pk=pk).first()
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object.
+        Aggregates and returns all related model instances for linked-model traversal
+        as a ModelLinks object.
 
         This includes:
         - All findings associated with this examination
@@ -210,7 +210,7 @@ class PatientExamination(models.Model):
         - Examination indications and their choices
         - Patient lab values
         """
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
+        from endoreg_db.utils.links import ModelLinks
 
         # Get all PatientExaminationIndication instances linked to this PatientExamination
         patient_exam_indications = self.indications.all()
@@ -262,7 +262,7 @@ class PatientExamination(models.Model):
                 if pf_intervention.intervention:
                     finding_interventions_list.append(pf_intervention.intervention)
 
-        return RequirementLinks(
+        return ModelLinks(
             patient_examinations=[self],  # Add the instance itself
             examinations=current_examination,  # Add the related Examination model
             examination_indications=examination_indications_list,

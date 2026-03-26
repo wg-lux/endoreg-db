@@ -23,7 +23,7 @@ repos:
         types: [python]
       - id: django-startup-smoke
         name: django startup smoke
-        entry: python scripts/check_django_startup_imports.py
+        entry: .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
         language: system
         pass_filenames: false
       - id: deployment-settings-contract

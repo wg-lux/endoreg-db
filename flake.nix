@@ -1,6 +1,13 @@
 {
   description = "Pure Nix packaging for endoreg-db";
 
+  nixConfig = {
+    extra-substituters = [ "https://cache.nixos-cuda.org" ];
+    extra-trusted-public-keys = [
+      "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -30,6 +37,7 @@
           inherit system;
           config.allowUnfree = true;
         };
+        numbaSupport = pkgs.callPackage ./nix/numba-support.nix { };
 
         workspace = uv2nix.lib.workspace.loadWorkspace {
           workspaceRoot = ./.;
@@ -50,7 +58,7 @@
                 (
                   final: prev: {
                     numba = prev.numba.overrideAttrs (old: {
-                      buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.onetbb ];
+                      buildInputs = (old.buildInputs or [ ]) ++ [ numbaSupport ];
                     });
                   }
                 )
@@ -59,19 +67,8 @@
 
         resolvedUvDeps = pythonSet.resolveVirtualEnv workspace.deps.default;
 
-        pythonDeps =
-          builtins.filter
-            (
-              drv:
-              let
-                depName = drv.pname or (pkgs.lib.getName drv);
-              in
-              depName != "endoreg-db" && depName != "endoreg_db"
-            )
-            resolvedUvDeps;
-
         base = pkgs.callPackage ./package.nix {
-          inherit pythonDeps;
+          inherit pkgs;
         };
         server_env = pkgs.python312.withPackages (_: [ base ]);
         server = pkgs.writeShellApplication {

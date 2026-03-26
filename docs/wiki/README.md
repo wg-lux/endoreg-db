@@ -9,10 +9,11 @@ These files are intended to become the canonical documentation after implementat
 - `docs/wiki/new_setup_overview.md`: what the new setup consists of and how pieces fit together
 - `docs/wiki/new_setup_general_purpose.md`: general purpose and operating model of the setup
 - `docs/wiki/dataloader_yaml_authoring.md`: how to create YAML files consumed by the dataloader
+- `docs/wiki/hub_ingest_current_state.md`: current capabilities and limits of hub ingest, including centre identity, watcher/API ingest, and study-network implications
+- `docs/wiki/hub_ingest_gap_closure.md`: target transfer contract for study-network hub ingest, including row-plus-media synchronization, processing replay rules, and central cleanup policy
 
 ## Migration To Real Wiki
 After rollout:
 1. Copy these pages to the project wiki.
 2. Replace root `docs/` implementation notes with links to the wiki.
 3. Delete obsolete handoff/design drafts.
-

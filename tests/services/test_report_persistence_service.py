@@ -29,7 +29,6 @@ def test_save_report_submission_final_purges_patient_examination_draft() -> None
         editor_payload={"sections": [{"id": "findings"}]},
         rendered_text="Final report text",
         status=PatientExaminationReport.Status.FINAL,
-        evaluate_requirements=False,
     )
 
     assert result.report.status == PatientExaminationReport.Status.FINAL
@@ -43,15 +42,14 @@ def test_save_report_submission_final_purges_patient_examination_draft() -> None
 @pytest.mark.xfail(
     reason="Needs minimal clinical fixtures + migration in test db for PatientExaminationReport"
 )
-def test_save_report_submission_is_advisory_for_unmet_requirements_scaffold():
+def test_save_report_submission_template_validation_warning_scaffold():
     """
     Scaffold for report persistence service.
 
     Target assertions:
     - persists report + normalized data first
-    - computes requirement guidance after persistence
-    - unmet requirements produce warnings
-    - final save remains non-blocking (advisory only)
+    - template/runtime validation warnings remain advisory
+    - final save remains non-blocking for clinician workflow
     """
     raise NotImplementedError
 

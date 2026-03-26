@@ -38,8 +38,6 @@ class TestDataLoaderComponents(TestCase):
         call_command("load_lab_value_data", verbose=verbose)
         call_command("load_medication_data", verbose=verbose)
 
-        call_command("load_requirement_data", verbose=verbose)
-
         # Load AI Model Data
         call_command("load_ai_model_label_data", verbose=verbose)
         call_command("load_ai_model_data", verbose=verbose)

@@ -5,7 +5,7 @@ from typing import Any
 from endoreg_db.config.env import env_bool, env_str
 
 from .base import *  # noqa: F401,F403
-from .base import BASE_DIR
+from .base import BASE_DIR, INSTALLED_APPS as BASE_INSTALLED_APPS
 
 TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
 TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,11 +101,6 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
 
     # MIGRATION_MODULES = DisableMigrations()
 
-INSTALLED_APPS = [
+INSTALLED_APPS = BASE_INSTALLED_APPS + [
     "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "endoreg_db",
 ]

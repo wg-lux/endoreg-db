@@ -55,6 +55,7 @@ LANGUAGES = [
 # Core apps
 INSTALLED_APPS = [
     "endoreg_db.apps.EndoregDbConfig",
+    "lx_dtypes.django.apps.LxDtypesDjangoConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

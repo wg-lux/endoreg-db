@@ -4,9 +4,9 @@ from django.db import models
 
 # Added imports for type hints
 if TYPE_CHECKING:
-    from ....utils.links.requirement_link import (
-        RequirementLinks,
-    )  # Added RequirementLinks
+    from ....utils.links import (
+        ModelLinks,
+    )  # Added ModelLinks
     from ..medication import Medication, MedicationIndication, MedicationIntakeTime
 
 
@@ -48,12 +48,12 @@ class PatientMedication(models.Model):
         pass
 
     @property
-    def links(self) -> "RequirementLinks":
+    def links(self) -> "ModelLinks":
         """
-        Returns a RequirementLinks object for this PatientMedication instance.
-        This is used during requirement evaluation.
+        Returns a ModelLinks object for this PatientMedication instance.
+        This is used during linked-model traversal.
         """
-        from ....utils.links.requirement_link import RequirementLinks
+        from ....utils.links import ModelLinks
 
         meds: List["Medication"] = []
         if self.medication:
@@ -65,7 +65,7 @@ class PatientMedication(models.Model):
 
         intake_times_list: List["MedicationIntakeTime"] = list(self.intake_times.all())
 
-        return RequirementLinks(
+        return ModelLinks(
             medications=meds,
             medication_indications=indications,
             medication_intake_times=intake_times_list,

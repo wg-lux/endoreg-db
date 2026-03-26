@@ -43,16 +43,6 @@ from .examination import urlpatterns as examination_url_patterns
 from .media import urlpatterns as media_url_patterns
 from .patient import urlpatterns as patient_url_patterns
 from .settings import urlpatterns as settings_url_patterns
-
-try:
-    from .requirements import urlpatterns as requirements_url_patterns
-except Exception as exc:
-    logger.warning(
-        "Requirement URLs disabled during startup due to import error: %s",
-        exc,
-        exc_info=True,
-    )
-    requirements_url_patterns = []
 from .stats import url_patterns as stats_url_patterns
 from .upload import urlpatterns as upload_url_patterns
 
@@ -63,7 +53,6 @@ api_urls += auth_url_patterns
 api_urls += examination_url_patterns
 api_urls += media_url_patterns
 api_urls += upload_url_patterns
-api_urls += requirements_url_patterns
 api_urls += patient_url_patterns
 api_urls += settings_url_patterns
 api_urls += stats_url_patterns
