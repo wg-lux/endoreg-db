@@ -6,7 +6,14 @@ from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from endoreg_db.models import Center, NetworkNode, RawPdfFile, TransferJob, VideoFile
+from endoreg_db.models import (
+    Center,
+    EndoscopyProcessor,
+    NetworkNode,
+    RawPdfFile,
+    TransferJob,
+    VideoFile,
+)
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
@@ -20,6 +27,32 @@ class HubTransferEndpointTests(TestCase):
 
     def setUp(self):
         self.center = Center.objects.create(name="center-a", display_name="Center A")
+        self.processor = EndoscopyProcessor.objects.create(
+            name="hub-test-processor",
+            image_width=1920,
+            image_height=1080,
+            endoscope_image_x=0,
+            endoscope_image_y=0,
+            endoscope_image_width=0,
+            endoscope_image_height=0,
+            examination_date_x=0,
+            examination_date_y=0,
+            examination_date_width=0,
+            examination_date_height=0,
+            patient_first_name_x=0,
+            patient_first_name_y=0,
+            patient_first_name_width=0,
+            patient_first_name_height=0,
+            patient_last_name_x=0,
+            patient_last_name_y=0,
+            patient_last_name_width=0,
+            patient_last_name_height=0,
+            patient_dob_x=0,
+            patient_dob_y=0,
+            patient_dob_width=0,
+            patient_dob_height=0,
+        )
+        self.processor.centers.add(self.center)
         self.source_node = NetworkNode.objects.create(
             display_name="Site A Node",
             node_key="site-a-node",
