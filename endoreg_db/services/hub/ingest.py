@@ -709,7 +709,7 @@ def process_preanonymized_watcher_file(
             "ingest_variant": "preanonymized",
             "sidecar_path": str(sidecar_path) if sidecar_path is not None else "",
             "sidecar_payload": (
-                metadata_payload.model_dump(exclude_none=True)
+                metadata_payload.model_dump(mode="json", exclude_none=True)
                 if metadata_payload is not None
                 else {}
             ),
