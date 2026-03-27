@@ -71,6 +71,15 @@ def load_model_data_from_yaml(command, model_name, metadata, verbose):
         )
         return
 
+    if not os.path.isdir(dir_path):
+        _record_warning(
+            command,
+            f"Skipping load because YAML data directory is missing: {dir_path}",
+            verbose,
+            model_name or model.__name__,
+        )
+        return
+
     _files = [f for f in os.listdir(dir_path) if f.endswith(".yaml")]
     # sort
     _files.sort()

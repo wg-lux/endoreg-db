@@ -1,7 +1,9 @@
+from .payloads import PreanonymizedIngestPayload
 from .ingest import (
     _default_processor_name,
     create_or_reuse_upload_job,
     create_or_reuse_watcher_upload_job,
+    process_preanonymized_watcher_file,
     process_watcher_file,
     process_upload_job,
     resolve_allowed_center_id,
@@ -21,9 +23,11 @@ __all__ = [
     "apply_transfer_metadata",
     "attach_transfer_media",
     "authenticate_network_node",
+    "PreanonymizedIngestPayload",
     "create_or_reuse_transfer_job",
     "create_or_reuse_upload_job",
     "create_or_reuse_watcher_upload_job",
+    "process_preanonymized_watcher_file",
     "process_watcher_file",
     "process_upload_job",
     "resolve_allowed_center_id",

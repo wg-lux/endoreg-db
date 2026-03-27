@@ -11,6 +11,7 @@ def test_data_paths_behaves_like_a_mapping():
 
     assert expanded["storage"] == paths_module.STORAGE_DIR
     assert expanded["import_video"] == paths_module.IMPORT_VIDEO_DIR
+    assert expanded["import_preanonymized"] == paths_module.IMPORT_PREANONYMIZED_DIR
     assert expanded["anonym_video"] == paths_module.ANONYM_VIDEO_DIR
     assert expanded["documents"] == paths_module.DOCUMENT_DIR
 
@@ -32,6 +33,10 @@ def test_paths_module_resolves_relative_env_paths(monkeypatch):
         assert reloaded.STORAGE_DIR == expected_storage
         assert reloaded.IO_DIR == expected_io
         assert reloaded.IMPORT_VIDEO_DIR == expected_io / "import" / "video_import"
+        assert (
+            reloaded.IMPORT_PREANONYMIZED_DIR
+            == expected_io / "import" / "preanonymized_import"
+        )
         assert reloaded.ANONYM_VIDEO_DIR == expected_storage / "processed_videos_final"
 
         for path in (
@@ -41,6 +46,7 @@ def test_paths_module_resolves_relative_env_paths(monkeypatch):
             reloaded.EXPORT_DIR,
             reloaded.IMPORT_VIDEO_DIR,
             reloaded.IMPORT_REPORT_DIR,
+            reloaded.IMPORT_PREANONYMIZED_DIR,
             reloaded.ANONYM_VIDEO_DIR,
             reloaded.SENSITIVE_VIDEO_DIR,
         ):

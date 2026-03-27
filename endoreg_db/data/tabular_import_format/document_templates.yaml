@@ -1,0 +1,314 @@
+templates:
+  - document_type: cwd
+    description: Clinical ward document export with anonymized text payload.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - Dokumentzeit
+      - Dokumentnummer
+      - Dokumentversion
+      - pmdAnam
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      Dokumentzeit:
+        target: dokumentzeit
+        type: datetime
+      Dokumentnummer:
+        target: dokumentnummer
+        type: str
+      Dokumentversion:
+        target: dokumentversion
+        type: str
+      pmdAnam:
+        target: pmd_anam
+        type: str
+
+  - document_type: bewegungen
+    description: Movement/location export.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - Zugangszeit
+      - Behandlungsort
+      - Fachabteilung
+      - Zimmer
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      Zugangszeit:
+        target: zugangszeit
+        type: datetime
+      Behandlungsort:
+        target: behandlungsort
+        type: str
+      Fachabteilung:
+        target: fachabteilung
+        type: str
+      Zimmer:
+        target: zimmer
+        type: str
+
+  - document_type: briefe
+    description: Letter export with generated text content.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - dateErstellzeit
+      - strText
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      dateErstellzeit:
+        target: date_erstellzeit
+        type: datetime
+      strText:
+        target: str_text
+        type: str
+
+  - document_type: diagnosen
+    description: Diagnosis export.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - Diagnoseschluessel1
+      - Diagnosezeit
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      Diagnoseschluessel1:
+        target: diagnoseschluessel_1
+        type: str
+      Diagnosezeit:
+        target: diagnosezeit
+        type: datetime
+      KzAufnahmediagnose:
+        target: kz_aufnahmediagnose
+        type: bool
+      KzBehandlungsdiagnose:
+        target: kz_behandlungsdiagnose
+        type: bool
+      KzEntlassdiagnose:
+        target: kz_entlassdiagnose
+        type: bool
+      KzFachabteilungshauptdiagnose:
+        target: kz_fachabteilungshauptdiagnose
+        type: bool
+      KzKrankenhaushauptdiagnose:
+        target: kz_krankenhaushauptdiagnose
+        type: bool
+      KzNebendiagnose:
+        target: kz_nebendiagnose
+        type: bool
+      KzOperationsdiagnose:
+        target: kz_operationsdiagnose
+        type: bool
+
+  - document_type: labor
+    description: Laboratory measurements export.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - Dokumentzeit
+      - Leistung
+      - Leistungstext
+      - Messwert
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      Dokumentzeit:
+        target: dokumentzeit
+        type: datetime
+      Leistung:
+        target: leistung
+        type: str
+      Leistungstext:
+        target: leistungstext
+        type: str
+      Messwert:
+        target: messwert
+        type: str
+
+  - document_type: meona_medikamente
+    description: Medication export from Meona.
+    required_columns:
+      - PatientNr
+      - id
+      - tradename
+      - patient_id
+      - apply_date
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      id:
+        target: medication_row_id
+        type: str
+      tradename:
+        target: tradename
+        type: str
+      patient_id:
+        target: source_patient_id
+        type: str
+      apply_date:
+        target: apply_date
+        type: datetime
+      prepare_date:
+        target: prepare_date
+        type: datetime
+      creation_date:
+        target: creation_date
+        type: datetime
+      actual_dose:
+        target: actual_dose
+        type: str
+      unit_dose_name:
+        target: unit_dose_name
+        type: str
+      main_application_id:
+        target: main_application_id
+        type: str
+      main_order_id:
+        target: main_order_id
+        type: str
+      status:
+        target: status
+        type: str
+
+  - document_type: pathodocs
+    description: Pathology document export.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - Dokumentnummer
+      - Dokumentzeit
+      - DokumenttypID
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      Dokumentnummer:
+        target: dokumentnummer
+        type: str
+      Dokumentzeit:
+        target: dokumentzeit
+        type: datetime
+      DokumenttypID:
+        target: dokumenttyp_id
+        type: str
+
+  - document_type: patienten
+    description: Patient master data without case reference.
+    required_columns:
+      - PatientNr
+      - PatientAlter
+      - Geschlecht
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      PatientAlter:
+        target: patient_alter
+        type: int
+      Geschlecht:
+        target: geschlecht
+        type: str
+
+  - document_type: prozeduren
+    description: Procedure export.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - OPCode
+      - Beginnzeit
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      OPCode:
+        target: op_code
+        type: str
+      Beginnzeit:
+        target: beginnzeit
+        type: datetime
+
+  - document_type: radiologie
+    description: Radiology export with short and long report sections.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - Dokumentzeit
+      - Dokumentnummer
+      - Dokumentversion
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      Dokumentzeit:
+        target: dokumentzeit
+        type: datetime
+      Dokumentnummer:
+        target: dokumentnummer
+        type: str
+      Dokumentversion:
+        target: dokumentversion
+        type: str
+      kurbefund:
+        target: kurbefund
+        type: str
+      befund:
+        target: befund
+        type: str
+      beurteilung:
+        target: beurteilung
+        type: str
+
+  - document_type: stammdaten
+    description: Patient and case master data.
+    required_columns:
+      - PatientNr
+      - FallNr
+      - PatientAlter
+      - Geschlecht
+    columns:
+      PatientNr:
+        target: patient_nr
+        type: str
+      FallNr:
+        target: fall_nr
+        type: str
+      PatientAlter:
+        target: patient_alter
+        type: int
+      Geschlecht:
+        target: geschlecht
+        type: str

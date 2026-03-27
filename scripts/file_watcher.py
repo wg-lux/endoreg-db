@@ -7,17 +7,33 @@ from pathlib import Path
 
 from django.core.exceptions import ObjectDoesNotExist
 
-from endoreg_db.services.hub import process_watcher_file, resolve_default_center
+from endoreg_db.services.hub import (
+    process_preanonymized_watcher_file,
+    process_watcher_file,
+    resolve_default_center,
+)
 from endoreg_db.utils.defaults.set_default_center import get_default_processor
-from endoreg_db.utils.paths import IMPORT_REPORT_DIR, IMPORT_VIDEO_DIR
+from endoreg_db.utils.paths import (
+    IMPORT_PREANONYMIZED_DIR,
+    IMPORT_REPORT_DIR,
+    IMPORT_VIDEO_DIR,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_preanonymized_watcher_dir() -> Path:
+    configured_dir = os.environ.get("WATCHER_PREANONYMIZED_DIR")
+    if configured_dir:
+        return Path(configured_dir).expanduser().resolve()
+    return (Path.home() / "Desktop" / IMPORT_PREANONYMIZED_DIR.name).resolve()
 
 
 class FileWatcherService:
     def __init__(self) -> None:
         self.video_dir = IMPORT_VIDEO_DIR
         self.report_dir = IMPORT_REPORT_DIR
+        self.preanonymized_dir = _resolve_preanonymized_watcher_dir()
         self.poll_interval_seconds = float(
             os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", "5")
         )
@@ -29,6 +45,7 @@ class FileWatcherService:
     def _validate_django_setup(self) -> None:
         self.video_dir.mkdir(parents=True, exist_ok=True)
         self.report_dir.mkdir(parents=True, exist_ok=True)
+        self.preanonymized_dir.mkdir(parents=True, exist_ok=True)
         if resolve_default_center() is None:
             raise ObjectDoesNotExist(
                 "No center is configured for watcher ingestion. Configure ApplicationSettings.center or create a center."
@@ -52,6 +69,11 @@ class FileWatcherService:
             suffixes={".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"},
         ):
             self._process_candidate(file_path=file_path, file_type="video")
+        for file_path in self._iter_candidates(
+            self.preanonymized_dir,
+            suffixes={".pdf", ".mp4"},
+        ):
+            self._process_candidate(file_path=file_path, file_type="preanonymized")
 
     def _iter_candidates(self, directory: Path, *, suffixes: set[str]) -> list[Path]:
         if not directory.exists():
@@ -85,11 +107,14 @@ class FileWatcherService:
             if file_type == "video":
                 processor = get_default_processor()
                 processor_name = getattr(processor, "name", None)
-            process_watcher_file(
-                file_path=file_path,
-                file_type=file_type,
-                processor_name=processor_name,
-            )
+            if file_type == "preanonymized":
+                process_preanonymized_watcher_file(file_path=file_path)
+            else:
+                process_watcher_file(
+                    file_path=file_path,
+                    file_type=file_type,
+                    processor_name=processor_name,
+                )
             self.processed_files.add(signature)
         except FileNotFoundError:
             logger.info("Watcher candidate disappeared before processing: %s", file_path)

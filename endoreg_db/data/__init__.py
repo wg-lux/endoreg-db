@@ -133,3 +133,6 @@ QUALIFICATION_DATA_DIR = DATA_DIR / "qualification"
 TAG_DATA_DIR = DATA_DIR / "tag"
 
 EXAMINATION_REQUIREMENT_SET_DATA_DIR = DATA_DIR / "examination_requirement_set"
+
+TABULAR_IMPORT_FORMAT_DIR = DATA_DIR / "tabular_import_format"
+TABULAR_IMPORT_TEMPLATES_FILE = TABULAR_IMPORT_FORMAT_DIR / "document_templates.yaml"

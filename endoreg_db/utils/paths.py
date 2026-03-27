@@ -25,6 +25,7 @@ EXPORT_DIR_NAME = "export"
 
 IMPORT_VIDEO_DIR_NAME = "video_import"
 REPORT_IMPORT_DIR_NAME = "report_import"
+PREANONYMIZED_IMPORT_DIR_NAME = "preanonymized_import"
 
 VIDEO_EXPORT_DIR_NAME = "video_export"
 REPORT_EXPORT_DIR_NAME = "report_export"
@@ -48,6 +49,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     export_dir: Path
     import_video: Path
     import_report: Path
+    import_preanonymized: Path
     video_export: Path
     report_export: Path
     documents: Path
@@ -69,6 +71,7 @@ class EndoregPathsModel(FilesAndDirsModel):
         "storage": "storage",
         "import": "import_dir",
         "import_video": "import_video",
+        "import_preanonymized": "import_preanonymized",
         "sensitive_video": "sensitive_video",
         "sensitive_report": "sensitive_report",
         "anonym_video": "anonym_video",
@@ -105,6 +108,7 @@ class EndoregPathsModel(FilesAndDirsModel):
                 export_dir,
                 import_dir / IMPORT_VIDEO_DIR_NAME,
                 import_dir / REPORT_IMPORT_DIR_NAME,
+                import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
                 export_dir / VIDEO_EXPORT_DIR_NAME,
                 export_dir / REPORT_EXPORT_DIR_NAME,
                 storage_dir / "documents",
@@ -127,6 +131,7 @@ class EndoregPathsModel(FilesAndDirsModel):
             export_dir=export_dir,
             import_video=import_dir / IMPORT_VIDEO_DIR_NAME,
             import_report=import_dir / REPORT_IMPORT_DIR_NAME,
+            import_preanonymized=import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
             video_export=export_dir / VIDEO_EXPORT_DIR_NAME,
             report_export=export_dir / REPORT_EXPORT_DIR_NAME,
             documents=storage_dir / "documents",
@@ -187,6 +192,7 @@ EXPORT_DIR = data_paths_model.export_dir
 
 IMPORT_VIDEO_DIR = data_paths_model.import_video
 IMPORT_REPORT_DIR = data_paths_model.import_report
+IMPORT_PREANONYMIZED_DIR = data_paths_model.import_preanonymized
 
 VIDEO_EXPORT_DIR = data_paths_model.video_export
 REPORT_EXPORT_DIR = data_paths_model.report_export
