@@ -104,7 +104,7 @@ class VideoState(models.Model):
         if self.anonymization_validated:
             return AnonymizationState.VALIDATED  # Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
         if self.sensitive_meta_processed:
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION  # /home/admin/endoreg-db/endoreg_db/services/video_import.py /home/admin/endoreg-db/endoreg_db/views/video/reimport.py
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
         if self.frames_extracted and not self.anonymized:
             return AnonymizationState.PROCESSING_ANONYMIZING
         if self.was_created and not self.frames_extracted:

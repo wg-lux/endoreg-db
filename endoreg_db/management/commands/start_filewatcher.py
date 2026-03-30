@@ -26,7 +26,6 @@ class Command(BaseCommand):
 
     Note:
     - The watcher script currently lives in lx-annotate at:
-      /home/admin/dev/lx-annotate/scripts/file_watcher.py
     """
 
     def add_arguments(self, parser):
@@ -62,7 +61,6 @@ class Command(BaseCommand):
             # Import the file watcher service from either local repo scripts/ or lx-annotate.
             candidate_paths = [
                 project_root / "scripts" / "file_watcher.py",
-                Path("/home/admin/dev/lx-annotate/scripts/file_watcher.py"),
             ]
             file_watcher_path = next(
                 (candidate for candidate in candidate_paths if candidate.exists()),

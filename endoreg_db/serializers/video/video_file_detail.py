@@ -55,7 +55,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
         request = self.context.get("request")
         # Use video streaming endpoint (VideoStreamView)
         return (
-            request.build_absolute_uri(f"/api/media/videos/{obj.pk}/")
+            request.build_absolute_uri(f"/api/media/videos/{obj.pk}/stream/")
             if request
             else None
         )

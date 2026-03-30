@@ -315,6 +315,8 @@ def _apply_preanonymized_metadata(
 
     payload_copy = payload.model_dump(exclude_none=True)
     payload_copy.setdefault("center_name", center.name)
+    payload_copy.pop("external_id", None)
+    payload_copy.pop("external_id_origin", None)
 
     patient_hash = payload.patient_hash or ""
     examination_hash = payload.examination_hash or ""

@@ -24,7 +24,6 @@ class VideoFileSerializer(serializers.ModelSerializer):
     """
     Serializer that dynamically handles video retrieval and streaming.
     Ensures file returns the relative file path (not MEDIA_URL)
-    Computes full_video_path using the correct storage path (/home/admin/test-data)-need to change make it dynamic
     Returns video_url for frontend integration
     Serves the video file when needed
 
@@ -90,9 +89,7 @@ class VideoFileSerializer(serializers.ModelSerializer):
             "request"
         )  # Gets the request object (provided by DRF).
         if request:
-            return request.build_absolute_uri(
-                f"/api/video/{obj.id}/"
-            )  # Added api/ prefix
+            return request.build_absolute_uri(f"/api/media/videos/{obj.id}/stream/")
 
         return {"error": "Video URL not available"}
 

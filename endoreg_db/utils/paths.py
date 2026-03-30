@@ -26,6 +26,8 @@ EXPORT_DIR_NAME = "export"
 IMPORT_VIDEO_DIR_NAME = "video_import"
 REPORT_IMPORT_DIR_NAME = "report_import"
 PREANONYMIZED_IMPORT_DIR_NAME = "preanonymized_import"
+ANONYMIZED_VIDEO_IMPORT_DIR_NAME = "anonymized_video_import"
+ANONYMIZED_REPORT_IMPORT_DIR_NAME = "anonymized_report_import"
 
 VIDEO_EXPORT_DIR_NAME = "video_export"
 REPORT_EXPORT_DIR_NAME = "report_export"
@@ -50,6 +52,8 @@ class EndoregPathsModel(FilesAndDirsModel):
     import_video: Path
     import_report: Path
     import_preanonymized: Path
+    import_anonymized_video: Path
+    import_anonymized_report: Path
     video_export: Path
     report_export: Path
     documents: Path
@@ -71,13 +75,15 @@ class EndoregPathsModel(FilesAndDirsModel):
         "storage": "storage",
         "import": "import_dir",
         "import_video": "import_video",
+        "import_report": "import_report",
         "import_preanonymized": "import_preanonymized",
+        "import_anonymized_video": "import_anonymized_video",
+        "import_anonymized_report": "import_anonymized_report",
         "sensitive_video": "sensitive_video",
         "sensitive_report": "sensitive_report",
         "anonym_video": "anonym_video",
         "anonym_report": "anonym_report",
         "import_frame": "import_frame",
-        "import_report": "import_report",
         "raw_frame": "raw_frame",
         "weights": "weights",
         "weights_import": "weights_import",
@@ -109,6 +115,8 @@ class EndoregPathsModel(FilesAndDirsModel):
                 import_dir / IMPORT_VIDEO_DIR_NAME,
                 import_dir / REPORT_IMPORT_DIR_NAME,
                 import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
+                import_dir / ANONYMIZED_VIDEO_IMPORT_DIR_NAME,
+                import_dir / ANONYMIZED_REPORT_IMPORT_DIR_NAME,
                 export_dir / VIDEO_EXPORT_DIR_NAME,
                 export_dir / REPORT_EXPORT_DIR_NAME,
                 storage_dir / "documents",
@@ -132,6 +140,8 @@ class EndoregPathsModel(FilesAndDirsModel):
             import_video=import_dir / IMPORT_VIDEO_DIR_NAME,
             import_report=import_dir / REPORT_IMPORT_DIR_NAME,
             import_preanonymized=import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
+            import_anonymized_video=import_dir / ANONYMIZED_VIDEO_IMPORT_DIR_NAME,
+            import_anonymized_report=import_dir / ANONYMIZED_REPORT_IMPORT_DIR_NAME,
             video_export=export_dir / VIDEO_EXPORT_DIR_NAME,
             report_export=export_dir / REPORT_EXPORT_DIR_NAME,
             documents=storage_dir / "documents",
@@ -193,6 +203,8 @@ EXPORT_DIR = data_paths_model.export_dir
 IMPORT_VIDEO_DIR = data_paths_model.import_video
 IMPORT_REPORT_DIR = data_paths_model.import_report
 IMPORT_PREANONYMIZED_DIR = data_paths_model.import_preanonymized
+IMPORT_ANONYMIZED_VIDEO_DIR = data_paths_model.import_anonymized_video
+IMPORT_ANONYMIZED_REPORT_DIR = data_paths_model.import_anonymized_report
 
 VIDEO_EXPORT_DIR = data_paths_model.video_export
 REPORT_EXPORT_DIR = data_paths_model.report_export

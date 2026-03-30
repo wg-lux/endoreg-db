@@ -23,6 +23,8 @@ let
   python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
   uvPackage = pkgs.uv;
   
+  numbaSupport = pkgs.callPackage ./nix/numba-support.nix { };
+
   buildInputs = with pkgs; [
     python312
     stdenv.cc.cc
@@ -40,7 +42,8 @@ let
     rustc
     rustfmt
     maturin
-    tbb
+    onetbb
+    numbaSupport
   ];
   runtimePackages = with pkgs; [
     stdenv.cc.cc
@@ -70,6 +73,7 @@ let
 
   _module.args.buildInputs = baseBuildInputs;
 
+  # this is an example of how to include packages devenv locally for development
   # lx-anonymizer-src = pkgs.fetchGit {
   #   url = "https://github.com/wg-lux/lx-anonymizer";
   #   ref = "prototype";
@@ -114,7 +118,32 @@ in
   outputs =
     lib.optionalAttrs (inputs ? pyproject-nix ) (
       let
-        pythonApp = config.languages.python.import ./. { inherit pkgs;};
+        workspace = inputs.uv2nix.lib.workspace.loadWorkspace {
+          workspaceRoot = ./.;
+        };
+
+        uvOverlay = workspace.mkPyprojectOverlay {
+          sourcePreference = "wheel";
+        };
+
+        pythonSet =
+          (pkgs.callPackage inputs.pyproject-nix.build.packages {
+            python = pkgs.python312;
+          }).overrideScope
+            (
+              pkgs.lib.composeManyExtensions [
+                inputs.pyproject-build-systems.overlays.wheel
+                uvOverlay
+                (
+                  final: prev: {
+                    numba = pkgs.python312Packages.numba;
+                    llvmlite = pkgs.python312Packages.llvmlite;
+                  }
+                )
+              ]
+            );
+
+        pythonApp = pythonSet.resolveVirtualEnv workspace.deps.default;
         nativeDrv = pkgs.rustPlatform.buildRustPackage {
           pname = "rust_endoreg_rust_backend";
           version = "0.1.0";

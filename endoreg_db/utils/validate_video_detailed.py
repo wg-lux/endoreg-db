@@ -12,7 +12,6 @@ import json
 import logging
 
 # Dynamically determine the Django project path
-# previously resolved to "/home/admin/test/lx-annotate/endoreg-db" (endoreg-db project directory)
 project_path = os.environ.get(
     "ENDOREG_DJANGO_PROJECT_PATH", str(Path(__file__).resolve().parent.parent.parent)
 )

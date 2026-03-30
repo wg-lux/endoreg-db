@@ -389,7 +389,9 @@ def get_default_video_file():
         load_examination_data,
         load_information_source,
     )
-    from .test_video_helper import get_random_video_path_by_examination_alias
+    from tests.helpers.test_video_helper import (
+        get_random_video_path_by_examination_alias,
+    )
 
     load_disease_data()
     load_event_data()

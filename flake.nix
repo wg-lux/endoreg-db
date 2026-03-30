@@ -37,7 +37,6 @@
           inherit system;
           config.allowUnfree = true;
         };
-        numbaSupport = pkgs.callPackage ./nix/numba-support.nix { };
 
         workspace = uv2nix.lib.workspace.loadWorkspace {
           workspaceRoot = ./.;
@@ -57,9 +56,8 @@
                 uvOverlay
                 (
                   final: prev: {
-                    numba = prev.numba.overrideAttrs (old: {
-                      buildInputs = (old.buildInputs or [ ]) ++ [ numbaSupport ];
-                    });
+                    numba = pkgs.python312Packages.numba;
+                    llvmlite = pkgs.python312Packages.llvmlite;
                   }
                 )
               ]

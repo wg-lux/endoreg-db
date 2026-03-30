@@ -105,16 +105,6 @@ class FrameStreamView(APIView):
             )
             raise Http404("Frame file path is invalid") from exc
 
-        try:
-            resolved_frame_path.relative_to(STORAGE_DIR.resolve())
-        except ValueError as exc:
-            logger.warning(
-                "Rejected frame path outside STORAGE_DIR for video %s: %s",
-                getattr(video, "pk", None),
-                resolved_frame_path,
-            )
-            raise Http404("Frame file path is invalid") from exc
-
         return resolved_frame_path
 
     def _get_or_create_frame_record(

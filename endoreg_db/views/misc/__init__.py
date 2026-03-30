@@ -5,6 +5,10 @@ from .application_settings import (
     application_settings_processors_dropdown,
     application_settings_annotators_dropdown,
     application_settings_report_templates_dropdown,
+    application_settings_backup,
+    application_settings_network_nodes,
+    application_settings_network_node_detail,
+    application_settings_network_node_roles_dropdown,
 )
 from .csrf import csrf_token_view
 from .gender import GenderViewSet
@@ -27,6 +31,10 @@ __all__ = [
     "application_settings_processors_dropdown",
     "application_settings_annotators_dropdown",
     "application_settings_report_templates_dropdown",
+    "application_settings_backup",
+    "application_settings_network_nodes",
+    "application_settings_network_node_detail",
+    "application_settings_network_node_roles_dropdown",
     "csrf_token_view",
     # Gender view
     "GenderViewSet",
