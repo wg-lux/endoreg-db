@@ -62,6 +62,7 @@ class SensitiveMeta(models.Model):
     examiners = models.ManyToManyField(
         "Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)"
     )
+    tags = models.ManyToManyField("Tag", blank=True, help_text="Validation tags")
     center = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
@@ -110,6 +111,7 @@ class SensitiveMeta(models.Model):
     # --- Text Fields ---
     text = models.TextField(blank=True, null=True)
     anonymized_text = models.TextField(blank=True, null=True)
+    validation_comment = models.TextField(blank=True, default="")
 
     # --- Anonymization helper method ---
     create_anonymized_record = logic._create_anonymized_record

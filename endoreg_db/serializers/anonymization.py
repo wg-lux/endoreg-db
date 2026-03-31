@@ -46,6 +46,12 @@ class SensitiveMetaValidateSerializer(serializers.Serializer):
     center_name = serializers.CharField(required=False, allow_blank=True)
     external_id = serializers.CharField(required=False, allow_blank=True)
     external_id_origin = serializers.CharField(required=False, allow_blank=True)
+    tags = serializers.ListField(
+        child=serializers.CharField(allow_blank=False),
+        required=False,
+        allow_empty=True,
+    )
+    validation_comment = serializers.CharField(required=False, allow_blank=True)
 
     def validate_patient_dob(self, value):
         """

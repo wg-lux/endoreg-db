@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from endoreg_db.models import Center, EndoscopyProcessor, NetworkNode
@@ -80,6 +81,17 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["processor_id"] == self.processor.pk
         assert payload["annotator_name"] == "annotator_a"
         assert payload["report_template_name"] == "template_a"
+
+    def test_get_application_settings_uses_authenticated_username_as_fallback(self):
+        user_model = get_user_model()
+        user = user_model.objects.create_user(username="keycloak_user")
+        self.client.force_login(user)
+
+        response = self.client.get("/api/settings/application/")
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["annotator_name"] == "keycloak_user"
 
     def test_patch_application_settings_rejects_unknown_center(self):
         response = self.client.patch(

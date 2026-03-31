@@ -12,6 +12,23 @@ fn map_io_error(err: std::io::Error) -> PyErr {
     PyIOError::new_err(err.to_string())
 }
 
+fn sha256_file_hex_impl(path: PathBuf, chunk_size: usize) -> Result<String, std::io::Error> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::with_capacity(chunk_size, file);
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; chunk_size];
+
+    loop {
+        let read_count = reader.read(&mut buffer)?;
+        if read_count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read_count]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn escape_pdf_text(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -30,31 +47,18 @@ fn latin1_safe_line(value: &str) -> String {
 
 #[pyfunction]
 #[pyo3(signature = (path, chunk_size=DEFAULT_CHUNK_SIZE))]
-fn sha256_file_hex(path: PathBuf, chunk_size: usize) -> PyResult<String> {
+fn sha256_file_hex(py: Python<'_>, path: PathBuf, chunk_size: usize) -> PyResult<String> {
     if chunk_size == 0 {
         return Err(PyValueError::new_err(
             "chunk_size must be greater than zero",
         ));
     }
 
-    let file = File::open(path).map_err(map_io_error)?;
-    let mut reader = BufReader::with_capacity(chunk_size, file);
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; chunk_size];
-
-    loop {
-        let read_count = reader.read(&mut buffer).map_err(map_io_error)?;
-        if read_count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read_count]);
-    }
-
-    Ok(format!("{:x}", hasher.finalize()))
+    py.allow_threads(move || sha256_file_hex_impl(path, chunk_size))
+        .map_err(map_io_error)
 }
 
-#[pyfunction]
-fn render_single_page_pdf(text: &str) -> PyResult<Vec<u8>> {
+fn render_single_page_pdf_impl(text: &str) -> Vec<u8> {
     let normalized_text = text.replace("\r\n", "\n").replace('\r', "\n");
     let normalized_lines: Vec<&str> = normalized_text.split('\n').collect();
 
@@ -119,11 +123,16 @@ fn render_single_page_pdf(text: &str) -> PyResult<Vec<u8>> {
         .as_bytes(),
     );
 
-    Ok(payload)
+    payload
 }
 
 #[pyfunction]
-fn parse_extracted_frame_numbers(paths: Vec<String>) -> PyResult<Vec<usize>> {
+fn render_single_page_pdf(py: Python<'_>, text: &str) -> PyResult<Vec<u8>> {
+    let owned_text = text.to_owned();
+    Ok(py.allow_threads(move || render_single_page_pdf_impl(&owned_text)))
+}
+
+fn parse_extracted_frame_numbers_impl(paths: Vec<String>) -> PyResult<Vec<usize>> {
     let mut frame_numbers = Vec::with_capacity(paths.len());
 
     for raw_path in paths {
@@ -145,6 +154,11 @@ fn parse_extracted_frame_numbers(paths: Vec<String>) -> PyResult<Vec<usize>> {
     Ok(frame_numbers)
 }
 
+#[pyfunction]
+fn parse_extracted_frame_numbers(py: Python<'_>, paths: Vec<String>) -> PyResult<Vec<usize>> {
+    py.allow_threads(move || parse_extracted_frame_numbers_impl(paths))
+}
+
 fn normalize_relative_path(path: &Path, relative_to: Option<&Path>) -> PyResult<String> {
     if let Some(base_path) = relative_to {
         let relative = path.strip_prefix(base_path).map_err(|_| {
@@ -163,15 +177,12 @@ fn normalize_relative_path(path: &Path, relative_to: Option<&Path>) -> PyResult<
     Ok(file_name.to_string())
 }
 
-#[pyfunction]
-#[pyo3(signature = (paths, *, relative_to=None, zero_based=false))]
-fn build_frame_records(
+fn build_frame_records_impl(
     paths: Vec<String>,
-    relative_to: Option<String>,
+    relative_to: Option<PathBuf>,
     zero_based: bool,
 ) -> PyResult<Vec<(usize, String)>> {
-    let relative_base = relative_to.as_ref().map(PathBuf::from);
-    let relative_base_ref = relative_base.as_deref();
+    let relative_base_ref = relative_to.as_deref();
     let mut records = Vec::with_capacity(paths.len());
 
     for raw_path in paths {
@@ -204,7 +215,19 @@ fn build_frame_records(
 
 #[pyfunction]
 #[pyo3(signature = (frame_count, ext="jpg"))]
-fn build_expected_frame_records(frame_count: usize, ext: &str) -> PyResult<Vec<(usize, String)>> {
+fn build_expected_frame_records(
+    py: Python<'_>,
+    frame_count: usize,
+    ext: &str,
+) -> PyResult<Vec<(usize, String)>> {
+    let owned_ext = ext.to_owned();
+    py.allow_threads(move || build_expected_frame_records_impl(frame_count, owned_ext))
+}
+
+fn build_expected_frame_records_impl(
+    frame_count: usize,
+    ext: String,
+) -> PyResult<Vec<(usize, String)>> {
     if ext.trim().is_empty() {
         return Err(PyValueError::new_err("ext must not be empty"));
     }
@@ -217,6 +240,18 @@ fn build_expected_frame_records(frame_count: usize, ext: &str) -> PyResult<Vec<(
         ));
     }
     Ok(records)
+}
+
+#[pyfunction]
+#[pyo3(signature = (paths, *, relative_to=None, zero_based=false))]
+fn build_frame_records(
+    py: Python<'_>,
+    paths: Vec<String>,
+    relative_to: Option<String>,
+    zero_based: bool,
+) -> PyResult<Vec<(usize, String)>> {
+    let relative_base = relative_to.map(PathBuf::from);
+    py.allow_threads(move || build_frame_records_impl(paths, relative_base, zero_based))
 }
 
 #[pymodule]

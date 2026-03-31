@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from endoreg_db.models import (
     RawPdfFile,
+    Tag,
     VideoFile,
 )
 from endoreg_db.models.metadata import SensitiveMeta
@@ -168,6 +169,52 @@ def _build_pdf_validation_context(pdf: RawPdfFile) -> Dict[str, Any] | None:
     }
 
 
+def _normalize_tag_names(raw_tags: Any) -> list[str]:
+    if not isinstance(raw_tags, list):
+        return []
+
+    normalized_tags: list[str] = []
+    seen: set[str] = set()
+    for entry in raw_tags:
+        if not isinstance(entry, str):
+            continue
+        tag_name = entry.strip()
+        if not tag_name:
+            continue
+        tag_key = tag_name.casefold()
+        if tag_key in seen:
+            continue
+        seen.add(tag_key)
+        normalized_tags.append(tag_name)
+    return normalized_tags
+
+
+def _apply_validation_tags(
+    *,
+    sensitive_meta: SensitiveMeta,
+    payload: Dict[str, Any],
+) -> None:
+    update_fields: list[str] = []
+
+    if "validation_comment" in payload:
+        validation_comment = payload.get("validation_comment")
+        if not isinstance(validation_comment, str):
+            validation_comment = ""
+        if sensitive_meta.validation_comment != validation_comment:
+            sensitive_meta.validation_comment = validation_comment
+            update_fields.append("validation_comment")
+
+    if update_fields:
+        sensitive_meta.save(update_fields=update_fields)
+
+    if "tags" not in payload:
+        return
+
+    normalized_tags = _normalize_tag_names(payload.get("tags"))
+    tag_objects = [Tag.objects.get_or_create(name=name)[0] for name in normalized_tags]
+    sensitive_meta.tags.set(tag_objects)
+
+
 class AnonymizationValidateView(APIView):
     """
     POST /api/anonymization/<int:file_id>/validate/
@@ -250,6 +297,10 @@ class AnonymizationValidateView(APIView):
 
                     video.save(update_fields=["sensitive_meta"])
                     video.sensitive_meta.get_or_create_state()
+                    _apply_validation_tags(
+                        sensitive_meta=video.sensitive_meta,
+                        payload=payload,
+                    )
                     if video.sensitive_meta.state is not None:
                         video.sensitive_meta.state.refresh_from_db()
                         video.sensitive_meta.state.mark_dob_verified()
@@ -389,6 +440,10 @@ class AnonymizationValidateView(APIView):
 
                         pdf.save(update_fields=["sensitive_meta"])
                         pdf.sensitive_meta.get_or_create_state()
+                        _apply_validation_tags(
+                            sensitive_meta=pdf.sensitive_meta,
+                            payload=payload,
+                        )
                         if pdf.sensitive_meta and pdf.sensitive_meta.state:
                             state_obj = cast(Any, pdf.sensitive_meta.state)
                             state_obj.refresh_from_db()

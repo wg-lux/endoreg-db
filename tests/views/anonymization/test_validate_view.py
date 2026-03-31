@@ -20,7 +20,7 @@ from rest_framework import status
 from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import Center, RawPdfFile, VideoFile
+from endoreg_db.models import Center, RawPdfFile, Tag, VideoFile
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
@@ -389,6 +389,44 @@ class TestAnonymizationValidateView:
             response = self._call_view(view, request, file_id=video_file.id)
 
             assert response.status_code == status.HTTP_200_OK
+
+    def test_validate_video_persists_tags_and_validation_comment(
+        self, factory, user, video_file
+    ):
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "examination_date": "15.02.2024",
+            "casenumber": "12345",
+            "file_type": "video",
+            "tags": ["Nochmal Überprüfen", "Ausgeschlossen", "Nochmal Überprüfen"],
+            "validation_comment": "Bitte vor Freigabe nochmal ansehen.",
+        }
+
+        with patch.object(VideoFile, "validate_metadata_annotation", return_value=True):
+            request = factory.post(
+                f"/api/anonymization/{video_file.id}/validate/",
+                data=data,
+                format="json",
+            )
+            force_authenticate(request, user=user)
+
+            view = AnonymizationValidateView.as_view()
+            response = self._call_view(view, request, file_id=video_file.id)
+
+            assert response.status_code == status.HTTP_200_OK
+
+        video_file.refresh_from_db()
+        assert video_file.sensitive_meta is not None
+        assert video_file.sensitive_meta.validation_comment == (
+            "Bitte vor Freigabe nochmal ansehen."
+        )
+        assert set(video_file.sensitive_meta.tags.values_list("name", flat=True)) == {
+            "Nochmal Überprüfen",
+            "Ausgeschlossen",
+        }
+        assert Tag.objects.filter(name="Nochmal Überprüfen").exists()
 
     def test_validate_pdf_records_operation_with_expected_metadata(
         self, factory, user, pdf_file

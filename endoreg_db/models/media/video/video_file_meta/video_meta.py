@@ -7,6 +7,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:
+    """
+    Copy derived technical fields from ``video.video_meta`` onto ``video`` in memory.
+
+    Returns the list of fields populated on the ``VideoFile`` instance.
+    """
+    if not video.video_meta:
+        return []
+
+    update_fields: list[str] = []
+    meta_fields = ["fps", "duration", "frame_count", "width", "height"]
+    for field in meta_fields:
+        current_value = getattr(video, field)
+        meta_value = getattr(video.video_meta, field, None)
+        if current_value is None and meta_value is not None:
+            setattr(video, field, meta_value)
+            update_fields.append(field)
+    return update_fields
+
+
 def _update_video_meta(video: "VideoFile", save_instance: bool = True):
     """
     Updates or creates the technical VideoMeta from the raw video file.
@@ -69,21 +89,12 @@ def _update_video_meta(video: "VideoFile", save_instance: bool = True):
             )
 
         # Save the VideoFile instance itself if requested and if video_meta was linked/updated
+        update_fields = ["video_meta"]
+        update_fields.extend(_populate_video_fields_from_meta(video))
+
         if save_instance:
-            update_fields = ["video_meta"]
-            # Check if derived fields also need updating
-            if video.video_meta:
-                meta_fields = ["fps", "duration", "frame_count", "width", "height"]
-                for field in meta_fields:
-                    # Check if field is None on video but has value on meta
-                    if (
-                        getattr(video, field) is None
-                        and getattr(video.video_meta, field, None) is not None
-                    ):
-                        # No need to set attribute here, save method handles it
-                        update_fields.append(field)
             # Ensure update_fields has unique values before saving
-            unique_update_fields = list(set(update_fields))
+            unique_update_fields = list(dict.fromkeys(update_fields))
             if unique_update_fields:
                 video.save(update_fields=unique_update_fields)
                 logger.info(

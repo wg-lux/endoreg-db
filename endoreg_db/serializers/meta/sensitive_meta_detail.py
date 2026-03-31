@@ -36,6 +36,7 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
     # Text fields
     text = serializers.SerializerMethodField()
     anonymized_text = serializers.SerializerMethodField()
+    tags = serializers.SerializerMethodField()
 
     class Meta:
         model = SensitiveMeta
@@ -63,6 +64,8 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
             "names_verified",
             "text",
             "anonymized_text",
+            "tags",
+            "validation_comment",
             "external_id",
             "external_id_origin",
         ]
@@ -116,6 +119,11 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
 
     def get_anonymized_text(self, obj):
         return obj.anonymized_text if isinstance(obj.anonymized_text, str) else None
+
+    def get_tags(self, obj):
+        if not obj.pk:
+            return []
+        return list(obj.tags.order_by("name").values_list("name", flat=True))
 
     def get_external_id(self, obj) -> str | None:
         return obj.external_id if isinstance(obj.external_id, str) else None

@@ -671,16 +671,21 @@ class VideoFile(models.Model):
         Returns:
             VideoFile: The initialized VideoFile instance.
         """
-
-        self.update_video_meta()
+        self.update_video_meta(save_instance=False)
         try:
-            # We explicitly check this because initialize_video_specs raises RuntimeError
-            # if the file is missing, which kills the import pipeline.
-            if self.get_raw_file_path():
+            # Only fall back to OpenCV when VideoMeta did not populate the core specs.
+            if self.get_raw_file_path() and (
+                self.fps is None
+                or self.width is None
+                or self.height is None
+                or self.frame_count is None
+                or self.duration is None
+            ):
                 self.initialize_video_specs(use_raw=True)
             else:
-                logger.error(
-                    f"Skipping video specs init for {self.video_hash}: Raw file path not found."
+                logger.debug(
+                    "Skipping OpenCV video spec init for %s; specs already available or raw file missing.",
+                    self.video_hash,
                 )
         except Exception as e:
             # Log the specific error but allow the function to continue to state creation
@@ -692,7 +697,17 @@ class VideoFile(models.Model):
         # Create a new state if it doesn't exist
         self.state = self.get_or_create_state()
 
-        self.save()
+        self.save(
+            update_fields=[
+                "video_meta",
+                "fps",
+                "duration",
+                "frame_count",
+                "width",
+                "height",
+                "state",
+            ]
+        )
         # Initialize frames based on the video specs
         self.initialize_frames()
 

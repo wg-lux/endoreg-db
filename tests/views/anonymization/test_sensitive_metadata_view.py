@@ -20,6 +20,7 @@ from endoreg_db.models import (
     RawPdfFile,
     SensitiveMeta,
     VideoFile,
+    Tag,
 )
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
@@ -106,6 +107,23 @@ class TestSensitiveMetadataEndpoints:
         )
         assert payload["patient_hash_display"].startswith("...")
         assert payload["examination_hash_display"].startswith("...")
+
+    def test_get_video_sensitive_metadata_includes_tags_and_validation_comment(
+        self, client, video
+    ):
+        assert video.sensitive_meta is not None
+        review_tag = Tag.objects.create(name="Nochmal Überprüfen")
+        excluded_tag = Tag.objects.create(name="Ausgeschlossen")
+        video.sensitive_meta.tags.set([review_tag, excluded_tag])
+        video.sensitive_meta.validation_comment = "Freitext zur Nachkontrolle"
+        video.sensitive_meta.save(update_fields=["validation_comment"])
+
+        response = client.get(f"/api/media/videos/{video.pk}/sensitive-metadata/")
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["validation_comment"] == "Freitext zur Nachkontrolle"
+        assert sorted(payload["tags"]) == ["Ausgeschlossen", "Nochmal Überprüfen"]
 
     def test_patch_video_sensitive_metadata(self, client, video):
         response = client.patch(

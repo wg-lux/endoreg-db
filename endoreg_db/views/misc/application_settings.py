@@ -34,17 +34,25 @@ def _count_files(root: Path) -> int:
     return sum(1 for path in root.rglob("*") if path.is_file())
 
 
+def _backup_source_label(index: int) -> str:
+    if index == 0:
+        return "storage"
+    if index == 1:
+        return "io"
+    return f"source_{index + 1}"
+
+
 def _backup_status_payload() -> dict[str, Any]:
     required_sources = [path.resolve() for path in _required_backup_sources()]
     missing_paths = [str(path) for path in required_sources if not path.exists()]
     source_roots = [
         {
-            "label": "storage" if path == STORAGE_DIR.resolve() else "io",
+            "label": _backup_source_label(index),
             "path": str(path),
             "exists": path.exists(),
             "file_count": _count_files(path) if path.exists() else 0,
         }
-        for path in required_sources
+        for index, path in enumerate(required_sources)
     ]
     return {
         "ready": len(missing_paths) == 0,
@@ -55,16 +63,23 @@ def _backup_status_payload() -> dict[str, Any]:
     }
 
 
-def _settings_payload() -> dict[str, Any]:
+def _settings_payload(request) -> dict[str, Any]:
     settings_obj = get_application_settings()
     snapshot = get_application_defaults()
+    annotator_name = snapshot.annotator_name
+    if (
+        not annotator_name
+        and getattr(request, "user", None)
+        and request.user.is_authenticated
+    ):
+        annotator_name = str(request.user.username or "")
     return {
         "id": settings_obj.pk,
         "center_id": snapshot.center_id,
         "center_name": snapshot.center_name,
         "processor_id": snapshot.processor_id,
         "processor_name": snapshot.processor_name,
-        "annotator_name": snapshot.annotator_name,
+        "annotator_name": annotator_name,
         "report_template_name": snapshot.report_template_name,
         "updated_at": settings_obj.updated_at.isoformat()
         if settings_obj.updated_at
@@ -134,7 +149,7 @@ def _network_node_roles_payload() -> list[dict[str, str]]:
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_detail(request):
     if request.method == "GET":
-        return Response(_settings_payload(), status=status.HTTP_200_OK)
+        return Response(_settings_payload(request), status=status.HTTP_200_OK)
 
     data = request.data
     center_value = data.get("center_id", data.get("center_name"))
@@ -185,7 +200,7 @@ def application_settings_detail(request):
         annotator_name=annotator_name,
         report_template_name=report_template_name,
     )
-    return Response(_settings_payload(), status=status.HTTP_200_OK)
+    return Response(_settings_payload(request), status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])

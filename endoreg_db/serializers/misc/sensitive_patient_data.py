@@ -141,4 +141,8 @@ class VoPPatientDataSerializer(serializers.Serializer):
             "endoscopeType": sensitive_meta.endoscope_type or "",
             "endoscopeSn": sensitive_meta.endoscope_sn or "",
             "isVerified": getattr(sensitive_meta, "is_verified", False),
+            "tags": list(
+                sensitive_meta.tags.order_by("name").values_list("name", flat=True)
+            ),
+            "validationComment": sensitive_meta.validation_comment or "",
         }
