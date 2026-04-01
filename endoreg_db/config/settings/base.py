@@ -5,6 +5,7 @@ import django_stubs_ext
 
 # Use centralized environment helpers
 from endoreg_db.config.env import env_bool, env_path, env_str
+from endoreg_db.utils.paths import STORAGE_DIR
 
 django_stubs_ext.monkeypatch()
 
@@ -85,7 +86,7 @@ STATIC_ROOT = env_path("STATIC_ROOT", "staticfiles")
 
 # Media/storage root can be overridden from env (important when embedded)
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
-MEDIA_ROOT = env_path("STORAGE_DIR", "storage")
+MEDIA_ROOT = STORAGE_DIR
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
 CACHES = {

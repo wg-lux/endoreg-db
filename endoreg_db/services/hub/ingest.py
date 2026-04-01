@@ -142,6 +142,11 @@ def create_or_reuse_upload_job(
     source_system: str = "api",
     idempotency_key: str = "",
     ingest_mode: str = UploadJob.IngestMode.API,
+    storage_class: str = UploadJob.StorageClass.INGEST,
+    storage_tier: str = UploadJob.StorageTier.UPLOAD_API,
+    retention_policy: str = UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+    source_file_persisted: bool = True,
+    cleanup_status: str = UploadJob.CleanupStatus.PENDING,
     processing_provenance: dict[str, Any] | None = None,
 ) -> tuple[UploadJob, bool]:
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
@@ -152,6 +157,8 @@ def create_or_reuse_upload_job(
             source_system=source_system,
             source_center=source_center,
             ingest_mode=ingest_mode,
+            storage_class=storage_class,
+            storage_tier=storage_tier,
         ).first()
         if existing is not None:
             return existing, False
@@ -163,6 +170,11 @@ def create_or_reuse_upload_job(
         source_system=source_system,
         idempotency_key=normalized_idempotency_key,
         ingest_mode=ingest_mode,
+        storage_class=storage_class,
+        storage_tier=storage_tier,
+        retention_policy=retention_policy,
+        source_file_persisted=source_file_persisted,
+        cleanup_status=cleanup_status,
         original_filename=getattr(uploaded_file, "name", "") or "",
         processing_provenance=processing_provenance or {},
         created_by=created_by
@@ -178,6 +190,9 @@ def create_or_reuse_watcher_upload_job(
     content_type: str,
     source_center: Center | None = None,
     source_system: str = "watcher",
+    storage_class: str = UploadJob.StorageClass.INGEST,
+    storage_tier: str = UploadJob.StorageTier.UPLOAD_WATCHER,
+    retention_policy: str = UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
     processing_provenance: dict[str, Any] | None = None,
 ) -> tuple[UploadJob, bool]:
     file_hash = sha256_file(file_path)
@@ -196,6 +211,11 @@ def create_or_reuse_watcher_upload_job(
             source_system=source_system,
             idempotency_key=idempotency_key,
             ingest_mode=UploadJob.IngestMode.WATCHER,
+            storage_class=storage_class,
+            storage_tier=storage_tier,
+            retention_policy=retention_policy,
+            source_file_persisted=True,
+            cleanup_status=UploadJob.CleanupStatus.PENDING,
             processing_provenance={
                 "entrypoint": "watcher",
                 "watched_path": str(file_path),
@@ -594,6 +614,46 @@ def process_upload_job(job_id: str) -> bool:
         return False
 
 
+def start_upload_job_processing(
+    *,
+    upload_job: UploadJob,
+    task_dispatcher: Any | None = None,
+) -> str:
+    provenance = dict(upload_job.processing_provenance or {})
+    handoff_mode = "celery" if task_dispatcher is not None else "inline"
+
+    try:
+        if task_dispatcher is not None:
+            task_dispatcher.delay(str(upload_job.id))
+        else:
+            processed = process_upload_job(str(upload_job.id))
+            if not processed:
+                refreshed_job = (
+                    cast(Any, getattr(UploadJob, "objects"))
+                    .filter(id=upload_job.id)
+                    .first()
+                )
+                error_detail = (
+                    getattr(refreshed_job, "error_detail", "") if refreshed_job else ""
+                )
+                raise RuntimeError(error_detail or "Upload job processing failed")
+    except Exception as exc:
+        logger.exception(
+            "Upload job processing handoff failed for %s: %s",
+            upload_job.id,
+            exc,
+        )
+        upload_job.mark_error(f"Failed to start processing: {exc}")
+        raise
+
+    if provenance.get("processing_handoff") != handoff_mode:
+        provenance["processing_handoff"] = handoff_mode
+        upload_job.processing_provenance = provenance
+        upload_job.save(update_fields=["processing_provenance", "updated_at"])
+
+    return handoff_mode
+
+
 def process_watcher_file(
     *,
     file_path: Path | str,
@@ -623,6 +683,8 @@ def process_watcher_file(
         content_type=content_type,
         source_center=source_center,
         source_system=source_system,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
         processing_provenance={
             "file_type": normalized_type,
         },
@@ -691,6 +753,9 @@ def process_preanonymized_watcher_file(
     elif suffix == ".mp4":
         normalized_type = "video"
         content_type = "video/mp4"
+    elif suffix == ".txt":
+        normalized_type = "report"
+        content_type = "export/txt"
     else:
         raise ValueError(
             f"Unsupported preanonymized watcher file suffix: {watched_path.suffix}"
@@ -706,6 +771,8 @@ def process_preanonymized_watcher_file(
         content_type=content_type,
         source_center=source_center,
         source_system=source_system,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
         processing_provenance={
             "file_type": normalized_type,
             "ingest_variant": "preanonymized",

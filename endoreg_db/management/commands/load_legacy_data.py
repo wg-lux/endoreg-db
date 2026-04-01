@@ -1,6 +1,8 @@
 # endoreg_db/management/commands/load_legacy_data.py
 
 import json
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from django.conf import settings
@@ -14,6 +16,11 @@ from endoreg_db.models import (
     Label,
     LabelSet,
     VideoFile,
+)
+from endoreg_db.utils.paths import (
+    MIGRATION_STAGING_DIR,
+    build_manifest_path,
+    ensure_within_protected_root,
 )
 
 DEFAULT_LABELSET_NAME = (
@@ -85,6 +92,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Parse and validate, but do not write anything to the database.",
         )
+        parser.add_argument(
+            "--staged-images-root",
+            type=str,
+            default="",
+            help="Protected staging directory for copied legacy images.",
+        )
+        parser.add_argument(
+            "--manifest-path",
+            type=str,
+            default="",
+            help="Optional manifest path under the protected migration manifest tier.",
+        )
 
     def handle(self, *args, **options):
         jsonl_path = Path(options["jsonl_path"])
@@ -95,6 +114,14 @@ class Command(BaseCommand):
         labelset_name = options["labelset_name"]
         labelset_version = options["labelset_version"]
         dry_run = options["dry_run"]
+        staged_images_root = self._resolve_staged_images_root(
+            raw_path=options.get("staged_images_root"),
+            video_id=video_id,
+        )
+        manifest_path = self._resolve_manifest_path(
+            raw_path=options.get("manifest_path"),
+            video_id=video_id,
+        )
 
         # --- Basic checks ---
         if not jsonl_path.exists():
@@ -112,24 +139,25 @@ class Command(BaseCommand):
             self.style.NOTICE(f"Using VideoFile id={video.id} for all Frames.")
         )
 
-        # Ensure this VideoFile uses the legacy images folder as its frame_dir
-        # IMPORTANT: we only set this if frame_dir is empty, so we don't break other videos.
-        if not video.frame_dir:
-            video.frame_dir = str(images_root)  # images_root is Path(...)
-            video.save(update_fields=["frame_dir"])
-            self.stdout.write(
-                self.style.NOTICE(
-                    f"Set frame_dir for VideoFile id={video.id} to '{video.frame_dir}' "
-                    "for legacy image frames."
+        if not dry_run:
+            staged_images_root.mkdir(parents=True, exist_ok=True)
+
+        # Ensure this VideoFile resolves legacy frames from protected staging storage.
+        if not video.frame_dir or Path(video.frame_dir).resolve() != staged_images_root:
+            if dry_run:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"[DRY RUN] Would set frame_dir for VideoFile id={video.id} to '{staged_images_root}'."
+                    )
                 )
-            )
-        else:
-            self.stdout.write(
-                self.style.WARNING(
-                    f"VideoFile id={video.id} already has frame_dir='{video.frame_dir}'. "
-                    "Legacy Frames will be resolved relative to this directory."
+            else:
+                video.frame_dir = str(staged_images_root)
+                video.save(update_fields=["frame_dir"])
+                self.stdout.write(
+                    self.style.NOTICE(
+                        f"Set frame_dir for VideoFile id={video.id} to '{video.frame_dir}'."
+                    )
                 )
-            )
 
         # --- Use existing LabelSet (v1) ---
         labelset = self._get_existing_labelset(
@@ -177,6 +205,8 @@ class Command(BaseCommand):
 
         frame_counter = 0
         annotation_counter = 0
+        copied_image_counter = 0
+        missing_image_counter = 0
 
         # Use transaction unless dry-run
         ctx = transaction.atomic if not dry_run else self._noop_context
@@ -210,12 +240,20 @@ class Command(BaseCommand):
 
                     image_path = images_root / filename
                     if not image_path.exists():
+                        missing_image_counter += 1
                         self.stdout.write(
                             self.style.WARNING(
                                 f"Image file does not exist for line {line_num}: {image_path}"
                             )
                         )
                         # Still create Frame so DB + paths are consistent.
+                    else:
+                        staged_image_path = staged_images_root / filename
+                        if not dry_run:
+                            staged_image_path.parent.mkdir(parents=True, exist_ok=True)
+                            if not staged_image_path.exists():
+                                shutil.copy2(image_path, staged_image_path)
+                                copied_image_counter += 1
 
                     # --- Create Frame ---
                     frame_counter += 1
@@ -267,6 +305,25 @@ class Command(BaseCommand):
                         f"ImageClassificationAnnotations into AIDataSet id={ai_dataset.id}."
                     )
                 )
+                manifest = {
+                    "command": "load_legacy_data",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "jsonl_path": str(jsonl_path.resolve()),
+                    "images_root": str(images_root.resolve()),
+                    "staged_images_root": str(staged_images_root),
+                    "video_id": video_id,
+                    "dataset_name": dataset_name,
+                    "frame_count": frame_counter,
+                    "annotation_count": annotation_counter,
+                    "copied_image_count": copied_image_counter,
+                    "missing_image_count": missing_image_counter,
+                }
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+                self.stdout.write(f"Manifest written to {manifest_path}")
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -300,3 +357,20 @@ class Command(BaseCommand):
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             return False
+
+    def _resolve_staged_images_root(
+        self, *, raw_path: str | None, video_id: int
+    ) -> Path:
+        if raw_path:
+            return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
+        return ensure_within_protected_root(
+            MIGRATION_STAGING_DIR / "legacy_data" / f"video_{video_id}"
+        )
+
+    def _resolve_manifest_path(self, *, raw_path: str | None, video_id: int) -> Path:
+        if raw_path:
+            return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
+        return build_manifest_path(
+            command_name="load_legacy_data",
+            stem=f"video_{video_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+        )

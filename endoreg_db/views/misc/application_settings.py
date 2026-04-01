@@ -22,22 +22,28 @@ from endoreg_db.utils.defaults.set_default_center import (
     get_application_settings,
     update_application_defaults,
 )
-from endoreg_db.utils.paths import IO_DIR, STORAGE_DIR
+from endoreg_db.utils.paths import IO_DIR, PROTECTED_DATA_ROOT, STORAGE_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
 def _required_backup_sources() -> list[Path]:
-    return [STORAGE_DIR, IO_DIR]
+    sources: list[Path] = []
+    for path in (PROTECTED_DATA_ROOT, STORAGE_DIR, IO_DIR):
+        if path not in sources:
+            sources.append(path)
+    return sources
 
 
 def _count_files(root: Path) -> int:
     return sum(1 for path in root.rglob("*") if path.is_file())
 
 
-def _backup_source_label(index: int) -> str:
-    if index == 0:
+def _backup_source_label(index: int, path: Path) -> str:
+    if path == PROTECTED_DATA_ROOT:
+        return "protected_root"
+    if path == STORAGE_DIR:
         return "storage"
-    if index == 1:
+    if path == IO_DIR:
         return "io"
     return f"source_{index + 1}"
 
@@ -47,7 +53,7 @@ def _backup_status_payload() -> dict[str, Any]:
     missing_paths = [str(path) for path in required_sources if not path.exists()]
     source_roots = [
         {
-            "label": _backup_source_label(index),
+            "label": _backup_source_label(index, path),
             "path": str(path),
             "exists": path.exists(),
             "file_count": _count_files(path) if path.exists() else 0,

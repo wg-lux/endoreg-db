@@ -35,7 +35,13 @@ class UploadEndpointTests(TestCase):
             content_type="application/pdf",
         )
 
-        with patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False):
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
             response = self.client.post("/api/upload/", data={"file": uploaded})
 
         assert response.status_code == 201, response.content
@@ -48,7 +54,7 @@ class UploadEndpointTests(TestCase):
         assert status_response.status_code == 200, status_response.content
         status_payload = status_response.json()
         assert status_payload["id"] == payload["upload_id"]
-        assert status_payload["status"] == "processing"
+        assert status_payload["status"] == "pending"
 
     def test_upload_reuses_existing_job_for_same_idempotency_key(self):
         uploaded_a = SimpleUploadedFile(
@@ -62,7 +68,13 @@ class UploadEndpointTests(TestCase):
             content_type="application/pdf",
         )
 
-        with patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False):
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
             first = self.client.post(
                 "/api/upload/",
                 data={"file": uploaded_a, "source_system": "site-a"},
@@ -85,7 +97,13 @@ class UploadEndpointTests(TestCase):
             content_type="application/pdf",
         )
 
-        with patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False):
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
             response = self.client.post(
                 "/api/upload/",
                 data={"file": uploaded, "center_key": "missing-center"},
@@ -109,7 +127,13 @@ class UploadEndpointTests(TestCase):
             content_type="application/pdf",
         )
 
-        with patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False):
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
             response = self.client.post("/api/upload/", data={"file": uploaded})
 
         assert response.status_code == 201, response.content
@@ -136,7 +160,13 @@ class UploadEndpointTests(TestCase):
         )
 
         self.client.force_login(user)
-        with patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False):
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
             response = self.client.post(
                 "/api/upload/",
                 data={"file": uploaded, "center_key": center_a.center_key},
@@ -171,3 +201,52 @@ class UploadEndpointTests(TestCase):
         self.client.force_login(user)
         response = self.client.get(f"/api/upload/{upload_job.id}/status/")
         assert response.status_code == 404, response.content
+
+    def test_upload_dispatches_inline_processing_when_celery_is_unavailable(self):
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ) as start_processing,
+        ):
+            response = self.client.post("/api/upload/", data={"file": uploaded})
+
+        assert response.status_code == 201, response.content
+        upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
+        assert upload_job.storage_class == UploadJob.StorageClass.INGEST
+        assert upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_API
+        assert upload_job.retention_policy == UploadJob.RetentionPolicy.PRESERVE_SOURCE
+        assert upload_job.cleanup_status == UploadJob.CleanupStatus.PENDING
+        start_processing.assert_called_once_with(
+            upload_job=upload_job,
+            task_dispatcher=None,
+        )
+
+    def test_upload_returns_500_when_processing_handoff_fails(self):
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                side_effect=RuntimeError("inline processing failed"),
+            ),
+        ):
+            response = self.client.post("/api/upload/", data={"file": uploaded})
+
+        assert response.status_code == 500, response.content
+        assert (
+            "Failed to start processing: inline processing failed"
+            in response.json()["error"]
+        )

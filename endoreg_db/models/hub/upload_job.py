@@ -3,6 +3,15 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
+
+from endoreg_db.utils.paths import build_upload_job_relative_path
+
+
+def upload_job_upload_to(instance: "UploadJob", filename: str) -> str:
+    tier = getattr(instance, "storage_tier", UploadJob.StorageTier.UPLOAD_API)
+    key = str(getattr(instance, "id", "") or uuid.uuid4())
+    return build_upload_job_relative_path(tier=tier, filename=filename, key=key)
 
 
 class UploadJob(models.Model):
@@ -21,6 +30,27 @@ class UploadJob(models.Model):
         API = "api", "API"
         WATCHER = "watcher", "Watcher"
 
+    class StorageTier(models.TextChoices):
+        UPLOAD_API = "upload_api", "API Upload"
+        UPLOAD_WATCHER = "upload_watcher", "Watcher Upload"
+        UPLOAD_PREANONYMIZED = "upload_preanonymized", "Preanonymized Upload"
+
+    class StorageClass(models.TextChoices):
+        INGEST = "ingest", "Ingest"
+        MANAGED = "managed", "Managed"
+        QUARANTINE = "quarantine", "Quarantine"
+
+    class RetentionPolicy(models.TextChoices):
+        PRESERVE_SOURCE = "preserve_source", "Preserve Source"
+        DELETE_AFTER_SUCCESS = "delete_after_success", "Delete After Success"
+        MIGRATION_MANAGED = "migration_managed", "Migration Managed"
+
+    class CleanupStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ELIGIBLE = "eligible", "Eligible"
+        COMPLETED = "completed", "Completed"
+        SKIPPED = "skipped", "Skipped"
+
     objects = models.Manager["UploadJob"]()
 
     id = models.UUIDField(
@@ -31,7 +61,8 @@ class UploadJob(models.Model):
     )
 
     file = models.FileField(
-        upload_to="uploads/%Y/%m/%d/", help_text="Uploaded file (report or video)"
+        upload_to=upload_job_upload_to,
+        help_text="Uploaded file (report or video)",
     )
 
     status = models.CharField(
@@ -87,6 +118,45 @@ class UploadJob(models.Model):
         blank=True,
         default=dict,
         help_text="Additional ingest metadata recorded for audit and processing",
+    )
+
+    storage_class = models.CharField(
+        max_length=64,
+        choices=StorageClass.choices,
+        default=StorageClass.INGEST,
+        help_text="High-level storage lifecycle class for the persisted artifact.",
+    )
+
+    storage_tier = models.CharField(
+        max_length=64,
+        choices=StorageTier.choices,
+        default=StorageTier.UPLOAD_API,
+        help_text="Protected storage tier where the upload artifact is persisted.",
+    )
+
+    retention_policy = models.CharField(
+        max_length=64,
+        choices=RetentionPolicy.choices,
+        default=RetentionPolicy.PRESERVE_SOURCE,
+        help_text="Lifecycle policy for the persisted upload artifact.",
+    )
+
+    source_file_persisted = models.BooleanField(
+        default=True,
+        help_text="Whether the source ingest artifact is currently expected to remain on disk.",
+    )
+
+    source_file_delete_eligible_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the persisted source ingest artifact becomes eligible for cleanup.",
+    )
+
+    cleanup_status = models.CharField(
+        max_length=64,
+        choices=CleanupStatus.choices,
+        default=CleanupStatus.PENDING,
+        help_text="Cleanup state for the persisted source artifact.",
     )
 
     created_by = models.ForeignKey(
@@ -151,7 +221,17 @@ class UploadJob(models.Model):
         self.status = self.Status.ANONYMIZED
         if sensitive_meta:
             self.sensitive_meta = sensitive_meta
-        self.save(update_fields=["status", "sensitive_meta", "updated_at"])
+        update_fields = ["status", "sensitive_meta", "updated_at"]
+        if (
+            self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS
+            and self.source_file_delete_eligible_at is None
+        ):
+            self.source_file_delete_eligible_at = timezone.now()
+            update_fields.append("source_file_delete_eligible_at")
+        if self.cleanup_status != self.CleanupStatus.ELIGIBLE:
+            self.cleanup_status = self.CleanupStatus.ELIGIBLE
+            update_fields.append("cleanup_status")
+        self.save(update_fields=update_fields)
 
     def mark_error(self, error_detail: str):
         """Mark the job as failed with error details."""

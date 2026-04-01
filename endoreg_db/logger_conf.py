@@ -1,7 +1,7 @@
-from pathlib import Path
 import os
 
-LOG_DIR = Path("data/logs")
+from endoreg_db.utils.paths import LOG_DIR
+
 DEFAULT_FILE_LOG_LEVEL = "INFO"
 DEFAULT_CONSOLE_LOG_LEVEL = "WARNING"
 
@@ -122,7 +122,7 @@ def get_logging_config(
 # Example usage (optional, for testing the function itself)
 if __name__ == "__main__":
     test_loggers = ["app1", "app2", "database"]
-    log_directory = Path("data/logs_test")  # Use a test directory
+    log_directory = LOG_DIR.parent / "logs_test"
 
     # Optionally clear logs before configuring logging
     print("Clearing logs...")

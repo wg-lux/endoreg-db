@@ -14,25 +14,26 @@ from endoreg_db.services.hub import (
 )
 from endoreg_db.utils.defaults.set_default_center import get_default_processor
 from endoreg_db.utils.paths import (
-    IMPORT_PREANONYMIZED_DIR,
-    IMPORT_REPORT_DIR,
-    IMPORT_VIDEO_DIR,
+    WATCHER_PREANONYMIZED_DROP_DIR,
+    WATCHER_REPORT_DROP_DIR,
+    WATCHER_VIDEO_DROP_DIR,
+    resolve_protected_runtime_path,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_preanonymized_watcher_dir() -> Path:
-    configured_dir = os.environ.get("WATCHER_PREANONYMIZED_DIR")
-    if configured_dir:
-        return Path(configured_dir).expanduser().resolve()
-    return (Path.home() / "Desktop" / IMPORT_PREANONYMIZED_DIR.name).resolve()
+    return resolve_protected_runtime_path(
+        os.environ.get("WATCHER_PREANONYMIZED_DIR"),
+        fallback=WATCHER_PREANONYMIZED_DROP_DIR,
+    )
 
 
 class FileWatcherService:
     def __init__(self) -> None:
-        self.video_dir = IMPORT_VIDEO_DIR
-        self.report_dir = IMPORT_REPORT_DIR
+        self.video_dir = WATCHER_VIDEO_DROP_DIR
+        self.report_dir = WATCHER_REPORT_DROP_DIR
         self.preanonymized_dir = _resolve_preanonymized_watcher_dir()
         self.poll_interval_seconds = float(
             os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", "5")

@@ -20,7 +20,8 @@ import sys
 def main() -> int:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
     os.environ.setdefault("DJANGO_DEBUG", "1")
-    os.environ.setdefault("STORAGE_DIR", "storage")
+    os.environ.setdefault("LX_ANNOTATE_ENCRYPTED_DATA_DIR", "data")
+    os.environ.setdefault("STORAGE_DIR", "data/storage")
     os.environ.setdefault("IO_DIR", "data")
 
     try:

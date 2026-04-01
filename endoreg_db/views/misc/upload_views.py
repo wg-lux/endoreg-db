@@ -25,20 +25,18 @@ from endoreg_db.services.hub import (
     resolve_declared_upload_center,
     resolve_allowed_center_id,
     resolve_upload_center,
+    start_upload_job_processing,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 # Try to import celery task, but provide fallback
 try:
-    from endoreg_db.tasks import process_upload_job
+    from endoreg_db.tasks import process_upload_job as process_upload_job_task
 
     CELERY_AVAILABLE = True
 except ImportError:
     CELERY_AVAILABLE = False
-
-    # Define a dummy function for development
-    def process_upload_job(job_id):
-        pass
+    process_upload_job_task = None
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -47,7 +45,7 @@ class UploadFileView(APIView):
     Handle file uploads (POST /api/upload/).
 
     Accepts multipart/form-data with a 'file' field containing report or video files.
-    Creates an UploadJob and starts asynchronous processing.
+    Creates an UploadJob and starts processing.
 
     Returns:
         201 Created: {"upload_id": "<uuid>", "status_url": "/api/upload/<uuid>/status/"}
@@ -183,6 +181,11 @@ class UploadFileView(APIView):
                 source_system=source_system,
                 idempotency_key=str(idempotency_key),
                 ingest_mode=UploadJob.IngestMode.API,
+                storage_class=UploadJob.StorageClass.INGEST,
+                storage_tier=UploadJob.StorageTier.UPLOAD_API,
+                retention_policy=UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+                source_file_persisted=True,
+                cleanup_status=UploadJob.CleanupStatus.PENDING,
                 processing_provenance={
                     "entrypoint": "api",
                     "declared_center_key": request.data.get("center_key"),
@@ -193,22 +196,19 @@ class UploadFileView(APIView):
                 },
             )
 
-            # Start asynchronous processing if Celery is available
-            if created and CELERY_AVAILABLE:
+            if created:
                 try:
-                    process_upload_job.delay(str(upload_job.id))
+                    start_upload_job_processing(
+                        upload_job=upload_job,
+                        task_dispatcher=(
+                            process_upload_job_task if CELERY_AVAILABLE else None
+                        ),
+                    )
                 except Exception as e:
-                    # If Celery task fails to start, mark job as failed
-                    upload_job.mark_error(f"Failed to start processing: {str(e)}")
                     return Response(
                         {"error": f"Failed to start processing: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
-            elif created:
-                # For development without Celery, mark as processing immediately
-                upload_job.mark_processing()
-                # In production, this would be handled by Celery
-                # For now, just leave it in processing state
 
             # Prepare response
             status_url = reverse("api:upload_status", kwargs={"id": upload_job.id})

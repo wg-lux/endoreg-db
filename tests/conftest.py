@@ -60,8 +60,11 @@ SKIP_EXPENSIVE_TESTS = (
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
 USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
-# Set up storage directory for tests
-TEST_STORAGE_DIR = Path(__file__).parent.parent / "storage" / "tests"
+# Set up protected runtime directories for tests
+TEST_PROTECTED_ROOT = (
+    Path(__file__).parent.parent / "data" / "tests" / "protected_runtime"
+)
+TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
 TEST_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 TEST_ASSET_DIR = Path(__file__).parent / "assets"
 
@@ -659,7 +662,12 @@ def setup_test_environment(cache):
     _cleanup_test_lock_files()
 
     # Set environment variables for tests
+    os.environ.setdefault(
+        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
+        str(TEST_PROTECTED_ROOT),
+    )
     os.environ.setdefault("STORAGE_DIR", str(TEST_STORAGE_DIR))
+    os.environ.setdefault("IO_DIR", str(TEST_PROTECTED_ROOT))
     os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 
     # Apply global video operation safety mocks

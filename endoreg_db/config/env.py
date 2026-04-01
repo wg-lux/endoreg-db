@@ -9,14 +9,48 @@ No Django imports here to prevent early settings configuration.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Detect pytest early to avoid loading .env in test runs
-IS_PYTEST = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+IS_PYTEST = bool(os.environ.get("PYTEST_CURRENT_TEST")) or any(
+    "pytest" in arg for arg in sys.argv
+)
+IS_STATIC_ANALYSIS = any("mypy" in arg for arg in sys.argv)
 
 # Compute repository BASE_DIR (repo root). This file is endoreg_db/config/env.py.
 BASE_DIR = Path(__file__).resolve().parents[2]
+TEST_PROTECTED_ROOT = BASE_DIR / "data" / "tests" / "protected_runtime"
+
+
+def _normalize_protected_runtime_paths(default_protected_root: Path) -> None:
+    os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(
+        Path(
+            os.environ.get(
+                "LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(default_protected_root)
+            )
+        ).resolve()
+    )
+    protected_root = Path(os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"])
+
+    storage_dir = Path(os.environ.get("STORAGE_DIR", protected_root / "storage"))
+    if not storage_dir.is_absolute():
+        storage_dir = (BASE_DIR / storage_dir).resolve()
+    if protected_root not in (storage_dir, *storage_dir.parents):
+        storage_dir = protected_root / "storage"
+    os.environ["STORAGE_DIR"] = str(storage_dir)
+
+    io_dir = Path(os.environ.get("IO_DIR", protected_root))
+    if not io_dir.is_absolute():
+        io_dir = (BASE_DIR / io_dir).resolve()
+    if protected_root not in (io_dir, *io_dir.parents):
+        io_dir = protected_root
+    os.environ["IO_DIR"] = str(io_dir)
+
+
+if IS_PYTEST or IS_STATIC_ANALYSIS:
+    _normalize_protected_runtime_paths(TEST_PROTECTED_ROOT)
 
 # Optional: load .env only when not under pytest
 _DOTENV_LOADED = False
@@ -29,6 +63,9 @@ try:
 except Exception:
     # dotenv is optional, ignore errors
     _DOTENV_LOADED = False
+
+if not IS_PYTEST and not IS_STATIC_ANALYSIS:
+    _normalize_protected_runtime_paths(BASE_DIR / "data")
 
 
 def _get(key: str, default: Optional[str] = None) -> Optional[str]:

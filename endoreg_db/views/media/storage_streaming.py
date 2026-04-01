@@ -7,7 +7,7 @@ from typing import Iterator
 
 from django.http import HttpResponseBase, StreamingHttpResponse
 
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
 
 RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)$")
 
@@ -108,6 +108,10 @@ def maybe_local_plaintext_path(field_file) -> Path | None:
     try:
         path = Path(field_file.path).resolve()
         if path.exists():
+            try:
+                ensure_within_protected_root(path)
+            except ValueError:
+                return None
             return path
     except (AttributeError, NotImplementedError, OSError, ValueError):
         pass
@@ -122,7 +126,13 @@ def maybe_local_plaintext_path(field_file) -> Path | None:
         candidate = candidate.resolve()
     except OSError:
         return None
-    return candidate if candidate.exists() else None
+    if not candidate.exists():
+        return None
+    try:
+        ensure_within_protected_root(candidate)
+    except ValueError:
+        return None
+    return candidate
 
 
 def build_partial_content_response(

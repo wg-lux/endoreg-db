@@ -1,15 +1,19 @@
-import logging
 import os
 import shutil
-from datetime import datetime, timedelta
+import logging
 from pathlib import Path
-
-from django.conf import settings
+from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand, CommandError
-
 from endoreg_db.models import VideoFile
+from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, data_paths
 
 logger = logging.getLogger(__name__)
+
+FRAME_CLEANUP_COMPLETE_STATUSES = (
+    "done_processing_anonymization",
+    "validated",
+    "anonymized",
+)
 
 
 class Command(BaseCommand):
@@ -128,8 +132,8 @@ class Command(BaseCommand):
             usage_percent = (used / total) * 100
 
             # Get project-specific storage info
-            project_root = Path(settings.BASE_DIR).parent
-            project_storage = self.get_directory_size(project_root)
+            protected_root = self.get_protected_root()
+            project_storage = self.get_directory_size(protected_root)
 
             return {
                 "total_gb": total / (1024**3),
@@ -158,6 +162,30 @@ class Command(BaseCommand):
         except Exception:
             pass
         return total_size
+
+    def get_storage_root(self) -> Path:
+        """Return the canonical storage root from centralized path helpers."""
+        return data_paths["storage"]
+
+    def get_protected_root(self) -> Path:
+        """Return the canonical protected runtime root."""
+        return PROTECTED_DATA_ROOT
+
+    def get_frames_dir(self) -> Path:
+        """Return the canonical extracted-frames directory."""
+        return data_paths["frame"]
+
+    def get_uploads_dir(self) -> Path:
+        """Return the upload cache directory under the canonical storage root."""
+        return self.get_storage_root() / "uploads"
+
+    def get_temp_dirs(self) -> list[Path]:
+        """Return temp directories worth cleaning."""
+        return [
+            Path("/tmp"),
+            self.get_protected_root() / "tmp",
+            self.get_storage_root() / "temp",
+        ]
 
     def display_storage_status(self, storage_info):
         """Display current storage status."""
@@ -253,20 +281,20 @@ class Command(BaseCommand):
         self.stdout.write("🖼️  Cleaning up extracted video frames...")
 
         total_freed = 0
-        frames_dir = Path(settings.BASE_DIR).parent / "storage" / "frames"
+        frames_dir = self.get_frames_dir()
 
         if not frames_dir.exists():
             return 0
 
         # Find videos that have completed processing
         completed_videos = VideoFile.objects.filter(
-            anonymization_tasks__status="done_processing_anonymization"
+            anonymization_tasks__status__in=FRAME_CLEANUP_COMPLETE_STATUSES
         ).distinct()
 
         for video in completed_videos:
             try:
                 # Find frame directories for this video
-                video_frame_dirs = list(frames_dir.glob(f"*{video.video_hash}*"))
+                video_frame_dirs = list(frames_dir.glob(f"*{video.uuid}*"))
 
                 for frame_dir in video_frame_dirs:
                     if frame_dir.is_dir():
@@ -277,13 +305,11 @@ class Command(BaseCommand):
 
                         total_freed += dir_size
                         self.stdout.write(
-                            f"  Removed frames for {video.video_hash}: {dir_size / (1024**2):.1f} MB"
+                            f"  Removed frames for {video.uuid}: {dir_size / (1024**2):.1f} MB"
                         )
 
             except Exception as e:
-                logger.warning(
-                    f"Failed to clean frames for video {video.video_hash}: {e}"
-                )
+                logger.warning(f"Failed to clean frames for video {video.uuid}: {e}")
                 continue
 
         self.stdout.write(f"✅ Frames cleanup: {total_freed / (1024**3):.2f} GB freed")
@@ -294,7 +320,7 @@ class Command(BaseCommand):
         self.stdout.write("📤 Cleaning up upload cache...")
 
         total_freed = 0
-        uploads_dir = Path(settings.BASE_DIR).parent / "storage" / "uploads"
+        uploads_dir = self.get_uploads_dir()
 
         if not uploads_dir.exists():
             return 0
@@ -328,7 +354,7 @@ class Command(BaseCommand):
         self.stdout.write("📋 Cleaning up old log files...")
 
         total_freed = 0
-        project_root = Path(settings.BASE_DIR).parent
+        project_root = Path(__file__).resolve().parents[3]
 
         # Find and clean large log files
         for log_file in project_root.rglob("*.log"):
@@ -358,11 +384,7 @@ class Command(BaseCommand):
         self.stdout.write("🗂️  Cleaning up temporary files...")
 
         total_freed = 0
-        temp_dirs = [
-            "/tmp",
-            Path(settings.BASE_DIR).parent / "data" / "tmp",
-            Path(settings.BASE_DIR).parent / "storage" / "tmp",
-        ]
+        temp_dirs = self.get_temp_dirs()
 
         for temp_dir in temp_dirs:
             if not Path(temp_dir).exists():
@@ -445,13 +467,11 @@ class Command(BaseCommand):
 
                         total_freed += file_size
                         self.stdout.write(
-                            f"  Removed processed video {video.video_hash}: {file_size / (1024**2):.1f} MB"
+                            f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
                         )
 
             except Exception as e:
-                logger.warning(
-                    f"Failed to clean processed video {video.video_hash}: {e}"
-                )
+                logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
                 continue
 
         self.stdout.write(
@@ -464,7 +484,7 @@ class Command(BaseCommand):
         self.stdout.write("🖼️  AGGRESSIVE: Cleaning up ALL extracted video frames...")
 
         total_freed = 0
-        frames_dir = Path(settings.BASE_DIR).parent / "storage" / "frames"
+        frames_dir = self.get_frames_dir()
 
         if not frames_dir.exists():
             self.stdout.write("No frames directory found")
@@ -513,7 +533,7 @@ class Command(BaseCommand):
         self.stdout.write("📤 AGGRESSIVE: Cleaning up ALL upload cache...")
 
         total_freed = 0
-        uploads_dir = Path(settings.BASE_DIR).parent / "storage" / "uploads"
+        uploads_dir = self.get_uploads_dir()
 
         if not uploads_dir.exists():
             return 0
@@ -562,9 +582,7 @@ class Command(BaseCommand):
                     freed = self._cleanup_processed_video_file(video)
                     total_freed += freed
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to clean processed video {video.video_hash}: {e}"
-                    )
+                    logger.warning(f"Failed to clean processed video {video.uuid}: {e}")
                     continue
 
         except Exception as e:
@@ -588,7 +606,7 @@ class Command(BaseCommand):
                     video.processed_file = None
                     video.save(update_fields=["processed_file"])
                 self.stdout.write(
-                    f"  Removed processed video {video.video_hash}: {file_size / (1024**2):.1f} MB"
+                    f"  Removed processed video {video.uuid}: {file_size / (1024**2):.1f} MB"
                 )
                 return file_size
         return 0

@@ -1,15 +1,5 @@
 """Module for utility classes and functions."""
 
-# --- Imports from submodules ---
-
-# dataloader
-from endoreg_db.utils.video.ffmpeg_wrapper import (
-    assemble_video_from_frames,
-    get_stream_info,
-    transcode_video,
-    transcode_videofile_if_required,
-)
-
 from .dataloader import load_model_data_from_yaml
 
 # dates
@@ -54,10 +44,47 @@ from .storage import file_exists as storage_file_exists
 
 # validate_endo_roi
 from .validate_endo_roi import validate_endo_roi
-from .video import split_video
 
-# ffmpeg_wrapper
-from .video.ffmpeg_wrapper import extract_frames
+
+def assemble_video_from_frames(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import (
+        assemble_video_from_frames as _impl,
+    )
+
+    return _impl(*args, **kwargs)
+
+
+def get_stream_info(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def transcode_video(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import transcode_video as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def transcode_videofile_if_required(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import (
+        transcode_videofile_if_required as _impl,
+    )
+
+    return _impl(*args, **kwargs)
+
+
+def extract_frames(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import extract_frames as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def split_video(*args, **kwargs):
+    from endoreg_db.utils.video.video_splitter import split_video as _impl
+
+    return _impl(*args, **kwargs)
+
 
 # --- Exports ---
 

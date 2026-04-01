@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission, is_debug_mode
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
 
 logger = logging.getLogger(__name__)
 NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
@@ -85,6 +85,16 @@ class FrameStreamView(APIView):
             resolved_frame_path = frame_path.resolve(strict=True)
         except FileNotFoundError as exc:
             raise Http404("Frame file not found on disk") from exc
+
+        try:
+            ensure_within_protected_root(resolved_frame_path)
+        except ValueError as exc:
+            logger.warning(
+                "Rejected frame path outside protected data root for video %s: %s",
+                getattr(video, "pk", None),
+                resolved_frame_path,
+            )
+            raise Http404("Frame file path is invalid") from exc
 
         frame_dir = video.get_frame_dir_path()
         if frame_dir is None:

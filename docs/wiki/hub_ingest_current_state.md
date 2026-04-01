@@ -55,6 +55,8 @@ Current behavior:
   `idempotency_key`
 - when Celery is available, job execution is queued through
   `endoreg_db.process_upload_job`
+- when Celery is not available, the same upload job is processed inline through
+  `endoreg_db.services.hub.process_upload_job(...)`
 
 Relevant files:
 
@@ -176,7 +178,8 @@ The current ingest flow is persistence-oriented, not sync-and-evict oriented.
 For API ingest:
 
 - uploaded files are stored through `UploadJob.file`
-- `process_upload_job(...)` then calls the report or video import service with
+- processing is then handed off either through Celery or inline execution
+- `process_upload_job(...)` calls the report or video import service with
   `delete_source=False`
 
 For watcher ingest:

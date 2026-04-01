@@ -18,6 +18,9 @@ class EndoregDbConfig(AppConfig):
         first database connection becomes available.
         """
         ensure_keycloak_settings()
+        from endoreg_db.utils.paths import validate_runtime_storage_contract
+
+        validate_runtime_storage_contract()
         from endoreg_db.services.reconciliation import (
             ReconciliationService,
             should_run_startup_reconciliation,

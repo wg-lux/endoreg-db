@@ -106,3 +106,40 @@ class VideoStreamViewTests(TestCase):
         assert response.status_code == 206
         assert response["Content-Range"] == f"bytes 25-99/{len(payload)}"
         assert b"".join(response.streaming_content) == payload[25:100]
+
+    def test_video_stream_does_not_emit_nginx_redirect_for_plaintext_path_outside_protected_root(
+        self,
+    ):
+        from endoreg_db.views.video import video_stream as view_module
+
+        tmp_file_path = None
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                tmp.write(b"\x00\x00\x00\x18ftypmp42")
+                tmp.flush()
+                tmp_file_path = Path(tmp.name)
+
+            fake_file_field = SimpleNamespace(
+                name=tmp_file_path.name,
+                path=str(tmp_file_path),
+                size=tmp_file_path.stat().st_size,
+            )
+            fake_video_obj = SimpleNamespace(
+                active_raw_file=fake_file_field,
+                processed_file=fake_file_field,
+            )
+
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setattr(
+                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+            )
+
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+            if tmp_file_path and tmp_file_path.exists():
+                tmp_file_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert "X-Accel-Redirect" not in response

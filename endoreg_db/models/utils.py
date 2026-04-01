@@ -1,11 +1,8 @@
 import io
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple
 
-import cv2
-import numpy as np
-from numpy.typing import NDArray
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage
 
@@ -43,15 +40,15 @@ def prepare_bulk_frames(frame_paths: List[Path]):
         yield frame_number, file_obj
 
 
-def find_segments_in_prediction_array(
-    prediction_array: NDArray[np.generic], min_frame_len: int
-):
+def find_segments_in_prediction_array(prediction_array: Any, min_frame_len: int):
     """
     Expects a prediction array of shape (num_frames) and a minimum frame length.
     Returns a list of tuples (start_frame_number, end_frame_number) that represent the segments.
     """
+    import numpy as np
+
     # Add False to the beginning and end to detect changes at the array boundaries
-    padded_prediction: NDArray[np.generic] = np.pad(
+    padded_prediction = np.pad(
         prediction_array, (1, 1), "constant", constant_values=False
     )
 
@@ -80,6 +77,9 @@ def anonymize_frame(
     """
     Anonymize the frame by blacking out pixels outside the endoscope ROI or making the whole frame black.
     """
+    import cv2
+    import numpy as np
+
     frame = cv2.imread(raw_frame_path.as_posix())
     if frame is None:
         # Raise error instead of returning None/frame
