@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from django.db import transaction
 from rest_framework import status
@@ -8,6 +7,7 @@ from rest_framework.views import APIView
 
 from ...models import SensitiveMeta, VideoFile
 from ...services.video_import import VideoImportService
+from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +52,6 @@ class VideoReimportView(APIView):
             logger.warning(f"Video {video.video_hash} has no raw file")
             return Response(
                 {"error": "Video has no raw file to re-import."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Check if the raw file actually exists on disk
-        raw_file_path = video.get_raw_file_path()
-        if raw_file_path is not None:
-            raw_file_path = Path(raw_file_path)
-        if not raw_file_path.exists():
-            logger.error(f"Raw file not found on disk: {raw_file_path}")
-            return Response(
-                {"error": f"Video file not found on server: {raw_file_path.name}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -144,40 +133,55 @@ class VideoReimportView(APIView):
                     logger.info(
                         f"Starting anonymization using VideoImportService for {video.video_hash}"
                     )
-                    self.video_service.import_and_anonymize(
-                        file_path=raw_file_path,
-                        center_name=video.center.name,
-                        processor_name=processor_name,
-                        retry=True,
-                        delete_source=False,
-                    )
+                    with ensure_local_file(video.raw_file) as raw_file_path:
+                        self.video_service.import_and_anonymize(
+                            file_path=raw_file_path,
+                            center_name=video.center.name,
+                            processor_name=processor_name,
+                            retry=True,
+                            delete_source=False,
+                        )
                     video.refresh_from_db()
-
-                    logger.info(
-                        f"VideoImportService anonymization completed for {video.video_hash}"
+                except FileNotFoundError as e:
+                    logger.warning(
+                        "Raw source missing during video re-import for %s: %s",
+                        video.video_hash,
+                        e,
                     )
-
                     return Response(
                         {
-                            "message": "Video re-import with VideoImportService completed successfully.",
+                            "error": "Video raw source could not be materialized from storage.",
+                            "error_type": "missing_source",
                             "video_id": pk,
                             "uuid": str(video.video_hash),
-                            "frame_cleaning_applied": True,
-                            "sensitive_meta_created": video.sensitive_meta is not None,
-                            "sensitive_meta_id": video.sensitive_meta.id
-                            if video.sensitive_meta
-                            else None,
-                            "updated_in_place": True,
-                            "status": "done",
                         },
-                        status=status.HTTP_200_OK,
+                        status=status.HTTP_404_NOT_FOUND,
                     )
-
                 except Exception as e:
                     logger.exception(
                         f"VideoImportService anonymization failed for video {video.video_hash}: {e}"
                     )
                     logger.warning("Continuing without anonymization due to error")
+
+                logger.info(
+                    f"VideoImportService anonymization completed for {video.video_hash}"
+                )
+
+                return Response(
+                    {
+                        "message": "Video re-import with VideoImportService completed successfully.",
+                        "video_id": pk,
+                        "uuid": str(video.video_hash),
+                        "frame_cleaning_applied": True,
+                        "sensitive_meta_created": video.sensitive_meta is not None,
+                        "sensitive_meta_id": video.sensitive_meta.id
+                        if video.sensitive_meta
+                        else None,
+                        "updated_in_place": True,
+                        "status": "done",
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
             # If we reach here, everything was successful
             logger.info(

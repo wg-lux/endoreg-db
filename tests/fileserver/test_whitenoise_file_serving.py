@@ -1,5 +1,4 @@
-import requests
-from django.test import LiveServerTestCase
+from django.test import TestCase
 
 from tests.media.video.helper import get_random_video_path_by_examination_alias
 
@@ -11,7 +10,7 @@ from ..helpers.default_objects import (
 )
 
 
-class WhiteNoiseFileServingTest(LiveServerTestCase):
+class WhiteNoiseFileServingTest(TestCase):
     def setUp(self):
         load_base_db_data()
 
@@ -39,25 +38,11 @@ class WhiteNoiseFileServingTest(LiveServerTestCase):
             self.video_file.delete_with_file()
 
     def test_video_file_accessible_via_url(self):
-        # Use the live server's URL, not a hardcoded one
-        full_url = (
-            self.live_server_url + self.video_url
-        )  # self.url should be the relative media path, e.g. '/media/videos/uuid.mp4'
-        print(f"DEBUG: Testing full URL: {full_url}")
-        response = requests.head(full_url)
-        print(f"DEBUG: Response status code: {response.status_code}")
-        print(f"DEBUG: Response content-type: {response.headers.get('Content-Type')}")
+        response = self.client.get(self.video_url)
         self.assertEqual(response.status_code, 200)
-        # Optionally, check content type or partial content
 
     def test_pdf_file_accessible_via_url(self):
         if self.pdf_url is None:
             self.fail("report file URL is None.")
-        full_url = self.live_server_url + self.pdf_url
-        print(f"DEBUG: Testing full URL for report: {full_url}")
-        response = requests.head(full_url)
-        print(f"DEBUG: Response status code for report: {response.status_code}")
-        print(
-            f"DEBUG: Response content-type for report: {response.headers.get('Content-Type')}"
-        )
+        response = self.client.get(self.pdf_url)
         self.assertEqual(response.status_code, 200)

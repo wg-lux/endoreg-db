@@ -288,8 +288,8 @@ def get_default_egd_pdf():
         # Use storage API to check existence
         file_field = pdf_file.file
         assert isinstance(file_field, FieldFile)
-        assert default_storage.exists(file_field.path), (
-            f"report file does not exist in storage at {file_field.path}"
+        assert default_storage.exists(file_field.name), (
+            f"report file does not exist in storage at {file_field.name}"
         )
         # Check that the source temp file was deleted
         assert not temp_file_path.exists(), (

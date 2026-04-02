@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from ...models import RawPdfFile, SensitiveMeta
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +50,9 @@ class ReportReimportView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Get raw file path using the model method
-        raw_file_path = pdf.get_raw_file_path()
-
-        if not raw_file_path or not raw_file_path.exists():
+        if not pdf.file or not getattr(pdf.file, "name", None):
             logger.error(
-                f"Raw report file not found for hash {pdf.pdf_hash}: {raw_file_path}"
+                f"Raw report file not found for hash {pdf.pdf_hash}: missing storage file"
             )
             return Response(
                 {
@@ -99,12 +97,13 @@ class ReportReimportView(APIView):
                     logger.info(
                         f"Starting reprocessing using ReportImportService for {pdf.pdf_hash}"
                     )
-                    self.pdf_service.import_and_anonymize(
-                        file_path=raw_file_path,
-                        center_name=pdf.center.name,
-                        delete_source=False,  # Don't delete during reimport
-                        retry=True,  # Mark as retry attempt
-                    )
+                    with ensure_local_file(pdf.file) as raw_file_path:
+                        self.pdf_service.import_and_anonymize(
+                            file_path=raw_file_path,
+                            center_name=pdf.center.name,
+                            delete_source=False,  # Don't delete during reimport
+                            retry=True,  # Mark as retry attempt
+                        )
 
                     logger.info(
                         f"ReportImportService reprocessing completed for {pdf.pdf_hash}"

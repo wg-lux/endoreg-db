@@ -60,16 +60,13 @@ class VideoProcessingHistorySerializer(serializers.ModelSerializer):
         if not obj.output_file or obj.status != VideoProcessingHistory.STATUS_SUCCESS:
             return None
 
-        # Build URL to download endpoint (to be implemented)
-        # Format: /api/media/processed-videos/{video_id}/{history_id}/
+        relative_url = f"/api/media/videos/{obj.video.id}/stream/?type=processed"
         context = self.context if isinstance(self.context, Mapping) else None
         request = context.get("request") if context else None
         if request:
-            return request.build_absolute_uri(
-                f"/api/media/processed-videos/{obj.video.id}/{obj.id}/"
-            )
+            return request.build_absolute_uri(relative_url)
 
-        return f"/api/media/processed-videos/{obj.video.id}/{obj.id}/"
+        return relative_url
 
     def get_operation_display(self, obj) -> str:
         display = getattr(obj, "get_operation_display", None)

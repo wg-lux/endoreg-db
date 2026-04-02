@@ -3,13 +3,19 @@ import mimetypes
 import os
 from pathlib import Path
 
-from django.http import FileResponse, Http404, HttpResponse
+from django.core.files import File
+from django.http import Http404, HttpResponse
 from rest_framework.views import APIView
 
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission, is_debug_mode
 from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
+from endoreg_db.views.media.storage_streaming import (
+    add_cors_headers,
+    build_partial_content_response,
+    parse_byte_range,
+)
 
 logger = logging.getLogger(__name__)
 NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
@@ -249,9 +255,24 @@ class FrameStreamView(APIView):
                 nginx_response["Access-Control-Allow-Credentials"] = "true"
                 return nginx_response
 
-        file_handle = open(frame_path, "rb")
-        response = FileResponse(file_handle, content_type=content_type)
-        response["Content-Disposition"] = f'inline; filename="{frame_path.name}"'
-        response["Access-Control-Allow-Origin"] = frontend_origin
-        response["Access-Control-Allow-Credentials"] = "true"
-        return response
+        range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+        file_size = frame_path.stat().st_size
+        if range_header:
+            try:
+                parse_byte_range(range_header, file_size)
+            except ValueError:
+                response = HttpResponse(status=416, content_type=content_type)
+                response["Content-Range"] = f"bytes */{file_size}"
+                response["Accept-Ranges"] = "bytes"
+                return add_cors_headers(response, frontend_origin)
+
+        django_file = File(frame_path.open("rb"), name=frame_path.name)
+        response = build_partial_content_response(
+            field_file=django_file,
+            content_type=content_type,
+            file_size=file_size,
+            range_header=range_header,
+            disposition="inline",
+            filename=frame_path.name,
+        )
+        return add_cors_headers(response, frontend_origin)

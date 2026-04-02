@@ -35,6 +35,7 @@ from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.utils.paths import ANONYM_VIDEO_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
@@ -327,13 +328,10 @@ class VideoApplyMaskView(APIView):
             # Initialize FrameCleaner
             frame_cleaner = FrameCleaner()
 
-            # Get video paths
-            raw_file_path = video.get_raw_file_path()
-            if raw_file_path is None:
+            if not video.raw_file or not getattr(video.raw_file, "name", None):
                 raise FileNotFoundError(
                     f"Raw video file not found for correction: {video.video_hash}"
                 )
-            video_path = Path(raw_file_path)
             output_path = _masked_output_path(video)
             temp_output_path = _part_output_path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,12 +355,13 @@ class VideoApplyMaskView(APIView):
 
             start_time = time.time()
 
-            success = frame_cleaner.mask_application.mask_video_streaming(
-                input_video=video_path,
-                mask_config=mask_config,
-                output_video=temp_output_path,
-                use_named_pipe=processing_method == "streaming",
-            )
+            with ensure_local_file(video.raw_file) as raw_path:
+                success = frame_cleaner.mask_application.mask_video_streaming(
+                    input_video=raw_path,
+                    mask_config=mask_config,
+                    output_video=temp_output_path,
+                    use_named_pipe=processing_method == "streaming",
+                )
 
             processing_time = time.time() - start_time
 
@@ -500,13 +499,10 @@ class VideoRemoveFramesView(APIView):
             # Initialize FrameCleaner
             frame_cleaner = FrameCleaner()
 
-            # Get video paths
-            raw_file_path = video.get_raw_file_path()
-            if raw_file_path is None:
+            if not video.raw_file or not getattr(video.raw_file, "name", None):
                 raise FileNotFoundError(
                     f"Raw video file not found for frame removal: {video.video_hash}"
                 )
-            video_path = Path(raw_file_path)
             output_path = _cleaned_output_path(video)
             temp_output_path = _part_output_path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -517,13 +513,14 @@ class VideoRemoveFramesView(APIView):
 
             start_time = time.time()
 
-            success = frame_cleaner.remove_frames_from_video_streaming(
-                original_video=video_path,
-                frames_to_remove=frames_to_remove,
-                output_video=temp_output_path,
-                total_frames=video.frame_count,
-                use_named_pipe=processing_method == "streaming",
-            )
+            with ensure_local_file(video.raw_file) as raw_path:
+                success = frame_cleaner.remove_frames_from_video_streaming(
+                    original_video=raw_path,
+                    frames_to_remove=frames_to_remove,
+                    output_video=temp_output_path,
+                    total_frames=video.frame_count,
+                    use_named_pipe=processing_method == "streaming",
+                )
 
             processing_time = time.time() - start_time
 

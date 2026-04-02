@@ -93,36 +93,6 @@ class LegacyVideoTestComparison(TestCase, OptimizedVideoTestCase):
     This demonstrates the performance difference between old and new approaches.
     """
 
-    def test_legacy_approach_expensive(self):
-        """
-        BEFORE: Legacy approach - expensive operations every test.
-
-        This would typically take 60+ seconds due to:
-        - Loading database data repeatedly
-        - Creating new video file from scratch
-        - Running actual FFmpeg operations
-        - AI model inference
-        """
-        # This is how tests used to work (commented out to avoid running)
-        """
-        from tests.helpers.default_objects import get_default_video_file
-        from tests.helpers.data_loader import load_base_db_data
-        
-        # Expensive: loads all data every test
-        load_base_db_data()
-        
-        # Expensive: creates new video file every test
-        video_file = get_default_video_file()
-        
-        # Expensive: actual file operations
-        video_file.pipe_1()  # Frame extraction + AI inference
-        video_file.pipe_2()  # Video anonymization
-        
-        # Cleanup expensive operations
-        video_file.delete_with_file()
-        """
-        pass  # Skip for demonstration
-
     def test_optimized_approach_fast(self):
         """
         AFTER: Optimized approach - fast operations with same coverage.

@@ -33,6 +33,11 @@ def _load_video_view_module(module_name: str):
     return module
 
 
+@contextmanager
+def _context_path(path: Path):
+    yield path
+
+
 class _FakeHistory:
     def __init__(self):
         self.running = False
@@ -65,7 +70,7 @@ class _FakeVideo:
         self.id = 1
         self.pk = 1
         self.video_hash = "video-hash"
-        self.raw_file = object()
+        self.raw_file = SimpleNamespace(name=raw_path.name, path=str(raw_path))
         self.center = SimpleNamespace(name="university_hospital_wuerzburg")
         self.video_meta = SimpleNamespace(
             processor=SimpleNamespace(name="olympus_cv_1500")
@@ -119,11 +124,19 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(tmp_path, monke
         objects = SimpleNamespace(get=lambda **kwargs: video)
 
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
+    monkeypatch.setattr(
+        module,
+        "ensure_local_file",
+        lambda field_file: (_ for _ in ()).throw(
+            FileNotFoundError("raw source missing from storage")
+        ),
+        raising=True,
+    )
 
     response = module.VideoReimportView.as_view()(factory.post("/reimport/"), pk=1)
 
-    assert response.status_code == 400
-    assert "not found on server" in response.data["error"]
+    assert response.status_code == 404
+    assert "could not be materialized from storage" in response.data["error"]
 
 
 @pytest.mark.django_db
@@ -158,6 +171,12 @@ def test_reimport_uses_retry_true_and_refreshes_video(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "VideoFile", _FakeVideoModel, raising=True)
     monkeypatch.setattr(module, "SensitiveMeta", _FakeSensitiveMetaModel, raising=True)
     monkeypatch.setattr(module.transaction, "atomic", _fake_atomic, raising=True)
+    monkeypatch.setattr(
+        module,
+        "ensure_local_file",
+        lambda field_file: _context_path(raw_path),
+        raising=True,
+    )
 
     view = module.VideoReimportView()
     view.video_service = _FakeService()

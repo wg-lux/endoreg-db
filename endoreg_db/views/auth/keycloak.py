@@ -1,40 +1,8 @@
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
-from rest_framework.response import Response
-
 from django.shortcuts import redirect
 from django.conf import settings
 from urllib.parse import urlencode
 import requests
 from django.http import HttpResponse
-
-"""
-    User hits /videos/
-    Middleware checks for token; if missing, redirects to /login/
-    /login/ redirects to Keycloak
-    User logs in → Keycloak sends them back to /login/callback/
-    /login/callback/ exchanges code for token, stores it in session
-    User is redirected to /videos/ again
-    Middleware now sees token, verifies it, injects user
-    DRF view (KeycloakVideoView) is allowed to execute and returns data
-"""
-
-
-class KeycloakVideoView(APIView):
-    permission_classes = [
-        IsAuthenticated
-    ]  # This uses DRF permissions to ensure request.user.is_authenticated == True.
-    print("1")
-
-    def get(self, request):
-        """
-        We already inject a mock user in the middleware, so this will pass if the middleware succeeded.
-        Returns a message including the Keycloak username.
-        """
-        username = getattr(request.user, "preferred_username", "Unknown")
-        return Response(
-            {"message": f"🎥 Hello, {username}. You are viewing protected videos!"}
-        )
 
 
 def keycloak_login(request):

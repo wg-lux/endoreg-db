@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 from django.db.models import Q
-from django.http import FileResponse, Http404
+from django.http import Http404, HttpResponse
 from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework import status
 from rest_framework.response import Response
@@ -22,6 +22,13 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import file_exists
+
+from .storage_streaming import (
+    add_cors_headers,
+    build_partial_content_response,
+    field_file_size,
+    parse_byte_range,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +90,7 @@ class PdfMediaView(APIView):
             pk: Optional report ID for detail view or streaming
 
         Returns:
-            Response or FileResponse: JSON response with report data or report file stream
+            Response: JSON response with report data or streamed report bytes
 
         Raises:
             Http404: If specific report not found
@@ -91,7 +98,7 @@ class PdfMediaView(APIView):
         if pk is not None:
             # Check if this is a streaming request
             if request.path.endswith("/stream/"):
-                return self._stream_pdf(pk)
+                return self._stream_pdf(request, pk)
             else:
                 # Detail view
                 return self._get_pdf_detail(pk)
@@ -179,7 +186,7 @@ class PdfMediaView(APIView):
             )
 
     @xframe_options_exempt
-    def _stream_pdf(self, pk):
+    def _stream_pdf(self, request, pk: int):
         """
         Stream report file content for viewing/download.
 
@@ -187,7 +194,7 @@ class PdfMediaView(APIView):
             pk: report primary key
 
         Returns:
-            FileResponse: report file stream
+            Response: streamed report file content
 
         Raises:
             Http404: If report not found or file cannot be accessed
@@ -203,28 +210,41 @@ class PdfMediaView(APIView):
             pdf = RawPdfFile.objects.get(pk=pdf_id_int)
 
             file_field = pdf.file
-            file_path = file_field.path
-
             if not file_field or not file_field.name:
                 raise Http404("report file not found")
             if not file_exists(file_field):
                 raise Http404("report file does not exist in storage")
 
-            with open(file_path, "rb") as file_handle:
-                response = FileResponse(
-                    file_handle,
-                    content_type="application/pdf",
-                    as_attachment=False,
-                )
+            file_size = field_file_size(file_field)
+            range_header = request.headers.get("Range") or request.META.get(
+                "HTTP_RANGE"
+            )
+            if range_header:
+                try:
+                    parse_byte_range(range_header, file_size)
+                except ValueError:
+                    range_error_response = HttpResponse(
+                        status=416,
+                        content_type="application/pdf",
+                    )
+                    range_error_response["Content-Range"] = f"bytes */{file_size}"
+                    range_error_response["Accept-Ranges"] = "bytes"
+                    frontend_origin = os.environ.get(
+                        "FRONTEND_ORIGIN", "http://localhost:8000"
+                    )
+                    return add_cors_headers(range_error_response, frontend_origin)
 
             filename = Path(file_field.name).name
-            response["Content-Disposition"] = f'inline; filename="{filename}"'
-
+            streaming_response = build_partial_content_response(
+                field_file=file_field,
+                content_type="application/pdf",
+                file_size=file_size,
+                range_header=range_header,
+                disposition="inline",
+                filename=filename,
+            )
             frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:8000")
-            response["Access-Control-Allow-Origin"] = frontend_origin
-            response["Access-Control-Allow-Credentials"] = "true"
-
-            return response
+            return add_cors_headers(streaming_response, frontend_origin)
 
         except RawPdfFile.DoesNotExist:
             raise Http404(f"report with ID {pk} not found")

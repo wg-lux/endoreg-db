@@ -1127,6 +1127,50 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
         )
 
 
+@pytest.fixture(autouse=True)
+def auto_mock_video_anonymizer_for_non_integration_video_tests(
+    request, monkeypatch, tmp_path
+):
+    """
+    Prevent unit-style video tests from invoking the real lx_anonymizer/Ollama stack.
+
+    Real anonymization is still allowed for tests explicitly marked as integration or
+    expensive.
+    """
+    is_video_test = "video" in request.node.nodeid.lower() or any(
+        mark.name == "video" for mark in request.node.iter_markers()
+    )
+    allows_real_stack = any(
+        mark.name in {"integration", "expensive"}
+        for mark in request.node.iter_markers()
+    )
+
+    if not is_video_test or allows_real_stack:
+        return
+
+    class DummyVideoAnonymizer:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def anonymize_video(self, ctx):
+            assert ctx.current_video is not None
+            output_dir = tmp_path / "mock_anonymized_videos"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"{ctx.current_video.video_hash}.mp4"
+            output_path.write_bytes(b"mock-anonymized-video")
+            ctx.anonymized_path = output_path
+            return ctx
+
+    monkeypatch.setattr(
+        "endoreg_db.import_files.video_import_service.VideoAnonymizer",
+        DummyVideoAnonymizer,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.import_files.processing.video_processing.video_anonymization.VideoAnonymizer",
+        DummyVideoAnonymizer,
+    )
+
+
 @pytest.fixture
 def smart_video_mocks(monkeypatch, cache):
     """

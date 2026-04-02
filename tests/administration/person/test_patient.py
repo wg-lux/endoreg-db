@@ -1,6 +1,5 @@
 import random
 from logging import getLogger
-from pathlib import Path
 
 from django.test import TestCase
 
@@ -102,8 +101,7 @@ class PatientModelWithExaminationTest(TestCase):
         # make sure the pdf file exists
         files = sample_examination_3.raw_pdf_files.all()
         self.assertEqual(len(files), 1)
-        file_exists = Path(files[0].file.path).exists()
-        self.assertEqual(file_exists, True)
+        self.assertTrue(files[0].file.storage.exists(files[0].file.name))
 
     def test_get_random_age(self):
         """Test if the get_random_age method returns a valid age."""
