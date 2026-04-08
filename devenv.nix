@@ -36,8 +36,8 @@ let
     pkg-config
     protobuf
     libglvnd
-    xorg.libxcb
-    xorg.libX11
+    libxcb
+    libx11
     cargo
     rustc
     rustfmt
@@ -57,10 +57,10 @@ let
     ollama.out
     tesseract
     # --- ADDED THESE FOR OPENCV 4.13+ SUPPORT ---
-    xorg.libxcb      # Provides libxcb.so.1
-    xorg.libX11      # Common dependency for XCB
-    xorg.libXext     # Common dependency for OpenCV
-    xorg.libXrender  # Common dependency for OpenCV
+    libxcb      # Provides libxcb.so.1
+    libx11      # Common dependency for XCB
+    libxext     # Common dependency for OpenCV
+    libxrender  # Common dependency for OpenCV
     libxkbcommon     # Often required by newer Qt/OpenCV builds
     # ------------------------------------------
     cargo
@@ -122,28 +122,33 @@ in
           workspaceRoot = ./.;
         };
 
-        uvOverlay = workspace.mkPyprojectOverlay {
+        overlay = workspace.mkPyprojectOverlay {
           sourcePreference = "wheel";
         };
 
         pythonSet =
           (pkgs.callPackage inputs.pyproject-nix.build.packages {
             python = pkgs.python312;
-          }).overrideScope
+          }).overrideScope (lib.composeManyExtensions [
+            inputs.pyproject-build-systems.overlays.default
+            overlay
             (
-              pkgs.lib.composeManyExtensions [
-                inputs.pyproject-build-systems.overlays.wheel
-                uvOverlay
-                (
-                  final: prev: {
-                    numba = pkgs.python312Packages.numba;
-                    llvmlite = pkgs.python312Packages.llvmlite;
-                  }
-                )
-              ]
-            );
+              final: prev: {
+                numba = prev.numba.overrideAttrs (old: {
+                  buildInputs = (old.buildInputs or [ ]) ++ [
+                    pkgs.onetbb
+                    numbaSupport
+                  ];
+                  preFixup = (old.preFixup or "") + ''
+                    addAutoPatchelfSearchPath ${lib.getLib pkgs.onetbb}/lib
+                    addAutoPatchelfSearchPath ${numbaSupport}/lib
+                  '';
+                });
+              }
+            )
+          ]);
 
-        pythonApp = pythonSet.resolveVirtualEnv workspace.deps.default;
+        pythonApp = pythonSet.mkVirtualEnv "endoreg_db-env" workspace.deps.default;
         nativeDrv = pkgs.rustPlatform.buildRustPackage {
           pname = "rust_endoreg_rust_backend";
           version = "0.1.0";

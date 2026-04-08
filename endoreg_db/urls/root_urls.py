@@ -24,5 +24,11 @@ urlpatterns = [
 
 # Serve static/media in DEBUG at the root (NOT under /api/)
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    protected_media_url = getattr(settings, "PROTECTED_MEDIA_URL", None)
+    protected_media_root = getattr(settings, "PROTECTED_MEDIA_ROOT", None)
+    if protected_media_url and protected_media_root:
+        urlpatterns += static(
+            protected_media_url,
+            document_root=protected_media_root,
+        )
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

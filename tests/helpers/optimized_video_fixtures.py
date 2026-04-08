@@ -9,7 +9,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,6 +38,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 _cache_namespace: Optional["CacheNamespace"] = None
+MAX_MOCK_VIDEO_FRAMES = 2
 _fallback_cache: Dict[str, Any] = {}
 _CACHE_SENTINEL = object()
 
@@ -266,15 +267,21 @@ class MockVideoState:
         self.video_meta_extracted = True
 
 
-def get_cached_or_create(cache_key: str, factory_func, *args, **kwargs):
+def get_cached_or_create(
+    cache_key: str,
+    factory_func: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
     """Return cached values, refreshing stale ORM objects when needed."""
 
     cached = _cache_get(cache_key)
 
     if isinstance(cached, models.Model):
         pk = getattr(cached, "pk", None)
-        if pk is not None and cached.__class__.objects.filter(pk=pk).exists():
-            return cached.__class__.objects.get(pk=pk)
+        manager = cast(Any, cached.__class__).objects
+        if pk is not None and manager.filter(pk=pk).exists():
+            return manager.get(pk=pk)
         _cache_pop(cache_key)
         cached = None
 
@@ -310,7 +317,7 @@ class MockVideoFile:
         # Set a mock ID for database queries
         self.id = 999999  # Use a high number to avoid conflicts with real data
         self.pk = self.id
-        self.video_hash = uuid.uuid4()
+        mock_uuid = uuid.uuid4()
         # Try to get real objects, but create mock ones if they don't exist
         try:
             self.center = Center.objects.get(name=center_name)
@@ -326,8 +333,8 @@ class MockVideoFile:
             self.processor = MagicMock()
             self.processor.name = processor_name
 
-        self.raw_file = f"mock_video_{self.video_hash}.mp4"
-        self.video_hash = f"mock_hash_{str(self.video_hash)[:8]}"
+        self.raw_file = f"mock_video_{mock_uuid}.mp4"
+        self.video_hash = f"mock_hash_{str(mock_uuid)[:8]}"
         self._video_meta = None
         self._sensitive_meta = None
         self.is_processed = False
@@ -371,7 +378,7 @@ class MockVideoFile:
         smooth_window_size_s=1,
         binarize_threshold=0.5,
         test_run=False,
-        n_test_frames=10,
+        n_test_frames=MAX_MOCK_VIDEO_FRAMES,
         **kwargs,
     ):
         """Mock pipe 1 processing with full parameter compatibility."""
@@ -471,8 +478,8 @@ class MockFFmpegOperations:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Create a few mock frame files
-        for i in range(1, 6):
+        # Keep mocked frame extraction minimal to speed up test execution.
+        for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1):
             mock_frame = output_path / f"frame_{i:06d}.jpg"
             mock_frame.touch()
 
@@ -500,7 +507,7 @@ class MockAIInference:
                     "label": "mock_prediction",
                     "confidence": 0.95,
                 }
-                for i in range(1, 6)
+                for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1)
             ],
             "processing_time": 0.1,  # Mock fast processing
         }

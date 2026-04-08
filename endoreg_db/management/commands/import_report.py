@@ -40,7 +40,7 @@ try:
     from lx_anonymizer.ollama.ollama_service import init_ollama_service
 except ImportError:
     print("Could not import init_ollama_service from local or installed lx_anonymizer")
-    raise
+    init_ollama_service = None
 
 
 class Command(BaseCommand):
@@ -239,11 +239,20 @@ class Command(BaseCommand):
                                 self.style.ERROR("Ollama binary not found in PATH")
                             )
 
-                    # Start the service with explicit initialization
-                    init_ollama_service(auto_start=True)
-                    self.stdout.write(
-                        self.style.SUCCESS("Ollama service initialized successfully")
-                    )
+                    # Start the service with explicit initialization when available.
+                    if init_ollama_service is not None:
+                        init_ollama_service(auto_start=True)
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                "Ollama service initialized successfully"
+                            )
+                        )
+                    else:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                "Ollama integration unavailable; continuing without it"
+                            )
+                        )
                 except Exception as e:
                     self.stdout.write(
                         self.style.ERROR(f"Failed to initialize Ollama service: {e}")

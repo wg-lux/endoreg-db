@@ -54,7 +54,7 @@ class FileWatcherServiceTests(TestCase):
             service.stable_after_seconds = 0
 
             with patch(
-                "scripts.file_watcher.process_watcher_file"
+                "endoreg_db.services.file_watcher.process_watcher_file"
             ) as process_watcher_file:
                 service._scan_once()
 
@@ -81,7 +81,7 @@ class FileWatcherServiceTests(TestCase):
             service.stable_after_seconds = 0
 
             with patch(
-                "scripts.file_watcher.process_preanonymized_watcher_file"
+                "endoreg_db.services.file_watcher.process_preanonymized_watcher_file"
             ) as process_preanonymized:
                 service._scan_once()
 

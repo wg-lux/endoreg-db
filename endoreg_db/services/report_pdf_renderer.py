@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from endoreg_db.utils.file_operations import safe_unlink_file
 from typing import Any
 
 from endoreg_db.models import PatientExamination, PatientExaminationReport
@@ -126,6 +128,6 @@ def render_pdf_with_rust_renderer(
         raise ReportPdfRendererError("renderer timed out") from exc
     finally:
         try:
-            input_path.unlink(missing_ok=True)
+            safe_unlink_file(input_path, missing_ok=True)
         except Exception:
             pass

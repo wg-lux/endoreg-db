@@ -1,32 +1,16 @@
-"""
-Django Management Command for File Watcher Service
-
-This command provides Django integration for the file watcher service.
-"""
-
 import os
 import sys
-from pathlib import Path
 
-from django.conf import settings
 from django.core.management.base import BaseCommand
+
+from endoreg_db.services.file_watcher import FileWatcherService
 
 
 class Command(BaseCommand):
-    help = """
-    Start the file watcher service for automatic video and report processing.
-    
-    This command monitors:
-    - data/import/video_import/ for video files (.mp4, .avi, .mov, .mkv, .webm, .m4v)
-    - data/import/report_import/ for report files (.pdf)
-    
-    When files are detected, they are automatically processed with:
-    - Video: Import, anonymization, and segmentation
-    - report: Import and anonymization
-
-    Note:
-    - The watcher script currently lives in lx-annotate at:
-    """
+    help = (
+        "Start the packaged file watcher service for automatic video and report "
+        "processing."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -48,45 +32,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Starting File Watcher Service"))
-
-        # Set environment variables
         os.environ["WATCHER_LOG_LEVEL"] = options["log_level"]
 
         try:
-            # Add project root to path
-            project_root = Path(settings.BASE_DIR)
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-
-            # Import the file watcher service from either local repo scripts/ or lx-annotate.
-            candidate_paths = [
-                project_root / "scripts" / "file_watcher.py",
-            ]
-            file_watcher_path = next(
-                (candidate for candidate in candidate_paths if candidate.exists()),
-                None,
-            )
-
-            if file_watcher_path is None:
-                self.stdout.write(
-                    self.style.ERROR(
-                        "❌ File watcher script not found in expected locations: "
-                        f"{candidate_paths[0]} or {candidate_paths[1]}"
-                    )
-                )
-                return
-
-            # Import the module dynamically
-            import importlib.util
-
-            spec = importlib.util.spec_from_file_location(
-                "file_watcher", file_watcher_path
-            )
-            file_watcher_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(file_watcher_module)
-
-            FileWatcherService = file_watcher_module.FileWatcherService
-
             if options["test"]:
                 self.stdout.write("Testing file watcher configuration...")
                 service = FileWatcherService()

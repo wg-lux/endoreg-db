@@ -7,6 +7,7 @@ import cv2
 from django.db import transaction
 from tqdm import tqdm
 
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.paths import STORAGE_DIR
 from endoreg_db.utils.validate_endo_roi import validate_endo_roi
@@ -424,6 +425,15 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
                     raw_frame_dir=original_raw_frame_dir_to_delete,
                 )
             )
+
+        transaction.on_commit(
+            lambda: sync_video_streamable_artifacts(
+                video,
+                include_raw=not delete_original_raw,
+                include_processed=True,
+                save=True,
+            )
+        )
 
         video.save(update_fields=update_fields)
         assert video.state is not None  # For type checker

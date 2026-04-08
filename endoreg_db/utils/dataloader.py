@@ -6,7 +6,7 @@ import yaml
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import OperationalError, connection, transaction
 
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import LOG_DIR
 
 _WARNING_LOG_PATH = None
 
@@ -15,10 +15,9 @@ def _get_warning_log_path():
     """Return the path used for warning logs, creating it on first access."""
     global _WARNING_LOG_PATH
     if _WARNING_LOG_PATH is None:
-        log_dir = STORAGE_DIR / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        _WARNING_LOG_PATH = log_dir / f"dataloader_warnings_{timestamp}.log"
+        _WARNING_LOG_PATH = LOG_DIR / f"dataloader_warnings_{timestamp}.log"
     return _WARNING_LOG_PATH
 
 

@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from endoreg_db.models import VideoFile
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,19 @@ class Command(BaseCommand):
                                 # Update the raw_file path
                                 video.raw_file.name = str(file_info["relative_path"])
                                 video.save(update_fields=["raw_file"])
+                            try:
+                                sync_video_streamable_artifacts(
+                                    video,
+                                    include_raw=True,
+                                    include_processed=False,
+                                    save=True,
+                                )
+                            except Exception as exc:
+                                self.stdout.write(
+                                    self.style.WARNING(
+                                        f"⚠️ Streamable sync failed for video {video.id}: {exc}"
+                                    )
+                                )
 
                             self.stdout.write(
                                 self.style.SUCCESS(

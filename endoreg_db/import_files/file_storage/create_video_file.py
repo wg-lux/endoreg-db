@@ -10,6 +10,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.import_files.file_storage.state_management import finalize_failure
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -103,5 +104,19 @@ def create_or_retrieve_video_file(
         video.pk,
         file_type,
     )
+
+    try:
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=True,
+            include_processed=False,
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not synchronize raw streamable artifact for video %s: %s",
+            getattr(video, "pk", "unknown"),
+            exc,
+        )
 
     return video, processed, needs_processing

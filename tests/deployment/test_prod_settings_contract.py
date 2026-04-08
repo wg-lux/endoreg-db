@@ -28,6 +28,12 @@ from endoreg_db.config.settings import prod
 payload = {
     "debug": prod.DEBUG,
     "allowed_hosts": prod.ALLOWED_HOSTS,
+    "endoreg_hub_mode": prod.ENDOREG_HUB_MODE,
+    "endoreg_enable_hub_transfers": prod.ENDOREG_ENABLE_HUB_TRANSFERS,
+    "endoreg_hub_transfer_require_secure_transport": prod.ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT,
+    "endoreg_hub_transfer_require_mtls": prod.ENDOREG_HUB_TRANSFER_REQUIRE_MTLS,
+    "endoreg_hub_transfer_mtls_meta_key": prod.ENDOREG_HUB_TRANSFER_MTLS_META_KEY,
+    "endoreg_hub_transfer_mtls_meta_value": prod.ENDOREG_HUB_TRANSFER_MTLS_META_VALUE,
     "secure_ssl_redirect": prod.SECURE_SSL_REDIRECT,
     "session_cookie_secure": prod.SESSION_COOKIE_SECURE,
     "csrf_cookie_secure": prod.CSRF_COOKIE_SECURE,
@@ -68,6 +74,10 @@ def test_prod_settings_accept_service_style_env_contract() -> None:
 
     assert payload["debug"] is False
     assert payload["allowed_hosts"] == ["annotate.example.org", "api.example.org"]
+    assert payload["endoreg_hub_mode"] is False
+    assert payload["endoreg_enable_hub_transfers"] is False
+    assert payload["endoreg_hub_transfer_require_secure_transport"] is True
+    assert payload["endoreg_hub_transfer_require_mtls"] is False
     assert payload["secure_ssl_redirect"] is True
     assert payload["session_cookie_secure"] is True
     assert payload["csrf_cookie_secure"] is True
@@ -80,6 +90,76 @@ def test_prod_settings_accept_service_style_env_contract() -> None:
         "endoreg_db.utils.permissions.EnvironmentAwarePermission",
         "endoreg_db.authz.permissions.PolicyPermission",
     ]
+
+
+def test_prod_settings_accept_hub_mode_flag() -> None:
+    result = _run_prod_settings_probe(
+        {
+            "DJANGO_DEBUG": "false",
+            "DJANGO_SECRET_KEY": "x" * 64,
+            "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
+            "DB_ENGINE": "django.db.backends.postgresql",
+            "DB_NAME": str(
+                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+            ),
+            "OIDC_RP_CLIENT_ID": "endoregdb-api",
+            "OIDC_RP_CLIENT_SECRET": "test-secret",
+            "ENDOREG_HUB_MODE": "true",
+        }
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload["endoreg_hub_mode"] is True
+
+
+def test_prod_settings_accept_hub_transfer_flag() -> None:
+    result = _run_prod_settings_probe(
+        {
+            "DJANGO_DEBUG": "false",
+            "DJANGO_SECRET_KEY": "x" * 64,
+            "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
+            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_NAME": str(
+                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+            ),
+            "OIDC_RP_CLIENT_ID": "endoregdb-api",
+            "OIDC_RP_CLIENT_SECRET": "test-secret",
+            "ENDOREG_ENABLE_HUB_TRANSFERS": "true",
+            "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS": "true",
+            "ENDOREG_HUB_TRANSFER_MTLS_META_KEY": "HTTP_X_CLIENT_CERT_VERIFIED",
+            "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE": "SUCCESS",
+        }
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload["endoreg_enable_hub_transfers"] is True
+    assert payload["endoreg_hub_transfer_require_secure_transport"] is True
+    assert payload["endoreg_hub_transfer_require_mtls"] is True
+
+
+def test_prod_settings_refuse_hub_transfers_without_mtls_requirement() -> None:
+    result = _run_prod_settings_probe(
+        {
+            "DJANGO_DEBUG": "false",
+            "DJANGO_SECRET_KEY": "x" * 64,
+            "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
+            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_NAME": str(
+                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+            ),
+            "OIDC_RP_CLIENT_ID": "endoregdb-api",
+            "OIDC_RP_CLIENT_SECRET": "test-secret",
+            "ENDOREG_ENABLE_HUB_TRANSFERS": "true",
+        }
+    )
+
+    assert result.returncode != 0
+    assert (
+        "ENDOREG_ENABLE_HUB_TRANSFERS requires ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true"
+        in result.stderr
+    )
 
 
 def test_prod_settings_refuse_debug_mode_even_if_other_env_is_present() -> None:
@@ -99,3 +179,23 @@ def test_prod_settings_refuse_debug_mode_even_if_other_env_is_present() -> None:
 
     assert result.returncode != 0
     assert "DJANGO_DEBUG must be false in production" in result.stderr
+
+
+def test_prod_settings_refuse_sqlite_when_hub_mode_is_enabled() -> None:
+    result = _run_prod_settings_probe(
+        {
+            "DJANGO_DEBUG": "false",
+            "DJANGO_SECRET_KEY": "x" * 64,
+            "DJANGO_ALLOWED_HOSTS": "annotate.example.org",
+            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_NAME": str(
+                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+            ),
+            "OIDC_RP_CLIENT_ID": "endoregdb-api",
+            "OIDC_RP_CLIENT_SECRET": "test-secret",
+            "ENDOREG_HUB_MODE": "true",
+        }
+    )
+
+    assert result.returncode != 0
+    assert "ENDOREG_HUB_MODE requires a non-SQLite production database" in result.stderr

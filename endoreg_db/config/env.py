@@ -25,6 +25,9 @@ TEST_PROTECTED_ROOT = BASE_DIR / "data" / "tests" / "protected_runtime"
 
 
 def _normalize_protected_runtime_paths(default_protected_root: Path) -> None:
+    # LX_ANNOTATE_ENCRYPTED_DATA_DIR is the single canonical runtime root for
+    # deployment-owned protected data. STORAGE_DIR and IO_DIR are normalized to
+    # live inside that root even if callers provide legacy or invalid values.
     os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(
         Path(
             os.environ.get(

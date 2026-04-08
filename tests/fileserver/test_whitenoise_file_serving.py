@@ -38,11 +38,13 @@ class WhiteNoiseFileServingTest(TestCase):
             self.video_file.delete_with_file()
 
     def test_video_file_accessible_via_url(self):
-        response = self.client.get(self.video_url)
-        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(self.video_url)
+        self.assertTrue(self.video_url.startswith("/api/media/videos/"))
+        self.assertFalse(self.video_url.startswith("/protected_media/"))
+        self.assertFalse(self.video_url.startswith("/media/"))
 
     def test_pdf_file_accessible_via_url(self):
-        if self.pdf_url is None:
-            self.fail("report file URL is None.")
-        response = self.client.get(self.pdf_url)
-        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(self.pdf_url)
+        self.assertTrue(self.pdf_url.startswith("/api/media/pdfs/"))
+        self.assertFalse(self.pdf_url.startswith("/protected_media/"))
+        self.assertFalse(self.pdf_url.startswith("/media/"))

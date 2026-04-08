@@ -5,8 +5,12 @@ from unittest.mock import Mock, patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from endoreg_db.models import Center, UploadJob
-from endoreg_db.services.hub.ingest import start_upload_job_processing
+from endoreg_db.models import Center, RawPdfFile, UploadJob
+from endoreg_db.services.hub.ingest import (
+    create_or_reuse_upload_job,
+    process_upload_job,
+    start_upload_job_processing,
+)
 
 
 class UploadJobDispatchTests(TestCase):
@@ -47,6 +51,15 @@ class UploadJobDispatchTests(TestCase):
         assert handoff_mode == "inline"
         process_upload_job.assert_called_once_with(str(upload_job.id))
         assert upload_job.processing_provenance["processing_handoff"] == "inline"
+        assert upload_job.processing_provenance["ingest_mode"] == "api"
+        assert (
+            upload_job.processing_provenance["source_center_key"]
+            == self.center.center_key
+        )
+        assert (
+            upload_job.processing_provenance["retention_policy"]
+            == UploadJob.RetentionPolicy.PRESERVE_SOURCE
+        )
 
     def test_start_upload_job_processing_dispatches_to_celery_when_available(self):
         upload_job = self._create_upload_job()
@@ -101,4 +114,61 @@ class UploadJobDispatchTests(TestCase):
         assert (
             "Failed to start processing: inline processing failed"
             in upload_job.error_detail
+        )
+
+    def test_create_or_reuse_upload_job_normalizes_provenance_contract(self):
+        with patch("endoreg_db.services.hub.audit.logger.info") as audit_log:
+            upload_job, created = create_or_reuse_upload_job(
+                uploaded_file=SimpleUploadedFile(
+                    name="dispatch.pdf",
+                    content=b"%PDF-1.4\n%%EOF\n",
+                    content_type="application/pdf",
+                ),
+                content_type="application/pdf",
+                source_center=self.center,
+                source_system="site-a",
+                processing_provenance={"custom_marker": "present"},
+            )
+
+        assert created is True
+        assert upload_job.processing_provenance["entrypoint"] == "api"
+        assert upload_job.processing_provenance["ingest_mode"] == "api"
+        assert upload_job.processing_provenance["source_system"] == "site-a"
+        assert (
+            upload_job.processing_provenance["content_hash"] == upload_job.content_hash
+        )
+        assert (
+            upload_job.processing_provenance["source_center_key"]
+            == self.center.center_key
+        )
+        assert (
+            upload_job.processing_provenance["storage_tier"]
+            == UploadJob.StorageTier.UPLOAD_API
+        )
+        assert (
+            upload_job.processing_provenance["retention_policy"]
+            == UploadJob.RetentionPolicy.PRESERVE_SOURCE
+        )
+        assert upload_job.processing_provenance["custom_marker"] == "present"
+        audit_log.assert_called()
+        assert "hub.upload_job_created" in audit_log.call_args.args[0]
+
+    def test_process_upload_job_preserve_source_keeps_cleanup_skipped(self):
+        upload_job = self._create_upload_job()
+        report = RawPdfFile(center=self.center)
+
+        with patch(
+            "endoreg_db.services.hub.ingest.ReportImportService.import_and_anonymize",
+            return_value=report,
+        ):
+            processed = process_upload_job(str(upload_job.id))
+
+        upload_job.refresh_from_db()
+        assert processed is True
+        assert upload_job.status == UploadJob.Status.ANONYMIZED
+        assert upload_job.cleanup_status == UploadJob.CleanupStatus.SKIPPED
+        assert upload_job.source_file_delete_eligible_at is None
+        assert (
+            upload_job.processing_provenance["stored_upload_path"]
+            == upload_job.file.name
         )

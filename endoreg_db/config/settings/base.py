@@ -21,6 +21,24 @@ BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 # Test assets directory (used in tests and utilities)
 ASSET_DIR = _abs_under_base("ASSET_DIR", "tests/assets")
 RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
+ENDOREG_HUB_MODE = env_bool("ENDOREG_HUB_MODE", False)
+ENDOREG_ENABLE_HUB_TRANSFERS = env_bool("ENDOREG_ENABLE_HUB_TRANSFERS", False)
+ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT = env_bool(
+    "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT",
+    True,
+)
+ENDOREG_HUB_TRANSFER_REQUIRE_MTLS = env_bool(
+    "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS",
+    False,
+)
+ENDOREG_HUB_TRANSFER_MTLS_META_KEY = env_str(
+    "ENDOREG_HUB_TRANSFER_MTLS_META_KEY",
+    "HTTP_X_CLIENT_CERT_VERIFIED",
+)
+ENDOREG_HUB_TRANSFER_MTLS_META_VALUE = env_str(
+    "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE",
+    "SUCCESS",
+)
 LABEL_STUDIO_WEBHOOK_SECRET = env_str("LABEL_STUDIO_WEBHOOK_SECRET", "")
 LABEL_STUDIO_INFORMATION_SOURCE_NAME = env_str(
     "LABEL_STUDIO_INFORMATION_SOURCE_NAME", "manual_annotation"
@@ -84,9 +102,15 @@ TIME_ZONE = os.environ.get("TIME_ZONE", "Europe/Berlin")
 STATIC_URL = os.environ.get("STATIC_URL", "/static/")
 STATIC_ROOT = env_path("STATIC_ROOT", "staticfiles")
 
-# Media/storage root can be overridden from env (important when embedded)
-MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
-MEDIA_ROOT = STORAGE_DIR
+# Protected media is served through the LuxNix/Nginx contract by default.
+PROTECTED_MEDIA_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+PROTECTED_MEDIA_ROOT = env_path("PROTECTED_MEDIA_ROOT", str(STORAGE_DIR))
+
+# Keep Django's media settings aligned with the protected-media contract so any
+# remaining FileField.url consumers resolve to the protected prefix rather than
+# the legacy public /media/ path.
+MEDIA_URL = os.environ.get("MEDIA_URL", PROTECTED_MEDIA_URL)
+MEDIA_ROOT = PROTECTED_MEDIA_ROOT
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
 CACHES = {
@@ -152,6 +176,12 @@ __all__ = [
     "BASE_DIR",
     "ASSET_DIR",
     "RUN_VIDEO_TESTS",
+    "ENDOREG_HUB_MODE",
+    "ENDOREG_ENABLE_HUB_TRANSFERS",
+    "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT",
+    "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS",
+    "ENDOREG_HUB_TRANSFER_MTLS_META_KEY",
+    "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE",
     "LABEL_STUDIO_WEBHOOK_SECRET",
     "LABEL_STUDIO_INFORMATION_SOURCE_NAME",
     "LOOKUP_REQUIREMENT_SOURCE",
@@ -169,6 +199,8 @@ __all__ = [
     "TIME_ZONE",
     "STATIC_URL",
     "STATIC_ROOT",
+    "PROTECTED_MEDIA_URL",
+    "PROTECTED_MEDIA_ROOT",
     "MEDIA_URL",
     "MEDIA_ROOT",
     "CACHES",

@@ -58,6 +58,7 @@ SKIP_EXPENSIVE_TESTS = (
     os.environ.get("SKIP_EXPENSIVE_TESTS", "false").lower() == "false"
 )
 RUN_VIDEO_TESTS = os.environ.get("RUN_VIDEO_TESTS", "true").lower() == "true"
+MAX_MOCK_VIDEO_FRAMES = 2
 USE_STUB_MODEL_META = os.environ.get("USE_STUB_MODEL_META", "true").lower() == "true"
 
 # Set up protected runtime directories for tests
@@ -941,9 +942,9 @@ def mock_ffmpeg(monkeypatch):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create 10 dummy frame files
+        # Keep mocked frame extraction minimal to speed up video-oriented tests.
         frame_paths = []
-        for i in range(1, 11):
+        for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1):
             frame_path = output_dir / f"frame_{i:04d}.jpg"
             frame_path.touch()  # Create empty file
             frame_paths.append(frame_path)
@@ -966,8 +967,8 @@ def mock_ffmpeg(monkeypatch):
             "width": 1920,
             "height": 1080,
             "fps": 25.0,
-            "duration": 10.0,
-            "frame_count": 250,
+            "duration": MAX_MOCK_VIDEO_FRAMES / 25.0,
+            "frame_count": MAX_MOCK_VIDEO_FRAMES,
         }
 
     # Apply mocks - use the actual function names from the module
@@ -1079,7 +1080,7 @@ def auto_mock_ffmpeg_for_video_tests(request, monkeypatch):
 
             # Create mock frame files
             frame_paths = []
-            for i in range(1, 11):
+            for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1):
                 frame_path = output_dir / f"frame_{i:04d}.jpg"
                 frame_path.touch()
                 frame_paths.append(frame_path)

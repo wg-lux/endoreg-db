@@ -9,6 +9,49 @@ This infrastructure was originally designed for clinical research studies and is
 - Clinical product and treatment data,
   and more.
 
+## Ingress contract
+
+The package supports two first-class ingest boundaries:
+
+- `watcher`: trusted local filesystem intake
+- `api`: authenticated remote upload intake
+
+Both boundaries create `UploadJob` records and converge on the same shared ingest services. The downstream processing model is shared; only the trust boundary differs.
+
+For shared multi-center deployments, enable `ENDOREG_HUB_MODE=true`. In hub mode the package requires authenticated API uploads with declared `center_key` and refuses default-center fallback on the API path.
+
+AI and automation consumers should use the API read surfaces for reports, videos, frames, and patient timelines rather than reading `STORAGE_DIR` directly. Those media endpoints are the package-level contract for center-scoped access.
+
+The node-to-node transfer API under `/api/media/hub/transfers/` is supported, but it is intentionally disabled by default. Enable it with `ENDOREG_ENABLE_HUB_TRANSFERS=true` only when transfer-job ingest is part of the deployment. Otherwise `/api/upload/` remains the primary hub boundary.
+
+For the current transport-security phase, transfer deployments must:
+
+- use HTTPS or equivalent secure transport
+- require proxy-verified mTLS for node-authenticated transfer requests
+- keep `NetworkNode.shared_secret` limited to request authentication rather than payload encryption
+
+For downstream upgrade and deployment impact, see
+[`docs/deployment_note_hub_contract.md`](/home/admin/endoreg-db/docs/deployment_note_hub_contract.md).
+
+## Ingest workflow
+
+The package is designed around one shared ingest core with multiple boundary adapters:
+
+1. `watcher`, `api`, or optional `transfer` ingress accepts a file or transfer payload.
+2. The boundary resolves `center_key` scope and creates an `UploadJob` or `TransferJob`.
+3. Provenance is normalized at creation time so audit and cleanup logic do not depend on caller-specific payload shapes.
+4. Shared processing services import, anonymize, and link the resulting media objects.
+5. Retention policy decides cleanup eligibility.
+
+The cleanup contract is strict:
+
+- `UploadJob.retention_policy=preserve_source`: successful completion keeps the source artifact and marks cleanup as `skipped`
+- `UploadJob.retention_policy=delete_after_success`: successful completion marks the source artifact as cleanup-eligible
+- `TransferJob.cleanup_policy=retain_all`: no cleanup is requested
+- transfer cleanup policies other than `retain_all` are recorded as deferred operator intent
+
+This keeps ingest behavior idempotent, auditable, and safe for production cleanup automation.
+
 ## 🚀 Key Features
 
 ### System Architecture

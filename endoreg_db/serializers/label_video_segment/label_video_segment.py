@@ -1,7 +1,5 @@
 from rest_framework import serializers
 from django.core.exceptions import ObjectDoesNotExist
-from django.conf import settings
-from urllib.parse import urljoin
 from pathlib import Path
 from typing import Any, Literal
 import logging
@@ -22,37 +20,6 @@ from endoreg_db.serializers.label_video_segment.image_classification_annotation 
 from endoreg_db.services.segment_contracts import SegmentAnnotationInput
 
 logger = logging.getLogger(__name__)
-
-
-# --- Helper Functions ---
-
-
-def _media_relpath_from_file_path(file_path) -> str:
-    """Return a media-relative path (never an absolute server path)."""
-    p = Path(str(file_path))
-    media_root = getattr(settings, "MEDIA_ROOT", None)
-    if media_root:
-        try:
-            rel = p.resolve().relative_to(Path(media_root).resolve())
-            return rel.as_posix()
-        except Exception:
-            pass
-    return p.name  # safe fallback
-
-
-def _media_url_from_file_path(file_path, request=None) -> str:
-    """Build a public URL for the file using MEDIA_URL + relpath."""
-    base = getattr(settings, "MEDIA_URL", "/media/")
-    if not base.endswith("/"):
-        base += "/"
-    rel = _media_relpath_from_file_path(file_path)
-    url = urljoin(base, rel)
-    if request is not None:
-        try:
-            return request.build_absolute_uri(url)
-        except Exception:
-            pass
-    return url
 
 
 class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
@@ -535,9 +502,14 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer):
                 frame.image_classification_annotations.all(), many=True
             ).data
 
-            # Use safe helpers for paths
-            rel = _media_relpath_from_file_path(frame.file_path)
-            url = _media_url_from_file_path(frame.file_path, request=request)
+            rel = Path(str(frame.file_path)).name
+            url = (
+                request.build_absolute_uri(
+                    f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+                )
+                if request is not None
+                else f"/api/media/videos/{frame.video_id}/frames/{frame.frame_number}/stream/"
+            )
 
             frame_data = {
                 "frame_filename": Path(str(frame.file_path)).name,

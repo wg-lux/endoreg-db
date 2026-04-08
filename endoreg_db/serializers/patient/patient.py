@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from endoreg_db.models import Patient, Gender, Center
+from endoreg_db.models import Patient, Gender
 from datetime import date
+from endoreg_db.serializers.fields import CenterKeyRelatedField
 
 
 class PatientSerializer(serializers.ModelSerializer):
@@ -11,9 +12,9 @@ class PatientSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
-    center = serializers.SlugRelatedField(
-        slug_field="name",
-        queryset=Center.objects.all(),
+    center = serializers.CharField(source="center.display_name", read_only=True)
+    center_key = CenterKeyRelatedField(
+        source="center",
         required=False,
         allow_null=True,
     )
@@ -28,6 +29,7 @@ class PatientSerializer(serializers.ModelSerializer):
             "dob",
             "gender",
             "center",
+            "center_key",
             "email",
             "phone",
             "patient_hash",
@@ -35,6 +37,19 @@ class PatientSerializer(serializers.ModelSerializer):
             "age",
         ]
         read_only_fields = ["id", "age"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if "center" in self.initial_data and "center_key" not in self.initial_data:
+            raise serializers.ValidationError(
+                {
+                    "center_key": (
+                        "center_key is the canonical center identifier for writes; "
+                        "the 'center' field is read-only display data."
+                    )
+                }
+            )
+        return attrs
 
     def get_age(self, obj):
         """Berechnet das Alter des Patienten"""

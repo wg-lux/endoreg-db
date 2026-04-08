@@ -14,6 +14,7 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.views.access_control import assert_center_scope_allowed
 
 from ..media.storage_streaming import (
     add_cors_headers,
@@ -82,6 +83,11 @@ class ReportStreamView(APIView):
             report = RawPdfFile.objects.get(pk=report_id)
         except RawPdfFile.DoesNotExist as exc:
             raise Http404(f"Report with ID {pk} not found") from exc
+        assert_center_scope_allowed(
+            request=request,
+            obj=report,
+            not_found_message=f"Report with ID {pk} not found",
+        )
 
         file_type = str(
             request.query_params.get("type")

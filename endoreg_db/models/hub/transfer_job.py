@@ -3,7 +3,10 @@ from __future__ import annotations
 import uuid
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from endoreg_db.services.hub.payloads import validate_transfer_provenance_payload
 
 
 class TransferJob(models.Model):
@@ -191,3 +194,14 @@ class TransferJob(models.Model):
 
     def __str__(self) -> str:
         return f"{self.transfer_key} ({self.transfer_status})"
+
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.provenance = validate_transfer_provenance_payload(self.provenance)
+        except ValueError as exc:
+            raise ValidationError({"provenance": str(exc)}) from exc
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        return super().save(*args, **kwargs)

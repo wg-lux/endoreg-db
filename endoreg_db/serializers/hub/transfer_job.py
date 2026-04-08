@@ -3,7 +3,8 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from endoreg_db.models import Center, NetworkNode, TransferJob
-from endoreg_db.services.hub import resolve_allowed_center_id
+from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.services.hub.ingest import resolve_allowed_center_id
 
 
 class TransferJobCreateSerializer(serializers.Serializer):
@@ -42,6 +43,12 @@ class TransferJobCreateSerializer(serializers.Serializer):
     processing_snapshot = serializers.JSONField(default=dict)
     provenance = serializers.JSONField(default=dict, required=False)
 
+    _TRANSFER_ELIGIBLE_ANONYMIZATION_STATES = {
+        AnonymizationState.ANONYMIZED,
+        AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
+        AnonymizationState.VALIDATED,
+    }
+
     def validate_source_node_key(self, value: str) -> str:
         normalized = value.strip()
         if not normalized:
@@ -55,6 +62,19 @@ class TransferJobCreateSerializer(serializers.Serializer):
     def validate(self, attrs: dict) -> dict:
         request = self.context.get("request")
         transfer_mode = attrs["transfer_mode"]
+
+        if transfer_mode in {
+            TransferJob.TransferMode.METADATA_AND_RAW_MEDIA,
+            TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA,
+        }:
+            raise serializers.ValidationError(
+                {
+                    "transfer_mode": (
+                        "Raw media transfer is not permitted. "
+                        "Only anonymized metadata or anonymized processed media may be transferred."
+                    )
+                }
+            )
 
         source_node = NetworkNode.objects.get(
             node_key=attrs["source_node_key"],
@@ -161,6 +181,14 @@ class TransferJobCreateSerializer(serializers.Serializer):
                             )
                         }
                     )
+            video_state_payload = resource_rows.get("video_state") or {}
+            anonymization_status = self._resolve_video_anonymization_status(
+                video_state_payload
+            )
+            self._validate_transfer_eligible_anonymization_status(
+                anonymization_status=anonymization_status,
+                resource_kind="video",
+            )
         elif attrs["resource_kind"] == TransferJob.ResourceKind.REPORT:
             report_file = resource_rows.get("raw_pdf_file")
             if not isinstance(report_file, dict):
@@ -189,6 +217,14 @@ class TransferJobCreateSerializer(serializers.Serializer):
                         )
                     }
                 )
+            report_state_payload = resource_rows.get("raw_pdf_state") or {}
+            anonymization_status = self._resolve_report_anonymization_status(
+                report_state_payload
+            )
+            self._validate_transfer_eligible_anonymization_status(
+                anonymization_status=anonymization_status,
+                resource_kind="report",
+            )
 
         self._validate_sensitive_meta_linkage(resource_rows)
 
@@ -196,6 +232,72 @@ class TransferJobCreateSerializer(serializers.Serializer):
         attrs["target_node"] = target_node
         attrs["source_center"] = source_center
         return attrs
+
+    def _validate_transfer_eligible_anonymization_status(
+        self,
+        *,
+        anonymization_status: AnonymizationState,
+        resource_kind: str,
+    ) -> None:
+        if anonymization_status not in self._TRANSFER_ELIGIBLE_ANONYMIZATION_STATES:
+            raise serializers.ValidationError(
+                {
+                    "resource_rows": (
+                        f"{resource_kind} transfer is only allowed for anonymized data. "
+                        f"Current anonymization_status={anonymization_status.value!r} is not eligible."
+                    )
+                }
+            )
+
+    @staticmethod
+    def _resolve_video_anonymization_status(
+        video_state_payload: object,
+    ) -> AnonymizationState:
+        if not isinstance(video_state_payload, dict):
+            return AnonymizationState.NOT_STARTED
+        if bool(video_state_payload.get("anonymization_validated")):
+            return AnonymizationState.VALIDATED
+        if bool(video_state_payload.get("sensitive_meta_processed")):
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+        if bool(video_state_payload.get("frames_extracted")) and not bool(
+            video_state_payload.get("anonymized")
+        ):
+            return AnonymizationState.PROCESSING_ANONYMIZING
+        if bool(video_state_payload.get("was_created")) and not bool(
+            video_state_payload.get("frames_extracted")
+        ):
+            return AnonymizationState.EXTRACTING_FRAMES
+        if bool(video_state_payload.get("processing_error")):
+            return AnonymizationState.FAILED
+        if bool(video_state_payload.get("processing_started")):
+            return AnonymizationState.STARTED
+        if bool(video_state_payload.get("anonymized")):
+            return AnonymizationState.ANONYMIZED
+        return AnonymizationState.NOT_STARTED
+
+    @staticmethod
+    def _resolve_report_anonymization_status(
+        report_state_payload: object,
+    ) -> AnonymizationState:
+        if not isinstance(report_state_payload, dict):
+            return AnonymizationState.NOT_STARTED
+        if bool(report_state_payload.get("anonymization_validated")):
+            return AnonymizationState.VALIDATED
+        if bool(report_state_payload.get("sensitive_meta_processed")):
+            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+        if (
+            bool(report_state_payload.get("processing_started"))
+            and not bool(report_state_payload.get("processing_error"))
+            and not bool(report_state_payload.get("anonymized"))
+        ):
+            return AnonymizationState.PROCESSING_ANONYMIZING
+        if bool(report_state_payload.get("processing_error")):
+            return AnonymizationState.FAILED
+        if bool(report_state_payload.get("processing_started")):
+            return AnonymizationState.STARTED
+        if bool(report_state_payload.get("anonymized")):
+            return AnonymizationState.ANONYMIZED
+        return AnonymizationState.NOT_STARTED
 
     def _validate_sensitive_meta_linkage(self, resource_rows: dict) -> None:
         sensitive_meta = resource_rows.get("sensitive_meta")

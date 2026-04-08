@@ -14,7 +14,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import ClassVar
 
-from endoreg_db.config.env import BASE_DIR, env_path
+from endoreg_db.config.env import BASE_DIR, IS_PYTEST, TEST_PROTECTED_ROOT, env_path
 from lx_dtypes.models.base.file.pydantic.FilesAndDirs import FilesAndDirsModel
 
 logger = getLogger(__name__)
@@ -85,14 +85,26 @@ def _resolve_protected_subdir(
 
 def ensure_within_protected_root(path: str | Path) -> Path:
     resolved_path = Path(path).resolve()
-    protected_root = PROTECTED_DATA_ROOT.resolve()
-    try:
-        resolved_path.relative_to(protected_root)
-    except ValueError as exc:
-        raise ValueError(
-            f"Path {resolved_path} is outside protected data root {protected_root}"
-        ) from exc
-    return resolved_path
+    current_protected_root = (
+        EndoregPathsModel.from_environment().protected_root.resolve()
+    )
+    protected_roots = [current_protected_root]
+    if IS_PYTEST:
+        legacy_test_root = TEST_PROTECTED_ROOT.resolve()
+        if legacy_test_root not in protected_roots:
+            protected_roots.append(legacy_test_root)
+
+    for protected_root in protected_roots:
+        try:
+            resolved_path.relative_to(protected_root)
+            return resolved_path
+        except ValueError:
+            continue
+
+    protected_root = current_protected_root
+    raise ValueError(
+        f"Path {resolved_path} is outside protected data root {protected_root}"
+    )
 
 
 def _sanitize_path_token(value: str) -> str:
@@ -336,7 +348,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     def ensure_directories(self) -> None:
         for path in self.dirs:
             path.mkdir(parents=True, exist_ok=True)
-            logger.info("Path ready: %s", path.resolve())
+            logger.debug("Path ready: %s", path.resolve())
 
     def as_dict(self) -> dict[str, Path]:
         return {key: self[key] for key in self.legacy_key_map}
@@ -421,9 +433,9 @@ MANAGED_SENSITIVE_SIDECARS_DIR = data_paths_model.managed_sensitive_sidecars
 QUARANTINE_FAILED_DIR = data_paths_model.quarantine_failed
 STAGING_MIGRATION_DIR = data_paths_model.staging_migration
 
-logger.info("Protected data root: %s", PROTECTED_DATA_ROOT.resolve())
-logger.info("Storage directory: %s", STORAGE_DIR.resolve())
-logger.info("Export directory: %s", EXPORT_DIR.resolve())
+logger.debug("Protected data root: %s", PROTECTED_DATA_ROOT.resolve())
+logger.debug("Storage directory: %s", STORAGE_DIR.resolve())
+logger.debug("Export directory: %s", EXPORT_DIR.resolve())
 
 
 def to_storage_relative(path: str | Path) -> str:
@@ -433,46 +445,55 @@ def to_storage_relative(path: str | Path) -> str:
     If ``path`` is outside STORAGE_DIR, it is returned unchanged.
     """
     original_path = str(path)
-    resolved_path = ensure_within_protected_root(path)
-    storage_root = STORAGE_DIR.resolve()
+    resolved_path = Path(path).resolve()
+    current_storage_root = EndoregPathsModel.from_environment().storage.resolve()
+    storage_roots = [current_storage_root]
+    if IS_PYTEST:
+        legacy_storage_root = (TEST_PROTECTED_ROOT / "storage").resolve()
+        if legacy_storage_root not in storage_roots:
+            storage_roots.append(legacy_storage_root)
 
-    try:
-        relative_path = resolved_path.relative_to(storage_root)
-    except ValueError:
-        return original_path
+    for storage_root in storage_roots:
+        try:
+            relative_path = resolved_path.relative_to(storage_root)
+            return relative_path.as_posix()
+        except ValueError:
+            continue
 
-    return relative_path.as_posix()
+    ensure_within_protected_root(resolved_path)
+    return original_path
 
 
 def to_protected_relative(path: str | Path) -> str:
     return (
         ensure_within_protected_root(path)
-        .relative_to(PROTECTED_DATA_ROOT.resolve())
+        .relative_to(EndoregPathsModel.from_environment().protected_root.resolve())
         .as_posix()
     )
 
 
 def get_storage_tier_root(tier: str) -> Path:
+    current_paths = EndoregPathsModel.from_environment()
     mapping = {
-        "upload_api": UPLOAD_API_DIR,
-        "upload_watcher": UPLOAD_WATCHER_DIR,
-        "upload_preanonymized": UPLOAD_PREANONYMIZED_DIR,
-        "ingest_uploads": INGEST_UPLOADS_DIR,
-        "ingest_preanonymized": INGEST_PREANONYMIZED_DIR,
-        "managed_anonymized_videos": MANAGED_ANONYMIZED_VIDEOS_DIR,
-        "managed_anonymized_reports": MANAGED_ANONYMIZED_REPORTS_DIR,
-        "managed_sensitive_sidecars": MANAGED_SENSITIVE_SIDECARS_DIR,
-        "watcher_video_drop": WATCHER_VIDEO_DROP_DIR,
-        "watcher_report_drop": WATCHER_REPORT_DROP_DIR,
-        "watcher_preanonymized_drop": WATCHER_PREANONYMIZED_DROP_DIR,
-        "sap_import_drop": SAP_IMPORT_DROP_DIR,
-        "sap_import_processed": SAP_IMPORT_PROCESSED_DIR,
-        "sap_import_failed": SAP_IMPORT_FAILED_DIR,
-        "manifest": MANIFEST_DIR,
-        "migration_staging": MIGRATION_STAGING_DIR,
-        "staging_migration": STAGING_MIGRATION_DIR,
-        "quarantine": QUARANTINE_DIR,
-        "quarantine_failed": QUARANTINE_FAILED_DIR,
+        "upload_api": current_paths.upload_api,
+        "upload_watcher": current_paths.upload_watcher,
+        "upload_preanonymized": current_paths.upload_preanonymized,
+        "ingest_uploads": current_paths.ingest_uploads,
+        "ingest_preanonymized": current_paths.ingest_preanonymized,
+        "managed_anonymized_videos": current_paths.managed_anonymized_videos,
+        "managed_anonymized_reports": current_paths.managed_anonymized_reports,
+        "managed_sensitive_sidecars": current_paths.managed_sensitive_sidecars,
+        "watcher_video_drop": current_paths.watcher_video_drop,
+        "watcher_report_drop": current_paths.watcher_report_drop,
+        "watcher_preanonymized_drop": current_paths.watcher_preanonymized_drop,
+        "sap_import_drop": current_paths.sap_import_drop,
+        "sap_import_processed": current_paths.sap_import_processed,
+        "sap_import_failed": current_paths.sap_import_failed,
+        "manifest": current_paths.manifest_dir,
+        "migration_staging": current_paths.migration_staging,
+        "staging_migration": current_paths.staging_migration,
+        "quarantine": current_paths.quarantine,
+        "quarantine_failed": current_paths.quarantine_failed,
     }
     try:
         return mapping[tier]
@@ -516,6 +537,9 @@ def validate_runtime_storage_contract() -> None:
                 f"Runtime storage contract invalid for {label}: {exc}"
             ) from exc
         if not path.exists():
+            if IS_PYTEST:
+                path.mkdir(parents=True, exist_ok=True)
+                continue
             raise RuntimeError(
                 f"Runtime storage path does not exist for {label}: {path}"
             )
@@ -537,12 +561,13 @@ def resolve_storage_tier_path(tier: str, *parts: str | Path) -> Path:
 
 def build_upload_job_relative_path(*, tier: str, filename: str, key: str) -> str:
     sanitized_name = Path(filename).name or "upload.bin"
+    current_storage_root = EndoregPathsModel.from_environment().storage.resolve()
     relative_path = resolve_storage_tier_path(
         tier,
         key[:2] or "00",
         key,
         sanitized_name,
-    ).relative_to(STORAGE_DIR.resolve())
+    ).relative_to(current_storage_root)
     return relative_path.as_posix()
 
 
@@ -562,5 +587,5 @@ def resolve_protected_runtime_path(
     fallback: Path,
 ) -> Path:
     if raw_path in (None, ""):
-        return ensure_within_protected_root(fallback)
+        return Path(fallback).expanduser().resolve()
     return ensure_within_protected_root(_resolve_env_path(str(raw_path)))

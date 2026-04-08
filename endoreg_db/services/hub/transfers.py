@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Literal, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -26,13 +26,48 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.services.hub.audit import emit_hub_audit_event
+from endoreg_db.utils.file_operations import safe_unlink_file, sha256_file
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, save_local_file
 from .ingest import _default_processor_name
 
 logger = logging.getLogger(__name__)
+
+
+class TransferProvenance(TypedDict, total=False):
+    entrypoint: str
+    source_node_key: str
+    target_node_key: str
+    source_center_key: str | None
+    transfer_mode: str
+    processing_policy: str
+    cleanup_policy: str
+    media_uploads: list[dict[str, str]]
+    case_resolution: dict[str, Any]
+    custom_marker: NotRequired[str]
+
+
+def _transfer_provenance(
+    existing: TransferProvenance | None = None,
+) -> TransferProvenance:
+    provenance: TransferProvenance = {}
+    if existing:
+        provenance.update(existing)
+    return provenance
+
+
+def _update_transfer_provenance(
+    transfer_job: TransferJob,
+    **updates: object,
+) -> TransferProvenance:
+    provenance = _transfer_provenance(transfer_job.provenance)
+    for key, value in updates.items():
+        if value is not None:
+            cast(Any, provenance)[key] = value
+    transfer_job.provenance = provenance
+    return provenance
 
 
 def _normalize_sensitive_meta_value(field_name: str, value: Any) -> Any:
@@ -59,6 +94,29 @@ def _normalize_sensitive_meta_value(field_name: str, value: Any) -> Any:
     return value
 
 
+def _normalized_transfer_provenance(
+    *,
+    provenance: TransferProvenance,
+    source_node: NetworkNode,
+    target_node: NetworkNode,
+    source_center: Center | None,
+    transfer_mode: str,
+    processing_policy: str,
+    cleanup_policy: str,
+) -> TransferProvenance:
+    normalized = _transfer_provenance(provenance)
+    normalized.setdefault("entrypoint", "transfer")
+    normalized["source_node_key"] = source_node.node_key
+    normalized["target_node_key"] = target_node.node_key
+    normalized["source_center_key"] = (
+        source_center.center_key if source_center is not None else None
+    )
+    normalized["transfer_mode"] = transfer_mode
+    normalized["processing_policy"] = processing_policy
+    normalized["cleanup_policy"] = cleanup_policy
+    return normalized
+
+
 def create_or_reuse_transfer_job(
     *,
     transfer_key: str,
@@ -74,7 +132,7 @@ def create_or_reuse_transfer_job(
     payload_schema_version: str,
     resource_rows: dict[str, Any],
     processing_snapshot: dict[str, Any],
-    provenance: dict[str, Any],
+    provenance: TransferProvenance,
     created_by=None,
 ) -> tuple[TransferJob, bool]:
     transfer_job_manager = cast(Any, TransferJob.objects)
@@ -89,6 +147,15 @@ def create_or_reuse_transfer_job(
             raise ValueError(
                 "transfer_key already exists for a different transfer payload"
             )
+        emit_hub_audit_event(
+            "hub.transfer_job_reused",
+            transfer_job_id=str(existing.id),
+            source_system="transfer",
+            request_user=created_by,
+            center_key=source_center.center_key if source_center is not None else None,
+            transfer_key=transfer_key,
+            source_node_key=source_node.node_key,
+        )
         return existing, False
 
     transfer_job = transfer_job_manager.create(
@@ -105,7 +172,15 @@ def create_or_reuse_transfer_job(
         payload_schema_version=payload_schema_version,
         resource_rows=resource_rows,
         processing_snapshot=processing_snapshot,
-        provenance=provenance,
+        provenance=_normalized_transfer_provenance(
+            provenance=provenance,
+            source_node=source_node,
+            target_node=target_node,
+            source_center=source_center,
+            transfer_mode=transfer_mode,
+            processing_policy=processing_policy,
+            cleanup_policy=cleanup_policy,
+        ),
         cleanup_status=(
             TransferJob.CleanupStatus.NOT_REQUESTED
             if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL
@@ -114,6 +189,16 @@ def create_or_reuse_transfer_job(
         created_by=created_by
         if getattr(created_by, "is_authenticated", False)
         else None,
+    )
+    emit_hub_audit_event(
+        "hub.transfer_job_created",
+        transfer_job_id=str(transfer_job.id),
+        source_system="transfer",
+        request_user=created_by,
+        center_key=source_center.center_key if source_center is not None else None,
+        transfer_key=transfer_key,
+        source_node_key=source_node.node_key,
+        cleanup_policy=cleanup_policy,
     )
     return transfer_job, True
 
@@ -201,7 +286,7 @@ def attach_transfer_media(
             )
         raise ValueError(f"Unsupported resource_kind: {transfer_job.resource_kind}")
     finally:
-        temp_path.unlink(missing_ok=True)
+        safe_unlink_file(temp_path, missing_ok=True)
 
 
 def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
@@ -867,7 +952,7 @@ def _record_media_upload(
     content_hash: str,
     uploaded_name: str,
 ) -> None:
-    provenance = dict(transfer_job.provenance or {})
+    provenance = _transfer_provenance(transfer_job.provenance)
     uploads = list(provenance.get("media_uploads") or [])
     uploads.append(
         {
@@ -877,8 +962,7 @@ def _record_media_upload(
             "uploaded_name": uploaded_name,
         }
     )
-    provenance["media_uploads"] = uploads
-    transfer_job.provenance = provenance
+    _update_transfer_provenance(transfer_job, media_uploads=uploads)
 
 
 def _get_transfer_video(transfer_job: TransferJob) -> VideoFile:
@@ -1142,15 +1226,16 @@ def _apply_case_resolution_for_media(
         if resolution.patient_examination is not None
         else None
     )
-    provenance = dict(transfer_job.provenance or {})
-    provenance["case_resolution"] = {
-        "status": resolution.status,
-        "created": resolution.created,
-        "reason": resolution.reason,
-        "linked_patient_examination_id": transfer_job.linked_patient_examination_id,
-        "linked_patient_id": transfer_job.linked_patient_id,
-    }
-    transfer_job.provenance = provenance
+    _update_transfer_provenance(
+        transfer_job,
+        case_resolution={
+            "status": resolution.status,
+            "created": resolution.created,
+            "reason": resolution.reason,
+            "linked_patient_examination_id": transfer_job.linked_patient_examination_id,
+            "linked_patient_id": transfer_job.linked_patient_id,
+        },
+    )
 
 
 def _decide_video_processing(

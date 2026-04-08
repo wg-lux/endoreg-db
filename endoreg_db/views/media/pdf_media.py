@@ -22,6 +22,7 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import file_exists
+from endoreg_db.views import access_control
 
 from .storage_streaming import (
     add_cors_headers,
@@ -130,6 +131,11 @@ class PdfMediaView(APIView):
             pdf = RawPdfFile.objects.select_related(
                 "sensitive_meta", "anonym_examination_report"
             ).get(pk=pdf_id_int)
+            access_control.assert_center_scope_allowed(
+                request=self.request,
+                obj=pdf,
+                not_found_message=f"report with ID {pk} not found",
+            )
 
             resolved_anonymized_text = self._resolved_anonymized_text(pdf)
 
@@ -208,6 +214,11 @@ class PdfMediaView(APIView):
 
             # Fetch report
             pdf = RawPdfFile.objects.get(pk=pdf_id_int)
+            access_control.assert_center_scope_allowed(
+                request=request,
+                obj=pdf,
+                not_found_message=f"report with ID {pk} not found",
+            )
 
             file_field = pdf.file
             if not file_field or not file_field.name:
@@ -268,6 +279,17 @@ class PdfMediaView(APIView):
             queryset = RawPdfFile.objects.select_related(
                 "sensitive_meta", "anonym_examination_report"
             ).all()
+            allowed_center_id = access_control.resolve_allowed_center_id(
+                getattr(request, "user", None)
+            )
+            if allowed_center_id == -1:
+                queryset = queryset.none()
+            elif isinstance(allowed_center_id, int):
+                queryset = queryset.filter(
+                    Q(center_id=allowed_center_id)
+                    | Q(patient__center_id=allowed_center_id)
+                    | Q(sensitive_meta__center_id=allowed_center_id)
+                )
 
             # Apply filters
             queryset = self._apply_filters(queryset, request.query_params)

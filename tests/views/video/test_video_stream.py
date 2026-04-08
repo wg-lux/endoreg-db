@@ -40,6 +40,7 @@ class VideoStreamViewTests(TestCase):
         storage_dir = STORAGE_DIR.resolve()
         storage_dir.mkdir(parents=True, exist_ok=True)
         tmp_file_path = None
+        streamable_path = None
         monkeypatches = pytest.MonkeyPatch()
         try:
             with tempfile.NamedTemporaryFile(
@@ -49,6 +50,10 @@ class VideoStreamViewTests(TestCase):
                 tmp.flush()
                 tmp_file_path = Path(tmp.name)
 
+            streamable_path = storage_dir / "streamable_videos" / "raw" / "test.mp4"
+            streamable_path.parent.mkdir(parents=True, exist_ok=True)
+            streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
             relative_name = tmp_file_path.relative_to(storage_dir).as_posix()
             fake_file_field = SimpleNamespace(
                 name=relative_name,
@@ -57,6 +62,9 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
+                storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+                streamable_relative_path="streamable_videos/raw/test.mp4",
+                processed_streamable_relative_path="streamable_videos/processed/test.mp4",
             )
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
@@ -73,10 +81,15 @@ class VideoStreamViewTests(TestCase):
             monkeypatches.undo()
             if tmp_file_path and tmp_file_path.exists():
                 tmp_file_path.unlink(missing_ok=True)
+            if streamable_path and streamable_path.exists():
+                streamable_path.unlink(missing_ok=True)
 
         assert response.status_code == 200
         assert "X-Accel-Redirect" in response
-        assert response["X-Accel-Redirect"].startswith("/protected_media/")
+        assert (
+            response["X-Accel-Redirect"]
+            == "/protected_media/streamable_videos/raw/test.mp4"
+        )
         assert response["X-Accel-Buffering"] == "no"
         assert response["Access-Control-Allow-Origin"] == "http://frontend.test"
 
@@ -89,6 +102,7 @@ class VideoStreamViewTests(TestCase):
         fake_video_obj = SimpleNamespace(
             active_raw_file=fake_field,
             processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
         )
 
         monkeypatches = pytest.MonkeyPatch()
@@ -128,6 +142,7 @@ class VideoStreamViewTests(TestCase):
             fake_video_obj = SimpleNamespace(
                 active_raw_file=fake_file_field,
                 processed_file=fake_file_field,
+                storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
             )
 
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
@@ -143,3 +158,71 @@ class VideoStreamViewTests(TestCase):
 
         assert response.status_code == 200
         assert "X-Accel-Redirect" not in response
+
+    def test_video_stream_plaintext_legacy_mode_does_not_emit_nginx_redirect(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        storage_dir = STORAGE_DIR.resolve()
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        tmp_file_path = None
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".mp4", dir=storage_dir, delete=False
+            ) as tmp:
+                tmp.write(b"\x00\x00\x00\x18ftypmp42")
+                tmp.flush()
+                tmp_file_path = Path(tmp.name)
+
+            relative_name = tmp_file_path.relative_to(storage_dir).as_posix()
+            fake_file_field = SimpleNamespace(
+                name=relative_name,
+                size=tmp_file_path.stat().st_size,
+            )
+            fake_video_obj = SimpleNamespace(
+                active_raw_file=fake_file_field,
+                processed_file=fake_file_field,
+                storage_mode=view_module.VideoFile.StorageMode.APP_ENCRYPTED,
+                streamable_relative_path="streamable_videos/raw/test.mp4",
+                processed_streamable_relative_path="streamable_videos/processed/test.mp4",
+            )
+
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setattr(
+                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+            )
+
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+            if tmp_file_path and tmp_file_path.exists():
+                tmp_file_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert "X-Accel-Redirect" not in response
+
+    def test_video_stream_returns_conflict_when_streamable_artifact_is_not_ready(self):
+        from endoreg_db.views.video import video_stream as view_module
+
+        payload = b"\x00\x00\x00\x18ftypmp42"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "videos/test.mp4")
+        fake_video_obj = SimpleNamespace(
+            active_raw_file=fake_field,
+            processed_file=fake_field,
+            storage_mode=view_module.VideoFile.StorageMode.FS_ENCRYPTED_STREAMABLE,
+            streamable_relative_path="streamable_videos/raw/missing.mp4",
+            processed_streamable_relative_path="streamable_videos/processed/missing.mp4",
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.VideoFile.objects, "get", lambda **kwargs: fake_video_obj
+            )
+            response = self.client.get("/api/media/videos/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 409
+        assert response["X-Stream-State"] == "missing_streamable_artifact"

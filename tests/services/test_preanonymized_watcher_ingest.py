@@ -6,7 +6,7 @@ from pathlib import Path
 
 from django.test import TestCase
 
-from endoreg_db.models import Center, Gender, PatientExternalID, RawPdfFile
+from endoreg_db.models import Center, Gender, PatientExternalID, RawPdfFile, UploadJob
 from endoreg_db.services.hub import process_preanonymized_watcher_file
 
 
@@ -62,3 +62,18 @@ class PreanonymizedWatcherIngestTests(TestCase):
         ).exists()
         assert not report_path.exists()
         assert not sidecar_path.exists()
+        assert upload_job.processing_provenance["entrypoint"] == "watcher"
+        assert (
+            upload_job.processing_provenance["ingest_mode"]
+            == UploadJob.IngestMode.WATCHER
+        )
+        assert (
+            upload_job.processing_provenance["source_center_key"]
+            == self.center.center_key
+        )
+        assert (
+            upload_job.processing_provenance["retention_policy"]
+            == UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS
+        )
+        assert upload_job.cleanup_status == UploadJob.CleanupStatus.ELIGIBLE
+        assert upload_job.source_file_delete_eligible_at is not None

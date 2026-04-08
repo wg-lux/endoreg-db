@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
+import hashlib
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NotRequired, TypedDict, cast
 
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
 from django.core.exceptions import ObjectDoesNotExist
@@ -21,6 +22,8 @@ from endoreg_db.models import (
     UploadJob,
     VideoFile,
 )
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.report_import import ReportImportService
@@ -29,7 +32,12 @@ from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_default_processor,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    atomic_move_file,
+    safe_unlink_file,
+    sha256_file,
+)
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
     ANONYM_VIDEO_DIR,
@@ -37,6 +45,95 @@ from endoreg_db.utils.paths import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class UploadProvenance(TypedDict, total=False):
+    entrypoint: str
+    ingest_mode: str
+    source_system: str
+    content_hash: str
+    source_center_key: str | None
+    storage_class: str
+    storage_tier: str
+    retention_policy: str
+    hub_mode: bool
+    declared_center_key: str | None
+    declared_center_name: str | None
+    resolved_center_key: str | None
+    watched_path: str
+    file_type: str
+    ingest_variant: str
+    sidecar_path: str
+    sidecar_payload: dict[str, Any]
+    watcher_processing_path: str
+    processor_name: str | None
+    processing_handoff: str
+    stored_upload_path: str
+    custom_marker: NotRequired[str]
+
+
+def _upload_provenance(
+    existing: UploadProvenance | None = None,
+) -> UploadProvenance:
+    provenance: UploadProvenance = {}
+    if existing:
+        provenance.update(existing)
+    return provenance
+
+
+def _update_upload_provenance(
+    upload_job: UploadJob,
+    **updates: object,
+) -> UploadProvenance:
+    provenance = _upload_provenance(upload_job.processing_provenance)
+    for key, value in updates.items():
+        if value is not None:
+            cast(Any, provenance)[key] = value
+    upload_job.processing_provenance = provenance
+    return provenance
+
+
+def hub_mode_enabled() -> bool:
+    return bool(getattr(settings, "ENDOREG_HUB_MODE", False))
+
+
+def _normalized_upload_provenance(
+    *,
+    ingest_mode: str,
+    source_system: str,
+    content_hash: str,
+    source_center: Center | None,
+    storage_class: str,
+    storage_tier: str,
+    retention_policy: str,
+    processing_provenance: UploadProvenance | None = None,
+) -> UploadProvenance:
+    provenance = _upload_provenance(processing_provenance)
+    provenance.setdefault("entrypoint", ingest_mode)
+    provenance["ingest_mode"] = ingest_mode
+    provenance["source_system"] = source_system
+    provenance["content_hash"] = content_hash
+    provenance["source_center_key"] = (
+        source_center.center_key if source_center is not None else None
+    )
+    provenance["storage_class"] = storage_class
+    provenance["storage_tier"] = storage_tier
+    provenance["retention_policy"] = retention_policy
+    return provenance
+
+
+def _compute_uploaded_file_content_hash(uploaded_file) -> str:
+    digest = hashlib.sha256()
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+    if hasattr(uploaded_file, "chunks"):
+        for chunk in uploaded_file.chunks():
+            digest.update(chunk)
+    else:
+        digest.update(uploaded_file.read())
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+    return digest.hexdigest()
 
 
 def resolve_upload_center(
@@ -133,6 +230,109 @@ def resolve_allowed_center_id(user: Any) -> int | None:
     return int(center_id) if isinstance(center_id, int) else -1
 
 
+def resolve_api_upload_context(
+    *,
+    user: Any = None,
+    center_key: str | None = None,
+    center_name: str | None = None,
+) -> tuple[Center | None, int | None, str | None, dict[str, Any]]:
+    normalized_center_key = (center_key or "").strip()
+    normalized_center_name = (center_name or "").strip()
+    hub_mode = hub_mode_enabled()
+    if hub_mode and not (
+        user
+        and not isinstance(user, AnonymousUser)
+        and getattr(user, "is_authenticated", False)
+    ):
+        return (
+            None,
+            None,
+            "Authentication is required for hub-mode API uploads.",
+            {"hub_mode": hub_mode},
+        )
+
+    declared_center, center_resolution_error = resolve_declared_upload_center(
+        center_key=normalized_center_key,
+        center_name=normalized_center_name,
+    )
+    if center_resolution_error:
+        return None, None, center_resolution_error, {"hub_mode": hub_mode}
+
+    if hub_mode:
+        if not normalized_center_key:
+            return (
+                None,
+                None,
+                "center_key is required for hub-mode API uploads.",
+                {"hub_mode": hub_mode},
+            )
+        if declared_center is None:
+            return (
+                None,
+                None,
+                "center_key is required for hub-mode API uploads.",
+                {"hub_mode": hub_mode},
+            )
+
+    allowed_center_id = resolve_allowed_center_id(user)
+    if (
+        allowed_center_id is not None
+        and allowed_center_id >= 0
+        and declared_center is not None
+        and declared_center.id != allowed_center_id
+    ):
+        return (
+            None,
+            allowed_center_id,
+            "Upload center is outside the authenticated scope",
+            {"hub_mode": hub_mode},
+        )
+
+    source_center = (
+        declared_center
+        if hub_mode
+        else resolve_upload_center(
+            user=user,
+            center_key=normalized_center_key,
+            center_name=normalized_center_name,
+        )
+    )
+    emit_hub_audit_event(
+        "hub.center_resolved",
+        source_system="api",
+        request_user=user,
+        hub_mode=hub_mode,
+        declared_center_key=normalized_center_key or None,
+        declared_center_name=normalized_center_name or None,
+        resolved_center_key=source_center.center_key if source_center else None,
+        allowed_center_id=allowed_center_id,
+    )
+    if (
+        allowed_center_id is not None
+        and allowed_center_id >= 0
+        and source_center is not None
+        and source_center.id != allowed_center_id
+    ):
+        return (
+            None,
+            allowed_center_id,
+            "Upload center is outside the authenticated scope",
+            {"hub_mode": hub_mode},
+        )
+
+    return (
+        source_center,
+        allowed_center_id,
+        None,
+        {
+            "hub_mode": hub_mode,
+            "declared_center_key": normalized_center_key or None,
+            "declared_center_name": normalized_center_name or None,
+            "resolved_center_key": source_center.center_key if source_center else None,
+        },
+    )
+
+
 def create_or_reuse_upload_job(
     *,
     uploaded_file,
@@ -140,6 +340,7 @@ def create_or_reuse_upload_job(
     created_by=None,
     source_center: Center | None = None,
     source_system: str = "api",
+    content_hash: str = "",
     idempotency_key: str = "",
     ingest_mode: str = UploadJob.IngestMode.API,
     storage_class: str = UploadJob.StorageClass.INGEST,
@@ -147,20 +348,58 @@ def create_or_reuse_upload_job(
     retention_policy: str = UploadJob.RetentionPolicy.PRESERVE_SOURCE,
     source_file_persisted: bool = True,
     cleanup_status: str = UploadJob.CleanupStatus.PENDING,
-    processing_provenance: dict[str, Any] | None = None,
+    processing_provenance: UploadProvenance | None = None,
 ) -> tuple[UploadJob, bool]:
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
+    normalized_content_hash = (content_hash or "").strip()
+    if not normalized_content_hash:
+        normalized_content_hash = _compute_uploaded_file_content_hash(uploaded_file)
+
+    if normalized_content_hash:
+        existing_by_hash = (
+            upload_job_manager.filter(
+                content_hash=normalized_content_hash,
+                source_center=source_center,
+                content_type=content_type,
+            )
+            .exclude(
+                status=UploadJob.Status.ERROR,
+            )
+            .first()
+        )
+        if existing_by_hash is not None:
+            emit_hub_audit_event(
+                "hub.upload_job_reused_by_content_hash",
+                upload_job_id=str(existing_by_hash.id),
+                source_system=source_system,
+                request_user=created_by,
+                center_key=source_center.center_key if source_center else None,
+                ingest_mode=ingest_mode,
+                content_hash=normalized_content_hash,
+            )
+            return existing_by_hash, False
+
     normalized_idempotency_key = (idempotency_key or "").strip()
     if normalized_idempotency_key:
         existing = upload_job_manager.filter(
             idempotency_key=normalized_idempotency_key,
             source_system=source_system,
+            content_hash=normalized_content_hash,
             source_center=source_center,
             ingest_mode=ingest_mode,
             storage_class=storage_class,
             storage_tier=storage_tier,
         ).first()
         if existing is not None:
+            emit_hub_audit_event(
+                "hub.upload_job_reused",
+                upload_job_id=str(existing.id),
+                source_system=source_system,
+                request_user=created_by,
+                center_key=source_center.center_key if source_center else None,
+                ingest_mode=ingest_mode,
+                idempotency_key=normalized_idempotency_key,
+            )
             return existing, False
 
     job = upload_job_manager.create(
@@ -168,6 +407,7 @@ def create_or_reuse_upload_job(
         content_type=content_type,
         source_center=source_center,
         source_system=source_system,
+        content_hash=normalized_content_hash,
         idempotency_key=normalized_idempotency_key,
         ingest_mode=ingest_mode,
         storage_class=storage_class,
@@ -176,10 +416,31 @@ def create_or_reuse_upload_job(
         source_file_persisted=source_file_persisted,
         cleanup_status=cleanup_status,
         original_filename=getattr(uploaded_file, "name", "") or "",
-        processing_provenance=processing_provenance or {},
+        processing_provenance=_normalized_upload_provenance(
+            ingest_mode=ingest_mode,
+            source_system=source_system,
+            content_hash=normalized_content_hash,
+            source_center=source_center,
+            storage_class=storage_class,
+            storage_tier=storage_tier,
+            retention_policy=retention_policy,
+            processing_provenance=processing_provenance,
+        ),
         created_by=created_by
         if getattr(created_by, "is_authenticated", False)
         else None,
+    )
+    emit_hub_audit_event(
+        "hub.upload_job_created",
+        upload_job_id=str(job.id),
+        source_system=source_system,
+        request_user=created_by,
+        center_key=source_center.center_key if source_center else None,
+        ingest_mode=ingest_mode,
+        content_hash=normalized_content_hash,
+        idempotency_key=normalized_idempotency_key,
+        storage_tier=storage_tier,
+        retention_policy=retention_policy,
     )
     return job, True
 
@@ -193,7 +454,7 @@ def create_or_reuse_watcher_upload_job(
     storage_class: str = UploadJob.StorageClass.INGEST,
     storage_tier: str = UploadJob.StorageTier.UPLOAD_WATCHER,
     retention_policy: str = UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
-    processing_provenance: dict[str, Any] | None = None,
+    processing_provenance: UploadProvenance | None = None,
 ) -> tuple[UploadJob, bool]:
     file_hash = sha256_file(file_path)
     stat_result = file_path.stat()
@@ -209,6 +470,7 @@ def create_or_reuse_watcher_upload_job(
             created_by=None,
             source_center=source_center,
             source_system=source_system,
+            content_hash=file_hash,
             idempotency_key=idempotency_key,
             ingest_mode=UploadJob.IngestMode.WATCHER,
             storage_class=storage_class,
@@ -264,12 +526,12 @@ def _persist_preanonymized_file(
         return
     if target_path.exists():
         if delete_source:
-            source_path.unlink(missing_ok=True)
+            safe_unlink_file(source_path, missing_ok=True)
         return
     if delete_source:
-        shutil.move(str(source_path), str(target_path))
+        atomic_move_file(source=source_path, destination=target_path)
     else:
-        shutil.copy2(source_path, target_path)
+        atomic_copy_file(source=source_path, destination=target_path)
 
 
 def _attach_external_id_to_sensitive_meta(
@@ -464,6 +726,19 @@ def _finalize_preanonymized_video(
                     video.video_hash,
                     exc,
                 )
+        try:
+            sync_video_streamable_artifacts(
+                video,
+                include_raw=True,
+                include_processed=True,
+                save=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not synchronize streamable artifacts for preanonymized video %s: %s",
+                video.video_hash,
+                exc,
+            )
         return video
 
 
@@ -573,9 +848,8 @@ def process_upload_job(job_id: str) -> bool:
         return False
 
     job.mark_processing()
-    provenance = dict(job.processing_provenance or {})
+    provenance = _update_upload_provenance(job, stored_upload_path=job.file.name)
     provenance.setdefault("stored_upload_path", job.file.name)
-    job.processing_provenance = provenance
     job.save(update_fields=["processing_provenance", "updated_at"])
 
     file_path = Path(job.file.path)
@@ -619,7 +893,17 @@ def start_upload_job_processing(
     upload_job: UploadJob,
     task_dispatcher: Any | None = None,
 ) -> str:
-    provenance = dict(upload_job.processing_provenance or {})
+    provenance = _normalized_upload_provenance(
+        ingest_mode=upload_job.ingest_mode,
+        source_system=upload_job.source_system or "api",
+        content_hash=upload_job.content_hash,
+        source_center=upload_job.source_center,
+        storage_class=upload_job.storage_class,
+        storage_tier=upload_job.storage_tier,
+        retention_policy=upload_job.retention_policy,
+        processing_provenance=upload_job.processing_provenance,
+    )
+    upload_job.processing_provenance = provenance
     handoff_mode = "celery" if task_dispatcher is not None else "inline"
 
     try:
@@ -647,8 +931,7 @@ def start_upload_job_processing(
         raise
 
     if provenance.get("processing_handoff") != handoff_mode:
-        provenance["processing_handoff"] = handoff_mode
-        upload_job.processing_provenance = provenance
+        _update_upload_provenance(upload_job, processing_handoff=handoff_mode)
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
 
     return handoff_mode
@@ -669,6 +952,16 @@ def process_watcher_file(
     source_center = center or resolve_default_center()
     if source_center is None:
         raise ObjectDoesNotExist("No center is configured for watcher ingestion")
+    emit_hub_audit_event(
+        "hub.center_resolved",
+        source_system=source_system,
+        request_user=None,
+        hub_mode=hub_mode_enabled(),
+        declared_center_key=source_center.center_key if center is not None else None,
+        declared_center_name=source_center.name if center is not None else None,
+        resolved_center_key=source_center.center_key,
+        allowed_center_id=None,
+    )
 
     normalized_type = file_type.strip().lower()
     if normalized_type == "report":
@@ -690,12 +983,14 @@ def process_watcher_file(
         },
     )
     if upload_job.is_complete:
+        safe_unlink_file(watched_path, missing_ok=True)
         return upload_job
 
     upload_job.mark_processing()
-    provenance = dict(upload_job.processing_provenance or {})
-    provenance["watcher_processing_path"] = str(watched_path)
-    upload_job.processing_provenance = provenance
+    _ = _update_upload_provenance(
+        upload_job,
+        watcher_processing_path=str(watched_path),
+    )
     upload_job.save(update_fields=["processing_provenance", "updated_at"])
 
     try:
@@ -720,12 +1015,16 @@ def process_watcher_file(
                 retry=False,
                 delete_source=True,
             )
-            provenance["processor_name"] = effective_processor_name
+            _ = _update_upload_provenance(
+                upload_job,
+                watcher_processing_path=str(watched_path),
+                processor_name=effective_processor_name,
+            )
+
             sensitive_meta = (
                 video.sensitive_meta if isinstance(video, VideoFile) else None
             )
 
-        upload_job.processing_provenance = provenance
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
         return upload_job
@@ -764,6 +1063,16 @@ def process_preanonymized_watcher_file(
     source_center = center or resolve_default_center()
     if source_center is None:
         raise ObjectDoesNotExist("No center is configured for watcher ingestion")
+    emit_hub_audit_event(
+        "hub.center_resolved",
+        source_system=source_system,
+        request_user=None,
+        hub_mode=hub_mode_enabled(),
+        declared_center_key=source_center.center_key if center is not None else None,
+        declared_center_name=source_center.name if center is not None else None,
+        resolved_center_key=source_center.center_key,
+        allowed_center_id=None,
+    )
 
     metadata_payload, sidecar_path = _load_preanonymized_sidecar(watched_path)
     upload_job, _ = create_or_reuse_watcher_upload_job(
@@ -785,12 +1094,16 @@ def process_preanonymized_watcher_file(
         },
     )
     if upload_job.is_complete:
+        safe_unlink_file(watched_path, missing_ok=True)
+        if sidecar_path is not None and sidecar_path.exists():
+            safe_unlink_file(sidecar_path, missing_ok=True)
         return upload_job
 
     upload_job.mark_processing()
-    provenance = dict(upload_job.processing_provenance or {})
-    provenance["watcher_processing_path"] = str(watched_path)
-    upload_job.processing_provenance = provenance
+    _ = _update_upload_provenance(
+        upload_job,
+        watcher_processing_path=str(watched_path),
+    )
     upload_job.save(update_fields=["processing_provenance", "updated_at"])
 
     try:
@@ -810,12 +1123,15 @@ def process_preanonymized_watcher_file(
                 payload=metadata_payload,
                 delete_source=True,
             )
-            provenance["processor_name"] = processor_name or _default_processor_name()
+            _ = _update_upload_provenance(
+                upload_job,
+                watcher_processing_path=str(watched_path),
+                processor_name=processor_name or _default_processor_name(),
+            )
             sensitive_meta = video.sensitive_meta
 
         if sidecar_path is not None and sidecar_path.exists():
-            sidecar_path.unlink(missing_ok=True)
-        upload_job.processing_provenance = provenance
+            safe_unlink_file(sidecar_path, missing_ok=True)
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
         return upload_job

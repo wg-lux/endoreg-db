@@ -1,14 +1,28 @@
 import uuid
 from typing import TYPE_CHECKING
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 
-from endoreg_db.utils.paths import build_upload_job_relative_path
+from endoreg_db.services.hub.payloads import validate_upload_provenance_payload
+from endoreg_db.utils.paths import EndoregPathsModel, build_upload_job_relative_path
+
+
+def _sync_upload_job_storage_location(instance: "UploadJob") -> None:
+    storage = instance._meta.get_field("file").storage
+    target_location = str(EndoregPathsModel.from_environment().storage.resolve())
+    if getattr(storage, "_location", None) == target_location:
+        return
+    storage._location = target_location
+    clear_cached_properties = getattr(storage, "_clear_cached_properties", None)
+    if callable(clear_cached_properties):
+        clear_cached_properties("MEDIA_ROOT")
 
 
 def upload_job_upload_to(instance: "UploadJob", filename: str) -> str:
+    _sync_upload_job_storage_location(instance)
     tier = getattr(instance, "storage_tier", UploadJob.StorageTier.UPLOAD_API)
     key = str(getattr(instance, "id", "") or uuid.uuid4())
     return build_upload_job_relative_path(tier=tier, filename=filename, key=key)
@@ -25,6 +39,7 @@ class UploadJob(models.Model):
         PROCESSING = "processing", "Processing"
         ANONYMIZED = "anonymized", "Anonymized"
         ERROR = "error", "Error"
+        LOST = "lost", "Lost"
 
     class IngestMode(models.TextChoices):
         API = "api", "API"
@@ -90,6 +105,14 @@ class UploadJob(models.Model):
         blank=True,
         default="api",
         help_text="Name of the upstream source system or client",
+    )
+
+    content_hash = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Canonical content hash used for content-first deduplication.",
     )
 
     idempotency_key = models.CharField(
@@ -201,10 +224,28 @@ class UploadJob(models.Model):
     def __str__(self):
         return f"UploadJob {self.id} - {self.status} ({self.content_type})"
 
+    def clean(self) -> None:
+        super().clean()
+        try:
+            self.processing_provenance = validate_upload_provenance_payload(
+                self.processing_provenance
+            )
+        except ValueError as exc:
+            raise ValidationError({"processing_provenance": str(exc)}) from exc
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        _sync_upload_job_storage_location(self)
+        return super().save(*args, **kwargs)
+
     @property
     def is_complete(self):
         """Returns True if the job has finished processing (success or error)."""
-        return self.status in [self.Status.ANONYMIZED, self.Status.ERROR]
+        return self.status in [
+            self.Status.ANONYMIZED,
+            self.Status.ERROR,
+            self.Status.LOST,
+        ]
 
     @property
     def is_successful(self):
@@ -222,19 +263,32 @@ class UploadJob(models.Model):
         if sensitive_meta:
             self.sensitive_meta = sensitive_meta
         update_fields = ["status", "sensitive_meta", "updated_at"]
-        if (
-            self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS
-            and self.source_file_delete_eligible_at is None
-        ):
-            self.source_file_delete_eligible_at = timezone.now()
-            update_fields.append("source_file_delete_eligible_at")
-        if self.cleanup_status != self.CleanupStatus.ELIGIBLE:
-            self.cleanup_status = self.CleanupStatus.ELIGIBLE
+        target_cleanup_status = self.cleanup_status
+
+        if self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS:
+            if self.source_file_delete_eligible_at is None:
+                self.source_file_delete_eligible_at = timezone.now()
+                update_fields.append("source_file_delete_eligible_at")
+            target_cleanup_status = self.CleanupStatus.ELIGIBLE
+        elif self.retention_policy in {
+            self.RetentionPolicy.PRESERVE_SOURCE,
+            self.RetentionPolicy.MIGRATION_MANAGED,
+        }:
+            target_cleanup_status = self.CleanupStatus.SKIPPED
+
+        if self.cleanup_status != target_cleanup_status:
+            self.cleanup_status = target_cleanup_status
             update_fields.append("cleanup_status")
         self.save(update_fields=update_fields)
 
     def mark_error(self, error_detail: str):
         """Mark the job as failed with error details."""
         self.status = self.Status.ERROR
+        self.error_detail = error_detail
+        self.save(update_fields=["status", "error_detail", "updated_at"])
+
+    def mark_lost(self, error_detail: str) -> None:
+        """Mark the job as unrecoverably inconsistent with on-disk state."""
+        self.status = self.Status.LOST
         self.error_detail = error_detail
         self.save(update_fields=["status", "error_detail", "updated_at"])

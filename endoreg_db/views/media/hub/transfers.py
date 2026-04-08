@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -24,15 +25,48 @@ from endoreg_db.services.hub import (
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
+def _assert_transfer_api_enabled() -> None:
+    if not bool(getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)):
+        raise Http404("Hub transfer API is not enabled")
+
+
 def _node_header(request, header_name: str) -> str:
     return str(request.headers.get(header_name, "") or "").strip()
 
 
+def _assert_secure_transfer_transport(request) -> None:
+    if not bool(
+        getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
+    ):
+        return
+    if request.is_secure():
+        return
+    raise PermissionDenied("Hub transfer requires HTTPS or equivalent secure transport")
+
+
+def _assert_transfer_mtls(request) -> None:
+    if not bool(getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS", False)):
+        return
+    meta_key = str(
+        getattr(settings, "ENDOREG_HUB_TRANSFER_MTLS_META_KEY", "") or ""
+    ).strip()
+    expected_value = str(
+        getattr(settings, "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE", "") or ""
+    ).strip()
+    actual_value = str(request.META.get(meta_key, "") or "").strip()
+    if not meta_key or not expected_value or actual_value != expected_value:
+        raise PermissionDenied(
+            "Hub transfer requires proxy-verified mutual TLS client authentication"
+        )
+
+
 def _enforce_transfer_node_auth(request, source_node_key: str) -> None:
+    _assert_secure_transfer_transport(request)
     user = getattr(request, "user", None)
     if getattr(user, "is_authenticated", False):
         return
 
+    _assert_transfer_mtls(request)
     provided_node_key = _node_header(request, "X-Network-Node-Key")
     provided_secret = _node_header(request, "X-Network-Node-Secret")
     authenticated_node = authenticate_network_node(
@@ -49,6 +83,7 @@ class HubTransferCreateView(APIView):
     permission_classes = [EnvironmentAwarePermission]
 
     def post(self, request, *args, **kwargs):
+        _assert_transfer_api_enabled()
         serializer = TransferJobCreateSerializer(
             data=request.data,
             context={"request": request},
@@ -93,6 +128,7 @@ class HubTransferStatusView(APIView):
     permission_classes = [EnvironmentAwarePermission]
 
     def get(self, request, transfer_key: str, *args, **kwargs):
+        _assert_transfer_api_enabled()
         transfer_job = (
             TransferJob.objects.select_related(
                 "source_center",
@@ -126,6 +162,7 @@ class HubTransferMediaUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, transfer_key: str, *args, **kwargs):
+        _assert_transfer_api_enabled()
         transfer_job = (
             TransferJob.objects.select_related(
                 "source_center",
@@ -145,9 +182,13 @@ class HubTransferMediaUploadView(APIView):
             raise ValidationError({"file": "A multipart file upload is required"})
 
         media_role = str(request.data.get("media_role", "") or "").strip().lower()
-        if media_role not in {"raw", "processed"}:
+        if media_role not in {"processed"}:
             raise ValidationError(
-                {"media_role": "media_role must be either 'raw' or 'processed'"}
+                {
+                    "media_role": (
+                        "Only anonymized processed media may be uploaded for transfers."
+                    )
+                }
             )
 
         try:

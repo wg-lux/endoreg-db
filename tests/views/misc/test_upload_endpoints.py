@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.contrib.auth.models import User
 
 from endoreg_db.models import (
@@ -90,6 +91,38 @@ class UploadEndpointTests(TestCase):
         assert second.status_code == 200, second.content
         assert first.json()["upload_id"] == second.json()["upload_id"]
 
+    def test_upload_reuses_existing_job_for_same_content_hash(self):
+        uploaded_a = SimpleUploadedFile(
+            name="upload-a.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+        uploaded_b = SimpleUploadedFile(
+            name="renamed-upload.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
+            first = self.client.post(
+                "/api/upload/",
+                data={"file": uploaded_a, "source_system": "site-a"},
+            )
+            second = self.client.post(
+                "/api/upload/",
+                data={"file": uploaded_b, "source_system": "site-b"},
+            )
+
+        assert first.status_code == 201, first.content
+        assert second.status_code == 200, second.content
+        assert first.json()["upload_id"] == second.json()["upload_id"]
+
     def test_upload_rejects_unknown_declared_center(self):
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
@@ -139,6 +172,85 @@ class UploadEndpointTests(TestCase):
         assert response.status_code == 201, response.content
         upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
         assert upload_job.source_center == default_center
+
+    @override_settings(ENDOREG_HUB_MODE=True)
+    def test_hub_mode_rejects_unauthenticated_upload(self):
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
+            response = self.client.post(
+                "/api/upload/",
+                data={"file": uploaded, "center_key": "any-center"},
+            )
+
+        assert response.status_code == 403, response.content
+        assert "Authentication is required" in response.json()["error"]
+
+    @override_settings(ENDOREG_HUB_MODE=True)
+    def test_hub_mode_requires_declared_center_key(self):
+        user = User.objects.create_user(username="hub-user", password="secret")
+        self.client.force_login(user)
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
+            response = self.client.post(
+                "/api/upload/",
+                data={"file": uploaded},
+            )
+
+        assert response.status_code == 400, response.content
+        assert "center_key is required" in response.json()["error"]
+
+    @override_settings(ENDOREG_HUB_MODE=True)
+    def test_hub_mode_accepts_authenticated_upload_with_center_key(self):
+        center = Center.objects.create(name="hub-center", display_name="Hub Center")
+        user = User.objects.create_user(username="hub-user", password="secret")
+        self.client.force_login(user)
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        with (
+            patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
+            patch(
+                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                return_value="inline",
+            ),
+        ):
+            response = self.client.post(
+                "/api/upload/",
+                data={"file": uploaded, "center_key": center.center_key},
+            )
+
+        assert response.status_code == 201, response.content
+        upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
+        assert upload_job.source_center == center
+        assert upload_job.processing_provenance["hub_mode"] is True
+        assert (
+            upload_job.processing_provenance["resolved_center_key"] == center.center_key
+        )
 
     def test_upload_rejects_authenticated_center_override(self):
         center_a = Center.objects.create(name="center-a", display_name="Center A")

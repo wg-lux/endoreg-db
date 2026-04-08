@@ -19,12 +19,14 @@ weights_search_patterns:
   - "image_multilabel_classification_colonoscopy_default_*.safetensors"
   - "*_colonoscopy_*.safetensors"
 
-# Search directories for local weights (relative to project root)
+# Search directories for local weights.
+# Prefer runtime-managed storage first; repo-local paths remain fallbacks for
+# development and tests.
 weights_search_dirs:
+  - "${STORAGE_DIR}/model_weights" # Environment variable substitution
   - "tests/assets"
   - "assets"
   - "data/storage/model_weights"
-  - "${STORAGE_DIR}/model_weights" # Environment variable substitution
 
 # Auto-generation defaults when creating metadata
 auto_generation_defaults:

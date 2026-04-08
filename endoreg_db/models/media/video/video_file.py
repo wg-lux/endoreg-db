@@ -11,8 +11,16 @@ from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models import F
 from django.db.models.fields.files import FieldFile
+from django.urls import reverse
 
+from endoreg_db.models.media.video.storage_mode import (
+    VIDEO_STORAGE_MODE_CHOICES,
+    VideoStorageMode,
+    coerce_video_storage_mode,
+    get_default_video_storage_mode_value,
+)
 from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.paths import (
     ANONYM_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
@@ -109,6 +117,8 @@ class VideoQuerySet(models.QuerySet):
 
 
 class VideoFile(models.Model):
+    StorageMode = VideoStorageMode
+
     objects = VideoQuerySet.as_manager()
     default_fps = 50.0
     use_default_fps = False
@@ -186,6 +196,32 @@ class VideoFile(models.Model):
     )
 
     original_file_name = models.CharField(max_length=255, blank=True, null=True)
+    storage_mode = models.CharField(
+        max_length=64,
+        choices=VIDEO_STORAGE_MODE_CHOICES,
+        default=get_default_video_storage_mode_value,
+        help_text=(
+            "Controls whether this video stays on the legacy application-encrypted "
+            "streaming path or may be handed off to Nginx from an encrypted "
+            "filesystem-backed media root."
+        ),
+    )
+    streamable_relative_path = models.CharField(
+        max_length=512,
+        blank=True,
+        help_text=(
+            "Protected-media relative path for the raw streamable asset when "
+            "storage_mode = fs_encrypted_streamable."
+        ),
+    )
+    processed_streamable_relative_path = models.CharField(
+        max_length=512,
+        blank=True,
+        help_text=(
+            "Protected-media relative path for the processed streamable asset "
+            "when storage_mode = fs_encrypted_streamable."
+        ),
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
     frame_dir = models.CharField(
         max_length=512,
@@ -252,17 +288,39 @@ class VideoFile(models.Model):
             return self.raw_file
         raise ValueError(self.NO_ACTIVE_FILE)
 
+    def _protected_stream_url(self, *, file_type: str) -> str | None:
+        if self.pk is None:
+            return None
+        if file_type == "processed" and not self.is_processed:
+            return None
+        if file_type == "raw" and not self.has_raw:
+            return None
+
+        try:
+            storage_mode = coerce_video_storage_mode(
+                getattr(self, "storage_mode", None)
+            )
+        except ValueError:
+            return None
+
+        if storage_mode == VideoStorageMode.STREAMABLE:
+            relative_path = (
+                self.processed_streamable_relative_path
+                if file_type == "processed"
+                else self.streamable_relative_path
+            )
+            if not isinstance(relative_path, str) or not relative_path.strip():
+                return None
+
+        url = reverse("api:video-stream", kwargs={"pk": self.pk})
+        if file_type == "processed":
+            return f"{url}?type=processed"
+        return url
+
     @property
-    def active_raw_file_url(self) -> str:
+    def active_raw_file_url(self) -> str | None:
         """Return the URL of the active raw file, or raise ValueError if unavailable."""
-        _file = self.active_raw_file
-        assert _file is not None, self.NO_ACTIVE_FILE
-        if not _file or not _file.name:
-            raise ValueError(self.NO_FILE_ASSOCIATED)
-        url = getattr(_file, "url", None)
-        if not url:
-            raise ValueError("Active raw file URL could not be resolved.")
-        return str(url)
+        return self._protected_stream_url(file_type="raw")
 
     # Pipeline Functions
     pipe_1 = _pipe_1
@@ -441,27 +499,13 @@ class VideoFile(models.Model):
         return path
 
     @property
-    def active_file_url(self) -> str:
+    def active_file_url(self) -> str | None:
         """Return the URL of the active video file, if available."""
-        file_obj = self.active_file
-        if not isinstance(file_obj, FieldFile):
-            raise ValueError("Active file is not a valid Django FieldFile instance.")
-        try:
-            url = getattr(file_obj, "url", None)
-        except Exception as exc:  # storage backends may raise when missing
-            logger.warning(
-                "Active file URL unavailable for video %s: %s",
-                self.video_hash,
-                exc,
-            )
-            raise ValueError(
-                "Active file URL could not be resolved for this VideoFile."
-            ) from exc
-
-        if not url:
-            raise ValueError("Active file URL is empty for this VideoFile.")
-
-        return str(url)
+        if self.is_processed:
+            processed_url = self._protected_stream_url(file_type="processed")
+            if processed_url is not None:
+                return processed_url
+        return self._protected_stream_url(file_type="raw")
 
     @classmethod
     def create_from_file(
@@ -708,6 +752,19 @@ class VideoFile(models.Model):
                 "state",
             ]
         )
+        try:
+            sync_video_streamable_artifacts(
+                self,
+                include_raw=True,
+                include_processed=False,
+                save=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not synchronize initial streamable artifact state for video %s: %s",
+                self.pk,
+                exc,
+            )
         # Initialize frames based on the video specs
         self.initialize_frames()
 
@@ -893,6 +950,19 @@ class VideoFile(models.Model):
 
             video.processed_file.name = to_storage_relative(new_video_path)
             video.save(update_fields=["processed_file", "date_modified"])
+            try:
+                sync_video_streamable_artifacts(
+                    video,
+                    include_raw=False,
+                    include_processed=True,
+                    save=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not synchronize processed streamable artifact for video %s: %s",
+                    video.pk,
+                    exc,
+                )
             return True
         except AssertionError as ae:
             logger.error(

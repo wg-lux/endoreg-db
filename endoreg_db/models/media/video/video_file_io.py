@@ -20,6 +20,12 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     if not (video.has_raw and video.raw_file.name):
         return None
 
+    streamable_relative_path = getattr(video, "streamable_relative_path", "")
+    if streamable_relative_path:
+        streamable_candidate = STORAGE_DIR / streamable_relative_path
+        if streamable_candidate.is_file():
+            return streamable_candidate.resolve()
+
     # 1) Canonical: use Django's storage path
     try:
         direct_path = Path(video.raw_file.path)
@@ -200,14 +206,19 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
                 exc_info=True,
             )
     else:
-        if delete_field_file(getattr(video, "processed_file", None), save=False):
-            logger.info(
-                "Deleted processed file from storage for video %s", video.video_hash
-            )
-        else:
-            logger.warning(
-                "Processed file missing in storage for video %s", video.video_hash
-            )
+        processed_field = getattr(video, "processed_file", None)
+        processed_name = getattr(processed_field, "name", "")
+        if processed_name:
+            if delete_field_file(processed_field, save=False):
+                logger.info(
+                    "Deleted processed file from storage for video %s",
+                    video.video_hash,
+                )
+            else:
+                logger.warning(
+                    "Processed file missing in storage for video %s",
+                    video.video_hash,
+                )
 
     # 4. Delete Database Record
     try:

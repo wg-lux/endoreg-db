@@ -33,6 +33,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.paths import ANONYM_VIDEO_DIR
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import ensure_local_file
@@ -49,6 +50,19 @@ def update_processed_file(video, output_path: Path):
 
     video.processed_file.name = str(rel_path)
     video.save(update_fields=["processed_file"])
+    try:
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=False,
+            include_processed=True,
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not synchronize processed streamable artifact for video %s: %s",
+            getattr(video, "pk", "unknown"),
+            exc,
+        )
 
 
 def _resolve_processing_method(payload: Any) -> str:

@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.urls import reverse
 
 from endoreg_db.utils.file_operations import get_content_hash_filename
 from endoreg_db.utils.hashs import get_pdf_hash
@@ -24,6 +25,11 @@ from endoreg_db.utils.storage import (
     ensure_local_file,
     file_exists,
     save_local_file,
+)
+from endoreg_db.utils.storage_profile import (
+    PayloadKind,
+    StoragePolicy,
+    resolve_storage_policy,
 )
 
 if TYPE_CHECKING:
@@ -142,6 +148,14 @@ class RawPdfFile(models.Model):
         processed_file = cast(FieldFile, processed_file)
 
     @property
+    def storage_policy(self) -> StoragePolicy:
+        return resolve_storage_policy(PayloadKind.REPORT_PDF)
+
+    @property
+    def uses_app_encrypted_storage(self) -> bool:
+        return self.storage_policy == StoragePolicy.APP_ENCRYPTED
+
+    @property
     def file_path(self) -> Path | None:
         """
         Returns the file path of the stored report file if available; otherwise, returns None.
@@ -251,7 +265,9 @@ class RawPdfFile(models.Model):
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
         try:
-            return self.file.url if self.file and self.file.name else None
+            if not self.file or not self.file.name or self.pk is None:
+                return None
+            return reverse("api:pdf-stream", kwargs={"pk": self.pk})
         except (ValueError, AttributeError):
             return None
 
@@ -261,11 +277,14 @@ class RawPdfFile(models.Model):
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
         try:
-            return (
-                self.processed_file.url
-                if self.processed_file and self.processed_file.name
-                else None
-            )
+            if (
+                not self.processed_file
+                or not self.processed_file.name
+                or self.pk is None
+            ):
+                return None
+            stream_url = reverse("api:pdf-stream", kwargs={"pk": self.pk})
+            return f"{stream_url}?type=processed"
         except (ValueError, AttributeError):
             return None
 

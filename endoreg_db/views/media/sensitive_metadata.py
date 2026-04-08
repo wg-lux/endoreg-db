@@ -229,8 +229,11 @@ def _resolve_case_resolution_patient(
             and sensitive_meta.patient_gender is not None
         ):
             patient_payload["gender"] = sensitive_meta.patient_gender.name
-        if patient_payload.get("center") is None and sensitive_meta.center is not None:
-            patient_payload["center"] = sensitive_meta.center.name
+        if (
+            patient_payload.get("center_key") is None
+            and sensitive_meta.center is not None
+        ):
+            patient_payload["center_key"] = sensitive_meta.center.center_key
         patient_serializer = PatientSerializer(data=patient_payload)
         patient_serializer.is_valid(raise_exception=True)
         return patient_serializer.save()

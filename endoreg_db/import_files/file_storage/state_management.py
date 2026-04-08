@@ -14,6 +14,7 @@ from django.db import transaction
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.state import RawPdfState, VideoState
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import sha256_file
 
@@ -329,6 +330,20 @@ def finalize_video_success(
             state.save()
 
         instance.save()
+
+    try:
+        sync_video_streamable_artifacts(
+            instance,
+            include_raw=True,
+            include_processed=True,
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not synchronize streamable artifacts for video %s after finalize: %s",
+            instance.pk,
+            exc,
+        )
 
     raw_path = instance.get_raw_file_path()
     if isinstance(ctx.sensitive_path, Path):

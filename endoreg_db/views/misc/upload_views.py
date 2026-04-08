@@ -22,10 +22,10 @@ from endoreg_db.models import UploadJob
 from endoreg_db.serializers.hub import UploadJobStatusSerializer
 from endoreg_db.services.hub import (
     create_or_reuse_upload_job,
-    resolve_declared_upload_center,
-    resolve_allowed_center_id,
-    resolve_upload_center,
+    resolve_api_upload_context,
+    hub_mode_enabled,
     start_upload_job_processing,
+    resolve_allowed_center_id,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
@@ -125,42 +125,29 @@ class UploadFileView(APIView):
             )
 
         try:
-            declared_center, center_resolution_error = resolve_declared_upload_center(
-                center_key=request.data.get("center_key"),
-                center_name=request.data.get("center_name"),
-            )
-            if center_resolution_error:
-                return Response(
-                    {"error": center_resolution_error},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            allowed_center_id = resolve_allowed_center_id(
-                getattr(request, "user", None)
-            )
-            if (
-                allowed_center_id is not None
-                and allowed_center_id >= 0
-                and declared_center is not None
-                and declared_center.id != allowed_center_id
-            ):
-                raise PermissionDenied(
-                    "Upload center is outside the authenticated scope"
-                )
-
-            source_center = resolve_upload_center(
+            (
+                source_center,
+                _allowed_center_id,
+                center_resolution_error,
+                upload_context,
+            ) = resolve_api_upload_context(
                 user=getattr(request, "user", None),
                 center_key=request.data.get("center_key"),
                 center_name=request.data.get("center_name"),
             )
-            if (
-                allowed_center_id is not None
-                and allowed_center_id >= 0
-                and source_center is not None
-                and source_center.id != allowed_center_id
-            ):
-                raise PermissionDenied(
-                    "Upload center is outside the authenticated scope"
+            if center_resolution_error:
+                status_code = (
+                    status.HTTP_403_FORBIDDEN
+                    if (
+                        hub_mode_enabled()
+                        and "Authentication is required" in center_resolution_error
+                    )
+                    or "outside the authenticated scope" in center_resolution_error
+                    else status.HTTP_400_BAD_REQUEST
+                )
+                return Response(
+                    {"error": center_resolution_error},
+                    status=status_code,
                 )
 
             source_system = (
@@ -188,11 +175,7 @@ class UploadFileView(APIView):
                 cleanup_status=UploadJob.CleanupStatus.PENDING,
                 processing_provenance={
                     "entrypoint": "api",
-                    "declared_center_key": request.data.get("center_key"),
-                    "declared_center_name": request.data.get("center_name"),
-                    "resolved_center_key": source_center.center_key
-                    if source_center
-                    else None,
+                    **upload_context,
                 },
             )
 

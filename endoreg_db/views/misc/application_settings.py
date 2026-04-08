@@ -45,6 +45,10 @@ def _backup_source_label(index: int, path: Path) -> str:
         return "storage"
     if path == IO_DIR:
         return "io"
+    if index == 0:
+        return "storage"
+    if index == 1:
+        return "io"
     return f"source_{index + 1}"
 
 

@@ -185,3 +185,8 @@ mypy-requirement-files:
 
 	sys.exit(1 if failed else 0)
 	PY
+
+package:
+	@make pypi-clean
+	@make pypi-wheel
+	@make pypi-sdist

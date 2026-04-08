@@ -9,12 +9,23 @@ from django.db import OperationalError, ProgrammingError, transaction
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.models import VideoFile
+from endoreg_db.services.media_integrity import reconcile_media_integrity
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.streamable_media import (
+    STREAMABLE_PROCESSED_VIDEO_ROOT,
+    STREAMABLE_RAW_VIDEO_ROOT,
+    STREAMABLE_VIDEO_ROOT,
+)
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    safe_unlink_file,
+    sha256_file,
+)
 from endoreg_db.utils.paths import data_paths
 
 logger = logging.getLogger(__name__)
@@ -69,6 +80,7 @@ class ReconciliationService:
         self.relink_broken_video_raw_files()
         self.cleanup_orphaned_artifacts()
         self.reset_incomplete_processing_states()
+        reconcile_media_integrity()
 
     def clear_stale_lock_files(self) -> int:
         """Delete abandoned import lock files older than the stale threshold."""
@@ -82,7 +94,7 @@ class ReconciliationService:
                 except FileNotFoundError:
                     continue
                 if age > STALE_LOCK_SECONDS:
-                    lock_path.unlink(missing_ok=True)
+                    safe_unlink_file(lock_path, missing_ok=True)
                     removed += 1
                     logger.warning("Removed stale lock file: %s", lock_path)
         return removed
@@ -95,8 +107,13 @@ class ReconciliationService:
             data_paths["sensitive_video"],
             data_paths["anonym_video"],
             data_paths["transcoding"],
+            STREAMABLE_VIDEO_ROOT,
+            STREAMABLE_RAW_VIDEO_ROOT,
+            STREAMABLE_PROCESSED_VIDEO_ROOT,
         )
         for root in scan_dirs:
+            if not Path(root).exists():
+                continue
             for path in Path(root).iterdir():
                 if not path.is_file():
                     continue
@@ -104,7 +121,7 @@ class ReconciliationService:
                     continue
                 if not self._is_stale(path, self.artifact_stale_seconds):
                     continue
-                path.unlink(missing_ok=True)
+                safe_unlink_file(path, missing_ok=True)
                 removed += 1
                 logger.warning("Removed orphaned startup artifact: %s", path)
         return removed
@@ -171,6 +188,19 @@ class ReconciliationService:
             with transaction.atomic():
                 video.raw_file.name = relative_name
                 video.save(update_fields=["raw_file"])
+            try:
+                sync_video_streamable_artifacts(
+                    video,
+                    include_raw=True,
+                    include_processed=False,
+                    save=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not synchronize reconciled raw streamable artifact for video %s: %s",
+                    video.video_hash,
+                    exc,
+                )
 
             recovered += 1
             claimed_hashes.add(video_hash)
@@ -330,7 +360,7 @@ class ReconciliationService:
             return None
 
         canonical_path.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(candidate, canonical_path)
+        atomic_move_file(source=candidate, destination=canonical_path)
         return canonical_path
 
     def _build_content_hash_index(
@@ -400,7 +430,7 @@ class _exclusive_lock:
     def __exit__(self, exc_type, exc, tb):
         if self.fd is not None:
             os.close(self.fd)
-        self.path.unlink(missing_ok=True)
+        safe_unlink_file(self.path, missing_ok=True)
         return False
 
 
