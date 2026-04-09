@@ -32,7 +32,6 @@ def create_or_retrieve_video_file(
 
     center_name = ctx.center_name
     processor_name = ctx.processor_name
-    delete_source = ctx.delete_source
     file_type = ctx.file_type  # logical key for history; can be None
 
     # default assumptions (same semantics as report)
@@ -85,7 +84,6 @@ def create_or_retrieve_video_file(
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,
-            delete_source=delete_source,
             video_hash=ctx.file_hash,
         )
         needs_processing = True

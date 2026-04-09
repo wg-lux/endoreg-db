@@ -89,7 +89,6 @@ class VideoImportService:
         center_name: str,
         processor_name: str,
         retry: bool = False,
-        delete_source: bool = True,
     ) -> "VideoFile | None":
         """
         Public entrypoint: wrap import_and_anonymize logic.
@@ -99,7 +98,6 @@ class VideoImportService:
             file_path=Path(file_path),
             center_name=center_name,
             processor_name=processor_name,
-            delete_source=delete_source,
             file_type="video",
         )
         self.logger.info("validating and preparing file")

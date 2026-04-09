@@ -1,12 +1,15 @@
 import logging
-import os
-import shutil
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Type
 
 # Import the new exceptions from the correct path
 from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.utils.file_operations import (
+    atomic_copy_file,
+    atomic_move_file,
+    ensure_disk_capacity,
+)
 from endoreg_db.utils.paths import (
     IMPORT_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
@@ -34,7 +37,7 @@ def _promote_atomic(temp_path: Path, final_path: Path) -> None:
     temp_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.parent.mkdir(parents=True, exist_ok=True)
     _verify_completed_file(temp_path)
-    os.replace(temp_path, final_path)
+    atomic_move_file(source=temp_path, destination=final_path)
     logger.debug("Promoted file atomically: %s -> %s", temp_path, final_path)
 
 
@@ -59,23 +62,32 @@ def check_storage_capacity(
     """
     try:
         src_size = src_path.stat().st_size
-        required_space = int(src_size * safety_margin)
-
-        # Check free space on destination
-        free_space = shutil.disk_usage(dst_root).free
-
-        if free_space < required_space:
-            raise InsufficientStorageError(
-                f"Insufficient storage space. Required: {required_space / 1e9:.1f} GB, Available: {free_space / 1e9:.1f} GB on {dst_root}",
-                required_space=required_space,
-                available_space=free_space,
-            )
-
+        ensure_disk_capacity(
+            destination_dir=dst_root,
+            required_bytes=src_size,
+            safety_margin=safety_margin,
+        )
         logger.info(
-            f"Storage check passed: {free_space / 1e9:.1f} GB available, {required_space / 1e9:.1f} GB required"
+            "Storage check passed for %s into %s with %.2fx safety margin",
+            src_path,
+            dst_root,
+            safety_margin,
         )
 
     except OSError as e:
+        if "Insufficient disk space" in str(e):
+            free_space = 0
+            try:
+                import shutil
+
+                free_space = shutil.disk_usage(dst_root).free
+            except OSError:
+                pass
+            raise InsufficientStorageError(
+                f"Insufficient storage space. Required: {int(src_size * safety_margin) / 1e9:.1f} GB, Available: {free_space / 1e9:.1f} GB on {dst_root}",
+                required_space=int(src_size * safety_margin),
+                available_space=free_space,
+            ) from e
         logger.warning(f"Could not check storage capacity: {e}")
         # Don't fail the operation, just log the warning
 
@@ -98,31 +110,25 @@ def atomic_copy_with_fallback(
         OSError: For other file system errors
     """
     try:
-        # Check space before copy
-        src_size = src_path.stat().st_size
-        free_space = shutil.disk_usage(dst_path.parent).free
+        atomic_copy_file(source=src_path, destination=dst_path, preserve_metadata=True)
+        logger.debug(f"Copy successful: {src_path} -> {dst_path}")
+        return True
+    except OSError as e:
+        if "Insufficient disk space" in str(e):
+            free_space = 0
+            try:
+                import shutil
 
-        if free_space < src_size * 1.1:  # 10% safety margin
+                free_space = shutil.disk_usage(dst_path.parent).free
+            except OSError:
+                pass
             raise InsufficientStorageError(
-                f"Insufficient space for copy operation. Required: {src_size / 1e9:.1f} GB, Available: {free_space / 1e9:.1f} GB",
-                required_space=src_size,
+                f"Insufficient space for copy operation. Required: {src_path.stat().st_size / 1e9:.1f} GB, Available: {free_space / 1e9:.1f} GB",
+                required_space=src_path.stat().st_size,
                 available_space=free_space,
-            )
-
-        # Use a temporary name during copy for atomicity
-        temp_dst = _temp_media_path(dst_path, "tmp")
-
-        try:
-            shutil.copy2(str(src_path), str(temp_dst))
-            temp_dst.rename(dst_path)
-            logger.debug(f"Copy successful: {src_path} -> {dst_path}")
-            return True
-        except Exception:
-            # Clean up temp file if copy failed
-            if temp_dst.exists():
-                temp_dst.unlink(missing_ok=True)
-            raise
-
+            ) from e
+        logger.error(f"Copy operation failed: {src_path} -> {dst_path}: {e}")
+        raise
     except Exception as e:
         logger.error(f"Copy operation failed: {src_path} -> {dst_path}: {e}")
         raise
@@ -144,54 +150,25 @@ def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
         OSError: For other file system errors
     """
     try:
-        # First try atomic move (same filesystem)
-        try:
-            src_path.rename(dst_path)
-            logger.debug(f"Atomic move successful: {src_path} -> {dst_path}")
-            return True
-        except OSError as e:
-            if e.errno == 18:  # Cross-device link
-                logger.debug("Cross-device move detected, falling back to copy+remove")
-            else:
-                raise
+        atomic_move_file(source=src_path, destination=dst_path)
+        logger.debug(f"Atomic move successful: {src_path} -> {dst_path}")
+        return True
+    except OSError as e:
+        if "Insufficient disk space" in str(e):
+            free_space = 0
+            try:
+                import shutil
 
-        # Check space before cross-filesystem copy
-        src_size = src_path.stat().st_size
-        free_space = shutil.disk_usage(dst_path.parent).free
-
-        if free_space < src_size * 1.1:  # 10% safety margin
+                free_space = shutil.disk_usage(dst_path.parent).free
+            except OSError:
+                pass
             raise InsufficientStorageError(
-                f"Insufficient space for copy operation. Required: {src_size / 1e9:.1f} GB, Available: {free_space / 1e9:.1f} GB",
-                required_space=src_size,
+                f"Insufficient space for copy operation. Required: {src_path.stat().st_size / 1e9:.1f} GB, Available: {free_space / 1e9:.1f} GB",
+                required_space=src_path.stat().st_size,
                 available_space=free_space,
-            )
-
-        # Fallback to copy+remove for cross-filesystem moves
-        logger.info(f"Copying file (cross-filesystem): {src_path} -> {dst_path}")
-
-        # Use a temporary name during copy for atomicity
-        temp_dst = _temp_media_path(dst_path, "tmp")
-
-        try:
-            shutil.copy2(str(src_path), str(temp_dst))
-            temp_dst.rename(dst_path)
-            src_path.unlink()  # Remove source only after successful copy
-            logger.debug(f"Copy+remove successful: {src_path} -> {dst_path}")
-            return True
-
-        except OSError as e:
-            # Clean up temp file on failure
-            if temp_dst.exists():
-                temp_dst.unlink(missing_ok=True)
-            # Re-raise with better context
-            if e.errno == 28:  # No space left on device
-                raise InsufficientStorageError(
-                    f"No space left on device during copy: {e}",
-                    required_space=src_path.stat().st_size,
-                    available_space=shutil.disk_usage(dst_path.parent).free,
-                )
-            raise
-
+            ) from e
+        logger.error(f"Failed to move {src_path} -> {dst_path}: {e}")
+        raise
     except Exception as e:
         logger.error(f"Failed to move {src_path} -> {dst_path}: {e}")
         raise
@@ -221,7 +198,6 @@ def _create_from_file(
     video_hash: str,
     video_dir: Path = IMPORT_VIDEO_DIR,
     save: bool = True,
-    delete_source: bool = False,
     **kwargs,
 ) -> "VideoFile":
     """
@@ -289,9 +265,9 @@ def _create_from_file(
 
         logger.debug("Using file for hashing: %s", transcoded_file_path)
 
-        # 3. Check if hash already exists
-        if cls_model.check_hash_exists(video_hash=video_hash):
-            existing_video = cls_model.objects.get(video_hash=video_hash)
+        # 3. Check if hash already exists (Fixed TOCTOU Race Condition)
+        existing_video = cls_model.objects.filter(video_hash=video_hash).first()
+        if existing_video:
             logger.warning(
                 "Video with hash %s already exists (UUID: %s)",
                 video_hash,
@@ -333,7 +309,6 @@ def _create_from_file(
                 atomic_copy_with_fallback(transcoded_file_path, temp_output_path)
                 _promote_atomic(temp_output_path, final_storage_path)
         except InsufficientStorageError:
-            # Re-raise storage errors as-is
             raise
         except Exception as e:
             raise RuntimeError(f"Failed to move file to final storage: {e}") from e
@@ -364,9 +339,10 @@ def _create_from_file(
 
         # 8. Create the VideoFile instance
         logger.info("Creating new VideoFile instance with hash: %s", video_hash)
-        # Store FileField path relative to storage root including the videos prefix
 
         relative_name = path_utils.to_storage_relative(final_storage_path)
+
+        # Unpacked **kwargs so any extra fields passed in actually hit the DB
         video = cls_model(
             raw_file=relative_name,
             processed_file=None,
@@ -377,21 +353,21 @@ def _create_from_file(
             processed_video_hash=None,
             suffix=original_suffix,
             fps=None,
+            **kwargs,
         )
 
         # 9. Save the instance if requested
         if save:
-            logger.info("Saving new VideoFile instance (Hash:%s", video_hash)
+            logger.info("Saving new VideoFile instance (Hash:%s)", video_hash)
             video.save()
             logger.info(
-                "Successfully created VideoFile PK %s ",
+                "Successfully created VideoFile PK %s",
                 video.pk,
             )
 
         return video
 
     except (InsufficientStorageError, ValueError):
-        # Re-raise these specific errors as-is
         raise
     except Exception as e:
         logger.error(

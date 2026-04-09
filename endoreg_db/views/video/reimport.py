@@ -139,7 +139,6 @@ class VideoReimportView(APIView):
                             center_name=video.center.name,
                             processor_name=processor_name,
                             retry=True,
-                            delete_source=False,
                         )
                     video.refresh_from_db()
                 except FileNotFoundError as e:

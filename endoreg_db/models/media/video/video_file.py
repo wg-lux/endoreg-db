@@ -546,7 +546,6 @@ class VideoFile(models.Model):
         center_name: str,
         processor_name: Optional[str],
         video_hash: str,
-        delete_source: bool = False,
         save_video_file: bool = True,
     ):
         """
@@ -565,7 +564,6 @@ class VideoFile(models.Model):
             center_name=center_name,
             processor_name=processor_name,
             video_hash=video_hash,
-            delete_source=delete_source,
             save=save_video_file,  # Add this line
         )
 

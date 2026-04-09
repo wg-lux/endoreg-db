@@ -859,7 +859,6 @@ def process_upload_job(job_id: str) -> bool:
                 file_path=file_path,
                 center_name=center.name,
                 retry=False,
-                delete_source=False,
             )
             sensitive_meta = (
                 report.sensitive_meta if isinstance(report, RawPdfFile) else None
@@ -874,7 +873,6 @@ def process_upload_job(job_id: str) -> bool:
                 center_name=center.name,
                 processor_name=processor_name,
                 retry=False,
-                delete_source=False,
             )
             sensitive_meta = (
                 video.sensitive_meta if isinstance(video, VideoFile) else None
@@ -999,7 +997,6 @@ def process_watcher_file(
                 file_path=watched_path,
                 center_name=source_center.name,
                 retry=False,
-                delete_source=True,
             )
             sensitive_meta = (
                 report.sensitive_meta if isinstance(report, RawPdfFile) else None
@@ -1013,7 +1010,6 @@ def process_watcher_file(
                 center_name=source_center.name,
                 processor_name=effective_processor_name,
                 retry=False,
-                delete_source=True,
             )
             _ = _update_upload_provenance(
                 upload_job,

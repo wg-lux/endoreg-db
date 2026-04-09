@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING, Iterator, Optional
 
 from django.db import transaction
 
-from endoreg_db.utils.paths import ANONYM_VIDEO_DIR, STORAGE_DIR, data_paths
+from endoreg_db.utils.paths import data_paths
 
-from ....utils import delete_field_file, ensure_local_file, storage_file_exists
+# --- Aligned Imports ---
+from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.utils.storage import delete_field_file, ensure_local_file, file_exists
 
 if TYPE_CHECKING:
     from .video_file import VideoFile
@@ -17,12 +19,12 @@ logger = logging.getLogger("video_file")
 
 def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
     """Return the best-effort absolute path to the raw video on disk."""
-    if not (video.has_raw and video.raw_file.name):
+    if not (video.has_raw and getattr(video.raw_file, "name", None)):
         return None
 
     streamable_relative_path = getattr(video, "streamable_relative_path", "")
     if streamable_relative_path:
-        streamable_candidate = STORAGE_DIR / streamable_relative_path
+        streamable_candidate = data_paths.storage / streamable_relative_path
         if streamable_candidate.is_file():
             return streamable_candidate.resolve()
 
@@ -39,7 +41,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
             )
     except Exception as exc:
         logger.debug(
-            "Could not access raw_file.path for video %s: %s",
+            "Could not access raw_file.path for video %s (may be remote storage): %s",
             video.video_hash,
             exc,
         )
@@ -58,7 +60,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
             return candidate
 
     logger.warning(
-        "Raw video file '%s' not found in import/sensitive paths or via stored FileField path for video %s.",
+        "Raw video file '%s' not found locally for video %s.",
         video.raw_file.name,
         video.video_hash,
     )
@@ -76,7 +78,7 @@ def _ensure_local_raw_file(video: "VideoFile") -> Iterator[Path]:
 
 
 def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
-    """Returns the absolute Path object for the processed file, if it exists."""
+    """Returns the absolute Path object for the processed file, if it exists locally."""
     processed_field = getattr(video, "processed_file", None)
     if not (video.is_processed and processed_field and processed_field.name):
         return None
@@ -92,26 +94,26 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
             video.video_hash,
             exc,
         )
-    # Fallback aligned with streaming path resolution:
-    # - absolute stored name -> use directly
-    # - relative stored name -> resolve under STORAGE_DIR
+
     if processed_name:
-        if processed_name.startswith("/"):
-            candidate = Path(processed_name)
-        else:
-            candidate = STORAGE_DIR / processed_name
+        candidate = (
+            Path(processed_name)
+            if processed_name.startswith("/")
+            else data_paths.storage / processed_name
+        )
         if candidate.exists():
             return candidate.resolve()
 
-    if processed_field and storage_file_exists(processed_field):
+    # --- Use aligned file_exists helper ---
+    if processed_field and file_exists(processed_field):
         logger.debug(
-            "Processed file for %s available only via storage backend", video.video_hash
+            "Processed file for %s available only via remote storage backend",
+            video.video_hash,
         )
     else:
         logger.warning(
-            "Could not get path for processed file of VideoFile %s: %s",
+            "Could not get path for processed file of VideoFile %s: path unavailable",
             video.video_hash,
-            "path unavailable",
         )
     return None
 
@@ -129,15 +131,13 @@ def _ensure_local_processed_file(video: "VideoFile") -> Iterator[Path]:
 @transaction.atomic
 def _delete_with_file(video: "VideoFile", *args, **kwargs):
     """Deletes the VideoFile record and its associated physical files (raw, processed, frames)."""
-    # 1. Delete Frames (using the frame helper function via instance method)
+    # 1. Delete Frames
     try:
-        # delete_frames raises RuntimeError on state update failure
         frame_delete_msg = video.delete_frames()
         logger.info(
             "Frame deletion result for video %s: %s", video.video_hash, frame_delete_msg
         )
     except Exception as frame_del_e:
-        # Log error but continue, as file deletion might still be possible
         logger.error(
             "Error during frame file/state deletion for video %s: %s",
             video.video_hash,
@@ -146,90 +146,45 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
         )
 
     # 2. Delete Raw File
-    raw_file_path = _get_raw_file_path(video)
-    if raw_file_path:
-        try:
-            if raw_file_path.exists():
-                raw_file_path.unlink()
-                logger.info(
-                    "Deleted raw video file for %s: %s", video.video_hash, raw_file_path
-                )
-            else:
-                logger.warning(
-                    "Raw video file not found at %s for video %s, skipping deletion.",
-                    raw_file_path,
-                    video.video_hash,
-                )
-
-        except Exception as e:
-            # Log error but continue
-            logger.error(
-                "Error deleting raw video file %s for video %s: %s",
-                raw_file_path,
-                video.video_hash,
-                e,
-                exc_info=True,
-            )
+    raw_field = getattr(video, "raw_file", None)
+    if raw_field and raw_field.name:
+        # Trust storage backend to delete (handles local, S3, Azure automatically)
+        delete_field_file(raw_field, missing_ok=True, save=False)
+        logger.info(
+            "Deleted raw field file via storage backend for %s", video.video_hash
+        )
     else:
-        if delete_field_file(getattr(video, "raw_file", None), save=False):
-            logger.info("Deleted raw file from storage for video %s", video.video_hash)
-        else:
-            logger.warning(
-                "Raw video file not found during deletion for video %s.",
-                video.video_hash,
-            )
+        # Fallback to local cleanup if FieldFile is corrupted
+        raw_file_path = _get_raw_file_path(video)
+        if raw_file_path and raw_file_path.exists():
+            safe_unlink_file(raw_file_path, missing_ok=True)
+            logger.info("Deleted orphaned local raw file for %s", video.video_hash)
 
     # 3. Delete Processed File
-    processed_file_path = _get_processed_file_path(video)
-    if processed_file_path:
-        try:
-            if processed_file_path.exists():
-                processed_file_path.unlink()
-                logger.info(
-                    "Deleted processed video file for %s: %s",
-                    video.video_hash,
-                    processed_file_path,
-                )
-            else:
-                logger.warning(
-                    "Processed video file not found at %s for video %s, skipping deletion.",
-                    processed_file_path,
-                    video.video_hash,
-                )
-        except Exception as e:
-            # Log error but continue
-            logger.error(
-                "Error deleting processed video file %s for video %s: %s",
-                processed_file_path,
-                video.video_hash,
-                e,
-                exc_info=True,
-            )
+    processed_field = getattr(video, "processed_file", None)
+    if processed_field and processed_field.name:
+        # Trust storage backend
+        delete_field_file(processed_field, missing_ok=True, save=False)
+        logger.info(
+            "Deleted processed field file via storage backend for %s", video.video_hash
+        )
     else:
-        processed_field = getattr(video, "processed_file", None)
-        processed_name = getattr(processed_field, "name", "")
-        if processed_name:
-            if delete_field_file(processed_field, save=False):
-                logger.info(
-                    "Deleted processed file from storage for video %s",
-                    video.video_hash,
-                )
-            else:
-                logger.warning(
-                    "Processed file missing in storage for video %s",
-                    video.video_hash,
-                )
+        # Fallback to local cleanup
+        processed_file_path = _get_processed_file_path(video)
+        if processed_file_path and processed_file_path.exists():
+            safe_unlink_file(processed_file_path, missing_ok=True)
+            logger.info(
+                "Deleted orphaned local processed file for %s", video.video_hash
+            )
 
     # 4. Delete Database Record
     try:
-        # Use 'super(type(video), video)' to call the parent's delete method
         super(type(video), video).delete(*args, **kwargs)
         logger.info(
             "Deleted VideoFile database record PK %s (UUID: %s).",
             video.pk,
             video.video_hash,
         )
-
         return f"Successfully deleted VideoFile {video.video_hash} and attempted file cleanup."
     except Exception as e:
         logger.error(
@@ -239,56 +194,49 @@ def _delete_with_file(video: "VideoFile", *args, **kwargs):
             e,
             exc_info=True,
         )
-        raise  # Re-raise the exception for DB deletion failure
+        raise
 
 
 def _get_base_frame_dir(video: "VideoFile") -> Path:
-    """Gets the base directory path for storing extracted frames."""
-    # Assuming data_paths['frame'] is the root directory for all frame storage
     return data_paths["frame"] / str(video.video_hash)
 
 
 def _set_frame_dir(video: "VideoFile", force_update: bool = False):
-    """Sets the frame_dir field based on the video's UUID."""
     target_dir = _get_base_frame_dir(video)
-    target_path_str = target_dir.as_posix()  # Store as POSIX path string
+    target_path_str = target_dir.as_posix()
 
     if not video.frame_dir or video.frame_dir != target_path_str or force_update:
         video.frame_dir = target_path_str
         logger.info(
             "Set frame_dir for video %s to %s", video.video_hash, video.frame_dir
         )
-        # Avoid saving if called from within the save method itself
         if not getattr(video, "_saving", False):
             video.save(update_fields=["frame_dir"])
 
 
 def _get_frame_dir_path(video: "VideoFile") -> Optional[Path]:
-    """Returns the Path object for the frame directory, if set."""
     if not video.frame_dir:
         _set_frame_dir(video)
-
     return Path(video.frame_dir)
 
 
 def _get_temp_anonymized_frame_dir(video: "VideoFile") -> Path:
-    """Gets the path for the temporary directory used during anonymization frame creation."""
     base_frame_dir = _get_base_frame_dir(video)
-    # Place temp dir alongside the final frame dir but with a prefix/suffix
     anon_dir = base_frame_dir.parent / f"anonymizing_{base_frame_dir.name}"
     return anon_dir
 
 
 def _get_target_anonymized_video_path(video: "VideoFile") -> Path:
     """Determines the target path for the anonymized/processed video file."""
-    if not video.has_raw or not video.raw_file.name:
-        # If raw is gone, maybe base it on UUID? Requires careful thought.
-        # For now, assume raw is needed to determine the original filename base.
+    if not video.has_raw or not getattr(video.raw_file, "name", None):
         raise ValueError(
             "Cannot determine target anonymized path without a raw file reference."
         )
 
     # Use the filename part of the raw file's relative path
     raw_path_relative = Path(video.raw_file.name)
-    # Place it in the ANONYM_VIDEO_DIR using the same filename
-    return ANONYM_VIDEO_DIR / raw_path_relative.name
+
+    # Use the data_paths dictionary mapping instead of the uppercase constant
+    target_dir = data_paths["anonym_video"]
+
+    return target_dir / raw_path_relative.name

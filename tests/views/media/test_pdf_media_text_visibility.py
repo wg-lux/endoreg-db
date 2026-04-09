@@ -72,7 +72,6 @@ class PdfMediaTextVisibilityTests(TestCase):
                 file_path=txt_path,
                 center_name=DEFAULT_CENTER_NAME,
                 retry=False,
-                delete_source=False,
             )
             assert isinstance(report_obj, RawPdfFile)
             report_obj.refresh_from_db()
@@ -105,8 +104,11 @@ class PdfMediaTextVisibilityTests(TestCase):
             ctx.current_report.anonymized_text = ctx.anonymized_text
             ctx.current_report.save(update_fields=["text", "anonymized_text"])
             sm = LxSM()
-            anonymizer_self.storage = sensitive_meta_storage(sm, ctx.current_report)
-            return ctx
+            if sensitive_meta_storage(sm, ctx.current_report):
+                ctx.extracted_metadata = sm
+                return ctx
+            else:
+                return ctx
 
         try:
             with patch.object(
@@ -118,7 +120,6 @@ class PdfMediaTextVisibilityTests(TestCase):
                     file_path=pdf_path,
                     center_name=DEFAULT_CENTER_NAME,
                     retry=False,
-                    delete_source=False,
                 )
 
             assert isinstance(report_obj, RawPdfFile)

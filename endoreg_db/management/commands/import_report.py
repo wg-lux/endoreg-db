@@ -83,13 +83,6 @@ class Command(BaseCommand):
         )
 
         parser.add_argument(
-            "--delete_source",
-            action="store_true",
-            default=False,
-            help="Delete the source report file after importing",
-        )
-
-        parser.add_argument(
             "--save",
             action="store_true",
             default=False,
@@ -138,14 +131,10 @@ class Command(BaseCommand):
         center_name = options["center_name"]
         report_dir_root = options["report_dir_root"]
         file_path = options["file_path"]
-        delete_source = options["delete_source"]
         save = options["save"]
         start_ollama = options["start_ollama"]
         ollama_debug = options["ollama_debug"]
         ollama_timeout = options["ollama_timeout"]
-
-        if not isinstance(delete_source, bool):
-            raise ValueError("delete_source must be a boolean")
 
         self.stdout.write(
             self.style.SUCCESS(f"Starting report import for {file_path}...")
@@ -291,7 +280,6 @@ class Command(BaseCommand):
             report_file_obj = ReportImportService().import_and_anonymize(
                 file_path=file_path,
                 center_name=center_name,
-                delete_source=delete_source,
                 retry=False,
             )
             if not report_file_obj:

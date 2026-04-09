@@ -277,24 +277,22 @@ def get_default_egd_pdf():
     file_field: Optional[FieldFile] = None
     try:
         # Create the report record using the temporary file.
-        # delete_source=True will ensure temp_file_path is deleted by create_from_file
         pdf_file = RawPdfFile.create_from_file_initialized(
             file_path=temp_file_path,
             center_name=center_name,
-            delete_source=True,
         )
 
         assert pdf_file is not None, "Failed to create report file object"
         # Use storage API to check existence
         file_field = pdf_file.file
         assert isinstance(file_field, FieldFile)
+        assert isinstance(file_field.name, str)
         assert default_storage.exists(file_field.name), (
             f"report file does not exist in storage at {file_field.name}"
         )
-        # Check that the source temp file was deleted
-        assert not temp_file_path.exists(), (
-            f"Temporary source file {temp_file_path} still exists after creation"
-        )
+
+        # Act as the watcher and clean up the file now that ingestion is successful
+        temp_file_path.unlink(missing_ok=True)
 
         # Prepare a minimal report_meta for SensitiveMeta creation
         default_report_meta = {
@@ -357,7 +355,6 @@ def get_default_video_file():
     video_file = VideoFile.create_from_file_initialized(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
-        delete_source=False,  # Keep the original asset for other tests
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
         video_hash=sha256_file(video_path),
     )

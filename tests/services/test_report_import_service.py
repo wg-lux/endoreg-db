@@ -106,7 +106,6 @@ class TestReportImportService(TestCase):
                 file_path=pdf_path,
                 center_name=self.center.name,
                 retry=False,
-                delete_source=False,
             )
 
             # Basic checks
@@ -123,42 +122,6 @@ class TestReportImportService(TestCase):
         finally:
             if pdf_path.exists():
                 pdf_path.unlink()
-
-    @pytest.mark.integration
-    def test_import_and_anonymize_with_different_options(self):
-        """
-        Test import_and_anonymize with different delete_source options.
-
-        Mirrors the video test:
-        - Create a temporary copy
-        - Call service with delete_source=True
-        - Ensure we still get a RawPdfFile and no crash
-        """
-        if SKIP_EXPENSIVE_TESTS:
-            self.skipTest(
-                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-
-        # Create a temporary report file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            temp_path = Path(tmp.name)
-        temp_path.write_bytes(MINIMAL_report_BYTES)
-
-        try:
-            pdf_file = import_and_anonymize(
-                file_path=temp_path,
-                center_name=self.center.name,
-                retry=False,
-                delete_source=False,
-            )
-
-            self.assertIsNotNone(pdf_file)
-            self.assertIsInstance(pdf_file, RawPdfFile)
-
-        finally:
-            # Clean up if file still exists (delete_source=True may have removed it)
-            if temp_path.exists():
-                temp_path.unlink()
 
     @pytest.mark.integration
     def test_imported_raw_pdf_can_link_to_anonym_examination_report(self):
@@ -181,7 +144,6 @@ class TestReportImportService(TestCase):
                 file_path=pdf_path,
                 center_name=self.center.name,
                 retry=False,
-                delete_source=False,
             )
 
             self.assertIsInstance(raw_pdf, RawPdfFile)

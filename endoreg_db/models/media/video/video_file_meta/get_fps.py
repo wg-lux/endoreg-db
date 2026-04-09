@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 import cv2
 
+from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.video import ffmpeg_wrapper
 
 if TYPE_CHECKING:
@@ -94,36 +95,44 @@ def _get_fps_from_ffprobe(video_path: Path) -> Optional[float]:
     return None
 
 
-def _resolve_video_path(video: "VideoFile") -> Optional[Path]:
+def _resolve_active_field_file(video: "VideoFile"):
     try:
-        video_path = video.active_file_path
-        _validate_video_path(video_path)
-        return video_path
+        return video.active_file
     except Exception:
         return None
 
 
 def _get_fps_from_video_file(video: "VideoFile") -> Optional[float]:
-    video_path = _resolve_video_path(video)
-    if video_path is None:
+    active_file = _resolve_active_field_file(video)
+    if active_file is None:
         return None
 
-    ffprobe_fps = _get_fps_from_ffprobe(video_path)
-    if ffprobe_fps is not None:
-        return ffprobe_fps
-
-    cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
-    if not cap.isOpened():
-        logger.warning("Cannot open video file for FPS read: %s", video_path)
-        cap.release()
-        return None
     try:
-        fps = _get_fps_from_property(cap)
-    finally:
-        cap.release()
+        with ensure_local_file(active_file) as video_path:
+            _validate_video_path(video_path)
 
-    if _is_valid_fps(fps):
-        return float(fps)
+            ffprobe_fps = _get_fps_from_ffprobe(video_path)
+            if ffprobe_fps is not None:
+                return ffprobe_fps
+
+            cap = cast(Any, cv2.VideoCapture)(video_path.as_posix())
+            if not cap.isOpened():
+                logger.warning("Cannot open video file for FPS read: %s", video_path)
+                cap.release()
+                return None
+            try:
+                fps = _get_fps_from_property(cap)
+            finally:
+                cap.release()
+
+            if _is_valid_fps(fps):
+                return float(fps)
+    except Exception as exc:
+        logger.warning(
+            "Could not stage active video file locally while resolving FPS for %s: %s",
+            getattr(video, "video_hash", "<unknown>"),
+            exc,
+        )
 
     return None
 

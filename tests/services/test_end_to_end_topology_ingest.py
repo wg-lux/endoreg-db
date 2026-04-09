@@ -44,12 +44,10 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                     file_path,
                     center_name,
                     retry,
-                    delete_source,
                 ):
                     assert Path(file_path) == first_drop
                     assert center_name == center.name
                     assert retry is False
-                    assert delete_source is True
                     Path(file_path).unlink(missing_ok=True)
                     return SimpleNamespace(sensitive_meta=None)
 

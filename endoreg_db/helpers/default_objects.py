@@ -303,12 +303,10 @@ def get_default_egd_pdf():
     file_field: Optional[FieldFile] = None
     try:
         # Create the report record using the temporary file.
-        # delete_source=True will ensure temp_file_path is deleted by create_from_file
         pdf_file = RawPdfFile.create_from_file(
             file_path=temp_file_path,
             center_name=center_name,
             save=True,  # save=True is default and handled internally now
-            delete_source=True,
         )
 
         if pdf_file is None:
@@ -408,7 +406,6 @@ def get_default_video_file():
     video_file = VideoFile.create_from_file_initialized(
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
-        delete_source=False,  # Keep the original asset for other tests
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
         video_hash=sha256_file(video_path),
     )

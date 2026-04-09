@@ -41,7 +41,6 @@ def main():
             file_path=VIDEO_PATH,
             center_name=DEFAULT_CENTER_NAME,
             processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
-            delete_source=False,  # Keep original for testing
         )
 
         print(f"✓ Video imported successfully with UUID: {video_file.video_hash}")

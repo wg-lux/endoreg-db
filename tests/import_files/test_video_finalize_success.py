@@ -109,7 +109,6 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
     ctx.file_hash = "file-hash"
     ctx.current_video = video
@@ -226,7 +225,6 @@ def test_finalize_video_success_rejects_unprobeable_final_output(tmp_path, monke
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
     ctx.file_hash = "file-hash"
     ctx.current_video = video

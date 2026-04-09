@@ -5,7 +5,6 @@ Tests the import_and_anonymize service function that combines VideoFile creation
 with frame-level anonymization.
 """
 
-import tempfile
 import os
 import threading
 import shutil
@@ -72,7 +71,6 @@ class TestVideoImportService(TestCase):
             file_path=filepath,
             center_name=self.center.name,
             processor_name=self.processor.name,
-            delete_source=False,
         )
 
         # Verify the import was successful
@@ -103,42 +101,6 @@ class TestVideoImportService(TestCase):
                 center_name="university_hospital_wuerzburg",
                 processor_name="olympus_cv_1500",
             )
-
-    @pytest.mark.integration
-    def test_import_and_anonymize_with_different_options(self):
-        """
-        Test import_and_anonymize with different save/delete options.
-
-        This test is marked as expensive due to video file operations.
-        """
-        if SKIP_EXPENSIVE_TESTS:
-            self.skipTest(
-                "Skipping expensive video import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-
-        video_asset_path = get_random_video_path_by_examination_alias()
-
-        # Create a temporary copy of the originalvideo file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-            temp_path = Path(temp_file.name)
-            temp_path.write_bytes(video_asset_path.read_bytes())
-
-        try:
-            # Test with save_video=False, delete_source=True
-            video_file = import_and_anonymize(
-                file_path=temp_path,
-                center_name="university_hospital_wuerzburg",
-                processor_name="olympus_cv_1500",
-                delete_source=True,
-            )
-
-            self.assertIsNotNone(video_file)
-            self.assertIsInstance(video_file, VideoFile)
-
-        finally:
-            # Clean up if file still exists
-            if temp_path.exists():
-                temp_path.unlink()
 
 
 @pytest.mark.unit
@@ -239,7 +201,6 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
 
     assert result.pk == 1
@@ -328,7 +289,6 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
 
     assert result.pk == 1
@@ -405,7 +365,6 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
 
     assert result.pk == 1
@@ -453,7 +412,6 @@ def test_import_and_anonymize_checks_pipeline_storage_before_staging(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
-            delete_source=False,
         )
 
     assert ("file_lock_enter", source_path) in events
@@ -527,7 +485,6 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
 
     assert result.pk == 1
@@ -653,7 +610,6 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
             file_path=path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
-            delete_source=False,
         )
 
     thread_a = threading.Thread(target=run_import, args=("a", source_a))

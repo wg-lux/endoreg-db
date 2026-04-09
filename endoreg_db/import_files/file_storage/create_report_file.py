@@ -27,7 +27,6 @@ def create_or_retrieve_report_file(
     """
     file_path = ctx.file_path
     center_name = ctx.center_name
-    delete_source = ctx.delete_source
     file_type = ctx.file_type  # logical key for history; can be None
 
     # default assumptions
@@ -77,7 +76,6 @@ def create_or_retrieve_report_file(
         pdf = RawPdfFile.create_from_file_initialized(
             file_path=file_path,
             center_name=center_name,
-            delete_source=delete_source,
         )
 
         center = ensure_center(pdf, ctx.center_name)

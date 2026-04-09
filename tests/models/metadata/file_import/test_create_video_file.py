@@ -4,15 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from endoreg_db.models import Center, EndoscopyProcessor
+import endoreg_db.models.media.video.create_from_file as create_from_file_module
+import endoreg_db.utils as utils
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
-import endoreg_db.models.media.video.create_from_file as create_from_file_module
+from endoreg_db.models import Center, EndoscopyProcessor
+from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import sha256_file
-import endoreg_db.utils as utils
-from endoreg_db.models.state.processing_history import ProcessingHistory
 
 
 def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path, Path]:
@@ -31,12 +31,10 @@ def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path, Path]:
 
     # Wire endoreg_db.utils.data_paths so _get_data_paths() sees our paths
     # NOTE: keep "storage" pointing to the real STORAGE_DIR, only override sensitive/transcoding
-    utils.data_paths = {
-        **getattr(utils, "data_paths", {}),
-        "storage": paths_module.STORAGE_DIR,
-        "sensitive_video": sensitive_dir,
-        "transcoding": transcoding_dir,
-    }
+    data_paths = utils.data_paths
+
+    data_paths.protected_root = sensitive_dir
+    data_paths.transcoding = transcoding_dir
 
     return storage_root, sensitive_dir, transcoding_dir
 
@@ -115,7 +113,6 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,  # keep import file
         original_path=Path(src_file),
     )
 
@@ -180,7 +177,6 @@ def test_create_from_file_duplicate_with_existing_file(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
     )
 
     # First call: creates the object
@@ -199,7 +195,6 @@ def test_create_from_file_duplicate_with_existing_file(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
     )
     assert isinstance(ctx.file_hash, str)
     ph = ProcessingHistory().get_or_create_for_hash(
@@ -262,7 +257,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
         original_path=Path(src_file),
     )
 
@@ -286,7 +280,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
     )
     new_video, processed2, needs_processing2 = (
         create_video_file.create_or_retrieve_video_file(ctx2)
@@ -338,7 +331,6 @@ def test_create_or_retrieve_prefers_sensitive_path(monkeypatch, tmp_path):
         file_path=original_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
-        delete_source=False,
     )
     ctx.sensitive_path = sensitive_path
     ctx.file_hash = "hash-from-sensitive-copy"
@@ -427,7 +419,6 @@ def test_create_from_file_transcoding_failure_falls_back_to_original(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
         original_path=Path(src_file),
     )
 

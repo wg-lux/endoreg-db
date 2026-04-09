@@ -180,7 +180,6 @@ For API ingest:
 - uploaded files are stored through `UploadJob.file`
 - processing is then handed off either through Celery or inline execution
 - `process_upload_job(...)` calls the report or video import service with
-  `delete_source=False`
 
 For watcher ingest:
 

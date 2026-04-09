@@ -22,10 +22,10 @@ def _test_video_create_from_file(test_case: "VideoFileModelTest"):
         video_file = VideoFile.create_from_file(
             file_path=video_path,
             center_name=default_center.name,  # Pass center name as expected by _create_from_file
-            delete_source=False,  # Keep the original asset for other tests
         )
 
         # Assertions
+        assert isinstance(video_file, VideoFile)
         test_case.assertIsInstance(video_file, VideoFile)
         test_case.assertIsNotNone(
             video_file.pk, "VideoFile should have a primary key after saving."

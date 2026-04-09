@@ -748,7 +748,6 @@ def _handle_video_processing_after_raw_upload(
             center_name=video.center.name,
             processor_name=processor_name,
             retry=True,
-            delete_source=False,
         )
     except Exception as exc:
         logger.exception(
@@ -857,7 +856,6 @@ def _handle_report_processing_after_raw_upload(
             file_path=import_path,
             center_name=report.center.name if report.center is not None else "",
             retry=True,
-            delete_source=False,
         )
     except Exception as exc:
         logger.exception(

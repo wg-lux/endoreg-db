@@ -142,7 +142,6 @@ class ReportImportService:
         file_path: Union[Path, str],
         center_name: str,
         retry: bool = False,
-        delete_source: bool = True,
     ) -> "RawPdfFile | None":
         """
         Public entrypoint: wrap import_and_anonymize logic.
@@ -151,13 +150,11 @@ class ReportImportService:
         ctx = ImportContext(
             file_path=Path(file_path),
             center_name=center_name,
-            delete_source=delete_source,
             file_type="report",
             original_path=Path(file_path),
         )
         temp_pdf_path: Optional[Path] = None
         is_txt_input = False
-        should_delete_original_txt = False
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Report file not found: {file_path}")
@@ -168,8 +165,6 @@ class ReportImportService:
                 temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
                 ctx.file_path = temp_pdf_path
                 ctx.file_hash = sha256_file(ctx.file_path)
-                ctx.delete_source = True
-                should_delete_original_txt = bool(delete_source)
 
             lock_path = ctx.original_path if is_txt_input else ctx.file_path
             assert lock_path is not None
@@ -198,12 +193,6 @@ class ReportImportService:
                     ctx.current_report.get_or_create_state()
                     assert ctx.current_report.state is not None
                     ctx.current_report = ctx.current_report
-
-                    if should_delete_original_txt and ctx.original_path is not None:
-                        self._cleanup_path(
-                            ctx.original_path, "Deleted source txt after import setup:"
-                        )
-                        should_delete_original_txt = False
 
                     if processed or retry:
                         ctx.retry = True

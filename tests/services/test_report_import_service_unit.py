@@ -64,7 +64,6 @@ class TestReportImportServiceUnit(unittest.TestCase):
             ctx = ImportContext(
                 file_path=pdf_path,
                 center_name="dummy-center",
-                delete_source=False,
             )
             existing_report = object()
             has_history_mock.return_value = True
@@ -98,7 +97,6 @@ class TestReportImportServiceUnit(unittest.TestCase):
             ctx = ImportContext(
                 file_path=source_path,
                 center_name="dummy-center",
-                delete_source=False,
                 original_path=source_path,
             )
             ctx.sensitive_path = sensitive_path

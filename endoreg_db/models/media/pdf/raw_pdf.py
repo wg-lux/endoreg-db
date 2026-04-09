@@ -5,15 +5,14 @@
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
 import uuid
-from typing import TYPE_CHECKING, Optional, Any, cast
+from typing import TYPE_CHECKING, Optional, Any, cast, Union
 
 from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.urls import reverse
-
-from endoreg_db.utils.file_operations import get_content_hash_filename
+from endoreg_db.models.media.pdf.create_report_from_file import _create_from_file
 from endoreg_db.utils.hashs import get_pdf_hash
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
@@ -399,190 +398,40 @@ class RawPdfFile(models.Model):
         return True
 
     @classmethod
-    def create_from_file_initialized(
-        cls,
-        file_path: Path,
-        center_name: str,
-        delete_source: bool = True,
-    ):
+    def create_from_file(
+        cls, file_path: Union[str, Path], center_name: Optional[str] = None, **kwargs
+    ) -> "RawPdfFile":
         """
-        Creates a RawPdfFile instance from a file and center name, ensuring an associated RawPdfState exists.
-
-        Parameters:
-            file_path (Path): Path to the source report file.
-            center_name (str): Name of the center to associate with the report.
-            delete_source (bool): Whether to delete the source file after processing. Defaults to True.
-
-        Returns:
-            RawPdfFile: The created or retrieved RawPdfFile instance with an associated RawPdfState.
+        Creates or retrieves a RawPdfFile instance.
         """
-        raw_pdf = cls.create_from_file(
-            file_path=file_path,
-            center_name=center_name,
-            delete_source=delete_source,
+        return _create_from_file(
+            cls_model=cls, file_path=file_path, center_name=center_name, **kwargs
         )
-        _state = raw_pdf.get_or_create_state()
-
-        return raw_pdf
 
     @classmethod
-    def create_from_file(
-        cls,
-        file_path: Path,
-        center_name,
-        save=True,  # Parameter kept for compatibility, but save now happens internally
-        delete_source=True,
-    ):
+    def create_from_file_initialized(
+        cls, file_path: Union[str, Path], center_name: Optional[str] = None, **kwargs
+    ) -> "RawPdfFile":
         """
-        Creates or retrieves a RawPdfFile instance from a given report file path and center name.
-
-        If a RawPdfFile with the same report hash already exists, verifies the file exists in storage and restores it if missing. Otherwise, creates a new RawPdfFile, assigns the file, and saves it to storage. Optionally deletes the source file after processing.
-
-        Parameters:
-            file_path (Path): Path to the source report file.
-            center_name (str): Name of the center to associate with the file.
-            save (bool, optional): Deprecated; saving occurs internally.
-            delete_source (bool, optional): Whether to delete the source file after processing (default True).
-
-        Returns:
-            RawPdfFile: The created or retrieved RawPdfFile instance.
-
-        Raises:
-            FileNotFoundError: If the source file does not exist.
-            Center.DoesNotExist: If the specified center is not found.
-            ValueError: If the report hash cannot be calculated.
-            IOError: If the file fails to save to storage.
+        Creates a RawPdfFile and immediately ensures states and metadata are initialized.
         """
-        from endoreg_db.models.administration import Center
+        raw_pdf = cls.create_from_file(
+            file_path=file_path, center_name=center_name, **kwargs
+        )
+        return raw_pdf.initialize()
 
-        if not file_path.exists():
-            logger.error(f"Source file does not exist: {file_path}")
-            raise FileNotFoundError(f"Source file not found: {file_path}")
+    def initialize(self) -> "RawPdfFile":
+        """
+        Initialize the RawPdfFile instance by ensuring related state exists and saving.
+        Standardized to match VideoFile.initialize().
+        """
+        # Create a new state if it doesn't exist
+        self.state = self.get_or_create_state()
 
-        # 1. Calculate hash from source file
-        try:
-            pdf_hash = get_pdf_hash(file_path)
-            logger.info(pdf_hash)
-        except Exception as e:
-            logger.error(f"Could not calculate hash for {file_path}: {e}")
-            raise ValueError(f"Could not calculate hash for {file_path}") from e
+        # If PDFs ever require extra metadata parsing upon init, it goes here.
 
-        # 2. Check if record with this hash already exists
-        existing_pdf_file = cls.objects.filter(pdf_hash=pdf_hash).first()
-        if existing_pdf_file:
-            logger.warning(
-                "RawPdfFile with hash %s already exists (ID: %s)",
-                pdf_hash,
-                existing_pdf_file.pk,
-            )
-
-            # Verify physical file exists for the existing record
-            try:
-                if existing_pdf_file is not None and isinstance(existing_pdf_file, cls):
-                    # Use storage API to check existence
-                    _file = existing_pdf_file.file
-                    assert _file is not None
-                    if not _file.storage.exists(_file.name):
-                        logger.warning(
-                            "File for existing RawPdfFile %s not found in storage at %s. Attempting to restore from source %s",
-                            pdf_hash,
-                            _file.name,
-                            file_path,
-                        )
-                        # Re-save the file from the source to potentially fix it
-                        with file_path.open("rb") as f:
-                            django_file = File(
-                                f, name=Path(_file.name).name
-                            )  # Use existing name if possible
-                            existing_pdf_file.file = django_file
-                            existing_pdf_file.save(
-                                update_fields=["file"]
-                            )  # Only update file field
-                    else:
-                        pass
-                        # logger.debug("File for existing RawPdfFile %s already exists in storage.", pdf_hash)
-            except Exception as e:
-                logger.error(
-                    "Error verifying/restoring file for existing record %s: %s",
-                    pdf_hash,
-                    e,
-                )
-
-            # Delete the source temp file if requested
-            if delete_source:
-                try:
-                    file_path.unlink()
-                    # logger.info("Deleted source file %s after finding existing record.", file_path)
-                except OSError as e:
-                    logger.error("Error deleting source file %s: %s", file_path, e)
-
-            return existing_pdf_file
-
-        # --- Create new record if not existing ---
-        assert center_name is not None, "center_name is required"
-        try:
-            center = Center.objects.get(name=center_name)
-        except Center.DoesNotExist:
-            logger.error(f"Center with name '{center_name}' not found.")
-            raise
-
-        # Generate a unique filename (e.g., using UUID)
-        new_file_name, _uuid = get_content_hash_filename(file_path)
-        logger.info(f"Generated new filename: {new_file_name}")
-
-        # Create model instance via manager so creation can be intercepted/mocked during tests
-        try:
-            with file_path.open("rb") as f:
-                django_file = File(f, name=new_file_name)
-                raw_pdf = cls.objects.create(
-                    pdf_hash=pdf_hash,
-                    center=center,
-                    file=django_file,
-                )
-
-            _file = raw_pdf.file
-            assert _file is not None
-            logger.info(
-                "Created and saved new RawPdfFile %s with file %s",
-                raw_pdf.pk,
-                _file.name,
-            )
-
-            if not _file.storage.exists(_file.name):
-                logger.error(
-                    "File was not saved correctly to storage path %s after model save.",
-                    _file.name,
-                )
-                raise IOError(
-                    f"File not found at expected storage path after save: {_file.name}"
-                )
-
-            try:
-                logger.info("File saved to absolute path: %s", _file.path)
-            except NotImplementedError:
-                logger.info(
-                    "File saved to storage path: %s (Absolute path not available from storage)",
-                    _file.name,
-                )
-
-        except Exception as e:
-            logger.error(
-                "Error processing or saving file %s for new record: %s", file_path, e
-            )
-            raise
-
-        # Delete source file *after* successful save and verification
-        if delete_source:
-            try:
-                file_path.unlink()
-                logger.info(
-                    "Deleted source file %s after creating new record.", file_path
-                )
-            except OSError as e:
-                logger.error("Error deleting source file %s: %s", file_path, e)
-
-        # raw_pdf.save() # unnecessary?
-        return raw_pdf
+        self.save(update_fields=["state"])
+        return self
 
     def save(self, *args, **kwargs):
         # Ensure hash is calculated before the first save if possible and not already set

@@ -3,11 +3,10 @@ from __future__ import annotations
 from io import StringIO
 
 from django.core.management import call_command
-from django.test import SimpleTestCase
 import pytest
 
 
-class StartFileWatcherCommandTests(SimpleTestCase):
+class StartFileWatcherCommandTests:
     def test_start_filewatcher_uses_packaged_service(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

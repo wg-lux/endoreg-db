@@ -79,11 +79,11 @@ class VideoFileModelTest(TestCase):
             video_file = VideoFile.create_from_file(
                 video_path,
                 center_name=self.center.name,  # Pass center name
-                delete_source=False,
             )
             self.assertIsNotNone(video_file, "VideoFile creation failed.")
 
             # Initialize specs
+            assert isinstance(video_file, VideoFile)
             initialized = video_file.initialize_video_specs(use_raw=True)
             self.assertTrue(initialized, "initialize_video_specs returned False.")
 

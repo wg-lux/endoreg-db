@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Union
 
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from endoreg_db.models.media import RawPdfFile, VideoFile
@@ -12,7 +12,6 @@ class ImportContext:
     file_path: Path
     center_name: str
     processor_name: str = "olympus-cv-500"
-    delete_source: bool = True
 
     retry: bool = False
     import_completed: bool = False
@@ -35,7 +34,7 @@ class ImportContext:
 
     original_text: Optional[str] = None
     anonymized_text: Optional[str] = None
-    extracted_metadata: Dict[str, Any] = field(default_factory=dict)
+    extracted_metadata: SensitiveMeta = field(default_factory=dict)
 
     def __post_init__(self):
         """Compute raw file hash after dataclass is constructed."""

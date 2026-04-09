@@ -24,13 +24,8 @@ def _configure_storage_layout(test_suffix: str) -> tuple[Path, Path]:
 
     storage_root.mkdir(parents=True, exist_ok=True)
     sensitive_dir.mkdir(parents=True, exist_ok=True)
-
-    # Wire endoreg_db.utils.data_paths so _get_data_paths() sees our paths
-    utils.data_paths = {
-        **getattr(utils, "data_paths", {}),
-        "storage": paths_module.STORAGE_DIR,
-        "sensitive_report": sensitive_dir,
-    }
+    data_paths = utils.data_paths
+    data_paths.protected_root = sensitive_dir
 
     return storage_root, sensitive_dir
 
@@ -62,7 +57,6 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
         original_path=Path(src_file),
     )
 
@@ -108,7 +102,6 @@ def test_create_from_file_duplicate_with_existing_file(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
     )
 
     r1, processed1, needs_processing1 = (
@@ -129,7 +122,6 @@ def test_create_from_file_duplicate_with_existing_file(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
     )
     r2, processed2, needs_processing2 = (
         create_from_file_module.create_or_retrieve_report_file(ctx2)
@@ -162,7 +154,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
         original_path=Path(src_file),
     )
 
@@ -189,7 +180,6 @@ def test_create_from_file_duplicate_with_missing_file_recreates(
         file_path=src_file,
         center_name=center_name,
         processor_name=processor_name,
-        delete_source=False,
     )
     new_report, processed2, needs_processing2 = (
         create_from_file_module.create_or_retrieve_report_file(ctx2)

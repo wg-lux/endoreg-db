@@ -101,7 +101,6 @@ class ReportReimportView(APIView):
                         self.pdf_service.import_and_anonymize(
                             file_path=raw_file_path,
                             center_name=pdf.center.name,
-                            delete_source=False,  # Don't delete during reimport
                             retry=True,  # Mark as retry attempt
                         )
 
