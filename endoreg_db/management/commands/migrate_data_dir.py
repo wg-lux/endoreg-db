@@ -5,11 +5,11 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-
+import logging
 from django.core.files import File
 from django.core.management.base import BaseCommand, CommandError
 
-from endoreg_db.models import UploadJob
+from endoreg_db.models import UploadJob, VideoFile, RawPdfFile
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import (
     MANAGED_ANONYMIZED_REPORTS_DIR,
@@ -20,10 +20,13 @@ from endoreg_db.utils.paths import (
     WATCHER_PREANONYMIZED_DROP_DIR,
     WATCHER_REPORT_DROP_DIR,
     WATCHER_VIDEO_DROP_DIR,
+    to_storage_relative,
     build_manifest_path,
     build_upload_job_relative_path,
     ensure_within_protected_root,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,8 +182,12 @@ class Command(BaseCommand):
                     "create_upload_job": rule.create_upload_job,
                 }
 
+                # 2. If it already exists at the destination, run the "Database Sync" logic
                 if destination_path.exists():
-                    skipped_entries.append({**entry, "reason": "destination_exists"})
+                    self.sync_db(destination_path, source_path, rule)
+                    skipped_entries.append(
+                        {**entry, "reason": "destination_exists_and_synced"}
+                    )
                     continue
 
                 if dry_run:
@@ -197,6 +204,14 @@ class Command(BaseCommand):
                         rule=rule,
                     )
                     job_id = str(job.id)
+                if self.sync_db(destination_path, source_path, rule):
+                    logger.info(
+                        f"synced db path of {destination_path} to {source_path}"
+                    )
+                else:
+                    logger.info(
+                        f"No existing DB records found for {source_path.name} to sync."
+                    )
                 migrated_entries.append({**entry, "upload_job_id": job_id})
 
         manifest = {
@@ -218,6 +233,38 @@ class Command(BaseCommand):
                 f"Migrated {len(migrated_entries)} file(s); skipped {len(skipped_entries)}."
             )
         )
+
+    def sync_db(
+        self, destination_path: Path, source_path: Path, rule: MigrationRule
+    ) -> bool:
+        self.stdout.write(
+            self.style.NOTICE(f"Syncing DB for existing file: {source_path.name}")
+        )
+
+        # Calculate hash to find the record in the DB
+        content_hash = sha256_file(destination_path)
+        rel_path = to_storage_relative(destination_path)
+        updated_count = 0
+        # Re-point existing Video records
+        if rule.target_root == MANAGED_ANONYMIZED_VIDEOS_DIR:
+            updated_count = VideoFile.objects.filter(video_hash=content_hash).update(
+                processed_file=rel_path
+            )
+
+        # Re-point existing Report records
+        elif rule.target_root == MANAGED_ANONYMIZED_REPORTS_DIR:
+            updated_count = RawPdfFile.objects.filter(pdf_hash=content_hash).update(
+                file=rel_path, processed_file=rel_path
+            )
+
+        if updated_count > 0:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Synced {updated_count} DB record(s) for: {source_path.name}"
+                )
+            )
+            return True
+        return False
 
     def _create_or_reuse_migration_upload_job(
         self,
