@@ -12,7 +12,7 @@ import yaml
 import json
 from django.db.models import Q, QuerySet
 
-from endoreg_db.helpers.data_loader import load_base_db_data
+from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 from endoreg_db.models import (
     ImageClassificationAnnotation,
     LabelVideoSegment,

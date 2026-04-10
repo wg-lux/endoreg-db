@@ -71,7 +71,7 @@ class TestReportImportService(TestCase):
     def setUpClass(cls):
         """Set up session-scoped fixtures."""
         super().setUpClass()
-        from endoreg_db.helpers.data_loader import load_base_db_data
+        from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
 

@@ -64,13 +64,11 @@ API/documentation conventions:
 - Operators preparing staging/prod bootstrap procedures
 
 ## Lifecycle Expectation
-- During implementation: draft docs can live in `docs/`.
-- After implementation stabilizes: wiki pages become canonical.
-- Temporary handoff/design docs should be deleted or merged.
+- These wiki pages are the canonical in-repo references for setup/workflow behavior.
+- Temporary handoff/design docs should be deleted or merged when superseded.
 
 ## Practical Rule Summary
 - Prefer YAML config.
 - Reference and use `load_base_db_data` for base bootstrap flows.
 - Keep contracts snake_case.
 - Keep heavy report/video interactions under `/api/media/...`.
-

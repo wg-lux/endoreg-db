@@ -21,12 +21,13 @@ from endoreg_db.services.hub import (
     authenticate_network_node,
     create_or_reuse_transfer_job,
     resolve_allowed_center_id,
+    transfer_api_enabled,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
 def _assert_transfer_api_enabled() -> None:
-    if not bool(getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)):
+    if not transfer_api_enabled():
         raise Http404("Hub transfer API is not enabled")
 
 

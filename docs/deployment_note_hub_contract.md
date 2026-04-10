@@ -46,37 +46,32 @@ Update API clients, frontend writes, automation, and ingest payloads to send
 Human-facing UIs may still display center names, but machine-facing payloads
 should no longer rely on `center`.
 
-### 2. Set the correct production mode explicitly
+### 2. Set deployment role explicitly
 
 For shared multi-center deployments, set:
 
 ```bash
-ENDOREG_HUB_MODE=true
+ENDOREG_DEPLOYMENT_ROLE=central_hub
 ```
 
-When hub mode is enabled:
+Supported roles:
+
+- `central_hub`
+- `site_node`
+- `standalone`
+
+When role is `central_hub`:
 
 - API uploads must be authenticated
 - API uploads must declare `center_key`
 - API uploads do not fall back to the default center
 - SQLite is rejected in production settings
+- transfer API is enabled and must run with secure transport plus mTLS
 
 Watcher ingestion remains supported in hub deployments and keeps trusted
 local-drop behavior.
 
-### 3. Do not expose transfer ingest accidentally
-
-The node-to-node transfer API is not enabled by default.
-
-Only enable it intentionally:
-
-```bash
-ENDOREG_ENABLE_HUB_TRANSFERS=true
-```
-
-If this variable is not set, transfer endpoints return `404` by design.
-
-### 4. Keep storage inside the protected runtime root
+### 3. Keep storage inside the protected runtime root
 
 The package expects a protected runtime boundary rooted at:
 
@@ -92,7 +87,7 @@ Both of these must resolve inside that protected root:
 Downstream deployments should not point ingest, storage, or workflow paths
 outside the protected runtime root.
 
-### 5. Run the package migrations
+### 4. Run the package migrations
 
 This upgrade includes schema and lifecycle behavior that depend on current
 migrations, including upload-job storage policy and content-hash metadata.

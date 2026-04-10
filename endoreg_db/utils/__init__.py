@@ -1,6 +1,6 @@
 """Module for utility classes and functions."""
 
-from .dataloader import load_model_data_from_yaml
+from .yaml_model_loader import load_model_data_from_yaml
 
 # dates
 from .dates import ensure_aware_datetime, random_day_by_month_year, random_day_by_year

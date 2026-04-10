@@ -4,7 +4,7 @@ from pathlib import Path
 
 from django.core.management import BaseCommand
 
-from endoreg_db.helpers.data_loader import load_data
+from endoreg_db.helpers.data_load_orchestrator import load_all_reference_data
 from endoreg_db.services.report_import import ReportImportService
 
 
@@ -120,7 +120,7 @@ class Command(BaseCommand):
         # This may include loading default values, configurations, or lookup table data
         # necessary for the import process or other application functionalities.
         try:
-            load_data()
+            load_all_reference_data()
             self.stdout.write(self.style.SUCCESS("Successfully loaded initial data."))
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Failed to load initial data: {e}"))

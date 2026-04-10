@@ -37,7 +37,7 @@ Typical concerns:
 Load required reference data before normal use.
 
 Preferred bootstrap reference:
-- `endoreg_db.helpers.data_loader.load_base_db_data`
+- `endoreg_db.helpers.data_load_orchestrator.load_base_db_data`
 
 Operationally this maps to the Django management command:
 - `load_base_db_data`
@@ -84,4 +84,3 @@ The new reporting flow depends on:
 - Use this page for architecture/setup flow.
 - Use `docs/wiki/new_setup_general_purpose.md` for why the setup exists and operational intent.
 - Use `docs/wiki/dataloader_yaml_authoring.md` for YAML authoring rules and examples.
-

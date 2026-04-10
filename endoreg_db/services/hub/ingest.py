@@ -6,7 +6,6 @@ import hashlib
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.core.files import File
 from django.core.exceptions import ObjectDoesNotExist
@@ -25,6 +24,9 @@ from endoreg_db.models import (
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
+from endoreg_db.services.hub.deployment import (
+    hub_mode_enabled as _deployment_hub_mode_enabled,
+)
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.video_import import VideoImportService
@@ -94,7 +96,7 @@ def _update_upload_provenance(
 
 
 def hub_mode_enabled() -> bool:
-    return bool(getattr(settings, "ENDOREG_HUB_MODE", False))
+    return _deployment_hub_mode_enabled()
 
 
 def _normalized_upload_provenance(

@@ -1,7 +1,10 @@
 import os
 
 from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, ENDOREG_HUB_MODE, ENDOREG_ENABLE_HUB_TRANSFERS
+from .base import (
+    BASE_DIR,
+    ENDOREG_DEPLOYMENT_ROLE,
+)
 from endoreg_db.config.env import env_bool, env_str
 from . import keycloak as KEYCLOAK
 
@@ -48,10 +51,10 @@ else:
             "DB_NAME must be set when using a non-sqlite database engine in production"
         )
 
-# require prod db in Hb mode
-if ENDOREG_HUB_MODE and DB_ENGINE.endswith("sqlite3"):
+# require prod db in central-hub mode
+if ENDOREG_DEPLOYMENT_ROLE == "central_hub" and DB_ENGINE.endswith("sqlite3"):
     raise ValueError(
-        "ENDOREG_HUB_MODE requires a non-SQLite production database. "
+        "ENDOREG_DEPLOYMENT_ROLE=central_hub requires a non-SQLite production database. "
         "Use PostgreSQL or another durable multi-user database engine."
     )
 
@@ -127,15 +130,15 @@ OIDC_STORE_ID_TOKEN = KEYCLOAK.OIDC_STORE_ID_TOKEN
 OIDC_LOGOUT_REDIRECT_URL = KEYCLOAK.OIDC_LOGOUT_REDIRECT_URL
 OIDC_AUTH_REQUEST_EXTRA_PARAMS = {}
 
-if ENDOREG_ENABLE_HUB_TRANSFERS:
+if ENDOREG_DEPLOYMENT_ROLE == "central_hub":
     if not bool(globals().get("ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)):
         raise ValueError(
-            "ENDOREG_ENABLE_HUB_TRANSFERS requires "
+            "ENDOREG_DEPLOYMENT_ROLE=central_hub requires "
             "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT=true in production"
         )
     if not bool(globals().get("ENDOREG_HUB_TRANSFER_REQUIRE_MTLS", False)):
         raise ValueError(
-            "ENDOREG_ENABLE_HUB_TRANSFERS requires "
+            "ENDOREG_DEPLOYMENT_ROLE=central_hub requires "
             "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true in production"
         )
     mtls_meta_key = str(
@@ -146,7 +149,7 @@ if ENDOREG_ENABLE_HUB_TRANSFERS:
     ).strip()
     if not mtls_meta_key or not mtls_meta_value:
         raise ValueError(
-            "ENDOREG_ENABLE_HUB_TRANSFERS requires "
+            "ENDOREG_DEPLOYMENT_ROLE=central_hub requires "
             "ENDOREG_HUB_TRANSFER_MTLS_META_KEY and "
             "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE in production"
         )

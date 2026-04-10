@@ -3,7 +3,6 @@ from .frame_annotations import (
     FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
-    LabelStudioWebhookReceiverView,
 )
 
 __all__ = [
@@ -14,5 +13,4 @@ __all__ = [
     "FrameAnnotationBulkUpsertView",
     "FrameAnnotationRandomTaskView",
     "FrameAnnotationSkipView",
-    "LabelStudioWebhookReceiverView",
 ]

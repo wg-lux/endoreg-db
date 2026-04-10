@@ -11,7 +11,7 @@ import yaml
 import json
 from django.db.models import QuerySet
 
-from endoreg_db.helpers.data_loader import load_base_db_data
+from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 from endoreg_db.models import ImageClassificationAnnotation, VideoFile
 from endoreg_db.utils.video.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,

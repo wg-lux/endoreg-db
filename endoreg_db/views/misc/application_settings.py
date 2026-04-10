@@ -17,6 +17,7 @@ from endoreg_db.models import (
     NetworkNode,
     PatientExaminationReport,
 )
+from endoreg_db.services.hub import deployment_profile_payload
 from endoreg_db.utils.defaults.set_default_center import (
     get_application_defaults,
     get_application_settings,
@@ -94,6 +95,7 @@ def _settings_payload(request) -> dict[str, Any]:
         "updated_at": settings_obj.updated_at.isoformat()
         if settings_obj.updated_at
         else None,
+        "deployment_profile": deployment_profile_payload(),
         "backup_status": _backup_status_payload(),
     }
 

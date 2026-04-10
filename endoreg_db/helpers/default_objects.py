@@ -57,7 +57,7 @@ def get_information_source_prediction():
 
     Loads information source data if needed and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found or is not an InformationSource.
     """
-    from .data_loader import load_information_source
+    from .data_load_orchestrator import load_information_source
 
     load_information_source()
     source = InformationSource.objects.get(name="prediction")
@@ -83,7 +83,7 @@ def get_latest_segmentation_model(
     Raises:
         ValueError: If the AI model does not exist, or if model metadata cannot be found or initialized.
     """
-    from .data_loader import (
+    from .data_load_orchestrator import (
         load_ai_model_data,
         load_ai_model_label_data,
         load_center_data,
@@ -377,7 +377,7 @@ def get_default_video_file():
     """
     from endoreg_db.models import VideoFile
 
-    from .data_loader import (
+    from .data_load_orchestrator import (
         load_ai_model_data,
         load_ai_model_label_data,
         load_center_data,

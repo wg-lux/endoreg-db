@@ -7,13 +7,18 @@ Project guidance:
 - Prefer YAML config.
 - Reference `load_base_db_data` for base bootstrap flows.
 
+For module/layer naming and architecture context, see:
+- `docs/wiki/dataloader_layers_and_naming.md`
+
 ## Where YAML Is Used
 Many management commands load model data from YAML files via:
-- `endoreg_db.utils.dataloader.load_model_data_from_yaml`
+- canonical: `endoreg_db.utils.yaml_model_loader.load_model_data_from_yaml`
+- legacy compatibility path: `endoreg_db.utils.dataloader.load_model_data_from_yaml`
 
 Base bootstrap is typically triggered by:
 - `load_base_db_data`
-- helper wrapper: `endoreg_db.helpers.data_loader.load_base_db_data`
+- canonical helper wrapper: `endoreg_db.helpers.data_load_orchestrator.load_base_db_data`
+- legacy compatibility path: `endoreg_db.helpers.data_loader.load_base_db_data`
 
 ## Loader Behavior (Important)
 The shared loader reads all `*.yaml` files in a configured directory and processes entries.
@@ -125,8 +130,8 @@ Fix:
 - No unexpected warnings in dataloader log.
 - Changes are limited to intended domain records.
 
-## Notes For Future Wiki Expansion
-This page is intentionally generic. After implementation stabilizes, add model-specific pages with:
+## Notes For Future Expansion
+This page is intentionally generic. Add model-specific pages as needed with:
 - exact directory locations
 - command names
 - field-by-field examples

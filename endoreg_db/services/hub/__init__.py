@@ -12,6 +12,8 @@ __all__ = [
     "create_or_reuse_transfer_job",
     "create_or_reuse_upload_job",
     "create_or_reuse_watcher_upload_job",
+    "deployment_profile_payload",
+    "get_deployment_role",
     "hub_mode_enabled",
     "PreanonymizedIngestPayload",
     "process_preanonymized_watcher_file",
@@ -24,10 +26,14 @@ __all__ = [
     "resolve_default_center",
     "resolve_upload_center",
     "start_upload_job_processing",
+    "transfer_api_enabled",
 ]
 
 _EXPORTS = {
     "PreanonymizedIngestPayload": (".payloads", "PreanonymizedIngestPayload"),
+    "deployment_profile_payload": (".deployment", "deployment_profile_payload"),
+    "get_deployment_role": (".deployment", "get_deployment_role"),
+    "transfer_api_enabled": (".deployment", "transfer_api_enabled"),
     "reap_upload_job_sources": (".cleanup", "reap_upload_job_sources"),
     "assert_environment_readiness": (
         "..environment_readiness",

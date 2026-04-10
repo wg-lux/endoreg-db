@@ -36,7 +36,7 @@ class TestVideoImportService(TestCase):
         """Set up session-scoped fixtures."""
         super().setUpClass()
         # Use session-scoped database loading from conftest.py
-        from endoreg_db.helpers.data_loader import load_base_db_data
+        from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
 

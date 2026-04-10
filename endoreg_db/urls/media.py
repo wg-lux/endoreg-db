@@ -48,7 +48,6 @@ from endoreg_db.views.video.ai import (
     FrameAnnotationBulkUpsertView,
     FrameAnnotationRandomTaskView,
     FrameAnnotationSkipView,
-    LabelStudioWebhookReceiverView,
     label_list,
 )
 from endoreg_db.views.video.correction import (
@@ -185,11 +184,6 @@ urlpatterns = [
         "media/annotations/frames/skip/",
         FrameAnnotationSkipView.as_view(),
         name="frame-annotations-skip",
-    ),
-    path(
-        "media/annotations/frames/label-studio-webhook/",
-        LabelStudioWebhookReceiverView.as_view(),
-        name="frame-annotations-label-studio-webhook",
     ),
     # VIDEO SEGMENT API ENDPOINTS (Modern Media Framework - October 14, 2025)
     # Video Segments Stats API

@@ -170,3 +170,64 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         response = self.view(request)
         self.assertEqual(response.status_code, 400)
         self.assertIn("invalid_frame_ids", response.data["details"])
+
+    def test_bulk_upsert_accepts_choice_name_and_inferrs_boolean_value(self):
+        payload = {
+            "video_id": self.video.pk,
+            "annotations": [
+                {
+                    "frame_id": self.frame_1.pk,
+                    "choice_name": f"{self.label.name}: present",
+                    "information_source_name": self.source.name,
+                    "annotator": "bulk-user",
+                },
+                {
+                    "frame_id": self.frame_2.pk,
+                    "choice_name": f"{self.label.name}: absent",
+                    "information_source_name": self.source.name,
+                    "annotator": "bulk-user",
+                },
+            ],
+        }
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+        response = self.view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["upserted_count"], 2)
+
+        ann_present = ImageClassificationAnnotation.objects.get(
+            frame=self.frame_1,
+            label=self.label,
+            information_source=self.source,
+            annotator="bulk-user",
+        )
+        ann_absent = ImageClassificationAnnotation.objects.get(
+            frame=self.frame_2,
+            label=self.label,
+            information_source=self.source,
+            annotator="bulk-user",
+        )
+        self.assertTrue(ann_present.value)
+        self.assertFalse(ann_absent.value)
+
+    def test_bulk_upsert_rejects_unknown_choice_name(self):
+        payload = [
+            {
+                "frame_id": self.frame_1.pk,
+                "choice_name": "definitely_unknown_label: present",
+                "information_source_name": self.source.name,
+                "annotator": "bulk-user",
+            }
+        ]
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+
+        response = self.view(request)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("choice_name", str(response.data))
