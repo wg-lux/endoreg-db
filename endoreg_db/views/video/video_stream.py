@@ -25,7 +25,6 @@ from endoreg_db.models.media.video.storage_mode import (
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import STORAGE_DIR
-from endoreg_db.views.access_control import assert_center_scope_allowed
 
 from ..media.storage_streaming import (
     add_cors_headers,
@@ -156,11 +155,6 @@ class VideoStreamView(APIView):
             video = VideoFile.objects.get(pk=video_id)
         except VideoFile.DoesNotExist as exc:
             raise Http404(f"Video with ID {pk} not found") from exc
-        assert_center_scope_allowed(
-            request=request,
-            obj=video,
-            not_found_message=f"Video with ID {pk} not found",
-        )
 
         file_type = str(
             request.query_params.get("type")

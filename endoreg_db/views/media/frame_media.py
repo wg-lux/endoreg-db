@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.utils.permissions import EnvironmentAwarePermission, is_debug_mode
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
 from endoreg_db.views.media.storage_streaming import (
     add_cors_headers,
@@ -54,36 +54,9 @@ class FrameStreamView(APIView):
     def _expected_relative_path(frame_number: int) -> str:
         return f"frame_{frame_number:07d}.jpg"
 
-    @staticmethod
-    def _is_privileged_user(user) -> bool:
-        return bool(
-            user
-            and getattr(user, "is_authenticated", False)
-            and (
-                getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
-            )
-        )
-
     def _assert_video_access_allowed(self, *, request, video: VideoFile) -> None:
+        # Streaming access is centralized via RBAC permissions.
         self.check_object_permissions(request, video)
-        if is_debug_mode():
-            return
-
-        user = getattr(request, "user", None)
-        if self._is_privileged_user(user):
-            return
-        if not user or not getattr(user, "is_authenticated", False):
-            raise Http404("Video not found")
-
-        portal_user_info = getattr(user, "portaluserinfo", None)
-        examiner = (
-            getattr(portal_user_info, "examiner", None) if portal_user_info else None
-        )
-        center_id = getattr(examiner, "center_id", None) if examiner else None
-        if center_id is None:
-            raise Http404("Video not found")
-        if int(video.center_id) != int(center_id):
-            raise Http404("Video not found")
 
     @staticmethod
     def _validate_frame_path_for_serving(*, video: VideoFile, frame_path: Path) -> Path:

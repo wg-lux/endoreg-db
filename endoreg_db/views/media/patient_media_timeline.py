@@ -18,7 +18,6 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.access_control import assert_center_scope_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -203,11 +202,6 @@ class PatientMediaTimelineView(APIView):
             patient = Patient.objects.get(pk=patient_id)
         except Patient.DoesNotExist:
             raise Http404(f"Patient with ID {patient_id} not found")
-        assert_center_scope_allowed(
-            request=request,
-            obj=patient,
-            not_found_message=f"Patient with ID {patient_id} not found",
-        )
 
         pe_filter_raw = request.query_params.get("patient_examination_id")
         latest_only = _is_truthy(request.query_params.get("latest_only"))
