@@ -80,6 +80,42 @@ def test_create_from_file_happy_path(tmp_path, monkeypatch, base_db_data):
 
 
 @pytest.mark.django_db
+def test_create_from_file_prefers_sensitive_copy_for_canonical_raw_report(
+    tmp_path, base_db_data
+):
+    _storage_root, sensitive_dir = _configure_storage_layout("sensitive_copy")
+
+    import_dir = tmp_path / "import"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    src_file = import_dir / "test_sensitive_source.pdf"
+    _write_minimal_pdf(src_file)
+
+    sensitive_copy = sensitive_dir / src_file.name
+    shutil.copy2(src_file, sensitive_copy)
+
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
+
+    ctx = ImportContext(
+        file_path=src_file,
+        center_name=center_name,
+        processor_name=processor_name,
+        original_path=src_file,
+    )
+    ctx.sensitive_path = sensitive_copy
+
+    report, processed, needs_processing = (
+        create_from_file_module.create_or_retrieve_report_file(ctx)
+    )
+
+    assert processed is False
+    assert needs_processing is True
+    raw_path = report.get_raw_file_path()
+    assert raw_path == sensitive_copy
+    assert report.file.name == paths_module.to_storage_relative(sensitive_copy)
+
+
+@pytest.mark.django_db
 def test_create_from_file_duplicate_with_existing_file(
     tmp_path, monkeypatch, base_db_data
 ):

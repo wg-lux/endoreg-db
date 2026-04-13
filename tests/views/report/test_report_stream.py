@@ -3,11 +3,12 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import IO
 
 import pytest
 from django.test import TestCase
 
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import ANONYM_REPORT_DIR, STORAGE_DIR
 
 
 class FakeStorage:
@@ -31,6 +32,36 @@ class StubFieldFile:
     @property
     def size(self):
         return self.storage.get_plaintext_size(self.name)
+
+
+class LocalStubFieldFile:
+    def __init__(self, name: str):
+        self.name = name
+        self.file: IO[bytes] | None = None
+
+    @property
+    def path(self) -> str:
+        return str((STORAGE_DIR / self.name).resolve())
+
+    @property
+    def size(self) -> int:
+        return Path(self.path).stat().st_size
+
+    def open(self, mode: str = "rb") -> None:
+        self.file = open(self.path, mode)
+
+    def close(self) -> None:
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+
+    def chunks(self, chunk_size: int = 64 * 1024):
+        with open(self.path, "rb") as handle:
+            while True:
+                chunk = handle.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
 
 
 class ReportStreamViewTests(TestCase):
@@ -123,4 +154,66 @@ class ReportStreamViewTests(TestCase):
 
         assert response.status_code == 200
         assert "X-Accel-Redirect" not in response
+        assert b"".join(response.streaming_content) == payload
+
+    def test_pdf_stream_recovers_raw_path_from_hash_lookup_when_field_name_is_stale(
+        self,
+    ):
+        from endoreg_db.views.report import report_stream as view_module
+
+        payload = b"%PDF-1.4\nraw-fallback\n%%EOF\n"
+        storage_dir = STORAGE_DIR.resolve()
+        fallback_path = storage_dir / "sensitive_reports" / "fallback-raw.pdf"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_bytes(payload)
+
+        fake_file_field = LocalStubFieldFile("missing_reports/stale.pdf")
+        fake_pdf_obj = SimpleNamespace(
+            file=fake_file_field,
+            processed_file=None,
+            get_raw_file_path=lambda: fallback_path,
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
+            )
+            response = self.client.get("/api/media/pdfs/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+            fallback_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == payload
+
+    def test_pdf_stream_recovers_processed_path_from_hash_lookup_when_field_name_is_stale(
+        self,
+    ):
+        from endoreg_db.views.report import report_stream as view_module
+
+        payload = b"%PDF-1.4\nprocessed-fallback\n%%EOF\n"
+        fallback_path = ANONYM_REPORT_DIR / "processed-hash.pdf"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_bytes(payload)
+
+        fake_processed_field = LocalStubFieldFile("anonymized_reports/missing.pdf")
+        fake_pdf_obj = SimpleNamespace(
+            pdf_hash="processed-hash",
+            file=None,
+            processed_file=fake_processed_field,
+            get_raw_file_path=lambda: None,
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setattr(
+                view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
+            )
+            response = self.client.get("/api/media/pdfs/123/stream/?type=processed")
+        finally:
+            monkeypatches.undo()
+            fallback_path.unlink(missing_ok=True)
+
+        assert response.status_code == 200
         assert b"".join(response.streaming_content) == payload

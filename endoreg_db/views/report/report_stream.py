@@ -9,11 +9,12 @@ from django.http import Http404, HttpResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework.views import APIView
+from typing import TYPE_CHECKING
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import ANONYM_REPORT_DIR, STORAGE_DIR, to_storage_relative
 
 from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
@@ -26,18 +27,54 @@ from endoreg_db.utils.storage_streaming import (
 logger = logging.getLogger(__name__)
 NGINX_PROTECTED_URL = os.environ.get("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
 
+if TYPE_CHECKING:
+    from django.db.models.fields.files import FieldFile
+
 
 def _pick_report_field_file(report: RawPdfFile, file_type: str):
     if file_type == "processed":
         field_file = getattr(report, "processed_file", None)
-        if not field_file or not getattr(field_file, "name", None):
-            raise Http404("Processed report file not available")
-        return field_file
+        if field_file and getattr(field_file, "name", None):
+            return field_file
+
+        fallback_path = ANONYM_REPORT_DIR / f"{report.pdf_hash}.pdf"
+        if fallback_path.exists():
+            relative_name = to_storage_relative(fallback_path)
+            report.processed_file.name = relative_name
+            return report.processed_file
+
+        raise Http404("Processed report file not available")
 
     field_file = getattr(report, "file", None)
-    if not field_file or not getattr(field_file, "name", None):
-        raise Http404("Raw report file not available")
-    return field_file
+    if field_file and getattr(field_file, "name", None):
+        return field_file
+
+    raw_fallback_path = report.get_raw_file_path()
+    if raw_fallback_path is not None and raw_fallback_path.exists():
+        relative_name = to_storage_relative(raw_fallback_path)
+        report.file.name = relative_name
+        return report.file
+
+    raise Http404("Raw report file not available")
+
+
+def _recover_missing_report_field_path(
+    report: RawPdfFile, file_type: str
+) -> "FieldFile | None":
+    if file_type == "processed":
+        fallback_path = ANONYM_REPORT_DIR / f"{report.pdf_hash}.pdf"
+        if fallback_path.exists():
+            relative_name = to_storage_relative(fallback_path)
+            report.processed_file.name = relative_name
+            return report.processed_file
+        return None
+
+    raw_fallback_path = report.get_raw_file_path()
+    if raw_fallback_path is not None and raw_fallback_path.exists():
+        relative_name = to_storage_relative(raw_fallback_path)
+        report.file.name = relative_name
+        return report.file
+    return None
 
 
 def _serve_with_nginx(
@@ -97,14 +134,18 @@ class ReportStreamView(APIView):
         try:
             file_size = field_file_size(field_file)
         except FileNotFoundError as exc:
-            logger.warning(
-                "Report stream file missing for id=%s type=%s path=%s: %s",
-                report_id,
-                file_type,
-                getattr(field_file, "name", None),
-                exc,
-            )
-            raise Http404("Report file is not available") from exc
+            recovered_field_file = _recover_missing_report_field_path(report, file_type)
+            if recovered_field_file is None:
+                logger.warning(
+                    "Report stream file missing for id=%s type=%s path=%s: %s",
+                    report_id,
+                    file_type,
+                    getattr(field_file, "name", None),
+                    exc,
+                )
+                raise Http404("Report file is not available") from exc
+            field_file = recovered_field_file
+            file_size = field_file_size(field_file)
         if file_size <= 0:
             raise Http404("Report file is empty")
 

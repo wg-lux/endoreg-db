@@ -1,5 +1,6 @@
 # endoreg_db/import_files/storage/create_report_file.py
 import logging
+from pathlib import Path
 from typing import Tuple
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
@@ -25,7 +26,9 @@ def create_or_retrieve_report_file(
         processed       : True if there is already a successful ProcessingHistory for this file
         needs_processing: True if the pipeline should run for this file in this call
     """
-    file_path = ctx.file_path
+    file_path = (
+        ctx.sensitive_path if isinstance(ctx.sensitive_path, Path) else ctx.file_path
+    )
     center_name = ctx.center_name
     file_type = ctx.file_type  # logical key for history; can be None
 
