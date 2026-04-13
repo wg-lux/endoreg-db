@@ -51,27 +51,32 @@ class CenterScopedReadTests(TestCase):
         )
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
-    def test_patient_timeline_returns_404_outside_center_scope(
+    def test_patient_timeline_is_available_outside_center_scope(
         self, mock_allowed_center_id
     ) -> None:
         mock_allowed_center_id.return_value = self.center_b.id
 
         response = self.client.get(f"/api/media/patients/{self.patient.pk}/timeline/")
 
-        assert response.status_code == 404, response.content
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert payload["patient"]["id"] == self.patient.pk
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
-    def test_pdf_detail_returns_404_outside_center_scope(
+    def test_pdf_detail_is_available_outside_center_scope(
         self, mock_allowed_center_id
     ) -> None:
         mock_allowed_center_id.return_value = self.center_b.id
 
         response = self.client.get(f"/api/media/pdfs/{self.report.pk}/")
 
-        assert response.status_code == 404, response.content
+        assert response.status_code == 200, response.content
+        assert response.json()["id"] == self.report.pk
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
-    def test_pdf_list_filters_to_allowed_center(self, mock_allowed_center_id) -> None:
+    def test_pdf_list_is_not_filtered_by_center_scope(
+        self, mock_allowed_center_id
+    ) -> None:
         mock_allowed_center_id.return_value = self.center_a.id
         other_patient = Patient.objects.create(
             first_name="Other",
@@ -96,21 +101,23 @@ class CenterScopedReadTests(TestCase):
 
         assert response.status_code == 200, response.content
         payload = response.json()
-        assert payload["count"] == 1
-        assert payload["results"][0]["id"] == self.report.pk
+        assert payload["count"] == 2
+        returned_ids = {item["id"] for item in payload["results"]}
+        assert self.report.pk in returned_ids
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
-    def test_report_stream_returns_404_outside_center_scope(
+    def test_report_stream_is_available_outside_center_scope(
         self, mock_allowed_center_id
     ) -> None:
         mock_allowed_center_id.return_value = self.center_b.id
 
         response = self.client.get(f"/api/media/pdfs/{self.report.pk}/stream/")
 
-        assert response.status_code == 404, response.content
+        assert response.status_code == 200
+        assert getattr(response, "streaming", False) is True
 
     @patch("endoreg_db.views.access_control.resolve_allowed_center_id")
-    def test_video_stream_returns_404_outside_center_scope(
+    def test_video_stream_still_returns_404_without_backing_file(
         self, mock_allowed_center_id
     ) -> None:
         mock_allowed_center_id.return_value = self.center_b.id

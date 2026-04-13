@@ -216,7 +216,7 @@ class HubTransferEndpointTests(TestCase):
             transfer_key="site-a__video__disabled"
         ).exists()
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_creates_placeholder_video_and_waits_for_media(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__hash-1",
@@ -255,7 +255,7 @@ class HubTransferEndpointTests(TestCase):
         )
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_matching_node_credentials(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__auth-fail",
@@ -276,7 +276,7 @@ class HubTransferEndpointTests(TestCase):
             transfer_key="site-a__video__auth-fail"
         ).exists()
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_secure_transport(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__insecure-transport",
@@ -294,7 +294,7 @@ class HubTransferEndpointTests(TestCase):
         assert "requires HTTPS" in response.json()["detail"]
 
     @override_settings(
-        ENDOREG_ENABLE_HUB_TRANSFERS=True,
+        ENDOREG_DEPLOYMENT_ROLE="central_hub",
         ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=True,
     )
     def test_transfer_registration_requires_proxy_verified_mtls(self):
@@ -314,7 +314,7 @@ class HubTransferEndpointTests(TestCase):
         assert response.status_code == 403, response.content
         assert "mutual TLS" in response.json()["detail"]
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_is_idempotent_for_same_transfer_key(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__hash-2",
@@ -342,7 +342,7 @@ class HubTransferEndpointTests(TestCase):
             == 1
         )
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_skips_reprocessing_when_local_success_exists(self):
         video = VideoFile.objects.create(
             video_hash="hash-3",
@@ -382,7 +382,7 @@ class HubTransferEndpointTests(TestCase):
             == "skip_processing_existing_success"
         )
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfers_for_same_patient_join_by_sensitive_meta_hash_inputs(self):
         first_payload = self._video_transfer_payload(
             transfer_key="site-a__video__join-1",
@@ -425,7 +425,7 @@ class HubTransferEndpointTests(TestCase):
             != second_transfer.linked_patient_examination_id
         )
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_rejects_raw_media_transfer_modes(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__raw-mode-rejected",
@@ -443,7 +443,7 @@ class HubTransferEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "Raw media transfer is not permitted" in str(response.json())
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_anonymized_status(self):
         payload = self._report_transfer_payload(
             transfer_key="site-a__report__not-anonymized",
@@ -464,7 +464,7 @@ class HubTransferEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "only allowed for anonymized data" in str(response.json())
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_video_upload_is_rejected(self):
         raw_bytes = b"raw-video-bytes"
         video_hash = self._sha256(raw_bytes)
@@ -499,7 +499,7 @@ class HubTransferEndpointTests(TestCase):
             upload_response.json()
         )
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_video_upload_preserves_sender_state(self):
         raw_hash = self._sha256(b"raw-video")
         processed_bytes = b"processed-video"
@@ -543,7 +543,7 @@ class HubTransferEndpointTests(TestCase):
         assert video.processed_video_hash == processed_hash
         assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
 
-    @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_report_upload_is_rejected(self):
         report_bytes = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
         pdf_hash = self._sha256(report_bytes)

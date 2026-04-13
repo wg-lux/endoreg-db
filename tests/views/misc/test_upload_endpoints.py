@@ -173,7 +173,7 @@ class UploadEndpointTests(TestCase):
         upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
         assert upload_job.source_center == default_center
 
-    @override_settings(ENDOREG_HUB_MODE=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_hub_mode_rejects_unauthenticated_upload(self):
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
@@ -196,7 +196,7 @@ class UploadEndpointTests(TestCase):
         assert response.status_code == 403, response.content
         assert "Authentication is required" in response.json()["error"]
 
-    @override_settings(ENDOREG_HUB_MODE=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_hub_mode_requires_declared_center_key(self):
         user = User.objects.create_user(username="hub-user", password="secret")
         self.client.force_login(user)
@@ -221,7 +221,7 @@ class UploadEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "center_key is required" in response.json()["error"]
 
-    @override_settings(ENDOREG_HUB_MODE=True)
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_hub_mode_accepts_authenticated_upload_with_center_key(self):
         center = Center.objects.create(name="hub-center", display_name="Hub Center")
         user = User.objects.create_user(username="hub-user", password="secret")
