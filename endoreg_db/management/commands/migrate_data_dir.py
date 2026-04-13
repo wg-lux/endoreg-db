@@ -319,6 +319,20 @@ class Command(BaseCommand):
                     "retention_policy": rule.retention_policy,
                     "create_upload_job": rule.create_upload_job,
                 }
+                # FIX 1: Ignore lock files
+                if source_path.suffix.lower() == ".lock":
+                    logger.warning(f"Skipping lock file: {source_path}")
+                    continue
+
+                # FIX 2: Ignore non-media junk (Optional, but highly recommended)
+                allowed_extensions = {".mp4", ".webm", ".avi", ".mkv", ".pdf", ".txt"}
+                if source_path.suffix.lower() not in allowed_extensions:
+                    logger.warning(f"Skipping unsupported file type: {source_path}")
+                    continue
+
+                destination_path = ensure_within_protected_root(
+                    rule.target_root / source_path.relative_to(legacy_dir)
+                )
 
                 # 2. If it already exists at the destination, run the "Database Sync" logic
                 if destination_path.exists():
