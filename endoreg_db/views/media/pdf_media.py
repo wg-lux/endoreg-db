@@ -23,7 +23,7 @@ from endoreg_db.models import RawPdfFile
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import file_exists
 
-from .storage_streaming import (
+from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
     field_file_size,

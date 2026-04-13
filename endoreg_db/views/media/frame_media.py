@@ -11,7 +11,7 @@ from endoreg_db.models import Frame, VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.paths import STORAGE_DIR, ensure_within_protected_root
-from endoreg_db.views.media.storage_streaming import (
+from endoreg_db.utils.storage_streaming import (
     add_cors_headers,
     build_partial_content_response,
     parse_byte_range,

@@ -101,3 +101,26 @@ class ReportStreamViewTests(TestCase):
         assert response.status_code == 206
         assert response["Content-Range"] == f"bytes 10-49/{len(payload)}"
         assert b"".join(response.streaming_content) == payload[10:50]
+
+    def test_pdf_stream_encrypted_storage_falls_back_to_django_streaming(self):
+        from endoreg_db.views.report import report_stream as view_module
+
+        payload = (b"%PDF-1.4\n" * 32) + b"%%EOF\n"
+        fake_storage = FakeStorage(payload)
+        fake_field = StubFieldFile(fake_storage, "reports/encrypted.pdf")
+        fake_pdf_obj = SimpleNamespace(file=fake_field, processed_file=fake_field)
+
+        monkeypatches = pytest.MonkeyPatch()
+        try:
+            monkeypatches.setenv("SERVE_WITH_NGINX", "true")
+            monkeypatches.setattr(
+                view_module.RawPdfFile.objects, "get", lambda **kwargs: fake_pdf_obj
+            )
+
+            response = self.client.get("/api/media/pdfs/123/stream/?type=raw")
+        finally:
+            monkeypatches.undo()
+
+        assert response.status_code == 200
+        assert "X-Accel-Redirect" not in response
+        assert b"".join(response.streaming_content) == payload

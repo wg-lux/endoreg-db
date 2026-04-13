@@ -7,15 +7,14 @@ from typing import TYPE_CHECKING
 
 from endoreg_db.utils.paths import STORAGE_DIR, to_storage_relative
 from endoreg_db.utils.file_operations import (
-    atomic_copy_file,
-    safe_unlink_file,
+    atomic_write_file,
 )
-from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
 )
+from endoreg_db.utils.storage_streaming import field_file_size, iter_field_file_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -44,24 +43,19 @@ STREAMABLE_DIRECTORY_MODE = 0o750
 STREAMABLE_FILE_MODE = 0o640
 
 
-def _materialize_streamable_target(source_path: Path, target_path: Path) -> Path:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    os.chmod(target_path.parent, STREAMABLE_DIRECTORY_MODE)
-    if source_path.resolve() == target_path.resolve():
-        os.chmod(target_path, STREAMABLE_FILE_MODE)
-        return target_path
-    if target_path.exists():
-        safe_unlink_file(target_path, missing_ok=True)
-    # Streamable artifacts are mirrors. Never move the canonical managed payload.
-    atomic_copy_file(
-        source=source_path,
+def _materialize_streamable_target(video_field_file, target_path: Path) -> Path:
+    file_size = field_file_size(video_field_file)
+    return atomic_write_file(
         destination=target_path,
-        preserve_metadata=True,
+        content=iter_field_file_bytes(
+            video_field_file,
+            start=0,
+            end=file_size - 1,
+        ),
+        required_bytes=file_size,
         file_mode=STREAMABLE_FILE_MODE,
         dir_mode=STREAMABLE_DIRECTORY_MODE,
     )
-    os.chmod(target_path, STREAMABLE_FILE_MODE)
-    return target_path
 
 
 def _video_streamable_target(
@@ -94,21 +88,18 @@ def sync_video_streamable_artifacts(
         and getattr(video, "raw_file", None)
         and getattr(video.raw_file, "name", None)
     ):
-        with ensure_local_file(video.raw_file) as local_raw_path:
-            target_path = _video_streamable_target(
-                video,
-                processed=False,
-                suffix=local_raw_path.suffix
-                or Path(video.raw_file.name).suffix
-                or ".mp4",
-            )
-            relative_path = to_storage_relative(
-                _materialize_streamable_target(local_raw_path, target_path)
-            )
-            if video.streamable_relative_path != relative_path:
-                video.streamable_relative_path = relative_path
-                update_fields.append("streamable_relative_path")
-            synced_any = True
+        target_path = _video_streamable_target(
+            video,
+            processed=False,
+            suffix=Path(video.raw_file.name).suffix or ".mp4",
+        )
+        relative_path = to_storage_relative(
+            _materialize_streamable_target(video.raw_file, target_path)
+        )
+        if video.streamable_relative_path != relative_path:
+            video.streamable_relative_path = relative_path
+            update_fields.append("streamable_relative_path")
+        synced_any = True
     elif (
         include_raw
         and getattr(video, "raw_file", None)
@@ -130,21 +121,18 @@ def sync_video_streamable_artifacts(
         and getattr(video, "processed_file", None)
         and getattr(video.processed_file, "name", None)
     ):
-        with ensure_local_file(video.processed_file) as local_processed_path:
-            target_path = _video_streamable_target(
-                video,
-                processed=True,
-                suffix=local_processed_path.suffix
-                or Path(video.processed_file.name).suffix
-                or ".mp4",
-            )
-            relative_path = to_storage_relative(
-                _materialize_streamable_target(local_processed_path, target_path)
-            )
-            if video.processed_streamable_relative_path != relative_path:
-                video.processed_streamable_relative_path = relative_path
-                update_fields.append("processed_streamable_relative_path")
-            synced_any = True
+        target_path = _video_streamable_target(
+            video,
+            processed=True,
+            suffix=Path(video.processed_file.name).suffix or ".mp4",
+        )
+        relative_path = to_storage_relative(
+            _materialize_streamable_target(video.processed_file, target_path)
+        )
+        if video.processed_streamable_relative_path != relative_path:
+            video.processed_streamable_relative_path = relative_path
+            update_fields.append("processed_streamable_relative_path")
+        synced_any = True
     elif (
         include_processed
         and getattr(video, "processed_file", None)

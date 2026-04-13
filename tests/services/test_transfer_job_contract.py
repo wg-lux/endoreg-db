@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 from django.test import TestCase
 
-from endoreg_db.models import Center, NetworkNode, TransferJob
+from endoreg_db.models import Center, NetworkNode, TransferJob, VideoFile
+from endoreg_db.services.hub import transfers
 from endoreg_db.services.hub.transfers import create_or_reuse_transfer_job
 
 
@@ -80,3 +84,52 @@ class TransferJobContractTests(TestCase):
 
         assert retain_all.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
         assert delete_after_apply.cleanup_status == TransferJob.CleanupStatus.DEFERRED
+
+    def test_raw_upload_transfer_preserves_existing_processed_artifact(self) -> None:
+        transfer_job = self._create_transfer(
+            transfer_key="transfer-processed-boundary",
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+        )
+        transfer_job.processing_policy = (
+            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
+        )
+        transfer_job.processing_snapshot = {"sender_processing_success": True}
+
+        video = cast(
+            VideoFile,
+            SimpleNamespace(
+                pk=99,
+                video_hash="raw-hash",
+                raw_file=SimpleNamespace(name="sensitive_videos/raw.mp4"),
+                processed_file=SimpleNamespace(name="anonymized_videos/processed.mp4"),
+                get_processed_file_path=lambda: Path("/tmp/processed-final.mp4"),
+            ),
+        )
+
+        with (
+            patch.object(
+                transfers,
+                "_mark_video_transfer_as_processed",
+            ) as mark_processed,
+            patch.object(
+                transfers,
+                "_save_transfer_job_state",
+                side_effect=lambda **kwargs: kwargs["transfer_job"],
+            ) as save_state,
+        ):
+            result = transfers._handle_video_processing_after_raw_upload(
+                transfer_job=transfer_job,
+                video=video,
+                import_path=Path("/tmp/raw-upload.mp4"),
+            )
+
+        assert result is transfer_job
+        mark_processed.assert_called_once_with(video)
+        save_state.assert_called_once()
+        assert save_state.call_args.kwargs["processing_decision"] == (
+            TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
+        )
+        assert (
+            "existing processed artifact"
+            in save_state.call_args.kwargs["status_detail"]
+        )

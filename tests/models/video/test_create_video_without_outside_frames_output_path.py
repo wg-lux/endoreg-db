@@ -116,3 +116,98 @@ def test_create_video_without_outside_frames_uses_data_paths_output(
 
     video.refresh_from_db()
     assert video.processed_file.name == to_storage_relative(expected_output_path)
+
+
+@pytest.mark.django_db
+def test_create_video_without_outside_frames_forces_processed_frame_reextract(
+    monkeypatch, tmp_path
+):
+    center = Center.objects.create(
+        name=f"outside-reextract-center-{uuid.uuid4().hex[:8]}",
+        display_name="Outside Reextract Center",
+    )
+    processor = EndoscopyProcessor.objects.create(
+        name=f"outside-reextract-processor-{uuid.uuid4().hex[:8]}",
+        image_width=1920,
+        image_height=1080,
+        endoscope_image_x=0,
+        endoscope_image_y=0,
+        endoscope_image_width=1920,
+        endoscope_image_height=1080,
+        examination_date_x=0,
+        examination_date_y=0,
+        examination_date_width=100,
+        examination_date_height=50,
+        examination_time_x=0,
+        examination_time_y=0,
+        examination_time_width=100,
+        examination_time_height=50,
+        patient_first_name_x=0,
+        patient_first_name_y=0,
+        patient_first_name_width=100,
+        patient_first_name_height=50,
+        patient_last_name_x=0,
+        patient_last_name_y=0,
+        patient_last_name_width=100,
+        patient_last_name_height=50,
+        patient_dob_x=0,
+        patient_dob_y=0,
+        patient_dob_width=100,
+        patient_dob_height=50,
+        endoscope_type_x=0,
+        endoscope_type_y=0,
+        endoscope_type_width=100,
+        endoscope_type_height=50,
+        endoscope_sn_x=0,
+        endoscope_sn_y=0,
+        endoscope_sn_width=100,
+        endoscope_sn_height=50,
+    )
+    processor.centers.add(center)
+
+    frame_dir = tmp_path / "frames"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+
+    video = VideoFile.objects.create(
+        center=center,
+        processor=processor,
+        video_hash=f"outside-reextract-{uuid.uuid4().hex}",
+        fps=25.0,
+        width=1920,
+        height=1080,
+        frame_dir=str(frame_dir),
+    )
+
+    fake_frames = [frame_dir / "frame_0000001.jpg", frame_dir / "frame_0000002.jpg"]
+    for path in fake_frames:
+        path.write_bytes(b"frame")
+
+    extracted_calls: list[dict[str, object]] = []
+
+    def fake_extract_frames(*args, **kwargs):
+        extracted_calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(video, "extract_frames", fake_extract_frames)
+    monkeypatch.setattr(video, "get_frame_paths", lambda: fake_frames)
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file._censor_outside_frames",
+        lambda _video: True,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.models.media.video.video_file.assemble_video_from_frames",
+        lambda frame_paths, output_path, fps, width=None, height=None: output_path,
+    )
+
+    ok = VideoFile.create_video_without_outside_frames(video)
+
+    assert ok is True
+    assert extracted_calls == [
+        {
+            "quality": 2,
+            "overwrite": True,
+            "ext": "jpg",
+            "verbose": False,
+            "from_processed": True,
+        }
+    ]

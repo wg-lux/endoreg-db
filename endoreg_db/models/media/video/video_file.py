@@ -901,7 +901,7 @@ class VideoFile(models.Model):
         try:
             extracted = video.extract_frames(
                 quality=2,
-                overwrite=False,
+                overwrite=True,
                 ext="jpg",
                 verbose=False,
                 from_processed=True,
@@ -910,7 +910,7 @@ class VideoFile(models.Model):
         except AssertionError:
             extracted = video.extract_frames(
                 quality=2,
-                overwrite=False,
+                overwrite=True,
                 ext="jpg",
                 verbose=False,
                 from_processed=True,

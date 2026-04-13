@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from typing import Iterable
 
 from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
 
@@ -202,6 +203,52 @@ def atomic_move_file(
         status="ok",
         source=source,
         destination=destination,
+    )
+    return destination
+
+
+def atomic_write_file(
+    *,
+    destination: Path,
+    content: Iterable[bytes],
+    required_bytes: int | None = None,
+    file_mode: int | None = None,
+    dir_mode: int | None = None,
+) -> Path:
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if dir_mode is not None:
+        os.chmod(destination.parent, dir_mode)
+    if required_bytes is not None:
+        ensure_disk_capacity(
+            destination_dir=destination.parent,
+            required_bytes=required_bytes,
+        )
+    temp_destination = _temporary_destination(destination)
+    bytes_written = 0
+    try:
+        with temp_destination.open("wb") as handle:
+            for chunk in content:
+                handle.write(chunk)
+                bytes_written += len(chunk)
+        if file_mode is not None:
+            os.chmod(temp_destination, file_mode)
+        os.replace(temp_destination, destination)
+    except Exception as exc:
+        temp_destination.unlink(missing_ok=True)
+        _emit_file_operation_event(
+            operation="write",
+            status="error",
+            destination=destination,
+            detail=str(exc),
+            bytes=bytes_written,
+        )
+        raise
+    _emit_file_operation_event(
+        operation="write",
+        status="ok",
+        destination=destination,
+        bytes=bytes_written,
     )
     return destination
 
