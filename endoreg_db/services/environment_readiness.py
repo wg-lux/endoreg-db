@@ -72,37 +72,6 @@ def _check_directory_access(path: Path, *, code_prefix: str) -> list[ReadinessIs
     return issues
 
 
-def _check_same_filesystem(
-    source: Path, target: Path, *, code: str
-) -> list[ReadinessIssue]:
-    try:
-        source_stat = source.stat()
-        target_stat = target.stat()
-    except FileNotFoundError:
-        return []
-    except OSError as exc:
-        return [
-            ReadinessIssue(
-                severity="critical",
-                code=f"{code}_stat_failed",
-                message=f"Could not stat filesystem for {source} or {target}: {exc}",
-            )
-        ]
-    same_device = source_stat.st_dev == target_stat.st_dev
-    if same_device:
-        return []
-    return [
-        ReadinessIssue(
-            severity="warning",
-            code=f"{code}_cross_filesystem",
-            message=(
-                f"Atomic move is not guaranteed between {source} and {target}; "
-                "the paths are on different filesystems."
-            ),
-        )
-    ]
-
-
 def _check_protected_media_contract() -> list[ReadinessIssue]:
     issues: list[ReadinessIssue] = []
     protected_media_url = (
@@ -204,13 +173,6 @@ def check_environment_readiness() -> list[ReadinessIssue]:
         _check_directory_access(
             STREAMABLE_PROCESSED_VIDEO_ROOT,
             code_prefix="streamable_processed_root",
-        )
-    )
-    issues.extend(
-        _check_same_filesystem(
-            STORAGE_DIR,
-            STREAMABLE_VIDEO_ROOT,
-            code="streamable_atomic_move",
         )
     )
     return issues

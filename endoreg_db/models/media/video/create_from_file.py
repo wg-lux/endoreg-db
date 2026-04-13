@@ -249,19 +249,16 @@ def _create_from_file(
                 input_path=file_path, output_path=temp_output_path
             )
         except Exception as e:
-            logger.warning(
-                "Video transcoding failed for %s, falling back to original file: %s",
-                file_path,
-                e,
-            )
-            transcoded_file_path = file_path
+            raise RuntimeError(
+                "Video standardization failed; refusing to promote the original file "
+                f"into canonical raw storage for {file_path}."
+            ) from e
 
         if transcoded_file_path is None:
-            logger.warning(
-                "Transcoding returned no output for %s, falling back to original file.",
-                file_path,
+            raise RuntimeError(
+                "Video standardization did not produce a compliant output; refusing "
+                f"to promote the original file into canonical raw storage for {file_path}."
             )
-            transcoded_file_path = file_path
 
         logger.debug("Using file for hashing: %s", transcoded_file_path)
 

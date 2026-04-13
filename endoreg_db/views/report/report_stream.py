@@ -94,7 +94,17 @@ class ReportStreamView(APIView):
         field_file = _pick_report_field_file(report, file_type)
         filename = Path(field_file.name).name
         content_type = mimetypes.guess_type(field_file.name)[0] or "application/pdf"
-        file_size = field_file_size(field_file)
+        try:
+            file_size = field_file_size(field_file)
+        except FileNotFoundError as exc:
+            logger.warning(
+                "Report stream file missing for id=%s type=%s path=%s: %s",
+                report_id,
+                file_type,
+                getattr(field_file, "name", None),
+                exc,
+            )
+            raise Http404("Report file is not available") from exc
         if file_size <= 0:
             raise Http404("Report file is empty")
 

@@ -167,6 +167,7 @@ def _build_encoder_args(
     quality_mode: str = "balanced",
     fallback: bool = False,
     custom_crf: Optional[int] = None,
+    encoder_type_override: Optional[str] = None,
 ) -> Tuple[List[str], str]:
     """
     Build encoder command arguments based on available hardware and quality requirements.
@@ -180,8 +181,9 @@ def _build_encoder_args(
         Tuple of (encoder_args, encoder_type)
     """
     encoder = _get_preferred_encoder()
+    effective_encoder_type = encoder_type_override or encoder["type"]
 
-    if encoder["type"] == "nvenc":
+    if effective_encoder_type == "nvenc":
         # NVIDIA NVENC configuration
         if fallback:
             preset = encoder["fallback_preset"]  # p1 - fastest
@@ -213,11 +215,11 @@ def _build_encoder_args(
             "vbr",  # Variable bitrate
             "-profile:v",
             "high",
-        ], encoder["type"]
+        ], "nvenc"
     else:
         # CPU libx264 configuration
         if fallback:
-            preset = encoder["fallback_preset"]  # ultrafast
+            preset = "ultrafast"
             quality = "28"  # Lower quality for speed
         elif quality_mode == "fast":
             preset = "faster"
@@ -235,14 +237,14 @@ def _build_encoder_args(
 
         return [
             "-c:v",
-            encoder["name"],
-            encoder["preset_param"],
+            "libx264",
+            "-preset",
             preset,
-            encoder["quality_param"],
+            "-crf",
             quality,
             "-profile:v",
             "high",
-        ], encoder["type"]
+        ], "cpu"
 
 
 def is_ffmpeg_available() -> bool:
@@ -410,15 +412,12 @@ def transcode_video(
     # Determine encoder configuration
     if codec == "auto" or preset == "auto":
         if force_cpu:
-            # Force CPU encoding
             encoder_args, encoder_type = _build_encoder_args(
-                quality_mode, fallback=False, custom_crf=crf
+                quality_mode,
+                fallback=False,
+                custom_crf=crf,
+                encoder_type_override="cpu",
             )
-            # Override to use CPU encoder
-            encoder_args[1] = "libx264"  # Replace encoder name
-            encoder_args[3] = "medium" if preset == "auto" else preset  # Replace preset
-            if crf is not None:
-                encoder_args[5] = str(crf)  # Replace quality value
         else:
             # Use automatic hardware detection
             encoder_args, encoder_type = _build_encoder_args(

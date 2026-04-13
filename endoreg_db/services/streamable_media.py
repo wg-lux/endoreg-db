@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from endoreg_db.utils.paths import STORAGE_DIR, to_storage_relative
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
-    atomic_move_file,
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import ensure_local_file
@@ -53,27 +52,14 @@ def _materialize_streamable_target(source_path: Path, target_path: Path) -> Path
         return target_path
     if target_path.exists():
         safe_unlink_file(target_path, missing_ok=True)
-    same_filesystem = False
-    try:
-        same_filesystem = source_path.stat().st_dev == target_path.parent.stat().st_dev
-    except OSError:
-        same_filesystem = False
-
-    if same_filesystem:
-        atomic_move_file(
-            source=source_path,
-            destination=target_path,
-            file_mode=STREAMABLE_FILE_MODE,
-            dir_mode=STREAMABLE_DIRECTORY_MODE,
-        )
-    else:
-        atomic_copy_file(
-            source=source_path,
-            destination=target_path,
-            preserve_metadata=True,
-            file_mode=STREAMABLE_FILE_MODE,
-            dir_mode=STREAMABLE_DIRECTORY_MODE,
-        )
+    # Streamable artifacts are mirrors. Never move the canonical managed payload.
+    atomic_copy_file(
+        source=source_path,
+        destination=target_path,
+        preserve_metadata=True,
+        file_mode=STREAMABLE_FILE_MODE,
+        dir_mode=STREAMABLE_DIRECTORY_MODE,
+    )
     os.chmod(target_path, STREAMABLE_FILE_MODE)
     return target_path
 

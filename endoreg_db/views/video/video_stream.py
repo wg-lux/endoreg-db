@@ -55,12 +55,16 @@ def _pick_video_field_file(video: VideoFile, file_type: str):
 
 def _normalize_internal_relative_path(relative_path: str) -> str | None:
     candidate = Path(relative_path)
+    if str(relative_path or "").strip() == "":
+        return None
     if candidate.is_absolute():
         return None
     if any(part in {"..", ""} for part in candidate.parts):
         return None
     normalized = Path(*candidate.parts).as_posix()
-    return normalized or None
+    if normalized in {"", "."}:
+        return None
+    return normalized
 
 
 def _streamable_relative_path(
@@ -71,7 +75,14 @@ def _streamable_relative_path(
         if file_type == "processed"
         else getattr(video, "streamable_relative_path", "")
     )
-    return _normalize_internal_relative_path(explicit_relative_path)
+    normalized_explicit = _normalize_internal_relative_path(explicit_relative_path)
+    if normalized_explicit is not None:
+        return normalized_explicit
+
+    # Backward-compatible fallback for rows where streamable path fields were not
+    # populated yet, but the file field already points to a streamable-safe path.
+    fallback_field_name = str(getattr(field_file, "name", "") or "")
+    return _normalize_internal_relative_path(fallback_field_name)
 
 
 def _stream_not_ready_reason(

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import logging
 from django.core.files import File
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Q
 
 from endoreg_db.models import UploadJob, VideoFile, RawPdfFile
+from endoreg_db.models.media.video.storage_mode import VideoStorageMode
+from endoreg_db.utils.file_operations import atomic_copy_file
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import (
     MANAGED_ANONYMIZED_REPORTS_DIR,
@@ -17,6 +20,8 @@ from endoreg_db.utils.paths import (
     SAP_IMPORT_DROP_DIR,
     SAP_IMPORT_FAILED_DIR,
     SAP_IMPORT_PROCESSED_DIR,
+    SENSITIVE_REPORT_DIR,
+    SENSITIVE_VIDEO_DIR,
     WATCHER_PREANONYMIZED_DROP_DIR,
     WATCHER_REPORT_DROP_DIR,
     WATCHER_VIDEO_DROP_DIR,
@@ -27,6 +32,39 @@ from endoreg_db.utils.paths import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _streamable_video_root() -> Path:
+    return ensure_within_protected_root(
+        Path(
+            os.environ.get(
+                "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT",
+                str(MANAGED_ANONYMIZED_VIDEOS_DIR.parent / "streamable_videos"),
+            )
+        ).expanduser()
+    )
+
+
+def _streamable_raw_video_root() -> Path:
+    return ensure_within_protected_root(
+        Path(
+            os.environ.get(
+                "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT",
+                str(_streamable_video_root() / "raw"),
+            )
+        ).expanduser()
+    )
+
+
+def _streamable_processed_video_root() -> Path:
+    return ensure_within_protected_root(
+        Path(
+            os.environ.get(
+                "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
+                str(_streamable_video_root() / "processed"),
+            )
+        ).expanduser()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +141,46 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
     ),
     MigrationRule(
+        legacy_relative=Path("sensitive_videos"),
+        target_root=SENSITIVE_VIDEO_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("sensitive_reports"),
+        target_root=SENSITIVE_REPORT_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("storage/sensitive_videos"),
+        target_root=SENSITIVE_VIDEO_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("storage/sensitive_reports"),
+        target_root=SENSITIVE_REPORT_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
         legacy_relative=Path("processed_videos_final"),
         target_root=MANAGED_ANONYMIZED_VIDEOS_DIR,
         create_upload_job=False,
@@ -118,6 +196,66 @@ MIGRATION_RULES: tuple[MigrationRule, ...] = (
         create_upload_job=False,
         storage_class=UploadJob.StorageClass.MANAGED,
         storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("storage/processed_videos_final"),
+        target_root=MANAGED_ANONYMIZED_VIDEOS_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("storage/processed_reports_final"),
+        target_root=MANAGED_ANONYMIZED_REPORTS_DIR,
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("streamable_videos/raw"),
+        target_root=_streamable_raw_video_root(),
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("streamable_videos/processed"),
+        target_root=_streamable_processed_video_root(),
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("storage/streamable_videos/raw"),
+        target_root=_streamable_raw_video_root(),
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
+        retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
+        source_file_persisted=True,
+        cleanup_status=UploadJob.CleanupStatus.SKIPPED,
+    ),
+    MigrationRule(
+        legacy_relative=Path("storage/streamable_videos/processed"),
+        target_root=_streamable_processed_video_root(),
+        create_upload_job=False,
+        storage_class=UploadJob.StorageClass.MANAGED,
+        storage_tier=UploadJob.StorageTier.UPLOAD_WATCHER,
         retention_policy=UploadJob.RetentionPolicy.MIGRATION_MANAGED,
         source_file_persisted=True,
         cleanup_status=UploadJob.CleanupStatus.SKIPPED,
@@ -194,8 +332,11 @@ class Command(BaseCommand):
                     migrated_entries.append({**entry, "dry_run": True})
                     continue
 
-                destination_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_path, destination_path)
+                atomic_copy_file(
+                    source=source_path,
+                    destination=destination_path,
+                    preserve_metadata=True,
+                )
                 job_id = None
                 if rule.create_upload_job:
                     job = self._create_or_reuse_migration_upload_job(
@@ -247,14 +388,36 @@ class Command(BaseCommand):
         updated_count = 0
         # Re-point existing Video records
         if rule.target_root == MANAGED_ANONYMIZED_VIDEOS_DIR:
+            updated_count = VideoFile.objects.filter(
+                Q(processed_video_hash=content_hash) | Q(video_hash=content_hash)
+            ).update(
+                processed_file=rel_path,
+            )
+        elif rule.target_root == SENSITIVE_VIDEO_DIR:
             updated_count = VideoFile.objects.filter(video_hash=content_hash).update(
-                processed_file=rel_path
+                raw_file=rel_path
+            )
+        elif rule.target_root == _streamable_raw_video_root():
+            updated_count = VideoFile.objects.filter(video_hash=content_hash).update(
+                streamable_relative_path=rel_path,
+                storage_mode=VideoStorageMode.STREAMABLE,
+            )
+        elif rule.target_root == _streamable_processed_video_root():
+            updated_count = VideoFile.objects.filter(
+                Q(processed_video_hash=content_hash) | Q(video_hash=content_hash)
+            ).update(
+                processed_streamable_relative_path=rel_path,
+                storage_mode=VideoStorageMode.STREAMABLE,
             )
 
         # Re-point existing Report records
         elif rule.target_root == MANAGED_ANONYMIZED_REPORTS_DIR:
             updated_count = RawPdfFile.objects.filter(pdf_hash=content_hash).update(
-                file=rel_path, processed_file=rel_path
+                processed_file=rel_path
+            )
+        elif rule.target_root == SENSITIVE_REPORT_DIR:
+            updated_count = RawPdfFile.objects.filter(pdf_hash=content_hash).update(
+                file=rel_path
             )
 
         if updated_count > 0:

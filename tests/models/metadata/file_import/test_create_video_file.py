@@ -378,11 +378,12 @@ def test_create_or_retrieve_prefers_sensitive_path(monkeypatch, tmp_path):
 
 
 @pytest.mark.django_db
-def test_create_from_file_transcoding_failure_falls_back_to_original(
+def test_create_from_file_transcoding_failure_fails_closed(
     tmp_path, monkeypatch, base_db_data
 ):
     """
-    If standardization fails, the original managed file is still stored so the import can proceed.
+    If standardization fails, the raw import must fail closed and not commit a
+    canonical managed raw file.
     """
     storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
         "transcode_fallback"
@@ -422,13 +423,103 @@ def test_create_from_file_transcoding_failure_falls_back_to_original(
         original_path=Path(src_file),
     )
 
-    video, processed, needs_processing = (
+    expected_hash = sha256_file(src_file)
+    expected_final_path = sensitive_dir / f"{expected_hash}{src_file.suffix}"
+    expected_temp_path = expected_final_path.with_name(
+        f"{expected_final_path.stem}.part{expected_final_path.suffix}"
+    )
+
+    with pytest.raises(RuntimeError, match="Video standardization failed"):
         create_video_file.create_or_retrieve_video_file(ctx)
+
+    assert not create_from_file_module.VideoFile.objects.filter(
+        video_hash=expected_hash
+    ).exists()
+    assert not expected_final_path.exists()
+    assert not expected_temp_path.exists()
+
+
+@pytest.mark.django_db
+def test_create_from_file_transcoding_failure_is_retry_safe(
+    tmp_path, monkeypatch, base_db_data
+):
+    """
+    A failed standardization attempt must leave no canonical residue so a later
+    retry can succeed idempotently with the same content hash.
+    """
+    storage_root, sensitive_dir, transcoding_dir = _configure_storage_layout(
+        "transcode_retry_safe"
+    )
+
+    monkeypatch.setattr(
+        create_from_file_module,
+        "TRANSCODING_DIR",
+        transcoding_dir,
+        raising=True,
+    )
+
+    call_count = {"count": 0}
+
+    def flaky_transcode(input_path: Path, output_path: Path):
+        call_count["count"] += 1
+        if call_count["count"] == 1:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"partial-output")
+            raise RuntimeError("first transcode attempt failed")
+        shutil.copy2(input_path, output_path)
+        return output_path
+
+    monkeypatch.setattr(
+        create_from_file_module,
+        "transcode_videofile_if_required",
+        flaky_transcode,
+        raising=True,
+    )
+
+    import_dir = tmp_path / "import"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    src_file = import_dir / "test_retry_safe.mp4"
+    src_file.write_bytes(
+        b"\x00\x00\x00\x20ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 1000
+    )
+
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
+    expected_hash = sha256_file(src_file)
+    expected_final_path = sensitive_dir / f"{expected_hash}{src_file.suffix}"
+    expected_temp_path = expected_final_path.with_name(
+        f"{expected_final_path.stem}.part{expected_final_path.suffix}"
+    )
+
+    first_ctx = ImportContext(
+        file_path=src_file,
+        center_name=center_name,
+        processor_name=processor_name,
+        original_path=Path(src_file),
+    )
+
+    with pytest.raises(RuntimeError, match="Video standardization failed"):
+        create_video_file.create_or_retrieve_video_file(first_ctx)
+
+    assert not create_from_file_module.VideoFile.objects.filter(
+        video_hash=expected_hash
+    ).exists()
+    assert not expected_final_path.exists()
+    assert not expected_temp_path.exists()
+
+    second_ctx = ImportContext(
+        file_path=src_file,
+        center_name=center_name,
+        processor_name=processor_name,
+        original_path=Path(src_file),
+    )
+    video, processed, needs_processing = (
+        create_video_file.create_or_retrieve_video_file(second_ctx)
     )
 
     raw_path = video.get_raw_file_path()
-    assert raw_path is not None
+    assert raw_path == expected_final_path
     assert raw_path.exists()
-    assert raw_path.read_bytes() == src_file.read_bytes()
     assert processed is False
     assert needs_processing is True
+    assert call_count["count"] == 2

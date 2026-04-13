@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from endoreg_db.services import environment_readiness as readiness
 
 
-def test_check_environment_readiness_reports_cross_filesystem_warning(
+def test_check_environment_readiness_does_not_report_cross_filesystem_warning(
     monkeypatch, tmp_path
 ):
     protected = tmp_path / "protected"
@@ -42,26 +40,9 @@ def test_check_environment_readiness_reports_cross_filesystem_warning(
         readiness, "STREAMABLE_PROCESSED_VIDEO_ROOT", streamable_processed
     )
 
-    class _Stat:
-        def __init__(self, st_dev: int):
-            self.st_dev = st_dev
-
-    original_stat = Path.stat
-
-    def fake_stat(self, *args, **kwargs):
-        if self == storage:
-            return _Stat(1)
-        if self == streamable:
-            return _Stat(2)
-        return original_stat(self)
-
-    monkeypatch.setattr(Path, "stat", fake_stat)
-
     issues = readiness.check_environment_readiness()
 
-    assert any(
-        issue.code == "streamable_atomic_move_cross_filesystem" for issue in issues
-    )
+    assert not any(issue.code.startswith("streamable_atomic_move_") for issue in issues)
 
 
 def test_assert_environment_readiness_raises_on_missing_directory(
