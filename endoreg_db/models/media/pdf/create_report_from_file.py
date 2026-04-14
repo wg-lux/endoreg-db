@@ -21,7 +21,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("raw_pdf")
 
 
-def _canonical_managed_report_relative_path(file_path: Path) -> str | None:
+def _canonical_managed_report_relative_path(
+    file_path: Path, *, canonical_filename: str
+) -> str | None:
     resolved = file_path.resolve()
     try:
         relative_to_storage = resolved.relative_to(STORAGE_DIR.resolve())
@@ -32,14 +34,18 @@ def _canonical_managed_report_relative_path(file_path: Path) -> str | None:
         ("sensitive_reports",),
         ("report_import",),
     ):
-        return to_storage_relative(resolved)
+        if resolved.name == canonical_filename:
+            return to_storage_relative(resolved)
+        return None
 
     for managed_root in (SENSITIVE_REPORT_DIR, IMPORT_REPORT_DIR):
         try:
             resolved.relative_to(managed_root.resolve())
         except ValueError:
             continue
-        return to_storage_relative(resolved)
+        if resolved.name == canonical_filename:
+            return to_storage_relative(resolved)
+        return None
     return None
 
 
@@ -108,8 +114,11 @@ def _create_from_file(
         existing_pdf_file.delete()
 
     # 5. Create New Record
-    managed_relative_path = _canonical_managed_report_relative_path(file_path)
     new_file_name, _uuid = get_content_hash_filename(file_path)
+    managed_relative_path = _canonical_managed_report_relative_path(
+        file_path,
+        canonical_filename=new_file_name,
+    )
 
     try:
         if managed_relative_path is not None:
